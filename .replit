@@ -1,0 +1,61 @@
+modules = ["nodejs-20", "web", "postgresql-16"]
+run = "npm run dev"
+hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
+
+[nix]
+channel = "stable-24_05"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[env]
+PORT = "5000"
+
+[deployment]
+deploymentTarget = "autoscale"
+run = ["node", "./dist/index.cjs"]
+build = ["npm", "run", "build"]
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev"
+waitForPort = 5000
+
+[userenv]
+
+[userenv.shared]
+DATABASE_URL = "postgresql://postgres:chiakhoathanhcong@42.96.40.138:5432/easyedu_new"
+AI_ENCRYPT_SECRET = "83fb9fed117194980efeb027ab416025"
+AWS_ACCESS_KEY_ID = "VR7KMVGVJFKDD7DI4AJJ"
+AWS_SECRET_ACCESS_KEY = "qsppIkRloxY5Y9ti0efTmFwAnLgztborND94PDKu"
+S3_ALIAS_HOST = "cdn3.emso.vn"
+S3_BUCKET = "easyedu"
+S3_ENABLED = "true"
+S3_ENDPOINT = "https://s3.hn-1.cloud.cmctelecom.vn"
+S3_FOLDER_PORTAL = "easyedu"
+S3_HOSTNAME = "s3.hn-1.cloud.cmctelecom.vn"
+S3_PROTOCOL = "https"
+S3_REGION = "s3-hn-1"
+SECRET_KEY_BASE = "938939b1ae243dbca8364b42bbbfb2c21a1b9ced874cc060dd673d69da7cba58e53d3cffdd5eaecd77e3c23a4fdaa7fed9fdf17ac9838089809ae4ba5bdaffdd"
+TINODE_URL = "https://57467d2e-23be-490f-9f16-66f489d68dbf-00-1h5l5n7rh1dj9.pike.replit.dev:5000"
+TINODE_ADMIN_USER = "admin"
+
+[agent]
+integrations = ["javascript_openai_ai_integrations:2.0.0", "javascript_gemini_ai_integrations:2.0.0"]

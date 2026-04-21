@@ -1,0 +1,28 @@
+image: docker:27-cli
+
+stages: [build_images]
+
+variables:
+  DOCKER_BUILDKIT: "1"
+  DOCKER_REGISTRY: harbor.emso.vn
+  REGISTRY_PROJECT: emso-common
+  REGISTRY_IMAGE: new-easyedu
+  DOCKER_IMAGE: $DOCKER_REGISTRY/$REGISTRY_PROJECT/$REGISTRY_IMAGE
+  # REGISTRY_TAG: ${CI_COMMIT_TAG:-${CI_COMMIT_REF_SLUG}-${CI_COMMIT_SHORT_SHA}}
+  REGISTRY_TAG: 0.0.2 #Thêm sync_user_tokens_controller.rb nân nodejs
+
+emso-build-image:
+  stage: build_images
+  tags: [emso-runner]
+  script:
+    - echo "Login to Docker Registry"
+    - echo "$HARBOR_ROBOT_TOKEN" | docker login -u "$HARBOR_ROBOT_USER" -p "$HARBOR_ROBOT_TOKEN" "$DOCKER_REGISTRY"
+    - docker build -t "$DOCKER_IMAGE:$REGISTRY_TAG" .
+    - docker push "$DOCKER_IMAGE:$REGISTRY_TAG"
+    - echo "Build xong rồi !"
+  after_script:
+    # Dọn rác để không đầy ổ của runner
+    - docker image prune -af
+    - docker builder prune -af
+    - docker logout "$DOCKER_REGISTRY"
+    - echo "Build xong rồi !"
