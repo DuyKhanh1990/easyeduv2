@@ -93,10 +93,15 @@ class MatBaoService {
 
     const callOnce = async () => {
       const token = await this.getToken();
-      return axios.post(`${BASE_URL}/api/invoice/create-invoice`, payload, {
-        headers: { Authorization: `Bearer ${token}` },
-        timeout: 30000,
-      });
+      // Mắt Bão yêu cầu body là { input: [ ... ] } (List<CreateInvoiceRequest>)
+      return axios.post(
+        `${BASE_URL}/api/invoice/create-invoice`,
+        { input: [payload] },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: 30000,
+        },
+      );
     };
 
     try {
@@ -113,8 +118,12 @@ class MatBaoService {
           throw err;
         }
       }
-      const fkey: string | undefined = res.data?.data?.fkey ?? res.data?.data?.Fkey;
+      const d = res.data?.data;
+      const first = Array.isArray(d) ? d[0] : d;
+      const fkey: string | undefined =
+        first?.fkey ?? first?.Fkey ?? first?.FKey ?? res.data?.fkey;
       if (!fkey) {
+        console.error("[MatBao] processInvoice unexpected response:", JSON.stringify(res.data));
         throw new Error("Mắt Bão không trả về fkey");
       }
       return {
