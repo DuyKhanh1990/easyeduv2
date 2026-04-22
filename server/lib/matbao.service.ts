@@ -93,10 +93,10 @@ class MatBaoService {
 
     const callOnce = async () => {
       const token = await this.getToken();
-      // Mắt Bão yêu cầu body là { input: [ ... ] } (List<CreateInvoiceRequest>)
+      // Mắt Bão yêu cầu root body là một mảng: List<CreateInvoiceRequest>
       return axios.post(
         `${BASE_URL}/api/invoice/create-invoice`,
-        { input: [payload] },
+        [payload],
         {
           headers: { Authorization: `Bearer ${token}` },
           timeout: 30000,
