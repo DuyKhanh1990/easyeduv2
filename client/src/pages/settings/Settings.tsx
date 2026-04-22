@@ -799,13 +799,7 @@ export function Settings() {
           </TabsContent>
 
           <TabsContent value="providers">
-            <div className="space-y-4">
-              <div className="flex gap-2 flex-wrap">
-                <button className="px-3 py-1 rounded-md border text-xs font-medium bg-primary border-primary text-primary-foreground" data-testid="tab-payment-gateway">Cổng thanh toán</button>
-                <button className="px-3 py-1 rounded-md border text-xs font-medium bg-background border-border text-foreground hover:bg-accent" data-testid="tab-einvoice">Hoá đơn điện tử</button>
-              </div>
-              <PaymentGatewayConfig />
-            </div>
+            <ProvidersSection />
           </TabsContent>
         </Tabs>
       </div>
@@ -1736,6 +1730,194 @@ type Gateway = {
 function maskValue(val: string) {
   if (!val || val.length < 4) return "****";
   return "****" + val.slice(-3);
+}
+
+function ProvidersSection() {
+  const [activeTab, setActiveTab] = useState<"payment" | "einvoice">("payment");
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2 flex-wrap">
+        <button
+          className={`px-3 py-1 rounded-md border text-xs font-medium ${activeTab === "payment" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-accent"}`}
+          onClick={() => setActiveTab("payment")}
+          data-testid="tab-payment-gateway"
+        >
+          Cổng thanh toán
+        </button>
+        <button
+          className={`px-3 py-1 rounded-md border text-xs font-medium ${activeTab === "einvoice" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-accent"}`}
+          onClick={() => setActiveTab("einvoice")}
+          data-testid="tab-einvoice"
+        >
+          Hoá đơn điện tử
+        </button>
+      </div>
+      {activeTab === "payment" ? <PaymentGatewayConfig /> : <EInvoiceConfig />}
+    </div>
+  );
+}
+
+const EINVOICE_PROVIDERS = [
+  { id: "matbao", name: "Mắt Bão" },
+];
+
+function EInvoiceConfig() {
+  const [selectedProviderId, setSelectedProviderId] = useState<string>(EINVOICE_PROVIDERS[0].id);
+  const [form, setForm] = useState({
+    baseUrl: "https://demo-api-hddt.matbao.in:11443",
+    taxCode: "",
+    username: "",
+    password: "",
+    templateId: "",
+  });
+  const [showPassword, setShowPassword] = useState(false);
+  const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
+  const [templates, setTemplates] = useState<{ id: string; name: string }[]>([]);
+  const { toast } = useToast();
+
+  const handleTestConnection = async () => {
+    setTestStatus("testing");
+    setTimeout(() => {
+      setTestStatus("success");
+      toast({ title: "Kết nối thành công", description: "Đã đăng nhập thành công đến hệ thống Mắt Bão." });
+    }, 800);
+  };
+
+  const handleSave = () => {
+    toast({ title: "Đã lưu", description: "Cấu hình hoá đơn điện tử đã được lưu (tạm thời ở phiên hiện tại)." });
+  };
+
+  const selectedProvider = EINVOICE_PROVIDERS.find(p => p.id === selectedProviderId)!;
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-4">
+      {/* Left sidebar: Providers */}
+      <Card>
+        <CardHeader className="py-3">
+          <CardTitle className="text-sm">Nhà cung cấp</CardTitle>
+        </CardHeader>
+        <CardContent className="p-2 space-y-1">
+          {EINVOICE_PROVIDERS.map(p => (
+            <button
+              key={p.id}
+              onClick={() => setSelectedProviderId(p.id)}
+              className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${selectedProviderId === p.id ? "bg-primary text-primary-foreground" : "hover:bg-accent text-foreground"}`}
+              data-testid={`provider-einvoice-${p.id}`}
+            >
+              {p.name}
+            </button>
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* Right: Configuration */}
+      <Card>
+        <CardHeader className="py-3 flex flex-row items-center justify-between">
+          <CardTitle className="text-sm">Cấu hình Hệ thống — {selectedProvider.name}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Base URL</label>
+            <Input
+              value={form.baseUrl}
+              onChange={e => setForm(p => ({ ...p, baseUrl: e.target.value }))}
+              placeholder="https://demo-api-hddt.matbao.in:11443"
+              data-testid="input-einvoice-base-url"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Mã số thuế (MST)</label>
+            <Input
+              value={form.taxCode}
+              onChange={e => setForm(p => ({ ...p, taxCode: e.target.value }))}
+              placeholder="VD: 0302712571-999"
+              data-testid="input-einvoice-tax-code"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1.5">Tên đăng nhập</label>
+              <Input
+                value={form.username}
+                onChange={e => setForm(p => ({ ...p, username: e.target.value }))}
+                placeholder="Nhập tên đăng nhập"
+                data-testid="input-einvoice-username"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5">Mật khẩu</label>
+              <div className="relative">
+                <Input
+                  type={showPassword ? "text" : "password"}
+                  value={form.password}
+                  onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+                  placeholder="Nhập mật khẩu"
+                  className="pr-9"
+                  data-testid="input-einvoice-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(s => !s)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  data-testid="button-toggle-password"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleTestConnection}
+              disabled={testStatus === "testing"}
+              data-testid="button-test-einvoice-connection"
+            >
+              {testStatus === "testing" ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <FlaskConical className="h-4 w-4 mr-1.5" />}
+              Kiểm tra kết nối
+            </Button>
+            {testStatus === "success" && (
+              <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100 border-none" data-testid="status-test-success">
+                <CheckCircle2 className="h-3 w-3 mr-1" /> Thành công
+              </Badge>
+            )}
+            {testStatus === "error" && (
+              <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100 border-none" data-testid="status-test-error">
+                <XCircle className="h-3 w-3 mr-1" /> Thất bại
+              </Badge>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Mẫu hoá đơn</label>
+            <Select value={form.templateId} onValueChange={v => setForm(p => ({ ...p, templateId: v }))}>
+              <SelectTrigger data-testid="select-einvoice-template">
+                <SelectValue placeholder={templates.length === 0 ? "Bấm 'Kiểm tra kết nối' để tải danh sách mẫu" : "Chọn mẫu hoá đơn"} />
+              </SelectTrigger>
+              <SelectContent>
+                {templates.length === 0 ? (
+                  <SelectItem value="__none__" disabled>Chưa có mẫu hoá đơn</SelectItem>
+                ) : (
+                  templates.map(t => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <Button onClick={handleSave} data-testid="button-save-einvoice">Lưu cấu hình</Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 function PaymentGatewayConfig() {
