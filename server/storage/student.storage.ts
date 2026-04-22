@@ -1105,7 +1105,7 @@ export async function getStudentsBySource(params: {
   months?: number;
   dateFrom?: string;
   dateTo?: string;
-}): Promise<{ name: string; count: number; color?: string }[]> {
+}): Promise<{ name: string; count: number; pct: number }[]> {
   const locationWhere = buildLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
 
   let timeWhere = "";
@@ -1118,20 +1118,84 @@ export async function getStudentsBySource(params: {
   }
 
   const queryStr = `
+    WITH session_stats AS (
+      SELECT
+        ss.student_id,
+        COUNT(*) FILTER (
+          WHERE cs2.session_date < CURRENT_DATE
+            AND ss.attendance_status NOT IN ('pending', 'paused')
+        ) AS past_active,
+        COUNT(*) FILTER (
+          WHERE cs2.session_date = CURRENT_DATE
+            AND ss.attendance_status NOT IN ('pending', 'paused')
+        ) AS today_active,
+        COUNT(*) FILTER (
+          WHERE cs2.session_date > CURRENT_DATE
+        ) AS future_any,
+        COUNT(*) FILTER (
+          WHERE cs2.session_date = CURRENT_DATE
+            AND ss.attendance_status = 'paused'
+        ) AS paused_today
+      FROM student_sessions ss
+      JOIN class_sessions cs2 ON cs2.id = ss.class_session_id
+      GROUP BY ss.student_id
+    ),
+    student_current_status AS (
+      SELECT
+        s.id AS student_id,
+        CASE
+          WHEN (COALESCE(st.past_active,0) > 0 OR COALESCE(st.today_active,0) > 0)
+               AND (COALESCE(st.future_any,0) > 0 OR COALESCE(st.today_active,0) > 0)
+            THEN 'dang_hoc'
+          WHEN COALESCE(st.paused_today,0) > 0
+            THEN 'bao_luu'
+          WHEN COALESCE(st.future_any,0) > 0
+               AND COALESCE(st.past_active,0) = 0
+               AND COALESCE(st.today_active,0) = 0
+               AND COALESCE(st.paused_today,0) = 0
+            THEN 'cho_lich'
+          WHEN (COALESCE(st.past_active,0) > 0 OR COALESCE(st.today_active,0) > 0)
+               AND COALESCE(st.future_any,0) = 0
+            THEN 'da_nghi'
+          ELSE 'chua_co_lich'
+        END AS status
+      FROM students s
+      LEFT JOIN session_stats st ON st.student_id = s.id
+      WHERE ${locationWhere}
+    ),
+    total_active AS (
+      SELECT COUNT(DISTINCT s.id) AS total
+      FROM students s
+      JOIN student_current_status scs ON scs.student_id = s.id
+      WHERE scs.status IN ('dang_hoc', 'cho_lich', 'bao_luu', 'da_nghi')
+        ${timeWhere}
+    ),
+    source_counts AS (
+      SELECT
+        src.name AS source_name,
+        COUNT(DISTINCT s.id) AS cnt,
+        COUNT(DISTINCT s.id) FILTER (
+          WHERE scs.status IN ('dang_hoc', 'cho_lich', 'bao_luu', 'da_nghi')
+        ) AS active_cnt
+      FROM students s
+      JOIN crm_customer_sources src ON src.id = ANY(s.customer_source_ids::uuid[])
+      JOIN student_current_status scs ON scs.student_id = s.id
+      WHERE ${locationWhere} ${timeWhere}
+      GROUP BY src.id, src.name
+    )
     SELECT
-      cs.name AS source_name,
-      COUNT(DISTINCT s.id) AS cnt
-    FROM students s
-    JOIN crm_customer_sources cs
-      ON cs.id = ANY(s.customer_source_ids::uuid[])
-    WHERE ${locationWhere} ${timeWhere}
-    GROUP BY cs.id, cs.name
-    ORDER BY cnt DESC
+      sc.source_name,
+      sc.cnt,
+      ROUND(sc.active_cnt::numeric * 100.0 / NULLIF(ta.total, 0), 1) AS pct
+    FROM source_counts sc
+    CROSS JOIN total_active ta
+    ORDER BY sc.cnt DESC
   `;
   const result = await db.execute(sql.raw(queryStr));
   return (result.rows as any[]).map(row => ({
     name: row.source_name as string,
     count: parseInt(row.cnt ?? "0", 10),
+    pct: parseFloat(row.pct ?? "0"),
   }));
 }
 

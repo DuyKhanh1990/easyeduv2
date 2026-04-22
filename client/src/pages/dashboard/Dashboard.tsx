@@ -91,7 +91,7 @@ export function Dashboard() {
     fetch(`/api/students/new-customers-summary${locationParam}`, { credentials: "include" }).then(r => r.json())
   });
 
-  const { data: bySource, isLoading: loadingBySource } = useQuery<{ name: string; count: number }[]>({
+  const { data: bySource, isLoading: loadingBySource } = useQuery<{ name: string; count: number; pct: number }[]>({
     queryKey: ["/api/students/by-source", locationId, chartMonths],
     queryFn: () => fetch(`/api/students/by-source${chartParam}`, { credentials: "include" }).then(r => r.json()),
   });
@@ -382,27 +382,19 @@ export function Dashboard() {
                       </div>
                     ) : (
                       <ResponsiveContainer width="100%" height={210}>
-                        <BarChart data={bySource} margin={{ top: 8, right: 8, left: -20, bottom: 4 }}>
+                        <ComposedChart data={bySource} margin={{ top: 8, right: 36, left: -20, bottom: 4 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                          <XAxis
-                            dataKey="name"
-                            tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-                            tickLine={false}
-                            axisLine={false}
-                          />
-                          <YAxis
-                            tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-                            tickLine={false}
-                            axisLine={false}
-                            allowDecimals={false}
-                          />
+                          <XAxis dataKey="name" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} />
+                          <YAxis yAxisId="left" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} allowDecimals={false} />
+                          <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: "#3b82f6" }} tickLine={false} axisLine={false} unit="%" domain={[0, 100]} />
                           <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--muted))", opacity: 0.5 }} />
-                          <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={48}>
+                          <Bar yAxisId="left" dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={48}>
                             {(bySource || []).map((_, idx) => (
                               <Cell key={idx} fill={SOURCE_COLORS[idx % SOURCE_COLORS.length]} />
                             ))}
                           </Bar>
-                        </BarChart>
+                          <Line yAxisId="right" type="monotone" dataKey="pct" stroke="#3b82f6" strokeWidth={2} dot={{ fill: "#3b82f6", r: 3 }} />
+                        </ComposedChart>
                       </ResponsiveContainer>
                     )}
                   </CardContent>
