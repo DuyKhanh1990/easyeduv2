@@ -25,6 +25,7 @@ import {
 import {
   Search, SlidersHorizontal, CalendarIcon, Plus, ChevronUp, ChevronDown,
   Pencil, Trash2, Eye, CreditCard, ChevronRight, Settings2, GripVertical, AlertCircle, QrCode, CheckCircle,
+  FileSignature,
 } from "lucide-react";
 import {
   DropdownMenu as ActionMenu,
@@ -262,6 +263,8 @@ export default function Invoices() {
   const [printPreviewInvoice, setPrintPreviewInvoice] = useState<InvoiceRow | null>(null);
   const [printTemplateOpen, setPrintTemplateOpen] = useState(false);
   const [qrInvoice, setQrInvoice] = useState<InvoiceRow | null>(null);
+  const [signDialogOpen, setSignDialogOpen] = useState(false);
+  const [signConfirmed, setSignConfirmed] = useState(false);
 
   const { toast } = useToast();
 
@@ -427,6 +430,18 @@ export default function Invoices() {
             </Popover>
 
             <div className="flex-1" />
+
+            {selectedIds.size > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 text-purple-700 border-purple-200 hover:bg-purple-50"
+                onClick={() => { setSignConfirmed(false); setSignDialogOpen(true); }}
+                data-testid="button-send-sign"
+              >
+                <FileSignature className="h-4 w-4 mr-1" /> Gửi ký số ({selectedIds.size})
+              </Button>
+            )}
 
             {invPerm.canDelete && selectedIds.size > 0 && (
               <Button variant="outline" size="sm" className="h-9 text-red-600 border-red-200 hover:bg-red-50">
@@ -812,6 +827,103 @@ export default function Invoices() {
         open={!!qrInvoice}
         onOpenChange={(open) => { if (!open) setQrInvoice(null); }}
       />
+
+      {/* Sign & Send e-invoice confirmation dialog */}
+      <Dialog open={signDialogOpen} onOpenChange={setSignDialogOpen}>
+        <DialogContent className="max-w-lg" data-testid="dialog-sign-einvoice">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <FileSignature className="h-5 w-5 text-purple-600" />
+              Xác nhận phát hành hóa đơn điện tử
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3 text-sm">
+            <p>
+              Bạn đang chọn{" "}
+              <span className="font-semibold text-purple-700" data-testid="text-sign-count">
+                {selectedIds.size}
+              </span>{" "}
+              hóa đơn để ký số và gửi lên cơ quan Thuế.
+            </p>
+
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800 text-xs leading-relaxed">
+              <div className="font-semibold mb-1">Lưu ý:</div>
+              Hóa đơn sau khi ký số sẽ không thể sửa đổi hoặc xóa bỏ một cách thông thường.
+              Vui lòng đảm bảo các thông tin học viên và số tiền đã chính xác 100%.
+            </div>
+
+            <label className="flex items-start gap-2 cursor-pointer select-none">
+              <Checkbox
+                checked={signConfirmed}
+                onCheckedChange={(v) => setSignConfirmed(!!v)}
+                data-testid="checkbox-sign-confirm"
+                className="mt-0.5"
+              />
+              <span className="text-sm">
+                Tôi đã kiểm tra kỹ và chịu trách nhiệm với dữ liệu này.
+              </span>
+            </label>
+
+            <div className="border-t pt-3 space-y-1.5 text-xs italic text-muted-foreground">
+              <div className="font-medium not-italic text-foreground mb-1">Giải thích:</div>
+              <div>
+                <span className="not-italic font-semibold text-emerald-700">Đồng ý:</span>{" "}
+                Hóa đơn sẽ được ký số và gửi lên Thuế ngay lập tức. Không thể sửa sau khi ký.
+              </div>
+              <div>
+                <span className="not-italic font-semibold text-amber-700">Gửi nháp:</span>{" "}
+                Dữ liệu chỉ gửi sang Mắt Bão để kiểm tra, chưa có giá trị pháp lý. Có thể xóa/sửa dễ dàng.
+              </div>
+              <div>
+                <span className="not-italic font-semibold text-gray-700">Hủy bỏ:</span>{" "}
+                Đóng cửa sổ và không làm gì cả.
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => setSignDialogOpen(false)}
+              data-testid="button-sign-cancel"
+            >
+              Hủy bỏ
+            </Button>
+            <Button
+              variant="outline"
+              className="border-amber-300 text-amber-700 hover:bg-amber-50"
+              disabled={!signConfirmed}
+              onClick={() => {
+                toast({
+                  title: "Đã gửi nháp",
+                  description: `${selectedIds.size} hóa đơn đã gửi nháp sang Mắt Bão để kiểm tra.`,
+                });
+                setSignDialogOpen(false);
+                setSelectedIds(new Set());
+              }}
+              data-testid="button-sign-draft"
+            >
+              Gửi nháp
+            </Button>
+            <Button
+              className="bg-purple-600 hover:bg-purple-700"
+              disabled={!signConfirmed}
+              onClick={() => {
+                toast({
+                  title: "Đã gửi ký số",
+                  description: `${selectedIds.size} hóa đơn đã được ký số và gửi lên cơ quan Thuế.`,
+                });
+                setSignDialogOpen(false);
+                setSelectedIds(new Set());
+              }}
+              data-testid="button-sign-confirm"
+            >
+              Đồng ý
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }
