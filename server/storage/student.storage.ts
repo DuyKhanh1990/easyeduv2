@@ -1354,12 +1354,10 @@ export async function getStudentsLearningStatuses(
         ss.student_id,
         COUNT(*) FILTER (
           WHERE cs.session_date < CURRENT_DATE
-            AND ss.attendance_status NOT IN ('pending', 'paused')
-        ) AS past_active,
+        ) AS past_any,
         COUNT(*) FILTER (
           WHERE cs.session_date = CURRENT_DATE
-            AND ss.attendance_status NOT IN ('pending', 'paused')
-        ) AS today_active,
+        ) AS today_any,
         COUNT(*) FILTER (
           WHERE cs.session_date > CURRENT_DATE
         ) AS future_any,
@@ -1375,17 +1373,20 @@ export async function getStudentsLearningStatuses(
     SELECT
       s.id AS student_id,
       CASE
-        WHEN (COALESCE(st.past_active,0) > 0 OR COALESCE(st.today_active,0) > 0)
-             AND (COALESCE(st.future_any,0) > 0 OR COALESCE(st.today_active,0) > 0)
-          THEN 'dang_hoc'
+        WHEN COALESCE(st.today_any,0) > 0
+             OR (COALESCE(st.past_any,0) > 0 AND COALESCE(st.future_any,0) > 0)
+             OR COALESCE(st.future_any,0) > 0
+          THEN CASE
+                 WHEN COALESCE(st.past_any,0) = 0
+                      AND COALESCE(st.today_any,0) = 0
+                      AND COALESCE(st.future_any,0) > 0
+                   THEN 'cho_lich'
+                 ELSE 'dang_hoc'
+               END
         WHEN COALESCE(st.paused_today,0) > 0
           THEN 'bao_luu'
-        WHEN COALESCE(st.future_any,0) > 0
-             AND COALESCE(st.past_active,0) = 0
-             AND COALESCE(st.today_active,0) = 0
-             AND COALESCE(st.paused_today,0) = 0
-          THEN 'cho_lich'
-        WHEN (COALESCE(st.past_active,0) > 0 OR COALESCE(st.today_active,0) > 0)
+        WHEN COALESCE(st.past_any,0) > 0
+             AND COALESCE(st.today_any,0) = 0
              AND COALESCE(st.future_any,0) = 0
           THEN 'da_nghi'
         ELSE 'chua_co_lich'
