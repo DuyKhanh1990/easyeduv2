@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: easyeduv2
-          image: harbor.emso.vn/emso-common/easyeduv2:0.0.1
+          image: harbor.emso.vn/emso-common/new-easyedu:0.0.2
           resources:
             requests:
               cpu: "50m"
