@@ -124,8 +124,20 @@ class MatBaoService {
       };
     } catch (err) {
       const ax = err as AxiosError<any>;
-      const msg = ax.response?.data?.message || ax.message || "Lỗi gửi dữ liệu sang Mắt Bão";
-      console.error("[MatBao] processInvoice error:", msg);
+      const data = ax.response?.data;
+      console.error("[MatBao] processInvoice ERROR status:", ax.response?.status);
+      console.error("[MatBao] processInvoice payload sent:", JSON.stringify(payload));
+      console.error("[MatBao] processInvoice response body:", JSON.stringify(data));
+      let msg: string =
+        (typeof data === "string" && data) ||
+        data?.message ||
+        data?.Message ||
+        data?.error ||
+        data?.errors?.[0]?.message ||
+        (Array.isArray(data?.errors) ? data.errors.map((e: any) => e.message || JSON.stringify(e)).join("; ") : "") ||
+        ax.message ||
+        "Lỗi gửi dữ liệu sang Mắt Bão";
+      if (typeof msg !== "string") msg = JSON.stringify(msg);
       throw new Error(msg);
     }
   }
