@@ -36,6 +36,7 @@ import { registerMobileRoutes } from "./routes/mobile.routes";
 import { registerMobileTaskRoutes } from "./routes/mobile-tasks.routes";
 import { registerChatRoutes } from "./routes/chat.routes";
 import { registerMobileChatRoutes } from "./routes/mobile-chat.routes";
+import { registerEInvoiceRoutes } from "./routes/einvoice.routes";
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
@@ -117,6 +118,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerMobileTaskRoutes(app);
   registerChatRoutes(app);
   registerMobileChatRoutes(app);
+  registerEInvoiceRoutes(app);
 
   return httpServer;
 }

@@ -126,6 +126,10 @@ export async function getInvoices(filters: { status?: string; type?: string; loc
     branch: r.locationName,
     creatorName: r.creatorName,
     updaterName: r.updaterName,
+    einvoiceStatus: (r.invoice as any).einvoiceStatus ?? null,
+    einvoiceFkey: (r.invoice as any).einvoiceFkey ?? null,
+    einvoiceMessage: (r.invoice as any).einvoiceMessage ?? null,
+    einvoiceUpdatedAt: (r.invoice as any).einvoiceUpdatedAt ?? null,
     hasSchedules: false,
   }));
 

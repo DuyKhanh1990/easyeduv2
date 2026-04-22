@@ -38,9 +38,11 @@ import { format } from "date-fns";
 import { vi } from "date-fns/locale";
 import { CreateInvoiceDialog } from "./CreateInvoiceDialog";
 import {
-  type InvoiceRow, STATUS_CONFIG,
+  type InvoiceRow, STATUS_CONFIG, EINVOICE_STATUS_CONFIG,
   parseNum, fmtMoney, fmtDate,
 } from "@/types/invoice-types";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useMutation } from "@tanstack/react-query";
 import { InvoiceStatusDropdown } from "./components/InvoiceStatusDropdown";
 import { DebtInvoiceRow } from "./components/DebtInvoiceRow";
 import { DebtScheduleLoader } from "./components/DebtScheduleLoader";
@@ -217,17 +219,14 @@ function renderInvoiceCell(colKey: string, inv: InvoiceRow, updateStatusMutation
       if (inv.status !== "paid") {
         return <td key="einvoice" className="p-3 whitespace-nowrap text-muted-foreground text-xs">—</td>;
       }
-      const EINVOICE_STATES = [
-        { label: "Chưa ký số", className: "bg-gray-100 text-gray-700 border border-gray-200" },
-        { label: "Chờ ký số",  className: "bg-amber-100 text-amber-700 border border-amber-200" },
-        { label: "Đã ký số",   className: "bg-emerald-100 text-emerald-700 border border-emerald-200" },
-      ];
-      let hash = 0;
-      for (let i = 0; i < inv.id.length; i++) hash = (hash * 31 + inv.id.charCodeAt(i)) >>> 0;
-      const st = EINVOICE_STATES[hash % EINVOICE_STATES.length];
+      const key = inv.einvoiceStatus ?? "none";
+      const st  = EINVOICE_STATUS_CONFIG[key] ?? EINVOICE_STATUS_CONFIG.none;
       return (
         <td key="einvoice" className="p-3 whitespace-nowrap" data-testid={`einvoice-status-${inv.id}`}>
-          <span className={`inline-flex items-center text-xs px-2 py-0.5 rounded-md font-medium ${st.className}`}>
+          <span
+            className={`inline-flex items-center text-xs px-2 py-0.5 rounded-md font-medium ${st.className}`}
+            title={inv.einvoiceMessage ?? undefined}
+          >
             {st.label}
           </span>
         </td>
@@ -265,8 +264,58 @@ export default function Invoices() {
   const [qrInvoice, setQrInvoice] = useState<InvoiceRow | null>(null);
   const [signDialogOpen, setSignDialogOpen] = useState(false);
   const [signConfirmed, setSignConfirmed] = useState(false);
+  const [signProgress, setSignProgress] = useState<{ done: number; total: number } | null>(null);
 
   const { toast } = useToast();
+
+  const signMutation = useMutation({
+    mutationFn: async (vars: { invoiceIds: string[]; isPublish: boolean }) => {
+      setSignProgress({ done: 0, total: vars.invoiceIds.length });
+      // Gọi tuần tự từng hoá đơn để có thanh tiến độ chính xác
+      const results: Array<{ invoiceId: string; success: boolean; message: string }> = [];
+      for (let i = 0; i < vars.invoiceIds.length; i++) {
+        const id = vars.invoiceIds[i];
+        try {
+          const res = await apiRequest("POST", "/api/einvoice/sign", {
+            invoiceIds: [id],
+            isPublish: vars.isPublish,
+          });
+          const data = await res.json();
+          const r = data.results?.[0];
+          results.push({
+            invoiceId: id,
+            success: !!r?.success,
+            message: r?.message ?? (data.message ?? "OK"),
+          });
+        } catch (err: any) {
+          results.push({ invoiceId: id, success: false, message: err?.message ?? "Lỗi gửi" });
+        }
+        setSignProgress({ done: i + 1, total: vars.invoiceIds.length });
+      }
+      return results;
+    },
+    onSuccess: (results, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
+      const ok = results.filter(r => r.success).length;
+      const fail = results.length - ok;
+      toast({
+        title: vars.isPublish ? "Đã gửi ký số" : "Đã gửi nháp",
+        description: `Thành công ${ok}/${results.length}${fail > 0 ? ` — Thất bại ${fail}` : ""}`,
+        variant: fail > 0 ? "destructive" : "default",
+      });
+      setSignDialogOpen(false);
+      setSignProgress(null);
+      setSelectedIds(new Set());
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Lỗi gửi hoá đơn điện tử",
+        description: err?.message ?? "Không gửi được, vui lòng thử lại",
+        variant: "destructive",
+      });
+      setSignProgress(null);
+    },
+  });
 
   const { data: myPerms } = useMyPermissions();
   const invPerm = (() => {
@@ -882,10 +931,26 @@ export default function Invoices() {
             </div>
           </div>
 
+          {signProgress && (
+            <div className="pt-2">
+              <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                <span>Đang gửi sang Mắt Bão...</span>
+                <span>{signProgress.done} / {signProgress.total}</span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full bg-purple-600 transition-all"
+                  style={{ width: `${signProgress.total > 0 ? (signProgress.done / signProgress.total) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="flex justify-end gap-2 pt-2">
             <Button
               variant="outline"
               onClick={() => setSignDialogOpen(false)}
+              disabled={signMutation.isPending}
               data-testid="button-sign-cancel"
             >
               Hủy bỏ
@@ -893,33 +958,19 @@ export default function Invoices() {
             <Button
               variant="outline"
               className="border-amber-300 text-amber-700 hover:bg-amber-50"
-              disabled={!signConfirmed}
-              onClick={() => {
-                toast({
-                  title: "Đã gửi nháp",
-                  description: `${selectedIds.size} hóa đơn đã gửi nháp sang Mắt Bão để kiểm tra.`,
-                });
-                setSignDialogOpen(false);
-                setSelectedIds(new Set());
-              }}
+              disabled={!signConfirmed || signMutation.isPending}
+              onClick={() => signMutation.mutate({ invoiceIds: Array.from(selectedIds), isPublish: false })}
               data-testid="button-sign-draft"
             >
               Gửi nháp
             </Button>
             <Button
               className="bg-purple-600 hover:bg-purple-700"
-              disabled={!signConfirmed}
-              onClick={() => {
-                toast({
-                  title: "Đã gửi ký số",
-                  description: `${selectedIds.size} hóa đơn đã được ký số và gửi lên cơ quan Thuế.`,
-                });
-                setSignDialogOpen(false);
-                setSelectedIds(new Set());
-              }}
+              disabled={!signConfirmed || signMutation.isPending}
+              onClick={() => signMutation.mutate({ invoiceIds: Array.from(selectedIds), isPublish: true })}
               data-testid="button-sign-confirm"
             >
-              Đồng ý
+              {signMutation.isPending ? "Đang xử lý..." : "Đồng ý"}
             </Button>
           </div>
         </DialogContent>

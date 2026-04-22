@@ -30,7 +30,18 @@ export interface InvoiceRow {
   schedulePaidCount?: number;
   scheduleNextDueDate?: string | null;
   scheduleLastPaidDate?: string | null;
+  // Hoá đơn điện tử (Mắt Bão)
+  einvoiceStatus?: "draft" | "published" | null;
+  einvoiceFkey?: string | null;
+  einvoiceMessage?: string | null;
+  einvoiceUpdatedAt?: string | Date | null;
 }
+
+export const EINVOICE_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  none:      { label: "Chưa ký số", className: "bg-gray-100 text-gray-700 border border-gray-200" },
+  draft:     { label: "Chờ ký số",  className: "bg-amber-100 text-amber-700 border border-amber-200" },
+  published: { label: "Đã ký số",   className: "bg-emerald-100 text-emerald-700 border border-emerald-200" },
+};
 
 export interface ScheduleItem {
   id: string;

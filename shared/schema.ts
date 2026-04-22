@@ -101,6 +101,11 @@ export const invoices = pgTable("invoices", {
   appliedBankAccount: jsonb("applied_bank_account"),                // { bankName, bankAccount, accountHolder }
   // Trạng thái
   status: varchar("status", { length: 50 }).notNull().default("unpaid"), // unpaid | partial | paid | debt | cancelled
+  // Hoá đơn điện tử (Mắt Bão)
+  einvoiceStatus: varchar("einvoice_status", { length: 20 }),       // null|"draft"|"published" → Chưa ký số / Chờ ký số / Đã ký số
+  einvoiceFkey: varchar("einvoice_fkey", { length: 100 }),          // Mã quản lý từ Mắt Bão
+  einvoiceMessage: text("einvoice_message"),                         // Thông báo / lỗi gần nhất
+  einvoiceUpdatedAt: timestamp("einvoice_updated_at"),               // Lần đổi trạng thái HĐĐT gần nhất
   // Audit
   createdBy: uuid("created_by").references(() => users.id),
   updatedBy: uuid("updated_by").references(() => users.id),
