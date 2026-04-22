@@ -801,7 +801,8 @@ export function Settings() {
           <TabsContent value="providers">
             <div className="space-y-4">
               <div className="flex gap-2 flex-wrap">
-                <button className="px-3 py-1 rounded-md border text-xs font-medium bg-primary border-primary text-primary-foreground">Cổng thanh toán</button>
+                <button className="px-3 py-1 rounded-md border text-xs font-medium bg-primary border-primary text-primary-foreground" data-testid="tab-payment-gateway">Cổng thanh toán</button>
+                <button className="px-3 py-1 rounded-md border text-xs font-medium bg-background border-border text-foreground hover:bg-accent" data-testid="tab-einvoice">Hoá đơn điện tử</button>
               </div>
               <PaymentGatewayConfig />
             </div>
