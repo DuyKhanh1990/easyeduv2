@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: easyeduv2
+  namespace: production
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: easyeduv2
+  template:
+    metadata:
+      labels:
+        app: easyeduv2
+    spec:
+      containers:
+        - name: easyeduv2
+          image: harbor.emso.vn/emso-common/easyeduv2:0.0.1
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+          envFrom:
+            - configMapRef:
+                name: easyeduv2-config
+          ports:
+            - name: http
+              containerPort: 3000
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      imagePullSecrets:
+        - name: emso-harbo-production

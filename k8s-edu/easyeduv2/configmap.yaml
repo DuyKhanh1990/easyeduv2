@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: easyeduv2-config
+  namespace: production
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  DATABASE_URL: "postgresql://postgres:chiakhoathanhcong@42.96.40.138:5432/easyedu_new"
+  AWS_ACCESS_KEY_ID: "VR7KMVGVJFKDD7DI4AJJ"
+  AWS_SECRET_ACCESS_KEY: "qsppIkRloxY5Y9ti0efTmFwAnLgztborND94PDKu"
+  S3_ENABLED: "true"
+  S3_ENDPOINT: "https://s3.hn-1.cloud.cmctelecom.vn"
+  S3_BUCKET: "easyedu"
+  S3_REGION: "s3-hn-1"
+  S3_PROTOCOL: "https"
+  S3_HOSTNAME: "s3.hn-1.cloud.cmctelecom.vn"
+  S3_ALIAS_HOST: "cdn3.emso.vn/easyedu"
+  S3_FOLDER_PORTAL: "easyedu"
+  AI_ENCRYPT_SECRET: "83fb9fed117194980efeb027ab416025"
+  SECRET_KEY_BASE: "938939b1ae243dbca8364b42bbbfb2c21a1b9ced874cc060dd673d69da7cba58e53d3cffdd5eaecd77e3c23a4fdaa7fed9fdf17ac9838089809ae4ba5bdaffdd"
+  SESSION_SECRET: "Ka00wbrYlIfT++63ye74jwq01lAOcNbfepXNUWmyq9hfVOwi3jrzGHs00L5mG5U4RsBPVzk0F/PYJ3grukD1Lg=="
+  JWT_SECRET: ""
+  TINODE_ADMIN_USER: "admin"
+  TINODE_ADMIN_PASS: ""
+  TINODE_SECRET: ""
+  TINODE_URL: ""
+  SMTP_HOST: "smtp.gmail.com"
+  SMTP_PORT: "587"
+  SMTP_USER: ""
+  SMTP_PASS: ""
+  SMTP_FROM: ""
