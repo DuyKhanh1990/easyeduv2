@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Users, UserCheck, GraduationCap, TrendingUp, BookOpen, Activity, UserPlus, CheckCircle2, XCircle, BookOpenCheck, Clock, PauseCircle, CalendarClock, UserX, Network, Megaphone } from "lucide-react";
+import { Users, UserCheck, GraduationCap, TrendingUp, BookOpen, Activity, UserPlus, CheckCircle2, XCircle, BookOpenCheck, Clock, PauseCircle, CalendarClock, UserX, Network, Megaphone, Building2, UserSquare2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,7 +8,8 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useQuery } from "@tanstack/react-query";
 import { useLocationFilter } from "@/hooks/use-location-filter";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  ComposedChart, Line
 } from "recharts";
 
 const stats = [
@@ -40,10 +41,14 @@ const MONTHS_OPTIONS = [
 
 function CustomTooltip({ active, payload, label }: any) {
   if (active && payload && payload.length) {
+    const countEntry = payload.find((p: any) => p.dataKey === "count");
+    const pctEntry = payload.find((p: any) => p.dataKey === "pct");
     return (
       <div className="bg-background border border-border rounded-lg px-3 py-2 shadow-lg text-sm">
-        <p className="font-semibold text-foreground mb-0.5">{label}</p>
-        <p className="text-muted-foreground">Học viên: <span className="font-bold text-foreground">{payload[0].value}</span></p>
+        <p className="font-semibold text-foreground mb-1">{label}</p>
+        {countEntry && <p className="text-muted-foreground">Học viên: <span className="font-bold text-foreground">{countEntry.value}</span></p>}
+        {pctEntry && <p className="text-muted-foreground">Tỷ lệ: <span className="font-bold text-emerald-500">{pctEntry.value}%</span></p>}
+        {!pctEntry && !countEntry && <p className="text-muted-foreground">Học viên: <span className="font-bold text-foreground">{payload[0].value}</span></p>}
       </div>
     );
   }
@@ -94,6 +99,16 @@ export function Dashboard() {
   const { data: byRelationship, isLoading: loadingByRelationship } = useQuery<{ name: string; count: number; color?: string }[]>({
     queryKey: ["/api/students/by-relationship", locationId, chartMonths],
     queryFn: () => fetch(`/api/students/by-relationship${chartParam}`, { credentials: "include" }).then(r => r.json()),
+  });
+
+  const { data: byLocation, isLoading: loadingByLocation } = useQuery<{ name: string; count: number; pct: number }[]>({
+    queryKey: ["/api/students/by-location", locationId, chartMonths],
+    queryFn: () => fetch(`/api/students/by-location${chartParam}`, { credentials: "include" }).then(r => r.json()),
+  });
+
+  const { data: byStaff, isLoading: loadingByStaff } = useQuery<{ name: string; count: number; pct: number }[]>({
+    queryKey: ["/api/students/by-staff", locationId, chartMonths],
+    queryFn: () => fetch(`/api/students/by-staff${chartParam}`, { credentials: "include" }).then(r => r.json()),
   });
 
   const activePct = customerSummary && customerSummary.total > 0
@@ -440,6 +455,91 @@ export function Dashboard() {
                     )}
                   </CardContent>
                 </Card>
+              </div>
+
+              {/* Row 2: by Location + by Staff */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+
+                {/* Left: by Location */}
+                <Card className="border-none shadow-lg shadow-black/5" data-testid="card-chart-by-location">
+                  <CardHeader className="pb-2 pt-5 px-5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                        <Building2 className="w-4 h-4 text-emerald-500" />
+                      </div>
+                      <CardTitle className="text-sm font-semibold text-muted-foreground">Học viên theo Cơ sở</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="px-3 pb-5">
+                    {loadingByLocation ? (
+                      <div className="h-52 flex items-center justify-center">
+                        <Skeleton className="w-full h-44" />
+                      </div>
+                    ) : !byLocation || byLocation.length === 0 ? (
+                      <div className="h-52 flex flex-col items-center justify-center text-muted-foreground/50 gap-2">
+                        <Building2 className="w-8 h-8" />
+                        <p className="text-sm">Chưa có dữ liệu</p>
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={210}>
+                        <ComposedChart data={byLocation} margin={{ top: 8, right: 36, left: -20, bottom: 4 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                          <XAxis dataKey="name" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} />
+                          <YAxis yAxisId="left" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} allowDecimals={false} />
+                          <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: "#10b981" }} tickLine={false} axisLine={false} unit="%" domain={[0, 100]} />
+                          <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--muted))", opacity: 0.5 }} />
+                          <Bar yAxisId="left" dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={48}>
+                            {(byLocation || []).map((_, idx) => (
+                              <Cell key={idx} fill={SOURCE_COLORS[idx % SOURCE_COLORS.length]} />
+                            ))}
+                          </Bar>
+                          <Line yAxisId="right" type="monotone" dataKey="pct" stroke="#10b981" strokeWidth={2} dot={{ fill: "#10b981", r: 3 }} />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Right: by Staff */}
+                <Card className="border-none shadow-lg shadow-black/5" data-testid="card-chart-by-staff">
+                  <CardHeader className="pb-2 pt-5 px-5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                        <UserSquare2 className="w-4 h-4 text-amber-500" />
+                      </div>
+                      <CardTitle className="text-sm font-semibold text-muted-foreground">Học viên theo Nhân sự</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="px-3 pb-5">
+                    {loadingByStaff ? (
+                      <div className="h-52 flex items-center justify-center">
+                        <Skeleton className="w-full h-44" />
+                      </div>
+                    ) : !byStaff || byStaff.length === 0 ? (
+                      <div className="h-52 flex flex-col items-center justify-center text-muted-foreground/50 gap-2">
+                        <UserSquare2 className="w-8 h-8" />
+                        <p className="text-sm">Chưa có dữ liệu</p>
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={210}>
+                        <ComposedChart data={byStaff} margin={{ top: 8, right: 36, left: -20, bottom: 4 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                          <XAxis dataKey="name" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} />
+                          <YAxis yAxisId="left" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} allowDecimals={false} />
+                          <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: "#f59e0b" }} tickLine={false} axisLine={false} unit="%" domain={[0, 100]} />
+                          <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--muted))", opacity: 0.5 }} />
+                          <Bar yAxisId="left" dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={48}>
+                            {(byStaff || []).map((_, idx) => (
+                              <Cell key={idx} fill={SOURCE_COLORS[idx % SOURCE_COLORS.length]} />
+                            ))}
+                          </Bar>
+                          <Line yAxisId="right" type="monotone" dataKey="pct" stroke="#f59e0b" strokeWidth={2} dot={{ fill: "#f59e0b", r: 3 }} />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    )}
+                  </CardContent>
+                </Card>
+
               </div>
             </div>
           </TabsContent>

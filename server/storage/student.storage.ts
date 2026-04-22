@@ -1176,3 +1176,100 @@ export async function getStudentsByRelationship(params: {
     color: row.rel_color as string | undefined,
   }));
 }
+
+// ==========================================
+// STUDENTS BY LOCATION (Theo cơ sở)
+// ==========================================
+export async function getStudentsByLocation(params: {
+  isSuperAdmin: boolean;
+  allowedLocationIds: string[];
+  locationId?: string;
+  months?: number;
+  dateFrom?: string;
+  dateTo?: string;
+}): Promise<{ name: string; count: number; pct: number }[]> {
+  const locationWhere = buildLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
+
+  let timeWhere = "";
+  if (params.dateFrom && params.dateTo) {
+    const from = params.dateFrom.replace(/[^0-9\-]/g, "");
+    const to = params.dateTo.replace(/[^0-9\-]/g, "");
+    timeWhere = `AND s.created_at >= '${from}'::date AND s.created_at < ('${to}'::date + INTERVAL '1 day')`;
+  } else if (params.months && params.months > 0) {
+    timeWhere = `AND s.created_at >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') - INTERVAL '${params.months - 1} months'`;
+  }
+
+  const queryStr = `
+    WITH loc_counts AS (
+      SELECT
+        l.name AS loc_name,
+        COUNT(DISTINCT s.id) AS cnt
+      FROM students s
+      JOIN student_locations sl ON sl.student_id = s.id
+      JOIN locations l ON l.id = sl.location_id
+      WHERE ${locationWhere} ${timeWhere}
+      GROUP BY l.id, l.name
+    ),
+    total AS (SELECT COALESCE(SUM(cnt), 1) AS total FROM loc_counts)
+    SELECT loc_name, cnt, ROUND(cnt * 100.0 / total.total, 1) AS pct
+    FROM loc_counts, total
+    ORDER BY cnt DESC
+  `;
+  const res = await db.execute(sql.raw(queryStr));
+  return (res.rows as any[]).map(row => ({
+    name: row.loc_name as string,
+    count: parseInt(row.cnt ?? "0", 10),
+    pct: parseFloat(row.pct ?? "0"),
+  }));
+}
+
+// ==========================================
+// STUDENTS BY STAFF (Theo nhân sự - Sale hoặc Phụ trách)
+// ==========================================
+export async function getStudentsByStaff(params: {
+  isSuperAdmin: boolean;
+  allowedLocationIds: string[];
+  locationId?: string;
+  months?: number;
+  dateFrom?: string;
+  dateTo?: string;
+}): Promise<{ name: string; count: number; pct: number }[]> {
+  const locationWhere = buildLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
+
+  let timeWhere = "";
+  if (params.dateFrom && params.dateTo) {
+    const from = params.dateFrom.replace(/[^0-9\-]/g, "");
+    const to = params.dateTo.replace(/[^0-9\-]/g, "");
+    timeWhere = `AND s.created_at >= '${from}'::date AND s.created_at < ('${to}'::date + INTERVAL '1 day')`;
+  } else if (params.months && params.months > 0) {
+    timeWhere = `AND s.created_at >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') - INTERVAL '${params.months - 1} months'`;
+  }
+
+  const queryStr = `
+    WITH staff_student AS (
+      SELECT DISTINCT
+        st.id AS staff_id,
+        st.full_name AS staff_name,
+        s.id AS student_id
+      FROM students s
+      JOIN staff st ON st.id = ANY(s.sales_by_ids::uuid[]) OR st.id = ANY(COALESCE(s.managed_by_ids, '{}')::uuid[])
+      WHERE ${locationWhere} ${timeWhere}
+    ),
+    staff_counts AS (
+      SELECT staff_name, COUNT(student_id) AS cnt
+      FROM staff_student
+      GROUP BY staff_id, staff_name
+    ),
+    total AS (SELECT COALESCE(SUM(cnt), 1) AS total FROM staff_counts)
+    SELECT staff_name, cnt, ROUND(cnt * 100.0 / total.total, 1) AS pct
+    FROM staff_counts, total
+    ORDER BY cnt DESC
+    LIMIT 20
+  `;
+  const res = await db.execute(sql.raw(queryStr));
+  return (res.rows as any[]).map(row => ({
+    name: row.staff_name as string,
+    count: parseInt(row.cnt ?? "0", 10),
+    pct: parseFloat(row.pct ?? "0"),
+  }));
+}
