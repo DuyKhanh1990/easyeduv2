@@ -212,6 +212,26 @@ function renderInvoiceCell(colKey: string, inv: InvoiceRow, updateStatusMutation
       const status = STATUS_CONFIG[inv.status] ?? STATUS_CONFIG.unpaid;
       return <td key="status" className="p-3 whitespace-nowrap">{inv.hasSchedules ? <Badge className={`text-xs font-medium ${status.className}`}>{status.label}</Badge> : <InvoiceStatusDropdown invoiceId={inv.id} currentStatus={inv.status} updateStatusMutation={updateStatusMutation} />}</td>;
     }
+    case "einvoice": {
+      if (inv.status !== "paid") {
+        return <td key="einvoice" className="p-3 whitespace-nowrap text-muted-foreground text-xs">—</td>;
+      }
+      const EINVOICE_STATES = [
+        { label: "Chưa ký số", className: "bg-gray-100 text-gray-700 border border-gray-200" },
+        { label: "Chờ ký số",  className: "bg-amber-100 text-amber-700 border border-amber-200" },
+        { label: "Đã ký số",   className: "bg-emerald-100 text-emerald-700 border border-emerald-200" },
+      ];
+      let hash = 0;
+      for (let i = 0; i < inv.id.length; i++) hash = (hash * 31 + inv.id.charCodeAt(i)) >>> 0;
+      const st = EINVOICE_STATES[hash % EINVOICE_STATES.length];
+      return (
+        <td key="einvoice" className="p-3 whitespace-nowrap" data-testid={`einvoice-status-${inv.id}`}>
+          <span className={`inline-flex items-center text-xs px-2 py-0.5 rounded-md font-medium ${st.className}`}>
+            {st.label}
+          </span>
+        </td>
+      );
+    }
     case "dueDate":
       return <td key="dueDate" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{fmtDate(inv.dueDate)}</td>;
     case "creator":

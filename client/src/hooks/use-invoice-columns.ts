@@ -28,6 +28,7 @@ export const ALL_COLUMNS: ColumnDef[] = [
   { key: "remaining",   label: "Còn lại",                                  defaultVisible: false, align: "right" },
   { key: "description", label: "Mô tả",            sortKey: "description", defaultVisible: true },
   { key: "status",      label: "Trạng thái",       sortKey: "status",      defaultVisible: true },
+  { key: "einvoice",    label: "HĐĐT",                                     defaultVisible: true },
   { key: "dueDate",     label: "Hạn TT",           sortKey: "dueDate",     defaultVisible: true },
   { key: "creator",     label: "Người tạo",                                defaultVisible: true },
   { key: "createdAt",   label: "Ngày tạo",         sortKey: "createdAt",   defaultVisible: true },
