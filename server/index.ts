@@ -437,6 +437,42 @@ app.use((req, res, next) => {
     console.error("Migration student_relationship_history failed:", err);
   }
 
+  // Backfill: synchronise classes.start_date/end_date with actual schedule
+  // (one-shot — no schema change, but data may be stale on rows created before
+  // the recalculateClass cascade was added).
+  try {
+    const { db: migDb } = await import("./storage/base");
+    const result: any = await migDb.execute(`
+      WITH derived AS (
+        SELECT
+          c.id AS class_id,
+          COALESCE(
+            (SELECT MIN(sc.start_date) FROM student_classes sc WHERE sc.class_id = c.id),
+            (SELECT MIN(cs.session_date) FROM class_sessions cs WHERE cs.class_id = c.id)
+          ) AS new_start,
+          COALESCE(
+            (SELECT MAX(sc.end_date) FROM student_classes sc WHERE sc.class_id = c.id),
+            (SELECT MAX(cs.session_date) FROM class_sessions cs WHERE cs.class_id = c.id)
+          ) AS new_end
+        FROM classes c
+      )
+      UPDATE classes c
+         SET start_date = d.new_start,
+             end_date   = d.new_end,
+             updated_at = NOW()
+        FROM derived d
+       WHERE c.id = d.class_id
+         AND (
+              c.start_date IS DISTINCT FROM d.new_start
+           OR c.end_date   IS DISTINCT FROM d.new_end
+         )
+    `);
+    const fixed = (result as any).rowCount ?? 0;
+    if (fixed > 0) console.log(`Migration: synced classes.start/end_date for ${fixed} classes`);
+  } catch (err) {
+    console.error("Migration classes start/end backfill failed:", err);
+  }
+
   // Seed default departments and roles
   try {
     const { storage } = await import("./storage");

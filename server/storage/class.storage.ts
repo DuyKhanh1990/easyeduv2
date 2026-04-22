@@ -445,6 +445,8 @@ export async function createClass(data: any): Promise<Class> {
       }));
       await tx.insert(classSessions).values(sessionsWithIndex);
       await tx.update(classes).set({ scheduleGenerated: true, updatedAt: new Date() }).where(eq(classes.id, newClass.id));
+      const { recalculateClass } = await import("./session.storage");
+      await recalculateClass(newClass.id, tx);
     }
 
     return newClass;
@@ -603,6 +605,9 @@ export async function updateClass(id: string, data: any): Promise<Class> {
         }));
         await tx.insert(classSessions).values(sessionsWithIndex);
       }
+
+      const { recalculateClass } = await import("./session.storage");
+      await recalculateClass(id, tx);
 
       return updated;
     });

@@ -61,6 +61,56 @@ export async function recalculateStudentClass(studentClassId: string, tx?: any):
       })
       .where(eq(studentClasses.id, studentClassId));
   }
+
+  // Cascade: keep classes.startDate/endDate in sync with student lessons
+  const [sc] = await conn.select({ classId: studentClasses.classId })
+    .from(studentClasses)
+    .where(eq(studentClasses.id, studentClassId));
+  if (sc?.classId) {
+    await recalculateClass(sc.classId, tx);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// recalculateClass
+// ---------------------------------------------------------------------------
+// Synchronises classes.startDate / classes.endDate with the actual schedule.
+// Priority:
+//   1) MIN/MAX of student_classes.start_date/end_date for that class
+//      (reflects the real lessons that students are scheduled for, regardless
+//      of student status — dropped/paused students still count as long as
+//      their sessions exist).
+//   2) Fallback to MIN/MAX of class_sessions.session_date when the class has
+//      no enrolled students yet (so the framework schedule is still shown).
+//   3) NULL when there are no sessions at all.
+export async function recalculateClass(classId: string, tx?: any): Promise<void> {
+  const conn = tx ?? db;
+
+  const studentRange = await conn.select({
+    startDate: sql<string>`MIN(${studentClasses.startDate})`,
+    endDate:   sql<string>`MAX(${studentClasses.endDate})`,
+  })
+  .from(studentClasses)
+  .where(eq(studentClasses.classId, classId));
+
+  let startDate: string | null = studentRange[0]?.startDate ?? null;
+  let endDate: string | null = studentRange[0]?.endDate ?? null;
+
+  if (!startDate || !endDate) {
+    const sessionRange = await conn.select({
+      startDate: sql<string>`MIN(${classSessions.sessionDate})`,
+      endDate:   sql<string>`MAX(${classSessions.sessionDate})`,
+    })
+    .from(classSessions)
+    .where(eq(classSessions.classId, classId));
+
+    startDate = sessionRange[0]?.startDate ?? null;
+    endDate   = sessionRange[0]?.endDate ?? null;
+  }
+
+  await conn.update(classes)
+    .set({ startDate, endDate, updatedAt: new Date() })
+    .where(eq(classes.id, classId));
 }
 
 // ---------------------------------------------------------------------------
