@@ -1337,3 +1337,68 @@ export async function getStudentsByStaff(params: {
     pct: parseFloat(row.pct ?? "0"),
   }));
 }
+
+// ==========================================
+// BATCH LEARNING STATUS (Trạng thái học tập theo danh sách ID)
+// ==========================================
+export async function getStudentsLearningStatuses(
+  studentIds: string[]
+): Promise<Record<string, string>> {
+  if (studentIds.length === 0) return {};
+
+  const safeIds = studentIds.map(id => `'${id.replace(/[^a-zA-Z0-9\-]/g, "")}'`).join(",");
+
+  const queryStr = `
+    WITH session_stats AS (
+      SELECT
+        ss.student_id,
+        COUNT(*) FILTER (
+          WHERE cs.session_date < CURRENT_DATE
+            AND ss.attendance_status NOT IN ('pending', 'paused')
+        ) AS past_active,
+        COUNT(*) FILTER (
+          WHERE cs.session_date = CURRENT_DATE
+            AND ss.attendance_status NOT IN ('pending', 'paused')
+        ) AS today_active,
+        COUNT(*) FILTER (
+          WHERE cs.session_date > CURRENT_DATE
+        ) AS future_any,
+        COUNT(*) FILTER (
+          WHERE cs.session_date = CURRENT_DATE
+            AND ss.attendance_status = 'paused'
+        ) AS paused_today
+      FROM student_sessions ss
+      JOIN class_sessions cs ON cs.id = ss.class_session_id
+      WHERE ss.student_id = ANY(ARRAY[${safeIds}]::uuid[])
+      GROUP BY ss.student_id
+    )
+    SELECT
+      s.id AS student_id,
+      CASE
+        WHEN (COALESCE(st.past_active,0) > 0 OR COALESCE(st.today_active,0) > 0)
+             AND (COALESCE(st.future_any,0) > 0 OR COALESCE(st.today_active,0) > 0)
+          THEN 'dang_hoc'
+        WHEN COALESCE(st.paused_today,0) > 0
+          THEN 'bao_luu'
+        WHEN COALESCE(st.future_any,0) > 0
+             AND COALESCE(st.past_active,0) = 0
+             AND COALESCE(st.today_active,0) = 0
+             AND COALESCE(st.paused_today,0) = 0
+          THEN 'cho_lich'
+        WHEN (COALESCE(st.past_active,0) > 0 OR COALESCE(st.today_active,0) > 0)
+             AND COALESCE(st.future_any,0) = 0
+          THEN 'da_nghi'
+        ELSE 'chua_co_lich'
+      END AS learning_status
+    FROM students s
+    LEFT JOIN session_stats st ON st.student_id = s.id
+    WHERE s.id = ANY(ARRAY[${safeIds}]::uuid[])
+  `;
+
+  const result = await db.execute(sql.raw(queryStr));
+  const map: Record<string, string> = {};
+  (result.rows as any[]).forEach(row => {
+    map[row.student_id as string] = row.learning_status as string;
+  });
+  return map;
+}

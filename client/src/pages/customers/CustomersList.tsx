@@ -75,6 +75,7 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: "teacher", label: "Giáo viên", visible: true },
   { id: "classes", label: "Lớp học", visible: true },
   { id: "accountStatus", label: "Trạng thái tài khoản", visible: true },
+  { id: "learningStatus", label: "Trạng thái học viên", visible: true },
   { id: "address", label: "Địa chỉ", visible: true },
   { id: "social", label: "Zalo/FB", visible: true },
   { id: "level", label: "Trình độ", visible: true },
@@ -125,6 +126,16 @@ export function CustomersList() {
   const students = studentsData?.students || [];
   const totalItems = studentsData?.total || 0;
   const totalPages = Math.ceil(totalItems / pageSize);
+
+  const studentIds = students.map((s) => s.id);
+  const { data: learningStatuses } = useQuery<Record<string, string>>({
+    queryKey: ["/api/students/learning-statuses", studentIds],
+    queryFn: () =>
+      studentIds.length === 0
+        ? Promise.resolve({})
+        : fetch(`/api/students/learning-statuses?ids=${studentIds.join(",")}`, { credentials: "include" }).then((r) => r.json()),
+    enabled: studentIds.length > 0,
+  });
 
   const { data: parentsData } = useStudents({ type: "Phụ huynh", limit: 1000 });
 
@@ -623,6 +634,7 @@ export function CustomersList() {
               selectedIds={selectedIds}
               crmRelationships={crmRelationships}
               parents={parents}
+              learningStatuses={learningStatuses}
               toggleSelectAll={toggleSelectAll}
               toggleSelect={toggleSelect}
               onEdit={(student) => { setEditingStudent(student); setIsEditOpen(true); }}

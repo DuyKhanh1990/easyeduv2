@@ -22,6 +22,7 @@ interface CustomersTableProps {
   selectedIds: string[];
   crmRelationships: any[] | undefined;
   parents?: ParentRecord[];
+  learningStatuses?: Record<string, string>;
   toggleSelectAll: () => void;
   toggleSelect: (id: string) => void;
   onEdit: (student: StudentResponse) => void;
@@ -32,6 +33,14 @@ interface CustomersTableProps {
   canDelete?: boolean;
 }
 
+const LEARNING_STATUS_MAP: Record<string, { label: string; className: string }> = {
+  dang_hoc:    { label: "Đang học",       className: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100" },
+  cho_lich:    { label: "Chờ đến lịch",   className: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-100" },
+  bao_luu:     { label: "Bảo lưu",        className: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100" },
+  da_nghi:     { label: "Đã nghỉ",        className: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100" },
+  chua_co_lich:{ label: "Chưa có lịch",   className: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300" },
+};
+
 export function CustomersTable({
   students,
   isLoading,
@@ -39,6 +48,7 @@ export function CustomersTable({
   selectedIds,
   crmRelationships,
   parents = [],
+  learningStatuses = {},
   toggleSelectAll,
   toggleSelect,
   onEdit,
@@ -300,6 +310,16 @@ export function CustomersTable({
         return student.updatedAt ? new Date(student.updatedAt).toLocaleString("vi-VN") : "-";
       case "updater":
         return student.updater?.username || "-";
+      case "learningStatus": {
+        const status = learningStatuses[student.id];
+        const config = status ? LEARNING_STATUS_MAP[status] : undefined;
+        if (!config) return <span className="text-muted-foreground text-[10px]">—</span>;
+        return (
+          <Badge variant="outline" className={`whitespace-nowrap border-none text-[10px] px-1.5 h-5 ${config.className}`} data-testid={`status-learning-${student.id}`}>
+            {config.label}
+          </Badge>
+        );
+      }
       case "actions":
         if (!canEdit && !canDelete) return null;
         return (

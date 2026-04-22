@@ -6,7 +6,7 @@ import { runSecurityTests } from "../middleware/security-test";
 import { db } from "../db";
 import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, students, classes, attendanceFeeRules, users, staff, staffAssignments, locations, classGradeBooks, classGradeBookScores, scoreCategories, scoreSheetItems, sessionContents, studentSessionContents, classSessions } from "@shared/schema";
 import { eq, and, isNotNull, sql, inArray, desc } from "drizzle-orm";
-import { getStudentLearningStatusSummary, getCustomerSummary, getNewCustomersSummary, getStudentsBySource, getStudentsByRelationship, getStudentsByLocation, getStudentsByStaff } from "../storage/student.storage";
+import { getStudentLearningStatusSummary, getCustomerSummary, getNewCustomersSummary, getStudentsBySource, getStudentsByRelationship, getStudentsByLocation, getStudentsByStaff, getStudentsLearningStatuses } from "../storage/student.storage";
 
 const CRM_RESOURCE = "/customers";
 
@@ -417,6 +417,22 @@ export function registerStudentsRoutes(app: Express): void {
     } catch (err: any) {
       console.error("Students by staff error:", err);
       res.status(500).json({ message: err.message || "Lỗi khi tải dữ liệu theo nhân sự" });
+    }
+  });
+
+  // ── GET /api/students/learning-statuses ───────────────────────────────────
+  app.get("/api/students/learning-statuses", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      const idsParam = typeof req.query.ids === "string" ? req.query.ids : "";
+      const studentIds = idsParam ? idsParam.split(",").filter(Boolean) : [];
+      if (studentIds.length === 0) return res.json({});
+      const statuses = await getStudentsLearningStatuses(studentIds);
+      res.json(statuses);
+    } catch (err: any) {
+      console.error("Learning statuses error:", err);
+      res.status(500).json({ message: err.message || "Lỗi khi tải trạng thái học tập" });
     }
   });
 
