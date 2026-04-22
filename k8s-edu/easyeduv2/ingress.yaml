@@ -23,3 +23,30 @@ spec:
     - hosts:
         - easyeduv2.easyedu.vn
       secretName: easyeduv2-tls-secret
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: easyeduv2-www-redirect
+  namespace: production
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-sn-prod
+    nginx.ingress.kubernetes.io/permanent-redirect: "https://easyeduv2.easyedu.vn$request_uri"
+    nginx.ingress.kubernetes.io/permanent-redirect-code: "301"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: www.easyeduv2.easyedu.vn
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: easyeduv2
+                port:
+                  name: https
+  tls:
+    - hosts:
+        - www.easyeduv2.easyedu.vn
+      secretName: easyeduv2-www-tls-secret
