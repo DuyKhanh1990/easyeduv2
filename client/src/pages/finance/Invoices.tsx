@@ -354,10 +354,8 @@ export default function Invoices() {
     });
   };
 
-  const isSignable = (inv: InvoiceRow) => inv.status === "paid" && inv.einvoiceStatus !== "published";
-  const signableInvoices = filtered.filter(isSignable);
-  const allSelected = signableInvoices.length > 0 && signableInvoices.every(i => selectedIds.has(i.id));
-  const toggleAll   = () => setSelectedIds(allSelected ? new Set() : new Set(signableInvoices.map(i => i.id)));
+  const allSelected = filtered.length > 0 && filtered.every(i => selectedIds.has(i.id));
+  const toggleAll   = () => setSelectedIds(allSelected ? new Set() : new Set(filtered.map(i => i.id)));
   const toggleOne   = (id: string) => setSelectedIds(prev => {
     const next = new Set(prev);
     next.has(id) ? next.delete(id) : next.add(id);
@@ -482,17 +480,46 @@ export default function Invoices() {
 
             <div className="flex-1" />
 
-            {selectedIds.size > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9 text-purple-700 border-purple-200 hover:bg-purple-50"
-                onClick={() => { setSignConfirmed(false); setSignDialogOpen(true); }}
-                data-testid="button-send-sign"
-              >
-                <FileSignature className="h-4 w-4 mr-1" /> Gửi ký số ({selectedIds.size})
-              </Button>
-            )}
+            {selectedIds.size > 0 && (() => {
+              const selectedInvs = filtered.filter(i => selectedIds.has(i.id));
+              const unpaidCount   = selectedInvs.filter(i => i.status === "unpaid" || i.status === "debt").length;
+              const partialCount  = selectedInvs.filter(i => i.status === "partial").length;
+              const publishedCount = selectedInvs.filter(i => i.einvoiceStatus === "published").length;
+              const reasons: string[] = [];
+              if (unpaidCount > 0)    reasons.push(`${unpaidCount} hoá đơn ở trạng thái Chưa thanh toán`);
+              if (partialCount > 0)   reasons.push(`${partialCount} hoá đơn ở trạng thái Thanh toán 1 phần`);
+              if (publishedCount > 0) reasons.push(`${publishedCount} hoá đơn đã ký số`);
+              const blocked = reasons.length > 0;
+              const button = (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 text-purple-700 border-purple-200 hover:bg-purple-50 disabled:opacity-50"
+                  onClick={() => { if (!blocked) { setSignConfirmed(false); setSignDialogOpen(true); } }}
+                  disabled={blocked}
+                  data-testid="button-send-sign"
+                >
+                  <FileSignature className="h-4 w-4 mr-1" /> Gửi ký số ({selectedIds.size})
+                </Button>
+              );
+              if (!blocked) return button;
+              return (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex">{button}</span>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-[320px]">
+                      <p className="font-medium mb-1">Không thể gửi ký số:</p>
+                      <ul className="list-disc pl-4 space-y-0.5 text-xs">
+                        {reasons.map((r, i) => <li key={i}>{r}</li>)}
+                      </ul>
+                      <p className="text-xs mt-1 opacity-80">Vui lòng bỏ chọn các hoá đơn đó.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              );
+            })()}
 
             {invPerm.canDelete && selectedIds.size > 0 && (
               <Button variant="outline" size="sm" className="h-9 text-red-600 border-red-200 hover:bg-red-50">
@@ -594,34 +621,7 @@ export default function Invoices() {
                         </span>
                       )}
                     </td>
-                    <td className="p-3">
-                      {invPerm.canDelete && (
-                        isSignable(inv) ? (
-                          <Checkbox
-                            checked={isSelected}
-                            onCheckedChange={() => toggleOne(inv.id)}
-                            data-testid={`checkbox-${inv.id}`}
-                          />
-                        ) : (
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="inline-flex">
-                                  <Checkbox checked={false} disabled data-testid={`checkbox-disabled-${inv.id}`} />
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="right" className="max-w-[240px] text-center">
-                                <p>
-                                  {inv.einvoiceStatus === "published"
-                                    ? "Hoá đơn đã ký số, không thể ký lại."
-                                    : "Chỉ ký số cho hoá đơn đã thanh toán đầy đủ."}
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        )
-                      )}
-                    </td>
+                    <td className="p-3">{invPerm.canDelete && <Checkbox checked={isSelected} onCheckedChange={() => toggleOne(inv.id)} data-testid={`checkbox-${inv.id}`} />}</td>
                     {visibleColumns.map(col => renderInvoiceCell(col.key, inv, updateStatusMutation))}
                     <td className="p-3 sticky right-0 bg-card border-l">
                       <div className="flex items-center justify-center">
