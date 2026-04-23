@@ -201,8 +201,11 @@ class MatBaoService {
       taxRate: number,
     ) => {
       if (!amount || amount <= 0) return;
-      const ThTien = Math.round(amount);
-      const TThue = Math.round((ThTien * taxRate) / 100);
+      // tChat=2 (Khuyến mãi) phải gửi giá trị ÂM để mẫu PDF của Mắt Bão tự trừ ở dòng "Cộng tiền hàng".
+      // tChat=3 (Phụ thu/Chiết khấu) gửi giá trị dương (cộng vào tổng).
+      const sign = tChat === 2 ? -1 : 1;
+      const ThTien = Math.round(amount) * sign;
+      const TThue = Math.round((Math.abs(ThTien) * taxRate) / 100) * sign;
       stt += 1;
       lines.push({
         TChat: tChat,
@@ -260,10 +263,10 @@ class MatBaoService {
       pushAdjustment(3, "+", `Phụ thu: ${s.name}`, s.amount, 0);
     }
 
-    // Tính tổng cộng/trừ theo tChat
-    const sign = (t: number) => (t === 2 ? -1 : 1);
-    const TgThTien = lines.reduce((s, x) => s + sign(x.TChat) * x.ThTien, 0);
-    const TgTThue = lines.reduce((s, x) => s + sign(x.TChat) * x.TThue, 0);
+    // Dấu đã được nhúng vào ThTien/TThue của từng dòng (tChat=2 mang giá trị âm),
+    // nên tổng chỉ cần cộng trực tiếp.
+    const TgThTien = lines.reduce((s, x) => s + x.ThTien, 0);
+    const TgTThue = lines.reduce((s, x) => s + x.TThue, 0);
     const TgTTTBSo = TgThTien + TgTThue;
     const items = lines;
 
