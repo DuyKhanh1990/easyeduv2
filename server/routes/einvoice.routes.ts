@@ -132,9 +132,9 @@ export function registerEInvoiceRoutes(app: Express) {
       (it.surchargeKeys ?? []).forEach(k => k && promoCodes.add(k));
     }
     const promoRows = promoCodes.size > 0
-      ? await db.select().from(financePromotions).where(inArray(financePromotions.code, Array.from(promoCodes)))
+      ? await db.select().from(financePromotions).where(inArray(financePromotions.id, Array.from(promoCodes)))
       : [];
-    const promoByCode = new Map(promoRows.map(p => [p.code, p]));
+    const promoByCode = new Map(promoRows.map(p => [p.id, p]));
 
     const results: Array<{ invoiceId: string; success: boolean; fkey?: string; message: string }> = [];
 
