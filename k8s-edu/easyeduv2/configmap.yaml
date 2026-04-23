@@ -8,7 +8,7 @@ data:
   PORT: "3000"
   DATABASE_URL: "postgresql://postgres:chiakhoathanhcong@42.96.40.138:5432/easyedu_new"
   AWS_ACCESS_KEY_ID: "VR7KMVGVJFKDD7DI4AJJ"
-  AWS_
+  AWS_SECRET_ACCESS_KEY: "qsppIkRloxY5Y9ti0efTmFwAnLgztborND94PDKu"
   S3_ENABLED: "true"
   S3_ENDPOINT: "https://s3.hn-1.cloud.cmctelecom.vn"
   S3_BUCKET: "easyedu"
