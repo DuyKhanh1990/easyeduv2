@@ -44,3 +44,4 @@ spec:
             periodSeconds: 10
       imagePullSecrets:
         - name: emso-harbo-production
+

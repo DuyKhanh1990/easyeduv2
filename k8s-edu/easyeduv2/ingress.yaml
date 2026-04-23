@@ -50,3 +50,4 @@ spec:
     - hosts:
         - www.easyeduv2.easyedu.vn
       secretName: easyeduv2-www-tls-secret
+
