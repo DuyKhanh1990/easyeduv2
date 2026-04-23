@@ -64,43 +64,88 @@ class MatBaoService {
     return this.login();
   }
 
+  async fetchTemplates(year?: number): Promise<any[]> {
+    const token = await this.getToken();
+    const y = year ?? new Date().getFullYear();
+    const res = await axios.get(
+      `${BASE_URL}/api/invoice/templates?year=${y}`,
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 },
+    );
+    return Array.isArray(res.data?.data) ? res.data.data : [];
+  }
+
   async processInvoice(
     inv: MatBaoInvoicePayload,
     isPublish: boolean,
   ): Promise<MatBaoProcessResult> {
-    const khhDon = process.env.MATBAO_KHHDON || "K24TAA";
+    const khhDon = process.env.MATBAO_KHHDON || "C26TAT";
     const khmsHDon = process.env.MATBAO_KHMSHDON || "1";
     console.log(
-      `[MatBao] Using KHHDon="${khhDon}" KHMSHDon="${khmsHDon}" (from env: KHHDon=${process.env.MATBAO_KHHDON ? "yes" : "NO-default"}, KHMSHDon=${process.env.MATBAO_KHMSHDON ? "yes" : "NO-default"})`,
+      `[MatBao] Using KHHDon="${khhDon}" KHMSHDon="${khmsHDon}" (env: KHHDon=${process.env.MATBAO_KHHDON ? "yes" : "default"}, KHMSHDon=${process.env.MATBAO_KHMSHDON ? "yes" : "default"})`,
     );
+
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const NLap = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T00:00:00`;
+    const MaTraCuu = `EDU${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}${Math.floor(Math.random() * 1000)}`;
+
+    const items = inv.items.map((it, idx) => {
+      const SLuong = it.quantity ?? 1;
+      const DGia = it.price;
+      const ThTien = DGia * SLuong;
+      const TSuat = it.taxRate ?? 0;
+      const TThue = Math.round((ThTien * TSuat) / 100);
+      const TgTien = ThTien + TThue;
+      return {
+        TChat: 1,
+        STT: idx + 1,
+        THHDVu: it.name,
+        DVTinh: it.unit ?? "Khóa",
+        SLuong,
+        DGia,
+        ThTienChuaCK: ThTien,
+        TLCKhau: 0,
+        STCKhau: 0,
+        ThTien,
+        TSuat,
+        TThue,
+        TgTien,
+      };
+    });
+    const TgThTien = items.reduce((s, x) => s + x.ThTien, 0);
+    const TgTThue = items.reduce((s, x) => s + x.TThue, 0);
+    const TgTTTBSo = TgThTien + TgTThue;
+
     const payload = {
-      isPublish,
-      KHHDon: khhDon,
+      LoaiHDon: isPublish ? 1 : 0,
+      TCHDon: 0,
+      LoaiTraHang: 0,
       KHMSHDon: khmsHDon,
-      nMua_Ten: inv.studentName,
-      nMua_Email: inv.email || "",
-      nMua_DThoai: inv.phone || "",
-      nMua_DChi: inv.address || "",
-      nMua_MST: inv.taxCode || "",
-      hThuc_TToan: "TM/CK",
-      loai_TTe: "VND",
-      tGia: 1,
-      thhdVu: inv.items.map(it => {
-        const sLuong = it.quantity ?? 1;
-        return {
-          ten: it.name,
-          dVi_tinh: it.unit ?? "Khóa",
-          sLuong,
-          dGia: it.price,
-          tTien: it.price * sLuong,
-          tSuat: it.taxRate ?? 0,
-        };
-      }),
+      KHHDon: khhDon,
+      MaTraCuu,
+      MTChieu: MaTraCuu.slice(0, 20),
+      NLap,
+      DVTTe: 704,
+      TGia: 1,
+      HTTToan: "TM/CK",
+      GChu: "",
+      NMua_Ten: inv.studentName,
+      NMua_MST: inv.taxCode || "",
+      NMua_DChi: inv.address || "",
+      NMua_SDThoai: inv.phone || "",
+      NMua_DCTDTu: inv.email || "",
+      NMua_HVTNMHang: inv.studentName,
+      DSHHDVu: items,
+      TgThTien,
+      TgTThue,
+      TTCKTMai: 0,
+      TGTKhac: 0,
+      TgTTTBSo,
+      TgTTTBChu: "",
     };
 
     const callOnce = async () => {
       const token = await this.getToken();
-      // Mắt Bão yêu cầu root body là một mảng: List<CreateInvoiceRequest>
       return axios.post(
         `${BASE_URL}/api/invoice/create-invoice`,
         [payload],
@@ -146,6 +191,7 @@ class MatBaoService {
       console.error("[MatBao] processInvoice response body:", JSON.stringify(data));
       let msg: string =
         (typeof data === "string" && data) ||
+        data?.data?.[0]?.message ||
         data?.message ||
         data?.Message ||
         data?.error ||
@@ -154,6 +200,16 @@ class MatBaoService {
         ax.message ||
         "Lỗi gửi dữ liệu sang Mắt Bão";
       if (typeof msg !== "string") msg = JSON.stringify(msg);
+
+      if (/KH(MS)?HDon/i.test(msg) && /(không hợp lệ|thiếu|invalid|required)/i.test(msg)) {
+        try {
+          const tpls = await this.fetchTemplates();
+          const list = tpls.slice(0, 10)
+            .map((t: any) => `KHMSHDon=${t.khmshDon}, KHHDon=${t.khhDon} (${t.thDon ?? ""}, còn ${t.cLai ?? "?"})`)
+            .join(" | ");
+          if (list) msg += ` — Mẫu hợp lệ cho MST này: ${list}`;
+        } catch {}
+      }
       throw new Error(msg);
     }
   }
