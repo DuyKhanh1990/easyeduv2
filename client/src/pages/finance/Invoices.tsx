@@ -354,8 +354,10 @@ export default function Invoices() {
     });
   };
 
-  const allSelected = filtered.length > 0 && filtered.every(i => selectedIds.has(i.id));
-  const toggleAll   = () => setSelectedIds(allSelected ? new Set() : new Set(filtered.map(i => i.id)));
+  const isSignable = (inv: InvoiceRow) => inv.status === "paid" && inv.einvoiceStatus !== "published";
+  const signableInvoices = filtered.filter(isSignable);
+  const allSelected = signableInvoices.length > 0 && signableInvoices.every(i => selectedIds.has(i.id));
+  const toggleAll   = () => setSelectedIds(allSelected ? new Set() : new Set(signableInvoices.map(i => i.id)));
   const toggleOne   = (id: string) => setSelectedIds(prev => {
     const next = new Set(prev);
     next.has(id) ? next.delete(id) : next.add(id);
@@ -592,7 +594,34 @@ export default function Invoices() {
                         </span>
                       )}
                     </td>
-                    <td className="p-3">{invPerm.canDelete && <Checkbox checked={isSelected} onCheckedChange={() => toggleOne(inv.id)} data-testid={`checkbox-${inv.id}`} />}</td>
+                    <td className="p-3">
+                      {invPerm.canDelete && (
+                        isSignable(inv) ? (
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => toggleOne(inv.id)}
+                            data-testid={`checkbox-${inv.id}`}
+                          />
+                        ) : (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex">
+                                  <Checkbox checked={false} disabled data-testid={`checkbox-disabled-${inv.id}`} />
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="right" className="max-w-[240px] text-center">
+                                <p>
+                                  {inv.einvoiceStatus === "published"
+                                    ? "Hoá đơn đã ký số, không thể ký lại."
+                                    : "Chỉ ký số cho hoá đơn đã thanh toán đầy đủ."}
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )
+                      )}
+                    </td>
                     {visibleColumns.map(col => renderInvoiceCell(col.key, inv, updateStatusMutation))}
                     <td className="p-3 sticky right-0 bg-card border-l">
                       <div className="flex items-center justify-center">
