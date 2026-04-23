@@ -70,6 +70,8 @@ class MatBaoService {
   ): Promise<MatBaoProcessResult> {
     const payload = {
       isPublish,
+      KHHDon: process.env.MATBAO_KHHDON || "K24TAA",
+      KHMSHDon: process.env.MATBAO_KHMSHDON || "1",
       nMua_Ten: inv.studentName,
       nMua_Email: inv.email || "",
       nMua_DThoai: inv.phone || "",
