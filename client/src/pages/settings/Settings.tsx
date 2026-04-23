@@ -1798,6 +1798,19 @@ function EInvoiceConfig() {
     }));
   }, [savedCfg]);
 
+  // Hợp nhất danh sách mẫu với mẫu đã lưu để Select luôn hiển thị giá trị đã chọn,
+  // ngay cả khi chưa bấm "Kiểm tra kết nối" để tải lại danh sách từ Mắt Bão.
+  const templatesForSelect: EInvoiceTemplate[] = (() => {
+    const list = [...templates];
+    if (savedCfg?.khhDon && savedCfg?.khmsHDon) {
+      const exists = list.some(t => t.khhDon === savedCfg.khhDon && t.khmsHDon === savedCfg.khmsHDon);
+      if (!exists) {
+        list.unshift({ khmsHDon: savedCfg.khmsHDon, khhDon: savedCfg.khhDon, name: "Mẫu đã lưu", remaining: null });
+      }
+    }
+    return list;
+  })();
+
   const testMutation = useMutation({
     mutationFn: async () => {
       const passwordToSend = form.password === "********" ? "" : form.password;
@@ -1969,13 +1982,13 @@ function EInvoiceConfig() {
             <label className="block text-sm font-medium mb-1.5">Mẫu hoá đơn</label>
             <Select value={form.templateId} onValueChange={v => setForm(p => ({ ...p, templateId: v }))}>
               <SelectTrigger data-testid="select-einvoice-template">
-                <SelectValue placeholder={templates.length === 0 ? "Bấm 'Kiểm tra kết nối' để tải danh sách mẫu" : "Chọn mẫu hoá đơn"} />
+                <SelectValue placeholder={templatesForSelect.length === 0 ? "Bấm 'Kiểm tra kết nối' để tải danh sách mẫu" : "Chọn mẫu hoá đơn"} />
               </SelectTrigger>
               <SelectContent>
-                {templates.length === 0 ? (
+                {templatesForSelect.length === 0 ? (
                   <SelectItem value="__none__" disabled>Chưa có mẫu hoá đơn</SelectItem>
                 ) : (
-                  templates.map(t => {
+                  templatesForSelect.map(t => {
                     const v = templateValue(t);
                     const label = `KHMS=${t.khmsHDon} • KH=${t.khhDon}${t.name ? ` — ${t.name}` : ""}${t.remaining != null ? ` (còn ${t.remaining})` : ""}`;
                     return (
@@ -1987,7 +2000,7 @@ function EInvoiceConfig() {
             </Select>
             {savedCfg?.khhDon && savedCfg?.khmsHDon && templates.length === 0 && (
               <p className="text-xs text-muted-foreground mt-1.5">
-                Mẫu đã lưu: KHMS={savedCfg.khmsHDon} • KH={savedCfg.khhDon}. Bấm "Kiểm tra kết nối" để tải lại danh sách.
+                Bấm "Kiểm tra kết nối" để tải lại danh sách mẫu mới nhất từ Mắt Bão.
               </p>
             )}
           </div>
