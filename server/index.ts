@@ -285,6 +285,18 @@ app.use((req, res, next) => {
     console.error("Migration invoice_items.category failed:", err);
   }
 
+  // Migrate: add invoice-level promotion/surcharge columns
+  try {
+    const { db: migDb } = await import("./storage/base");
+    await migDb.execute(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS invoice_promotion_keys TEXT[] DEFAULT '{}'::text[]`);
+    await migDb.execute(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS invoice_surcharge_keys TEXT[] DEFAULT '{}'::text[]`);
+    await migDb.execute(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS invoice_promotion_amount DECIMAL(15,2) NOT NULL DEFAULT 0`);
+    await migDb.execute(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS invoice_surcharge_amount DECIMAL(15,2) NOT NULL DEFAULT 0`);
+    console.log("Migration: invoices invoice-level promo/surcharge columns ensured");
+  } catch (err) {
+    console.error("Migration invoices invoice-level promo/surcharge failed:", err);
+  }
+
   // Migrate: add scheduled_weekdays column to student_classes
   try {
     const { db: migDb } = await import("./storage/base");

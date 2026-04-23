@@ -101,6 +101,11 @@ export const invoices = pgTable("invoices", {
   appliedBankAccount: jsonb("applied_bank_account"),                // { bankName, bankAccount, accountHolder }
   // Trạng thái
   status: varchar("status", { length: 50 }).notNull().default("unpaid"), // unpaid | partial | paid | debt | cancelled
+  // KM / Phụ thu áp dụng cho TOÀN hoá đơn (ngoài phần đã gắn theo từng item)
+  invoicePromotionKeys: text("invoice_promotion_keys").array().default(sql`'{}'::text[]`),
+  invoiceSurchargeKeys: text("invoice_surcharge_keys").array().default(sql`'{}'::text[]`),
+  invoicePromotionAmount: decimal("invoice_promotion_amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  invoiceSurchargeAmount: decimal("invoice_surcharge_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   // Hoá đơn điện tử (Mắt Bão)
   einvoiceStatus: varchar("einvoice_status", { length: 20 }),       // null|"draft"|"published" → Chưa ký số / Chờ ký số / Đã ký số
   einvoiceFkey: varchar("einvoice_fkey", { length: 200 }),          // MaSoHDon từ Mắt Bão

@@ -125,11 +125,16 @@ export function registerEInvoiceRoutes(app: Express) {
       itemsByInv.set(it.invoiceId, arr);
     }
 
-    // Lookup tên KM/Phụ thu theo code
+    // Lookup tên KM/Phụ thu theo id (cả theo SP lẫn theo toàn đơn)
     const promoCodes = new Set<string>();
     for (const it of itemsRows) {
       (it.promotionKeys ?? []).forEach(k => k && promoCodes.add(k));
       (it.surchargeKeys ?? []).forEach(k => k && promoCodes.add(k));
+    }
+    for (const r of invRows) {
+      const inv: any = r.invoice;
+      (inv.invoicePromotionKeys ?? []).forEach((k: string) => k && promoCodes.add(k));
+      (inv.invoiceSurchargeKeys ?? []).forEach((k: string) => k && promoCodes.add(k));
     }
     const promoRows = promoCodes.size > 0
       ? await db.select().from(financePromotions).where(inArray(financePromotions.id, Array.from(promoCodes)))
@@ -195,6 +200,20 @@ export function registerEInvoiceRoutes(app: Express) {
             unit: "Khóa",
           }];
 
+      const invAny: any = inv;
+      const invoicePromotions = distributeAdjustments(
+        invAny.invoicePromotionKeys,
+        "promotion",
+        parseFloat(invAny.invoicePromotionAmount ?? "0"),
+        parseFloat(inv.totalAmount ?? "0"),
+      );
+      const invoiceSurcharges = distributeAdjustments(
+        invAny.invoiceSurchargeKeys,
+        "surcharge",
+        parseFloat(invAny.invoiceSurchargeAmount ?? "0"),
+        parseFloat(inv.totalAmount ?? "0"),
+      );
+
       try {
         const out = await matbao.processInvoice(
           {
@@ -202,6 +221,8 @@ export function registerEInvoiceRoutes(app: Express) {
             email: r.studentEmail,
             phone: r.studentPhone,
             items: matbaoItems,
+            invoicePromotions,
+            invoiceSurcharges,
           },
           isPublish,
         );

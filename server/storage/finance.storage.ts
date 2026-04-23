@@ -241,6 +241,10 @@ export async function createInvoice(data: any): Promise<any> {
       totalAmount: invoiceData.totalAmount?.toString() ?? "0",
       totalPromotion: invoiceData.totalPromotion?.toString() ?? "0",
       totalSurcharge: invoiceData.totalSurcharge?.toString() ?? "0",
+      invoicePromotionKeys: invoiceData.invoicePromotionKeys ?? [],
+      invoiceSurchargeKeys: invoiceData.invoiceSurchargeKeys ?? [],
+      invoicePromotionAmount: invoiceData.invoicePromotionAmount?.toString() ?? "0",
+      invoiceSurchargeAmount: invoiceData.invoiceSurchargeAmount?.toString() ?? "0",
       grandTotal: invoiceData.grandTotal?.toString() ?? "0",
       remainingAmount: invoiceData.remainingAmount?.toString() ?? invoiceData.grandTotal?.toString() ?? "0",
       commission: invoiceData.commission?.toString() ?? "0",
@@ -293,6 +297,8 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
   if (toUpdate.totalAmount !== undefined) toUpdate.totalAmount = toUpdate.totalAmount.toString();
   if (toUpdate.totalPromotion !== undefined) toUpdate.totalPromotion = toUpdate.totalPromotion.toString();
   if (toUpdate.totalSurcharge !== undefined) toUpdate.totalSurcharge = toUpdate.totalSurcharge.toString();
+  if (toUpdate.invoicePromotionAmount !== undefined) toUpdate.invoicePromotionAmount = toUpdate.invoicePromotionAmount.toString();
+  if (toUpdate.invoiceSurchargeAmount !== undefined) toUpdate.invoiceSurchargeAmount = toUpdate.invoiceSurchargeAmount.toString();
   if (toUpdate.grandTotal !== undefined) toUpdate.grandTotal = toUpdate.grandTotal.toString();
   if (toUpdate.paidAmount !== undefined) toUpdate.paidAmount = toUpdate.paidAmount.toString();
   if (toUpdate.remainingAmount !== undefined) toUpdate.remainingAmount = toUpdate.remainingAmount.toString();
