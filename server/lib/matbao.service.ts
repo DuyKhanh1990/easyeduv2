@@ -170,13 +170,38 @@ class MatBaoService {
           throw err;
         }
       }
-      const d = res.data?.data;
+      const body = res.data;
+      const d = body?.data;
       const first = Array.isArray(d) ? d[0] : d;
+      // Mắt Bão dùng errorCode=200 cho thành công; bất kỳ giá trị khác = lỗi nghiệp vụ
+      const outerOk = body?.errorCode === 200 || body?.success === true;
+      const innerOk = first?.errorCode === undefined || first?.errorCode === 200 || first?.success === true;
+      if (!outerOk || !innerOk) {
+        const bizMsg =
+          first?.message ||
+          body?.message ||
+          "Mắt Bão từ chối hóa đơn (không rõ lý do)";
+        console.error("[MatBao] business error:", JSON.stringify(body));
+        let msg = String(bizMsg);
+        if (/KH(MS)?HDon/i.test(msg)) {
+          try {
+            const tpls = await this.fetchTemplates();
+            const list = tpls.slice(0, 10)
+              .map((t: any) => `KHMSHDon=${t.khmshDon}, KHHDon=${t.khhDon} (${t.thDon ?? ""}, còn ${t.cLai ?? "?"})`)
+              .join(" | ");
+            if (list) msg += ` — Cặp ký hiệu hợp lệ cho MST của bạn: ${list}. Vui lòng cập nhật secret MATBAO_KHHDON & MATBAO_KHMSHDON.`;
+          } catch (e) {
+            console.error("[MatBao] fetchTemplates error:", e);
+          }
+        }
+        throw new Error(msg);
+      }
+      const inner = first?.data ?? first;
       const fkey: string | undefined =
-        first?.fkey ?? first?.Fkey ?? first?.FKey ?? res.data?.fkey;
+        inner?.fkey ?? inner?.Fkey ?? inner?.FKey ?? inner?.maSoHDon ?? inner?.MaSoHDon;
       if (!fkey) {
-        console.error("[MatBao] processInvoice unexpected response:", JSON.stringify(res.data));
-        throw new Error("Mắt Bão không trả về fkey");
+        console.error("[MatBao] no fkey in response:", JSON.stringify(body));
+        throw new Error("Mắt Bão không trả về fkey/MaSoHDon");
       }
       return {
         success: true,
