@@ -2,7 +2,8 @@ import type { Express } from "express";
 import { z } from "zod";
 import { db, eq, inArray } from "../storage/base";
 import { invoices, invoiceItems, students } from "../storage/base";
-import { matbao } from "../lib/matbao.service";
+import { financePromotions } from "@shared/schema";
+import { matbao, type MatBaoAdjustment } from "../lib/matbao.service";
 
 const signSchema = z.object({
   invoiceIds: z.array(z.string().uuid()).min(1),
@@ -124,6 +125,17 @@ export function registerEInvoiceRoutes(app: Express) {
       itemsByInv.set(it.invoiceId, arr);
     }
 
+    // Lookup tên KM/Phụ thu theo code
+    const promoCodes = new Set<string>();
+    for (const it of itemsRows) {
+      (it.promotionKeys ?? []).forEach(k => k && promoCodes.add(k));
+      (it.surchargeKeys ?? []).forEach(k => k && promoCodes.add(k));
+    }
+    const promoRows = promoCodes.size > 0
+      ? await db.select().from(financePromotions).where(inArray(financePromotions.code, Array.from(promoCodes)))
+      : [];
+    const promoByCode = new Map(promoRows.map(p => [p.code, p]));
+
     const results: Array<{ invoiceId: string; success: boolean; fkey?: string; message: string }> = [];
 
     for (const r of invRows) {
@@ -131,13 +143,51 @@ export function registerEInvoiceRoutes(app: Express) {
       const studentName = r.studentName || inv.subjectName || "Khách lẻ";
       const items = itemsByInv.get(inv.id) ?? [];
 
+      // Helper tính phân bổ amount theo danh sách KM/PT đã match
+      const distributeAdjustments = (
+        keys: string[] | null | undefined,
+        type: "promotion" | "surcharge",
+        totalAmount: number,
+        baseAmount: number,
+      ): MatBaoAdjustment[] => {
+        const codes = (keys ?? []).filter(Boolean);
+        if (codes.length === 0 || totalAmount <= 0) return [];
+        const matched = codes
+          .map(c => promoByCode.get(c))
+          .filter((p): p is NonNullable<typeof p> => Boolean(p) && p!.type === type);
+        if (matched.length === 0) {
+          return [{ name: type === "promotion" ? "Khuyến mãi" : "Phụ thu", amount: Math.round(totalAmount) }];
+        }
+        const result: MatBaoAdjustment[] = matched.map(p => {
+          const v = parseFloat(p.valueAmount ?? "0");
+          const amt = p.valueType === "vnd"
+            ? v
+            : (baseAmount * v) / 100;
+          return { name: p.name, amount: Math.max(0, Math.round(amt)) };
+        });
+        // Hiệu chỉnh dòng cuối để tổng khớp totalAmount
+        const sum = result.reduce((s, r) => s + r.amount, 0);
+        const diff = Math.round(totalAmount) - sum;
+        if (diff !== 0 && result.length > 0) {
+          result[result.length - 1].amount = Math.max(0, result[result.length - 1].amount + diff);
+        }
+        return result.filter(r => r.amount > 0);
+      };
+
       const matbaoItems = items.length > 0
-        ? items.map(it => ({
-            name: it.packageName,
-            price: parseFloat(it.unitPrice ?? "0"),
-            quantity: it.quantity ?? 1,
-            unit: it.packageType === "buổi" ? "Buổi" : "Khóa",
-          }))
+        ? items.map(it => {
+            const price = parseFloat(it.unitPrice ?? "0");
+            const qty = it.quantity ?? 1;
+            const base = price * qty;
+            return {
+              name: it.packageName,
+              price,
+              quantity: qty,
+              unit: it.packageType === "buổi" ? "Buổi" : "Khóa",
+              promotions: distributeAdjustments(it.promotionKeys, "promotion", parseFloat(it.promotionAmount ?? "0"), base),
+              surcharges: distributeAdjustments(it.surchargeKeys, "surcharge", parseFloat(it.surchargeAmount ?? "0"), base),
+            };
+          })
         : [{
             name: inv.category || inv.description || "Học phí",
             price: parseFloat(inv.grandTotal ?? "0"),

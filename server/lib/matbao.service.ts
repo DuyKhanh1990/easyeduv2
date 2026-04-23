@@ -15,12 +15,23 @@ export interface MatBaoConfig {
   khmsHDon: string;
 }
 
+export interface MatBaoAdjustment {
+  /** Tên hiển thị, ví dụ "KM đăng ký sớm 10%" hoặc "Phí giáo trình" */
+  name: string;
+  /** Số tiền dương; tChat sẽ quyết định cộng/trừ */
+  amount: number;
+}
+
 export interface MatBaoInvoiceItem {
   name: string;
   price: number;
   quantity?: number;
   unit?: string;
   taxRate?: number;
+  /** Khuyến mãi áp dụng riêng cho dòng này (sẽ chèn ngay dưới sản phẩm với tChat:2) */
+  promotions?: MatBaoAdjustment[];
+  /** Phụ thu áp dụng riêng cho dòng này (sẽ chèn ngay dưới sản phẩm với tChat:3) */
+  surcharges?: MatBaoAdjustment[];
 }
 
 export interface MatBaoInvoicePayload {
@@ -30,6 +41,10 @@ export interface MatBaoInvoicePayload {
   taxCode?: string | null;
   address?: string | null;
   items: MatBaoInvoiceItem[];
+  /** Khuyến mãi áp dụng cho toàn hoá đơn (đẩy xuống cuối với tChat:2) */
+  invoicePromotions?: MatBaoAdjustment[];
+  /** Phụ thu áp dụng cho toàn hoá đơn (đẩy xuống cuối với tChat:3) */
+  invoiceSurcharges?: MatBaoAdjustment[];
 }
 
 export interface MatBaoProcessResult {
@@ -160,16 +175,62 @@ class MatBaoService {
     const NLap = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T00:00:00`;
     const MaTraCuu = `EDU${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}${Math.floor(Math.random() * 1000)}`;
 
-    const items = inv.items.map((it, idx) => {
+    type Line = {
+      TChat: number;
+      STT: number;
+      THHDVu: string;
+      DVTinh: string;
+      SLuong: number;
+      DGia: number;
+      ThTienChuaCK: number;
+      TLCKhau: number;
+      STCKhau: number;
+      ThTien: number;
+      TSuat: number;
+      TThue: number;
+      TgTien: number;
+    };
+    const lines: Line[] = [];
+    let stt = 0;
+
+    const pushAdjustment = (
+      tChat: 2 | 3,
+      prefix: "-" | "+",
+      label: string,
+      amount: number,
+      taxRate: number,
+    ) => {
+      if (!amount || amount <= 0) return;
+      const ThTien = Math.round(amount);
+      const TThue = Math.round((ThTien * taxRate) / 100);
+      stt += 1;
+      lines.push({
+        TChat: tChat,
+        STT: stt,
+        THHDVu: ` ${prefix} ${label}`,
+        DVTinh: "",
+        SLuong: 1,
+        DGia: ThTien,
+        ThTienChuaCK: ThTien,
+        TLCKhau: 0,
+        STCKhau: 0,
+        ThTien,
+        TSuat: taxRate,
+        TThue,
+        TgTien: ThTien + TThue,
+      });
+    };
+
+    for (const it of inv.items) {
       const SLuong = it.quantity ?? 1;
       const DGia = it.price;
       const ThTien = DGia * SLuong;
       const TSuat = it.taxRate ?? 0;
       const TThue = Math.round((ThTien * TSuat) / 100);
-      const TgTien = ThTien + TThue;
-      return {
+      stt += 1;
+      lines.push({
         TChat: 1,
-        STT: idx + 1,
+        STT: stt,
         THHDVu: it.name,
         DVTinh: it.unit ?? "Khóa",
         SLuong,
@@ -180,12 +241,31 @@ class MatBaoService {
         ThTien,
         TSuat,
         TThue,
-        TgTien,
-      };
-    });
-    const TgThTien = items.reduce((s, x) => s + x.ThTien, 0);
-    const TgTThue = items.reduce((s, x) => s + x.TThue, 0);
+        TgTien: ThTien + TThue,
+      });
+      // Chèn các dòng KM / phụ thu ngay dưới sản phẩm
+      for (const p of it.promotions ?? []) {
+        pushAdjustment(2, "-", `Khuyến mãi: ${p.name}`, p.amount, TSuat);
+      }
+      for (const s of it.surcharges ?? []) {
+        pushAdjustment(3, "+", `Phụ thu: ${s.name}`, s.amount, TSuat);
+      }
+    }
+
+    // KM / Phụ thu áp dụng cho toàn hoá đơn → đẩy xuống cuối
+    for (const p of inv.invoicePromotions ?? []) {
+      pushAdjustment(2, "-", `Giảm giá tổng: ${p.name}`, p.amount, 0);
+    }
+    for (const s of inv.invoiceSurcharges ?? []) {
+      pushAdjustment(3, "+", `Phụ thu: ${s.name}`, s.amount, 0);
+    }
+
+    // Tính tổng cộng/trừ theo tChat
+    const sign = (t: number) => (t === 2 ? -1 : 1);
+    const TgThTien = lines.reduce((s, x) => s + sign(x.TChat) * x.ThTien, 0);
+    const TgTThue = lines.reduce((s, x) => s + sign(x.TChat) * x.TThue, 0);
     const TgTTTBSo = TgThTien + TgTThue;
+    const items = lines;
 
     const payload = {
       LoaiHDon: isPublish ? 1 : 0,
