@@ -9,7 +9,7 @@ variables:
   REGISTRY_IMAGE: new-easyedu
   DOCKER_IMAGE: $DOCKER_REGISTRY/$REGISTRY_PROJECT/$REGISTRY_IMAGE
   # REGISTRY_TAG: ${CI_COMMIT_TAG:-${CI_COMMIT_REF_SLUG}-${CI_COMMIT_SHORT_SHA}}
-  REGISTRY_TAG: 0.0.4 #Thêm sync_user_tokens_controller.rb nân nodejs
+  REGISTRY_TAG: 0.0.5 #Thêm sync_user_tokens_controller.rb nân nodejs
 
 emso-build-image:
   stage: build_images
