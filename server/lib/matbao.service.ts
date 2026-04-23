@@ -68,10 +68,15 @@ class MatBaoService {
     inv: MatBaoInvoicePayload,
     isPublish: boolean,
   ): Promise<MatBaoProcessResult> {
+    const khhDon = process.env.MATBAO_KHHDON || "K24TAA";
+    const khmsHDon = process.env.MATBAO_KHMSHDON || "1";
+    console.log(
+      `[MatBao] Using KHHDon="${khhDon}" KHMSHDon="${khmsHDon}" (from env: KHHDon=${process.env.MATBAO_KHHDON ? "yes" : "NO-default"}, KHMSHDon=${process.env.MATBAO_KHMSHDON ? "yes" : "NO-default"})`,
+    );
     const payload = {
       isPublish,
-      KHHDon: process.env.MATBAO_KHHDON || "K24TAA",
-      KHMSHDon: process.env.MATBAO_KHMSHDON || "1",
+      KHHDon: khhDon,
+      KHMSHDon: khmsHDon,
       nMua_Ten: inv.studentName,
       nMua_Email: inv.email || "",
       nMua_DThoai: inv.phone || "",
