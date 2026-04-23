@@ -274,13 +274,14 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const itemSurcharge  = products.reduce((s, p) => {
     return s + calcSurchargeAmountForProduct(p, calcBase(p), surchargeOptions);
   }, 0);
-  // KM/Phụ thu áp lên TOÀN hoá đơn (tính trên Số tiền gốc)
+  // KM/Phụ thu áp lên TOÀN hoá đơn (tính trên Thành tiền của các dòng — đã trừ KM / cộng phụ thu theo SP)
+  const lineSubtotal = totalAmount - itemPromo + itemSurcharge;
   const calcAdjustment = (keys: string[], opts: any[]) =>
     keys.reduce((sum, key) => {
       const opt = opts.find((o: any) => o.id === key);
       if (!opt) return sum;
       const v = parseFloat(opt.valueAmount || "0");
-      return sum + (opt.valueType === "percent" ? Math.round(totalAmount * v / 100) : v);
+      return sum + (opt.valueType === "percent" ? Math.round(lineSubtotal * v / 100) : v);
     }, 0);
   const invoicePromoAmt    = calcAdjustment(invoicePromoKeys, promotionOptions);
   const invoiceSurchargeAmt = calcAdjustment(invoiceSurchargeKeys, surchargeOptions);
