@@ -103,7 +103,8 @@ export const invoices = pgTable("invoices", {
   status: varchar("status", { length: 50 }).notNull().default("unpaid"), // unpaid | partial | paid | debt | cancelled
   // Hoá đơn điện tử (Mắt Bão)
   einvoiceStatus: varchar("einvoice_status", { length: 20 }),       // null|"draft"|"published" → Chưa ký số / Chờ ký số / Đã ký số
-  einvoiceFkey: varchar("einvoice_fkey", { length: 100 }),          // Mã quản lý từ Mắt Bão
+  einvoiceFkey: varchar("einvoice_fkey", { length: 200 }),          // MaSoHDon từ Mắt Bão
+  einvoiceMaTraCuu: varchar("einvoice_ma_tra_cuu", { length: 100 }), // MaTraCuu (mã tham chiếu) từ Mắt Bão
   einvoiceMessage: text("einvoice_message"),                         // Thông báo / lỗi gần nhất
   einvoiceUpdatedAt: timestamp("einvoice_updated_at"),               // Lần đổi trạng thái HĐĐT gần nhất
   // Audit

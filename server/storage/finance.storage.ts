@@ -128,6 +128,7 @@ export async function getInvoices(filters: { status?: string; type?: string; loc
     updaterName: r.updaterName,
     einvoiceStatus: (r.invoice as any).einvoiceStatus ?? null,
     einvoiceFkey: (r.invoice as any).einvoiceFkey ?? null,
+    einvoiceMaTraCuu: (r.invoice as any).einvoiceMaTraCuu ?? null,
     einvoiceMessage: (r.invoice as any).einvoiceMessage ?? null,
     einvoiceUpdatedAt: (r.invoice as any).einvoiceUpdatedAt ?? null,
     hasSchedules: false,

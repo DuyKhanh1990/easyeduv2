@@ -161,6 +161,7 @@ export function registerEInvoiceRoutes(app: Express) {
           .set({
             einvoiceStatus: newStatus,
             einvoiceFkey: out.fkey,
+            einvoiceMaTraCuu: out.maTraCuu,
             einvoiceMessage: out.message,
             einvoiceUpdatedAt: new Date(),
           })
@@ -186,5 +187,30 @@ export function registerEInvoiceRoutes(app: Express) {
       failed: results.length - okCount,
       results,
     });
+  });
+
+  // GET /api/einvoice/pdf/:invoiceId — Tải PDF nháp / đã ký từ Mắt Bão
+  app.get("/api/einvoice/pdf/:invoiceId", async (req, res) => {
+    const invoiceId = req.params.invoiceId;
+    try {
+      const rows = await db.select().from(invoices).where(eq(invoices.id, invoiceId)).limit(1);
+      const inv = rows[0];
+      if (!inv) return res.status(404).json({ message: "Không tìm thấy hoá đơn" });
+      if (!inv.einvoiceFkey) {
+        return res.status(400).json({ message: "Hoá đơn chưa được gửi sang Mắt Bão" });
+      }
+      const pdf = await matbao.downloadInvoicePdf({
+        maSoHDon: inv.einvoiceFkey,
+        maTraCuu: inv.einvoiceMaTraCuu,
+      });
+      const isDraft = inv.einvoiceStatus === "draft";
+      const filename = `${isDraft ? "nhap" : "hoadon"}-${inv.code || invoiceId}.pdf`;
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+      res.setHeader("Cache-Control", "no-store");
+      res.send(pdf);
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Lỗi tải PDF" });
+    }
   });
 }

@@ -33,6 +33,7 @@ export interface InvoiceRow {
   // Hoá đơn điện tử (Mắt Bão)
   einvoiceStatus?: "draft" | "published" | null;
   einvoiceFkey?: string | null;
+  einvoiceMaTraCuu?: string | null;
   einvoiceMessage?: string | null;
   einvoiceUpdatedAt?: string | Date | null;
 }

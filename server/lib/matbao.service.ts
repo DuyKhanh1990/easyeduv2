@@ -35,6 +35,7 @@ export interface MatBaoInvoicePayload {
 export interface MatBaoProcessResult {
   success: true;
   fkey: string;
+  maTraCuu: string;
   message: string;
 }
 
@@ -248,14 +249,17 @@ class MatBaoService {
       }
       const inner = first?.data ?? first;
       const fkey: string | undefined =
-        inner?.fkey ?? inner?.Fkey ?? inner?.FKey ?? inner?.maSoHDon ?? inner?.MaSoHDon;
+        inner?.maSoHDon ?? inner?.MaSoHDon ?? inner?.fkey ?? inner?.Fkey ?? inner?.FKey;
       if (!fkey) {
         console.error("[MatBao] no fkey in response:", JSON.stringify(body));
         throw new Error("Mắt Bão không trả về fkey/MaSoHDon");
       }
+      const returnedMaTraCuu: string =
+        inner?.maTraCuu ?? inner?.MaTraCuu ?? MaTraCuu;
       return {
         success: true,
         fkey,
+        maTraCuu: returnedMaTraCuu,
         message: isPublish ? "Đã ký số thành công" : "Đã tạo bản nháp thành công",
       };
     } catch (err) {
@@ -275,6 +279,43 @@ class MatBaoService {
   async getPdfUrl(fkey: string): Promise<string> {
     const cfg = await this.getConfig();
     return `${cfg.baseUrl}/api/invoice/download-inv-pdf?fkey=${encodeURIComponent(fkey)}`;
+  }
+
+  /** Tải file PDF của 1 hoá đơn (cả nháp lẫn đã ký) từ Mắt Bão. Trả về Buffer PDF. */
+  async downloadInvoicePdf(opts: { maSoHDon: string; maTraCuu?: string | null }): Promise<Buffer> {
+    const { token, cfg } = await this.getToken();
+    const body = {
+      MaTraCuu: opts.maTraCuu || "",
+      MaSoHDon: opts.maSoHDon,
+    };
+    const callOnce = async (tk: string) =>
+      axios.post(`${cfg.baseUrl}/api/invoice/download-invoice`, body, {
+        headers: { Authorization: `Bearer ${tk}` },
+        timeout: 30000,
+      });
+
+    let res;
+    try {
+      res = await callOnce(token);
+    } catch (err) {
+      const ax = err as AxiosError;
+      if (ax.response?.status === 401) {
+        this.token = null;
+        const t2 = await this.getToken(cfg);
+        res = await callOnce(t2.token);
+      } else {
+        throw err;
+      }
+    }
+
+    const data = res.data;
+    const outerOk = data?.errorCode === 200 || data?.success === true;
+    const b64: string | undefined = data?.data?.data_PDF_Base64 ?? data?.data?.dataPDFBase64 ?? data?.data?.pdfBase64;
+    if (!outerOk || !b64) {
+      const msg = data?.message || data?.data?.message || "Mắt Bão không trả về file PDF";
+      throw new Error(String(msg));
+    }
+    return Buffer.from(b64, "base64");
   }
 }
 

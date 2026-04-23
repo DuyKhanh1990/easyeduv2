@@ -25,7 +25,7 @@ import {
 import {
   Search, SlidersHorizontal, CalendarIcon, Plus, ChevronUp, ChevronDown,
   Pencil, Trash2, Eye, CreditCard, ChevronRight, Settings2, GripVertical, AlertCircle, QrCode, CheckCircle,
-  FileSignature,
+  FileSignature, FileText, Download,
 } from "lucide-react";
 import {
   DropdownMenu as ActionMenu,
@@ -636,6 +636,32 @@ export default function Invoices() {
                                 >
                                   <QrCode className="h-3.5 w-3.5 text-purple-600" />
                                   Mã QR
+                                </ActionMenuItem>
+                              </>
+                            )}
+                            {inv.einvoiceStatus === "draft" && (
+                              <>
+                                <ActionMenuSeparator />
+                                <ActionMenuItem
+                                  className="gap-2 cursor-pointer"
+                                  data-testid={`menuitem-einvoice-preview-${inv.id}`}
+                                  onClick={() => window.open(`/api/einvoice/pdf/${inv.id}`, "_blank", "noopener,noreferrer")}
+                                >
+                                  <FileText className="h-3.5 w-3.5 text-indigo-600" />
+                                  Xem thử PDF
+                                </ActionMenuItem>
+                              </>
+                            )}
+                            {inv.einvoiceStatus === "published" && (
+                              <>
+                                <ActionMenuSeparator />
+                                <ActionMenuItem
+                                  className="gap-2 cursor-pointer"
+                                  data-testid={`menuitem-einvoice-pdf-${inv.id}`}
+                                  onClick={() => window.open(`/api/einvoice/pdf/${inv.id}`, "_blank", "noopener,noreferrer")}
+                                >
+                                  <Download className="h-3.5 w-3.5 text-emerald-600" />
+                                  Tải PDF hoá đơn
                                 </ActionMenuItem>
                               </>
                             )}
