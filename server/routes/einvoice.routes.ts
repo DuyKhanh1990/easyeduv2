@@ -9,12 +9,89 @@ const signSchema = z.object({
   isPublish: z.boolean(),
 });
 
+const configSchema = z.object({
+  baseUrl: z.string().url(),
+  mst: z.string().min(1),
+  username: z.string().min(1),
+  password: z.string().optional().default(""),
+  khhDon: z.string().default(""),
+  khmsHDon: z.string().default(""),
+});
+
+const testSchema = z.object({
+  baseUrl: z.string().url(),
+  mst: z.string().min(1),
+  username: z.string().min(1),
+  password: z.string().optional().default(""),
+});
+
 export function registerEInvoiceRoutes(app: Express) {
-  // POST /api/einvoice/sign  — Gửi danh sách hoá đơn sang Mắt Bão
+  // GET /api/einvoice/config — Lấy cấu hình hiện tại (ẩn password)
+  app.get("/api/einvoice/config", async (_req, res) => {
+    try {
+      const cfg = await matbao.getConfig();
+      res.json({
+        baseUrl: cfg.baseUrl,
+        mst: cfg.mst,
+        username: cfg.username,
+        hasPassword: Boolean(cfg.password),
+        khhDon: cfg.khhDon,
+        khmsHDon: cfg.khmsHDon,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Lỗi đọc cấu hình" });
+    }
+  });
+
+  // POST /api/einvoice/config — Lưu cấu hình
+  app.post("/api/einvoice/config", async (req, res) => {
+    const parsed = configSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Dữ liệu không hợp lệ", errors: parsed.error.errors });
+    }
+    try {
+      let { password } = parsed.data;
+      if (!password) {
+        const cur = await matbao.getConfig();
+        if (!cur.password) {
+          return res.status(400).json({ message: "Vui lòng nhập mật khẩu" });
+        }
+        password = cur.password;
+      }
+      await matbao.saveConfig({ ...parsed.data, password });
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message || "Lỗi lưu cấu hình" });
+    }
+  });
+
+  // POST /api/einvoice/test-connection — Kiểm tra đăng nhập + tải mẫu hoá đơn
+  app.post("/api/einvoice/test-connection", async (req, res) => {
+    const parsed = testSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Dữ liệu không hợp lệ", errors: parsed.error.errors });
+    }
+    try {
+      const templates = await matbao.fetchTemplates({ creds: parsed.data });
+      res.json({
+        ok: true,
+        templates: templates.map((t: any) => ({
+          khmsHDon: String(t.khmshDon ?? t.KHMSHDon ?? ""),
+          khhDon: String(t.khhDon ?? t.KHHDon ?? ""),
+          name: t.thDon ?? t.THDon ?? "",
+          remaining: t.cLai ?? t.CLai ?? null,
+        })),
+      });
+    } catch (err: any) {
+      res.status(400).json({ ok: false, message: err?.message || "Kết nối thất bại" });
+    }
+  });
+
+  // POST /api/einvoice/sign — Gửi danh sách hoá đơn sang Mắt Bão
   app.post("/api/einvoice/sign", async (req, res) => {
-    if (!matbao.isConfigured()) {
+    if (!(await matbao.isConfigured())) {
       return res.status(500).json({
-        message: "Hệ thống chưa cấu hình kết nối Mắt Bão (MATBAO_MST/USER/PASS)",
+        message: "Hệ thống chưa cấu hình kết nối Mắt Bão. Vui lòng vào Cấu hình hệ thống → Hoá đơn điện tử.",
       });
     }
 
@@ -24,7 +101,6 @@ export function registerEInvoiceRoutes(app: Express) {
     }
     const { invoiceIds, isPublish } = parsed.data;
 
-    // Lấy thông tin hoá đơn + học viên + items
     const invRows = await db
       .select({
         invoice: invoices,
@@ -48,19 +124,13 @@ export function registerEInvoiceRoutes(app: Express) {
       itemsByInv.set(it.invoiceId, arr);
     }
 
-    const results: Array<{
-      invoiceId: string;
-      success: boolean;
-      fkey?: string;
-      message: string;
-    }> = [];
+    const results: Array<{ invoiceId: string; success: boolean; fkey?: string; message: string }> = [];
 
     for (const r of invRows) {
       const inv = r.invoice;
       const studentName = r.studentName || inv.subjectName || "Khách lẻ";
       const items = itemsByInv.get(inv.id) ?? [];
 
-      // Nếu không có invoice_items, fallback dùng tổng tiền của hoá đơn làm 1 dòng
       const matbaoItems = items.length > 0
         ? items.map(it => ({
             name: it.packageName,

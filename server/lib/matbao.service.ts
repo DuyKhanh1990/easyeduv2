@@ -1,9 +1,19 @@
 import axios, { AxiosError } from "axios";
+import { db } from "../storage/base";
+import { systemSettings } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
-const MST  = process.env.MATBAO_MST  ?? "";
-const USER = process.env.MATBAO_USER ?? "";
-const PASS = process.env.MATBAO_PASS ?? "";
-const BASE_URL = process.env.MATBAO_BASE_URL ?? "https://demo-api-hddt.matbao.in:11443";
+const SETTINGS_KEY = "einvoice_matbao";
+const DEFAULT_BASE_URL = "https://demo-api-hddt.matbao.in:11443";
+
+export interface MatBaoConfig {
+  baseUrl: string;
+  mst: string;
+  username: string;
+  password: string;
+  khhDon: string;
+  khmsHDon: string;
+}
 
 export interface MatBaoInvoiceItem {
   name: string;
@@ -31,44 +41,105 @@ export interface MatBaoProcessResult {
 class MatBaoService {
   private token: string | null = null;
   private tokenExpiresAt = 0;
+  private tokenForUser: string | null = null;
 
-  isConfigured(): boolean {
-    return Boolean(MST && USER && PASS);
+  async getConfig(): Promise<MatBaoConfig> {
+    const rows = await db
+      .select()
+      .from(systemSettings)
+      .where(eq(systemSettings.key, SETTINGS_KEY));
+    if (rows.length > 0) {
+      try {
+        const cfg = JSON.parse(rows[0].value) as Partial<MatBaoConfig>;
+        return {
+          baseUrl: cfg.baseUrl || DEFAULT_BASE_URL,
+          mst: cfg.mst || "",
+          username: cfg.username || "",
+          password: cfg.password || "",
+          khhDon: cfg.khhDon || "",
+          khmsHDon: cfg.khmsHDon || "",
+        };
+      } catch {}
+    }
+    // Fallback từ env
+    return {
+      baseUrl: process.env.MATBAO_BASE_URL || DEFAULT_BASE_URL,
+      mst: process.env.MATBAO_MST || "",
+      username: process.env.MATBAO_USER || "",
+      password: process.env.MATBAO_PASS || "",
+      khhDon: process.env.MATBAO_KHHDON || "",
+      khmsHDon: process.env.MATBAO_KHMSHDON || "",
+    };
   }
 
-  private async login(): Promise<string> {
-    if (!this.isConfigured()) {
-      throw new Error("Chưa cấu hình MATBAO_MST / MATBAO_USER / MATBAO_PASS");
-    }
+  async saveConfig(cfg: MatBaoConfig): Promise<void> {
+    await db
+      .insert(systemSettings)
+      .values({ key: SETTINGS_KEY, value: JSON.stringify(cfg) })
+      .onConflictDoUpdate({
+        target: systemSettings.key,
+        set: { value: JSON.stringify(cfg), updatedAt: new Date() },
+      });
+    // Reset token vì có thể đổi user
+    this.token = null;
+    this.tokenForUser = null;
+  }
+
+  async isConfigured(): Promise<boolean> {
+    const c = await this.getConfig();
+    return Boolean(c.mst && c.username && c.password);
+  }
+
+  /** Đăng nhập với credentials cụ thể, trả về token. Không cache. */
+  async loginWith(creds: { baseUrl: string; mst: string; username: string; password: string }): Promise<string> {
     try {
       const res = await axios.post(
-        `${BASE_URL}/api/auth/login`,
-        { MST, TDNhap: USER, MKhau: PASS },
+        `${creds.baseUrl}/api/auth/login`,
+        { MST: creds.mst, TDNhap: creds.username, MKhau: creds.password },
         { timeout: 15000 },
       );
       const token = res.data?.data?.accessToken;
       if (!token) throw new Error("Mắt Bão không trả về accessToken");
-      this.token = token;
-      this.tokenExpiresAt = Date.now() + 50 * 60 * 1000; // ~50 phút
       return token;
     } catch (err) {
       const ax = err as AxiosError<any>;
-      const msg = ax.response?.data?.message || ax.message || "Đăng nhập Mắt Bão thất bại";
-      console.error("[MatBao] login error:", msg);
+      const msg = ax.response?.data?.message || ax.response?.data?.data?.[0]?.message || ax.message || "Đăng nhập Mắt Bão thất bại";
       throw new Error(`Đăng nhập Mắt Bão thất bại: ${msg}`);
     }
   }
 
-  private async getToken(): Promise<string> {
-    if (this.token && Date.now() < this.tokenExpiresAt) return this.token;
-    return this.login();
+  /** Lấy token với cấu hình hiện tại trong DB, có cache theo user. */
+  private async getToken(cfg?: MatBaoConfig): Promise<{ token: string; cfg: MatBaoConfig }> {
+    const c = cfg ?? (await this.getConfig());
+    if (!c.mst || !c.username || !c.password) {
+      throw new Error("Chưa cấu hình kết nối Mắt Bão. Vui lòng vào Cấu hình hệ thống → Hoá đơn điện tử.");
+    }
+    const userKey = `${c.mst}|${c.username}`;
+    if (this.token && this.tokenForUser === userKey && Date.now() < this.tokenExpiresAt) {
+      return { token: this.token, cfg: c };
+    }
+    const token = await this.loginWith(c);
+    this.token = token;
+    this.tokenForUser = userKey;
+    this.tokenExpiresAt = Date.now() + 50 * 60 * 1000;
+    return { token, cfg: c };
   }
 
-  async fetchTemplates(year?: number): Promise<any[]> {
-    const token = await this.getToken();
-    const y = year ?? new Date().getFullYear();
+  /** Lấy danh sách mẫu hoá đơn. Có thể truyền creds để test, không thì dùng cấu hình DB. */
+  async fetchTemplates(opts?: { year?: number; creds?: { baseUrl: string; mst: string; username: string; password: string } }): Promise<any[]> {
+    const year = opts?.year ?? new Date().getFullYear();
+    let token: string;
+    let baseUrl: string;
+    if (opts?.creds) {
+      token = await this.loginWith(opts.creds);
+      baseUrl = opts.creds.baseUrl;
+    } else {
+      const t = await this.getToken();
+      token = t.token;
+      baseUrl = t.cfg.baseUrl;
+    }
     const res = await axios.get(
-      `${BASE_URL}/api/invoice/templates?year=${y}`,
+      `${baseUrl}/api/invoice/templates?year=${year}`,
       { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 },
     );
     return Array.isArray(res.data?.data) ? res.data.data : [];
@@ -78,11 +149,10 @@ class MatBaoService {
     inv: MatBaoInvoicePayload,
     isPublish: boolean,
   ): Promise<MatBaoProcessResult> {
-    const khhDon = process.env.MATBAO_KHHDON || "C26TAT";
-    const khmsHDon = process.env.MATBAO_KHMSHDON || "1";
-    console.log(
-      `[MatBao] Using KHHDon="${khhDon}" KHMSHDon="${khmsHDon}" (env: KHHDon=${process.env.MATBAO_KHHDON ? "yes" : "default"}, KHMSHDon=${process.env.MATBAO_KHMSHDON ? "yes" : "default"})`,
-    );
+    const { token, cfg } = await this.getToken();
+    if (!cfg.khhDon || !cfg.khmsHDon) {
+      throw new Error("Chưa chọn Mẫu hoá đơn. Vui lòng vào Cấu hình hệ thống → Hoá đơn điện tử để chọn mẫu.");
+    }
 
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -120,8 +190,8 @@ class MatBaoService {
       LoaiHDon: isPublish ? 1 : 0,
       TCHDon: 0,
       LoaiTraHang: 0,
-      KHMSHDon: khmsHDon,
-      KHHDon: khhDon,
+      KHMSHDon: cfg.khmsHDon,
+      KHHDon: cfg.khhDon,
       MaTraCuu,
       MTChieu: MaTraCuu.slice(0, 20),
       NLap,
@@ -144,28 +214,24 @@ class MatBaoService {
       TgTTTBChu: "",
     };
 
-    const callOnce = async () => {
-      const token = await this.getToken();
+    const callOnce = async (tk: string) => {
       return axios.post(
-        `${BASE_URL}/api/invoice/create-invoice`,
+        `${cfg.baseUrl}/api/invoice/create-invoice`,
         [payload],
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          timeout: 30000,
-        },
+        { headers: { Authorization: `Bearer ${tk}` }, timeout: 30000 },
       );
     };
 
     try {
       let res;
       try {
-        res = await callOnce();
+        res = await callOnce(token);
       } catch (err) {
         const ax = err as AxiosError;
-        // Token expired → login lại 1 lần và thử tiếp
         if (ax.response?.status === 401) {
           this.token = null;
-          res = await callOnce();
+          const t2 = await this.getToken(cfg);
+          res = await callOnce(t2.token);
         } else {
           throw err;
         }
@@ -173,28 +239,12 @@ class MatBaoService {
       const body = res.data;
       const d = body?.data;
       const first = Array.isArray(d) ? d[0] : d;
-      // Mắt Bão dùng errorCode=200 cho thành công; bất kỳ giá trị khác = lỗi nghiệp vụ
       const outerOk = body?.errorCode === 200 || body?.success === true;
       const innerOk = first?.errorCode === undefined || first?.errorCode === 200 || first?.success === true;
       if (!outerOk || !innerOk) {
-        const bizMsg =
-          first?.message ||
-          body?.message ||
-          "Mắt Bão từ chối hóa đơn (không rõ lý do)";
+        const bizMsg = first?.message || body?.message || "Mắt Bão từ chối hoá đơn (không rõ lý do)";
         console.error("[MatBao] business error:", JSON.stringify(body));
-        let msg = String(bizMsg);
-        if (/KH(MS)?HDon/i.test(msg)) {
-          try {
-            const tpls = await this.fetchTemplates();
-            const list = tpls.slice(0, 10)
-              .map((t: any) => `KHMSHDon=${t.khmshDon}, KHHDon=${t.khhDon} (${t.thDon ?? ""}, còn ${t.cLai ?? "?"})`)
-              .join(" | ");
-            if (list) msg += ` — Cặp ký hiệu hợp lệ cho MST của bạn: ${list}. Vui lòng cập nhật secret MATBAO_KHHDON & MATBAO_KHMSHDON.`;
-          } catch (e) {
-            console.error("[MatBao] fetchTemplates error:", e);
-          }
-        }
-        throw new Error(msg);
+        throw new Error(String(bizMsg));
       }
       const inner = first?.data ?? first;
       const fkey: string | undefined =
@@ -211,36 +261,20 @@ class MatBaoService {
     } catch (err) {
       const ax = err as AxiosError<any>;
       const data = ax.response?.data;
-      console.error("[MatBao] processInvoice ERROR status:", ax.response?.status);
-      console.error("[MatBao] processInvoice payload sent:", JSON.stringify(payload));
-      console.error("[MatBao] processInvoice response body:", JSON.stringify(data));
-      let msg: string =
+      const msg: string =
         (typeof data === "string" && data) ||
         data?.data?.[0]?.message ||
         data?.message ||
-        data?.Message ||
-        data?.error ||
-        data?.errors?.[0]?.message ||
-        (Array.isArray(data?.errors) ? data.errors.map((e: any) => e.message || JSON.stringify(e)).join("; ") : "") ||
         ax.message ||
+        (err as Error).message ||
         "Lỗi gửi dữ liệu sang Mắt Bão";
-      if (typeof msg !== "string") msg = JSON.stringify(msg);
-
-      if (/KH(MS)?HDon/i.test(msg) && /(không hợp lệ|thiếu|invalid|required)/i.test(msg)) {
-        try {
-          const tpls = await this.fetchTemplates();
-          const list = tpls.slice(0, 10)
-            .map((t: any) => `KHMSHDon=${t.khmshDon}, KHHDon=${t.khhDon} (${t.thDon ?? ""}, còn ${t.cLai ?? "?"})`)
-            .join(" | ");
-          if (list) msg += ` — Mẫu hợp lệ cho MST này: ${list}`;
-        } catch {}
-      }
-      throw new Error(msg);
+      throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
     }
   }
 
-  getPdfUrl(fkey: string): string {
-    return `${BASE_URL}/api/invoice/download-inv-pdf?fkey=${encodeURIComponent(fkey)}`;
+  async getPdfUrl(fkey: string): Promise<string> {
+    const cfg = await this.getConfig();
+    return `${cfg.baseUrl}/api/invoice/download-inv-pdf?fkey=${encodeURIComponent(fkey)}`;
   }
 }
 

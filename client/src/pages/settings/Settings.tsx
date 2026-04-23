@@ -1761,6 +1761,13 @@ const EINVOICE_PROVIDERS = [
   { id: "matbao", name: "Mắt Bão" },
 ];
 
+type EInvoiceTemplate = { khmsHDon: string; khhDon: string; name: string; remaining: number | null };
+type EInvoiceConfigDto = { baseUrl: string; mst: string; username: string; hasPassword: boolean; khhDon: string; khmsHDon: string };
+
+function templateValue(t: { khmsHDon: string; khhDon: string }): string {
+  return `${t.khmsHDon}|${t.khhDon}`;
+}
+
 function EInvoiceConfig() {
   const [selectedProviderId, setSelectedProviderId] = useState<string>(EINVOICE_PROVIDERS[0].id);
   const [form, setForm] = useState({
@@ -1772,20 +1779,85 @@ function EInvoiceConfig() {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
-  const [templates, setTemplates] = useState<{ id: string; name: string }[]>([]);
+  const [templates, setTemplates] = useState<EInvoiceTemplate[]>([]);
   const { toast } = useToast();
 
-  const handleTestConnection = async () => {
-    setTestStatus("testing");
-    setTimeout(() => {
-      setTestStatus("success");
-      toast({ title: "Kết nối thành công", description: "Đã đăng nhập thành công đến hệ thống Mắt Bão." });
-    }, 800);
-  };
+  const { data: savedCfg } = useQuery<EInvoiceConfigDto>({
+    queryKey: ["/api/einvoice/config"],
+  });
 
-  const handleSave = () => {
-    toast({ title: "Đã lưu", description: "Cấu hình hoá đơn điện tử đã được lưu (tạm thời ở phiên hiện tại)." });
-  };
+  useEffect(() => {
+    if (!savedCfg) return;
+    setForm(p => ({
+      ...p,
+      baseUrl: savedCfg.baseUrl || p.baseUrl,
+      taxCode: savedCfg.mst || "",
+      username: savedCfg.username || "",
+      password: savedCfg.hasPassword ? "********" : "",
+      templateId: savedCfg.khmsHDon && savedCfg.khhDon ? `${savedCfg.khmsHDon}|${savedCfg.khhDon}` : "",
+    }));
+  }, [savedCfg]);
+
+  const testMutation = useMutation({
+    mutationFn: async () => {
+      const passwordToSend = form.password === "********" ? "" : form.password;
+      if (!passwordToSend && !savedCfg?.hasPassword) {
+        throw new Error("Vui lòng nhập mật khẩu");
+      }
+      const res = await apiRequest("POST", "/api/einvoice/test-connection", {
+        baseUrl: form.baseUrl,
+        mst: form.taxCode,
+        username: form.username,
+        password: passwordToSend || "__USE_SAVED__",
+      });
+      return (await res.json()) as { ok: boolean; templates: EInvoiceTemplate[]; message?: string };
+    },
+    onMutate: () => setTestStatus("testing"),
+    onSuccess: (data) => {
+      setTestStatus("success");
+      setTemplates(data.templates || []);
+      toast({
+        title: "Kết nối thành công",
+        description: `Đã tải ${data.templates?.length ?? 0} mẫu hoá đơn từ Mắt Bão.`,
+      });
+      // Nếu mẫu đang chọn không còn trong list thì reset
+      if (form.templateId && !data.templates?.some(t => templateValue(t) === form.templateId)) {
+        setForm(p => ({ ...p, templateId: "" }));
+      }
+    },
+    onError: (err: any) => {
+      setTestStatus("error");
+      toast({
+        title: "Kết nối thất bại",
+        description: err?.message || "Không đăng nhập được Mắt Bão",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!form.templateId) throw new Error("Vui lòng chọn Mẫu hoá đơn (bấm 'Kiểm tra kết nối' trước nếu chưa có).");
+      const [khmsHDon, khhDon] = form.templateId.split("|");
+      const passwordToSend = form.password === "********" ? "" : form.password;
+      const res = await apiRequest("POST", "/api/einvoice/config", {
+        baseUrl: form.baseUrl,
+        mst: form.taxCode,
+        username: form.username,
+        password: passwordToSend,
+        khhDon,
+        khmsHDon,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Đã lưu cấu hình", description: "Cấu hình hoá đơn điện tử Mắt Bão đã được lưu." });
+      queryClient.invalidateQueries({ queryKey: ["/api/einvoice/config"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Lưu thất bại", description: err?.message || "Không lưu được cấu hình", variant: "destructive" });
+    },
+  });
 
   const selectedProvider = EINVOICE_PROVIDERS.find(p => p.id === selectedProviderId)!;
 
@@ -1874,7 +1946,7 @@ function EInvoiceConfig() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={handleTestConnection}
+              onClick={() => testMutation.mutate()}
               disabled={testStatus === "testing"}
               data-testid="button-test-einvoice-connection"
             >
@@ -1903,16 +1975,32 @@ function EInvoiceConfig() {
                 {templates.length === 0 ? (
                   <SelectItem value="__none__" disabled>Chưa có mẫu hoá đơn</SelectItem>
                 ) : (
-                  templates.map(t => (
-                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                  ))
+                  templates.map(t => {
+                    const v = templateValue(t);
+                    const label = `KHMS=${t.khmsHDon} • KH=${t.khhDon}${t.name ? ` — ${t.name}` : ""}${t.remaining != null ? ` (còn ${t.remaining})` : ""}`;
+                    return (
+                      <SelectItem key={v} value={v} data-testid={`option-template-${v}`}>{label}</SelectItem>
+                    );
+                  })
                 )}
               </SelectContent>
             </Select>
+            {savedCfg?.khhDon && savedCfg?.khmsHDon && templates.length === 0 && (
+              <p className="text-xs text-muted-foreground mt-1.5">
+                Mẫu đã lưu: KHMS={savedCfg.khmsHDon} • KH={savedCfg.khhDon}. Bấm "Kiểm tra kết nối" để tải lại danh sách.
+              </p>
+            )}
           </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t">
-            <Button onClick={handleSave} data-testid="button-save-einvoice">Lưu cấu hình</Button>
+            <Button
+              onClick={() => saveMutation.mutate()}
+              disabled={saveMutation.isPending}
+              data-testid="button-save-einvoice"
+            >
+              {saveMutation.isPending && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              Lưu cấu hình
+            </Button>
           </div>
         </CardContent>
       </Card>
