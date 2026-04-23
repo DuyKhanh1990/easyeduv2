@@ -60,3 +60,4 @@ TINODE_ADMIN_USER = "admin"
 [agent]
 integrations = ["javascript_openai_ai_integrations:2.0.0", "javascript_gemini_ai_integrations:2.0.0"]
 stack = "FULLSTACK_JS"
+expertMode = true

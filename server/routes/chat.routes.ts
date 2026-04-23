@@ -25,10 +25,12 @@ export function registerChatRoutes(app: Express): void {
     const userId = (req.user as any).id;
 
     try {
-      const { isTinodeConfigured, getUserCredentials } = await import("../lib/tinode.service");
+      const { isTinodeConfigured, getUserCredentials, ensureUserInTinode } = await import("../lib/tinode.service");
       if (!isTinodeConfigured()) {
         return res.status(503).json({ message: "Tính năng chat chưa được cấu hình" });
       }
+
+      await ensureUserInTinode(userId);
 
       // Lấy tên hiển thị từ staff hoặc students
       let displayName: string | null = null;
@@ -42,7 +44,7 @@ export function registerChatRoutes(app: Express): void {
         if (studentRow) displayName = studentRow.fullName;
       }
 
-      const creds = getUserCredentials(userId);
+      const creds = await getUserCredentials(userId);
       const isStudent = (req as any).isStudent ?? false;
       res.set("Cache-Control", "no-store");
       return res.json({ ...creds, displayName, isStudent });

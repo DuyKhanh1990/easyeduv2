@@ -98,7 +98,7 @@ export function registerMobileChatRoutes(app: Express): void {
     if (!userId) return;
 
     try {
-      const { isTinodeConfigured, getUserCredentials } = await import("../lib/tinode.service");
+      const { isTinodeConfigured, getUserCredentials, ensureUserInTinode } = await import("../lib/tinode.service");
 
       if (!isTinodeConfigured()) {
         return res.status(503).json({
@@ -106,6 +106,8 @@ export function registerMobileChatRoutes(app: Express): void {
           message: "Tính năng chat chưa được cấu hình trên server.",
         });
       }
+
+      await ensureUserInTinode(userId);
 
       // Lấy tên hiển thị
       let displayName: string | null = null;
@@ -126,7 +128,7 @@ export function registerMobileChatRoutes(app: Express): void {
         if (studentRow) displayName = studentRow.fullName;
       }
 
-      const creds = getUserCredentials(userId);
+      const creds = await getUserCredentials(userId);
 
       res.set("Cache-Control", "no-store");
       return res.status(200).json({
@@ -303,7 +305,7 @@ export function registerMobileChatRoutes(app: Express): void {
     const { classId } = req.params;
 
     try {
-      const { isTinodeConfigured, createClassTopic, getUserCredentials } = await import("../lib/tinode.service");
+      const { isTinodeConfigured, createClassTopic, getUserCredentials, ensureUserInTinode } = await import("../lib/tinode.service");
 
       if (!isTinodeConfigured()) {
         return res.status(503).json({
@@ -359,7 +361,8 @@ export function registerMobileChatRoutes(app: Express): void {
         });
       }
 
-      const creds = getUserCredentials(userId);
+      await ensureUserInTinode(userId);
+      const creds = await getUserCredentials(userId);
       return res.status(200).json({
         success: true,
         data: {
