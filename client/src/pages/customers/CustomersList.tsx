@@ -705,30 +705,43 @@ export function CustomersList() {
                         onRemove={(val) => setFilters((f) => ({ ...f, learningStatuses: f.learningStatuses.filter((s) => s !== val) }))}
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs">Sinh nhật từ</Label>
-                      <Input
-                        type="text"
-                        placeholder="dd/mm"
-                        maxLength={5}
-                        className="h-9"
-                        value={filters.birthdayFrom}
-                        onChange={(e) => setFilters((f) => ({ ...f, birthdayFrom: e.target.value }))}
-                        data-testid="input-filter-birthday-from"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs">Đến</Label>
-                      <Input
-                        type="text"
-                        placeholder="dd/mm"
-                        maxLength={5}
-                        className="h-9"
-                        value={filters.birthdayTo}
-                        onChange={(e) => setFilters((f) => ({ ...f, birthdayTo: e.target.value }))}
-                        data-testid="input-filter-birthday-to"
-                      />
-                    </div>
+                    {(["birthdayFrom", "birthdayTo"] as const).map((key) => {
+                      const label = key === "birthdayFrom" ? "Sinh nhật từ" : "Đến";
+                      const raw = filters[key];
+                      const [d, m] = raw ? raw.split("/") : ["", ""];
+                      const setMD = (day: string, month: string) => {
+                        const next = day && month ? `${day.padStart(2, "0")}/${month.padStart(2, "0")}` : "";
+                        setFilters((f) => ({ ...f, [key]: next }));
+                      };
+                      const daysInMonth = m ? new Date(2000, parseInt(m, 10), 0).getDate() : 31;
+                      return (
+                        <div className="space-y-2" key={key}>
+                          <Label className="text-xs">{label}</Label>
+                          <div className="flex gap-1">
+                            <Select value={d || undefined} onValueChange={(v) => setMD(v, m || "01")}>
+                              <SelectTrigger className="h-9 flex-1" data-testid={`select-${key}-day`}>
+                                <SelectValue placeholder="Ngày" />
+                              </SelectTrigger>
+                              <SelectContent className="max-h-64">
+                                {Array.from({ length: daysInMonth }, (_, i) => String(i + 1).padStart(2, "0")).map((dv) => (
+                                  <SelectItem key={dv} value={dv}>{dv}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Select value={m || undefined} onValueChange={(v) => setMD(d || "01", v)}>
+                              <SelectTrigger className="h-9 flex-1" data-testid={`select-${key}-month`}>
+                                <SelectValue placeholder="Tháng" />
+                              </SelectTrigger>
+                              <SelectContent className="max-h-64">
+                                {Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0")).map((mv) => (
+                                  <SelectItem key={mv} value={mv}>Th{parseInt(mv, 10)}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </PopoverContent>
               </Popover>
