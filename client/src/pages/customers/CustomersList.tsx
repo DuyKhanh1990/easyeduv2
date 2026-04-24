@@ -637,15 +637,13 @@ export function CustomersList() {
                         onRemove={(val) => setFilters((f) => ({ ...f, classIds: f.classIds.filter((id) => id !== val) }))}
                       />
                     </div>
-                    <div className="col-span-1 grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <Label className="text-[10px]">Ngày tạo từ</Label>
-                        <Input type="date" className="h-8 text-xs" value={filters.dateFrom} onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))} />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-[10px]">Đến</Label>
-                        <Input type="date" className="h-8 text-xs" value={filters.dateTo} onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))} />
-                      </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs">Ngày tạo từ</Label>
+                      <Input type="date" className="h-9" value={filters.dateFrom} onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs">Đến</Label>
+                      <Input type="date" className="h-9" value={filters.dateTo} onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))} />
                     </div>
                   </div>
                 </PopoverContent>
