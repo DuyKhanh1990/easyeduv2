@@ -26,8 +26,6 @@ data:
   # (envFrom: secretRef) instead of ConfigMap. ConfigMaps are NOT encrypted.
   TINODE_URL: "https://chattinode.easyedu.vn"
   TINODE_API_KEY: "AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K"
-  TINODE_ADMIN_USER: "edumanage_svc"
-  TINODE_ADMIN_PASS: "HFJc0h/eaq39coHIOf6upyZvuLtMYqXQ5W8lh5hIh8Ar78VI"
   TINODE_BOT_USER: "edumanage_bot_v2"
   TINODE_BOT_PASS: "hExLPoQv+3HVYFWykRkHYwmwAGiUublYPnlFAho0OmwQk10U"
   TINODE_USER_PASS_SECRET: "DcD4ZGBfstLXTtkXxmPAKZs+ntFRPo5b98Bd1xpWJLo="
