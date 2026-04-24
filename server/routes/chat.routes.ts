@@ -680,9 +680,11 @@ export function registerChatRoutes(app: Express): void {
     }
 
     const TINODE_URL = process.env.TINODE_URL?.replace(/\/$/, "");
-    const TINODE_API_KEY = "AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K";
+    const TINODE_API_KEY = process.env.TINODE_API_KEY;
 
-    if (!TINODE_URL) return res.status(503).json({ message: "Chat chưa được cấu hình" });
+    if (!TINODE_URL || !TINODE_API_KEY) {
+      return res.status(503).json({ message: "Chat chưa được cấu hình" });
+    }
 
     try {
       const userId = (req.user as any).id;

@@ -21,10 +21,20 @@ data:
   SECRET_KEY_BASE: "938939b1ae243dbca8364b42bbbfb2c21a1b9ced874cc060dd673d69da7cba58e53d3cffdd5eaecd77e3c23a4fdaa7fed9fdf17ac9838089809ae4ba5bdaffdd"
   SESSION_SECRET: "Ka00wbrYlIfT++63ye74jwq01lAOcNbfepXNUWmyq9hfVOwi3jrzGHs00L5mG5U4RsBPVzk0F/PYJ3grukD1Lg=="
   JWT_SECRET: ""
-  TINODE_ADMIN_USER: "admin"
-  TINODE_ADMIN_PASS: "admin123"
-  TINODE_SECRET: "AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K"
+  # === Tinode chat integration ===
+  # NOTE: in production, move *_PASS and *_SECRET into a Kubernetes Secret
+  # (envFrom: secretRef) instead of ConfigMap. ConfigMaps are NOT encrypted.
   TINODE_URL: "https://chattinode.easyedu.vn"
+  TINODE_API_KEY: "AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K"
+  TINODE_ADMIN_USER: "edumanage_svc"
+  TINODE_ADMIN_PASS: "HFJc0h/eaq39coHIOf6upyZvuLtMYqXQ5W8lh5hIh8Ar78VI"
+  TINODE_BOT_USER: "edumanage_bot_v2"
+  TINODE_BOT_PASS: "hExLPoQv+3HVYFWykRkHYwmwAGiUublYPnlFAho0OmwQk10U"
+  TINODE_USER_PASS_SECRET: "DcD4ZGBfstLXTtkXxmPAKZs+ntFRPo5b98Bd1xpWJLo="
+  TINODE_USER_AGENT: "EduManage/1.0"
+  TINODE_REQUEST_TIMEOUT_MS: "10000"
+  TINODE_MAX_RETRIES: "5"
+  TINODE_RETRY_BACKOFF_MS: "5000"
   SMTP_HOST: "smtp.gmail.com"
   SMTP_PORT: "587"
   SMTP_USER: ""

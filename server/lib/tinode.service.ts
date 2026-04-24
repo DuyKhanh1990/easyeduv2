@@ -9,19 +9,27 @@
  * - Channel / topic type: regular group topic (grp*) created via sub{topic:"new"}.
  *   The returned topic ID is stored in classes.tinode_topic_id.
  *
- * Env vars:
- *   TINODE_URL          = https://your-tinode.replit.dev
- *   TINODE_ADMIN_USER   = admin (default)
- *   TINODE_ADMIN_PASS   = admin123 (default)
- *   TINODE_SECRET       = secret for deterministic user passwords
+ * Required env vars:
+ *   TINODE_URL              = https://chattinode.example.com
+ *   TINODE_API_KEY          = API key generated from Tinode keygen
+ *   TINODE_USER_PASS_SECRET = HMAC secret used to derive each user's Tinode password.
+ *                             MUST be the same value across every center sharing this Tinode.
+ *                             MUST NOT be the same value as TINODE_API_KEY.
  */
 
 import { createHmac } from "crypto";
 import { tinodeAdmin } from "./tinode-admin";
 
-const TINODE_URL    = process.env.TINODE_URL?.replace(/\/$/, "") ?? null;
-const TINODE_SECRET = process.env.TINODE_SECRET ?? "edumanage-tinode-secret";
-const TINODE_API_KEY = "AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K";
+const TINODE_URL             = process.env.TINODE_URL?.replace(/\/$/, "") ?? null;
+const TINODE_API_KEY         = process.env.TINODE_API_KEY ?? null;
+const TINODE_USER_PASS_SECRET = process.env.TINODE_USER_PASS_SECRET ?? null;
+
+if (TINODE_URL && !TINODE_API_KEY) {
+  console.error("[Tinode] TINODE_API_KEY is not set — chat will not work.");
+}
+if (TINODE_URL && !TINODE_USER_PASS_SECRET) {
+  console.error("[Tinode] TINODE_USER_PASS_SECRET is not set — user passwords cannot be derived.");
+}
 
 let _msgId = 1;
 function nextId(): string { return String(_msgId++); }
@@ -45,7 +53,10 @@ export function getTinodeLogin(userId: string): string {
 }
 
 function getTinodePassword(userId: string): string {
-  return createHmac("sha256", TINODE_SECRET).update(userId).digest("hex");
+  if (!TINODE_USER_PASS_SECRET) {
+    throw new Error("TINODE_USER_PASS_SECRET is not configured");
+  }
+  return createHmac("sha256", TINODE_USER_PASS_SECRET).update(userId).digest("hex");
 }
 
 // ─── Tạo / đảm bảo tồn tại group topic cho lớp học ──────────────────────────
@@ -269,7 +280,7 @@ export function getUserCredentials(userId: string): {
   login: string;
   password: string;
   tinodeUrl: string | null;
-  apiKey: string;
+  apiKey: string | null;
 } {
   return {
     login:     getTinodeLogin(userId),
@@ -282,7 +293,7 @@ export function getUserCredentials(userId: string): {
 // ─── Kiểm tra kết nối ────────────────────────────────────────────────────────
 
 export async function pingTinode(): Promise<boolean> {
-  if (!TINODE_URL) return false;
+  if (!TINODE_URL || !TINODE_API_KEY) return false;
   try {
     const res = await fetch(`${TINODE_URL}/v0/status`, {
       headers: { "X-Tinode-APIKey": TINODE_API_KEY },
