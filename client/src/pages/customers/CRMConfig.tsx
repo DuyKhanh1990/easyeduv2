@@ -590,20 +590,6 @@ function AdditionalInfoTab() {
                       </FormControl>
                     </FormItem>
                   )}
-                  <FormField control={form.control} name="position" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Thứ tự hiển thị</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          value={field.value ?? 0}
-                          onChange={(e) => field.onChange(Number(e.target.value))}
-                          data-testid="input-custom-field-position"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
                   <DialogFooter>
                     <Button type="submit" disabled={saveMutation.isPending} data-testid="button-save-custom-field">
                       {editing ? "Cập nhật" : "Thêm mới"}
@@ -624,8 +610,6 @@ function AdditionalInfoTab() {
               <TableRow>
                 <TableHead>Tên trường</TableHead>
                 <TableHead>Loại dữ liệu</TableHead>
-                <TableHead>Lựa chọn</TableHead>
-                <TableHead>Thứ tự</TableHead>
                 {(canEdit || canDelete) && <TableHead className="text-right">Thao tác</TableHead>}
               </TableRow>
             </TableHeader>
@@ -634,10 +618,6 @@ function AdditionalInfoTab() {
                 <TableRow key={item.id} data-testid={`row-custom-field-${item.id}`}>
                   <TableCell className="font-medium" data-testid={`text-custom-field-label-${item.id}`}>{item.label}</TableCell>
                   <TableCell>{FIELD_TYPE_OPTIONS.find(o => o.value === item.fieldType)?.label ?? item.fieldType}</TableCell>
-                  <TableCell className="text-muted-foreground text-xs">
-                    {item.fieldType === "select" ? (item.options ?? []).join(", ") : "—"}
-                  </TableCell>
-                  <TableCell>{item.position}</TableCell>
                   {(canEdit || canDelete) && (
                     <TableCell className="text-right space-x-2">
                       {canEdit && (
