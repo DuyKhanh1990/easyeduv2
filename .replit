@@ -55,7 +55,7 @@ S3_PROTOCOL = "https"
 S3_REGION = "s3-hn-1"
 SECRET_KEY_BASE = "938939b1ae243dbca8364b42bbbfb2c21a1b9ced874cc060dd673d69da7cba58e53d3cffdd5eaecd77e3c23a4fdaa7fed9fdf17ac9838089809ae4ba5bdaffdd"
 TINODE_URL = "https://chattinode.easyedu.vn"
-TINODE_ADMIN_USER = "admin"
+TINODE_ADMIN_USER = "easyedu_bot"
 
 [agent]
 integrations = ["javascript_openai_ai_integrations:2.0.0", "javascript_gemini_ai_integrations:2.0.0"]

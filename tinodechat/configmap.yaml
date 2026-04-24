@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tinodechat-config
+  namespace: production
+data:
+  SESSION_SECRET: "G3q6pa67E0KclpMDJcnpJd9ARW/FgvvrL7o9eTsEMlkw1P/9GuItBqYZUK/bX++nWwUWDUOV9C8fCYxJQBIOlg=="
+  TNDB_MONGO_URI: "mongodb+srv://tinode_user:Khanh%40123456@cluster0.fxvs9sp.mongodb.net/tinode?retryWrites=true&w=majority"
+  API_KEY_SALT: "T713/rYYgW7g4m3vG6zGRh7+FM1t0T8j13koXScOAj4="
+  AUTH_TOKEN_KEY: "wfaY2RgF2S1OQI/ZlK+LSrp1KB2jwAdGAIHQ7JZn+Kc="
+  UID_ENCRYPTION_KEY: "la6YsO+bNX/+XIkOqc5Svw=="
+  STORE_USE_ADAPTER: "mongodb"
+  MEDIA_HANDLER: "fs"
+  MEDIA_MAX_SIZE: "209715200"
+  FS_CORS_ORIGINS: '["*"]'
+  DEFAULT_COUNTRY_CODE: "VN"
+  NO_DB_INIT: "true"

@@ -1,0 +1,102 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tinodechat-ext-config
+  namespace: production
+data:
+  tinode.conf: |
+    {
+      "listen": ":6060",
+      "api_path": "/",
+      "cache_control": 39600,
+      "static_mount": "/",
+      "grpc_listen": ":16060",
+      "grpc_keepalive_enabled": true,
+      "api_key_salt": "T713/rYYgW7g4m3vG6zGRh7+FM1t0T8j13koXScOAj4=",
+      "max_message_size": 4194304,
+      "max_subscriber_count": 128,
+      "max_tag_count": 16,
+      "expvar": "/stats/expvar/",
+      "use_x_forwarded_for": true,
+      "default_country_code": "VN",
+      "media": {
+        "use_handler": "fs",
+        "max_size": 209715200,
+        "gc_period": 60,
+        "gc_block_size": 100,
+        "handlers": {
+          "fs": {
+            "upload_dir": "uploads",
+            "cache_control": "max-age=86400",
+            "cors_origins": ["*"]
+          }
+        }
+      },
+      "tls": {
+        "enabled": false
+      },
+      "auth_config": {
+        "logical_names": [],
+        "basic": {
+          "add_to_tags": true,
+          "min_login_length": 3,
+          "min_password_length": 6
+        },
+        "token": {
+          "expire_in": 1209600,
+          "serial_num": 1,
+          "key": "wfaY2RgF2S1OQI/ZlK+LSrp1KB2jwAdGAIHQ7JZn+Kc="
+        },
+        "code": {
+          "expire_in": 900,
+          "max_retries": 3,
+          "code_length": 6
+        }
+      },
+      "store_config": {
+        "uid_key": "la6YsO+bNX/+XIkOqc5Svw==",
+        "max_results": 1024,
+        "use_adapter": "mongodb",
+        "adapters": {
+          "mongodb": {
+            "database": "tinode",
+            "uri": "mongodb+srv://tinode_user:Khanh%40123456@cluster0.fxvs9sp.mongodb.net/tinode?retryWrites=true&w=majority"
+          }
+        }
+      },
+      "acc_validation": {
+        "email": {
+          "add_to_tags": true,
+          "required": [],
+          "config": {
+            "languages": ["en", "vi"],
+            "validation_templ": "./templ/email-validation-{{.Language}}.templ",
+            "reset_secret_templ": "./templ/email-password-reset-{{.Language}}.templ",
+            "max_retries": 3,
+            "domains": []
+          }
+        }
+      },
+      "push": [
+        {
+          "name": "tnpg",
+          "config": {
+            "enabled": false
+          }
+        },
+        {
+          "name": "fcm",
+          "config": {
+            "enabled": false
+          }
+        }
+      ],
+      "webrtc": {
+        "enabled": false
+      },
+      "cluster_config": {
+        "self": "",
+        "nodes": []
+      },
+      "plugins": []
+    }
