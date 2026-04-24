@@ -58,14 +58,45 @@ export function getTinodeLogin(userId: string): string {
   return `u${TINODE_LOGIN_VERSION}_${compact}`;
 }
 
-function getTinodePassword(userId: string): string {
+/**
+ * Tinode password length cap.
+ *
+ * Tinode Web v0.25.2 hardcode maxLength=32 trên ô input password.
+ * Nếu password >32 chars, browser cắt khi user nhập tay → server nhận hash khác
+ * → 401 dù credentials đúng trong DB.
+ *
+ * Vì vậy MỌI password trên Tinode (bot lẫn user, derive lẫn fixed) PHẢI ≤32 chars.
+ * Dùng `derivePassword(seed)` cho mọi password derive trong module này — không
+ * inline `createHmac(...).slice(0,32)` ở chỗ khác để tránh quên cắt.
+ */
+export const TINODE_PASSWORD_MAX_LEN = 32;
+
+/**
+ * Derive a Tinode-safe password (≤32 chars) from an arbitrary seed using HMAC-SHA256
+ * with TINODE_USER_PASS_SECRET. Used for both real users and any future derived
+ * accounts. Bot password is fixed in env (TINODE_BOT_PASS), but it is also
+ * validated at startup against TINODE_PASSWORD_MAX_LEN.
+ */
+export function derivePassword(seed: string): string {
   if (!TINODE_USER_PASS_SECRET) {
     throw new Error("TINODE_USER_PASS_SECRET is not configured");
   }
-  // Tinode Web v0.25.2 hardcode maxLength=32 trên ô input password.
-  // Nếu password >32 chars, browser cắt khi user nhập tay → server nhận hash khác → 401
-  // dù credentials đúng trong DB. Vì vậy GIỚI HẠN MỌI password ≤32 chars (cả bot lẫn user).
-  return createHmac("sha256", TINODE_USER_PASS_SECRET).update(userId).digest("hex").slice(0, 32);
+  const pwd = createHmac("sha256", TINODE_USER_PASS_SECRET)
+    .update(seed)
+    .digest("hex")
+    .slice(0, TINODE_PASSWORD_MAX_LEN);
+  // Defensive runtime assert — must never exceed 32 chars or Tinode Web login
+  // sẽ 401 vì browser cắt mật khẩu khi nhập tay.
+  if (pwd.length > TINODE_PASSWORD_MAX_LEN) {
+    throw new Error(
+      `[Tinode] derivePassword produced ${pwd.length} chars (>${TINODE_PASSWORD_MAX_LEN}). This is a bug.`
+    );
+  }
+  return pwd;
+}
+
+function getTinodePassword(userId: string): string {
+  return derivePassword(userId);
 }
 
 // ─── Tạo / đảm bảo tồn tại group topic cho lớp học ──────────────────────────

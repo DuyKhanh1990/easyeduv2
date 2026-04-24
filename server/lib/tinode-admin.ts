@@ -30,6 +30,17 @@ const TINODE_API_KEY = process.env.TINODE_API_KEY ?? null;
 const BOT_LOGIN      = process.env.TINODE_BOT_USER ?? null;
 const BOT_PASSWORD   = process.env.TINODE_BOT_PASS ?? null;
 
+// Tinode Web v0.25.2 hardcode maxLength=32 trên ô input password.
+// Nếu TINODE_BOT_PASS >32 chars, login từ Tinode Web sẽ luôn 401 (browser cắt
+// password khi user nhập tay → hash khác). Fail-fast tại boot để báo sai cấu hình.
+if (BOT_PASSWORD && BOT_PASSWORD.length > 32) {
+  console.error(
+    `[TinodeAdmin WS] TINODE_BOT_PASS is ${BOT_PASSWORD.length} chars (>32). ` +
+    `Tinode Web sẽ không login được vì input password bị cắt ở 32 chars. ` +
+    `Set TINODE_BOT_PASS ≤32 chars rồi reset hash tương ứng trong Tinode MongoDB.`
+  );
+}
+
 const USER_AGENT          = process.env.TINODE_USER_AGENT ?? "EduManage/1.0";
 const REQUEST_TIMEOUT_MS  = parseInt(process.env.TINODE_REQUEST_TIMEOUT_MS ?? "10000", 10);
 const MAX_RETRIES         = parseInt(process.env.TINODE_MAX_RETRIES ?? "5", 10);
