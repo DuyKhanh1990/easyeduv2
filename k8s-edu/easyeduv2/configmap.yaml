@@ -27,13 +27,16 @@ data:
   TINODE_URL: "https://chattinode.easyedu.vn"
   TINODE_API_KEY: "AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K"
   TINODE_BOT_USER: "edumanage_bot_v2"
-  TINODE_BOT_PASS: "hExLPoQv+3HVYFWykRkHYwmwAGiUublYPnlFAho0OmwQk10U"
+  # Password ≤32 chars (bắt buộc — Tinode Web maxLength=32, password dài hơn sẽ
+  # bị cắt khi user gõ vào form → 401). Khi đổi giá trị này phải đồng thời update
+  # bcrypt hash cho user trong MongoDB Tinode.
+  TINODE_BOT_PASS: "M1mwB493gLwB8Sk4+z6k2/66BrE21V5k"
   TINODE_USER_PASS_SECRET: "DcD4ZGBfstLXTtkXxmPAKZs+ntFRPo5b98Bd1xpWJLo="
   # Bump khi cần "reset" toàn bộ user account trên Tinode (tạo lại tất cả với
   # password derive từ TINODE_USER_PASS_SECRET hiện tại). Tăng số nguyên: 2, 3, …
-  # Lần đầu deploy với code mới nên đặt = "2" để bỏ qua các account cũ trong
-  # MongoDB Tinode (đã được tạo bằng password cũ và không thể login).
-  TINODE_LOGIN_VERSION: "2"
+  # v3 = lần đổi sang quy ước password ≤32 chars (slice hex xuống 32). User account
+  # cũ (64-char password) sẽ bị bỏ và account mới u3_<userId> được tạo tự động.
+  TINODE_LOGIN_VERSION: "3"
   TINODE_USER_AGENT: "EduManage/1.0"
   TINODE_REQUEST_TIMEOUT_MS: "10000"
   TINODE_MAX_RETRIES: "5"

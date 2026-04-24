@@ -62,7 +62,10 @@ function getTinodePassword(userId: string): string {
   if (!TINODE_USER_PASS_SECRET) {
     throw new Error("TINODE_USER_PASS_SECRET is not configured");
   }
-  return createHmac("sha256", TINODE_USER_PASS_SECRET).update(userId).digest("hex");
+  // Tinode Web v0.25.2 hardcode maxLength=32 trên ô input password.
+  // Nếu password >32 chars, browser cắt khi user nhập tay → server nhận hash khác → 401
+  // dù credentials đúng trong DB. Vì vậy GIỚI HẠN MỌI password ≤32 chars (cả bot lẫn user).
+  return createHmac("sha256", TINODE_USER_PASS_SECRET).update(userId).digest("hex").slice(0, 32);
 }
 
 // ─── Tạo / đảm bảo tồn tại group topic cho lớp học ──────────────────────────
