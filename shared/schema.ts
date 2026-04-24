@@ -505,6 +505,15 @@ export const crmCustomerSources = pgTable("crm_customer_sources", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Stores per-field "required" flag for the customer form (Học viên / Phụ huynh).
+// Only fields that are NOT system-required (locationIds, type, code, fullName)
+// are configurable here.
+export const crmRequiredFields = pgTable("crm_required_fields", {
+  fieldKey: varchar("field_key", { length: 100 }).primaryKey(),
+  isRequired: boolean("is_required").notNull().default(false),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // ==========================================
 // STUDENT RELATIONSHIP HISTORY (Lịch sử chuyển đổi mối quan hệ)
 // ==========================================

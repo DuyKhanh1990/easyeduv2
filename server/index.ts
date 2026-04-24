@@ -449,6 +449,21 @@ app.use((req, res, next) => {
     console.error("Migration student_relationship_history failed:", err);
   }
 
+  // Migrate: create crm_required_fields table (per-field "required" flag for customer form)
+  try {
+    const { db: migDb } = await import("./storage/base");
+    await migDb.execute(`
+      CREATE TABLE IF NOT EXISTS crm_required_fields (
+        field_key VARCHAR(100) PRIMARY KEY,
+        is_required BOOLEAN NOT NULL DEFAULT FALSE,
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    console.log("Migration: crm_required_fields table ensured");
+  } catch (err) {
+    console.error("Migration crm_required_fields failed:", err);
+  }
+
   // Backfill: synchronise classes.start_date/end_date with actual schedule
   // (one-shot — no schema change, but data may be stale on rows created before
   // the recalculateClass cascade was added).

@@ -423,6 +423,10 @@ export const api = {
       update: { path: "/api/crm/customer-sources/:id", method: "put", input: insertCrmCustomerSourceSchema.partial() },
       delete: { path: "/api/crm/customer-sources/:id", method: "delete" },
     },
+    requiredFields: {
+      list: { path: "/api/crm/required-fields", method: "GET" },
+      upsert: { path: "/api/crm/required-fields", method: "PUT" },
+    },
   },
   courses: {
     list: { path: "/api/courses", method: "get" },

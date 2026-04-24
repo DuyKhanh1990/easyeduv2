@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -10,7 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useLocations } from "@/hooks/use-locations";
 import { useStaff } from "@/hooks/use-staff";
 import { useStudents } from "@/hooks/use-students";
-import { useCrmRelationships, useCrmCustomerSources, useCrmRejectReasons, type CrmRelationship } from "@/hooks/use-crm-config";
+import { useCrmRelationships, useCrmCustomerSources, useCrmRejectReasons, useCrmRequiredFields, type CrmRelationship } from "@/hooks/use-crm-config";
+import { getCrmFieldLabel } from "@/lib/crm-customer-fields";
 import { User, Phone, Mail, MapPin, CalendarDays, Briefcase, GraduationCap, Camera, Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -104,10 +105,53 @@ function getFormDefaults(data?: StudentResponse | null): FormData {
 export function CustomerForm({ initialData, onSubmit, isPending }: CustomerFormProps) {
   const { toast } = useToast();
 
+  // Required-field configuration from CRM config
+  const { data: requiredFieldsData } = useCrmRequiredFields();
+  const requiredKeys = useMemo(
+    () => new Set((requiredFieldsData ?? []).filter(r => r.isRequired).map(r => r.fieldKey)),
+    [requiredFieldsData],
+  );
+  const requiredKeysRef = useRef<Set<string>>(requiredKeys);
+  useEffect(() => { requiredKeysRef.current = requiredKeys; }, [requiredKeys]);
+
+  // Custom resolver: zod first, then add errors for any configured required fields that are empty
+  const resolver = useMemo(() => {
+    const baseResolver = zodResolver(formSchema);
+    return async (values: any, context: any, options: any) => {
+      const result: any = await (baseResolver as any)(values, context, options);
+      const errors: any = { ...(result.errors || {}) };
+      Array.from(requiredKeysRef.current).forEach((key) => {
+        if (errors[key]) return;
+        const v = (values as any)?.[key];
+        const isEmpty =
+          v === undefined ||
+          v === null ||
+          v === "" ||
+          (Array.isArray(v) && v.length === 0);
+        if (isEmpty) {
+          errors[key] = { type: "required", message: `${getCrmFieldLabel(key)} là bắt buộc` };
+        }
+      });
+      return {
+        values: Object.keys(errors).length > 0 ? {} : result.values,
+        errors,
+      };
+    };
+  }, []);
+
   const form = useForm<FormData>({
-    resolver: zodResolver(formSchema),
+    resolver: resolver as any,
     defaultValues: getFormDefaults(initialData),
   });
+
+  const RequiredMark = ({ k }: { k: string }) =>
+    requiredKeys.has(k) ? <span className="text-destructive">*</span> : null;
+
+  const FieldError = ({ k }: { k: string }) => {
+    const err = (form.formState.errors as any)?.[k];
+    if (!err?.message) return null;
+    return <p className="text-xs text-destructive" data-testid={`error-${k}`}>{err.message}</p>;
+  };
 
   const type = form.watch("type");
   const code = form.watch("code");
@@ -223,7 +267,7 @@ export function CustomerForm({ initialData, onSubmit, isPending }: CustomerFormP
         <div className="flex gap-6 items-start">
           {/* Avatar upload square */}
           <div className="flex-shrink-0">
-            <Label className="text-sm font-medium block mb-2">Ảnh đại diện</Label>
+            <Label className="text-sm font-medium block mb-2">Ảnh đại diện <RequiredMark k="avatarUrl" /></Label>
             <div
               data-testid="avatar-upload-btn"
               onClick={() => !uploadingAvatar && avatarInputRef.current?.click()}
@@ -305,33 +349,38 @@ export function CustomerForm({ initialData, onSubmit, isPending }: CustomerFormP
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mt-6">
           <div className="space-y-2">
-            <Label>Tài khoản</Label>
+            <Label>Tài khoản <RequiredMark k="username" /></Label>
             <Input className="h-11 bg-white opacity-100" {...form.register("username")} />
+            <FieldError k="username" />
           </div>
           <div className="space-y-2">
-            <Label>Mật khẩu</Label>
+            <Label>Mật khẩu <RequiredMark k="password" /></Label>
             <Input className="h-11 bg-white opacity-100" {...form.register("password")} />
+            <FieldError k="password" />
           </div>
           <div className="space-y-2">
-            <Label>Sinh nhật</Label>
+            <Label>Sinh nhật <RequiredMark k="dateOfBirth" /></Label>
             <div className="relative">
               <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input type="date" className="h-11 pl-10 bg-white opacity-100" {...form.register("dateOfBirth")} />
             </div>
+            <FieldError k="dateOfBirth" />
           </div>
           <div className="space-y-2">
-            <Label>Số điện thoại</Label>
+            <Label>Số điện thoại <RequiredMark k="phone" /></Label>
             <div className="relative">
               <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input className="h-11 pl-10 bg-white opacity-100" placeholder="090..." {...form.register("phone")} />
             </div>
+            <FieldError k="phone" />
           </div>
           <div className="space-y-2">
-            <Label>Email</Label>
+            <Label>Email <RequiredMark k="email" /></Label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input type="email" className="h-11 pl-10 bg-white opacity-100" placeholder="email@example.com" {...form.register("email")} />
             </div>
+            <FieldError k="email" />
           </div>
         </div>
           </div>
@@ -348,40 +397,46 @@ export function CustomerForm({ initialData, onSubmit, isPending }: CustomerFormP
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <div className="space-y-4 p-4 border rounded-xl bg-white/50">
               <div className="space-y-2">
-                <Label>Họ tên Phụ huynh 1</Label>
+                <Label>Họ tên Phụ huynh 1 <RequiredMark k="parentName" /></Label>
                 <Input className="h-11 bg-white opacity-100" placeholder="Tên phụ huynh" {...form.register("parentName")} />
+                <FieldError k="parentName" />
               </div>
               <div className="space-y-2">
-                <Label>SĐT Phụ huynh 1</Label>
+                <Label>SĐT Phụ huynh 1 <RequiredMark k="parentPhone" /></Label>
                 <Input className="h-11 bg-white opacity-100" placeholder="090..." {...form.register("parentPhone")} />
+                <FieldError k="parentPhone" />
               </div>
             </div>
 
             <div className="space-y-4 p-4 border rounded-xl bg-white/50">
               <div className="space-y-2">
-                <Label>Họ tên Phụ huynh 2</Label>
+                <Label>Họ tên Phụ huynh 2 <RequiredMark k="parentName2" /></Label>
                 <Input className="h-11 bg-white opacity-100" placeholder="Tên phụ huynh" {...form.register("parentName2")} />
+                <FieldError k="parentName2" />
               </div>
               <div className="space-y-2">
-                <Label>SĐT Phụ huynh 2</Label>
+                <Label>SĐT Phụ huynh 2 <RequiredMark k="parentPhone2" /></Label>
                 <Input className="h-11 bg-white opacity-100" placeholder="090..." {...form.register("parentPhone2")} />
+                <FieldError k="parentPhone2" />
               </div>
             </div>
 
             <div className="space-y-4 p-4 border rounded-xl bg-white/50">
               <div className="space-y-2">
-                <Label>Họ tên Phụ huynh 3</Label>
+                <Label>Họ tên Phụ huynh 3 <RequiredMark k="parentName3" /></Label>
                 <Input className="h-11 bg-white opacity-100" placeholder="Tên phụ huynh" {...form.register("parentName3")} />
+                <FieldError k="parentName3" />
               </div>
               <div className="space-y-2">
-                <Label>SĐT Phụ huynh 3</Label>
+                <Label>SĐT Phụ huynh 3 <RequiredMark k="parentPhone3" /></Label>
                 <Input className="h-11 bg-white opacity-100" placeholder="090..." {...form.register("parentPhone3")} />
+                <FieldError k="parentPhone3" />
               </div>
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label className="text-sm font-medium">Mã Phụ huynh (tài khoản hệ thống)</Label>
+            <Label className="text-sm font-medium">Mã Phụ huynh (tài khoản hệ thống) <RequiredMark k="parentIds" /></Label>
             <MultiSelect
               data-testid="select-parent-ids"
               options={
@@ -396,6 +451,7 @@ export function CustomerForm({ initialData, onSubmit, isPending }: CustomerFormP
               maxCount={5}
             />
             <p className="text-xs text-muted-foreground">Gán học viên này với tài khoản phụ huynh đã được tạo trên hệ thống.</p>
+            <FieldError k="parentIds" />
           </div>
         </div>
 
@@ -408,7 +464,7 @@ export function CustomerForm({ initialData, onSubmit, isPending }: CustomerFormP
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
-                <Label>Mối quan hệ</Label>
+                <Label>Mối quan hệ <RequiredMark k="relationshipIds" /></Label>
                 <div className="relative">
                   <MultiSelect
                     options={relationships?.map((rel: any) => ({ 
@@ -429,9 +485,10 @@ export function CustomerForm({ initialData, onSubmit, isPending }: CustomerFormP
                     className="bg-white opacity-100"
                   />
                 </div>
+                <FieldError k="relationshipIds" />
               </div>
               <div className="space-y-2">
-                <Label>Nguồn khách hàng</Label>
+                <Label>Nguồn khách hàng <RequiredMark k="customerSourceIds" /></Label>
                 <div className="relative">
                   <MultiSelect
                     options={sources?.map((source: any) => ({ label: source.name, value: source.id })) || [
@@ -447,9 +504,10 @@ export function CustomerForm({ initialData, onSubmit, isPending }: CustomerFormP
                     className="bg-white opacity-100"
                   />
                 </div>
+                <FieldError k="customerSourceIds" />
               </div>
               <div className="space-y-2">
-                <Label>Lý do từ chối</Label>
+                <Label>Lý do từ chối <RequiredMark k="rejectReason" /></Label>
                 <Select onValueChange={(val) => form.setValue("rejectReason", val)} defaultValue={form.getValues("rejectReason")}>
                   <SelectTrigger className="h-11 bg-white opacity-100"><SelectValue placeholder="Chọn" /></SelectTrigger>
                   <SelectContent className="bg-white opacity-100 shadow-md border border-border">
@@ -461,12 +519,13 @@ export function CustomerForm({ initialData, onSubmit, isPending }: CustomerFormP
                     )}
                   </SelectContent>
                 </Select>
+                <FieldError k="rejectReason" />
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
-                <Label>Lớp học</Label>
+                <Label>Lớp học <RequiredMark k="classIds" /></Label>
                 <div className="relative">
                   <MultiSelect
                     options={(Array.isArray(classesData) ? classesData : []).map((c: any) => ({ label: c.name, value: c.id }))}
@@ -477,9 +536,10 @@ export function CustomerForm({ initialData, onSubmit, isPending }: CustomerFormP
                     className="bg-white opacity-100"
                   />
                 </div>
+                <FieldError k="classIds" />
               </div>
               <div className="space-y-2">
-                <Label>Trạng thái tài khoản</Label>
+                <Label>Trạng thái tài khoản <RequiredMark k="accountStatus" /></Label>
                 <Select onValueChange={(val) => form.setValue("accountStatus", val)} defaultValue={form.getValues("accountStatus")}>
                   <SelectTrigger className="h-11 bg-white opacity-100"><SelectValue placeholder="Chọn" /></SelectTrigger>
                   <SelectContent className="bg-white opacity-100 shadow-md border border-border">
@@ -487,9 +547,10 @@ export function CustomerForm({ initialData, onSubmit, isPending }: CustomerFormP
                     <SelectItem value="Không hoạt động" className="focus:bg-accent">Không hoạt động</SelectItem>
                   </SelectContent>
                 </Select>
+                <FieldError k="accountStatus" />
               </div>
               <div className="space-y-2">
-                <Label>Nhân viên sale</Label>
+                <Label>Nhân viên sale <RequiredMark k="salesByIds" /></Label>
                 <div className="relative">
                   <MultiSelect
                     options={staff?.map((s: any) => ({ label: s.fullName, value: s.id })) || []}
@@ -500,12 +561,13 @@ export function CustomerForm({ initialData, onSubmit, isPending }: CustomerFormP
                     className="bg-white opacity-100"
                   />
                 </div>
+                <FieldError k="salesByIds" />
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
-                <Label>Quản lý</Label>
+                <Label>Quản lý <RequiredMark k="managedByIds" /></Label>
                 <div className="relative">
                   <MultiSelect
                     options={staff?.map((s: any) => ({ label: s.fullName, value: s.id })) || []}
@@ -516,9 +578,10 @@ export function CustomerForm({ initialData, onSubmit, isPending }: CustomerFormP
                     className="bg-white opacity-100"
                   />
                 </div>
+                <FieldError k="managedByIds" />
               </div>
               <div className="space-y-2">
-                <Label>Giáo viên</Label>
+                <Label>Giáo viên <RequiredMark k="teacherIds" /></Label>
                 <div className="relative">
                   <MultiSelect
                     options={staff?.map((s: any) => ({ label: s.fullName, value: s.id })) || []}
@@ -529,28 +592,33 @@ export function CustomerForm({ initialData, onSubmit, isPending }: CustomerFormP
                     className="bg-white opacity-100"
                   />
                 </div>
+                <FieldError k="teacherIds" />
               </div>
               <div className="space-y-2">
-                <Label>Trình độ</Label>
+                <Label>Trình độ <RequiredMark k="academicLevel" /></Label>
                 <Input className="h-11 bg-white opacity-100" placeholder="VD: IELTS 5.0" {...form.register("academicLevel")} />
+                <FieldError k="academicLevel" />
               </div>
             </div>
 
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
-                <Label>Địa chỉ</Label>
+                <Label>Địa chỉ <RequiredMark k="address" /></Label>
                 <Input className="h-11 bg-white opacity-100" placeholder="Địa chỉ..." {...form.register("address")} />
+                <FieldError k="address" />
               </div>
               <div className="space-y-2">
-                <Label>Zalo/FB</Label>
+                <Label>Zalo/FB <RequiredMark k="socialLink" /></Label>
                 <Input className="h-11 bg-white opacity-100" placeholder="Link hoặc ID..." {...form.register("socialLink")} />
+                <FieldError k="socialLink" />
               </div>
             </div>
             
             <div className="space-y-2">
-              <Label>Ghi chú</Label>
+              <Label>Ghi chú <RequiredMark k="note" /></Label>
               <Textarea className="bg-white opacity-100 resize-none" placeholder="Nhập ghi chú thêm..." {...form.register("note")} />
+              <FieldError k="note" />
             </div>
           </div>
         </div>

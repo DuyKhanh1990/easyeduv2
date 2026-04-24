@@ -3,6 +3,7 @@ import {
   eq, sql, and, or, inArray, asc, isNull,
   students, staff, users, classes, classSessions, studentClasses, studentSessions,
   studentLocations, crmRelationships, crmRejectReasons, crmCustomerSources,
+  crmRequiredFields,
   courseFeePackages, shiftTemplates, studentComments,
   staffAssignments, locations, invoices, invoiceSessionAllocations,
   studentRelationshipHistory,
@@ -657,6 +658,23 @@ export async function updateCrmCustomerSource(id: string, data: Partial<InsertCr
 
 export async function deleteCrmCustomerSource(id: string): Promise<void> {
   await db.delete(crmCustomerSources).where(eq(crmCustomerSources.id, id));
+}
+
+export async function getCrmRequiredFields(): Promise<{ fieldKey: string; isRequired: boolean }[]> {
+  const rows = await db.select().from(crmRequiredFields);
+  return rows.map(r => ({ fieldKey: r.fieldKey, isRequired: r.isRequired }));
+}
+
+export async function upsertCrmRequiredField(fieldKey: string, isRequired: boolean): Promise<{ fieldKey: string; isRequired: boolean }> {
+  const [res] = await db
+    .insert(crmRequiredFields)
+    .values({ fieldKey, isRequired })
+    .onConflictDoUpdate({
+      target: crmRequiredFields.fieldKey,
+      set: { isRequired, updatedAt: new Date() },
+    })
+    .returning();
+  return { fieldKey: res.fieldKey, isRequired: res.isRequired };
 }
 
 // ==========================================

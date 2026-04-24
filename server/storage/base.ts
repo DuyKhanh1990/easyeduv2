@@ -10,6 +10,7 @@ export {
   users, locations, staff, students, departments, roles,
   departmentsRelations, rolesRelations,
   crmRelationships, crmRejectReasons, crmCustomerSources,
+  crmRequiredFields,
   courses, courseFeePackages,
   coursePrograms,
   courseProgramContents,

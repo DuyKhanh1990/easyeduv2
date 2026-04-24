@@ -40,4 +40,17 @@ import { useQuery } from "@tanstack/react-query";
       },
     });
   }
+
+  export interface CrmRequiredField { fieldKey: string; isRequired: boolean }
+
+  export function useCrmRequiredFields() {
+    return useQuery<CrmRequiredField[]>({
+      queryKey: [api.crm.requiredFields.list.path],
+      queryFn: async () => {
+        const res = await fetch(api.crm.requiredFields.list.path, { credentials: "include" });
+        if (!res.ok) throw new Error("Failed to fetch CRM required fields");
+        return await res.json();
+      },
+    });
+  }
   

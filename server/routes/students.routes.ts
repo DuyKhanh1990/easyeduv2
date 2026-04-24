@@ -784,6 +784,27 @@ export function registerStudentsRoutes(app: Express): void {
     res.status(204).send();
   });
 
+  app.get(api.crm.requiredFields.list.path, async (_req, res) => {
+    try {
+      res.json(await storage.getCrmRequiredFields());
+    } catch (err) {
+      res.status(500).json({ message: (err as any).message });
+    }
+  });
+
+  app.put(api.crm.requiredFields.upsert.path, async (req, res) => {
+    try {
+      const body = req.body as { fieldKey: string; isRequired: boolean };
+      if (!body || typeof body.fieldKey !== "string" || typeof body.isRequired !== "boolean") {
+        return res.status(400).json({ message: "Invalid payload" });
+      }
+      const data = await storage.upsertCrmRequiredField(body.fieldKey, body.isRequired);
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({ message: (err as any).message });
+    }
+  });
+
   app.post(api.students.importClassAssign.path, async (req, res) => {
     try {
       const items: { studentId: string; classCode: string; className?: string; locationId: string }[] = req.body;

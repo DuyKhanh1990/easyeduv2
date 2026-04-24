@@ -107,6 +107,9 @@ export interface IStorage {
   updateCrmCustomerSource(id: string, data: Partial<InsertCrmCustomerSource>): Promise<CrmCustomerSource>;
   deleteCrmCustomerSource(id: string): Promise<void>;
 
+  getCrmRequiredFields(): Promise<{ fieldKey: string; isRequired: boolean }[]>;
+  upsertCrmRequiredField(fieldKey: string, isRequired: boolean): Promise<{ fieldKey: string; isRequired: boolean }>;
+
   // Courses & Fee Packages
   getCourses(): Promise<Course[]>;
   createCourse(course: InsertCourse): Promise<Course>;
@@ -736,6 +739,14 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCrmCustomerSource(id: string): Promise<void> {
     return studentStorage.deleteCrmCustomerSource(id);
+  }
+
+  async getCrmRequiredFields(): Promise<{ fieldKey: string; isRequired: boolean }[]> {
+    return studentStorage.getCrmRequiredFields();
+  }
+
+  async upsertCrmRequiredField(fieldKey: string, isRequired: boolean): Promise<{ fieldKey: string; isRequired: boolean }> {
+    return studentStorage.upsertCrmRequiredField(fieldKey, isRequired);
   }
 
   // Courses & Fee Packages

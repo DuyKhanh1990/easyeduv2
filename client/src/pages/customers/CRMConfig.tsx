@@ -14,9 +14,13 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertCrmRelationshipSchema, insertCrmRejectReasonSchema, insertCrmCustomerSourceSchema, type CrmRelationship, type CrmRejectReason, type CrmCustomerSource } from "@shared/schema";
 import { Plus, Pencil, Trash2, Settings2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useSidebarVisibility } from "@/hooks/use-sidebar-visibility";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
+import { useCrmRequiredFields, type CrmRequiredField } from "@/hooks/use-crm-config";
+import { CRM_CONFIGURABLE_FIELDS, CRM_FIELD_GROUP_LABELS, type CrmConfigurableField } from "@/lib/crm-customer-fields";
+import { api } from "@shared/routes";
 
 const CRM_CONFIG_HREF = "/customers/crm-config";
 const ALL_TABS = [
@@ -118,6 +122,12 @@ export function CRMConfig() {
           {isSubTabVisible(CRM_CONFIG_HREF, "sources") && (
             <TabsContent value="sources">
               <CustomerSourceTab />
+            </TabsContent>
+          )}
+
+          {isSubTabVisible(CRM_CONFIG_HREF, "required-info") && (
+            <TabsContent value="required-info">
+              <RequiredInfoTab />
             </TabsContent>
           )}
         </Tabs>
@@ -417,6 +427,96 @@ function CustomerSourceTab() {
             ))}
           </TableBody>
         </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RequiredInfoTab() {
+  const { toast } = useToast();
+  const { canEdit } = useTabPerms("required-info");
+  const { data: list, isLoading } = useCrmRequiredFields();
+
+  const requiredMap = new Map<string, boolean>(
+    (list ?? []).map((r: CrmRequiredField) => [r.fieldKey, r.isRequired]),
+  );
+
+  const upsertMutation = useMutation({
+    mutationFn: async (vars: { fieldKey: string; isRequired: boolean }) => {
+      return apiRequest("PUT", api.crm.requiredFields.upsert.path, vars);
+    },
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: [api.crm.requiredFields.list.path] });
+      const prev = queryClient.getQueryData<CrmRequiredField[]>([api.crm.requiredFields.list.path]);
+      const next: CrmRequiredField[] = [...(prev ?? [])];
+      const idx = next.findIndex(r => r.fieldKey === vars.fieldKey);
+      if (idx >= 0) next[idx] = { ...next[idx], isRequired: vars.isRequired };
+      else next.push({ fieldKey: vars.fieldKey, isRequired: vars.isRequired });
+      queryClient.setQueryData([api.crm.requiredFields.list.path], next);
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData([api.crm.requiredFields.list.path], ctx.prev);
+      toast({ title: "Lỗi", description: "Không lưu được cấu hình", variant: "destructive" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.crm.requiredFields.list.path] });
+    },
+  });
+
+  const groups = Array.from(new Set(CRM_CONFIGURABLE_FIELDS.map(f => f.group)));
+
+  return (
+    <Card>
+      <CardHeader className="pb-4">
+        <CardTitle>Thông tin bắt buộc</CardTitle>
+        <CardDescription>
+          Tích chọn các trường thông tin sẽ trở thành bắt buộc (có dấu *) khi thêm/sửa Học viên hoặc Phụ huynh.
+          Các trường mặc định bắt buộc của hệ thống (Cơ sở, Phân loại, Mã, Họ tên) không hiển thị ở đây.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Đang tải...</p>
+        ) : (
+          groups.map(group => {
+            const fields = CRM_CONFIGURABLE_FIELDS.filter(f => f.group === group);
+            return (
+              <div key={group} className="space-y-2">
+                <h3 className="text-sm font-semibold text-foreground">{CRM_FIELD_GROUP_LABELS[group]}</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {fields.map((f: CrmConfigurableField) => {
+                    const checked = requiredMap.get(f.key) ?? false;
+                    return (
+                      <label
+                        key={f.key}
+                        htmlFor={`required-${f.key}`}
+                        className={cn(
+                          "flex items-center gap-2 px-3 py-2 rounded-md border bg-background hover:bg-muted/40 cursor-pointer",
+                          !canEdit && "opacity-60 cursor-not-allowed"
+                        )}
+                        data-testid={`label-required-${f.key}`}
+                      >
+                        <Checkbox
+                          id={`required-${f.key}`}
+                          checked={checked}
+                          disabled={!canEdit || upsertMutation.isPending}
+                          onCheckedChange={(val) => {
+                            if (!canEdit) return;
+                            upsertMutation.mutate({ fieldKey: f.key, isRequired: !!val });
+                          }}
+                          data-testid={`checkbox-required-${f.key}`}
+                        />
+                        <span className="text-sm text-foreground">{f.label}</span>
+                        {checked && <span className="text-destructive text-sm">*</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })
+        )}
       </CardContent>
     </Card>
   );
