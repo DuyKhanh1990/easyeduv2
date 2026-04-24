@@ -105,6 +105,12 @@ export function CustomersList() {
     classIds: [] as string[],
     dateFrom: "",
     dateTo: "",
+    updatedFrom: "",
+    updatedTo: "",
+    accountStatuses: [] as string[],
+    learningStatuses: [] as string[],
+    birthdayFrom: "",
+    birthdayTo: "",
   });
 
   const { data: studentsData, isLoading } = useStudents({
@@ -122,6 +128,12 @@ export function CustomersList() {
     classIds: filters.classIds.length > 0 ? filters.classIds : undefined,
     startDate: filters.dateFrom || undefined,
     endDate: filters.dateTo || undefined,
+    updatedFrom: filters.updatedFrom || undefined,
+    updatedTo: filters.updatedTo || undefined,
+    accountStatuses: filters.accountStatuses.length > 0 ? filters.accountStatuses : undefined,
+    learningStatuses: filters.learningStatuses.length > 0 ? filters.learningStatuses : undefined,
+    birthdayFrom: filters.birthdayFrom || undefined,
+    birthdayTo: filters.birthdayTo || undefined,
   });
 
   const students = studentsData?.students || [];
@@ -366,7 +378,13 @@ export function CustomersList() {
     filters.teacherIds.length > 0 ||
     filters.classIds.length > 0 ||
     filters.dateFrom !== "" ||
-    filters.dateTo !== "";
+    filters.dateTo !== "" ||
+    filters.updatedFrom !== "" ||
+    filters.updatedTo !== "" ||
+    filters.accountStatuses.length > 0 ||
+    filters.learningStatuses.length > 0 ||
+    filters.birthdayFrom !== "" ||
+    filters.birthdayTo !== "";
 
   return (
     <DashboardLayout>
@@ -543,19 +561,21 @@ export function CustomersList() {
                     )}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[820px] p-4 bg-slate-100 dark:bg-slate-800 border shadow-xl" align="end">
+                <PopoverContent className="w-[1100px] p-4 bg-slate-100 dark:bg-slate-800 border shadow-xl" align="end">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="font-semibold text-sm">Bộ lọc nâng cao</h3>
                     <Button
                       variant="ghost"
                       size="sm"
                       className="h-8 text-xs text-muted-foreground"
-                      onClick={() => setFilters({ locationId: "all", type: "all", pipelineStage: filters.pipelineStage, sources: [], rejectReasons: [], saleIds: [], managerIds: [], teacherIds: [], classIds: [], dateFrom: "", dateTo: "" })}
+                      onClick={() => setFilters({ locationId: "all", type: "all", pipelineStage: filters.pipelineStage, sources: [], rejectReasons: [], saleIds: [], managerIds: [], teacherIds: [], classIds: [], dateFrom: "", dateTo: "", updatedFrom: "", updatedTo: "", accountStatuses: [], learningStatuses: [], birthdayFrom: "", birthdayTo: "" })}
+                      data-testid="button-filter-clear-all"
                     >
                       Xoá tất cả
                     </Button>
                   </div>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-4 gap-4">
+                    {/* Hàng 1 */}
                     <div className="space-y-2">
                       <Label className="text-xs">Cơ sở</Label>
                       <Select value={filters.locationId} onValueChange={(v) => setFilters((f) => ({ ...f, locationId: v }))}>
@@ -597,6 +617,7 @@ export function CustomersList() {
                         onRemove={(val) => setFilters((f) => ({ ...f, rejectReasons: f.rejectReasons.filter((r) => r !== val) }))}
                       />
                     </div>
+                    {/* Hàng 2 */}
                     <div className="space-y-2">
                       <Label className="text-xs">Sale</Label>
                       <SearchableMultiSelect
@@ -618,7 +639,7 @@ export function CustomersList() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-xs">Giáo Viên</Label>
+                      <Label className="text-xs">Giáo viên</Label>
                       <SearchableMultiSelect
                         placeholder="Chọn giáo viên"
                         options={teachers.map((s) => ({ id: s.id, fullName: s.fullName }))}
@@ -637,13 +658,76 @@ export function CustomersList() {
                         onRemove={(val) => setFilters((f) => ({ ...f, classIds: f.classIds.filter((id) => id !== val) }))}
                       />
                     </div>
+                    {/* Hàng 3 */}
                     <div className="space-y-2">
                       <Label className="text-xs">Ngày tạo từ</Label>
-                      <Input type="date" className="h-9" value={filters.dateFrom} onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))} />
+                      <Input type="date" className="h-9" value={filters.dateFrom} onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))} data-testid="input-filter-date-from" />
                     </div>
                     <div className="space-y-2">
                       <Label className="text-xs">Đến</Label>
-                      <Input type="date" className="h-9" value={filters.dateTo} onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))} />
+                      <Input type="date" className="h-9" value={filters.dateTo} onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))} data-testid="input-filter-date-to" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs">Ngày cập nhật từ</Label>
+                      <Input type="date" className="h-9" value={filters.updatedFrom} onChange={(e) => setFilters((f) => ({ ...f, updatedFrom: e.target.value }))} data-testid="input-filter-updated-from" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs">Đến</Label>
+                      <Input type="date" className="h-9" value={filters.updatedTo} onChange={(e) => setFilters((f) => ({ ...f, updatedTo: e.target.value }))} data-testid="input-filter-updated-to" />
+                    </div>
+                    {/* Hàng 4 */}
+                    <div className="space-y-2">
+                      <Label className="text-xs">Trạng thái tài khoản</Label>
+                      <SearchableMultiSelect
+                        placeholder="Chọn trạng thái"
+                        options={[
+                          { id: "Hoạt động", name: "Hoạt động" },
+                          { id: "Không hoạt động", name: "Không hoạt động" },
+                        ]}
+                        selected={filters.accountStatuses}
+                        onSelect={(val) => setFilters((f) => ({ ...f, accountStatuses: [...f.accountStatuses, val] }))}
+                        onRemove={(val) => setFilters((f) => ({ ...f, accountStatuses: f.accountStatuses.filter((s) => s !== val) }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs">Trạng thái học viên</Label>
+                      <SearchableMultiSelect
+                        placeholder="Chọn trạng thái"
+                        options={[
+                          { id: "dang_hoc", name: "Đang học" },
+                          { id: "cho_lich", name: "Chờ đến lịch" },
+                          { id: "bao_luu", name: "Bảo lưu" },
+                          { id: "da_nghi", name: "Đã nghỉ" },
+                          { id: "chua_co_lich", name: "Chưa có lịch" },
+                        ]}
+                        selected={filters.learningStatuses}
+                        onSelect={(val) => setFilters((f) => ({ ...f, learningStatuses: [...f.learningStatuses, val] }))}
+                        onRemove={(val) => setFilters((f) => ({ ...f, learningStatuses: f.learningStatuses.filter((s) => s !== val) }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs">Sinh nhật từ</Label>
+                      <Input
+                        type="text"
+                        placeholder="dd/mm"
+                        maxLength={5}
+                        className="h-9"
+                        value={filters.birthdayFrom}
+                        onChange={(e) => setFilters((f) => ({ ...f, birthdayFrom: e.target.value }))}
+                        data-testid="input-filter-birthday-from"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs">Đến</Label>
+                      <Input
+                        type="text"
+                        placeholder="dd/mm"
+                        maxLength={5}
+                        className="h-9"
+                        value={filters.birthdayTo}
+                        onChange={(e) => setFilters((f) => ({ ...f, birthdayTo: e.target.value }))}
+                        data-testid="input-filter-birthday-to"
+                      />
                     </div>
                   </div>
                 </PopoverContent>

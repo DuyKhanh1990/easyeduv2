@@ -243,6 +243,12 @@ export function registerStudentsRoutes(app: Express): void {
         classIds: parseArray(req.query.classIds),
         startDate: req.query.startDate as string | undefined,
         endDate: req.query.endDate as string | undefined,
+        updatedFrom: req.query.updatedFrom as string | undefined,
+        updatedTo: req.query.updatedTo as string | undefined,
+        accountStatuses: parseArray(req.query.accountStatuses),
+        learningStatuses: parseArray(req.query.learningStatuses),
+        birthdayFrom: req.query.birthdayFrom as string | undefined,
+        birthdayTo: req.query.birthdayTo as string | undefined,
         viewScope,
         viewerStaffId: req.staffId ?? undefined,
       });

@@ -39,6 +39,12 @@ export async function getStudents(params: {
   classIds?: string[];
   startDate?: string;
   endDate?: string;
+  updatedFrom?: string;
+  updatedTo?: string;
+  accountStatuses?: string[];
+  learningStatuses?: string[];
+  birthdayFrom?: string;
+  birthdayTo?: string;
   viewScope?: 'all' | 'own';
   viewerStaffId?: string;
 }): Promise<{ students: StudentResponse[]; total: number }> {
@@ -46,7 +52,9 @@ export async function getStudents(params: {
     allowedLocationIds, isSuperAdmin,
     locationId, offset, limit, searchTerm, type, pipelineStage,
     sources, rejectReasons, salesIds, managerIds, teacherIds, classIds,
-    startDate, endDate, viewScope, viewerStaffId
+    startDate, endDate, updatedFrom, updatedTo,
+    accountStatuses, learningStatuses, birthdayFrom, birthdayTo,
+    viewScope, viewerStaffId
   } = params;
 
   let whereClause = sql`1=1`;
@@ -102,6 +110,66 @@ export async function getStudents(params: {
     const end = new Date(endDate);
     end.setHours(23, 59, 59, 999);
     whereClause = sql`${whereClause} AND ${students.createdAt} <= ${end}`;
+  }
+  if (updatedFrom) {
+    whereClause = sql`${whereClause} AND ${students.updatedAt} >= ${new Date(updatedFrom)}`;
+  }
+  if (updatedTo) {
+    const end = new Date(updatedTo);
+    end.setHours(23, 59, 59, 999);
+    whereClause = sql`${whereClause} AND ${students.updatedAt} <= ${end}`;
+  }
+  if (accountStatuses && accountStatuses.length > 0) {
+    whereClause = sql`${whereClause} AND ${students.accountStatus} IN ${accountStatuses}`;
+  }
+  if (birthdayFrom || birthdayTo) {
+    const parseMD = (s?: string) => {
+      if (!s) return null;
+      const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})$/);
+      if (!m) return null;
+      const day = parseInt(m[1], 10);
+      const month = parseInt(m[2], 10);
+      if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+      return month * 100 + day;
+    };
+    const fromMD = parseMD(birthdayFrom);
+    const toMD = parseMD(birthdayTo);
+    const dobExpr = sql`(EXTRACT(MONTH FROM ${students.dateOfBirth})::int * 100 + EXTRACT(DAY FROM ${students.dateOfBirth})::int)`;
+    if (fromMD !== null && toMD !== null) {
+      if (fromMD <= toMD) {
+        whereClause = sql`${whereClause} AND ${students.dateOfBirth} IS NOT NULL AND ${dobExpr} BETWEEN ${fromMD} AND ${toMD}`;
+      } else {
+        whereClause = sql`${whereClause} AND ${students.dateOfBirth} IS NOT NULL AND (${dobExpr} >= ${fromMD} OR ${dobExpr} <= ${toMD})`;
+      }
+    } else if (fromMD !== null) {
+      whereClause = sql`${whereClause} AND ${students.dateOfBirth} IS NOT NULL AND ${dobExpr} >= ${fromMD}`;
+    } else if (toMD !== null) {
+      whereClause = sql`${whereClause} AND ${students.dateOfBirth} IS NOT NULL AND ${dobExpr} <= ${toMD}`;
+    }
+  }
+  if (learningStatuses && learningStatuses.length > 0) {
+    whereClause = sql`${whereClause} AND ${students.id} IN (
+      SELECT s2.id FROM students s2
+      LEFT JOIN (
+        SELECT ss.student_id,
+          COUNT(*) FILTER (WHERE cs.session_date < CURRENT_DATE) AS past_any,
+          COUNT(*) FILTER (WHERE cs.session_date = CURRENT_DATE) AS today_any,
+          COUNT(*) FILTER (WHERE cs.session_date > CURRENT_DATE) AS future_any,
+          COUNT(*) FILTER (WHERE cs.session_date = CURRENT_DATE AND ss.attendance_status = 'paused') AS paused_today
+        FROM student_sessions ss
+        JOIN class_sessions cs ON cs.id = ss.class_session_id
+        GROUP BY ss.student_id
+      ) st ON st.student_id = s2.id
+      WHERE (
+        CASE
+          WHEN COALESCE(st.today_any,0) > 0 OR (COALESCE(st.past_any,0) > 0 AND COALESCE(st.future_any,0) > 0) OR COALESCE(st.future_any,0) > 0
+            THEN CASE WHEN COALESCE(st.past_any,0) = 0 AND COALESCE(st.today_any,0) = 0 AND COALESCE(st.future_any,0) > 0 THEN 'cho_lich' ELSE 'dang_hoc' END
+          WHEN COALESCE(st.paused_today,0) > 0 THEN 'bao_luu'
+          WHEN COALESCE(st.past_any,0) > 0 AND COALESCE(st.today_any,0) = 0 AND COALESCE(st.future_any,0) = 0 THEN 'da_nghi'
+          ELSE 'chua_co_lich'
+        END
+      ) IN ${learningStatuses}
+    )`;
   }
   if (searchTerm) {
     const search = `%${searchTerm.toLowerCase()}%`;

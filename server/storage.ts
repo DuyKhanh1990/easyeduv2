@@ -80,6 +80,12 @@ export interface IStorage {
     classIds?: string[];
     startDate?: string;
     endDate?: string;
+    updatedFrom?: string;
+    updatedTo?: string;
+    accountStatuses?: string[];
+    learningStatuses?: string[];
+    birthdayFrom?: string;
+    birthdayTo?: string;
     viewScope?: 'all' | 'own';
     viewerStaffId?: string;
   }): Promise<{ students: StudentResponse[]; total: number }>;
@@ -666,6 +672,14 @@ export class DatabaseStorage implements IStorage {
     classIds?: string[];
     startDate?: string;
     endDate?: string;
+    updatedFrom?: string;
+    updatedTo?: string;
+    accountStatuses?: string[];
+    learningStatuses?: string[];
+    birthdayFrom?: string;
+    birthdayTo?: string;
+    viewScope?: 'all' | 'own';
+    viewerStaffId?: string;
   }): Promise<{ students: StudentResponse[]; total: number }> {
     return studentStorage.getStudents(params);
   }

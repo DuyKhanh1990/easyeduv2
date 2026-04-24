@@ -18,6 +18,12 @@ export function useStudents(params?: {
   classIds?: string[];
   startDate?: string;
   endDate?: string;
+  updatedFrom?: string;
+  updatedTo?: string;
+  accountStatuses?: string[];
+  learningStatuses?: string[];
+  birthdayFrom?: string;
+  birthdayTo?: string;
 }) {
   return useQuery<{ students: StudentResponse[]; total: number }>({
     queryKey: [api.students.list.path, params],
