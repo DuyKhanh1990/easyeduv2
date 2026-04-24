@@ -543,7 +543,7 @@ export function CustomersList() {
                     )}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[600px] p-4 bg-background border shadow-xl" align="end">
+                <PopoverContent className="w-[820px] p-4 bg-muted/40 border shadow-xl" align="end">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="font-semibold text-sm">Bộ lọc nâng cao</h3>
                     <Button
