@@ -23,6 +23,8 @@ const ALL_TABS = [
   { value: "relationships", label: "Mối quan hệ" },
   { value: "reject-reasons", label: "Lý do từ chối" },
   { value: "sources", label: "Nguồn khách hàng" },
+  { value: "additional-info", label: "Thông tin bổ sung" },
+  { value: "required-info", label: "Thông tin bắt buộc" },
 ];
 
 interface TabPerms {
