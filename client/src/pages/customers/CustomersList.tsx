@@ -422,6 +422,110 @@ export function CustomersList() {
                 />
               </div>
 
+            </div>
+
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              {crmPerms.canCreate && (
+                <Button variant="outline" size="sm" onClick={() => setIsImportOpen(true)} className="px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-2 bg-white border-border shadow-sm">
+                  <Upload className="w-3.5 h-3.5" /><span>Tải lên</span>
+                </Button>
+              )}
+              {crmPerms.canEdit && (
+                <Button variant="outline" size="sm" onClick={excel.exportToExcel} className="px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-2 bg-white border-border shadow-sm">
+                  <Download className="w-3.5 h-3.5" /><span>Tải xuống</span>
+                </Button>
+              )}
+              {crmPerms.canEdit && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-2 bg-white border-border shadow-sm">
+                      <Settings2 className="w-3.5 h-3.5" /><span>Sắp xếp</span>
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 p-4" align="end">
+                    <h3 className="font-semibold mb-4 text-sm px-1">Cấu hình cột hiển thị</h3>
+                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                      <SortableContext items={columns.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+                        <div className="max-h-[400px] overflow-y-auto pr-1">
+                          {columns.map((column) => (
+                            <SortableColumnItem key={column.id} column={column} onToggle={toggleColumn} />
+                          ))}
+                        </div>
+                      </SortableContext>
+                    </DndContext>
+                  </PopoverContent>
+                </Popover>
+              )}
+              {crmPerms.canCreate && (
+                <Button onClick={() => setIsAddOpen(true)} size="sm" className="px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-2 bg-primary hover:bg-primary/90 text-white border-primary shadow-sm">
+                  <Plus className="w-3.5 h-3.5" /><span>Thêm Học Viên</span>
+                </Button>
+              )}
+              {crmPerms.canEdit && (
+                <DropdownMenu open={isActionMenuOpen} onOpenChange={setIsActionMenuOpen} modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-2 bg-white border-border shadow-sm">
+                      <span>Hành động ({selectedIds.length})</span>
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="end"
+                    className="w-56 p-2 rounded-xl bg-white opacity-100 shadow-xl border-border"
+                    onPointerDownOutside={(e) => {
+                      const target = e.target as HTMLElement;
+                      if (target.closest('[role="checkbox"]') || target.closest("[data-radix-collection-item]")) e.preventDefault();
+                    }}
+                    onInteractOutside={(e) => {
+                      const target = e.target as HTMLElement;
+                      if (target.closest('[role="checkbox"]') || target.closest("[data-radix-collection-item]")) e.preventDefault();
+                    }}
+                  >
+                    {selectedIds.length > 0 ? (
+                      <>
+                        <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground border-b mb-1">Thao tác hàng loạt</div>
+                        <DropdownMenuItem className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent" onClick={() => bulk.setIsBulkRelOpen(true)}>
+                          <Users className="w-4 h-4 text-pink-500" /><span>Mối quan hệ</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent" onClick={() => bulk.setIsBulkLocationOpen(true)}>
+                          <Building2 className="w-4 h-4 text-blue-600" /><span>Gán cơ sở</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent" onClick={() => bulk.setIsBulkSaleOpen(true)}>
+                          <UserCog className="w-4 h-4 text-orange-500" /><span>Gán sale</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent" onClick={() => bulk.setIsBulkManagerOpen(true)}>
+                          <UserPlus className="w-4 h-4 text-green-500" /><span>Gán quản lý</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent" onClick={() => bulk.setIsBulkTeacherOpen(true)}>
+                          <GraduationCap className="w-4 h-4 text-purple-600" /><span>Gán giáo viên</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent" onClick={() => bulk.setIsBulkParentOpen(true)}>
+                          <UserCircle className="w-4 h-4 text-teal-500" /><span>Gán phụ huynh</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent" onClick={() => bulk.setIsAssignClassOpen(true)}>
+                          <BookOpen className="w-4 h-4 text-blue-500" /><span>Gán lớp</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent" onClick={(e) => { e.preventDefault(); bulk.setIsAccountStatusOpen(true); setIsActionMenuOpen(false); }}>
+                          <Tablet className="w-4 h-4 text-indigo-600" /><span>TT Tài khoản</span>
+                        </DropdownMenuItem>
+                        {crmPerms.canDelete && (
+                          <>
+                            <div className="my-1 border-t" />
+                            <DropdownMenuItem
+                              className="flex items-center gap-3 py-2 cursor-pointer rounded-lg text-destructive focus:text-destructive focus:bg-destructive/10"
+                              onClick={() => bulk.handleBulkDelete(selectedIds)}
+                            >
+                              <Trash className="w-4 h-4" /><span>Xoá {selectedIds.length} học viên</span>
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <div className="px-4 py-2 text-xs text-muted-foreground text-center">Vui lòng chọn học viên để thực hiện hành động</div>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
@@ -431,6 +535,7 @@ export function CustomersList() {
                       "px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-2 bg-white border-border shadow-sm",
                       hasActiveFilters && "border-primary text-primary bg-primary/5"
                     )}
+                    data-testid="button-filter-customers"
                   >
                     <Filter className="w-3.5 h-3.5" /> Bộ lọc
                     {hasActiveFilters && (
@@ -545,114 +650,10 @@ export function CustomersList() {
                   </div>
                 </PopoverContent>
               </Popover>
-            </div>
-
-            <div className="flex items-center gap-2 w-full md:w-auto">
-              {crmPerms.canCreate && (
-                <Button variant="outline" size="sm" onClick={() => setIsImportOpen(true)} className="px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-2 bg-white border-border shadow-sm">
-                  <Upload className="w-3.5 h-3.5" /><span>Tải lên</span>
-                </Button>
-              )}
-              {crmPerms.canEdit && (
-                <Button variant="outline" size="sm" onClick={excel.exportToExcel} className="px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-2 bg-white border-border shadow-sm">
-                  <Download className="w-3.5 h-3.5" /><span>Tải xuống</span>
-                </Button>
-              )}
-              {crmPerms.canEdit && (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className="px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-2 bg-white border-border shadow-sm">
-                      <Settings2 className="w-3.5 h-3.5" /><span>Sắp xếp</span>
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-80 p-4" align="end">
-                    <h3 className="font-semibold mb-4 text-sm px-1">Cấu hình cột hiển thị</h3>
-                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                      <SortableContext items={columns.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-                        <div className="max-h-[400px] overflow-y-auto pr-1">
-                          {columns.map((column) => (
-                            <SortableColumnItem key={column.id} column={column} onToggle={toggleColumn} />
-                          ))}
-                        </div>
-                      </SortableContext>
-                    </DndContext>
-                  </PopoverContent>
-                </Popover>
-              )}
-              {crmPerms.canCreate && (
-                <Button onClick={() => setIsAddOpen(true)} size="sm" className="px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-2 bg-primary hover:bg-primary/90 text-white border-primary shadow-sm">
-                  <Plus className="w-3.5 h-3.5" /><span>Thêm Học Viên</span>
-                </Button>
-              )}
-              {crmPerms.canEdit && (
-                <DropdownMenu open={isActionMenuOpen} onOpenChange={setIsActionMenuOpen} modal={false}>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-2 bg-white border-border shadow-sm">
-                      <span>Hành động ({selectedIds.length})</span>
-                      <ChevronDown className="w-3.5 h-3.5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="end"
-                    className="w-56 p-2 rounded-xl bg-white opacity-100 shadow-xl border-border"
-                    onPointerDownOutside={(e) => {
-                      const target = e.target as HTMLElement;
-                      if (target.closest('[role="checkbox"]') || target.closest("[data-radix-collection-item]")) e.preventDefault();
-                    }}
-                    onInteractOutside={(e) => {
-                      const target = e.target as HTMLElement;
-                      if (target.closest('[role="checkbox"]') || target.closest("[data-radix-collection-item]")) e.preventDefault();
-                    }}
-                  >
-                    {selectedIds.length > 0 ? (
-                      <>
-                        <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground border-b mb-1">Thao tác hàng loạt</div>
-                        <DropdownMenuItem className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent" onClick={() => bulk.setIsBulkRelOpen(true)}>
-                          <Users className="w-4 h-4 text-pink-500" /><span>Mối quan hệ</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent" onClick={() => bulk.setIsBulkLocationOpen(true)}>
-                          <Building2 className="w-4 h-4 text-blue-600" /><span>Gán cơ sở</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent" onClick={() => bulk.setIsBulkSaleOpen(true)}>
-                          <UserCog className="w-4 h-4 text-orange-500" /><span>Gán sale</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent" onClick={() => bulk.setIsBulkManagerOpen(true)}>
-                          <UserPlus className="w-4 h-4 text-green-500" /><span>Gán quản lý</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent" onClick={() => bulk.setIsBulkTeacherOpen(true)}>
-                          <GraduationCap className="w-4 h-4 text-purple-600" /><span>Gán giáo viên</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent" onClick={() => bulk.setIsBulkParentOpen(true)}>
-                          <UserCircle className="w-4 h-4 text-teal-500" /><span>Gán phụ huynh</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent" onClick={() => bulk.setIsAssignClassOpen(true)}>
-                          <BookOpen className="w-4 h-4 text-blue-500" /><span>Gán lớp</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent" onClick={(e) => { e.preventDefault(); bulk.setIsAccountStatusOpen(true); setIsActionMenuOpen(false); }}>
-                          <Tablet className="w-4 h-4 text-indigo-600" /><span>TT Tài khoản</span>
-                        </DropdownMenuItem>
-                        {crmPerms.canDelete && (
-                          <>
-                            <div className="my-1 border-t" />
-                            <DropdownMenuItem
-                              className="flex items-center gap-3 py-2 cursor-pointer rounded-lg text-destructive focus:text-destructive focus:bg-destructive/10"
-                              onClick={() => bulk.handleBulkDelete(selectedIds)}
-                            >
-                              <Trash className="w-4 h-4" /><span>Xoá {selectedIds.length} học viên</span>
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                      </>
-                    ) : (
-                      <div className="px-4 py-2 text-xs text-muted-foreground text-center">Vui lòng chọn học viên để thực hiện hành động</div>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
               <Button
                 variant="outline"
                 size="sm"
-                className="px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-2 bg-white border-border shadow-sm ml-auto"
+                className="px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-2 bg-white border-border shadow-sm"
                 onClick={() => setIsActivityLogOpen(true)}
                 data-testid="btn-nhat-ky"
               >
