@@ -1240,6 +1240,77 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
 
   const modules = navigation.filter((e): e is Extract<typeof navigation[number], { module: string }> => "module" in e);
 
+  const getAllowedKeysForResource = (resource: string, hasSubTabs: boolean): PermKey[] => {
+    if (hasSubTabs) return [];
+    return PERM_COLS.map(c => c.key).filter(k => {
+      if (READ_ONLY_RESOURCES.has(resource) && (k === "canCreate" || k === "canEdit" || k === "canDelete")) return false;
+      if (NO_EDIT_DELETE_RESOURCES.has(resource) && (k === "canEdit" || k === "canDelete")) return false;
+      if (NO_DELETE_RESOURCES.has(resource) && k === "canDelete") return false;
+      return true;
+    });
+  };
+
+  const getAllowedKeysForSubResource = (resource: string): PermKey[] => {
+    return PERM_COLS.map(c => c.key).filter(k => {
+      if (NO_DELETE_RESOURCES.has(resource) && k === "canDelete") return false;
+      return true;
+    });
+  };
+
+  const getModuleResources = (mod: typeof modules[number]): { resource: string; allowedKeys: PermKey[] }[] => {
+    const list: { resource: string; allowedKeys: PermKey[] }[] = [];
+    for (const item of mod.items) {
+      const hasSubTabs = !!(item.subTabs && item.subTabs.length > 0);
+      if (hasSubTabs) {
+        for (const sub of item.subTabs!) {
+          const subResource = `${item.href}#${sub.value}`;
+          list.push({ resource: subResource, allowedKeys: getAllowedKeysForSubResource(subResource) });
+        }
+      } else {
+        list.push({ resource: item.href, allowedKeys: getAllowedKeysForResource(item.href, false) });
+      }
+    }
+    return list;
+  };
+
+  const isModuleAllChecked = (mod: typeof modules[number]): boolean => {
+    const resources = getModuleResources(mod);
+    if (resources.length === 0) return false;
+    return resources.every(({ resource, allowedKeys }) => {
+      if (allowedKeys.length === 0) return true;
+      const perm = getResourcePerm(resource);
+      return allowedKeys.every(k => perm[k]);
+    });
+  };
+
+  const handleToggleModuleAll = (mod: typeof modules[number]) => {
+    if (!selectedRoleId) return;
+    const allChecked = isModuleAllChecked(mod);
+    const value = !allChecked;
+    if (value && !canCreate) {
+      toast({ title: "Không có quyền", description: "Bạn không có quyền cấp thêm quyền.", variant: "destructive" });
+      return;
+    }
+    if (!value && !canEdit) {
+      toast({ title: "Không có quyền", description: "Bạn không có quyền thu hồi quyền.", variant: "destructive" });
+      return;
+    }
+    const resources = getModuleResources(mod);
+    const updates: PermMap = {};
+    for (const { resource, allowedKeys } of resources) {
+      const current = localPerms[resource] ?? defaultPerm();
+      const updated = { ...current };
+      for (const col of PERM_COLS) {
+        updated[col.key] = value && allowedKeys.includes(col.key);
+      }
+      updates[resource] = updated;
+    }
+    setLocalPerms(prev => ({ ...prev, ...updates }));
+    for (const [resource, perms] of Object.entries(updates)) {
+      savePerm.mutate({ resource, perms });
+    }
+  };
+
   const handleSelectDept = (deptId: string) => {
     setSelectedDeptId(deptId);
     const dept = displayedDepts?.find(d => d.id === deptId);
@@ -1337,6 +1408,21 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                         : <ChevronRight className="w-4 h-4 text-muted-foreground ml-1" />
                       }
                     </button>
+                    {/* "All" quick-tick checkbox */}
+                    <div
+                      className="flex items-center gap-1.5 mr-4 px-2 py-1 rounded-md hover:bg-muted/50 cursor-pointer select-none"
+                      onClick={(e) => { e.stopPropagation(); handleToggleModuleAll(mod); }}
+                      title="Tích chọn nhanh tất cả quyền trong nhóm này"
+                    >
+                      <Checkbox
+                        data-testid={`perm-module-all-${mod.module}`}
+                        checked={isModuleAllChecked(mod)}
+                        onCheckedChange={() => handleToggleModuleAll(mod)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-xs font-semibold text-muted-foreground">All</span>
+                    </div>
                     {/* Permission column headers */}
                     <div className="flex items-center gap-0">
                       {PERM_COLS.map(col => (
