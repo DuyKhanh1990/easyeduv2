@@ -12,14 +12,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertCrmRelationshipSchema, insertCrmRejectReasonSchema, insertCrmCustomerSourceSchema, type CrmRelationship, type CrmRejectReason, type CrmCustomerSource } from "@shared/schema";
+import { insertCrmRelationshipSchema, insertCrmRejectReasonSchema, insertCrmCustomerSourceSchema, insertCrmCustomFieldSchema, type CrmRelationship, type CrmRejectReason, type CrmCustomerSource } from "@shared/schema";
 import { Plus, Pencil, Trash2, Settings2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useSidebarVisibility } from "@/hooks/use-sidebar-visibility";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
-import { useCrmRequiredFields, type CrmRequiredField } from "@/hooks/use-crm-config";
-import { CRM_CONFIGURABLE_FIELDS, CRM_FIELD_GROUP_LABELS, type CrmConfigurableField } from "@/lib/crm-customer-fields";
+import { useCrmRequiredFields, useCrmCustomFields, type CrmRequiredField, type CrmCustomField } from "@/hooks/use-crm-config";
+import { CRM_CONFIGURABLE_FIELDS, CRM_FIELD_GROUP_LABELS, makeCustomFieldKey, type CrmConfigurableField } from "@/lib/crm-customer-fields";
 import { api } from "@shared/routes";
 
 const CRM_CONFIG_HREF = "/customers/crm-config";
@@ -122,6 +124,12 @@ export function CRMConfig() {
           {isSubTabVisible(CRM_CONFIG_HREF, "sources") && (
             <TabsContent value="sources">
               <CustomerSourceTab />
+            </TabsContent>
+          )}
+
+          {isSubTabVisible(CRM_CONFIG_HREF, "additional-info") && (
+            <TabsContent value="additional-info">
+              <AdditionalInfoTab />
             </TabsContent>
           )}
 
@@ -432,10 +440,250 @@ function CustomerSourceTab() {
   );
 }
 
+const FIELD_TYPE_OPTIONS: { value: CrmCustomField["fieldType"]; label: string }[] = [
+  { value: "text", label: "Văn bản ngắn" },
+  { value: "textarea", label: "Văn bản dài" },
+  { value: "number", label: "Số" },
+  { value: "date", label: "Ngày" },
+  { value: "select", label: "Chọn từ danh sách" },
+];
+
+function AdditionalInfoTab() {
+  const { toast } = useToast();
+  const { canCreate, canEdit, canDelete } = useTabPerms("additional-info");
+  const [editing, setEditing] = useState<CrmCustomField | null>(null);
+  const [open, setOpen] = useState(false);
+  const [optionsText, setOptionsText] = useState("");
+
+  const { data: list, isLoading } = useCrmCustomFields();
+
+  const form = useForm<any>({
+    resolver: zodResolver(insertCrmCustomFieldSchema) as any,
+    defaultValues: { label: "", fieldType: "text", options: undefined, position: 0 },
+  });
+
+  const fieldType = form.watch("fieldType") as CrmCustomField["fieldType"];
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: any) => {
+      if (editing) {
+        return apiRequest("PUT", `/api/crm/custom-fields/${editing.id}`, data);
+      }
+      return apiRequest("POST", "/api/crm/custom-fields", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.crm.customFields.list.path] });
+      setOpen(false); setEditing(null); form.reset(); setOptionsText("");
+      toast({ title: "Thành công", description: "Đã lưu trường tùy chỉnh" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Lỗi", description: err?.message || "Không lưu được", variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => apiRequest("DELETE", `/api/crm/custom-fields/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.crm.customFields.list.path] });
+      queryClient.invalidateQueries({ queryKey: [api.crm.requiredFields.list.path] });
+      queryClient.invalidateQueries({ queryKey: ["/api/students"] });
+      toast({ title: "Đã xoá", description: "Đã xoá trường tùy chỉnh" });
+    },
+  });
+
+  const openCreate = () => {
+    setEditing(null);
+    form.reset({ label: "", fieldType: "text", options: undefined, position: (list?.length ?? 0) });
+    setOptionsText("");
+    setOpen(true);
+  };
+
+  const openEdit = (item: CrmCustomField) => {
+    setEditing(item);
+    form.reset({
+      label: item.label,
+      fieldType: item.fieldType,
+      options: item.options ?? undefined,
+      position: item.position,
+    });
+    setOptionsText((item.options ?? []).join("\n"));
+    setOpen(true);
+  };
+
+  const onSubmit = (data: any) => {
+    const payload: any = {
+      label: data.label?.trim(),
+      fieldType: data.fieldType,
+      position: Number(data.position) || 0,
+    };
+    if (data.fieldType === "select") {
+      const opts = optionsText.split("\n").map(s => s.trim()).filter(Boolean);
+      if (opts.length === 0) {
+        toast({ title: "Lỗi", description: "Vui lòng nhập ít nhất một lựa chọn", variant: "destructive" });
+        return;
+      }
+      payload.options = opts;
+    } else {
+      payload.options = null;
+    }
+    saveMutation.mutate(payload);
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+        <div>
+          <CardTitle>Thông tin bổ sung</CardTitle>
+          <CardDescription>
+            Tạo các trường thông tin tùy chỉnh để bổ sung vào hồ sơ Học viên / Phụ huynh.
+          </CardDescription>
+        </div>
+        {canCreate && (
+          <Dialog open={open} onOpenChange={(val) => { setOpen(val); if (!val) { setEditing(null); setOptionsText(""); } }}>
+            <DialogTrigger asChild>
+              <Button onClick={openCreate} data-testid="button-add-custom-field">
+                <Plus className="h-4 w-4 mr-2" /> Thêm mới
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{editing ? "Sửa trường thông tin" : "Thêm trường thông tin"}</DialogTitle>
+              </DialogHeader>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                  <FormField control={form.control} name="label" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Tên trường <span className="text-destructive">*</span></FormLabel>
+                      <FormControl><Input {...field} data-testid="input-custom-field-label" /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="fieldType" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Loại dữ liệu</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-custom-field-type">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {FIELD_TYPE_OPTIONS.map(o => (
+                            <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  {fieldType === "select" && (
+                    <FormItem>
+                      <FormLabel>Danh sách lựa chọn (mỗi dòng 1 lựa chọn)</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          value={optionsText}
+                          onChange={(e) => setOptionsText(e.target.value)}
+                          rows={4}
+                          placeholder={"Lựa chọn 1\nLựa chọn 2"}
+                          data-testid="textarea-custom-field-options"
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                  <FormField control={form.control} name="position" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Thứ tự hiển thị</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          value={field.value ?? 0}
+                          onChange={(e) => field.onChange(Number(e.target.value))}
+                          data-testid="input-custom-field-position"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <DialogFooter>
+                    <Button type="submit" disabled={saveMutation.isPending} data-testid="button-save-custom-field">
+                      {editing ? "Cập nhật" : "Thêm mới"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+        )}
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Đang tải...</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Tên trường</TableHead>
+                <TableHead>Loại dữ liệu</TableHead>
+                <TableHead>Lựa chọn</TableHead>
+                <TableHead>Thứ tự</TableHead>
+                {(canEdit || canDelete) && <TableHead className="text-right">Thao tác</TableHead>}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(list ?? []).map((item) => (
+                <TableRow key={item.id} data-testid={`row-custom-field-${item.id}`}>
+                  <TableCell className="font-medium" data-testid={`text-custom-field-label-${item.id}`}>{item.label}</TableCell>
+                  <TableCell>{FIELD_TYPE_OPTIONS.find(o => o.value === item.fieldType)?.label ?? item.fieldType}</TableCell>
+                  <TableCell className="text-muted-foreground text-xs">
+                    {item.fieldType === "select" ? (item.options ?? []).join(", ") : "—"}
+                  </TableCell>
+                  <TableCell>{item.position}</TableCell>
+                  {(canEdit || canDelete) && (
+                    <TableCell className="text-right space-x-2">
+                      {canEdit && (
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(item)} data-testid={`button-edit-custom-field-${item.id}`}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {canDelete && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-destructive"
+                          onClick={() => {
+                            if (confirm(`Xoá trường "${item.label}"? Dữ liệu đã nhập sẽ bị xoá theo.`)) {
+                              deleteMutation.mutate(item.id);
+                            }
+                          }}
+                          data-testid={`button-delete-custom-field-${item.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+              {(!list || list.length === 0) && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">
+                    Chưa có trường tùy chỉnh nào. Bấm "Thêm mới" để tạo.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function RequiredInfoTab() {
   const { toast } = useToast();
   const { canEdit } = useTabPerms("required-info");
   const { data: list, isLoading } = useCrmRequiredFields();
+  const { data: customFields } = useCrmCustomFields();
 
   const requiredMap = new Map<string, boolean>(
     (list ?? []).map((r: CrmRequiredField) => [r.fieldKey, r.isRequired]),
@@ -464,7 +712,13 @@ function RequiredInfoTab() {
     },
   });
 
-  const groups = Array.from(new Set(CRM_CONFIGURABLE_FIELDS.map(f => f.group)));
+  const customAsConfigurable: CrmConfigurableField[] = (customFields ?? []).map(c => ({
+    key: makeCustomFieldKey(c.id),
+    label: c.label,
+    group: "additional",
+  }));
+  const allFields: CrmConfigurableField[] = [...CRM_CONFIGURABLE_FIELDS, ...customAsConfigurable];
+  const groups = Array.from(new Set(allFields.map(f => f.group)));
 
   return (
     <Card>
@@ -480,7 +734,8 @@ function RequiredInfoTab() {
           <p className="text-sm text-muted-foreground">Đang tải...</p>
         ) : (
           groups.map(group => {
-            const fields = CRM_CONFIGURABLE_FIELDS.filter(f => f.group === group);
+            const fields = allFields.filter(f => f.group === group);
+            if (fields.length === 0) return null;
             return (
               <div key={group} className="space-y-2">
                 <h3 className="text-sm font-semibold text-foreground">{CRM_FIELD_GROUP_LABELS[group]}</h3>

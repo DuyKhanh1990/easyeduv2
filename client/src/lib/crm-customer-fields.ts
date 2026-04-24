@@ -1,8 +1,18 @@
 export type CrmConfigurableField = {
   key: string;
   label: string;
-  group: "system" | "account" | "contact" | "parent" | "crm" | "school" | "other";
+  group: "system" | "account" | "contact" | "parent" | "crm" | "school" | "other" | "additional";
 };
+
+export const CUSTOM_FIELD_KEY_PREFIX = "custom:";
+
+export function makeCustomFieldKey(id: string): string {
+  return `${CUSTOM_FIELD_KEY_PREFIX}${id}`;
+}
+
+export function parseCustomFieldKey(key: string): string | null {
+  return key.startsWith(CUSTOM_FIELD_KEY_PREFIX) ? key.slice(CUSTOM_FIELD_KEY_PREFIX.length) : null;
+}
 
 export const CRM_CONFIGURABLE_FIELDS: CrmConfigurableField[] = [
   { key: "avatarUrl", label: "Ảnh đại diện", group: "account" },
@@ -45,8 +55,16 @@ export const CRM_FIELD_GROUP_LABELS: Record<CrmConfigurableField["group"], strin
   crm: "CRM / Sale",
   school: "Lớp & Giáo viên",
   other: "Khác",
+  additional: "Thông tin bổ sung",
 };
 
-export function getCrmFieldLabel(key: string): string {
+export function getCrmFieldLabel(
+  key: string,
+  customFields?: { id: string; label: string }[],
+): string {
+  const customId = parseCustomFieldKey(key);
+  if (customId) {
+    return customFields?.find(c => c.id === customId)?.label ?? key;
+  }
   return CRM_CONFIGURABLE_FIELDS.find(f => f.key === key)?.label ?? key;
 }

@@ -3,7 +3,7 @@ import {
   eq, sql, and, or, inArray, asc, isNull,
   students, staff, users, classes, classSessions, studentClasses, studentSessions,
   studentLocations, crmRelationships, crmRejectReasons, crmCustomerSources,
-  crmRequiredFields,
+  crmRequiredFields, crmCustomFields,
   courseFeePackages, shiftTemplates, studentComments,
   staffAssignments, locations, invoices, invoiceSessionAllocations,
   studentRelationshipHistory,
@@ -13,6 +13,7 @@ import type {
   StudentResponse, Staff as StaffType, CrmRelationship,
   InsertCrmRelationship, CrmRejectReason, InsertCrmRejectReason,
   CrmCustomerSource, InsertCrmCustomerSource,
+  CrmCustomField, InsertCrmCustomField,
   StudentComment, InsertStudentComment,
   User,
 } from "./base";
@@ -675,6 +676,38 @@ export async function upsertCrmRequiredField(fieldKey: string, isRequired: boole
     })
     .returning();
   return { fieldKey: res.fieldKey, isRequired: res.isRequired };
+}
+
+// ── CRM Custom Fields ───────────────────────────────────────────────────────
+export async function getCrmCustomFields(): Promise<CrmCustomField[]> {
+  return await db
+    .select()
+    .from(crmCustomFields)
+    .orderBy(asc(crmCustomFields.position), asc(crmCustomFields.createdAt));
+}
+
+export async function createCrmCustomField(data: InsertCrmCustomField): Promise<CrmCustomField> {
+  const [res] = await db.insert(crmCustomFields).values(data).returning();
+  return res;
+}
+
+export async function updateCrmCustomField(id: string, data: Partial<InsertCrmCustomField>): Promise<CrmCustomField> {
+  const [res] = await db
+    .update(crmCustomFields)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(crmCustomFields.id, id))
+    .returning();
+  return res;
+}
+
+export async function deleteCrmCustomField(id: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    // Strip the value from every student's custom_fields jsonb
+    await tx.execute(sql`UPDATE students SET custom_fields = COALESCE(custom_fields, '{}'::jsonb) - ${id} WHERE custom_fields ? ${id}`);
+    // Remove the linked required-field row, if any
+    await tx.delete(crmRequiredFields).where(eq(crmRequiredFields.fieldKey, `custom:${id}`));
+    await tx.delete(crmCustomFields).where(eq(crmCustomFields.id, id));
+  });
 }
 
 // ==========================================

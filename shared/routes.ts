@@ -9,6 +9,7 @@ import {
   insertCrmRelationshipSchema,
   insertCrmRejectReasonSchema,
   insertCrmCustomerSourceSchema,
+  insertCrmCustomFieldSchema,
 } from './schema';
 
 export const errorSchemas = {
@@ -350,6 +351,7 @@ export const api = {
         teacherIds: z.array(z.string()).optional(),
         parentIds: z.array(z.string()).optional(),
         avatarUrl: z.string().optional(),
+        customFields: z.record(z.any()).optional(),
       }).refine(data => {
         const uniqueIds = new Set(data.locationIds);
         return uniqueIds.size === data.locationIds.length;
@@ -394,6 +396,7 @@ export const api = {
         accountStatus: z.string().optional(),
         password: z.string().optional(),
         avatarUrl: z.string().optional(),
+        customFields: z.record(z.any()).optional(),
       }).partial(),
       responses: {
         200: studentWithRelationsSchema,
@@ -426,6 +429,12 @@ export const api = {
     requiredFields: {
       list: { path: "/api/crm/required-fields", method: "GET" },
       upsert: { path: "/api/crm/required-fields", method: "PUT" },
+    },
+    customFields: {
+      list: { path: "/api/crm/custom-fields", method: "GET" },
+      create: { path: "/api/crm/custom-fields", method: "POST", input: insertCrmCustomFieldSchema },
+      update: { path: "/api/crm/custom-fields/:id", method: "PUT", input: insertCrmCustomFieldSchema.partial() },
+      delete: { path: "/api/crm/custom-fields/:id", method: "DELETE" },
     },
   },
   courses: {

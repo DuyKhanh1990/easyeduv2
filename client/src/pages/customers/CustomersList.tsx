@@ -9,7 +9,8 @@ import { useStudents, useStudent, useCreateStudent, useDeleteStudent, useUpdateS
 import { useLocations } from "@/hooks/use-locations";
 import { useStaff } from "@/hooks/use-staff";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
-import { useCrmRelationships, useCrmCustomerSources, useCrmRejectReasons, type CrmRelationship } from "@/hooks/use-crm-config";
+import { useCrmRelationships, useCrmCustomerSources, useCrmRejectReasons, useCrmCustomFields, type CrmRelationship } from "@/hooks/use-crm-config";
+import { makeCustomFieldKey } from "@/lib/crm-customer-fields";
 import { useStudentSchedule } from "@/hooks/useStudentSchedule";
 import { useCustomersBulkActions } from "@/hooks/useCustomersBulkActions";
 import { useExcelImportExport } from "@/hooks/useExcelImportExport";
@@ -184,6 +185,41 @@ export function CustomersList() {
   const { data: crmRelationships } = useCrmRelationships();
   const { data: crmSources } = useCrmCustomerSources();
   const { data: crmReasons } = useCrmRejectReasons();
+  const { data: crmCustomFields } = useCrmCustomFields();
+
+  // Merge custom-field columns just before "actions" — preserve user's saved order/visibility.
+  useEffect(() => {
+    if (!crmCustomFields) return;
+    setColumns((prev) => {
+      const existingIds = new Set(prev.map((c) => c.id));
+      const wantedIds = new Set((crmCustomFields ?? []).map((c) => makeCustomFieldKey(c.id)));
+      // Drop deleted custom columns
+      let next = prev.filter((c) => !c.id.startsWith("custom:") || wantedIds.has(c.id));
+      // Append new custom columns just before the trailing "actions"
+      const toAdd = (crmCustomFields ?? [])
+        .filter((c) => !existingIds.has(makeCustomFieldKey(c.id)))
+        .map((c) => ({ id: makeCustomFieldKey(c.id), label: c.label, visible: true } as ColumnConfig));
+      // Sync labels for existing custom columns (in case label changed)
+      next = next.map((c) => {
+        const id = c.id.startsWith("custom:") ? c.id.slice("custom:".length) : null;
+        if (!id) return c;
+        const def = crmCustomFields.find((d) => d.id === id);
+        return def ? { ...c, label: def.label } : c;
+      });
+      if (toAdd.length === 0 && next.length === prev.length) {
+        // No changes other than possible label updates
+        const labelChanged = next.some((c, i) => c.label !== prev[i]?.label);
+        return labelChanged ? next : prev;
+      }
+      const actionsIdx = next.findIndex((c) => c.id === "actions");
+      if (actionsIdx >= 0) {
+        next = [...next.slice(0, actionsIdx), ...toAdd, ...next.slice(actionsIdx)];
+      } else {
+        next = [...next, ...toAdd];
+      }
+      return next;
+    });
+  }, [crmCustomFields]);
   const { data: locations } = useLocations();
   const { data: staff } = useStaff(undefined, true);
 

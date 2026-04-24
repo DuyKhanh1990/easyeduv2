@@ -53,4 +53,25 @@ import { useQuery } from "@tanstack/react-query";
       },
     });
   }
+
+  export interface CrmCustomField {
+    id: string;
+    label: string;
+    fieldType: "text" | "number" | "date" | "textarea" | "select";
+    options?: string[] | null;
+    position: number;
+    createdAt?: string;
+    updatedAt?: string;
+  }
+
+  export function useCrmCustomFields() {
+    return useQuery<CrmCustomField[]>({
+      queryKey: [api.crm.customFields.list.path],
+      queryFn: async () => {
+        const res = await fetch(api.crm.customFields.list.path, { credentials: "include" });
+        if (!res.ok) throw new Error("Failed to fetch CRM custom fields");
+        return await res.json();
+      },
+    });
+  }
   

@@ -8,6 +8,7 @@ import {
   type CrmRelationship, type InsertCrmRelationship,
   type CrmRejectReason, type InsertCrmRejectReason,
   type CrmCustomerSource, type InsertCrmCustomerSource,
+  type CrmCustomField, type InsertCrmCustomField,
   type Course, type InsertCourse,
   type CourseFeePackage, type InsertCourseFeePackage,
   type CourseProgram, type CourseProgramContent,
@@ -109,6 +110,11 @@ export interface IStorage {
 
   getCrmRequiredFields(): Promise<{ fieldKey: string; isRequired: boolean }[]>;
   upsertCrmRequiredField(fieldKey: string, isRequired: boolean): Promise<{ fieldKey: string; isRequired: boolean }>;
+
+  getCrmCustomFields(): Promise<CrmCustomField[]>;
+  createCrmCustomField(data: InsertCrmCustomField): Promise<CrmCustomField>;
+  updateCrmCustomField(id: string, data: Partial<InsertCrmCustomField>): Promise<CrmCustomField>;
+  deleteCrmCustomField(id: string): Promise<void>;
 
   // Courses & Fee Packages
   getCourses(): Promise<Course[]>;
@@ -747,6 +753,19 @@ export class DatabaseStorage implements IStorage {
 
   async upsertCrmRequiredField(fieldKey: string, isRequired: boolean): Promise<{ fieldKey: string; isRequired: boolean }> {
     return studentStorage.upsertCrmRequiredField(fieldKey, isRequired);
+  }
+
+  async getCrmCustomFields(): Promise<CrmCustomField[]> {
+    return studentStorage.getCrmCustomFields();
+  }
+  async createCrmCustomField(data: InsertCrmCustomField): Promise<CrmCustomField> {
+    return studentStorage.createCrmCustomField(data);
+  }
+  async updateCrmCustomField(id: string, data: Partial<InsertCrmCustomField>): Promise<CrmCustomField> {
+    return studentStorage.updateCrmCustomField(id, data);
+  }
+  async deleteCrmCustomField(id: string): Promise<void> {
+    return studentStorage.deleteCrmCustomField(id);
   }
 
   // Courses & Fee Packages

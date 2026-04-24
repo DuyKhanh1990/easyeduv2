@@ -464,6 +464,26 @@ app.use((req, res, next) => {
     console.error("Migration crm_required_fields failed:", err);
   }
 
+  // Migrate: create crm_custom_fields table + students.custom_fields jsonb column
+  try {
+    const { db: migDb } = await import("./storage/base");
+    await migDb.execute(`
+      CREATE TABLE IF NOT EXISTS crm_custom_fields (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        label VARCHAR(255) NOT NULL,
+        field_type VARCHAR(20) NOT NULL DEFAULT 'text',
+        options TEXT[],
+        position INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await migDb.execute(`ALTER TABLE students ADD COLUMN IF NOT EXISTS custom_fields JSONB DEFAULT '{}'::jsonb`);
+    console.log("Migration: crm_custom_fields table & students.custom_fields ensured");
+  } catch (err) {
+    console.error("Migration crm_custom_fields failed:", err);
+  }
+
   // Backfill: synchronise classes.start_date/end_date with actual schedule
   // (one-shot — no schema change, but data may be stale on rows created before
   // the recalculateClass cascade was added).

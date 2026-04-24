@@ -10,8 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useLocations } from "@/hooks/use-locations";
 import { useStaff } from "@/hooks/use-staff";
 import { useStudents } from "@/hooks/use-students";
-import { useCrmRelationships, useCrmCustomerSources, useCrmRejectReasons, useCrmRequiredFields, type CrmRelationship } from "@/hooks/use-crm-config";
-import { getCrmFieldLabel } from "@/lib/crm-customer-fields";
+import { useCrmRelationships, useCrmCustomerSources, useCrmRejectReasons, useCrmRequiredFields, useCrmCustomFields, type CrmRelationship } from "@/hooks/use-crm-config";
+import { getCrmFieldLabel, parseCustomFieldKey, makeCustomFieldKey } from "@/lib/crm-customer-fields";
 import { User, Phone, Mail, MapPin, CalendarDays, Briefcase, GraduationCap, Camera, Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -56,6 +56,7 @@ const formSchema = z.object({
   
   note: z.string().optional(),
   avatarUrl: z.string().optional(),
+  customFields: z.record(z.any()).optional(),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -99,6 +100,7 @@ function getFormDefaults(data?: StudentResponse | null): FormData {
     parentIds: (data as any)?.parentIds || [],
     note: data?.note || "",
     avatarUrl: (data as any)?.avatarUrl || "",
+    customFields: ((data as any)?.customFields as Record<string, any>) || {},
   };
 }
 
@@ -114,13 +116,38 @@ export function CustomerForm({ initialData, onSubmit, isPending }: CustomerFormP
   const requiredKeysRef = useRef<Set<string>>(requiredKeys);
   useEffect(() => { requiredKeysRef.current = requiredKeys; }, [requiredKeys]);
 
+  const { data: customFieldsList } = useCrmCustomFields();
+  const customFieldLabelRef = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    customFieldLabelRef.current = new Map((customFieldsList ?? []).map(c => [c.id, c.label]));
+  }, [customFieldsList]);
+
   // Custom resolver: zod first, then add errors for any configured required fields that are empty
   const resolver = useMemo(() => {
     const baseResolver = zodResolver(formSchema);
     return async (values: any, context: any, options: any) => {
       const result: any = await (baseResolver as any)(values, context, options);
       const errors: any = { ...(result.errors || {}) };
+      const customLabelMap = customFieldLabelRef.current;
       Array.from(requiredKeysRef.current).forEach((key) => {
+        const customId = parseCustomFieldKey(key);
+        if (customId) {
+          if (errors.customFields?.[customId]) return;
+          const v = (values as any)?.customFields?.[customId];
+          const isEmpty =
+            v === undefined ||
+            v === null ||
+            v === "" ||
+            (Array.isArray(v) && v.length === 0);
+          if (isEmpty) {
+            const label = customLabelMap.get(customId) ?? "Trường";
+            errors.customFields = {
+              ...(errors.customFields || {}),
+              [customId]: { type: "required", message: `${label} là bắt buộc` },
+            };
+          }
+          return;
+        }
         if (errors[key]) return;
         const v = (values as any)?.[key];
         const isEmpty =
@@ -622,6 +649,58 @@ export function CustomerForm({ initialData, onSubmit, isPending }: CustomerFormP
             </div>
           </div>
         </div>
+
+        {(customFieldsList?.length ?? 0) > 0 && (
+          <div className="bg-muted/30 p-6 rounded-2xl border border-border/50 space-y-6">
+            <h3 className="text-lg font-display font-semibold flex items-center gap-2">
+              <GraduationCap className="w-5 h-5 text-primary" /> Thông tin bổ sung
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {(customFieldsList ?? []).map((cf) => {
+                const fieldKey = makeCustomFieldKey(cf.id);
+                const value = form.watch("customFields")?.[cf.id] ?? "";
+                const setVal = (v: any) => {
+                  const cur = form.getValues("customFields") || {};
+                  form.setValue("customFields", { ...cur, [cf.id]: v });
+                };
+                const errMsg = (form.formState.errors as any)?.customFields?.[cf.id]?.message;
+                return (
+                  <div key={cf.id} className="space-y-2">
+                    <Label>{cf.label} <RequiredMark k={fieldKey} /></Label>
+                    {cf.fieldType === "textarea" ? (
+                      <Textarea
+                        className="bg-white opacity-100 resize-none"
+                        value={value}
+                        onChange={(e) => setVal(e.target.value)}
+                        data-testid={`input-custom-${cf.id}`}
+                      />
+                    ) : cf.fieldType === "select" ? (
+                      <Select value={value || undefined} onValueChange={(v) => setVal(v)}>
+                        <SelectTrigger className="h-11 bg-white opacity-100" data-testid={`select-custom-${cf.id}`}>
+                          <SelectValue placeholder="Chọn..." />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white opacity-100 shadow-md border border-border">
+                          {(cf.options ?? []).map(opt => (
+                            <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        type={cf.fieldType === "number" ? "number" : cf.fieldType === "date" ? "date" : "text"}
+                        className="h-11 bg-white opacity-100"
+                        value={value}
+                        onChange={(e) => setVal(cf.fieldType === "number" && e.target.value !== "" ? Number(e.target.value) : e.target.value)}
+                        data-testid={`input-custom-${cf.id}`}
+                      />
+                    )}
+                    {errMsg && <p className="text-xs text-destructive" data-testid={`error-custom-${cf.id}`}>{errMsg}</p>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex justify-end gap-4 pt-4 border-t border-border pb-8">

@@ -360,8 +360,15 @@ export function CustomersTable({
             </DropdownMenuContent>
           </DropdownMenu>
         );
-      default:
+      default: {
+        if (columnId.startsWith("custom:")) {
+          const id = columnId.slice("custom:".length);
+          const v = (student?.customFields ?? {})[id];
+          if (v === undefined || v === null || v === "") return <span className="text-muted-foreground">—</span>;
+          return <span data-testid={`cell-custom-${id}-${student.id}`}>{String(v)}</span>;
+        }
         return null;
+      }
     }
   };
 

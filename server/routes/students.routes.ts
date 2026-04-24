@@ -805,6 +805,44 @@ export function registerStudentsRoutes(app: Express): void {
     }
   });
 
+  // ── CRM Custom Fields ──────────────────────────────────────────────────────
+  app.get(api.crm.customFields.list.path, async (_req, res) => {
+    try {
+      res.json(await storage.getCrmCustomFields());
+    } catch (err) {
+      res.status(500).json({ message: (err as any).message });
+    }
+  });
+
+  app.post(api.crm.customFields.create.path, async (req, res) => {
+    try {
+      const input = api.crm.customFields.create.input.parse(req.body);
+      res.status(201).json(await storage.createCrmCustomField(input));
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json(err.errors);
+      res.status(500).json({ message: (err as any).message });
+    }
+  });
+
+  app.put(api.crm.customFields.update.path, async (req, res) => {
+    try {
+      const input = api.crm.customFields.update.input.parse(req.body);
+      res.json(await storage.updateCrmCustomField(req.params.id, input));
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json(err.errors);
+      res.status(500).json({ message: (err as any).message });
+    }
+  });
+
+  app.delete(api.crm.customFields.delete.path, async (req, res) => {
+    try {
+      await storage.deleteCrmCustomField(req.params.id);
+      res.status(204).send();
+    } catch (err) {
+      res.status(500).json({ message: (err as any).message });
+    }
+  });
+
   app.post(api.students.importClassAssign.path, async (req, res) => {
     try {
       const items: { studentId: string; classCode: string; className?: string; locationId: string }[] = req.body;

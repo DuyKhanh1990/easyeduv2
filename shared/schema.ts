@@ -461,6 +461,7 @@ export const students = pgTable("students", {
   customerSourceIds: uuid("customer_source_ids").array(),
   note: text("note"),
   avatarUrl: text("avatar_url"),
+  customFields: jsonb("custom_fields").$type<Record<string, any>>().default({}),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -513,6 +514,26 @@ export const crmRequiredFields = pgTable("crm_required_fields", {
   isRequired: boolean("is_required").notNull().default(false),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// Center-defined custom fields appended to the customer form.
+// Values are stored on students.customFields (jsonb) keyed by this row's id.
+export const crmCustomFields = pgTable("crm_custom_fields", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  label: varchar("label", { length: 255 }).notNull(),
+  fieldType: varchar("field_type", { length: 20 }).notNull().default("text"), // text | number | date | textarea | select
+  options: text("options").array(),
+  position: integer("position").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertCrmCustomFieldSchema = createInsertSchema(crmCustomFields).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertCrmCustomField = z.infer<typeof insertCrmCustomFieldSchema>;
+export type CrmCustomField = typeof crmCustomFields.$inferSelect;
 
 // ==========================================
 // STUDENT RELATIONSHIP HISTORY (Lịch sử chuyển đổi mối quan hệ)

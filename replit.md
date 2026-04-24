@@ -3,6 +3,24 @@
 ## Project Overview
 A comprehensive learning management system for managing students, classes, course programs, and tuition/fee management.
 
+## CRM Custom Fields ("Thông tin bổ sung")
+
+Centers can define custom additional fields for student records (text/number/date/textarea/select).
+
+**Schema:**
+- `crm_custom_fields` — id (uuid), label, fieldType, options (text[]), position, timestamps
+- `students.custom_fields` — jsonb keyed by custom-field id
+
+**Key files:**
+- `shared/schema.ts` — `crmCustomFields` table + `students.customFields` column
+- `server/storage/student.storage.ts` — CRUD; delete strips key from all `students.custom_fields` (single tx)
+- `server/routes/students.routes.ts` — `/api/crm/custom-fields` REST
+- `client/src/hooks/use-crm-config.ts` — `useCrmCustomFields()` hook
+- `client/src/lib/customer-fields.ts` — `makeCustomFieldKey()` / `parseCustomFieldKey()` (`custom:<id>`) + `additional` group
+- `client/src/pages/customers/CRMConfig.tsx` — `AdditionalInfoTab` (CRUD) + `RequiredInfoTab` merges custom fields under `additional` group
+- `client/src/pages/customers/CustomerForm.tsx` — dynamic section + Zod resolver checks required custom fields via `customFields[id]`
+- `client/src/pages/customers/CustomersList.tsx` / `CustomersTable.tsx` — custom columns rendered before `actions`, toggleable in Sort menu
+
 ## Notification System
 
 Hệ thống thông báo realtime tích hợp vào app, gồm 3 kênh: DB, WebSocket, Email.
