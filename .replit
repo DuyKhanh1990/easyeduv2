@@ -61,6 +61,7 @@ TINODE_ADMIN_PASS = "HFJc0h/eaq39coHIOf6upyZvuLtMYqXQ5W8lh5hIh8Ar78VI"
 TINODE_BOT_USER = "edumanage_bot_v2"
 TINODE_BOT_PASS = "hExLPoQv+3HVYFWykRkHYwmwAGiUublYPnlFAho0OmwQk10U"
 TINODE_USER_PASS_SECRET = "DcD4ZGBfstLXTtkXxmPAKZs+ntFRPo5b98Bd1xpWJLo="
+TINODE_LOGIN_VERSION = "2"
 
 [agent]
 integrations = ["javascript_openai_ai_integrations:2.0.0", "javascript_gemini_ai_integrations:2.0.0"]

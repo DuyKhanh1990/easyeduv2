@@ -31,6 +31,11 @@ data:
   TINODE_BOT_USER: "edumanage_bot_v2"
   TINODE_BOT_PASS: "hExLPoQv+3HVYFWykRkHYwmwAGiUublYPnlFAho0OmwQk10U"
   TINODE_USER_PASS_SECRET: "DcD4ZGBfstLXTtkXxmPAKZs+ntFRPo5b98Bd1xpWJLo="
+  # Bump khi cần "reset" toàn bộ user account trên Tinode (tạo lại tất cả với
+  # password derive từ TINODE_USER_PASS_SECRET hiện tại). Tăng số nguyên: 2, 3, …
+  # Lần đầu deploy với code mới nên đặt = "2" để bỏ qua các account cũ trong
+  # MongoDB Tinode (đã được tạo bằng password cũ và không thể login).
+  TINODE_LOGIN_VERSION: "2"
   TINODE_USER_AGENT: "EduManage/1.0"
   TINODE_REQUEST_TIMEOUT_MS: "10000"
   TINODE_MAX_RETRIES: "5"

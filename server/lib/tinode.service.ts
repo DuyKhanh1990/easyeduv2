@@ -23,6 +23,7 @@ import { tinodeAdmin } from "./tinode-admin";
 const TINODE_URL             = process.env.TINODE_URL?.replace(/\/$/, "") ?? null;
 const TINODE_API_KEY         = process.env.TINODE_API_KEY ?? null;
 const TINODE_USER_PASS_SECRET = process.env.TINODE_USER_PASS_SECRET ?? null;
+const TINODE_LOGIN_VERSION   = parseInt(process.env.TINODE_LOGIN_VERSION ?? "1", 10);
 
 if (TINODE_URL && !TINODE_API_KEY) {
   console.error("[Tinode] TINODE_API_KEY is not set — chat will not work.");
@@ -47,9 +48,14 @@ if (TINODE_URL) {
 // ─── Naming helpers ───────────────────────────────────────────────────────────
 
 export function getTinodeLogin(userId: string): string {
-  // max 32 chars: "u_" + 28 hex chars
+  // Tinode login max 32 chars.
+  // - version 1 (default, backward-compat): "u_<28-hex>"
+  // - version >1: "u<v>_<28-hex>" — bump khi cần "reset" toàn bộ user account
+  //   trên Tinode mà không phải đụng MongoDB (mọi login mới được tạo từ đầu
+  //   với password mới derive từ TINODE_USER_PASS_SECRET hiện tại).
   const compact = userId.replace(/-/g, "").slice(0, 28);
-  return `u_${compact}`;
+  if (TINODE_LOGIN_VERSION <= 1) return `u_${compact}`;
+  return `u${TINODE_LOGIN_VERSION}_${compact}`;
 }
 
 function getTinodePassword(userId: string): string {
