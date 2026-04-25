@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { createActivityLog, getActivityLogs } from "../storage/activity-log.storage";
+import { getClassFormatSummary, getClassStatusSummary } from "../storage/class.storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { db } from "../db";
@@ -593,7 +594,7 @@ export function registerClassesRoutes(app: Express): void {
       const allowedLocationIds = await getAllowedLocationIds(req);
       const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
 
-      const summary = await storage.getClassFormatSummary({ isSuperAdmin, allowedLocationIds, locationId });
+      const summary = await getClassFormatSummary({ isSuperAdmin, allowedLocationIds, locationId });
       res.json(summary);
     } catch (err: any) {
       console.error("Class format summary error:", err);
@@ -613,7 +614,7 @@ export function registerClassesRoutes(app: Express): void {
       const allowedLocationIds = await getAllowedLocationIds(req);
       const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
 
-      const summary = await storage.getClassStatusSummary({ isSuperAdmin, allowedLocationIds, locationId });
+      const summary = await getClassStatusSummary({ isSuperAdmin, allowedLocationIds, locationId });
       res.json(summary);
     } catch (err: any) {
       console.error("Class status summary error:", err);
