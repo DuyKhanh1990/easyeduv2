@@ -207,21 +207,21 @@ function LearningStatusBars({
     return () => clearTimeout(t);
   }, []);
   return (
-    <div className="space-y-2.5" data-testid="chart-learning-bars">
+    <div className="space-y-3.5" data-testid="chart-learning-bars">
       {items.map((s) => {
         const pctVal = Math.round((s.value / safeTotal) * 100);
         const barPct = Math.round((s.value / max) * 100);
         return (
           <div
             key={s.key}
-            className="grid grid-cols-[78px_1fr_28px_36px] items-center gap-2 text-[11px]"
+            className="grid grid-cols-[100px_1fr_32px_40px] items-center gap-2.5 text-[11px]"
             data-testid={`row-${s.key}`}
           >
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: s.fill }} />
-              <span className="text-muted-foreground truncate">{s.label}</span>
+              <span className="text-muted-foreground whitespace-nowrap">{s.label}</span>
             </div>
-            <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+            <div className="h-4 rounded-full bg-muted overflow-hidden">
               <div
                 className="h-full rounded-full transition-[width] duration-[1100ms] ease-out"
                 style={{
