@@ -3,7 +3,8 @@ import { FileViewer } from "@/components/ui/file-viewer";
 import {
   Search, Send, Users, Hash, Wifi, WifiOff, Loader2,
   MessageCircle, Info, Bell, Plus, X, UserPlus, Trash2, UserRound,
-  Smile, Paperclip, FileText, Download, ImageIcon
+  Smile, Paperclip, FileText, Download, ImageIcon,
+  CornerUpLeft, Pencil
 } from "lucide-react";
 import Picker from "@emoji-mart/react";
 import data from "@emoji-mart/data";
@@ -800,7 +801,7 @@ function MessageWindow({
   myUid: string | null;
   myLogin: string | null;
   userNames: Record<string, string>;
-  onSend: (content: string | Record<string, any>) => void;
+  onSend: (content: string | Record<string, any>, head?: Record<string, any>) => void;
   onUploadFile: (file: File) => Promise<{ ref: string; size: number; mime: string; name: string } | null>;
   onOpenViewer: (url: string, name: string) => void;
 }) {
@@ -809,10 +810,36 @@ function MessageWindow({
   const [input, setInput] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [editingMsg, setEditingMsg] = useState<UseTinodeResult["messages"][string][0] | null>(null);
+  const [replyingTo, setReplyingTo] = useState<UseTinodeResult["messages"][string][0] | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
+
+  // Quick lookup of messages by seq (used to render quoted previews).
+  const messagesBySeq = (messages ?? []).reduce<Record<number, typeof messages[0]>>(
+    (acc, m) => { acc[m.seq] = m; return acc; },
+    {}
+  );
+
+  // Preview text for a message (used in reply banner & quoted preview block).
+  function previewText(m: { content: string | Record<string, any> } | undefined): string {
+    if (!m) return "Tin nhắn không còn tồn tại";
+    if (typeof m.content === "string") return m.content;
+    if (m.content?.txt) return m.content.txt;
+    const fmt: any[] = m.content?.fmt ?? [];
+    if (fmt.find((f: any) => f.tp === "IM")) return "[Hình ảnh]";
+    if (fmt.find((f: any) => f.tp === "EX")) return "[Tệp đính kèm]";
+    return "[Tin nhắn]";
+  }
+
+  // Reset edit/reply mode when switching topic.
+  useEffect(() => {
+    setEditingMsg(null);
+    setReplyingTo(null);
+    setInput("");
+  }, [topic?.topic]);
 
   useEffect(() => {
     const el = scrollContainerRef.current;
@@ -840,12 +867,53 @@ function MessageWindow({
   }, [showEmojiPicker]);
 
   function handleSend() {
-    if (!input.trim()) return;
-    onSend(input.trim());
+    const text = input.trim();
+    if (!text) return;
+    if (editingMsg) {
+      // Edit/Replace: send pub with head.replace = ":N" where N is the original seq.
+      onSend(text, { replace: `:${editingMsg.seq}` });
+      setEditingMsg(null);
+    } else if (replyingTo && topic) {
+      // Reply: send pub with head.reply = "topicName:seq".
+      onSend(text, { reply: `${topic.topic}:${replyingTo.seq}` });
+      setReplyingTo(null);
+    } else {
+      onSend(text);
+    }
     setInput("");
   }
 
+  function startEdit(msg: typeof messages[0]) {
+    if (typeof msg.content !== "string") {
+      toast({ title: "Không thể sửa", description: "Chỉ có thể sửa tin nhắn dạng văn bản.", variant: "destructive" });
+      return;
+    }
+    setReplyingTo(null);
+    setEditingMsg(msg);
+    setInput(msg.content);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  function startReply(msg: typeof messages[0]) {
+    setEditingMsg(null);
+    setReplyingTo(msg);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  function cancelComposeMode() {
+    if (editingMsg) {
+      setEditingMsg(null);
+      setInput("");
+    }
+    if (replyingTo) setReplyingTo(null);
+  }
+
   function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Escape" && (editingMsg || replyingTo)) {
+      e.preventDefault();
+      cancelComposeMode();
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -1001,13 +1069,34 @@ function MessageWindow({
                     const nextMsg = group.msgs[idx + 1];
                     const isLast = !nextMsg || nextMsg.from !== msg.from;
 
+                    // Reply / edit metadata.
+                    const replyRef: string | undefined = msg.head?.reply;
+                    const repliedSeq: number | null = (() => {
+                      if (typeof replyRef !== "string") return null;
+                      const m = /(?::|^)(\d+)$/.exec(replyRef);
+                      return m ? parseInt(m[1], 10) : null;
+                    })();
+                    const repliedMsg = repliedSeq != null ? messagesBySeq[repliedSeq] : undefined;
+                    const repliedFromName = repliedMsg
+                      ? (repliedMsg.from === myUid || repliedMsg.from === myLogin
+                          ? "Bạn"
+                          : (userNames[repliedMsg.from] && userNames[repliedMsg.from] !== repliedMsg.from
+                              ? userNames[repliedMsg.from]
+                              : repliedMsg.from?.replace(/^usr/, "").slice(0, 8) || "Người dùng"))
+                      : "";
+
+                    const isEdited = msg.edited === true || typeof msg.head?.replace === "string";
+                    const isHighlighted = (editingMsg && editingMsg.seq === msg.seq) || (replyingTo && replyingTo.seq === msg.seq);
+                    const canEdit = isMe && typeof content === "string";
+
                     return (
                       <div
                         key={`${msg.seq}-${msg.ts}`}
                         className={cn(
-                          "flex gap-3",
+                          "group flex gap-3 -mx-2 px-2 py-0.5 rounded-lg transition-colors",
                           isMe ? "flex-row-reverse" : "flex-row",
-                          isFirst ? "mt-4" : "mt-0.5"
+                          isFirst ? "mt-4" : "mt-0.5",
+                          isHighlighted && "bg-primary/5"
                         )}
                         data-testid={`chat-message-${msg.seq}`}
                       >
@@ -1030,26 +1119,94 @@ function MessageWindow({
                             </span>
                           )}
 
-                          <div className={cn(
-                            "px-4 py-2.5 text-sm leading-relaxed",
-                            typeof content === "object" && content !== null ? "p-2" : "",
-                            isMe
-                              ? cn(
-                                  "bg-gradient-to-br from-primary to-indigo-600 text-white shadow-sm shadow-primary/20",
-                                  isFirst && isLast ? "rounded-2xl rounded-br-sm" :
-                                  isFirst ? "rounded-2xl rounded-br-sm" :
-                                  isLast ? "rounded-xl rounded-tr-2xl rounded-br-sm" :
-                                  "rounded-l-2xl rounded-r-lg"
-                                )
-                              : cn(
-                                  "bg-white dark:bg-muted shadow-sm border border-border/40 text-foreground",
-                                  isFirst && isLast ? "rounded-2xl rounded-bl-sm" :
-                                  isFirst ? "rounded-2xl rounded-bl-sm" :
-                                  isLast ? "rounded-xl rounded-tl-2xl rounded-bl-sm" :
-                                  "rounded-r-2xl rounded-l-lg"
-                                )
-                          )}>
-                            {renderContent(content, isMe, tinodeUrl, onOpenViewer)}
+                          {/* Quoted reply preview (looked up from local messages by seq) */}
+                          {replyRef && (
+                            <div
+                              className={cn(
+                                "mb-1 max-w-full text-xs rounded-lg border-l-2 pl-2 pr-3 py-1 cursor-pointer hover:bg-muted/60 transition-colors",
+                                isMe
+                                  ? "border-white/50 bg-white/10 text-white/90"
+                                  : "border-primary/60 bg-muted/40 text-muted-foreground"
+                              )}
+                              data-testid={`chat-message-reply-${msg.seq}`}
+                              onClick={() => {
+                                if (repliedSeq == null) return;
+                                const el = document.querySelector(`[data-testid="chat-message-${repliedSeq}"]`);
+                                if (el) {
+                                  el.scrollIntoView({ behavior: "smooth", block: "center" });
+                                  el.classList.add("ring-2", "ring-primary/40");
+                                  setTimeout(() => el.classList.remove("ring-2", "ring-primary/40"), 1500);
+                                }
+                              }}
+                            >
+                              <p className={cn("font-semibold leading-tight", isMe ? "text-white" : "text-primary")}>
+                                {repliedFromName || "Tin nhắn"}
+                              </p>
+                              <p className="line-clamp-2 leading-snug">{previewText(repliedMsg)}</p>
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-1.5">
+                            {/* Hover action buttons (placed before bubble for "me" so they sit on the left) */}
+                            <div
+                              className={cn(
+                                "flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0",
+                                isMe ? "order-1" : "order-2"
+                              )}
+                            >
+                              <button
+                                onClick={() => startReply(msg)}
+                                title="Trả lời"
+                                data-testid={`button-reply-${msg.seq}`}
+                                className="w-7 h-7 rounded-lg bg-white/90 dark:bg-muted shadow-sm border border-border/40 hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground"
+                              >
+                                <CornerUpLeft className="h-3.5 w-3.5" />
+                              </button>
+                              {canEdit && (
+                                <button
+                                  onClick={() => startEdit(msg)}
+                                  title="Sửa tin nhắn"
+                                  data-testid={`button-edit-${msg.seq}`}
+                                  className="w-7 h-7 rounded-lg bg-white/90 dark:bg-muted shadow-sm border border-border/40 hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+
+                            <div className={cn(
+                              "px-4 py-2.5 text-sm leading-relaxed",
+                              isMe ? "order-2" : "order-1",
+                              typeof content === "object" && content !== null ? "p-2" : "",
+                              isMe
+                                ? cn(
+                                    "bg-gradient-to-br from-primary to-indigo-600 text-white shadow-sm shadow-primary/20",
+                                    isFirst && isLast ? "rounded-2xl rounded-br-sm" :
+                                    isFirst ? "rounded-2xl rounded-br-sm" :
+                                    isLast ? "rounded-xl rounded-tr-2xl rounded-br-sm" :
+                                    "rounded-l-2xl rounded-r-lg"
+                                  )
+                                : cn(
+                                    "bg-white dark:bg-muted shadow-sm border border-border/40 text-foreground",
+                                    isFirst && isLast ? "rounded-2xl rounded-bl-sm" :
+                                    isFirst ? "rounded-2xl rounded-bl-sm" :
+                                    isLast ? "rounded-xl rounded-tl-2xl rounded-bl-sm" :
+                                    "rounded-r-2xl rounded-l-lg"
+                                  )
+                            )}>
+                              {renderContent(content, isMe, tinodeUrl, onOpenViewer)}
+                              {isEdited && (
+                                <span
+                                  className={cn(
+                                    "ml-1.5 text-[10px] italic",
+                                    isMe ? "text-white/70" : "text-muted-foreground"
+                                  )}
+                                  data-testid={`text-edited-${msg.seq}`}
+                                >
+                                  (đã sửa)
+                                </span>
+                              )}
+                            </div>
                           </div>
 
                           {isLast && (
@@ -1100,6 +1257,42 @@ function MessageWindow({
           data-testid="chat-file-input"
         />
 
+        {/* Compose mode banner: shows when editing or replying */}
+        {(editingMsg || replyingTo) && (
+          <div
+            className="flex items-start gap-2 mb-2 px-3 py-2 rounded-xl bg-primary/5 border-l-2 border-primary"
+            data-testid="compose-mode-banner"
+          >
+            <div className="shrink-0 mt-0.5 text-primary">
+              {editingMsg ? <Pencil className="h-4 w-4" /> : <CornerUpLeft className="h-4 w-4" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-primary">
+                {editingMsg
+                  ? "Đang sửa tin nhắn"
+                  : `Đang trả lời ${
+                      replyingTo && (replyingTo.from === myUid || replyingTo.from === myLogin)
+                        ? "chính bạn"
+                        : (replyingTo && userNames[replyingTo.from] && userNames[replyingTo.from] !== replyingTo.from
+                            ? userNames[replyingTo.from]
+                            : (replyingTo?.from?.replace(/^usr/, "").slice(0, 8) || "Người dùng"))
+                    }`}
+              </p>
+              <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                {previewText(editingMsg ?? replyingTo ?? undefined)}
+              </p>
+            </div>
+            <button
+              onClick={cancelComposeMode}
+              data-testid="button-cancel-compose"
+              className="shrink-0 w-6 h-6 rounded-md hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground"
+              title="Huỷ"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
         <div className="flex items-center gap-2 bg-muted/50 rounded-2xl px-3 py-2 focus-within:ring-2 focus-within:ring-primary/20 focus-within:bg-muted/70 transition-all">
           {/* Emoji button */}
           <button
@@ -1132,7 +1325,13 @@ function MessageWindow({
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={`Nhắn tin đến ${topic.name || topic.topic}...`}
+            placeholder={
+              editingMsg
+                ? "Sửa tin nhắn… (Esc để huỷ)"
+                : replyingTo
+                ? "Nhập tin trả lời… (Esc để huỷ)"
+                : `Nhắn tin đến ${topic.name || topic.topic}...`
+            }
             className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50 py-1 min-w-0"
             data-testid="chat-message-input"
           />

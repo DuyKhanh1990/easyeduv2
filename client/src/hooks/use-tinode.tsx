@@ -7,6 +7,8 @@ export interface TinodeMessage {
   from: string;
   content: string | Record<string, any>;
   ts: string;
+  head?: Record<string, any>;
+  edited?: boolean;
 }
 
 export interface TinodeTopic {
@@ -38,7 +40,7 @@ export interface UseTinodeResult {
   messages: TinopeMessages;
   currentTopic: string | null;
   subscribe: (topic: string) => void;
-  sendMessage: (topic: string, content: string | Record<string, any>) => void;
+  sendMessage: (topic: string, content: string | Record<string, any>, head?: Record<string, any>) => void;
   uploadFile: (file: File) => Promise<{ ref: string; size: number; mime: string; name: string } | null>;
   tinodeUrl: string | null;
   apiKey: string;
@@ -242,17 +244,20 @@ export function useTinode(): UseTinodeResult {
     }
   }, [wsSend, nextId]);
 
-  const sendMessage = useCallback((topic: string, content: string | Record<string, any>) => {
+  const sendMessage = useCallback((topic: string, content: string | Record<string, any>, head?: Record<string, any>) => {
     if (!authedRef.current) return;
     if (typeof content === "string" && !content.trim()) return;
-    wsSend({
-      pub: {
-        id: nextId(),
-        topic,
-        noecho: false,
-        content,
-      },
-    });
+    const pub: Record<string, any> = {
+      id: nextId(),
+      topic,
+      noecho: false,
+      content,
+    };
+    if (head && Object.keys(head).length > 0) {
+      // Default mime when callers send a structured head without it.
+      pub.head = { mime: typeof content === "string" ? "text/plain" : "text/x-drafty", ...head };
+    }
+    wsSend({ pub });
   }, [wsSend, nextId]);
 
   const uploadFile = useCallback(async (file: File): Promise<{ ref: string; size: number; mime: string; name: string } | null> => {
@@ -687,23 +692,56 @@ export function useTinode(): UseTinodeResult {
       }
 
       if (msg.data) {
-        const { topic, from, content, ts, seq } = msg.data;
+        const { topic, from, content, ts, seq, head } = msg.data;
         // Track the latest seq so subscribe() can send note{read} immediately when needed
         topicsSeqRef.current[topic] = Math.max(topicsSeqRef.current[topic] ?? 0, seq);
         // Trigger backend name lookup for unknown senders
         if (from && from !== myUidRef.current) {
           scheduleFetchNames(from);
         }
+
+        // Detect "replace" head: ":N" means this message edits the original at seq=N.
+        // Tinode delivers the new content as a fresh data packet; we replace in-place.
+        const replaceTarget: number | null = (() => {
+          const r = head?.replace;
+          if (typeof r !== "string") return null;
+          const m = /^:(\d+)$/.exec(r);
+          return m ? parseInt(m[1], 10) : null;
+        })();
+
         setMessagesSynced((prev) => {
           const existing = prev[topic] ?? [];
+          if (replaceTarget !== null) {
+            // Find the original message and overwrite its content + mark edited.
+            const idx = existing.findIndex((m) => m.seq === replaceTarget);
+            if (idx === -1) {
+              // Original not loaded — drop the replace packet (don't add as new message).
+              return prev;
+            }
+            const updated = [...existing];
+            updated[idx] = {
+              ...updated[idx],
+              content,
+              ts,
+              head: { ...(updated[idx].head ?? {}), ...(head ?? {}) },
+              edited: true,
+            };
+            return { ...prev, [topic]: updated };
+          }
           if (existing.some((m) => m.seq === seq)) return prev;
           return {
             ...prev,
-            [topic]: [...existing, { seq, from, content, ts }].sort(
+            [topic]: [...existing, { seq, from, content, ts, head }].sort(
               (a, b) => a.seq - b.seq
             ),
           };
         });
+
+        // Suppress preview/badge updates for edits — they shouldn't bump the
+        // conversation list to "unread" or change the last-shown content.
+        if (replaceTarget !== null) {
+          return;
+        }
 
         // Update last-content cache so conversation list shows preview after page reload
         const contentText = typeof content === "string" ? content : "[tin nhắn]";
