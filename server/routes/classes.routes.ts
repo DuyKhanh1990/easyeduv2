@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { createActivityLog, getActivityLogs } from "../storage/activity-log.storage";
-import { getClassFormatSummary, getClassStatusSummary, getNewClassesSummary } from "../storage/class.storage";
+import { getClassFormatSummary, getClassStatusSummary, getNewClassesSummary, getClassesByLocationSummary, getMonthlyAttendanceRate, getClassesByTeacherSummary, getSessionsByTeacherSummary } from "../storage/class.storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { db } from "../db";
@@ -619,6 +619,71 @@ export function registerClassesRoutes(app: Express): void {
     } catch (err: any) {
       console.error("Class status summary error:", err);
       res.status(500).json({ message: err.message || "Lỗi khi tải trạng thái lớp học" });
+    }
+  });
+
+  // ── GET /api/classes/by-location ──────────────────────────────────────────
+  app.get("/api/classes/by-location", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      const isSuperAdmin = (req as any).isSuperAdmin ?? false;
+      const allowedLocationIds = await getAllowedLocationIds(req);
+      const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
+      const data = await getClassesByLocationSummary({ isSuperAdmin, allowedLocationIds, locationId });
+      res.json(data);
+    } catch (err: any) {
+      console.error("Classes by location error:", err);
+      res.status(500).json({ message: err.message || "Lỗi" });
+    }
+  });
+
+  // ── GET /api/classes/monthly-attendance ────────────────────────────────────
+  app.get("/api/classes/monthly-attendance", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      const isSuperAdmin = (req as any).isSuperAdmin ?? false;
+      const allowedLocationIds = await getAllowedLocationIds(req);
+      const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
+      const months = req.query.months ? parseInt(String(req.query.months), 10) : 6;
+      const data = await getMonthlyAttendanceRate({ isSuperAdmin, allowedLocationIds, locationId, months });
+      res.json(data);
+    } catch (err: any) {
+      console.error("Monthly attendance rate error:", err);
+      res.status(500).json({ message: err.message || "Lỗi" });
+    }
+  });
+
+  // ── GET /api/classes/by-teacher ────────────────────────────────────────────
+  app.get("/api/classes/by-teacher", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      const isSuperAdmin = (req as any).isSuperAdmin ?? false;
+      const allowedLocationIds = await getAllowedLocationIds(req);
+      const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
+      const data = await getClassesByTeacherSummary({ isSuperAdmin, allowedLocationIds, locationId });
+      res.json(data);
+    } catch (err: any) {
+      console.error("Classes by teacher error:", err);
+      res.status(500).json({ message: err.message || "Lỗi" });
+    }
+  });
+
+  // ── GET /api/classes/sessions-by-teacher ───────────────────────────────────
+  app.get("/api/classes/sessions-by-teacher", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      const isSuperAdmin = (req as any).isSuperAdmin ?? false;
+      const allowedLocationIds = await getAllowedLocationIds(req);
+      const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
+      const data = await getSessionsByTeacherSummary({ isSuperAdmin, allowedLocationIds, locationId });
+      res.json(data);
+    } catch (err: any) {
+      console.error("Sessions by teacher error:", err);
+      res.status(500).json({ message: err.message || "Lỗi" });
     }
   });
 

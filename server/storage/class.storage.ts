@@ -1383,3 +1383,158 @@ export async function getNewClassesSummary(params: {
     thisMonth: parseInt(row.this_month ?? "0", 10),
   };
 }
+
+// ==========================================
+// CLASSES BY LOCATION SUMMARY (Tổng số lớp theo cơ sở)
+// ==========================================
+export async function getClassesByLocationSummary(params: {
+  isSuperAdmin: boolean;
+  allowedLocationIds: string[] | null;
+  locationId?: string;
+}): Promise<{ name: string; count: number; pct: number }[]> {
+  const { isSuperAdmin, allowedLocationIds, locationId } = params;
+
+  let locWhere = "1=1";
+  if (locationId && locationId !== "all") {
+    const safe = locationId.replace(/[^a-zA-Z0-9\-]/g, "");
+    locWhere = `l.id = '${safe}'::uuid`;
+  } else if (!isSuperAdmin && allowedLocationIds !== null) {
+    if (allowedLocationIds.length === 0) locWhere = "1=0";
+    else {
+      const ids = allowedLocationIds.map(id => `'${id.replace(/[^a-zA-Z0-9\-]/g, "")}'`).join(",");
+      locWhere = `l.id = ANY(ARRAY[${ids}]::uuid[])`;
+    }
+  }
+
+  const queryStr = `
+    SELECT l.name, COUNT(c.id)::int AS count
+    FROM locations l
+    LEFT JOIN classes c ON c.location_id = l.id
+    WHERE ${locWhere}
+    GROUP BY l.id, l.name
+    ORDER BY count DESC, l.name ASC
+  `;
+  const result = await db.execute(sql.raw(queryStr));
+  const rows = result.rows as any[];
+  const total = rows.reduce((s, r) => s + (parseInt(r.count, 10) || 0), 0);
+  return rows.map(r => ({
+    name: r.name,
+    count: parseInt(r.count, 10) || 0,
+    pct: total > 0 ? Math.round(((parseInt(r.count, 10) || 0) / total) * 100) : 0,
+  }));
+}
+
+// ==========================================
+// MONTHLY ATTENDANCE RATE (Tỷ lệ điểm danh theo tháng — 6 tháng gần nhất)
+// ==========================================
+export async function getMonthlyAttendanceRate(params: {
+  isSuperAdmin: boolean;
+  allowedLocationIds: string[] | null;
+  locationId?: string;
+  months?: number;
+}): Promise<{ monthKey: string; label: string; total: number; present: number; rate: number }[]> {
+  const months = Math.max(1, Math.min(24, params.months ?? 6));
+  const where = buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
+
+  const queryStr = `
+    WITH month_series AS (
+      SELECT TO_CHAR(d, 'YYYY-MM') AS month_key,
+             TO_CHAR(d, 'MM/YYYY') AS label,
+             d AS month_start
+      FROM generate_series(
+        DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') - INTERVAL '${months - 1} months',
+        DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh'),
+        INTERVAL '1 month'
+      ) d
+    ),
+    session_counts AS (
+      SELECT TO_CHAR(cs.session_date, 'YYYY-MM') AS month_key,
+             COUNT(*)::int AS total,
+             COUNT(*) FILTER (WHERE ss.attendance_status = 'present')::int AS present,
+             COUNT(*) FILTER (WHERE ss.attendance_status = 'absent')::int AS absent
+      FROM student_sessions ss
+      JOIN class_sessions cs ON cs.id = ss.class_session_id
+      JOIN classes c ON c.id = ss.class_id
+      WHERE ${where}
+        AND cs.session_date >= (DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') - INTERVAL '${months - 1} months')::date
+      GROUP BY month_key
+    )
+    SELECT m.month_key, m.label,
+           COALESCE(sc.total,   0) AS total,
+           COALESCE(sc.present, 0) AS present,
+           COALESCE(sc.absent,  0) AS absent
+    FROM month_series m
+    LEFT JOIN session_counts sc ON sc.month_key = m.month_key
+    ORDER BY m.month_start ASC
+  `;
+  const result = await db.execute(sql.raw(queryStr));
+  return (result.rows as any[]).map(r => {
+    const total   = parseInt(r.total   ?? "0", 10);
+    const present = parseInt(r.present ?? "0", 10);
+    const absent  = parseInt(r.absent  ?? "0", 10);
+    const marked  = present + absent;
+    const rate    = marked > 0 ? Math.round((present / marked) * 100) : 0;
+    return { monthKey: r.month_key, label: r.label, total, present, rate };
+  });
+}
+
+// ==========================================
+// CLASSES BY TEACHER (Tổng số lớp của từng giáo viên)
+// ==========================================
+export async function getClassesByTeacherSummary(params: {
+  isSuperAdmin: boolean;
+  allowedLocationIds: string[] | null;
+  locationId?: string;
+  limit?: number;
+}): Promise<{ name: string; count: number; pct: number }[]> {
+  const where = buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
+  const limit = Math.max(1, Math.min(50, params.limit ?? 10));
+  const queryStr = `
+    SELECT s.full_name AS name, COUNT(c.id)::int AS count
+    FROM staff s
+    JOIN classes c ON s.id = ANY(c.teacher_ids) AND ${where}
+    GROUP BY s.id, s.full_name
+    HAVING COUNT(c.id) > 0
+    ORDER BY count DESC, s.full_name ASC
+    LIMIT ${limit}
+  `;
+  const result = await db.execute(sql.raw(queryStr));
+  const rows = result.rows as any[];
+  const total = rows.reduce((s, r) => s + (parseInt(r.count, 10) || 0), 0);
+  return rows.map(r => ({
+    name: r.name,
+    count: parseInt(r.count, 10) || 0,
+    pct: total > 0 ? Math.round(((parseInt(r.count, 10) || 0) / total) * 100) : 0,
+  }));
+}
+
+// ==========================================
+// SESSIONS BY TEACHER (Tổng số ca dạy của từng giáo viên)
+// ==========================================
+export async function getSessionsByTeacherSummary(params: {
+  isSuperAdmin: boolean;
+  allowedLocationIds: string[] | null;
+  locationId?: string;
+  limit?: number;
+}): Promise<{ name: string; count: number; pct: number }[]> {
+  const where = buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
+  const limit = Math.max(1, Math.min(50, params.limit ?? 10));
+  const queryStr = `
+    SELECT s.full_name AS name, COUNT(cs.id)::int AS count
+    FROM staff s
+    JOIN class_sessions cs ON s.id = ANY(cs.teacher_ids)
+    JOIN classes c ON c.id = cs.class_id AND ${where}
+    GROUP BY s.id, s.full_name
+    HAVING COUNT(cs.id) > 0
+    ORDER BY count DESC, s.full_name ASC
+    LIMIT ${limit}
+  `;
+  const result = await db.execute(sql.raw(queryStr));
+  const rows = result.rows as any[];
+  const total = rows.reduce((s, r) => s + (parseInt(r.count, 10) || 0), 0);
+  return rows.map(r => ({
+    name: r.name,
+    count: parseInt(r.count, 10) || 0,
+    pct: total > 0 ? Math.round(((parseInt(r.count, 10) || 0) / total) * 100) : 0,
+  }));
+}

@@ -238,6 +238,49 @@ function HorizontalBars({
   );
 }
 
+// ── Generic column + line chart (count as bars, percentage as line) ──────────
+function ColumnLineChart({
+  data, barKey, lineKey, barColor, lineColor, barName, lineName, valueSuffix, lineSuffix, height,
+}: {
+  data: { label: string; [k: string]: any }[];
+  barKey: string;
+  lineKey: string;
+  barColor: string;
+  lineColor: string;
+  barName: string;
+  lineName: string;
+  valueSuffix?: string;
+  lineSuffix?: string;
+  height?: number;
+}) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="h-[260px] flex items-center justify-center text-xs text-muted-foreground">
+        Chưa có dữ liệu
+      </div>
+    );
+  }
+  return (
+    <ResponsiveContainer width="100%" height={height ?? 260}>
+      <ComposedChart data={data} margin={{ top: 16, right: 16, left: 0, bottom: 4 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+        <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+        <YAxis yAxisId="left"  tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" allowDecimals={false} />
+        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}%`} domain={[0, 100]} />
+        <Tooltip
+          contentStyle={{ background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+          formatter={(value: any, name: string) => {
+            if (name === lineName) return [`${value}${lineSuffix ?? "%"}`, name];
+            return [`${value}${valueSuffix ?? ""}`, name];
+          }}
+        />
+        <Bar  yAxisId="left"  dataKey={barKey}  name={barName}  fill={barColor}  radius={[6, 6, 0, 0]} maxBarSize={36} />
+        <Line yAxisId="right" dataKey={lineKey} name={lineName} stroke={lineColor} strokeWidth={2} dot={{ r: 3, fill: lineColor }} activeDot={{ r: 5 }} />
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+}
+
 // ── Card 3: Trạng thái học tập — horizontal bars ──────────────────────────────
 function LearningStatusBars({
   dangHoc, choLich, baoLuu, daNghi, chuaCoLich, total,
@@ -414,6 +457,30 @@ export function Dashboard() {
     today: number; thisMonth: number;
   }>({ queryKey: ["/api/classes/new-summary", locationId], queryFn: () =>
     fetch(`/api/classes/new-summary${locationParam}`, { credentials: "include" }).then(r => r.json())
+  });
+
+  // Đào tạo — Tổng số lớp theo cơ sở
+  const { data: classesByLoc, isLoading: loadingClassesByLoc } = useQuery<{ name: string; count: number; pct: number }[]>({
+    queryKey: ["/api/classes/by-location", locationId],
+    queryFn: () => fetch(`/api/classes/by-location${locationParam}`, { credentials: "include" }).then(r => r.json()),
+  });
+
+  // Đào tạo — Tỷ lệ điểm danh 6 tháng gần nhất
+  const { data: monthlyAttendance, isLoading: loadingMonthlyAttendance } = useQuery<{ monthKey: string; label: string; total: number; present: number; rate: number }[]>({
+    queryKey: ["/api/classes/monthly-attendance", locationId],
+    queryFn: () => fetch(`/api/classes/monthly-attendance?months=6${locationParam ? `&${locationParam.slice(1)}` : ""}`, { credentials: "include" }).then(r => r.json()),
+  });
+
+  // Đào tạo — Tổng số lớp giáo viên
+  const { data: classesByTeacher, isLoading: loadingClassesByTeacher } = useQuery<{ name: string; count: number; pct: number }[]>({
+    queryKey: ["/api/classes/by-teacher", locationId],
+    queryFn: () => fetch(`/api/classes/by-teacher${locationParam}`, { credentials: "include" }).then(r => r.json()),
+  });
+
+  // Đào tạo — Tổng số ca dạy giáo viên
+  const { data: sessionsByTeacher, isLoading: loadingSessionsByTeacher } = useQuery<{ name: string; count: number; pct: number }[]>({
+    queryKey: ["/api/classes/sessions-by-teacher", locationId],
+    queryFn: () => fetch(`/api/classes/sessions-by-teacher${locationParam}`, { credentials: "include" }).then(r => r.json()),
   });
 
   const activePct = customerSummary && customerSummary.total > 0
@@ -971,6 +1038,118 @@ export function Dashboard() {
                         <p className="text-[10px] text-muted-foreground mt-1.5 text-center">Đóng góp của hôm nay vào tổng tháng</p>
                       </div>
                     </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Row 2: Tổng số lớp theo cơ sở + Tỷ lệ điểm danh theo tháng */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+              <Card className="border-none shadow-lg shadow-black/5" data-testid="card-lop-theo-co-so">
+                <CardHeader className="pb-2 pt-5 px-5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                      <Building2 className="w-5 h-5 text-blue-500" />
+                    </div>
+                    <CardTitle className="text-sm font-semibold text-muted-foreground">Tổng số lớp theo cơ sở</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="px-5 pb-5">
+                  {loadingClassesByLoc ? (
+                    <Skeleton className="h-[260px] w-full" />
+                  ) : (
+                    <ColumnLineChart
+                      data={(classesByLoc ?? []).map(d => ({ label: d.name, count: d.count, pct: d.pct }))}
+                      barKey="count" lineKey="pct"
+                      barColor="#3b82f6" lineColor="#f59e0b"
+                      barName="Số lớp" lineName="% chiếm"
+                    />
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="border-none shadow-lg shadow-black/5" data-testid="card-ty-le-diem-danh">
+                <CardHeader className="pb-2 pt-5 px-5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                    </div>
+                    <CardTitle className="text-sm font-semibold text-muted-foreground">Tỷ lệ điểm danh theo tháng</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="px-5 pb-5">
+                  {loadingMonthlyAttendance ? (
+                    <Skeleton className="h-[260px] w-full" />
+                  ) : (
+                    <ColumnLineChart
+                      data={(monthlyAttendance ?? []).map(d => ({ label: d.label, total: d.total, rate: d.rate }))}
+                      barKey="total" lineKey="rate"
+                      barColor="#10b981" lineColor="#f59e0b"
+                      barName="Tổng buổi" lineName="Tỷ lệ điểm danh"
+                    />
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Row 3: Tổng số lớp giáo viên + Tổng số ca dạy giáo viên */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+              <Card className="border-none shadow-lg shadow-black/5" data-testid="card-lop-giao-vien">
+                <CardHeader className="pb-2 pt-5 px-5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-9 h-9 rounded-xl bg-violet-500/10 flex items-center justify-center">
+                      <UserSquare2 className="w-5 h-5 text-violet-500" />
+                    </div>
+                    <CardTitle className="text-sm font-semibold text-muted-foreground">Tổng số lớp giáo viên</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="px-5 pb-5">
+                  {loadingClassesByTeacher ? (
+                    <Skeleton className="h-32 w-full" />
+                  ) : (classesByTeacher ?? []).length === 0 ? (
+                    <div className="h-[120px] flex items-center justify-center text-xs text-muted-foreground">Chưa có dữ liệu</div>
+                  ) : (
+                    <HorizontalBars
+                      items={(classesByTeacher ?? []).map((t, i) => ({
+                        key: `teacher-cls-${i}`,
+                        label: t.name,
+                        value: t.count,
+                        fill: ["#8b5cf6", "#3b82f6", "#10b981", "#f59e0b", "#f43f5e", "#06b6d4", "#a855f7", "#ec4899"][i % 8],
+                        testId: `teacher-cls-${i}`,
+                      }))}
+                      total={(classesByTeacher ?? []).reduce((s, t) => s + t.count, 0)}
+                      testId="chart-classes-by-teacher"
+                    />
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="border-none shadow-lg shadow-black/5" data-testid="card-ca-day-giao-vien">
+                <CardHeader className="pb-2 pt-5 px-5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                      <BookOpenCheck className="w-5 h-5 text-amber-500" />
+                    </div>
+                    <CardTitle className="text-sm font-semibold text-muted-foreground">Tổng số ca dạy giáo viên</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="px-5 pb-5">
+                  {loadingSessionsByTeacher ? (
+                    <Skeleton className="h-32 w-full" />
+                  ) : (sessionsByTeacher ?? []).length === 0 ? (
+                    <div className="h-[120px] flex items-center justify-center text-xs text-muted-foreground">Chưa có dữ liệu</div>
+                  ) : (
+                    <HorizontalBars
+                      items={(sessionsByTeacher ?? []).map((t, i) => ({
+                        key: `teacher-ses-${i}`,
+                        label: t.name,
+                        value: t.count,
+                        fill: ["#f59e0b", "#3b82f6", "#10b981", "#8b5cf6", "#f43f5e", "#06b6d4", "#a855f7", "#ec4899"][i % 8],
+                        testId: `teacher-ses-${i}`,
+                      }))}
+                      total={(sessionsByTeacher ?? []).reduce((s, t) => s + t.count, 0)}
+                      testId="chart-sessions-by-teacher"
+                    />
                   )}
                 </CardContent>
               </Card>
