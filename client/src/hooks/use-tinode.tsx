@@ -272,6 +272,7 @@ export function useTinode(): UseTinodeResult {
         pendingPubsByIdRef.current[id] = { topic, head: interesting };
       }
     }
+    console.log(`[TINODE DEBUG] sendMessage id=${id} topic=${topic} head=${JSON.stringify(pub.head ?? null)}`);
     wsSend({ pub });
   }, [wsSend, nextId]);
 
