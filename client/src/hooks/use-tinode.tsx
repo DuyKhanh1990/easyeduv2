@@ -122,6 +122,15 @@ export function useTinode(): UseTinodeResult {
   // Historical messages: seq <= baseline → do NOT increment badge (meta.sub already counted them)
   // New messages:        seq >  baseline → DO increment badge
   const subBaselineSeqRef = useRef<Record<string, number>>({});
+  // Set of group topic IDs the current user is authorized to see, sourced from
+  // /api/chat/my-channels. Tinode's `me` subscription returns ALL topics the user
+  // has ever joined (since defacs are permissive), but we must only display the
+  // topics the backend authorizes for this user.
+  const allowedGroupTopicsRef = useRef<Set<string>>(new Set());
+  // Becomes true once /api/chat/my-channels has responded at least once. Until
+  // this is true, we permissively allow all group topics through (so initial
+  // meta.sub from Tinode isn't dropped before we know the allowlist).
+  const allowedGroupTopicsLoadedRef = useRef<boolean>(false);
 
   const { data: credentials } = useQuery<TinodeCredentials>({
     queryKey: ["/api/chat/credentials"],
@@ -366,6 +375,19 @@ export function useTinode(): UseTinodeResult {
         .then((r) => r.json())
         .then((data: { channels?: { topicId: string; className: string; isCustomGroup?: boolean; groupId?: string }[] }) => {
           if (!Array.isArray(data.channels)) return;
+          // Build the authorized group topic allowlist from the API response.
+          const allowed = new Set<string>();
+          for (const ch of data.channels) {
+            if (ch.topicId && ch.topicId.startsWith("grp")) allowed.add(ch.topicId);
+          }
+          allowedGroupTopicsRef.current = allowed;
+          allowedGroupTopicsLoadedRef.current = true;
+          // Prune any group topics that Tinode's me sub may have already added but
+          // which the backend does NOT authorize for this user. Keep all P2P topics.
+          setTopics(prev => prev.filter(t => {
+            if (!t.topic.startsWith("grp")) return true;
+            return allowed.has(t.topic);
+          }));
           for (const ch of data.channels) {
             if (!ch.topicId) continue;
             // Pre-populate topic metadata so the sidebar shows label before Tinode responds
@@ -536,6 +558,13 @@ export function useTinode(): UseTinodeResult {
               const isGroup = topicId.startsWith("grp");
               const isP2P   = topicId.startsWith("usr");
               if (!isGroup && !isP2P) continue;
+              // Backend authorizes which group topics this user may see. If the
+              // allowlist has loaded and this group topic is not in it, skip —
+              // Tinode lists every topic the user has ever joined, including
+              // some they should no longer see.
+              if (isGroup && allowedGroupTopicsLoadedRef.current && !allowedGroupTopicsRef.current.has(topicId)) {
+                continue;
+              }
 
               const name: string = s.public?.fn ?? s.public?.name ?? topicId;
               const existing = map.get(topicId);
