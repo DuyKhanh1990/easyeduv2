@@ -1522,3 +1522,63 @@ export async function getStudentsLearningStatuses(
   });
   return map;
 }
+
+// ==========================================
+// MONTHLY STUDENT COUNTS (Số lượng học viên theo tháng)
+// Trả về N tháng gần nhất, mỗi tháng có count + growthPct so với tháng trước.
+// ==========================================
+export async function getMonthlyStudentCounts(params: {
+  isSuperAdmin: boolean;
+  allowedLocationIds: string[];
+  locationId?: string;
+  months?: number;
+}): Promise<{ monthKey: string; label: string; count: number; growthPct: number }[]> {
+  const n = Math.max(1, Math.min(params.months ?? 6, 36));
+  const locationWhere = buildLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
+  // We fetch N+1 months including the month BEFORE the visible window so the
+  // first visible month can compute its growth pct against a real prior value.
+  const queryStr = `
+    WITH months AS (
+      SELECT generate_series(
+        DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') - INTERVAL '${n} months',
+        DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh'),
+        INTERVAL '1 month'
+      ) AS month_start
+    ),
+    counts AS (
+      SELECT
+        DATE_TRUNC('month', s.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh') AS month_start,
+        COUNT(*) AS cnt
+      FROM students s
+      WHERE ${locationWhere}
+        AND s.created_at >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') - INTERVAL '${n} months'
+      GROUP BY 1
+    )
+    SELECT m.month_start, COALESCE(c.cnt, 0)::int AS cnt
+    FROM months m
+    LEFT JOIN counts c ON c.month_start = m.month_start
+    ORDER BY m.month_start
+  `;
+  const result = await db.execute(sql.raw(queryStr));
+  const rows = (result.rows as any[]).map(r => ({
+    date: new Date(r.month_start as string),
+    count: parseInt(String(r.cnt ?? "0"), 10),
+  }));
+  // Drop the seed (oldest) month after using it as growth baseline for the
+  // first visible month.
+  return rows.slice(1).map((row, i) => {
+    const prev = rows[i].count;
+    const curr = row.count;
+    const growthPct = prev > 0
+      ? Math.round(((curr - prev) / prev) * 100)
+      : (curr > 0 ? 100 : 0);
+    const m = row.date.getUTCMonth() + 1;
+    const y = row.date.getUTCFullYear();
+    return {
+      monthKey: `${y}-${String(m).padStart(2, "0")}`,
+      label: `T${m}/${String(y).slice(-2)}`,
+      count: curr,
+      growthPct,
+    };
+  });
+}

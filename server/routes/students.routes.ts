@@ -6,7 +6,7 @@ import { runSecurityTests } from "../middleware/security-test";
 import { db } from "../db";
 import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, students, classes, attendanceFeeRules, users, staff, staffAssignments, locations, classGradeBooks, classGradeBookScores, scoreCategories, scoreSheetItems, sessionContents, studentSessionContents, classSessions } from "@shared/schema";
 import { eq, and, isNotNull, sql, inArray, desc } from "drizzle-orm";
-import { getStudentLearningStatusSummary, getCustomerSummary, getNewCustomersSummary, getStudentsBySource, getStudentsByRelationship, getStudentsByLocation, getStudentsByStaff, getStudentsLearningStatuses } from "../storage/student.storage";
+import { getStudentLearningStatusSummary, getCustomerSummary, getNewCustomersSummary, getStudentsBySource, getStudentsByRelationship, getStudentsByLocation, getStudentsByStaff, getStudentsLearningStatuses, getMonthlyStudentCounts } from "../storage/student.storage";
 
 const CRM_RESOURCE = "/customers";
 
@@ -423,6 +423,25 @@ export function registerStudentsRoutes(app: Express): void {
     } catch (err: any) {
       console.error("Students by staff error:", err);
       res.status(500).json({ message: err.message || "Lỗi khi tải dữ liệu theo nhân sự" });
+    }
+  });
+
+  // ── GET /api/students/monthly-counts ─────────────────────────────────────
+  // Trả về số lượng học viên đăng ký mới theo từng tháng (mặc định 6 tháng).
+  // Mỗi tháng có thêm growthPct so với tháng liền kề trước đó.
+  app.get("/api/students/monthly-counts", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      const isSuperAdmin = (req as any).isSuperAdmin ?? false;
+      const allowedLocationIds: string[] = (req as any).allowedLocationIds ?? [];
+      const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
+      const months = typeof req.query.months === "string" ? parseInt(req.query.months, 10) : 6;
+      const data = await getMonthlyStudentCounts({ isSuperAdmin, allowedLocationIds, locationId, months });
+      res.json(data);
+    } catch (err: any) {
+      console.error("Monthly student counts error:", err);
+      res.status(500).json({ message: err.message || "Lỗi khi tải dữ liệu theo tháng" });
     }
   });
 

@@ -297,6 +297,15 @@ export function Dashboard() {
     queryFn: () => fetch(`/api/students/by-staff${chartParam}`, { credentials: "include" }).then(r => r.json()),
   });
 
+  // Monthly student counts: hard-coded 6 tháng theo yêu cầu, độc lập với
+  // bộ lọc khoảng thời gian của các biểu đồ phân tích phía dưới.
+  const { data: monthlyCounts, isLoading: loadingMonthly } = useQuery<{
+    monthKey: string; label: string; count: number; growthPct: number;
+  }[]>({
+    queryKey: ["/api/students/monthly-counts", locationId],
+    queryFn: () => fetch(`/api/students/monthly-counts?months=6${locationParam ? `&${locationParam.slice(1)}` : ""}`, { credentials: "include" }).then(r => r.json()),
+  });
+
   const activePct = customerSummary && customerSummary.total > 0
     ? Math.round((customerSummary.active / customerSummary.total) * 100)
     : 100;
@@ -477,8 +486,67 @@ export function Dashboard() {
                 </CardContent>
               </Card>
 
-              {/* Slot trống — chừa cho thẻ sẽ thêm sau */}
-              <div aria-hidden="true" />
+              {/* Số lượng học viên theo tháng — combo bar (count) + line (growth %) */}
+              <Card className="border-none shadow-lg shadow-black/5" data-testid="card-monthly-students">
+                <CardHeader className="pb-2 pt-5 px-5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-9 h-9 rounded-xl bg-sky-500/10 flex items-center justify-center">
+                      <TrendingUp className="w-5 h-5 text-sky-500" />
+                    </div>
+                    <CardTitle className="text-sm font-semibold text-muted-foreground">Số lượng học viên theo tháng</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="px-3 pb-5">
+                  {loadingMonthly ? (
+                    <div className="h-[230px] flex items-center justify-center">
+                      <Skeleton className="w-full h-48" />
+                    </div>
+                  ) : !monthlyCounts || monthlyCounts.length === 0 ? (
+                    <div className="h-[230px] flex flex-col items-center justify-center text-muted-foreground/50 gap-2">
+                      <TrendingUp className="w-8 h-8" />
+                      <p className="text-sm">Chưa có dữ liệu</p>
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={230}>
+                      <ComposedChart data={monthlyCounts} margin={{ top: 12, right: 36, left: -20, bottom: 4 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                        <XAxis dataKey="label" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} />
+                        <YAxis yAxisId="left" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} allowDecimals={false} />
+                        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: "#10b981" }} tickLine={false} axisLine={false} unit="%" />
+                        <Tooltip
+                          content={({ active, payload, label }: any) =>
+                            active && payload?.length ? (
+                              <div className="bg-background border border-border rounded-lg px-3 py-2 shadow-lg text-sm">
+                                <p className="font-semibold text-foreground mb-1">Tháng {label}</p>
+                                <p className="text-muted-foreground">
+                                  Học viên mới: <span className="font-bold text-sky-600">{payload[0]?.payload?.count ?? 0}</span>
+                                </p>
+                                <p className="text-muted-foreground">
+                                  Tăng trưởng:{" "}
+                                  <span className={`font-bold ${(payload[0]?.payload?.growthPct ?? 0) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                                    {(payload[0]?.payload?.growthPct ?? 0) > 0 ? "+" : ""}{payload[0]?.payload?.growthPct ?? 0}%
+                                  </span>
+                                </p>
+                              </div>
+                            ) : null
+                          }
+                          cursor={{ fill: "hsl(var(--muted))", opacity: 0.5 }}
+                        />
+                        <Bar yAxisId="left" dataKey="count" fill="#0ea5e9" radius={[4, 4, 0, 0]} maxBarSize={42} />
+                        <Line
+                          yAxisId="right"
+                          type="monotone"
+                          dataKey="growthPct"
+                          stroke="#10b981"
+                          strokeWidth={2}
+                          dot={{ fill: "#10b981", r: 3 }}
+                          activeDot={{ r: 5 }}
+                        />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  )}
+                </CardContent>
+              </Card>
             </div>
 
             {/* Charts section */}
