@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import {
   MessageCircle, Send, WifiOff, Loader2, Search, X,
   Minus, ChevronDown, UserRound, Users, Plus, ArrowLeft,
-  FileText, Download, Paperclip,
+  FileText, Download, Paperclip, CornerUpLeft, Pencil,
 } from "lucide-react";
 import { SiMessenger } from "react-icons/si";
 import { getAuthToken, apiRequest } from "@/lib/queryClient";
@@ -244,7 +244,7 @@ function ChatWindow({
   myUid: string | null;
   myLogin: string | null;
   userNames: Record<string, string>;
-  onSend: (topic: string, content: string | Record<string, any>) => void;
+  onSend: (topic: string, content: string | Record<string, any>, head?: Record<string, any>) => void;
   onClose: (topic: string) => void;
   stackIndex: number;
   onToggleMinimize: (topic: string) => void;
@@ -252,6 +252,8 @@ function ChatWindow({
 }) {
   const [input, setInput] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [editingMsg, setEditingMsg] = useState<any | null>(null);
+  const [replyingTo, setReplyingTo] = useState<any | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -269,15 +271,71 @@ function ChatWindow({
     setTimeout(() => inputRef.current?.focus(), 50);
   }, []);
 
+  // Reset compose-mode when switching topic.
+  useEffect(() => {
+    setEditingMsg(null);
+    setReplyingTo(null);
+    setInput("");
+  }, [topicId]);
+
+  // Quick lookup of messages by seq (used to render quoted previews).
+  const messagesBySeq = messages.reduce<Record<number, any>>((acc, m) => {
+    acc[m.seq] = m;
+    return acc;
+  }, {});
+
+  function previewText(m: { content: string | Record<string, any> } | undefined): string {
+    if (!m) return "Tin nhắn không còn tồn tại";
+    if (typeof m.content === "string") return m.content;
+    if ((m.content as any)?.txt) return (m.content as any).txt;
+    const fmt: any[] = (m.content as any)?.fmt ?? [];
+    if (fmt.find((f: any) => f.tp === "IM")) return "[Hình ảnh]";
+    if (fmt.find((f: any) => f.tp === "EX")) return "[Tệp đính kèm]";
+    return "[Tin nhắn]";
+  }
+
+  function startReply(m: any) {
+    setEditingMsg(null);
+    setReplyingTo(m);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  function startEdit(m: any) {
+    if (typeof m.content !== "string") {
+      toast({ title: "Không thể sửa", description: "Chỉ có thể sửa tin nhắn văn bản.", variant: "destructive" });
+      return;
+    }
+    setReplyingTo(null);
+    setEditingMsg(m);
+    setInput(m.content);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  function cancelCompose() {
+    setEditingMsg(null);
+    setReplyingTo(null);
+    setInput("");
+  }
+
   const rightOffset = WINDOW_GAP + stackIndex * (WINDOW_WIDTH + WINDOW_GAP);
 
   function handleSend() {
-    if (!input.trim()) return;
-    onSend(topicId, input.trim());
+    const text = input.trim();
+    if (!text) return;
+    if (editingMsg) {
+      onSend(topicId, text, { replace: `:${editingMsg.seq}` });
+      setEditingMsg(null);
+    } else if (replyingTo) {
+      onSend(topicId, text, { reply: `${topicId}:${replyingTo.seq}` });
+      setReplyingTo(null);
+    } else {
+      onSend(topicId, text);
+    }
     setInput("");
   }
 
   function handleKey(e: React.KeyboardEvent) {
+    if (e.key === "Escape") { e.preventDefault(); cancelCompose(); return; }
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   }
 
@@ -405,14 +463,35 @@ function ChatWindow({
                         const nextMsg = group.msgs[idx + 1];
                         const isLast = !nextMsg || nextMsg.from !== msg.from;
 
+                        // Reply / edit metadata.
+                        const replyRef: string | undefined = msg.head?.reply;
+                        const repliedSeq: number | null = (() => {
+                          if (typeof replyRef !== "string") return null;
+                          const m = /(?::|^)(\d+)\s*$/.exec(replyRef);
+                          return m ? parseInt(m[1], 10) : null;
+                        })();
+                        const repliedMsg = repliedSeq != null ? messagesBySeq[repliedSeq] : undefined;
+                        const repliedFromName = repliedMsg
+                          ? (repliedMsg.from === myUid || repliedMsg.from === myLogin
+                              ? "Bạn"
+                              : (userNames[repliedMsg.from] && userNames[repliedMsg.from] !== repliedMsg.from
+                                  ? userNames[repliedMsg.from]
+                                  : repliedMsg.from?.replace(/^usr/, "").slice(0, 8) || "?"))
+                          : "";
+                        const isEdited = msg.edited === true || typeof msg.head?.replace === "string";
+                        const isHighlighted = (editingMsg && editingMsg.seq === msg.seq) || (replyingTo && replyingTo.seq === msg.seq);
+                        const canEdit = isMe && typeof msg.content === "string";
+
                         return (
                           <div
                             key={`${msg.seq}-${msg.ts}`}
                             className={cn(
-                              "flex gap-1.5",
+                              "group flex gap-1.5 -mx-1 px-1 py-0.5 rounded-md transition-colors",
                               isMe ? "flex-row-reverse" : "flex-row",
-                              isFirst ? "mt-3" : "mt-px"
+                              isFirst ? "mt-3" : "mt-px",
+                              isHighlighted && "bg-primary/5"
                             )}
+                            data-testid={`chat-message-${topicId}-${msg.seq}`}
                           >
                             {/* Avatar */}
                             <div className="w-7 shrink-0 flex items-end">
@@ -428,24 +507,82 @@ function ChatWindow({
                                   {displayName}
                                 </span>
                               )}
-                              <div className={cn(
-                                "px-3 py-2 text-sm leading-relaxed break-words",
-                                isMe ? cn(
-                                  "text-white",
-                                  "bg-[#1877f2]",
-                                  isFirst && isLast ? "rounded-[20px] rounded-br-[4px]" :
-                                  isFirst ? "rounded-[20px] rounded-br-[4px]" :
-                                  isLast ? "rounded-[20px] rounded-tr-[8px] rounded-br-[4px]" :
-                                  "rounded-l-[20px] rounded-r-[8px]"
-                                ) : cn(
-                                  "bg-[#f0f2f5] dark:bg-muted text-foreground",
-                                  isFirst && isLast ? "rounded-[20px] rounded-bl-[4px]" :
-                                  isFirst ? "rounded-[20px] rounded-bl-[4px]" :
-                                  isLast ? "rounded-[20px] rounded-tl-[8px] rounded-bl-[4px]" :
-                                  "rounded-r-[20px] rounded-l-[8px]"
-                                )
-                              )}>
-                                {renderMiniContent(msg.content, onOpenViewer)}
+
+                              {/* Quoted reply preview */}
+                              {replyRef && (
+                                <div
+                                  className="mb-1 max-w-full text-[11px] rounded-md border-l-2 border-primary/60 bg-muted/60 text-muted-foreground pl-2 pr-2.5 py-0.5 cursor-pointer hover:bg-muted transition-colors"
+                                  data-testid={`chat-message-reply-${topicId}-${msg.seq}`}
+                                  onClick={() => {
+                                    if (repliedSeq == null) return;
+                                    const el = document.querySelector(`[data-testid="chat-message-${topicId}-${repliedSeq}"]`);
+                                    if (el) {
+                                      el.scrollIntoView({ behavior: "smooth", block: "center" });
+                                      el.classList.add("ring-2", "ring-primary/40");
+                                      setTimeout(() => el.classList.remove("ring-2", "ring-primary/40"), 1500);
+                                    }
+                                  }}
+                                >
+                                  <p className="font-semibold leading-tight text-primary">
+                                    {repliedFromName || "Tin nhắn"}
+                                  </p>
+                                  <p className="line-clamp-2 leading-snug">{previewText(repliedMsg)}</p>
+                                </div>
+                              )}
+
+                              <div className="flex items-center gap-1">
+                                {/* Hover action buttons (left of bubble for "me", right for others) */}
+                                <div
+                                  className={cn(
+                                    "flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0",
+                                    isMe ? "order-1" : "order-2"
+                                  )}
+                                >
+                                  <button
+                                    onClick={() => startReply(msg)}
+                                    title="Trả lời"
+                                    data-testid={`button-reply-${topicId}-${msg.seq}`}
+                                    className="w-6 h-6 rounded-full bg-white dark:bg-muted shadow-sm border border-border/40 hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground"
+                                  >
+                                    <CornerUpLeft className="h-3 w-3" />
+                                  </button>
+                                  {canEdit && (
+                                    <button
+                                      onClick={() => startEdit(msg)}
+                                      title="Sửa tin nhắn"
+                                      data-testid={`button-edit-${topicId}-${msg.seq}`}
+                                      className="w-6 h-6 rounded-full bg-white dark:bg-muted shadow-sm border border-border/40 hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground"
+                                    >
+                                      <Pencil className="h-3 w-3" />
+                                    </button>
+                                  )}
+                                </div>
+
+                                <div className={cn(
+                                  "px-3 py-2 text-sm leading-relaxed break-words",
+                                  isMe ? "order-2" : "order-1",
+                                  isMe ? cn(
+                                    "text-white",
+                                    "bg-[#1877f2]",
+                                    isFirst && isLast ? "rounded-[20px] rounded-br-[4px]" :
+                                    isFirst ? "rounded-[20px] rounded-br-[4px]" :
+                                    isLast ? "rounded-[20px] rounded-tr-[8px] rounded-br-[4px]" :
+                                    "rounded-l-[20px] rounded-r-[8px]"
+                                  ) : cn(
+                                    "bg-[#f0f2f5] dark:bg-muted text-foreground",
+                                    isFirst && isLast ? "rounded-[20px] rounded-bl-[4px]" :
+                                    isFirst ? "rounded-[20px] rounded-bl-[4px]" :
+                                    isLast ? "rounded-[20px] rounded-tl-[8px] rounded-bl-[4px]" :
+                                    "rounded-r-[20px] rounded-l-[8px]"
+                                  )
+                                )}>
+                                  {renderMiniContent(msg.content, onOpenViewer)}
+                                  {isEdited && (
+                                    <span className={cn("ml-1.5 text-[10px] italic", isMe ? "text-white/70" : "text-muted-foreground")}>
+                                      (đã sửa)
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                               {isLast && (
                                 <span className={cn("text-[10px] text-muted-foreground mt-1", isMe ? "mr-1" : "ml-1")}>
@@ -465,6 +602,36 @@ function ChatWindow({
 
           {/* Input */}
           <div className="px-3 py-2.5 border-t border-border/30 bg-white dark:bg-background shrink-0">
+            {/* Compose-mode banner: editing or replying */}
+            {(editingMsg || replyingTo) && (
+              <div
+                className="mb-2 flex items-start gap-2 px-2.5 py-1.5 rounded-md border-l-2 border-primary/60 bg-muted/50 text-[11px]"
+                data-testid={`chat-compose-banner-${topicId}`}
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-primary leading-tight">
+                    {editingMsg ? "Đang sửa tin nhắn" : `Trả lời ${(() => {
+                      const r: any = replyingTo;
+                      if (!r) return "";
+                      if (r.from === myUid || r.from === myLogin) return "chính bạn";
+                      const n = userNames[r.from];
+                      return (n && n !== r.from) ? n : (r.from?.replace(/^usr/, "").slice(0, 8) || "");
+                    })()}`}
+                  </p>
+                  <p className="line-clamp-1 text-muted-foreground leading-snug">
+                    {previewText(editingMsg ?? replyingTo ?? undefined)}
+                  </p>
+                </div>
+                <button
+                  onClick={cancelCompose}
+                  title="Huỷ (Esc)"
+                  data-testid={`button-cancel-compose-${topicId}`}
+                  className="shrink-0 w-5 h-5 rounded-full hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
             <div className="flex items-center gap-2 bg-[#f0f2f5] dark:bg-muted rounded-full px-3 py-2 focus-within:ring-2 focus-within:ring-[#1877f2]/30 transition-all">
               <button
                 onClick={() => !isUploading && fileInputRef.current?.click()}
@@ -491,7 +658,7 @@ function ChatWindow({
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKey}
-                placeholder="Aa"
+                placeholder={editingMsg ? "Sửa tin nhắn…" : (replyingTo ? "Trả lời…" : "Aa")}
                 className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
                 data-testid={`chat-input-${topicId}`}
               />
@@ -1122,8 +1289,8 @@ export function ChatButton() {
     });
   }
 
-  function handleSend(topicId: string, content: string | Record<string, any>) {
-    sendMessage(topicId, content);
+  function handleSend(topicId: string, content: string | Record<string, any>, head?: Record<string, any>) {
+    sendMessage(topicId, content, head);
   }
 
   return (
