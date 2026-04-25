@@ -185,18 +185,15 @@ function AccountStatusGauge({
   );
 }
 
-// ── Card 3: Trạng thái học tập — horizontal bars ──────────────────────────────
-function LearningStatusBars({
-  dangHoc, choLich, baoLuu, daNghi, chuaCoLich, total,
-}: { dangHoc: number; choLich: number; baoLuu: number; daNghi: number; chuaCoLich: number; total: number }) {
+// ── Generic horizontal-bar chart (reusable) ───────────────────────────────────
+function HorizontalBars({
+  items, total, testId,
+}: {
+  items: { key: string; label: string; value: number; fill: string; testId?: string }[];
+  total: number;
+  testId?: string;
+}) {
   const safeTotal = Math.max(total, 1);
-  const items = [
-    { key: "dangHoc",    label: "Đang học",     value: dangHoc,    fill: "#8b5cf6", testId: "status-dang-hoc" },
-    { key: "choLich",    label: "Chờ đến lịch", value: choLich,    fill: "#3b82f6", testId: "status-cho-lich" },
-    { key: "baoLuu",     label: "Bảo lưu",      value: baoLuu,     fill: "#f59e0b", testId: "status-bao-luu" },
-    { key: "daNghi",     label: "Đã nghỉ",      value: daNghi,     fill: "#f43f5e", testId: "status-da-nghi" },
-    { key: "chuaCoLich", label: "Chưa có lịch", value: chuaCoLich, fill: "#94a3b8", testId: "status-chua-co-lich" },
-  ];
   // Bar widths are scaled to the largest value so the longest bar fills the
   // track. Empty bars stay at 0 so they don't masquerade as a tiny value.
   const max = Math.max(...items.map((s) => s.value), 1);
@@ -207,7 +204,7 @@ function LearningStatusBars({
     return () => clearTimeout(t);
   }, []);
   return (
-    <div className="space-y-3.5" data-testid="chart-learning-bars">
+    <div className="space-y-3.5" data-testid={testId}>
       {items.map((s) => {
         const pctVal = Math.round((s.value / safeTotal) * 100);
         const barPct = Math.round((s.value / max) * 100);
@@ -237,6 +234,98 @@ function LearningStatusBars({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ── Card 3: Trạng thái học tập — horizontal bars ──────────────────────────────
+function LearningStatusBars({
+  dangHoc, choLich, baoLuu, daNghi, chuaCoLich, total,
+}: { dangHoc: number; choLich: number; baoLuu: number; daNghi: number; chuaCoLich: number; total: number }) {
+  const items = [
+    { key: "dangHoc",    label: "Đang học",     value: dangHoc,    fill: "#8b5cf6", testId: "status-dang-hoc" },
+    { key: "choLich",    label: "Chờ đến lịch", value: choLich,    fill: "#3b82f6", testId: "status-cho-lich" },
+    { key: "baoLuu",     label: "Bảo lưu",      value: baoLuu,     fill: "#f59e0b", testId: "status-bao-luu" },
+    { key: "daNghi",     label: "Đã nghỉ",      value: daNghi,     fill: "#f43f5e", testId: "status-da-nghi" },
+    { key: "chuaCoLich", label: "Chưa có lịch", value: chuaCoLich, fill: "#94a3b8", testId: "status-chua-co-lich" },
+  ];
+  return <HorizontalBars items={items} total={total} testId="chart-learning-bars" />;
+}
+
+// ── Class Status (Đào tạo) — horizontal bars ──────────────────────────────────
+function ClassStatusBars({
+  planning, recruiting, active, closed, total,
+}: { planning: number; recruiting: number; active: number; closed: number; total: number }) {
+  const items = [
+    { key: "active",     label: "Đang hoạt động", value: active,     fill: "#10b981", testId: "class-status-active" },
+    { key: "recruiting", label: "Đang tuyển sinh", value: recruiting, fill: "#3b82f6", testId: "class-status-recruiting" },
+    { key: "planning",   label: "Lên kế hoạch",   value: planning,   fill: "#f59e0b", testId: "class-status-planning" },
+    { key: "closed",     label: "Đã đóng",        value: closed,     fill: "#94a3b8", testId: "class-status-closed" },
+  ];
+  return <HorizontalBars items={items} total={total} testId="chart-class-status-bars" />;
+}
+
+// ── Class Format (Đào tạo) — donut chart ──────────────────────────────────────
+function ClassFormatDonut({
+  total, offline, offlinePct, online, onlinePct,
+}: { total: number; offline: number; offlinePct: number; online: number; onlinePct: number }) {
+  const hasData = offline + online > 0;
+  const data = hasData
+    ? [
+        { name: "Offline", value: offline, color: "#3b82f6" },
+        { name: "Online",  value: online,  color: "#8b5cf6" },
+      ]
+    : [{ name: "Chưa có dữ liệu", value: 1, color: "hsl(var(--muted))" }];
+  return (
+    <div data-testid="chart-class-format-donut">
+      <div className="relative w-full h-[140px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data}
+              cx="50%"
+              cy="50%"
+              innerRadius={44}
+              outerRadius={64}
+              paddingAngle={hasData ? 3 : 0}
+              dataKey="value"
+              stroke="none"
+              isAnimationActive
+              animationBegin={100}
+              animationDuration={1100}
+            >
+              {data.map((entry, idx) => (
+                <Cell key={idx} fill={entry.color} />
+              ))}
+            </Pie>
+            {hasData && <Tooltip content={<CustomTooltip />} />}
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Tổng</span>
+          <span className="text-2xl font-bold font-display text-foreground leading-tight" data-testid="text-total-classes">
+            {total}
+          </span>
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: "#3b82f6" }} />
+          <span className="text-muted-foreground shrink-0">Offline</span>
+          <span className="font-semibold text-foreground whitespace-nowrap tabular-nums" data-testid="text-classes-offline">
+            {offline}
+          </span>
+          <span className="text-muted-foreground tabular-nums">({offlinePct}%)</span>
+        </div>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: "#8b5cf6" }} />
+          <span className="text-muted-foreground shrink-0">Online</span>
+          <span className="font-semibold text-foreground whitespace-nowrap tabular-nums" data-testid="text-classes-online">
+            {online}
+          </span>
+          <span className="text-muted-foreground tabular-nums">({onlinePct}%)</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -304,6 +393,20 @@ export function Dashboard() {
   }[]>({
     queryKey: ["/api/students/monthly-counts", locationId],
     queryFn: () => fetch(`/api/students/monthly-counts?months=6${locationParam ? `&${locationParam.slice(1)}` : ""}`, { credentials: "include" }).then(r => r.json()),
+  });
+
+  // Đào tạo tab — Tổng số lớp học (offline / online)
+  const { data: classFormat, isLoading: loadingClassFormat } = useQuery<{
+    total: number; offline: number; offlinePct: number; online: number; onlinePct: number;
+  }>({ queryKey: ["/api/classes/format-summary", locationId], queryFn: () =>
+    fetch(`/api/classes/format-summary${locationParam}`, { credentials: "include" }).then(r => r.json())
+  });
+
+  // Đào tạo tab — Trạng thái lớp học
+  const { data: classStatus, isLoading: loadingClassStatus } = useQuery<{
+    planning: number; recruiting: number; active: number; closed: number; total: number;
+  }>({ queryKey: ["/api/classes/status-summary", locationId], queryFn: () =>
+    fetch(`/api/classes/status-summary${locationParam}`, { credentials: "include" }).then(r => r.json())
   });
 
   const activePct = customerSummary && customerSummary.total > 0
@@ -741,7 +844,63 @@ export function Dashboard() {
               </div>
             </div>
           </TabsContent>
-          <TabsContent value="dao-tao" />
+          <TabsContent value="dao-tao">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+              {/* Card 1: Tổng số lớp học — Donut chart (offline / online) */}
+              <Card className="border-none shadow-lg shadow-black/5" data-testid="card-tong-so-lop-hoc">
+                <CardHeader className="pb-2 pt-5 px-5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                      <Building2 className="w-5 h-5 text-blue-500" />
+                    </div>
+                    <CardTitle className="text-sm font-semibold text-muted-foreground">Tổng số lớp học</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="px-5 pb-5">
+                  {loadingClassFormat ? (
+                    <div className="space-y-2 mt-1">
+                      <Skeleton className="h-32 w-full" />
+                    </div>
+                  ) : (
+                    <ClassFormatDonut
+                      total={classFormat?.total ?? 0}
+                      offline={classFormat?.offline ?? 0}
+                      offlinePct={classFormat?.offlinePct ?? 0}
+                      online={classFormat?.online ?? 0}
+                      onlinePct={classFormat?.onlinePct ?? 0}
+                    />
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Card 2: Trạng thái lớp học — horizontal bars */}
+              <Card className="border-none shadow-lg shadow-black/5" data-testid="card-trang-thai-lop-hoc">
+                <CardHeader className="pb-2 pt-5 px-5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-9 h-9 rounded-xl bg-violet-500/10 flex items-center justify-center">
+                      <BookOpenCheck className="w-5 h-5 text-violet-500" />
+                    </div>
+                    <CardTitle className="text-sm font-semibold text-muted-foreground">Trạng thái lớp học</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="px-5 pb-5">
+                  {loadingClassStatus ? (
+                    <div className="space-y-2 mt-1">
+                      <Skeleton className="h-32 w-full" />
+                    </div>
+                  ) : (
+                    <ClassStatusBars
+                      planning={classStatus?.planning ?? 0}
+                      recruiting={classStatus?.recruiting ?? 0}
+                      active={classStatus?.active ?? 0}
+                      closed={classStatus?.closed ?? 0}
+                      total={classStatus?.total ?? 0}
+                    />
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
           <TabsContent value="tai-chinh" />
         </Tabs>
       </div>

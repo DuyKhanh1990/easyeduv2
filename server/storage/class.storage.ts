@@ -1269,3 +1269,87 @@ export async function scheduleClassStudents(classId: string, configs: any[], use
     await distributeInvoiceFeeToSessions(inv.id, inv.studentId, inv.classId);
   }
 }
+
+// ==========================================
+// CLASS FORMAT SUMMARY (Tổng số lớp học - online vs offline)
+// ==========================================
+function buildClassLocationWhere(isSuperAdmin: boolean, allowedLocationIds: string[] | null, locationId?: string): string {
+  if (locationId && locationId !== "all") {
+    const safe = locationId.replace(/[^a-zA-Z0-9\-]/g, "");
+    return `c.location_id = '${safe}'::uuid`;
+  }
+  if (isSuperAdmin || allowedLocationIds === null) return "1=1";
+  if (allowedLocationIds.length === 0) return "1=0";
+  const ids = allowedLocationIds.map(id => `'${id.replace(/[^a-zA-Z0-9\-]/g, "")}'`).join(",");
+  return `c.location_id = ANY(ARRAY[${ids}]::uuid[])`;
+}
+
+export async function getClassFormatSummary(params: {
+  isSuperAdmin: boolean;
+  allowedLocationIds: string[] | null;
+  locationId?: string;
+}): Promise<{
+  total: number;
+  offline: number;
+  offlinePct: number;
+  online: number;
+  onlinePct: number;
+}> {
+  const where = buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
+  const queryStr = `
+    SELECT
+      COUNT(*) AS total,
+      COUNT(*) FILTER (WHERE c.learning_format = 'offline') AS offline,
+      COUNT(*) FILTER (WHERE c.learning_format = 'online')  AS online
+    FROM classes c
+    WHERE ${where}
+  `;
+  const result = await db.execute(sql.raw(queryStr));
+  const row: any = result.rows[0] ?? {};
+  const total   = parseInt(row.total ?? "0", 10);
+  const offline = parseInt(row.offline ?? "0", 10);
+  const online  = parseInt(row.online ?? "0", 10);
+  return {
+    total,
+    offline,
+    offlinePct: total > 0 ? Math.round((offline / total) * 100) : 0,
+    online,
+    onlinePct:  total > 0 ? Math.round((online  / total) * 100) : 0,
+  };
+}
+
+// ==========================================
+// CLASS STATUS SUMMARY (Trạng thái lớp học)
+// ==========================================
+export async function getClassStatusSummary(params: {
+  isSuperAdmin: boolean;
+  allowedLocationIds: string[] | null;
+  locationId?: string;
+}): Promise<{
+  planning: number;
+  recruiting: number;
+  active: number;
+  closed: number;
+  total: number;
+}> {
+  const where = buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
+  const queryStr = `
+    SELECT
+      COUNT(*) FILTER (WHERE c.status = 'planning')   AS planning,
+      COUNT(*) FILTER (WHERE c.status = 'recruiting') AS recruiting,
+      COUNT(*) FILTER (WHERE c.status = 'active')     AS active,
+      COUNT(*) FILTER (WHERE c.status = 'closed')     AS closed,
+      COUNT(*) AS total
+    FROM classes c
+    WHERE ${where}
+  `;
+  const result = await db.execute(sql.raw(queryStr));
+  const row: any = result.rows[0] ?? {};
+  return {
+    planning:   parseInt(row.planning   ?? "0", 10),
+    recruiting: parseInt(row.recruiting ?? "0", 10),
+    active:     parseInt(row.active     ?? "0", 10),
+    closed:     parseInt(row.closed     ?? "0", 10),
+    total:      parseInt(row.total      ?? "0", 10),
+  };
+}

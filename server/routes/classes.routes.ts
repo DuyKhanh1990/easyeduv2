@@ -581,6 +581,46 @@ export function registerClassesRoutes(app: Express): void {
     }
   });
 
+  // ── GET /api/classes/format-summary ────────────────────────────────────────
+  // Trả về tổng số lớp học và phân bố theo hình thức (online/offline)
+  // Query params: locationId (optional)
+  app.get("/api/classes/format-summary", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+      const isSuperAdmin = (req as any).isSuperAdmin ?? false;
+      const allowedLocationIds = await getAllowedLocationIds(req);
+      const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
+
+      const summary = await storage.getClassFormatSummary({ isSuperAdmin, allowedLocationIds, locationId });
+      res.json(summary);
+    } catch (err: any) {
+      console.error("Class format summary error:", err);
+      res.status(500).json({ message: err.message || "Lỗi khi tải tổng số lớp học" });
+    }
+  });
+
+  // ── GET /api/classes/status-summary ────────────────────────────────────────
+  // Trả về số lượng lớp học theo từng trạng thái (planning, recruiting, active, closed)
+  // Query params: locationId (optional)
+  app.get("/api/classes/status-summary", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+      const isSuperAdmin = (req as any).isSuperAdmin ?? false;
+      const allowedLocationIds = await getAllowedLocationIds(req);
+      const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
+
+      const summary = await storage.getClassStatusSummary({ isSuperAdmin, allowedLocationIds, locationId });
+      res.json(summary);
+    } catch (err: any) {
+      console.error("Class status summary error:", err);
+      res.status(500).json({ message: err.message || "Lỗi khi tải trạng thái lớp học" });
+    }
+  });
+
   app.get(api.classes.get.path, async (req, res) => {
     const cls = await storage.getClass(req.params.id);
     if (!cls) return res.status(404).json({ message: "Not found" });
