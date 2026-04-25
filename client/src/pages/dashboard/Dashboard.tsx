@@ -69,16 +69,16 @@ function CustomerDonut({
       ]
     : [{ name: "Chưa có dữ liệu", value: 1, color: "hsl(var(--muted))" }];
   return (
-    <div className="flex items-center gap-3" data-testid="chart-customer-donut">
-      <div className="relative w-[120px] h-[120px] shrink-0">
+    <div data-testid="chart-customer-donut">
+      <div className="relative w-full h-[140px]">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
               data={data}
               cx="50%"
               cy="50%"
-              innerRadius={38}
-              outerRadius={56}
+              innerRadius={44}
+              outerRadius={64}
               paddingAngle={hasData ? 3 : 0}
               dataKey="value"
               stroke="none"
@@ -95,28 +95,24 @@ function CustomerDonut({
         </ResponsiveContainer>
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
           <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Tổng</span>
-          <span className="text-xl font-bold font-display text-foreground leading-tight" data-testid="text-total-customers">
+          <span className="text-2xl font-bold font-display text-foreground leading-tight" data-testid="text-total-customers">
             {total}
           </span>
         </div>
       </div>
-      <div className="flex-1 min-w-0 space-y-2 text-sm">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-muted-foreground flex items-center gap-1.5 truncate">
-            <span className="w-2.5 h-2.5 rounded-sm bg-blue-500 inline-block shrink-0" />
-            <UserCheck className="w-3.5 h-3.5 shrink-0" /> Học viên
-          </span>
-          <span className="font-semibold text-foreground whitespace-nowrap" data-testid="text-hoc-vien">
-            {hocVien} <span className="text-blue-500 font-normal">({hocVienPct}%)</span>
+      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: "#3b82f6" }} />
+          <span className="text-muted-foreground truncate">Học viên</span>
+          <span className="ml-auto font-semibold text-foreground whitespace-nowrap" data-testid="text-hoc-vien">
+            {hocVien} <span className="text-muted-foreground font-normal">({hocVienPct}%)</span>
           </span>
         </div>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-muted-foreground flex items-center gap-1.5 truncate">
-            <span className="w-2.5 h-2.5 rounded-sm bg-violet-500 inline-block shrink-0" />
-            <Users className="w-3.5 h-3.5 shrink-0" /> Phụ huynh
-          </span>
-          <span className="font-semibold text-foreground whitespace-nowrap" data-testid="text-phu-huynh">
-            {phuHuynh} <span className="text-violet-500 font-normal">({phuHuynhPct}%)</span>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: "#8b5cf6" }} />
+          <span className="text-muted-foreground truncate">Phụ huynh</span>
+          <span className="ml-auto font-semibold text-foreground whitespace-nowrap" data-testid="text-phu-huynh">
+            {phuHuynh} <span className="text-muted-foreground font-normal">({phuHuynhPct}%)</span>
           </span>
         </div>
       </div>
@@ -172,18 +168,18 @@ function AccountStatusGauge({
           <span className="text-[10px] uppercase tracking-wider text-muted-foreground mt-0.5">Hoạt động</span>
         </div>
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block shrink-0" />
+          <span className="w-2 h-2 rounded-sm bg-emerald-500 shrink-0" />
           <span className="text-muted-foreground truncate">Hoạt động</span>
-          <span className="ml-auto font-semibold text-foreground" data-testid="text-active-accounts">
-            {active}
+          <span className="ml-auto font-semibold text-foreground whitespace-nowrap" data-testid="text-active-accounts">
+            {active} <span className="text-muted-foreground font-normal">({activePct}%)</span>
           </span>
         </div>
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="w-2.5 h-2.5 rounded-sm bg-muted inline-block shrink-0" />
+          <span className="w-2 h-2 rounded-sm bg-muted shrink-0" />
           <span className="text-muted-foreground truncate">Không HĐ</span>
-          <span className="ml-auto font-semibold text-foreground" data-testid="text-inactive-accounts">
+          <span className="ml-auto font-semibold text-foreground whitespace-nowrap" data-testid="text-inactive-accounts">
             {inactive} <span className="text-muted-foreground font-normal">({inactivePct}%)</span>
           </span>
         </div>
@@ -368,7 +364,7 @@ export function Dashboard() {
             <TabsTrigger value="tai-chinh" data-testid="tab-tai-chinh">TÀI CHÍNH</TabsTrigger>
           </TabsList>
           <TabsContent value="khach-hang">
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mt-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
 
               {/* Card 1: Tổng Khách hàng — Donut chart */}
               <Card className="border-none shadow-lg shadow-black/5" data-testid="card-tong-khach-hang">
@@ -451,57 +447,6 @@ export function Dashboard() {
                 </CardContent>
               </Card>
 
-              {/* Card 4: Khách hàng mới */}
-              <Card className="border-none shadow-lg shadow-black/5" data-testid="card-khach-hang-moi">
-                <CardHeader className="pb-2 pt-5 px-5">
-                  <div className="flex items-center gap-2">
-                    <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center">
-                      <UserPlus className="w-5 h-5 text-amber-500" />
-                    </div>
-                    <CardTitle className="text-sm font-semibold text-muted-foreground">Khách hàng mới</CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="px-5 pb-5">
-                  {loadingNewCustomers ? (
-                    <div className="space-y-2 mt-1">
-                      <Skeleton className="h-8 w-20 mb-3" />
-                      {[1,2].map(i => <Skeleton key={i} className="h-4 w-full" />)}
-                    </div>
-                  ) : (
-                    <>
-                      <p className="text-3xl font-bold font-display text-foreground mb-3" data-testid="text-new-today">
-                        {newCustomers?.today ?? 0}
-                      </p>
-                      <div className="space-y-2 text-sm">
-                        <div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground">Hôm nay</span>
-                            <span className="font-semibold text-amber-500" data-testid="text-new-today-count">
-                              +{newCustomers?.today ?? 0}
-                            </span>
-                          </div>
-                          <MiniBar
-                            pct={(newCustomers?.thisMonth ?? 0) > 0
-                              ? Math.round(((newCustomers?.today ?? 0) / (newCustomers?.thisMonth ?? 1)) * 100)
-                              : 0}
-                            colorClass="bg-amber-500"
-                          />
-                        </div>
-                        <div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground">Tháng này</span>
-                            <span className="font-semibold text-amber-400" data-testid="text-new-month-count">
-                              +{newCustomers?.thisMonth ?? 0}
-                            </span>
-                          </div>
-                          <MiniBar pct={100} colorClass="bg-amber-400" />
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-
             </div>
 
             {/* Charts section */}
@@ -520,8 +465,76 @@ export function Dashboard() {
                 </Select>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Left: by Source */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Khách hàng mới */}
+                <Card className="border-none shadow-lg shadow-black/5" data-testid="card-khach-hang-moi">
+                  <CardHeader className="pb-2 pt-5 px-5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                        <UserPlus className="w-4 h-4 text-amber-500" />
+                      </div>
+                      <CardTitle className="text-sm font-semibold text-muted-foreground">Khách hàng mới</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="px-5 pb-5">
+                    {loadingNewCustomers ? (
+                      <div className="space-y-3 mt-1">
+                        <Skeleton className="h-20 w-full" />
+                        <Skeleton className="h-20 w-full" />
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="rounded-xl bg-amber-500/5 border border-amber-500/15 px-4 py-3 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-9 h-9 rounded-full bg-amber-500/15 flex items-center justify-center">
+                              <UserPlus className="w-4 h-4 text-amber-500" />
+                            </div>
+                            <div>
+                              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Hôm nay</p>
+                              <p className="text-2xl font-bold font-display text-amber-600 leading-tight" data-testid="text-new-today">
+                                +{newCustomers?.today ?? 0}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-[11px] text-muted-foreground" data-testid="text-new-today-count">
+                            {(newCustomers?.thisMonth ?? 0) > 0
+                              ? `${Math.round(((newCustomers?.today ?? 0) / (newCustomers?.thisMonth ?? 1)) * 100)}% tháng này`
+                              : "—"}
+                          </span>
+                        </div>
+                        <div className="rounded-xl bg-muted/40 border border-border/60 px-4 py-3 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
+                              <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                            </div>
+                            <div>
+                              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Tháng này</p>
+                              <p className="text-2xl font-bold font-display text-foreground leading-tight" data-testid="text-new-month-count">
+                                +{newCustomers?.thisMonth ?? 0}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-[11px] text-muted-foreground">Tổng dồn</span>
+                        </div>
+                        <div className="pt-1">
+                          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-amber-400 to-amber-500 transition-all duration-1000"
+                              style={{
+                                width: `${(newCustomers?.thisMonth ?? 0) > 0
+                                  ? Math.min(Math.round(((newCustomers?.today ?? 0) / (newCustomers?.thisMonth ?? 1)) * 100), 100)
+                                  : 0}%`,
+                              }}
+                            />
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-1.5 text-center">Đóng góp của hôm nay vào tổng tháng</p>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* By Source */}
                 <Card className="border-none shadow-lg shadow-black/5" data-testid="card-chart-by-source">
                   <CardHeader className="pb-2 pt-5 px-5">
                     <div className="flex items-center gap-2">
