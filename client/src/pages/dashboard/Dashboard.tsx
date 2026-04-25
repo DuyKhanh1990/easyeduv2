@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Users, UserCheck, GraduationCap, TrendingUp, BookOpen, Activity, UserPlus, CheckCircle2, XCircle, BookOpenCheck, Clock, PauseCircle, CalendarClock, UserX, Network, Megaphone, Building2, UserSquare2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocationFilter } from "@/hooks/use-location-filter";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
-  ComposedChart, Line, PieChart, Pie, FunnelChart, Funnel, LabelList
+  ComposedChart, Line, PieChart, Pie
 } from "recharts";
 
 const stats = [
@@ -103,17 +103,19 @@ function CustomerDonut({
       <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: "#3b82f6" }} />
-          <span className="text-muted-foreground truncate">Học viên</span>
-          <span className="ml-auto font-semibold text-foreground whitespace-nowrap" data-testid="text-hoc-vien">
-            {hocVien} <span className="text-muted-foreground font-normal">({hocVienPct}%)</span>
+          <span className="text-muted-foreground shrink-0">Học viên</span>
+          <span className="font-semibold text-foreground whitespace-nowrap tabular-nums" data-testid="text-hoc-vien">
+            {hocVien}
           </span>
+          <span className="text-muted-foreground tabular-nums">({hocVienPct}%)</span>
         </div>
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: "#8b5cf6" }} />
-          <span className="text-muted-foreground truncate">Phụ huynh</span>
-          <span className="ml-auto font-semibold text-foreground whitespace-nowrap" data-testid="text-phu-huynh">
-            {phuHuynh} <span className="text-muted-foreground font-normal">({phuHuynhPct}%)</span>
+          <span className="text-muted-foreground shrink-0">Phụ huynh</span>
+          <span className="font-semibold text-foreground whitespace-nowrap tabular-nums" data-testid="text-phu-huynh">
+            {phuHuynh}
           </span>
+          <span className="text-muted-foreground tabular-nums">({phuHuynhPct}%)</span>
         </div>
       </div>
     </div>
@@ -171,32 +173,30 @@ function AccountStatusGauge({
       <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="w-2 h-2 rounded-sm bg-emerald-500 shrink-0" />
-          <span className="text-muted-foreground truncate">Hoạt động</span>
-          <span className="ml-auto font-semibold text-foreground whitespace-nowrap" data-testid="text-active-accounts">
-            {active} <span className="text-muted-foreground font-normal">({activePct}%)</span>
+          <span className="text-muted-foreground shrink-0">Hoạt động</span>
+          <span className="font-semibold text-foreground whitespace-nowrap tabular-nums" data-testid="text-active-accounts">
+            {active}
           </span>
+          <span className="text-muted-foreground tabular-nums">({activePct}%)</span>
         </div>
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="w-2 h-2 rounded-sm bg-muted shrink-0" />
-          <span className="text-muted-foreground truncate">Không HĐ</span>
-          <span className="ml-auto font-semibold text-foreground whitespace-nowrap" data-testid="text-inactive-accounts">
-            {inactive} <span className="text-muted-foreground font-normal">({inactivePct}%)</span>
+          <span className="text-muted-foreground shrink-0">Không HĐ</span>
+          <span className="font-semibold text-foreground whitespace-nowrap tabular-nums" data-testid="text-inactive-accounts">
+            {inactive}
           </span>
+          <span className="text-muted-foreground tabular-nums">({inactivePct}%)</span>
         </div>
       </div>
     </div>
   );
 }
 
-// ── Card 3: Trạng thái học tập — funnel chart ─────────────────────────────────
-function LearningStatusFunnel({
+// ── Card 3: Trạng thái học tập — horizontal bars ──────────────────────────────
+function LearningStatusBars({
   dangHoc, choLich, baoLuu, daNghi, chuaCoLich, total,
 }: { dangHoc: number; choLich: number; baoLuu: number; daNghi: number; chuaCoLich: number; total: number }) {
   const safeTotal = Math.max(total, 1);
-  const pct = (n: number) => Math.round((n / safeTotal) * 100);
-  // Funnel needs values in descending order to render the classic pyramid.
-  // We sort by count so it always renders cleanly regardless of which status
-  // happens to be largest in this center.
   const items = [
     { key: "dangHoc",    label: "Đang học",     value: dangHoc,    fill: "#8b5cf6", testId: "status-dang-hoc" },
     { key: "choLich",    label: "Chờ đến lịch", value: choLich,    fill: "#3b82f6", testId: "status-cho-lich" },
@@ -204,80 +204,46 @@ function LearningStatusFunnel({
     { key: "daNghi",     label: "Đã nghỉ",      value: daNghi,     fill: "#f43f5e", testId: "status-da-nghi" },
     { key: "chuaCoLich", label: "Chưa có lịch", value: chuaCoLich, fill: "#94a3b8", testId: "status-chua-co-lich" },
   ];
-  const sorted = [...items].sort((a, b) => b.value - a.value);
-  const hasData = sorted.some((s) => s.value > 0);
-  // Funnel needs strictly positive values to render trapezoids, so when a
-  // segment is zero we substitute a tiny sliver and remember the real value.
-  const funnelData = sorted.map((s) => ({
-    name: s.label,
-    value: s.value > 0 ? s.value : 0.001,
-    realValue: s.value,
-    fill: s.fill,
-  }));
+  // Bar widths are scaled to the largest value so the longest bar fills the
+  // track. Empty bars stay at 0 so they don't masquerade as a tiny value.
+  const max = Math.max(...items.map((s) => s.value), 1);
+  // Trigger CSS width transition on mount so bars grow from 0 → target.
+  const [animated, setAnimated] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setAnimated(true), 100);
+    return () => clearTimeout(t);
+  }, []);
   return (
-    <div data-testid="chart-learning-funnel">
-      <div className="w-full h-[140px]">
-        {hasData ? (
-          <ResponsiveContainer width="100%" height="100%">
-            <FunnelChart margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
-              <Tooltip
-                content={({ active, payload }: any) =>
-                  active && payload?.length ? (
-                    <div className="bg-background border border-border rounded-lg px-3 py-2 shadow-lg text-sm">
-                      <p className="font-semibold text-foreground mb-1">{payload[0].payload.name}</p>
-                      <p className="text-muted-foreground">
-                        Học viên: <span className="font-bold text-foreground">{payload[0].payload.realValue}</span>
-                      </p>
-                      <p className="text-muted-foreground">
-                        Tỷ lệ: <span className="font-bold text-emerald-500">{pct(payload[0].payload.realValue)}%</span>
-                      </p>
-                    </div>
-                  ) : null
-                }
+    <div className="space-y-2.5" data-testid="chart-learning-bars">
+      {items.map((s) => {
+        const pctVal = Math.round((s.value / safeTotal) * 100);
+        const barPct = Math.round((s.value / max) * 100);
+        return (
+          <div
+            key={s.key}
+            className="grid grid-cols-[78px_1fr_28px_36px] items-center gap-2 text-[11px]"
+            data-testid={`row-${s.key}`}
+          >
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: s.fill }} />
+              <span className="text-muted-foreground truncate">{s.label}</span>
+            </div>
+            <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full rounded-full transition-[width] duration-[1100ms] ease-out"
+                style={{
+                  width: animated && s.value > 0 ? `${Math.max(barPct, 3)}%` : "0%",
+                  background: s.fill,
+                }}
               />
-              <Funnel
-                dataKey="value"
-                data={funnelData}
-                isAnimationActive
-                animationBegin={100}
-                animationDuration={1100}
-                stroke="hsl(var(--background))"
-                strokeWidth={2}
-              >
-                <LabelList
-                  position="center"
-                  fill="#fff"
-                  stroke="none"
-                  fontSize={12}
-                  fontWeight={700}
-                  dataKey="realValue"
-                />
-                <LabelList
-                  position="right"
-                  fill="hsl(var(--muted-foreground))"
-                  stroke="none"
-                  fontSize={10}
-                  dataKey="name"
-                />
-              </Funnel>
-            </FunnelChart>
-          </ResponsiveContainer>
-        ) : (
-          <div className="h-full flex flex-col items-center justify-center text-muted-foreground/50 gap-1.5">
-            <BookOpenCheck className="w-6 h-6" />
-            <p className="text-xs">Chưa có dữ liệu</p>
+            </div>
+            <span className="text-right font-semibold text-foreground tabular-nums" data-testid={s.testId}>
+              {s.value}
+            </span>
+            <span className="text-right text-muted-foreground tabular-nums">{pctVal}%</span>
           </div>
-        )}
-      </div>
-      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
-        {items.map((s) => (
-          <div key={s.key} className="flex items-center gap-1.5 min-w-0">
-            <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: s.fill }} />
-            <span className="text-muted-foreground truncate">{s.label}</span>
-            <span className="ml-auto font-semibold text-foreground" data-testid={s.testId}>{s.value}</span>
-          </div>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
 }
@@ -435,7 +401,7 @@ export function Dashboard() {
                       <Skeleton className="h-32 w-full" />
                     </div>
                   ) : (
-                    <LearningStatusFunnel
+                    <LearningStatusBars
                       dangHoc={learningStatus?.dangHoc ?? 0}
                       choLich={learningStatus?.choLich ?? 0}
                       baoLuu={learningStatus?.baoLuu ?? 0}
