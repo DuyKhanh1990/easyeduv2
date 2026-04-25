@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Users, UserCheck, GraduationCap, TrendingUp, BookOpen, Activity, UserPlus, CheckCircle2, XCircle, BookOpenCheck, Clock, PauseCircle, CalendarClock, UserX, Network, Megaphone, Building2, UserSquare2 } from "lucide-react";
+import { Users, TrendingUp, UserPlus, CheckCircle2, BookOpenCheck, Network, Megaphone, Building2, UserSquare2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,13 +11,6 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   ComposedChart, Line, PieChart, Pie
 } from "recharts";
-
-const stats = [
-  { title: "Tổng Học Viên", value: "2,543", change: "+12%", icon: Users, color: "text-blue-500", bg: "bg-blue-500/10" },
-  { title: "Học Viên Đang Học", value: "1,892", change: "+5%", icon: UserCheck, color: "text-emerald-500", bg: "bg-emerald-500/10" },
-  { title: "Lớp Học Đang Mở", value: "145", change: "0%", icon: GraduationCap, color: "text-violet-500", bg: "bg-violet-500/10" },
-  { title: "Doanh Thu Tháng", value: "1.2 Tỷ", change: "+18%", icon: TrendingUp, color: "text-amber-500", bg: "bg-amber-500/10" },
-];
 
 function MiniBar({ pct, colorClass }: { pct: number; colorClass: string }) {
   return (
@@ -385,7 +378,78 @@ export function Dashboard() {
                 </CardContent>
               </Card>
 
-              {/* Card 3: Trạng thái học tập — Funnel */}
+              {/* Card 3: Khách hàng mới — moved from analytics row */}
+              <Card className="border-none shadow-lg shadow-black/5" data-testid="card-khach-hang-moi">
+                <CardHeader className="pb-2 pt-5 px-5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                      <UserPlus className="w-5 h-5 text-amber-500" />
+                    </div>
+                    <CardTitle className="text-sm font-semibold text-muted-foreground">Khách hàng mới</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="px-5 pb-5">
+                  {loadingNewCustomers ? (
+                    <div className="space-y-3 mt-1">
+                      <Skeleton className="h-20 w-full" />
+                      <Skeleton className="h-20 w-full" />
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="rounded-xl bg-amber-500/5 border border-amber-500/15 px-4 py-3 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-9 h-9 rounded-full bg-amber-500/15 flex items-center justify-center">
+                            <UserPlus className="w-4 h-4 text-amber-500" />
+                          </div>
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Hôm nay</p>
+                            <p className="text-2xl font-bold font-display text-amber-600 leading-tight" data-testid="text-new-today">
+                              +{newCustomers?.today ?? 0}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-[11px] text-muted-foreground" data-testid="text-new-today-count">
+                          {(newCustomers?.thisMonth ?? 0) > 0
+                            ? `${Math.round(((newCustomers?.today ?? 0) / (newCustomers?.thisMonth ?? 1)) * 100)}% tháng này`
+                            : "—"}
+                        </span>
+                      </div>
+                      <div className="rounded-xl bg-muted/40 border border-border/60 px-4 py-3 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
+                            <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                          </div>
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Tháng này</p>
+                            <p className="text-2xl font-bold font-display text-foreground leading-tight" data-testid="text-new-month-count">
+                              +{newCustomers?.thisMonth ?? 0}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-[11px] text-muted-foreground">Tổng dồn</span>
+                      </div>
+                      <div className="pt-1">
+                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-amber-400 to-amber-500 transition-all duration-1000"
+                            style={{
+                              width: `${(newCustomers?.thisMonth ?? 0) > 0
+                                ? Math.min(Math.round(((newCustomers?.today ?? 0) / (newCustomers?.thisMonth ?? 1)) * 100), 100)
+                                : 0}%`,
+                            }}
+                          />
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-1.5 text-center">Đóng góp của hôm nay vào tổng tháng</p>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+            </div>
+
+            {/* Row 2: Trạng thái học tập + slot trống (sẽ thêm sau) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
               <Card className="border-none shadow-lg shadow-black/5" data-testid="card-trang-thai-hoc-tap">
                 <CardHeader className="pb-2 pt-5 px-5">
                   <div className="flex items-center gap-2">
@@ -413,6 +477,8 @@ export function Dashboard() {
                 </CardContent>
               </Card>
 
+              {/* Slot trống — chừa cho thẻ sẽ thêm sau */}
+              <div aria-hidden="true" />
             </div>
 
             {/* Charts section */}
@@ -431,75 +497,7 @@ export function Dashboard() {
                 </Select>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {/* Khách hàng mới */}
-                <Card className="border-none shadow-lg shadow-black/5" data-testid="card-khach-hang-moi">
-                  <CardHeader className="pb-2 pt-5 px-5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center">
-                        <UserPlus className="w-4 h-4 text-amber-500" />
-                      </div>
-                      <CardTitle className="text-sm font-semibold text-muted-foreground">Khách hàng mới</CardTitle>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="px-5 pb-5">
-                    {loadingNewCustomers ? (
-                      <div className="space-y-3 mt-1">
-                        <Skeleton className="h-20 w-full" />
-                        <Skeleton className="h-20 w-full" />
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        <div className="rounded-xl bg-amber-500/5 border border-amber-500/15 px-4 py-3 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div className="w-9 h-9 rounded-full bg-amber-500/15 flex items-center justify-center">
-                              <UserPlus className="w-4 h-4 text-amber-500" />
-                            </div>
-                            <div>
-                              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Hôm nay</p>
-                              <p className="text-2xl font-bold font-display text-amber-600 leading-tight" data-testid="text-new-today">
-                                +{newCustomers?.today ?? 0}
-                              </p>
-                            </div>
-                          </div>
-                          <span className="text-[11px] text-muted-foreground" data-testid="text-new-today-count">
-                            {(newCustomers?.thisMonth ?? 0) > 0
-                              ? `${Math.round(((newCustomers?.today ?? 0) / (newCustomers?.thisMonth ?? 1)) * 100)}% tháng này`
-                              : "—"}
-                          </span>
-                        </div>
-                        <div className="rounded-xl bg-muted/40 border border-border/60 px-4 py-3 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
-                              <TrendingUp className="w-4 h-4 text-muted-foreground" />
-                            </div>
-                            <div>
-                              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Tháng này</p>
-                              <p className="text-2xl font-bold font-display text-foreground leading-tight" data-testid="text-new-month-count">
-                                +{newCustomers?.thisMonth ?? 0}
-                              </p>
-                            </div>
-                          </div>
-                          <span className="text-[11px] text-muted-foreground">Tổng dồn</span>
-                        </div>
-                        <div className="pt-1">
-                          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-gradient-to-r from-amber-400 to-amber-500 transition-all duration-1000"
-                              style={{
-                                width: `${(newCustomers?.thisMonth ?? 0) > 0
-                                  ? Math.min(Math.round(((newCustomers?.today ?? 0) / (newCustomers?.thisMonth ?? 1)) * 100), 100)
-                                  : 0}%`,
-                              }}
-                            />
-                          </div>
-                          <p className="text-[10px] text-muted-foreground mt-1.5 text-center">Đóng góp của hôm nay vào tổng tháng</p>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {/* By Source */}
                 <Card className="border-none shadow-lg shadow-black/5" data-testid="card-chart-by-source">
                   <CardHeader className="pb-2 pt-5 px-5">
@@ -678,69 +676,6 @@ export function Dashboard() {
           <TabsContent value="dao-tao" />
           <TabsContent value="tai-chinh" />
         </Tabs>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {stats.map((stat, i) => (
-            <Card key={i} className="border-none shadow-lg shadow-black/5 hover:-translate-y-1 transition-transform duration-300">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${stat.bg}`}>
-                    <stat.icon className={`w-6 h-6 ${stat.color}`} />
-                  </div>
-                  <span className={`text-sm font-semibold ${stat.change.startsWith('+') ? 'text-emerald-500' : 'text-muted-foreground'}`}>
-                    {stat.change}
-                  </span>
-                </div>
-                <div className="mt-6">
-                  <h3 className="text-muted-foreground font-medium text-sm">{stat.title}</h3>
-                  <p className="text-3xl font-bold font-display mt-1 text-foreground">{stat.value}</p>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <Card className="col-span-1 lg:col-span-2 border-none shadow-lg shadow-black/5">
-            <CardHeader className="border-b border-border/50 pb-4">
-              <CardTitle className="text-lg font-display flex items-center gap-2">
-                <Activity className="w-5 h-5 text-primary" />
-                Biểu đồ Tăng trưởng
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-6 h-[300px] flex items-center justify-center text-muted-foreground border-dashed border-2 border-border/50 rounded-xl m-6 bg-muted/20">
-              <div className="text-center">
-                <Activity className="w-10 h-10 mx-auto text-muted-foreground/30 mb-2" />
-                <p>Khu vực hiển thị biểu đồ</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="col-span-1 border-none shadow-lg shadow-black/5">
-            <CardHeader className="border-b border-border/50 pb-4">
-              <CardTitle className="text-lg font-display flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-primary" />
-                Lịch học sắp tới
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="divide-y divide-border/50">
-                {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="p-4 hover:bg-muted/50 transition-colors flex items-start gap-4">
-                    <div className="w-12 h-12 bg-primary/5 rounded-xl flex flex-col items-center justify-center text-primary flex-shrink-0">
-                      <span className="text-xs font-semibold">T2</span>
-                      <span className="text-lg font-bold leading-tight">15</span>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-foreground">Lớp Tiếng Anh Giao Tiếp {i}</h4>
-                      <p className="text-sm text-muted-foreground mt-0.5">18:00 - 19:30 • Cơ sở Quận 1</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
       </div>
     </DashboardLayout>
   );
