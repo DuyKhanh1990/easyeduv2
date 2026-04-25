@@ -41,6 +41,13 @@ data:
   TINODE_REQUEST_TIMEOUT_MS: "10000"
   TINODE_MAX_RETRIES: "5"
   TINODE_RETRY_BACKOFF_MS: "5000"
+  # === Multi-tenant ===
+  # Định danh trung tâm — phải UNIQUE giữa các center share cùng Tinode/MongoDB.
+  # Pattern: ^[a-z][a-z0-9_]{2,30}$
+  # Dùng để tag mọi user/topic Tinode tạo từ deployment này
+  # → cho phép off-board sạch (xoá data theo `tenant:<CENTER_ID>` trong MongoDB).
+  # KHÔNG đổi giá trị này sau khi đã chạy production.
+  CENTER_ID: "easyeduv2"
   SMTP_HOST: "smtp.gmail.com"
   SMTP_PORT: "587"
   SMTP_USER: ""
