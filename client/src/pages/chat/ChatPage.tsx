@@ -1514,7 +1514,7 @@ export function ChatPage() {
                 </div>
                 <div className="text-center">
                   <p className="font-semibold text-foreground">Đang kết nối tới máy chủ chat...</p>
-                  <p className="text-sm text-muted-foreground mt-1">Tự động thử lại sau mỗi 5 giây</p>
+                  <p className="text-sm text-muted-foreground mt-1">Hệ thống sẽ tự động thử lại</p>
                 </div>
               </>
             ) : (

@@ -64,9 +64,13 @@ export function useTinode(): UseTinodeResult {
   const msgIdRef = useRef(1);
   const authedRef = useRef(false);
   // Periodic keepalive timer — Tinode (and reverse proxies) close idle WS
-  // connections after ~60s. Sending a tiny payload every 25s keeps the link
+  // connections after ~60s. Sending a tiny payload every 20s keeps the link
   // alive so the chat doesn't show "connecting…" while the user is just idle.
   const keepaliveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Tracks last time we received any data from server. Used to detect a
+  // "zombie" socket: still readyState=OPEN but no traffic for too long
+  // (network change, OS sleep, mobile radio handoff). Force-close → reconnect.
+  const lastRxRef = useRef<number>(Date.now());
   const myUidRef = useRef<string | null>(null);
   const credRef = useRef<TinodeCredentials | null>(null);
   const currentTopicRef = useRef<string | null>(null);
@@ -74,6 +78,9 @@ export function useTinode(): UseTinodeResult {
   const loginIdRef = useRef<string | null>(null);
   const accIdRef = useRef<string | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Reconnect attempt counter for exponential backoff. Reset to 0 once
+  // the new socket reaches the "authed" state.
+  const reconnectAttemptRef = useRef<number>(0);
   const pendingUidFetchRef = useRef<Set<string>>(new Set());
   const fetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const knownUidsRef = useRef<Set<string>>(new Set());
@@ -459,6 +466,7 @@ export function useTinode(): UseTinodeResult {
     ws.onopen = () => {
       console.log("[Tinode WS] Connected:", ws.url);
       setConnected(true);
+      lastRxRef.current = Date.now();
       const hiId = nextId();
       hiIdRef.current = hiId;
       ws.send(JSON.stringify({
@@ -468,12 +476,29 @@ export function useTinode(): UseTinodeResult {
       // application-level no-op (matches the official Tinode JS SDK behavior).
       // Without this, the connection drops after ~60s of idle and the user
       // sees a recurring "Đang kết nối tới máy chủ chat…" banner.
+      // 20s interval gives margin even for proxies with ~30s idle timeouts.
       if (keepaliveTimerRef.current) clearInterval(keepaliveTimerRef.current);
       keepaliveTimerRef.current = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          try { ws.send("1"); } catch { /* ignore */ }
+        if (ws.readyState !== WebSocket.OPEN) {
+          // Already closing/closed — onclose handler will schedule reconnect.
+          return;
         }
-      }, 25000);
+        // Zombie detection: if we haven't heard anything from the server for
+        // a long time even though the socket says OPEN (network change, OS
+        // sleep, mobile radio handoff), force-close so onclose triggers a
+        // fresh reconnect instead of leaving the user stuck on the banner.
+        if (Date.now() - lastRxRef.current > 90_000) {
+          console.warn("[Tinode WS] Zombie connection detected (no rx > 90s) — force closing");
+          try { ws.close(); } catch { /* ignore */ }
+          return;
+        }
+        try {
+          ws.send("1");
+        } catch (err) {
+          console.warn("[Tinode WS] Keepalive send failed — force closing", err);
+          try { ws.close(); } catch { /* ignore */ }
+        }
+      }, 20000);
     };
 
     ws.onclose = (e) => {
@@ -485,9 +510,14 @@ export function useTinode(): UseTinodeResult {
         clearInterval(keepaliveTimerRef.current);
         keepaliveTimerRef.current = null;
       }
+      // Exponential backoff: 1s, 2s, 4s, 8s, capped at 15s.
+      // Reset to 0 once a new socket reaches the authed state (in login ctrl handler).
+      const attempt = reconnectAttemptRef.current++;
+      const delay = Math.min(15000, 1000 * Math.pow(2, attempt));
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
       retryTimerRef.current = setTimeout(() => {
         if (credRef.current) connect(credRef.current);
-      }, 5000);
+      }, delay);
     };
 
     ws.onerror = (e) => {
@@ -496,6 +526,10 @@ export function useTinode(): UseTinodeResult {
     };
 
     ws.onmessage = (event) => {
+      // Update last-rx timestamp for ANY frame (including the "0" pong reply
+      // some Tinode versions send back to keepalive pings). This is what the
+      // zombie-detection logic in the keepalive interval reads from.
+      lastRxRef.current = Date.now();
       let msg: any;
       try { msg = JSON.parse(event.data); } catch { return; }
       // Log full payload for `data` packets (we need to inspect head.{replace,reply}); truncate other noisy frames.
@@ -526,6 +560,9 @@ export function useTinode(): UseTinodeResult {
         // login response
         if (id === loginIdRef.current) {
           if (code === 200 || code === 201) {
+            // Successfully (re)connected — reset backoff so the next disconnect
+            // retries quickly instead of waiting the previous accumulated delay.
+            reconnectAttemptRef.current = 0;
             // Extract and register Tinode UID
             const tinodeUid: string | undefined = msg.ctrl.params?.user;
             if (tinodeUid) {
@@ -837,7 +874,51 @@ export function useTinode(): UseTinodeResult {
     credRef.current = credentials;
     connect(credentials);
 
+    // Recover quickly when the network comes back, when the user returns to
+    // the tab (browsers throttle setInterval to once / minute on hidden tabs,
+    // so the keepalive may have missed its window), or when the OS wakes up.
+    // In any of these cases the socket can be a "zombie" — readyState=OPEN
+    // but actually dead. Force-close and let onclose schedule the reconnect.
+    const recover = (reason: string) => {
+      const ws = wsRef.current;
+      if (!ws) {
+        if (credRef.current) connect(credRef.current);
+        return;
+      }
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        // If we know we haven't received traffic recently, the socket is
+        // almost certainly dead — kick it so we reconnect immediately.
+        if (Date.now() - lastRxRef.current > 10_000) {
+          console.warn(`[Tinode WS] recover(${reason}) — closing stale socket`);
+          // Reset backoff and clear pending retry so we reconnect right away.
+          reconnectAttemptRef.current = 0;
+          if (retryTimerRef.current) {
+            clearTimeout(retryTimerRef.current);
+            retryTimerRef.current = null;
+          }
+          try { ws.close(); } catch { /* ignore */ }
+        }
+      } else if (credRef.current) {
+        // CLOSING / CLOSED — try a fresh connect now.
+        reconnectAttemptRef.current = 0;
+        if (retryTimerRef.current) {
+          clearTimeout(retryTimerRef.current);
+          retryTimerRef.current = null;
+        }
+        connect(credRef.current);
+      }
+    };
+
+    const onOnline = () => recover("online");
+    const onVisible = () => {
+      if (document.visibilityState === "visible") recover("visible");
+    };
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisible);
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
       if (wsRef.current) {
         wsRef.current.onclose = null;
