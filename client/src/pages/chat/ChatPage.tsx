@@ -1122,12 +1122,7 @@ function MessageWindow({
                           {/* Quoted reply preview (looked up from local messages by seq) */}
                           {replyRef && (
                             <div
-                              className={cn(
-                                "mb-1 max-w-full text-xs rounded-lg border-l-2 pl-2 pr-3 py-1 cursor-pointer hover:bg-muted/60 transition-colors",
-                                isMe
-                                  ? "border-white/50 bg-white/10 text-white/90"
-                                  : "border-primary/60 bg-muted/40 text-muted-foreground"
-                              )}
+                              className="mb-1 max-w-full text-xs rounded-lg border-l-2 border-primary/60 bg-muted/60 text-muted-foreground pl-2 pr-3 py-1 cursor-pointer hover:bg-muted transition-colors"
                               data-testid={`chat-message-reply-${msg.seq}`}
                               onClick={() => {
                                 if (repliedSeq == null) return;
@@ -1139,7 +1134,7 @@ function MessageWindow({
                                 }
                               }}
                             >
-                              <p className={cn("font-semibold leading-tight", isMe ? "text-white" : "text-primary")}>
+                              <p className="font-semibold leading-tight text-primary">
                                 {repliedFromName || "Tin nhắn"}
                               </p>
                               <p className="line-clamp-2 leading-snug">{previewText(repliedMsg)}</p>
