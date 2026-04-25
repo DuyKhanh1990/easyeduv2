@@ -137,6 +137,10 @@ export function useTinode(): UseTinodeResult {
   // this is true, we permissively allow all group topics through (so initial
   // meta.sub from Tinode isn't dropped before we know the allowlist).
   const allowedGroupTopicsLoadedRef = useRef<boolean>(false);
+  // Outbound pub heads we've sent and are waiting on a ctrl ack for.
+  // After ack, we re-key by `${topic}:${seq}` so the data echo (which may strip head fields) can be restored.
+  const pendingPubsByIdRef = useRef<Record<string, { topic: string; head: Record<string, any> }>>({});
+  const localPubHeadsByTopicSeqRef = useRef<Record<string, Record<string, any>>>({});
 
   const { data: credentials } = useQuery<TinodeCredentials>({
     queryKey: ["/api/chat/credentials"],
@@ -247,8 +251,9 @@ export function useTinode(): UseTinodeResult {
   const sendMessage = useCallback((topic: string, content: string | Record<string, any>, head?: Record<string, any>) => {
     if (!authedRef.current) return;
     if (typeof content === "string" && !content.trim()) return;
+    const id = nextId();
     const pub: Record<string, any> = {
-      id: nextId(),
+      id,
       topic,
       noecho: false,
       content,
@@ -256,6 +261,16 @@ export function useTinode(): UseTinodeResult {
     if (head && Object.keys(head).length > 0) {
       // Default mime when callers send a structured head without it.
       pub.head = { mime: typeof content === "string" ? "text/plain" : "text/x-drafty", ...head };
+      // Track this pub so we can rebuild head on the data echo (Tinode may strip non-mime fields).
+      // We only care about replace/reply right now; mime alone needs no tracking.
+      const interesting: Record<string, any> = {};
+      for (const k of Object.keys(pub.head)) {
+        if (k === "mime") continue;
+        interesting[k] = pub.head[k];
+      }
+      if (Object.keys(interesting).length > 0) {
+        pendingPubsByIdRef.current[id] = { topic, head: interesting };
+      }
     }
     wsSend({ pub });
   }, [wsSend, nextId]);
@@ -482,10 +497,25 @@ export function useTinode(): UseTinodeResult {
     ws.onmessage = (event) => {
       let msg: any;
       try { msg = JSON.parse(event.data); } catch { return; }
-      console.log("[Tinode WS] Message:", JSON.stringify(msg).slice(0, 200));
+      // Log full payload for `data` packets (we need to inspect head.{replace,reply}); truncate other noisy frames.
+      const raw = JSON.stringify(msg);
+      console.log("[Tinode WS] Message:", msg.data ? raw : raw.slice(0, 200));
 
       if (msg.ctrl) {
         const { id, code } = msg.ctrl;
+
+        // pub ack: re-key the pending head we tracked when sending,
+        // so that the data echo (which may strip head fields) can be restored.
+        if (id && code >= 200 && code < 300 && pendingPubsByIdRef.current[id]) {
+          const pending = pendingPubsByIdRef.current[id];
+          const ackedSeq: number | undefined = msg.ctrl.params?.seq;
+          if (typeof ackedSeq === "number") {
+            const key = `${pending.topic}:${ackedSeq}`;
+            localPubHeadsByTopicSeqRef.current[key] = pending.head;
+            console.log(`[TINODE DEBUG] pub ack id=${id} → ${key} head=${JSON.stringify(pending.head)}`);
+          }
+          delete pendingPubsByIdRef.current[id];
+        }
 
         // hi accepted → send login
         if (id === hiIdRef.current && code >= 200 && code < 300) {
@@ -692,7 +722,15 @@ export function useTinode(): UseTinodeResult {
       }
 
       if (msg.data) {
-        const { topic, from, content, ts, seq, head } = msg.data;
+        const { topic, from, content, ts, seq } = msg.data;
+        // Merge in any locally-saved head we tracked at send time (in case the server's data echo strips fields).
+        const localKey = `${topic}:${seq}`;
+        const localHead = localPubHeadsByTopicSeqRef.current[localKey];
+        const head: Record<string, any> = { ...(msg.data.head ?? {}), ...(localHead ?? {}) };
+        if (localHead) {
+          delete localPubHeadsByTopicSeqRef.current[localKey];
+          console.log(`[TINODE DEBUG] data echo ${localKey}: merged local head=${JSON.stringify(localHead)}`);
+        }
         // Track the latest seq so subscribe() can send note{read} immediately when needed
         topicsSeqRef.current[topic] = Math.max(topicsSeqRef.current[topic] ?? 0, seq);
         // Trigger backend name lookup for unknown senders
@@ -702,12 +740,19 @@ export function useTinode(): UseTinodeResult {
 
         // Detect "replace" head: ":N" means this message edits the original at seq=N.
         // Tinode delivers the new content as a fresh data packet; we replace in-place.
+        // Be permissive about format — accept ":N", "N", or "topicName:N".
         const replaceTarget: number | null = (() => {
           const r = head?.replace;
           if (typeof r !== "string") return null;
-          const m = /^:(\d+)$/.exec(r);
+          const m = /(?::|^)(\d+)\s*$/.exec(r);
           return m ? parseInt(m[1], 10) : null;
         })();
+        if (head?.replace) {
+          console.log(`[TINODE DEBUG] data with head.replace=${JSON.stringify(head.replace)} → target seq=${replaceTarget} (incoming seq=${seq})`);
+        }
+        if (head?.reply) {
+          console.log(`[TINODE DEBUG] data with head.reply=${JSON.stringify(head.reply)} (incoming seq=${seq})`);
+        }
 
         setMessagesSynced((prev) => {
           const existing = prev[topic] ?? [];
