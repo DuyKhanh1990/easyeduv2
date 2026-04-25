@@ -221,7 +221,7 @@ function LearningStatusBars({
               <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: s.fill }} />
               <span className="text-muted-foreground whitespace-nowrap">{s.label}</span>
             </div>
-            <div className="h-4 rounded-full bg-muted overflow-hidden">
+            <div className="h-[25px] rounded-full bg-muted overflow-hidden">
               <div
                 className="h-full rounded-full transition-[width] duration-[1100ms] ease-out"
                 style={{
