@@ -1468,9 +1468,9 @@ export function ChatPage() {
     subscribe(topicId);
   }
 
-  function handleSend(content: string | Record<string, any>) {
+  function handleSend(content: string | Record<string, any>, head?: Record<string, any>) {
     if (!currentTopic) return;
-    sendMessage(currentTopic, content);
+    sendMessage(currentTopic, content, head);
   }
 
   function handleGroupCreated(topicId: string, groupName: string) {
