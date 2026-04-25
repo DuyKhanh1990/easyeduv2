@@ -1353,3 +1353,33 @@ export async function getClassStatusSummary(params: {
     total:      parseInt(row.total      ?? "0", 10),
   };
 }
+
+// ==========================================
+// NEW CLASSES SUMMARY (Lớp học mới)
+// ==========================================
+export async function getNewClassesSummary(params: {
+  isSuperAdmin: boolean;
+  allowedLocationIds: string[] | null;
+  locationId?: string;
+}): Promise<{
+  today: number;
+  thisMonth: number;
+}> {
+  const where = buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
+  const queryStr = `
+    SELECT
+      COUNT(*) FILTER (WHERE DATE(c.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh') = CURRENT_DATE) AS today,
+      COUNT(*) FILTER (
+        WHERE DATE_TRUNC('month', c.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')
+            = DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')
+      ) AS this_month
+    FROM classes c
+    WHERE ${where}
+  `;
+  const result = await db.execute(sql.raw(queryStr));
+  const row: any = result.rows[0] ?? {};
+  return {
+    today:     parseInt(row.today      ?? "0", 10),
+    thisMonth: parseInt(row.this_month ?? "0", 10),
+  };
+}

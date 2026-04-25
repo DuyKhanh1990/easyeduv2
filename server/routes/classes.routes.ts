@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { createActivityLog, getActivityLogs } from "../storage/activity-log.storage";
-import { getClassFormatSummary, getClassStatusSummary } from "../storage/class.storage";
+import { getClassFormatSummary, getClassStatusSummary, getNewClassesSummary } from "../storage/class.storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { db } from "../db";
@@ -619,6 +619,26 @@ export function registerClassesRoutes(app: Express): void {
     } catch (err: any) {
       console.error("Class status summary error:", err);
       res.status(500).json({ message: err.message || "Lỗi khi tải trạng thái lớp học" });
+    }
+  });
+
+  // ── GET /api/classes/new-summary ──────────────────────────────────────────
+  // Trả về số lớp học mới được tạo trong hôm nay và trong tháng hiện tại
+  // Query params: locationId (optional)
+  app.get("/api/classes/new-summary", async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+      const isSuperAdmin = (req as any).isSuperAdmin ?? false;
+      const allowedLocationIds = await getAllowedLocationIds(req);
+      const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
+
+      const summary = await getNewClassesSummary({ isSuperAdmin, allowedLocationIds, locationId });
+      res.json(summary);
+    } catch (err: any) {
+      console.error("New classes summary error:", err);
+      res.status(500).json({ message: err.message || "Lỗi khi tải lớp học mới" });
     }
   });
 

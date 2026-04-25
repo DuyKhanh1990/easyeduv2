@@ -409,6 +409,13 @@ export function Dashboard() {
     fetch(`/api/classes/status-summary${locationParam}`, { credentials: "include" }).then(r => r.json())
   });
 
+  // Đào tạo tab — Lớp học mới (hôm nay / tháng này)
+  const { data: newClasses, isLoading: loadingNewClasses } = useQuery<{
+    today: number; thisMonth: number;
+  }>({ queryKey: ["/api/classes/new-summary", locationId], queryFn: () =>
+    fetch(`/api/classes/new-summary${locationParam}`, { credentials: "include" }).then(r => r.json())
+  });
+
   const activePct = customerSummary && customerSummary.total > 0
     ? Math.round((customerSummary.active / customerSummary.total) * 100)
     : 100;
@@ -845,7 +852,7 @@ export function Dashboard() {
             </div>
           </TabsContent>
           <TabsContent value="dao-tao">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
               {/* Card 1: Tổng số lớp học — Donut chart (offline / online) */}
               <Card className="border-none shadow-lg shadow-black/5" data-testid="card-tong-so-lop-hoc">
                 <CardHeader className="pb-2 pt-5 px-5">
@@ -896,6 +903,74 @@ export function Dashboard() {
                       closed={classStatus?.closed ?? 0}
                       total={classStatus?.total ?? 0}
                     />
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Card 3: Lớp học mới (giống Khách hàng mới) */}
+              <Card className="border-none shadow-lg shadow-black/5" data-testid="card-lop-hoc-moi">
+                <CardHeader className="pb-2 pt-5 px-5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                      <UserPlus className="w-5 h-5 text-amber-500" />
+                    </div>
+                    <CardTitle className="text-sm font-semibold text-muted-foreground">Lớp học mới</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="px-5 pb-5">
+                  {loadingNewClasses ? (
+                    <div className="space-y-3 mt-1">
+                      <Skeleton className="h-20 w-full" />
+                      <Skeleton className="h-20 w-full" />
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="rounded-xl bg-amber-500/5 border border-amber-500/15 px-4 py-3 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-9 h-9 rounded-full bg-amber-500/15 flex items-center justify-center">
+                            <UserPlus className="w-4 h-4 text-amber-500" />
+                          </div>
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Hôm nay</p>
+                            <p className="text-2xl font-bold font-display text-amber-600 leading-tight" data-testid="text-new-class-today">
+                              +{newClasses?.today ?? 0}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-[11px] text-muted-foreground" data-testid="text-new-class-today-pct">
+                          {(newClasses?.thisMonth ?? 0) > 0
+                            ? `${Math.round(((newClasses?.today ?? 0) / (newClasses?.thisMonth ?? 1)) * 100)}% tháng này`
+                            : "—"}
+                        </span>
+                      </div>
+                      <div className="rounded-xl bg-muted/40 border border-border/60 px-4 py-3 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
+                            <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                          </div>
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Tháng này</p>
+                            <p className="text-2xl font-bold font-display text-foreground leading-tight" data-testid="text-new-class-month-count">
+                              +{newClasses?.thisMonth ?? 0}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-[11px] text-muted-foreground">Tổng dồn</span>
+                      </div>
+                      <div className="pt-1">
+                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-amber-400 to-amber-500 transition-all duration-1000"
+                            style={{
+                              width: `${(newClasses?.thisMonth ?? 0) > 0
+                                ? Math.min(Math.round(((newClasses?.today ?? 0) / (newClasses?.thisMonth ?? 1)) * 100), 100)
+                                : 0}%`,
+                            }}
+                          />
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-1.5 text-center">Đóng góp của hôm nay vào tổng tháng</p>
+                      </div>
+                    </div>
                   )}
                 </CardContent>
               </Card>
