@@ -16,7 +16,7 @@
 import type { Express } from "express";
 import { db } from "../db";
 import { users, students, staff, studentClasses, classes } from "@shared/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 
 // ─── Helper: xác thực user từ req ──────────────────────────────────────────────
 
@@ -183,6 +183,7 @@ export function registerMobileChatRoutes(app: Express): void {
 
     const isSuperAdmin: boolean        = (req as any).isSuperAdmin ?? false;
     const isStudent: boolean           = (req as any).isStudent ?? false;
+    const staffId: string | null       = (req as any).staffId ?? null;
     const allowedLocationIds: string[] = (req as any).allowedLocationIds ?? [];
 
     try {
@@ -213,17 +214,26 @@ export function registerMobileChatRoutes(app: Express): void {
             .where(eq(studentClasses.studentId, studentRow.id))
             .limit(30);
         }
-      } else if (isSuperAdmin || allowedLocationIds.length === 0) {
+      } else if (isSuperAdmin) {
         classRows = await db
           .select({ id: classes.id, name: classes.name, locationId: classes.locationId, tinodeTopicId: classes.tinodeTopicId })
           .from(classes)
+          .limit(30);
+      } else if (staffId) {
+        // Non-admin staff: only classes where they are explicitly a teacher or manager
+        const conditions = [
+          sql`${staffId}::uuid = ANY(${classes.teacherIds}) OR ${staffId}::uuid = ANY(${classes.managerIds})`,
+        ];
+        if (allowedLocationIds.length > 0) {
+          conditions.push(inArray(classes.locationId, allowedLocationIds));
+        }
+        classRows = await db
+          .select({ id: classes.id, name: classes.name, locationId: classes.locationId, tinodeTopicId: classes.tinodeTopicId })
+          .from(classes)
+          .where(and(...conditions))
           .limit(30);
       } else {
-        classRows = await db
-          .select({ id: classes.id, name: classes.name, locationId: classes.locationId, tinodeTopicId: classes.tinodeTopicId })
-          .from(classes)
-          .where(inArray(classes.locationId, allowedLocationIds))
-          .limit(30);
+        classRows = [];
       }
 
       // Đảm bảo mỗi lớp có Tinode topic

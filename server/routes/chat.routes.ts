@@ -13,7 +13,7 @@
 import type { Express } from "express";
 import { db } from "../db";
 import { users, students, staff, studentClasses, classes, chatGroups, chatGroupMembers } from "@shared/schema";
-import { eq, and, inArray, ilike, or } from "drizzle-orm";
+import { eq, and, inArray, ilike, or, sql } from "drizzle-orm";
 import { storage } from "../storage";
 import multer from "multer";
 
@@ -65,6 +65,7 @@ export function registerChatRoutes(app: Express): void {
     const userId              = (req.user as any).id;
     const isSuperAdmin        = (req as any).isSuperAdmin ?? false;
     const isStudent           = (req as any).isStudent ?? false;
+    const staffId: string | null = (req as any).staffId ?? null;
     const allowedLocationIds: string[] = (req as any).allowedLocationIds ?? [];
 
     try {
@@ -97,17 +98,28 @@ export function registerChatRoutes(app: Express): void {
             .where(eq(studentClasses.studentId, studentRow.id))
             .limit(30);
         }
-      } else if (isSuperAdmin || allowedLocationIds.length === 0) {
+      } else if (isSuperAdmin) {
+        // Super admin: see all classes
         classRows = await db
           .select({ id: classes.id, name: classes.name, locationId: classes.locationId, tinodeTopicId: classes.tinodeTopicId })
           .from(classes)
+          .limit(30);
+      } else if (staffId) {
+        // Non-admin staff: only classes where they are explicitly a teacher or manager
+        const conditions = [
+          sql`${staffId}::uuid = ANY(${classes.teacherIds}) OR ${staffId}::uuid = ANY(${classes.managerIds})`,
+        ];
+        if (allowedLocationIds.length > 0) {
+          conditions.push(inArray(classes.locationId, allowedLocationIds));
+        }
+        classRows = await db
+          .select({ id: classes.id, name: classes.name, locationId: classes.locationId, tinodeTopicId: classes.tinodeTopicId })
+          .from(classes)
+          .where(and(...conditions))
           .limit(30);
       } else {
-        classRows = await db
-          .select({ id: classes.id, name: classes.name, locationId: classes.locationId, tinodeTopicId: classes.tinodeTopicId })
-          .from(classes)
-          .where(inArray(classes.locationId, allowedLocationIds))
-          .limit(30);
+        // No staff profile and not student/admin → no class chats
+        classRows = [];
       }
 
       // ── Ensure each class has a Tinode topic ────────────────────────────────
