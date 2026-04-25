@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocationFilter } from "@/hooks/use-location-filter";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
-  ComposedChart, Line
+  ComposedChart, Line, PieChart, Pie, FunnelChart, Funnel, LabelList
 } from "recharts";
 
 const stats = [
@@ -53,6 +53,237 @@ function CustomTooltip({ active, payload, label }: any) {
     );
   }
   return null;
+}
+
+// ── Card 1: Tổng khách hàng — donut chart ─────────────────────────────────────
+function CustomerDonut({
+  total, hocVien, hocVienPct, phuHuynh, phuHuynhPct,
+}: { total: number; hocVien: number; hocVienPct: number; phuHuynh: number; phuHuynhPct: number }) {
+  // Recharts Pie won't render anything when every value is 0, so seed a single
+  // gray slice so the empty-state still looks like a donut, not a blank card.
+  const hasData = hocVien + phuHuynh > 0;
+  const data = hasData
+    ? [
+        { name: "Học viên", value: hocVien, color: "#3b82f6" },
+        { name: "Phụ huynh", value: phuHuynh, color: "#8b5cf6" },
+      ]
+    : [{ name: "Chưa có dữ liệu", value: 1, color: "hsl(var(--muted))" }];
+  return (
+    <div className="flex items-center gap-3" data-testid="chart-customer-donut">
+      <div className="relative w-[120px] h-[120px] shrink-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data}
+              cx="50%"
+              cy="50%"
+              innerRadius={38}
+              outerRadius={56}
+              paddingAngle={hasData ? 3 : 0}
+              dataKey="value"
+              stroke="none"
+              isAnimationActive
+              animationBegin={100}
+              animationDuration={1100}
+            >
+              {data.map((entry, idx) => (
+                <Cell key={idx} fill={entry.color} />
+              ))}
+            </Pie>
+            {hasData && <Tooltip content={<CustomTooltip />} />}
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Tổng</span>
+          <span className="text-xl font-bold font-display text-foreground leading-tight" data-testid="text-total-customers">
+            {total}
+          </span>
+        </div>
+      </div>
+      <div className="flex-1 min-w-0 space-y-2 text-sm">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-muted-foreground flex items-center gap-1.5 truncate">
+            <span className="w-2.5 h-2.5 rounded-sm bg-blue-500 inline-block shrink-0" />
+            <UserCheck className="w-3.5 h-3.5 shrink-0" /> Học viên
+          </span>
+          <span className="font-semibold text-foreground whitespace-nowrap" data-testid="text-hoc-vien">
+            {hocVien} <span className="text-blue-500 font-normal">({hocVienPct}%)</span>
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-muted-foreground flex items-center gap-1.5 truncate">
+            <span className="w-2.5 h-2.5 rounded-sm bg-violet-500 inline-block shrink-0" />
+            <Users className="w-3.5 h-3.5 shrink-0" /> Phụ huynh
+          </span>
+          <span className="font-semibold text-foreground whitespace-nowrap" data-testid="text-phu-huynh">
+            {phuHuynh} <span className="text-violet-500 font-normal">({phuHuynhPct}%)</span>
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Card 2: Trạng thái tài khoản — half-donut gauge ───────────────────────────
+function AccountStatusGauge({
+  active, inactive, activePct, inactivePct,
+}: { active: number; inactive: number; activePct: number; inactivePct: number }) {
+  const hasData = active + inactive > 0;
+  // Half-donut: full ring is 180° → rendered as two slices, the rest is the
+  // muted "track" so the colored segment reads as a gauge needle level.
+  const data = hasData
+    ? [
+        { name: "Hoạt động", value: active, color: "#10b981" },
+        { name: "Không hoạt động", value: inactive, color: "hsl(var(--muted))" },
+      ]
+    : [{ name: "Chưa có dữ liệu", value: 1, color: "hsl(var(--muted))" }];
+  return (
+    <div data-testid="chart-account-gauge">
+      <div className="relative w-full h-[110px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data}
+              cx="50%"
+              cy="92%"
+              startAngle={180}
+              endAngle={0}
+              innerRadius={62}
+              outerRadius={88}
+              paddingAngle={hasData ? 1 : 0}
+              dataKey="value"
+              stroke="none"
+              cornerRadius={4}
+              isAnimationActive
+              animationBegin={100}
+              animationDuration={1100}
+            >
+              {data.map((entry, idx) => (
+                <Cell key={idx} fill={entry.color} />
+              ))}
+            </Pie>
+            {hasData && <Tooltip content={<CustomTooltip />} />}
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="absolute inset-x-0 bottom-1 flex flex-col items-center justify-end pointer-events-none">
+          <span className="text-2xl font-bold font-display text-emerald-600 leading-none">
+            {hasData ? `${activePct}%` : "—"}
+          </span>
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground mt-0.5">Hoạt động</span>
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block shrink-0" />
+          <span className="text-muted-foreground truncate">Hoạt động</span>
+          <span className="ml-auto font-semibold text-foreground" data-testid="text-active-accounts">
+            {active}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="w-2.5 h-2.5 rounded-sm bg-muted inline-block shrink-0" />
+          <span className="text-muted-foreground truncate">Không HĐ</span>
+          <span className="ml-auto font-semibold text-foreground" data-testid="text-inactive-accounts">
+            {inactive} <span className="text-muted-foreground font-normal">({inactivePct}%)</span>
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Card 3: Trạng thái học tập — funnel chart ─────────────────────────────────
+function LearningStatusFunnel({
+  dangHoc, choLich, baoLuu, daNghi, chuaCoLich, total,
+}: { dangHoc: number; choLich: number; baoLuu: number; daNghi: number; chuaCoLich: number; total: number }) {
+  const safeTotal = Math.max(total, 1);
+  const pct = (n: number) => Math.round((n / safeTotal) * 100);
+  // Funnel needs values in descending order to render the classic pyramid.
+  // We sort by count so it always renders cleanly regardless of which status
+  // happens to be largest in this center.
+  const items = [
+    { key: "dangHoc",    label: "Đang học",     value: dangHoc,    fill: "#8b5cf6", testId: "status-dang-hoc" },
+    { key: "choLich",    label: "Chờ đến lịch", value: choLich,    fill: "#3b82f6", testId: "status-cho-lich" },
+    { key: "baoLuu",     label: "Bảo lưu",      value: baoLuu,     fill: "#f59e0b", testId: "status-bao-luu" },
+    { key: "daNghi",     label: "Đã nghỉ",      value: daNghi,     fill: "#f43f5e", testId: "status-da-nghi" },
+    { key: "chuaCoLich", label: "Chưa có lịch", value: chuaCoLich, fill: "#94a3b8", testId: "status-chua-co-lich" },
+  ];
+  const sorted = [...items].sort((a, b) => b.value - a.value);
+  const hasData = sorted.some((s) => s.value > 0);
+  // Funnel needs strictly positive values to render trapezoids, so when a
+  // segment is zero we substitute a tiny sliver and remember the real value.
+  const funnelData = sorted.map((s) => ({
+    name: s.label,
+    value: s.value > 0 ? s.value : 0.001,
+    realValue: s.value,
+    fill: s.fill,
+  }));
+  return (
+    <div data-testid="chart-learning-funnel">
+      <div className="w-full h-[140px]">
+        {hasData ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <FunnelChart margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
+              <Tooltip
+                content={({ active, payload }: any) =>
+                  active && payload?.length ? (
+                    <div className="bg-background border border-border rounded-lg px-3 py-2 shadow-lg text-sm">
+                      <p className="font-semibold text-foreground mb-1">{payload[0].payload.name}</p>
+                      <p className="text-muted-foreground">
+                        Học viên: <span className="font-bold text-foreground">{payload[0].payload.realValue}</span>
+                      </p>
+                      <p className="text-muted-foreground">
+                        Tỷ lệ: <span className="font-bold text-emerald-500">{pct(payload[0].payload.realValue)}%</span>
+                      </p>
+                    </div>
+                  ) : null
+                }
+              />
+              <Funnel
+                dataKey="value"
+                data={funnelData}
+                isAnimationActive
+                animationBegin={100}
+                animationDuration={1100}
+                stroke="hsl(var(--background))"
+                strokeWidth={2}
+              >
+                <LabelList
+                  position="center"
+                  fill="#fff"
+                  stroke="none"
+                  fontSize={12}
+                  fontWeight={700}
+                  dataKey="realValue"
+                />
+                <LabelList
+                  position="right"
+                  fill="hsl(var(--muted-foreground))"
+                  stroke="none"
+                  fontSize={10}
+                  dataKey="name"
+                />
+              </Funnel>
+            </FunnelChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center text-muted-foreground/50 gap-1.5">
+            <BookOpenCheck className="w-6 h-6" />
+            <p className="text-xs">Chưa có dữ liệu</p>
+          </div>
+        )}
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+        {items.map((s) => (
+          <div key={s.key} className="flex items-center gap-1.5 min-w-0">
+            <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: s.fill }} />
+            <span className="text-muted-foreground truncate">{s.label}</span>
+            <span className="ml-auto font-semibold text-foreground" data-testid={s.testId}>{s.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function Dashboard() {
@@ -139,7 +370,7 @@ export function Dashboard() {
           <TabsContent value="khach-hang">
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mt-4">
 
-              {/* Card 1: Tổng Khách hàng */}
+              {/* Card 1: Tổng Khách hàng — Donut chart */}
               <Card className="border-none shadow-lg shadow-black/5" data-testid="card-tong-khach-hang">
                 <CardHeader className="pb-2 pt-5 px-5">
                   <div className="flex items-center gap-2">
@@ -152,42 +383,21 @@ export function Dashboard() {
                 <CardContent className="px-5 pb-5">
                   {loadingCustomer ? (
                     <div className="space-y-2 mt-1">
-                      <Skeleton className="h-8 w-20 mb-3" />
-                      {[1,2].map(i => <Skeleton key={i} className="h-4 w-full" />)}
+                      <Skeleton className="h-32 w-full" />
                     </div>
                   ) : (
-                    <>
-                      <p className="text-3xl font-bold font-display text-foreground mb-3" data-testid="text-total-customers">
-                        {customerSummary?.total ?? 0}
-                      </p>
-                      <div className="space-y-2 text-sm">
-                        <div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground flex items-center gap-1.5"><UserCheck className="w-3.5 h-3.5" /> Học viên</span>
-                            <span className="font-semibold text-foreground" data-testid="text-hoc-vien">
-                              {customerSummary?.hocVien ?? 0}{" "}
-                              <span className="text-blue-500 font-normal">({customerSummary?.hocVienPct ?? 0}%)</span>
-                            </span>
-                          </div>
-                          <MiniBar pct={customerSummary?.hocVienPct ?? 0} colorClass="bg-blue-500" />
-                        </div>
-                        <div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> Phụ huynh</span>
-                            <span className="font-semibold text-foreground" data-testid="text-phu-huynh">
-                              {customerSummary?.phuHuynh ?? 0}{" "}
-                              <span className="text-violet-500 font-normal">({customerSummary?.phuHuynhPct ?? 0}%)</span>
-                            </span>
-                          </div>
-                          <MiniBar pct={customerSummary?.phuHuynhPct ?? 0} colorClass="bg-violet-500" />
-                        </div>
-                      </div>
-                    </>
+                    <CustomerDonut
+                      total={customerSummary?.total ?? 0}
+                      hocVien={customerSummary?.hocVien ?? 0}
+                      hocVienPct={customerSummary?.hocVienPct ?? 0}
+                      phuHuynh={customerSummary?.phuHuynh ?? 0}
+                      phuHuynhPct={customerSummary?.phuHuynhPct ?? 0}
+                    />
                   )}
                 </CardContent>
               </Card>
 
-              {/* Card 2: Trạng thái tài khoản */}
+              {/* Card 2: Trạng thái tài khoản — Half-donut gauge */}
               <Card className="border-none shadow-lg shadow-black/5" data-testid="card-trang-thai-tai-khoan">
                 <CardHeader className="pb-2 pt-5 px-5">
                   <div className="flex items-center gap-2">
@@ -200,40 +410,20 @@ export function Dashboard() {
                 <CardContent className="px-5 pb-5">
                   {loadingCustomer ? (
                     <div className="space-y-2 mt-1">
-                      {[1,2].map(i => <Skeleton key={i} className="h-4 w-full" />)}
+                      <Skeleton className="h-32 w-full" />
                     </div>
                   ) : (
-                    <div className="space-y-2 text-sm mt-1">
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground flex items-center gap-1.5">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Hoạt động
-                          </span>
-                          <span className="font-semibold text-foreground" data-testid="text-active-accounts">
-                            {customerSummary?.active ?? 0}{" "}
-                            <span className="text-emerald-500 font-normal">({activePct}%)</span>
-                          </span>
-                        </div>
-                        <MiniBar pct={activePct} colorClass="bg-emerald-500" />
-                      </div>
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground flex items-center gap-1.5">
-                            <XCircle className="w-3.5 h-3.5 text-rose-400" /> Không hoạt động
-                          </span>
-                          <span className="font-semibold text-foreground" data-testid="text-inactive-accounts">
-                            {customerSummary?.inactive ?? 0}{" "}
-                            <span className="text-rose-400 font-normal">({inactivePct}%)</span>
-                          </span>
-                        </div>
-                        <MiniBar pct={inactivePct} colorClass="bg-rose-400" />
-                      </div>
-                    </div>
+                    <AccountStatusGauge
+                      active={customerSummary?.active ?? 0}
+                      inactive={customerSummary?.inactive ?? 0}
+                      activePct={activePct}
+                      inactivePct={inactivePct}
+                    />
                   )}
                 </CardContent>
               </Card>
 
-              {/* Card 3: Trạng thái học tập */}
+              {/* Card 3: Trạng thái học tập — Funnel */}
               <Card className="border-none shadow-lg shadow-black/5" data-testid="card-trang-thai-hoc-tap">
                 <CardHeader className="pb-2 pt-5 px-5">
                   <div className="flex items-center gap-2">
@@ -246,46 +436,17 @@ export function Dashboard() {
                 <CardContent className="px-5 pb-5">
                   {loadingStatus ? (
                     <div className="space-y-2 mt-1">
-                      {[1,2,3,4,5].map(i => <Skeleton key={i} className="h-4 w-full" />)}
+                      <Skeleton className="h-32 w-full" />
                     </div>
                   ) : (
-                    <div className="space-y-2 text-sm mt-1">
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground flex items-center gap-1.5"><BookOpenCheck className="w-3.5 h-3.5 text-violet-500" /> Đang học</span>
-                          <span className="font-semibold text-violet-600" data-testid="status-dang-hoc">{learningStatus?.dangHoc ?? 0}</span>
-                        </div>
-                        <MiniBar pct={pct(learningStatus?.dangHoc ?? 0)} colorClass="bg-violet-500" />
-                      </div>
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground flex items-center gap-1.5"><CalendarClock className="w-3.5 h-3.5 text-blue-500" /> Chờ đến lịch</span>
-                          <span className="font-semibold text-blue-600" data-testid="status-cho-lich">{learningStatus?.choLich ?? 0}</span>
-                        </div>
-                        <MiniBar pct={pct(learningStatus?.choLich ?? 0)} colorClass="bg-blue-500" />
-                      </div>
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground flex items-center gap-1.5"><PauseCircle className="w-3.5 h-3.5 text-amber-500" /> Bảo lưu</span>
-                          <span className="font-semibold text-amber-600" data-testid="status-bao-luu">{learningStatus?.baoLuu ?? 0}</span>
-                        </div>
-                        <MiniBar pct={pct(learningStatus?.baoLuu ?? 0)} colorClass="bg-amber-500" />
-                      </div>
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground flex items-center gap-1.5"><UserX className="w-3.5 h-3.5 text-rose-400" /> Đã nghỉ</span>
-                          <span className="font-semibold text-rose-500" data-testid="status-da-nghi">{learningStatus?.daNghi ?? 0}</span>
-                        </div>
-                        <MiniBar pct={pct(learningStatus?.daNghi ?? 0)} colorClass="bg-rose-400" />
-                      </div>
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-muted-foreground" /> Chưa có lịch</span>
-                          <span className="font-semibold text-muted-foreground" data-testid="status-chua-co-lich">{learningStatus?.chuaCoLich ?? 0}</span>
-                        </div>
-                        <MiniBar pct={pct(learningStatus?.chuaCoLich ?? 0)} colorClass="bg-slate-400" />
-                      </div>
-                    </div>
+                    <LearningStatusFunnel
+                      dangHoc={learningStatus?.dangHoc ?? 0}
+                      choLich={learningStatus?.choLich ?? 0}
+                      baoLuu={learningStatus?.baoLuu ?? 0}
+                      daNghi={learningStatus?.daNghi ?? 0}
+                      chuaCoLich={learningStatus?.chuaCoLich ?? 0}
+                      total={lsTotal}
+                    />
                   )}
                 </CardContent>
               </Card>
