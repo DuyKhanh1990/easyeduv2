@@ -200,6 +200,25 @@ Added the following columns to track tuition and payment status for each student
 
 `DatabaseStorage` trong `server/storage.ts` delegate toàn bộ sang các module trên.
 
+## Tinode Chat — Multi-tenant tagging
+
+Nhiều trung tâm (mỗi trung tâm có Postgres + domain riêng) **dùng chung 1 Tinode server + 1 MongoDB**. Để off-board (xoá data chat của 1 trung tâm) cần gắn tag tenant vào tất cả user/topic do trung tâm đó tạo.
+
+**Env vars (mỗi deployment):**
+- `TINODE_URL`, `TINODE_API_KEY`, `TINODE_BOT_USER`, `TINODE_BOT_PASS`, `TINODE_USER_PASS_SECRET` — **giống nhau** trên mọi center sharing cùng Tinode (đặc biệt `TINODE_USER_PASS_SECRET` phải identical để HMAC password derive ra cùng giá trị).
+- `CENTER_ID` — **khác nhau** từng center. Pattern `^[a-z][a-z0-9_]{2,30}$`. Ví dụ: `easyedu_vn`, `abc_center`. Nếu bỏ trống, code sẽ thử derive từ domain (`PUBLIC_DOMAIN` → `REPLIT_DOMAINS` → `REPLIT_DEV_DOMAIN`); nếu derive thất bại → log warning và **bỏ qua tag** (không break Tinode).
+
+**Tag/private đính kèm khi tạo mới:**
+- User (`ensureUserInTinode`) → `tags: [<login>, "tenant:<CENTER_ID>"]`, `private.tenantId: <CENTER_ID>`
+- Class topic (`createClassTopic`) → `tags: ["tenant:<CENTER_ID>"]`, `private.tenantId: <CENTER_ID>`
+- Group topic (`createGroupTopic`) → `tags: ["tenant:<CENTER_ID>"]`, `private.tenantId: <CENTER_ID>`
+
+**Off-board 1 trung tâm:** query MongoDB `users`/`topics` collections theo `tags` chứa `tenant:<CENTER_ID>` → xoá. User cũ tạo trước khi rollout này KHÔNG có tag → cần backfill thủ công nếu muốn dọn sạch.
+
+**Files:**
+- `server/lib/tinode.service.ts` — `resolveCenterId()`, `getCenterId()`, `getTenantTag()`, đã inject vào 3 hàm tạo user/topic.
+- `server/lib/tinode-admin.ts` — bot connection + check `TINODE_BOT_PASS` length ≤ 32.
+
 ## Schema Files
 - `shared/schema.ts`: Contains all Drizzle ORM table definitions and relations
 - `migrations/`: SQL migration files (0000, 0001, 0002, 0003...)

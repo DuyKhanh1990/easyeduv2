@@ -32,6 +32,88 @@ if (TINODE_URL && !TINODE_USER_PASS_SECRET) {
   console.error("[Tinode] TINODE_USER_PASS_SECRET is not set — user passwords cannot be derived.");
 }
 
+// ─── Multi-tenant: CENTER_ID resolver ─────────────────────────────────────────
+//
+// CENTER_ID là định danh của trung tâm (tenant) hiện tại. Dùng để tag tất cả
+// user/topic Tinode được tạo ra → để có thể query/xoá hàng loạt khi 1 trung
+// tâm off-board (vì nhiều trung tâm dùng chung 1 Tinode + 1 MongoDB).
+//
+// Ưu tiên:
+//   1. env CENTER_ID (admin tự set) — luôn thắng
+//   2. derive từ domain (REPLIT_DOMAINS / PUBLIC_DOMAIN) — fallback cho lần
+//      đầu deploy nếu chưa set env
+//   3. nếu cả hai đều không có → trả null, KHÔNG throw, KHÔNG break kết nối.
+//      Chỉ có hệ quả: user/topic tạo trong giai đoạn này không có tenant tag.
+
+const CENTER_ID_PATTERN = /^[a-z][a-z0-9_]{2,30}$/;
+
+function sanitizeDomainToCenterId(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "")
+    .replace(/:[0-9]+$/, "")
+    .replace(/[.\-]/g, "_")
+    .replace(/[^a-z0-9_]/g, "");
+}
+
+function resolveCenterId(): string | null {
+  const explicit = process.env.CENTER_ID?.trim();
+  if (explicit) {
+    if (!CENTER_ID_PATTERN.test(explicit)) {
+      console.error(
+        `[Tinode] CENTER_ID="${explicit}" không hợp lệ. Yêu cầu pattern ${CENTER_ID_PATTERN}. ` +
+        `Bỏ qua tag tenant cho đến khi sửa.`
+      );
+      return null;
+    }
+    return explicit;
+  }
+
+  // Fallback: derive từ domain
+  const domainSource =
+    process.env.PUBLIC_DOMAIN ||
+    process.env.REPLIT_DOMAINS?.split(",")[0]?.trim() ||
+    process.env.REPLIT_DEV_DOMAIN ||
+    null;
+
+  if (!domainSource) {
+    console.warn(
+      "[Tinode] CENTER_ID env trống và không tìm thấy domain để derive. " +
+      "User/topic tạo trong session này sẽ không có tenant tag. " +
+      "Set env CENTER_ID để fix."
+    );
+    return null;
+  }
+
+  const derived = sanitizeDomainToCenterId(domainSource);
+  if (!CENTER_ID_PATTERN.test(derived)) {
+    console.warn(
+      `[Tinode] Derive CENTER_ID từ domain "${domainSource}" → "${derived}" không khớp pattern. ` +
+      `Bỏ qua tag tenant. Set env CENTER_ID thủ công để fix.`
+    );
+    return null;
+  }
+
+  console.log(`[Tinode] CENTER_ID auto-derived from domain "${domainSource}" → "${derived}"`);
+  return derived;
+}
+
+const CENTER_ID = resolveCenterId();
+
+/**
+ * Trả về CENTER_ID hiện tại (hoặc null nếu chưa cấu hình được).
+ * Exported để các module khác (logging, analytics) có thể tái sử dụng.
+ */
+export function getCenterId(): string | null {
+  return CENTER_ID;
+}
+
+/** Trả về tag tenant chuẩn cho Tinode (ví dụ "tenant:easyedu_vn"), hoặc null. */
+function getTenantTag(): string | null {
+  return CENTER_ID ? `tenant:${CENTER_ID}` : null;
+}
+
 let _msgId = 1;
 function nextId(): string { return String(_msgId++); }
 
@@ -112,6 +194,7 @@ export async function createClassTopic(
 ): Promise<string | null> {
   if (!TINODE_URL) return null;
 
+  const tenantTag = getTenantTag();
   const data = await tinodeAdmin.send({
     sub: {
       id:    tinodeAdmin.nextMsgId(),
@@ -119,8 +202,11 @@ export async function createClassTopic(
       set: {
         desc: {
           public:  { fn: className, note: `EduManage class — ${classId}` },
-          private: { locationId, classId },
+          private: CENTER_ID
+            ? { tenantId: CENTER_ID, locationId, classId }
+            : { locationId, classId },
         },
+        ...(tenantTag ? { tags: [tenantTag] } : {}),
         defacs: { auth: "JRWP", anon: "N" },
         sub: { mode: "JRWPASDO" },
       },
@@ -151,6 +237,7 @@ export async function createGroupTopic(
 ): Promise<string | null> {
   if (!TINODE_URL) return null;
 
+  const tenantTag = getTenantTag();
   const data = await tinodeAdmin.send({
     sub: {
       id:    tinodeAdmin.nextMsgId(),
@@ -158,8 +245,11 @@ export async function createGroupTopic(
       set: {
         desc: {
           public:  { fn: groupName, note: `EduManage custom group — ${groupId}` },
-          private: { groupId },
+          private: CENTER_ID
+            ? { tenantId: CENTER_ID, groupId }
+            : { groupId },
         },
+        ...(tenantTag ? { tags: [tenantTag] } : {}),
         defacs: { auth: "JRWP", anon: "N" },
         sub: { mode: "JRWPASDO" },
       },
@@ -283,6 +373,9 @@ export async function ensureUserInTinode(userId: string): Promise<{
   const password = getTinodePassword(userId);
   const secret   = Buffer.from(`${tinodeLogin}:${password}`).toString("base64");
 
+  const tenantTag = getTenantTag();
+  const userTags  = tenantTag ? [tinodeLogin, tenantTag] : [tinodeLogin];
+
   try {
     const data = await tinodeAdmin.send({
       acc: {
@@ -293,9 +386,11 @@ export async function ensureUserInTinode(userId: string): Promise<{
         login:  false,
         desc: {
           public:  { fn: tinodeLogin },
-          private: { comment: "EduManage auto-registered" },
+          private: CENTER_ID
+            ? { tenantId: CENTER_ID, comment: "EduManage auto-registered" }
+            : { comment: "EduManage auto-registered" },
         },
-        tags: [tinodeLogin],
+        tags: userTags,
       },
     });
 
