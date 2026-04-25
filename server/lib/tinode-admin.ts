@@ -45,6 +45,9 @@ const USER_AGENT          = process.env.TINODE_USER_AGENT ?? "EduManage/1.0";
 const REQUEST_TIMEOUT_MS  = parseInt(process.env.TINODE_REQUEST_TIMEOUT_MS ?? "10000", 10);
 const MAX_RETRIES         = parseInt(process.env.TINODE_MAX_RETRIES ?? "5", 10);
 const RETRY_BACKOFF_MS    = parseInt(process.env.TINODE_RETRY_BACKOFF_MS ?? "5000", 10);
+// Tinode server (and most reverse proxies) close idle WebSockets after ~60s.
+// Send a keepalive every 25s to prevent the connection from being dropped.
+const KEEPALIVE_INTERVAL_MS = parseInt(process.env.TINODE_KEEPALIVE_INTERVAL_MS ?? "25000", 10);
 
 const BOT_SECRET = (BOT_LOGIN && BOT_PASSWORD)
   ? Buffer.from(`${BOT_LOGIN}:${BOT_PASSWORD}`).toString("base64")
@@ -65,6 +68,7 @@ class TinodeAdminWs {
   private connecting = false;
   private retryCount = 0;
   private giveUpForever = false;
+  private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
 
   private nextId(): string { return String(this.msgId++); }
 
@@ -187,6 +191,7 @@ class TinodeAdminWs {
       this.ready     = false;
       this.connecting = false;
       this.ws        = null;
+      this.stopKeepalive();
       for (const [, e] of this.pending) {
         clearTimeout(e.timer);
         e.reject(new Error("TinodeAdmin WS disconnected"));
@@ -223,7 +228,30 @@ class TinodeAdminWs {
     this.connecting = false;
     this.retryCount = 0;
     console.log(`[TinodeAdmin WS] Ready as ${BOT_LOGIN}`);
+    this.startKeepalive();
     this.flushQueue();
+  }
+
+  private startKeepalive(): void {
+    this.stopKeepalive();
+    this.keepaliveTimer = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        try {
+          // WebSocket-level ping frame; Tinode/proxies will respond with pong
+          // and the connection stays alive past idle-timeout windows.
+          this.ws.ping();
+        } catch {
+          // ignore — close handler will reconnect
+        }
+      }
+    }, KEEPALIVE_INTERVAL_MS);
+  }
+
+  private stopKeepalive(): void {
+    if (this.keepaliveTimer) {
+      clearInterval(this.keepaliveTimer);
+      this.keepaliveTimer = null;
+    }
   }
 
   private flushQueue(): void {

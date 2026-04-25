@@ -61,6 +61,10 @@ export function useTinode(): UseTinodeResult {
   const wsRef = useRef<WebSocket | null>(null);
   const msgIdRef = useRef(1);
   const authedRef = useRef(false);
+  // Periodic keepalive timer — Tinode (and reverse proxies) close idle WS
+  // connections after ~60s. Sending a tiny payload every 25s keeps the link
+  // alive so the chat doesn't show "connecting…" while the user is just idle.
+  const keepaliveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const myUidRef = useRef<string | null>(null);
   const credRef = useRef<TinodeCredentials | null>(null);
   const currentTopicRef = useRef<string | null>(null);
@@ -439,6 +443,16 @@ export function useTinode(): UseTinodeResult {
       ws.send(JSON.stringify({
         hi: { id: hiId, ver: "0.25", ua: "EduManage/1.0" },
       }));
+      // Start keepalive ping. Tinode treats a single "1" character as an
+      // application-level no-op (matches the official Tinode JS SDK behavior).
+      // Without this, the connection drops after ~60s of idle and the user
+      // sees a recurring "Đang kết nối tới máy chủ chat…" banner.
+      if (keepaliveTimerRef.current) clearInterval(keepaliveTimerRef.current);
+      keepaliveTimerRef.current = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          try { ws.send("1"); } catch { /* ignore */ }
+        }
+      }, 25000);
     };
 
     ws.onclose = (e) => {
@@ -446,6 +460,10 @@ export function useTinode(): UseTinodeResult {
       setConnected(false);
       setAuthed(false);
       authedRef.current = false;
+      if (keepaliveTimerRef.current) {
+        clearInterval(keepaliveTimerRef.current);
+        keepaliveTimerRef.current = null;
+      }
       retryTimerRef.current = setTimeout(() => {
         if (credRef.current) connect(credRef.current);
       }, 5000);
