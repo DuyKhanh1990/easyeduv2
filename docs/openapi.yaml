@@ -1,0 +1,2516 @@
+openapi: 3.0.3
+info:
+  title: EduManage Mobile API
+  description: |
+    Toàn bộ các endpoint dành cho ứng dụng mobile (student, parent, staff).
+
+    **Authentication:** Hầu hết endpoint yêu cầu JWT Bearer token.
+    Lấy token qua `POST /api/mobile/auth/login` hoặc `POST /api/mobile/auth/zalo`.
+
+    ```
+    Authorization: Bearer <token>
+    ```
+  version: "1.0.0"
+  contact:
+    name: Web Team
+
+servers:
+  - url: /api/mobile
+    description: Mobile API prefix
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    # ─── Common ─────────────────────────────────────────────
+    PaginationMeta:
+      type: object
+      properties:
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+        totalPages: { type: integer }
+
+    AttachmentItem:
+      type: object
+      properties:
+        name: { type: string }
+        url: { type: string }
+        size: { type: integer }
+        mimetype: { type: string }
+
+    StaffRef:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        fullName: { type: string }
+        code: { type: string }
+
+    StudentRef:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        code: { type: string }
+
+    # ─── Auth ────────────────────────────────────────────────
+    AuthResponse:
+      type: object
+      properties:
+        token: { type: string }
+        center: { type: object }
+        needsOnboarding: { type: boolean }
+        userType:
+          type: string
+          enum: [staff, student, parent, unknown]
+        profile: { type: object, nullable: true }
+
+    # ─── Session ─────────────────────────────────────────────
+    SessionSummary:
+      type: object
+      properties:
+        classSessionId: { type: string, format: uuid }
+        sessionDate: { type: string, format: date }
+        sessionIndex: { type: integer, nullable: true }
+        weekday: { type: string }
+        className: { type: string }
+        classCode: { type: string }
+        startTime: { type: string }
+        endTime: { type: string }
+        learningFormat: { type: string }
+        onlineLink: { type: string, nullable: true }
+        sessionStatus: { type: string }
+        locationName: { type: string, nullable: true }
+
+    # ─── Task ────────────────────────────────────────────────
+    Task:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        content: { type: string, nullable: true }
+        statusId: { type: string, format: uuid, nullable: true }
+        levelId: { type: string, format: uuid, nullable: true }
+        departmentId: { type: string, format: uuid, nullable: true }
+        dueDate: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        managers:
+          type: array
+          items: { $ref: "#/components/schemas/StaffRef" }
+        assignees:
+          type: array
+          items: { $ref: "#/components/schemas/StaffRef" }
+
+    TaskComment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        taskId: { type: string, format: uuid }
+        content: { type: string }
+        authorId: { type: string, format: uuid }
+        authorName: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    TaskPermissions:
+      type: object
+      properties:
+        canView: { type: boolean }
+        canViewAll: { type: boolean }
+        canCreate: { type: boolean }
+        canEdit: { type: boolean }
+        canDelete: { type: boolean }
+
+    # ─── News Feed ───────────────────────────────────────────
+    Post:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        authorId: { type: string, format: uuid }
+        authorName: { type: string }
+        authorRole: { type: string }
+        category:
+          type: string
+          enum: [thong-bao, su-kien, hoat-dong, hoc-thuat]
+        content: { type: string }
+        imageUrl: { type: string, nullable: true }
+        imageUrls:
+          type: array
+          items: { type: string }
+        isPinned: { type: boolean }
+        locationId: { type: string, format: uuid, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        reactions: { type: object, additionalProperties: { type: integer } }
+        myReaction: { type: string, nullable: true }
+
+    # ─── Notification ────────────────────────────────────────
+    Notification:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        content: { type: string }
+        type: { type: string }
+        category: { type: string }
+        referenceId: { type: string, nullable: true }
+        referenceType: { type: string, nullable: true }
+        isRead: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        deeplink:
+          type: object
+          properties:
+            screen: { type: string }
+            params: { type: object }
+
+    # ─── Salary ──────────────────────────────────────────────
+    SalarySession:
+      type: object
+      properties:
+        sessionDate: { type: string, format: date }
+        sessionIndex: { type: integer, nullable: true }
+        weekday: { type: string }
+        startTime: { type: string }
+        endTime: { type: string }
+        isEligible: { type: boolean }
+        salaryForSession: { type: number }
+
+    SalaryClass:
+      type: object
+      properties:
+        classId: { type: string, format: uuid }
+        className: { type: string }
+        role: { type: string }
+        packageId: { type: string, format: uuid, nullable: true }
+        packageName: { type: string, nullable: true }
+        packageType: { type: string, nullable: true }
+        totalEligibleSessions: { type: integer }
+        totalSalary: { type: number }
+        sessions:
+          type: array
+          items: { $ref: "#/components/schemas/SalarySession" }
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  # ════════════════════════════════════════════════════════════
+  # AUTH
+  # ════════════════════════════════════════════════════════════
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Đăng nhập bằng username/password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string, example: teacher01 }
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: Đăng nhập thành công
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "401":
+          description: Sai thông tin đăng nhập
+
+  /auth/zalo:
+    post:
+      tags: [Auth]
+      summary: Đăng nhập qua Zalo Mini App
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accessToken]
+              properties:
+                accessToken: { type: string }
+      responses:
+        "200":
+          description: Đăng nhập thành công
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "401":
+          description: Access token không hợp lệ
+
+  # ════════════════════════════════════════════════════════════
+  # SCHEDULE
+  # ════════════════════════════════════════════════════════════
+  /schedule/today:
+    get:
+      tags: [Schedule]
+      summary: Lịch hôm nay (student & staff)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userType: { type: string }
+                  date: { type: string, format: date }
+                  sessions:
+                    type: array
+                    items:
+                      allOf:
+                        - { $ref: "#/components/schemas/SessionSummary" }
+                        - type: object
+                          properties:
+                            studentSessionId: { type: string, format: uuid, nullable: true }
+                            teacherNames: { type: array, items: { type: string } }
+                            attendanceStatus: { type: string, nullable: true }
+                            attendanceNote: { type: string, nullable: true }
+                            enrolledCount: { type: integer, nullable: true }
+                            pendingCount: { type: integer, nullable: true }
+
+  # ════════════════════════════════════════════════════════════
+  # STUDENT / PARENT — CALENDAR
+  # ════════════════════════════════════════════════════════════
+  /student/calendar:
+    get:
+      tags: [Student - Calendar]
+      summary: Lịch học tháng (full sessions)
+      parameters:
+        - { name: month, in: query, schema: { type: string, example: "2025-07" }, description: "Tháng theo định dạng YYYY-MM" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  month: { type: string }
+                  datesWithSessions: { type: array, items: { type: string, format: date } }
+                  sessions:
+                    type: array
+                    items: { $ref: "#/components/schemas/SessionSummary" }
+
+  /student/calendar/month:
+    get:
+      tags: [Student - Calendar]
+      summary: Những ngày có buổi học trong tháng (chấm dot)
+      parameters:
+        - { name: month, in: query, schema: { type: string, example: "2025-07" } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  month: { type: string }
+                  datesWithSessions: { type: array, items: { type: string, format: date } }
+
+  /student/calendar/day:
+    get:
+      tags: [Student - Calendar]
+      summary: Chi tiết các buổi học trong ngày
+      parameters:
+        - { name: date, in: query, required: true, schema: { type: string, format: date, example: "2025-07-10" } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  date: { type: string, format: date }
+                  sessions:
+                    type: array
+                    items:
+                      allOf:
+                        - { $ref: "#/components/schemas/SessionSummary" }
+                        - type: object
+                          properties:
+                            reviewData:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  teacherName: { type: string }
+                                  criteria:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        criteriaName: { type: string }
+                                        rating: { type: number, nullable: true }
+                                        items:
+                                          type: array
+                                          items:
+                                            type: object
+                                            properties:
+                                              subCriteriaName: { type: string }
+                                              comment: { type: string }
+                            content:
+                              type: object
+                              properties:
+                                general: { type: array, items: { type: object } }
+                                personal: { type: array, items: { type: object } }
+
+  /student/session/{classSessionId}:
+    get:
+      tags: [Student - Calendar]
+      summary: Chi tiết một buổi học (nội dung + điểm danh)
+      parameters:
+        - { name: classSessionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+
+  /student/session/{classSessionId}/online-click:
+    post:
+      tags: [Student - Calendar]
+      summary: Ghi nhận học viên bấm vào link học online
+      description: |
+        Đánh dấu thời điểm học viên click vào link học online (onlineClickedAt).
+        Phải gọi trước online-end. Sẽ lỗi nếu buổi học online đã kết thúc.
+      parameters:
+        - { name: classSessionId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: studentId, in: query, schema: { type: string, format: uuid }, description: "ID học viên (phụ huynh chọn con)" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  onlineClickedAt: { type: string, format: date-time }
+        "400":
+          description: Buổi học online đã kết thúc
+        "404":
+          description: Không tìm thấy buổi học
+
+  /student/session/{classSessionId}/online-end:
+    post:
+      tags: [Student - Calendar]
+      summary: Ghi nhận kết thúc học online
+      parameters:
+        - { name: classSessionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+
+  /online-learning-rules:
+    get:
+      tags: [Student - Calendar]
+      summary: Cấu hình thời gian mở nút học online theo cơ sở
+      description: |
+        Trả về danh sách rule theo từng locationId.
+        Mobile dùng để tính `canJoin` / `canEnd` cho button link học online.
+        Không cần role cụ thể — mọi user đã đăng nhập đều xem được.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string, format: uuid }
+                    locationId: { type: string, format: uuid }
+                    earlyEntryMinutes: { type: integer, description: "Phút được vào trước giờ học" }
+                    lateEntryMinutes: { type: integer, description: "Phút được vào muộn tối đa" }
+                    earlyEndMinutes: { type: integer, description: "Phút được kết thúc sớm" }
+
+  /test-content-attempt:
+    post:
+      tags: [Student - Assignments]
+      summary: Kiểm tra + ghi nhận lượt làm bài trong buổi kiểm tra TEST
+      description: |
+        Kiểm tra số lượt còn lại cho một nội dung (contentId) trong buổi test (testSessionId).
+        Nếu còn lượt → ghi nhận lượt mới và trả về `allowed: true`.
+        Nếu hết lượt → trả về `allowed: false` (không ghi nhận).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [testSessionId, contentId]
+              properties:
+                testSessionId: { type: string, format: uuid }
+                contentId: { type: string, format: uuid }
+                contentType:
+                  type: string
+                  default: assignment
+                  description: "Loại nội dung (vd: assignment, exam). Server mặc định là 'assignment'."
+                studentId: { type: string, format: uuid, description: "ID học viên (phụ huynh chọn con)" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allowed: { type: boolean }
+                  attemptsUsed: { type: integer }
+                  maxAttempts: { type: integer, nullable: true }
+        "400":
+          description: Thiếu testSessionId hoặc contentId
+        "403":
+          description: Không phải tài khoản học viên
+        "404":
+          description: Không tìm thấy buổi test
+
+  # ════════════════════════════════════════════════════════════
+  # STUDENT — ASSIGNMENTS
+  # ════════════════════════════════════════════════════════════
+  /student/assignments:
+    get:
+      tags: [Student - Assignments]
+      summary: Danh sách bài tập / đề thi
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [submitted, pending] } }
+        - { name: itemType, in: query, schema: { type: string, enum: [BTVN, exam] } }
+        - { name: className, in: query, schema: { type: string } }
+        - { name: month, in: query, schema: { type: string, example: "2025-07" } }
+        - { name: dateFrom, in: query, schema: { type: string, format: date } }
+        - { name: dateTo, in: query, schema: { type: string, format: date } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/PaginationMeta" }
+                  - type: object
+                    properties:
+                      month: { type: string, nullable: true }
+                      rows:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            itemType: { type: string, enum: [BTVN, exam] }
+                            classSessionId: { type: string, format: uuid }
+                            className: { type: string }
+                            classCode: { type: string }
+                            sessionDate: { type: string, format: date }
+                            weekday: { type: string }
+                            sessionIndex: { type: integer, nullable: true }
+                            startTime: { type: string }
+                            endTime: { type: string }
+                            homeworkId: { type: string, format: uuid, nullable: true }
+                            title: { type: string }
+                            description: { type: string, nullable: true }
+                            attachments: { type: array, items: { $ref: "#/components/schemas/AttachmentItem" } }
+                            isPersonalized: { type: boolean }
+                            submissionStatus: { type: string, nullable: true }
+                            submissionContent: { type: string, nullable: true }
+                            submissionAttachments: { type: array, items: { type: string } }
+                            studentSessionContentId: { type: string, format: uuid, nullable: true }
+                            score: { type: number, nullable: true }
+                            comment: { type: string, nullable: true }
+                            dueDate: { type: string, format: date-time, nullable: true }
+                            examId: { type: string, format: uuid, nullable: true }
+                            maxAttempts: { type: integer, nullable: true }
+                            attemptsUsed: { type: integer }
+                            student: { $ref: "#/components/schemas/StudentRef" }
+                            isParent: { type: boolean }
+
+  /student/assignments/submit:
+    post:
+      tags: [Student - Assignments]
+      summary: Nộp bài tập
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [homeworkId]
+              properties:
+                homeworkId: { type: string, format: uuid }
+                submissionContent: { type: string }
+                submissionAttachments: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+
+  /student/exam/{examId}/attempt-count:
+    get:
+      tags: [Student - Assignments]
+      summary: Số lần thi đã dùng
+      parameters:
+        - { name: examId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: studentId, in: query, schema: { type: string, format: uuid } }
+        - { name: classId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  maxAttempts: { type: integer, nullable: true }
+
+  # ════════════════════════════════════════════════════════════
+  # STUDENT — FINANCE & REWARDS
+  # ════════════════════════════════════════════════════════════
+  /student/invoices:
+    get:
+      tags: [Student - Finance]
+      summary: Lịch sử học phí (student/parent)
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+
+  /student/stars:
+    get:
+      tags: [Student - Finance]
+      summary: Lịch sử điểm thưởng (sao)
+      responses:
+        "200":
+          description: OK
+
+  /student/score-sheet:
+    get:
+      tags: [Student - Academics]
+      summary: Bảng điểm học sinh
+      parameters:
+        - { name: classId, in: query, schema: { type: string, format: uuid } }
+        - { name: month, in: query, schema: { type: string, example: "2025-07" } }
+        - { name: dateFrom, in: query, schema: { type: string, format: date } }
+        - { name: dateTo, in: query, schema: { type: string, format: date } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: pageSize, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/PaginationMeta" }
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: string, format: uuid }
+                            title: { type: string }
+                            classCode: { type: string }
+                            className: { type: string }
+                            scoreSheetName: { type: string }
+                            sessionIndex: { type: integer, nullable: true }
+                            sessionDate: { type: string, format: date }
+                            weekday: { type: string }
+                            startTime: { type: string }
+                            endTime: { type: string }
+                            scores:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  categoryId: { type: string, format: uuid }
+                                  categoryName: { type: string }
+                                  score: { type: number }
+                            teacherComment: { type: string, nullable: true }
+                            createdByName: { type: string }
+                            student: { $ref: "#/components/schemas/StudentRef" }
+                            isParent: { type: boolean }
+
+  # ════════════════════════════════════════════════════════════
+  # PARENT PROFILE
+  # ════════════════════════════════════════════════════════════
+  /parent/profile:
+    get:
+      tags: [Parent]
+      summary: Hồ sơ phụ huynh và danh sách học sinh liên kết
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  parent:
+                    type: object
+                    properties:
+                      id: { type: string, format: uuid }
+                      code: { type: string }
+                      fullName: { type: string }
+                      type: { type: string }
+                      phone: { type: string }
+                      email: { type: string, nullable: true }
+                      dateOfBirth: { type: string, format: date, nullable: true }
+                      gender: { type: string, nullable: true }
+                      address: { type: string, nullable: true }
+                      relationship: { type: string, nullable: true }
+                      accountStatus: { type: string }
+                      status: { type: string }
+                  linkedStudents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        code: { type: string }
+                        fullName: { type: string }
+                        enrolledClasses:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              classId: { type: string, format: uuid }
+                              classCode: { type: string }
+                              className: { type: string }
+                              status: { type: string }
+                              startDate: { type: string, format: date, nullable: true }
+                              endDate: { type: string, format: date, nullable: true }
+                              totalSessions: { type: integer }
+                              attendedSessions: { type: integer }
+                              remainingSessions: { type: integer }
+
+  # ════════════════════════════════════════════════════════════
+  # NOTIFICATIONS
+  # ════════════════════════════════════════════════════════════
+  /student/notifications:
+    get:
+      tags: [Notifications]
+      summary: Thông báo học sinh / phụ huynh (student token)
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalUnread: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Notification" }
+
+  /student/notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Số thông báo chưa đọc (student)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  byStudent:
+                    type: array
+                    nullable: true
+                    items:
+                      type: object
+                      properties:
+                        studentId: { type: string, format: uuid }
+                        fullName: { type: string }
+                        code: { type: string }
+                        unread: { type: integer }
+
+  /student/notifications/{id}/read:
+    patch:
+      tags: [Notifications]
+      summary: Đánh dấu đã đọc một thông báo (student)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+
+  /student/notifications/read-all:
+    patch:
+      tags: [Notifications]
+      summary: Đánh dấu đọc hết thông báo (student)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+
+  /parent/notifications:
+    get:
+      tags: [Notifications]
+      summary: Thông báo (parent token)
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: OK
+
+  /parent/notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Số thông báo chưa đọc (parent)
+      responses:
+        "200":
+          description: OK
+
+  /parent/notifications/{id}/read:
+    patch:
+      tags: [Notifications]
+      summary: Đánh dấu đọc một thông báo (parent)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+
+  /parent/notifications/read-all:
+    patch:
+      tags: [Notifications]
+      summary: Đánh dấu đọc hết thông báo (parent)
+      responses:
+        "200":
+          description: OK
+
+  /staff/notifications:
+    get:
+      tags: [Notifications]
+      summary: Thông báo nhân viên
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalUnread: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Notification" }
+
+  /staff/notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Số thông báo chưa đọc (staff)
+      responses:
+        "200":
+          description: OK
+
+  /staff/notifications/{id}/read:
+    patch:
+      tags: [Notifications]
+      summary: Đánh dấu đọc một thông báo (staff)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+
+  /staff/notifications/read-all:
+    patch:
+      tags: [Notifications]
+      summary: Đánh dấu đọc hết thông báo (staff)
+      responses:
+        "200":
+          description: OK
+
+  # ════════════════════════════════════════════════════════════
+  # PUSH TOKEN
+  # ════════════════════════════════════════════════════════════
+  /push-token:
+    post:
+      tags: [Push Notifications]
+      summary: Đăng ký FCM / APNS token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+                platform:
+                  type: string
+                  enum: [ios, android]
+      responses:
+        "200":
+          description: OK
+
+  # ════════════════════════════════════════════════════════════
+  # STAFF — FINANCE
+  # ════════════════════════════════════════════════════════════
+  /staff/invoices:
+    get:
+      tags: [Staff - Finance]
+      summary: Hoá đơn học phí cần thu (staff)
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoices:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        invoiceId: { type: string }
+                        title: { type: string }
+                        code: { type: string }
+                        amount: { type: number }
+                        paidAmount: { type: number }
+                        remainingAmount: { type: number }
+                        status: { type: string }
+                        dueDate: { type: string, format: date, nullable: true }
+                        paidAt: { type: string, format: date-time, nullable: true }
+                        paymentMethod: { type: string, nullable: true }
+                  summary:
+                    type: object
+                    properties:
+                      totalPaid: { type: number }
+                      totalUnpaid: { type: number }
+                      totalAmount: { type: number }
+                  pagination: { $ref: "#/components/schemas/PaginationMeta" }
+                  staff: { $ref: "#/components/schemas/StaffRef" }
+
+  # ════════════════════════════════════════════════════════════
+  # STAFF — PAYROLL / SALARY
+  # ════════════════════════════════════════════════════════════
+  /staff/payroll/published-rows:
+    get:
+      tags: [Staff - Payroll]
+      summary: Chi tiết từng lớp từ bảng lương đã publish
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    salaryTableId: { type: string, format: uuid }
+                    salaryTableName: { type: string }
+                    startDate: { type: string, format: date }
+                    endDate: { type: string, format: date }
+                    locationName: { type: string }
+                    teacherId: { type: string, format: uuid }
+                    teacherName: { type: string }
+                    teacherCode: { type: string }
+                    classId: { type: string, format: uuid }
+                    className: { type: string }
+                    role: { type: string }
+                    packageId: { type: string, format: uuid, nullable: true }
+                    sessions: { type: integer }
+                    sessionDates: { type: array, items: { type: string, format: date } }
+
+  /staff/payroll/salary-summary:
+    get:
+      tags: [Staff - Payroll]
+      summary: Tóm tắt bảng lương (nhóm theo bảng lương)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    salaryTableId: { type: string, format: uuid }
+                    salaryTableName: { type: string }
+                    startDate: { type: string, format: date }
+                    endDate: { type: string, format: date }
+                    locationName: { type: string }
+                    classes:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          classId: { type: string, format: uuid }
+                          className: { type: string }
+                          role: { type: string }
+                          totalSalary: { type: number }
+                    grandTotal: { type: number }
+
+  /staff/salary-tables/{id}/breakdown:
+    get:
+      tags: [Staff - Payroll]
+      summary: Chi tiết đầy đủ một bảng lương (kèm session-level)
+      description: |
+        Thay thế cặp `salary-summary` + `published-rows`.
+        Trả về từng buổi dạy với số tiền tính được và trạng thái eligible.
+      parameters:
+        - { name: id, in: path, required: true, description: salaryTableId, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  salaryTableId: { type: string, format: uuid }
+                  salaryTableName: { type: string }
+                  startDate: { type: string, format: date }
+                  endDate: { type: string, format: date }
+                  locationName: { type: string }
+                  grandTotal: { type: number }
+                  classes:
+                    type: array
+                    items: { $ref: "#/components/schemas/SalaryClass" }
+        "403":
+          description: Bảng lương chưa được công bố cho giáo viên này
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+        "404":
+          description: Không tìm thấy bảng lương
+
+  /staff/payroll/attendance:
+    get:
+      tags: [Staff - Payroll]
+      summary: Chấm công theo tháng
+      parameters:
+        - { name: month, in: query, schema: { type: integer, example: 7 } }
+        - { name: year, in: query, schema: { type: integer, example: 2025 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    workDate: { type: string, format: date }
+                    timeIn: { type: string, nullable: true }
+                    timeOut: { type: string, nullable: true }
+                    tongCong: { type: number, nullable: true }
+                    workedHours: { type: number, nullable: true }
+                    note: { type: string, nullable: true }
+
+  /staff/payroll/hr-summary:
+    get:
+      tags: [Staff - Payroll]
+      summary: Bảng lương HR (bảng chung có phụ cấp, thuế, BHXH...)
+      parameters:
+        - { name: month, in: query, schema: { type: integer, example: 7 } }
+        - { name: year, in: query, schema: { type: integer, example: 2025 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sheetId: { type: string, format: uuid }
+                  sheetName: { type: string }
+                  sheetMonth: { type: string }
+                  soCong: { type: number }
+                  luongCB: { type: number }
+                  congThuc: { type: string }
+                  luongTheoCong: { type: number }
+                  phuCap: { type: number }
+                  thuong: { type: number }
+                  phat: { type: number }
+                  luongDungLop: { type: number }
+                  tongLuong: { type: number }
+                  bhxh: { type: number }
+                  bhyt: { type: number }
+                  bhtn: { type: number }
+                  thueTNCN: { type: number }
+                  tamUng: { type: number }
+                  thucNhan: { type: number }
+                  daChi: { type: number }
+
+  # ════════════════════════════════════════════════════════════
+  # STAFF — CALENDAR
+  # ════════════════════════════════════════════════════════════
+  /staff/calendar:
+    get:
+      tags: [Staff - Calendar]
+      summary: Lịch dạy tháng
+      parameters:
+        - { name: month, in: query, schema: { type: string, example: "2025-07" } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  month: { type: string }
+                  datesWithSessions: { type: array, items: { type: string, format: date } }
+                  sessions:
+                    type: array
+                    items:
+                      allOf:
+                        - { $ref: "#/components/schemas/SessionSummary" }
+                        - type: object
+                          properties:
+                            checkInAt: { type: string, format: date-time, nullable: true }
+                            checkOutAt: { type: string, format: date-time, nullable: true }
+                            isTestSession: { type: boolean }
+
+  /staff/calendar/day:
+    get:
+      tags: [Staff - Calendar]
+      summary: Lịch dạy trong ngày
+      parameters:
+        - { name: date, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  date: { type: string, format: date }
+                  sessions:
+                    type: array
+                    items:
+                      allOf:
+                        - { $ref: "#/components/schemas/SessionSummary" }
+                        - type: object
+                          properties:
+                            enrolledCount: { type: integer }
+                            attendancePendingCount: { type: integer }
+                            checkInAt: { type: string, format: date-time, nullable: true }
+                            checkOutAt: { type: string, format: date-time, nullable: true }
+
+  /staff/calendar/session/{classSessionId}:
+    get:
+      tags: [Staff - Calendar]
+      summary: Chi tiết một buổi dạy (staff view)
+      parameters:
+        - { name: classSessionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  classSessionId: { type: string, format: uuid }
+                  classId: { type: string, format: uuid }
+                  sessionDate: { type: string, format: date }
+                  weekday: { type: string }
+                  className: { type: string }
+                  classCode: { type: string }
+                  startTime: { type: string }
+                  endTime: { type: string }
+                  learningFormat: { type: string }
+                  onlineLink: { type: string, nullable: true }
+                  sessionStatus: { type: string }
+                  sessionIndex: { type: integer, nullable: true }
+                  totalSessions: { type: integer, nullable: true }
+                  locationName: { type: string, nullable: true }
+                  teachers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        fullName: { type: string }
+                  generalContents: { type: array, items: { type: object } }
+                  enrolledCount: { type: integer }
+                  attendancePendingCount: { type: integer }
+                  reviewedCount: { type: integer }
+                  checkInAt: { type: string, format: date-time, nullable: true }
+                  checkOutAt: { type: string, format: date-time, nullable: true }
+                  isTestSession: { type: boolean }
+
+  /staff/calendar/session/{classSessionId}/students:
+    get:
+      tags: [Staff - Calendar]
+      summary: Danh sách học sinh trong buổi dạy
+      parameters:
+        - { name: classSessionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    studentSessionId: { type: string, format: uuid }
+                    studentId: { type: string, format: uuid }
+                    studentName: { type: string }
+                    studentCode: { type: string }
+                    attendanceStatus: { type: string, nullable: true }
+                    attendanceNote: { type: string, nullable: true }
+                    sessionOrder: { type: integer, nullable: true }
+                    hasReview: { type: boolean }
+                    reviewPublished: { type: boolean }
+
+  /staff/calendar/session/{classSessionId}/contents:
+    get:
+      tags: [Staff - Calendar]
+      summary: Nội dung buổi học (của giáo viên)
+      parameters:
+        - { name: classSessionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string, format: uuid }
+                    contentType: { type: string }
+                    title: { type: string }
+                    description: { type: string, nullable: true }
+                    resourceUrl: { type: string, nullable: true }
+                    displayOrder: { type: integer }
+                    dueDate: { type: string, format: date-time, nullable: true }
+    post:
+      tags: [Staff - Calendar]
+      summary: Thêm nội dung vào buổi học
+      parameters:
+        - { name: classSessionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                libraryContentId: { type: string, format: uuid, nullable: true }
+                contentType: { type: string }
+                title: { type: string }
+                description: { type: string }
+                dueDate: { type: string, format: date-time }
+      responses:
+        "200":
+          description: OK
+
+  /staff/calendar/session/{classSessionId}/contents/{contentId}:
+    delete:
+      tags: [Staff - Calendar]
+      summary: Xoá nội dung khỏi buổi học
+      parameters:
+        - { name: classSessionId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: contentId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204":
+          description: Xoá thành công
+
+  # ════════════════════════════════════════════════════════════
+  # STAFF — LIBRARY
+  # ════════════════════════════════════════════════════════════
+  /staff/library:
+    get:
+      tags: [Staff - Library]
+      summary: Thư viện tài liệu
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: type, in: query, schema: { type: string } }
+        - { name: programId, in: query, schema: { type: string, format: uuid } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: pageSize, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/PaginationMeta" }
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: string, format: uuid }
+                            title: { type: string }
+                            type: { type: string }
+                            content: { type: string, nullable: true }
+                            programId: { type: string, format: uuid, nullable: true }
+                            programName: { type: string, nullable: true }
+                            attachments: { type: array, items: { $ref: "#/components/schemas/AttachmentItem" } }
+                            allowDownload: { type: boolean }
+                            createdAt: { type: string, format: date-time }
+    post:
+      tags: [Staff - Library]
+      summary: Tạo tài liệu mới
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                type: { type: string }
+                content: { type: string }
+                programId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+
+  # ════════════════════════════════════════════════════════════
+  # STAFF — EXAMS
+  # ════════════════════════════════════════════════════════════
+  /staff/exams:
+    get:
+      tags: [Staff - Exams]
+      summary: Danh sách đề thi (staff)
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: pageSize, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/PaginationMeta" }
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: string, format: uuid }
+                            code: { type: string }
+                            name: { type: string }
+                            status: { type: string }
+                            timeLimitMinutes: { type: integer, nullable: true }
+                            passingScore: { type: number, nullable: true }
+                            maxAttempts: { type: integer, nullable: true }
+                            description: { type: string, nullable: true }
+
+  # ════════════════════════════════════════════════════════════
+  # STAFF — ASSIGNMENTS (GRADING)
+  # ════════════════════════════════════════════════════════════
+  /staff/assignments:
+    get:
+      tags: [Staff - Assignments]
+      summary: Danh sách bài nộp cần chấm
+      parameters:
+        - { name: month, in: query, schema: { type: string } }
+        - { name: dateFrom, in: query, schema: { type: string, format: date } }
+        - { name: dateTo, in: query, schema: { type: string, format: date } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: className, in: query, schema: { type: string } }
+        - { name: studentId, in: query, schema: { type: string, format: uuid } }
+        - { name: studentName, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  month: { type: string, nullable: true }
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        classSessionId: { type: string, format: uuid }
+                        className: { type: string }
+                        classCode: { type: string }
+                        sessionDate: { type: string, format: date }
+                        studentId: { type: string, format: uuid }
+                        studentName: { type: string }
+                        itemType: { type: string, enum: [BTVN, exam] }
+                        homeworkId: { type: string, format: uuid, nullable: true }
+                        homeworkTitle: { type: string, nullable: true }
+                        isPersonalized: { type: boolean }
+                        submissionStatus: { type: string, nullable: true }
+                        submissionContent: { type: string, nullable: true }
+                        submissionAttachments: { type: array, items: { type: string } }
+                        studentSessionContentId: { type: string, format: uuid }
+                        score: { type: number, nullable: true }
+                        comment: { type: string, nullable: true }
+                        examId: { type: string, format: uuid, nullable: true }
+
+  /staff/assignments/grade:
+    post:
+      tags: [Staff - Assignments]
+      summary: Chấm điểm bài nộp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [studentSessionContentId]
+              properties:
+                studentSessionContentId: { type: string, format: uuid }
+                score: { type: number, nullable: true }
+                gradingComment: { type: string, nullable: true }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+
+  # ════════════════════════════════════════════════════════════
+  # STAFF — CLASSES & GRADE BOOKS
+  # ════════════════════════════════════════════════════════════
+  /staff/classes:
+    get:
+      tags: [Staff - Classes]
+      summary: Danh sách lớp của giáo viên
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string, format: uuid }
+                    classCode: { type: string }
+                    name: { type: string }
+                    locationId: { type: string, format: uuid, nullable: true }
+                    scoreSheetId: { type: string, format: uuid, nullable: true }
+
+  /staff/classes/{classId}/sessions:
+    get:
+      tags: [Staff - Classes]
+      summary: Danh sách buổi học của lớp
+      parameters:
+        - { name: classId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string, format: uuid }
+                    sessionIndex: { type: integer }
+                    sessionDate: { type: string, format: date }
+                    weekday: { type: string }
+                    startTime: { type: string }
+                    endTime: { type: string }
+
+  /staff/classes/{classId}/active-students:
+    get:
+      tags: [Staff - Classes]
+      summary: Danh sách học sinh đang học trong lớp
+      parameters:
+        - { name: classId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string, format: uuid }
+                    fullName: { type: string }
+                    code: { type: string }
+                    phone: { type: string, nullable: true }
+                    email: { type: string, nullable: true }
+
+  /staff/classes/{classId}/grade-books:
+    get:
+      tags: [Staff - Classes]
+      summary: Danh sách sổ điểm của lớp
+      parameters:
+        - { name: classId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string, format: uuid }
+                    classId: { type: string, format: uuid }
+                    title: { type: string }
+                    scoreSheetId: { type: string, format: uuid, nullable: true }
+                    scoreSheetName: { type: string, nullable: true }
+                    sessionId: { type: string, format: uuid, nullable: true }
+                    published: { type: boolean }
+                    createdByName: { type: string }
+                    updatedByName: { type: string, nullable: true }
+                    createdAt: { type: string, format: date-time }
+                    updatedAt: { type: string, format: date-time }
+    post:
+      tags: [Staff - Classes]
+      summary: Tạo sổ điểm mới cho lớp
+      parameters:
+        - { name: classId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+                scoreSheetId: { type: string, format: uuid, nullable: true }
+                sessionId: { type: string, format: uuid, nullable: true }
+      responses:
+        "200":
+          description: Sổ điểm vừa tạo
+
+  /staff/classes/{classId}/grade-books/{id}:
+    get:
+      tags: [Staff - Classes]
+      summary: Chi tiết sổ điểm
+      parameters:
+        - { name: classId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+    put:
+      tags: [Staff - Classes]
+      summary: Cập nhật sổ điểm
+      parameters:
+        - { name: classId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                published: { type: boolean }
+                scores: { type: array, items: { type: object } }
+      responses:
+        "200":
+          description: OK
+    delete:
+      tags: [Staff - Classes]
+      summary: Xoá sổ điểm
+      parameters:
+        - { name: classId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204":
+          description: Xoá thành công
+
+  /staff/score-sheet:
+    get:
+      tags: [Staff - Classes]
+      summary: Danh sách sổ điểm do staff tạo
+      responses:
+        "200":
+          description: OK
+
+  /score-sheets:
+    get:
+      tags: [Staff - Classes]
+      summary: Danh sách mẫu sổ điểm
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string, format: uuid }
+                    name: { type: string }
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          id: { type: string, format: uuid }
+                          scoreSheetId: { type: string, format: uuid }
+                          categoryId: { type: string, format: uuid }
+                          formula: { type: string, nullable: true }
+                          order: { type: integer }
+                          category:
+                            type: object
+                            properties:
+                              id: { type: string, format: uuid }
+                              name: { type: string }
+
+  # ════════════════════════════════════════════════════════════
+  # LEARNING OVERVIEW
+  # ════════════════════════════════════════════════════════════
+  /learning-overview/meta:
+    get:
+      tags: [Learning Overview]
+      summary: Metadata bộ lọc (danh sách lớp, trạng thái...)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  availableClasses:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        code: { type: string }
+                        label: { type: string }
+
+  /learning-overview/summary:
+    get:
+      tags: [Learning Overview]
+      summary: Tổng quan học sinh/lớp sắp hết hạn
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  studentsEndingSoon: { type: integer }
+                  classesEndingSoon: { type: integer }
+
+  /students-ending-soon:
+    get:
+      tags: [Learning Overview]
+      summary: Danh sách học sinh sắp hết buổi
+      parameters:
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: pageSize, in: query, schema: { type: integer } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: classes, in: query, schema: { type: array, items: { type: string } } }
+        - { name: maxRemaining, in: query, schema: { type: integer } }
+        - { name: dateFrom, in: query, schema: { type: string, format: date } }
+        - { name: dateTo, in: query, schema: { type: string, format: date } }
+        - { name: statusFilter, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        studentId: { type: string, format: uuid }
+                        classId: { type: string, format: uuid }
+                        status: { type: string }
+                        totalSessions: { type: integer }
+                        attendedSessions: { type: integer }
+                        remainingSessions: { type: integer }
+                        studentCode: { type: string }
+                        studentName: { type: string }
+                        classCode: { type: string }
+                        className: { type: string }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+                  availableClasses:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        code: { type: string }
+                        label: { type: string }
+
+  /classes-ending-soon:
+    get:
+      tags: [Learning Overview]
+      summary: Danh sách lớp sắp kết thúc
+      parameters:
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: pageSize, in: query, schema: { type: integer } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: maxRemaining, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        classCode: { type: string }
+                        className: { type: string }
+                        weekdays: { type: string, nullable: true }
+                        endDate: { type: string, format: date, nullable: true }
+                        locationName: { type: string, nullable: true }
+                        remainingSessions: { type: integer }
+                        teacherNames: { type: array, items: { type: string } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+
+  # ════════════════════════════════════════════════════════════
+  # TASKS
+  # ════════════════════════════════════════════════════════════
+  /tasks/kanban:
+    get:
+      tags: [Tasks]
+      summary: Kanban board (nhóm theo status)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permissions: { $ref: "#/components/schemas/TaskPermissions" }
+                  statuses: { type: array, items: { type: object } }
+                  levels: { type: array, items: { type: object } }
+                  columns:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        status: { type: object, nullable: true }
+                        tasks: { type: array, items: { $ref: "#/components/schemas/Task" } }
+
+  /tasks/meta:
+    get:
+      tags: [Tasks]
+      summary: Metadata cho tạo/lọc task
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permissions: { $ref: "#/components/schemas/TaskPermissions" }
+                  statuses: { type: array, items: { type: object } }
+                  levels: { type: array, items: { type: object } }
+                  staff:
+                    type: array
+                    items: { $ref: "#/components/schemas/StaffRef" }
+                  locations: { type: array, items: { type: object } }
+                  departments: { type: array, items: { type: object } }
+
+  /tasks:
+    get:
+      tags: [Tasks]
+      summary: Danh sách task (có filter)
+      parameters:
+        - { name: statusId, in: query, schema: { type: string, format: uuid } }
+        - { name: levelId, in: query, schema: { type: string, format: uuid } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permissions: { $ref: "#/components/schemas/TaskPermissions" }
+                  tasks: { type: array, items: { $ref: "#/components/schemas/Task" } }
+    post:
+      tags: [Tasks]
+      summary: Tạo task mới
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, locationIds]
+              properties:
+                title: { type: string }
+                content: { type: string }
+                locationIds: { type: array, items: { type: string, format: uuid } }
+                departmentId: { type: string, format: uuid, nullable: true }
+                statusId: { type: string, format: uuid, nullable: true }
+                levelId: { type: string, format: uuid, nullable: true }
+                dueDate: { type: string, format: date-time, nullable: true }
+                subjectIds: { type: array, items: { type: string, format: uuid } }
+                managerIds: { type: array, items: { type: string, format: uuid } }
+                assigneeIds: { type: array, items: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Task vừa tạo
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+
+  /tasks/{id}:
+    get:
+      tags: [Tasks]
+      summary: Chi tiết task
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+    patch:
+      tags: [Tasks]
+      summary: Cập nhật task
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                content: { type: string }
+                statusId: { type: string, format: uuid, nullable: true }
+                levelId: { type: string, format: uuid, nullable: true }
+                dueDate: { type: string, format: date-time, nullable: true }
+                assigneeIds: { type: array, items: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Task đã cập nhật
+    delete:
+      tags: [Tasks]
+      summary: Xoá task
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: "Đã xoá công việc" }
+
+  /tasks/{id}/attachments:
+    get:
+      tags: [Tasks]
+      summary: Danh sách file đính kèm của task
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AttachmentItem" }
+    post:
+      tags: [Tasks]
+      summary: Upload file đính kèm
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items: { type: string, format: binary }
+      responses:
+        "200":
+          description: OK
+    delete:
+      tags: [Tasks]
+      summary: Xoá file đính kèm
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /tasks/{id}/comments:
+    get:
+      tags: [Tasks]
+      summary: Bình luận của task
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TaskComment" }
+    post:
+      tags: [Tasks]
+      summary: Thêm bình luận
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskComment" }
+
+  /tasks/{taskId}/comments/{commentId}:
+    delete:
+      tags: [Tasks]
+      summary: Xoá bình luận
+      parameters:
+        - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: commentId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: "Đã xoá bình luận" }
+
+  # ════════════════════════════════════════════════════════════
+  # NEWS FEED
+  # ════════════════════════════════════════════════════════════
+  /news-feed:
+    get:
+      tags: [News Feed]
+      summary: Danh sách bài đăng
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+            enum: [thong-bao, su-kien, hoat-dong, hoc-thuat, all]
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permissions: { type: object }
+                  posts: { type: array, items: { $ref: "#/components/schemas/Post" } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+    post:
+      tags: [News Feed]
+      summary: Tạo bài đăng mới
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category, content]
+              properties:
+                category:
+                  type: string
+                  enum: [thong-bao, su-kien, hoat-dong, hoc-thuat]
+                content: { type: string }
+                imageUrl: { type: string, nullable: true }
+                imageUrls: { type: array, items: { type: string } }
+                locationId: { type: string, format: uuid, nullable: true }
+      responses:
+        "201":
+          description: Bài đăng đã tạo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  post: { $ref: "#/components/schemas/Post" }
+        "403":
+          description: Không có quyền đăng bài
+
+  /news-feed/pinned:
+    get:
+      tags: [News Feed]
+      summary: Bài đăng ghim (tối đa 3)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  posts: { type: array, items: { $ref: "#/components/schemas/Post" } }
+
+  /news-feed/{id}:
+    get:
+      tags: [News Feed]
+      summary: Chi tiết bài đăng
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+    patch:
+      tags: [News Feed]
+      summary: Chỉnh sửa bài đăng
+      description: Yêu cầu quyền canEdit và phải là tác giả (trừ superAdmin).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content: { type: string }
+                category:
+                  type: string
+                  enum: [thong-bao, su-kien, hoat-dong, hoc-thuat]
+                imageUrls: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  post: { $ref: "#/components/schemas/Post" }
+        "403":
+          description: Không có quyền hoặc không phải tác giả
+        "404":
+          description: Không tìm thấy bài đăng
+    delete:
+      tags: [News Feed]
+      summary: Xoá bài đăng
+      description: Yêu cầu quyền canDelete và phải là tác giả (trừ superAdmin).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: "Đã xoá bài viết." }
+        "403":
+          description: Không có quyền hoặc không phải tác giả
+        "404":
+          description: Không tìm thấy bài đăng
+
+  /news-feed/{id}/react:
+    post:
+      tags: [News Feed]
+      summary: Thả / bỏ reaction
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reaction]
+              properties:
+                reaction: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /news-feed/{id}/pin:
+    patch:
+      tags: [News Feed]
+      summary: Ghim / bỏ ghim bài đăng
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  isPinned: { type: boolean }
+
+  # ════════════════════════════════════════════════════════════
+  # CHAT
+  # ════════════════════════════════════════════════════════════
+  /chat/connect:
+    post:
+      tags: [Chat]
+      summary: Lấy thông tin kết nối Tinode
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      tinodeLogin: { type: string }
+                      tinodePassword: { type: string }
+                      tinodeUrl: { type: string }
+                      apiKey: { type: string }
+
+  /chat/channel/{classId}:
+    get:
+      tags: [Chat]
+      summary: Kênh chat của lớp
+      parameters:
+        - { name: classId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      topicId: { type: string }
+                      classId: { type: string, format: uuid }
+                      className: { type: string }
+                      tinodeUrl: { type: string }
+                      apiKey: { type: string }
+                      fetchedAt: { type: string, format: date-time }
+
+  /chat/uid:
+    put:
+      tags: [Chat]
+      summary: Cập nhật Tinode UID của user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tinodeUid]
+              properties:
+                tinodeUid: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+                  updatedAt: { type: string, format: date-time }
+
+  /chat/users:
+    get:
+      tags: [Chat]
+      summary: Resolve tên user theo Tinode UID
+      parameters:
+        - { name: uids, in: query, required: true, description: "Danh sách UID phân cách bằng dấu phẩy", schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      users:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            tinodeUid: { type: string }
+                            displayName: { type: string }
+                      fetchedAt: { type: string, format: date-time }
+
+  /chat/channels:
+    get:
+      tags: [Chat]
+      summary: Danh sách tất cả kênh chat lớp của user
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      channels:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            topicId: { type: string }
+                            classId: { type: string, format: uuid }
+                            className: { type: string }
+                            tinodeUrl: { type: string }
+                            apiKey: { type: string }
+
+  /chat/search-users:
+    get:
+      tags: [Chat]
+      summary: Tìm kiếm người dùng để chat
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      users:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            userId: { type: string, format: uuid }
+                            displayName: { type: string }
+                            role: { type: string, enum: [staff, student] }
+                            tinodeLogin: { type: string }
+                            tinodeUid: { type: string, nullable: true }
+
+  /chat/p2p/open:
+    post:
+      tags: [Chat]
+      summary: Mở / khởi tạo chat 1-1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetUserId]
+              properties:
+                targetUserId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      tinodeLogin: { type: string }
+                      tinodeUid: { type: string }
+
+  /chat/groups:
+    get:
+      tags: [Chat]
+      summary: Danh sách nhóm chat
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      groups:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            topicId: { type: string }
+                            name: { type: string }
+                            memberCount: { type: integer }
+                            isCreator: { type: boolean }
+                            createdAt: { type: string, format: date-time }
+                      total: { type: integer }
+                      permissions:
+                        type: object
+                        properties:
+                          canCreate: { type: boolean }
+    post:
+      tags: [Chat]
+      summary: Tạo nhóm chat mới (staff only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                classId: { type: string, format: uuid, nullable: true }
+                memberUids: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      topicId: { type: string }
+                      name: { type: string }
+                      createdAt: { type: string, format: date-time }
+
+  /chat/classes/search:
+    get:
+      tags: [Chat]
+      summary: Tìm lớp học để thêm vào nhóm chat
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+
+  /chat/classes/{classId}/groups:
+    get:
+      tags: [Chat]
+      summary: Các nhóm chat thuộc lớp học
+      parameters:
+        - { name: classId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+
+  /chat/classes/{classId}/members:
+    get:
+      tags: [Chat]
+      summary: Danh sách thành viên lớp (để auto-fill nhóm chat)
+      parameters:
+        - { name: classId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+
+  # ════════════════════════════════════════════════════════════
+  # SHARED — các route dùng prefix /api/ (không phải /api/mobile/)
+  # nhưng vẫn được mobile app gọi
+  # ════════════════════════════════════════════════════════════
+  /student-sessions/{id}/review:
+    get:
+      tags: [Shared (non-mobile prefix)]
+      summary: Lấy nhận xét (review) của một buổi học
+      description: |
+        Trả về reviewData và trạng thái published cho một student session.
+        Route này dùng prefix `/api/` thay vì `/api/mobile/`.
+        **URL thực tế:** `GET /api/student-sessions/{id}/review`
+      servers:
+        - url: /api
+          description: Shared API prefix (không phải /api/mobile)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid }, description: "ID của student session" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reviewData: { type: object, nullable: true, description: "Dữ liệu nhận xét (JSON)" }
+                  reviewPublished: { type: boolean, description: "Nhận xét đã được public hay chưa" }
+        "404":
+          description: Không tìm thấy student session
+
+tags:
+  - name: Auth
+    description: Xác thực người dùng
+  - name: Schedule
+    description: Lịch học chung
+  - name: Student - Calendar
+    description: Lịch học của học sinh / phụ huynh
+  - name: Student - Assignments
+    description: Bài tập & thi học sinh
+  - name: Student - Finance
+    description: Hoá đơn & điểm thưởng
+  - name: Student - Academics
+    description: Bảng điểm học sinh
+  - name: Parent
+    description: Hồ sơ phụ huynh
+  - name: Notifications
+    description: Thông báo push
+  - name: Push Notifications
+    description: Đăng ký thiết bị nhận push
+  - name: Staff - Finance
+    description: Hoá đơn học phí (staff view)
+  - name: Staff - Payroll
+    description: Bảng lương & chấm công
+  - name: Staff - Calendar
+    description: Lịch dạy & quản lý buổi học
+  - name: Staff - Library
+    description: Thư viện tài liệu
+  - name: Staff - Exams
+    description: Đề thi
+  - name: Staff - Assignments
+    description: Chấm bài tập
+  - name: Staff - Classes
+    description: Lớp học & sổ điểm
+  - name: Learning Overview
+    description: Tổng quan học sinh/lớp sắp hết hạn
+  - name: Tasks
+    description: Quản lý công việc nội bộ
+  - name: News Feed
+    description: Bảng tin
+  - name: Chat
+    description: Chat nội bộ (Tinode)
+  - name: Shared (non-mobile prefix)
+    description: Các route dùng prefix /api/ thay vì /api/mobile/ nhưng vẫn được mobile gọi

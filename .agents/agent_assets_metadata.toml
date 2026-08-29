@@ -1,0 +1,20 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "8Ze_1MCrVjM-rKxlF_TVB"
+uri = "file://docs/mobile-api-score-sheet.md"
+type = "text"
+title = "Mobile API — Bảng điểm học viên"
+
+[[outputs]]
+id = "6wnhwVgon-H0l7I09jLVB"
+uri = "file://docs/mobile-api.md"
+type = "text"
+title = "Mobile API — Section 4 bổ sung đầy đủ (BTVN + Kiểm tra)"
+
+[[outputs]]
+id = "DiYyl5CpXv_P9oHxgNAci"
+uri = "file://docs/mobile-api-notifications.md"
+type = "text"
+title = "Mobile API — Thông báo chuông (Hoàn chỉnh)"

@@ -1,0 +1,283 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-sans: 'Roboto', Helvetica, Arial, sans-serif;
+    --font-display: 'Roboto', Helvetica, Arial, sans-serif;
+
+    /* Base Colors - Clean Minimal Dashboard */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 13%;
+
+    /* Clear blue primary inspired by the reference UI (#1E88E5) */
+    --primary: 207 79% 51%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 13%;
+
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 46%;
+
+    --accent: 207 79% 96%;
+    --accent-foreground: 0 0% 13%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 0 0% 74%;
+    --input: 0 0% 74%;
+    --ring: 207 79% 51%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 13%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 13%;
+
+    --radius: 0.75rem;
+    
+    /* Custom Shadows for Visual Depth */
+    --shadow-subtle: 0 1px 3px 0 rgba(0,0,0,0.07), 0 4px 16px -2px rgba(0,0,0,0.06);
+    --shadow-floating: 0 10px 40px -10px rgba(0, 0, 0, 0.14);
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --primary: 238 82% 65%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 238 82% 65%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    font-size: 14px;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    @apply tracking-tight;
+  }
+}
+
+@layer utilities {
+  /* The customers table keeps the three identity columns at their legacy size.
+     All other columns intentionally share one readable Roboto size. */
+  .customers-table .standard-customer-font,
+  .customers-table .standard-customer-font *:not(svg) {
+    font-family: 'Roboto', Helvetica, Arial, sans-serif !important;
+    font-size: 13px !important;
+  }
+
+  .glass-panel {
+    @apply bg-white/70 backdrop-blur-xl border border-white/20 shadow-sm;
+  }
+  .card-shadow {
+    box-shadow: var(--shadow-subtle);
+  }
+  .hover-float {
+    @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Invoice print template — borderless table support
+   - In the EDITOR (.invoice-template-editor) we still draw a faint dashed
+     guide line so users can see where cells are while editing.
+   - Anywhere else (live preview, print window) borders are completely
+     removed so the table behaves like an invisible Word-style layout grid.
+   ───────────────────────────────────────────────────────────────────── */
+table[data-borderless="true"] {
+  border-color: transparent !important;
+}
+table[data-borderless="true"] td,
+table[data-borderless="true"] th {
+  border: none !important;
+  background: transparent !important;
+}
+.invoice-template-editor table[data-borderless="true"] td,
+.invoice-template-editor table[data-borderless="true"] th {
+  border: 1px dashed #d1d5db !important;
+  background: transparent !important;
+}
+
+/* Resize handle hover hint inside the invoice template editor */
+.invoice-template-editor table {
+  table-layout: fixed;
+}
+.invoice-template-editor td,
+.invoice-template-editor th {
+  position: relative;
+  word-break: break-word;
+}
+
+/* TipTap rich editor */
+.tiptap-review-editor .ProseMirror {
+  min-height: 72px;
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  outline: none;
+}
+.tiptap-review-editor .ProseMirror p {
+  margin: 0 0 4px 0;
+}
+.tiptap-review-editor .ProseMirror p:last-child {
+  margin-bottom: 0;
+}
+.tiptap-review-editor .ProseMirror img {
+  max-width: 100%;
+  max-height: 240px;
+  width: auto;
+  border-radius: 6px;
+  display: block;
+  margin: 6px 0;
+  cursor: pointer;
+}
+.tiptap-review-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+  height: 0;
+}
+/* HTML comment display */
+.review-html-content img {
+  max-width: 100%;
+  max-height: 200px;
+  width: auto;
+  border-radius: 6px;
+  display: block;
+  margin: 4px 0;
+}
+.review-html-content video {
+  max-width: 100%;
+  border-radius: 6px;
+  display: block;
+  margin: 6px 0;
+}
+.review-html-content audio {
+  width: 100%;
+  display: block;
+  margin: 6px 0;
+}
+.review-html-content iframe {
+  width: 100%;
+  aspect-ratio: 16/9;
+  border-radius: 6px;
+  display: block;
+  margin: 6px 0;
+  border: none;
+}
+.review-html-content p {
+  margin: 0 0 2px 0;
+}
+.review-html-content p:last-child {
+  margin-bottom: 0;
+}
+/* TipTap media in editor */
+.tiptap-rich-editor .ProseMirror img,
+.tiptap-review-editor .ProseMirror img {
+  max-width: 220px !important;
+  max-height: 160px !important;
+  width: auto !important;
+  height: auto !important;
+  border-radius: 6px;
+  display: block;
+  margin: 6px 0;
+  object-fit: contain;
+}
+.tiptap-rich-editor .ProseMirror video,
+.tiptap-review-editor .ProseMirror video {
+  max-width: 320px !important;
+  max-height: 180px !important;
+  width: auto !important;
+  border-radius: 6px;
+  display: block;
+  margin: 6px 0;
+}
+.tiptap-rich-editor .ProseMirror audio,
+.tiptap-review-editor .ProseMirror audio {
+  max-width: 320px !important;
+  width: 100% !important;
+  display: block;
+  margin: 6px 0;
+}
+.tiptap-rich-editor .ProseMirror div[data-youtube-video],
+.tiptap-review-editor .ProseMirror div[data-youtube-video],
+.tiptap-rich-editor .ProseMirror .youtube-wrapper,
+.tiptap-review-editor .ProseMirror .youtube-wrapper {
+  max-width: 320px !important;
+  margin: 6px 0;
+}
+.tiptap-rich-editor .ProseMirror div[data-youtube-video] iframe,
+.tiptap-review-editor .ProseMirror div[data-youtube-video] iframe,
+.tiptap-rich-editor .ProseMirror .youtube-wrapper iframe,
+.tiptap-review-editor .ProseMirror .youtube-wrapper iframe {
+  width: 100% !important;
+  aspect-ratio: 16/9;
+  border-radius: 6px;
+  border: none;
+}
+
+/* Hide scrollbar but keep scrollable */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* The schedule section is intentionally borderless between its four metrics. */
+.learning-overview-schedule-cell {
+  border: 0 !important;
+  border-width: 0 !important;
+  border-style: none !important;
+  border-color: transparent !important;
+  border-left: 0 !important;
+  border-right: 0 !important;
+  border-inline: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Keep the four schedule metrics visually grouped as one section. */
+.learning-overview-table .learning-overview-schedule-cell {
+  border-inline: 0 !important;
+  box-shadow: none !important;
+}
+
+/* System-wide typography for controls; text inherits the Roboto body style. */
+body,
+button,
+input,
+textarea,
+select,
+option {
+  font-family: 'Roboto', Helvetica, Arial, sans-serif !important;
+  font-size: 14px !important;
+}

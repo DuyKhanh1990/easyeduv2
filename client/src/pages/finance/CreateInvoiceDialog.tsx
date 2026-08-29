@@ -1,0 +1,1743 @@
+import { useState, useEffect, useMemo } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Popover, PopoverContent, PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Search, CreditCard, Plus, ChevronDown, X, CalendarIcon,
+} from "lucide-react";
+import { format } from "date-fns";
+import { vi } from "date-fns/locale";
+import { useClasses } from "@/hooks/use-classes";
+import { useStaff } from "@/hooks/use-staff";
+import { useAuth } from "@/hooks/use-auth";
+import { useMyPermissions } from "@/hooks/use-my-permissions";
+import { fmtMoney } from "@/types/invoice-types";
+import { FinancePromotionDialog, type FinancePromotionType } from "./components/FinancePromotionDialog";
+
+interface Product {
+  id: string;
+  packageId: string | null;
+  packageType: string | null;
+  name: string;
+  unitPrice: number;
+  quantity: number;
+  promotionKeys: string[];
+  surchargeKeys: string[];
+  categoryId: string;
+  storeProductId?: string | null;
+  storeProductCode?: string | null;
+  warehouseId?: string | null;
+  warehouseName?: string | null;
+  stockAvailable?: number;
+}
+
+const calcBase = (p: Product) =>
+  p.packageType === "khoá" ? p.unitPrice : p.unitPrice * p.quantity;
+
+const calcPromoAmountForProduct = (p: Product, promotionOptions: any[]) => {
+  const base = calcBase(p);
+  return p.promotionKeys.reduce((sum, key) => {
+    const opt = promotionOptions.find((o: any) => o.id === key);
+    if (!opt) return sum;
+    const val = parseFloat(opt.valueAmount || "0");
+    return sum + (opt.valueType === "percent" ? Math.round(base * val / 100) : val);
+  }, 0);
+};
+
+const calcSurchargeAmountForProduct = (p: Product, base: number, surchargeOptions: any[]) =>
+  p.surchargeKeys.reduce((sum, key) => {
+    const opt = surchargeOptions.find((o: any) => o.id === key);
+    if (!opt) return sum;
+    const val = parseFloat(opt.valueAmount || "0");
+    return sum + (opt.valueType === "percent" ? Math.round(base * val / 100) : val);
+  }, 0);
+
+const isVoucherKey = (key: string) => key.startsWith("voucher:");
+const formatPromotionLabel = (option: any) =>
+  option?.kind === "voucher" ? `Voucher: ${option.name}` : option?.name;
+const normalizeSearchText = (value: unknown) =>
+  String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }: { open: boolean; onClose: () => void; invoiceId?: string | null; defaultStudent?: { id: string; fullName: string; code: string } | null }) {
+  const isEdit = Boolean(invoiceId);
+
+  const [invoiceType, setInvoiceType] = useState<"income" | "expense">("income");
+  const [locationId, setLocationId]   = useState<string>("");
+  const [classId, setClassId]         = useState<string>("");
+  const [account, setAccount]         = useState<string>("111");
+  const [counterAccount, setCounterAccount] = useState<string>("511");
+  const [studentId, setStudentId]     = useState<string | null>(null);
+  const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
+  const [subjectName, setSubjectName] = useState<string>("");
+  const [studentSearch, setStudentSearch] = useState<string>("");
+  const [preloadedStudent, setPreloadedStudent] = useState<{ id: string; fullName: string; code: string } | null>(null);
+  const [studentPickerOpen, setStudentPickerOpen] = useState(false);
+  const [products, setProducts] = useState<Product[]>([
+    { id: "1", packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, promotionKeys: [], surchargeKeys: [], categoryId: "" },
+  ]);
+  const [openPromoId, setOpenPromoId] = useState<string | null>(null);
+  const [openSurchargeId, setOpenSurchargeId] = useState<string | null>(null);
+  const [khoPickerOpen, setKhoPickerOpen] = useState<string | null>(null);
+  const [khoSearch, setKhoSearch] = useState<string>("");
+  const [invoicePromoKeys, setInvoicePromoKeys] = useState<string[]>([]);
+  const [invoiceSurchargeKeys, setInvoiceSurchargeKeys] = useState<string[]>([]);
+  const [manualInvoicePromoAmt, setManualInvoicePromoAmt] = useState<number>(0);
+  const [manualInvoiceSurchargeAmt, setManualInvoiceSurchargeAmt] = useState<number>(0);
+  const [openInvoicePromo, setOpenInvoicePromo] = useState(false);
+  const [openInvoiceSurcharge, setOpenInvoiceSurcharge] = useState(false);
+  const [quickCreateType, setQuickCreateType] = useState<FinancePromotionType | null>(null);
+  const [quickCreateTarget, setQuickCreateTarget] = useState<
+    { scope: "product"; productId: string } | { scope: "invoice" } | null
+  >(null);
+  const [paymentSchedule, setPaymentSchedule] = useState<{ id: string; label: string; code: string; amount: number; due: Date | undefined; status: string; paymentMethod: string; bank: string; isAuto?: boolean }[]>([]);
+  const [openDuePicker, setOpenDuePicker] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+  const [dueDate, setDueDate] = useState<string>(() => new Date().toISOString().split("T")[0]);
+  const [directPaidAmount, setDirectPaidAmount] = useState<number>(0);
+  const [directPaymentMethod, setDirectPaymentMethod] = useState<string>("cash");
+  const [directBank, setDirectBank] = useState<string>("");
+  const [deduction, setDeduction] = useState<number>(0);
+  const [commissions, setCommissions] = useState<{ staffId: string; percentage: number }[]>([]);
+  const [commissionStaffPickerOpen, setCommissionStaffPickerOpen] = useState(false);
+  const [commissionStaffSearch, setCommissionStaffSearch] = useState("");
+  const [commissionAutoAssigned, setCommissionAutoAssigned] = useState(false);
+
+  const { toast } = useToast();
+  const { data: staffList = [] } = useStaff(undefined, true, true);
+  const { data: currentUser } = useAuth();
+  const { data: myPerms } = useMyPermissions();
+  const canCreatePromotion = Boolean(
+    myPerms?.isSuperAdmin || myPerms?.permissions["/finance-config#promotions"]?.canCreate
+  );
+
+  const { data: editData } = useQuery<any>({
+    queryKey: ["/api/finance/invoices", invoiceId],
+    enabled: open && Boolean(invoiceId),
+  });
+
+  const { data: allCategoriesForEdit = [] } = useQuery<any[]>({ queryKey: ["/api/finance/transaction-categories"], enabled: open && Boolean(invoiceId) });
+
+  useEffect(() => {
+    if (!open) return;
+    if (!isEdit || !editData) {
+      if (!isEdit) {
+        setInvoiceType("income");
+        setLocationId("");
+        setClassId("");
+        setAccount("111");
+        setCounterAccount("511");
+        setPreloadedStudent(defaultStudent ?? null);
+        setStudentId(defaultStudent?.id ?? null);
+        setSelectedStaffId(null);
+        setSubjectName("");
+        setStudentSearch("");
+        setProducts([{ id: "1", packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, promotionKeys: [], surchargeKeys: [], categoryId: "" }]);
+        setInvoicePromoKeys([]);
+        setInvoiceSurchargeKeys([]);
+        setManualInvoicePromoAmt(0);
+        setManualInvoiceSurchargeAmt(0);
+        setPaymentSchedule([]);
+        setNote("");
+        setDueDate(new Date().toISOString().split("T")[0]);
+        setDirectPaidAmount(0);
+        setDirectPaymentMethod("cash");
+        setDirectBank("");
+        setDeduction(0);
+        setCommissions([]);
+        setCommissionStaffPickerOpen(false);
+        setCommissionStaffSearch("");
+        setCommissionAutoAssigned(false);
+      }
+      return;
+    }
+
+    const inv = editData;
+    setInvoiceType(inv.type === "Thu" ? "income" : "expense");
+    setLocationId(inv.locationId ?? "");
+    setAccount(inv.account ?? "111");
+    setCounterAccount(inv.counterAccount ?? "511");
+    setClassId(inv.classId ?? "");
+    setStudentId(inv.studentId ?? null);
+    setSubjectName(inv.subjectName ?? "");
+    setStudentSearch("");
+    if (inv.studentId && inv.studentFullName) {
+      setPreloadedStudent({ id: inv.studentId, fullName: inv.studentFullName, code: inv.studentCode ?? "" });
+    } else {
+      setPreloadedStudent(null);
+    }
+    setNote(inv.note ?? inv.description ?? "");
+    setDueDate(inv.dueDate ? inv.dueDate.split("T")[0] : new Date().toISOString().split("T")[0]);
+    // When a payment schedule exists, paid info is captured per-installment — don't double-count paidAmount
+    const hasSchedule = Array.isArray(inv.paymentSchedule) && inv.paymentSchedule.length > 0;
+    setDirectPaidAmount(hasSchedule ? 0 : (parseFloat(inv.paidAmount) || 0));
+    setDirectPaymentMethod(inv.paymentMethod ?? "cash");
+    setDirectBank(inv.appliedBankAccount?.bankAccount ?? "");
+    setDeduction(parseFloat(inv.deduction) || 0);
+    const loadedCommissions = Array.isArray(inv.commissions)
+      ? inv.commissions.map((c: any) => ({ staffId: c.staffId, percentage: parseFloat(c.percentage) || 0 }))
+      : [];
+    setCommissions(loadedCommissions);
+    // Existing assignments are authoritative. If there are none, the
+    // auto-assignment effect below may use this invoice's original creator.
+    setCommissionAutoAssigned(loadedCommissions.length > 0);
+    setCommissionStaffPickerOpen(false);
+    setCommissionStaffSearch("");
+
+    const invTypeForCat = inv.type === "Thu" ? "income" : "expense";
+    const matchedCat = allCategoriesForEdit.find((c: any) => c.name === inv.category && c.type === invTypeForCat)
+      ?? allCategoriesForEdit.find((c: any) => c.name === inv.category);
+    const fallbackCatId = matchedCat?.id ?? "";
+
+    const loadedPromoKeys = Array.isArray(inv.invoicePromotionKeys) ? inv.invoicePromotionKeys : [];
+    const loadedSurchargeKeys = Array.isArray(inv.invoiceSurchargeKeys) ? inv.invoiceSurchargeKeys : [];
+    setInvoicePromoKeys(loadedPromoKeys);
+    setInvoiceSurchargeKeys(loadedSurchargeKeys);
+    // When no promo/surcharge keys are stored but amounts exist (e.g. receipt-created invoices), use stored amounts as manual override
+    setManualInvoicePromoAmt(loadedPromoKeys.length === 0 ? (parseFloat(inv.invoicePromotionAmount) || 0) : 0);
+    setManualInvoiceSurchargeAmt(loadedSurchargeKeys.length === 0 ? (parseFloat(inv.invoiceSurchargeAmount) || 0) : 0);
+
+    if (Array.isArray(inv.items) && inv.items.length > 0) {
+      setProducts(inv.items.map((item: any, i: number) => {
+        const itemCat = item.category
+          ? (allCategoriesForEdit.find((c: any) => c.name === item.category && c.type === invTypeForCat)
+            ?? allCategoriesForEdit.find((c: any) => c.name === item.category))
+          : null;
+        return {
+          id: item.id ?? String(i + 1),
+          packageId: item.packageId ?? null,
+          packageType: item.packageType ?? null,
+          name: item.packageName ?? "",
+          unitPrice: parseFloat(item.unitPrice) || 0,
+          quantity: item.quantity ?? 1,
+          promotionKeys: item.promotionKeys ?? [],
+          surchargeKeys: item.surchargeKeys ?? [],
+          categoryId: itemCat?.id ?? fallbackCatId,
+        };
+      }));
+    } else {
+      setProducts([{ id: "1", packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, promotionKeys: [], surchargeKeys: [], categoryId: fallbackCatId }]);
+    }
+
+    if (Array.isArray(inv.paymentSchedule) && inv.paymentSchedule.length > 0) {
+      setPaymentSchedule(inv.paymentSchedule.map((s: any, i: number) => ({
+        id: s.id ?? String(i + 1),
+        label: s.label ?? `Đợt ${i + 1}`,
+        code: s.code ?? "",
+        amount: parseFloat(s.amount) || 0,
+        due: s.dueDate ? new Date(s.dueDate) : undefined,
+        status: s.status ?? "unpaid",
+        paymentMethod: s.paymentMethod ?? "cash",
+        bank: s.bank ?? "",
+      })));
+    } else {
+      setPaymentSchedule([]);
+    }
+  }, [open, isEdit, editData, allCategoriesForEdit]);
+
+  // Preselect the logged-in creator only for a new invoice. Existing invoices
+  // must always keep the assignments loaded from invoice_commissions; running
+  // this effect for edit mode can overwrite a saved percentage while data is
+  // still being hydrated.
+  useEffect(() => {
+    if (!open || isEdit || commissionAutoAssigned || commissions.length > 0 || !currentUser?.id) return;
+    const creatorUserId = currentUser.id;
+    const creatorStaff = (staffList as any[]).find((staff: any) => staff.userId === creatorUserId);
+    if (!creatorStaff) return;
+    setCommissions([{ staffId: creatorStaff.id, percentage: 100 }]);
+    setCommissionAutoAssigned(true);
+  }, [open, isEdit, commissionAutoAssigned, commissions.length, currentUser?.id, staffList]);
+
+  const saveMutation = useMutation({
+    mutationFn: (body: any) =>
+      isEdit
+        ? apiRequest("PATCH", `/api/finance/invoices/${invoiceId}`, body)
+        : apiRequest("POST", "/api/finance/invoices", body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/student-classes"] });
+      if (studentId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/students", studentId, "fee-wallet"] });
+      }
+      toast({ title: isEdit ? "Đã cập nhật phiếu thành công" : "Đã lưu phiếu thành công" });
+      onClose();
+    },
+    onError: (err: any) => {
+      toast({ title: "Lỗi khi lưu", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const { data: locations = [] } = useQuery<any[]>({ queryKey: ["/api/locations"] });
+  const { data: allCategories = [] } = useQuery<any[]>({ queryKey: ["/api/finance/transaction-categories"] });
+
+  const selectedLocation = (locations as any[]).find((l: any) => l.id === locationId);
+  const locationBanks: { bankName: string; bankAccount: string; accountHolder: string }[] = (() => {
+    if (!selectedLocation?.bankAccounts) return [];
+    try { return JSON.parse(selectedLocation.bankAccounts); } catch { return []; }
+  })();
+  const { data: classes = [] } = useClasses(locationId || undefined, { minimal: true, enabled: open });
+
+  const feePackageUrl = `/api/fee-packages${locationId ? `?locationId=${encodeURIComponent(locationId)}` : ""}`;
+  const { data: feePackages = [] } = useQuery<any[]>({
+    queryKey: ["/api/fee-packages", locationId],
+    queryFn: () => apiRequest("GET", feePackageUrl).then(r => r.json()),
+    enabled: open,
+  });
+
+  const { data: promotionOptions = [] } = useQuery<any[]>({
+    queryKey: ["/api/finance/promotions", { type: "promotion" }],
+    queryFn: () => apiRequest("GET", "/api/finance/promotions?type=promotion").then(r => r.json()),
+    enabled: open,
+  });
+
+  const { data: availableVouchers = [] } = useQuery<any[]>({
+    queryKey: ["/api/finance/vouchers/available", studentId, dueDate],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        studentId: studentId!,
+        asOfDate: dueDate,
+      });
+      return apiRequest("GET", `/api/finance/vouchers/available?${params}`).then(r => r.json());
+    },
+    enabled: open && invoiceType === "income" && Boolean(studentId),
+    staleTime: 15_000,
+  });
+
+  const promotionOptionsWithVouchers = useMemo(
+    () => [...promotionOptions, ...availableVouchers],
+    [promotionOptions, availableVouchers],
+  );
+  const hasAvailableVouchers = availableVouchers.length > 0;
+
+  const { data: surchargeOptions = [] } = useQuery<any[]>({
+    queryKey: ["/api/finance/promotions", { type: "surcharge" }],
+    queryFn: () => apiRequest("GET", "/api/finance/promotions?type=surcharge").then(r => r.json()),
+    enabled: open,
+  });
+
+  const createPromotionMutation = useMutation({
+    mutationFn: async ({ type, data }: {
+      type: FinancePromotionType;
+      data: {
+        code: string;
+        name: string;
+        valueAmount: string | null;
+        valueType: "percent" | "vnd";
+        quantity: number | null;
+        fromDate: string | null;
+        toDate: string | null;
+      };
+    }) => {
+      const response = await apiRequest("POST", "/api/finance/promotions", { ...data, type });
+      return response.json();
+    },
+    onSuccess: (created: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/finance/promotions"] });
+      const createdId = created?.id;
+      if (createdId && quickCreateTarget) {
+        if (quickCreateTarget.scope === "product") {
+          setProducts(prev => prev.map(product => {
+            if (product.id !== quickCreateTarget.productId) return product;
+            const keyName = quickCreateType === "promotion" ? "promotionKeys" : "surchargeKeys";
+            return {
+              ...product,
+              [keyName]: [...new Set([...product[keyName], createdId])],
+            };
+          }));
+        } else if (quickCreateType === "promotion") {
+          setInvoicePromoKeys(prev => [...new Set([...prev, createdId])]);
+          setManualInvoicePromoAmt(0);
+        } else {
+          setInvoiceSurchargeKeys(prev => [...new Set([...prev, createdId])]);
+          setManualInvoiceSurchargeAmt(0);
+        }
+      }
+      setQuickCreateType(null);
+      setQuickCreateTarget(null);
+      toast({ title: `Đã thêm ${quickCreateType === "promotion" ? "khuyến mãi" : "phụ thu"}` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Lỗi khi thêm mới", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const openQuickCreate = (
+    type: FinancePromotionType,
+    target: { scope: "product"; productId: string } | { scope: "invoice" },
+  ) => {
+    setQuickCreateType(type);
+    setQuickCreateTarget(target);
+  };
+
+  const clearSelectedVouchers = () => {
+    setInvoicePromoKeys(prev => prev.filter(key => !isVoucherKey(key)));
+    setProducts(prev => prev.map(product => ({
+      ...product,
+      promotionKeys: product.promotionKeys.filter(key => !isVoucherKey(key)),
+    })));
+  };
+
+  const { data: khoProducts = [] } = useQuery<any[]>({
+    queryKey: ["/api/store/issue-inventory/search", "byLocation", locationId, khoSearch],
+    queryFn: () => {
+      const params = new URLSearchParams({ locationId });
+      if (khoSearch) params.set("q", khoSearch);
+      return apiRequest("GET", `/api/store/issue-inventory/search?${params}`).then(r => r.json());
+    },
+    enabled: !!khoPickerOpen && !!locationId,
+    staleTime: 0,
+    gcTime: 0,
+  });
+
+  const { data: studentsData } = useQuery<any[]>({
+    queryKey: ["/api/invoice/search-students", locationId, studentSearch],
+    queryFn: () => {
+      const params = new URLSearchParams({ limit: "20" });
+      if (studentSearch) params.set("searchTerm", studentSearch);
+      if (locationId) params.set("locationId", locationId);
+      return apiRequest("GET", `/api/invoice/search-students?${params}`).then(r => r.json());
+    },
+    enabled: open,
+  });
+
+  const studentsRaw: any[] = Array.isArray(studentsData) ? studentsData : [];
+  const students: any[] = preloadedStudent && !studentsRaw.some((s: any) => s.id === preloadedStudent.id)
+    ? [preloadedStudent, ...studentsRaw]
+    : studentsRaw;
+
+  const categories = allCategories.filter(c =>
+    c.isActive !== false && c.type === (invoiceType === "income" ? "income" : "expense")
+  );
+  const isHocPhi = products.some(p => {
+    const cat = allCategories.find(c => c.id === p.categoryId);
+    return cat?.name?.toLowerCase().includes("học phí");
+  });
+
+  const { data: studentWallet } = useQuery<any>({
+    queryKey: ["/api/students", studentId, "fee-wallet"],
+    queryFn: () => apiRequest("GET", `/api/students/${studentId}/fee-wallet`).then(r => r.json()),
+    enabled: open && Boolean(studentId),
+  });
+  const datCocBalance = (studentWallet?.summary?.datCoc ?? 0) as number;
+
+  const selectedPerson = students.find((s: any) => s.id === studentId);
+  const displayName = selectedPerson ? `[${selectedPerson.code}] ${selectedPerson.fullName}` : subjectName;
+  const commissionStaffOptions = useMemo(() => {
+    const search = normalizeSearchText(commissionStaffSearch);
+    return (staffList as any[])
+      .filter((staff: any) => !commissions.some(commission => commission.staffId === staff.id))
+      .filter((staff: any) => !search || normalizeSearchText(`${staff.fullName} ${staff.code}`).includes(search))
+      .sort((a: any, b: any) => {
+        const aActive = a.status !== "Không hoạt động";
+        const bActive = b.status !== "Không hoạt động";
+        if (aActive !== bActive) return aActive ? -1 : 1;
+        return String(a.fullName ?? "").localeCompare(String(b.fullName ?? ""), "vi");
+      });
+  }, [staffList, commissions, commissionStaffSearch]);
+
+  const totalAmount    = products.reduce((s, p) => s + calcBase(p), 0);
+  const itemPromo      = products.reduce((s, p) => s + calcPromoAmountForProduct(p, promotionOptionsWithVouchers), 0);
+  const itemSurcharge  = products.reduce((s, p) => {
+    return s + calcSurchargeAmountForProduct(p, calcBase(p), surchargeOptions);
+  }, 0);
+  // KM/Phụ thu áp lên TOÀN hoá đơn (tính trên Thành tiền của các dòng — đã trừ KM / cộng phụ thu theo SP)
+  const lineSubtotal = totalAmount - itemPromo + itemSurcharge;
+  const calcAdjustment = (keys: string[], opts: any[]) =>
+    keys.reduce((sum, key) => {
+      const opt = opts.find((o: any) => o.id === key);
+      if (!opt) return sum;
+      const v = parseFloat(opt.valueAmount || "0");
+      return sum + (opt.valueType === "percent" ? Math.round(lineSubtotal * v / 100) : v);
+    }, 0);
+  const invoicePromoAmt    = invoicePromoKeys.length > 0 ? calcAdjustment(invoicePromoKeys, promotionOptionsWithVouchers) : manualInvoicePromoAmt;
+  const invoiceSurchargeAmt = invoiceSurchargeKeys.length > 0 ? calcAdjustment(invoiceSurchargeKeys, surchargeOptions) : manualInvoiceSurchargeAmt;
+  const totalPromo     = itemPromo + invoicePromoAmt;
+  const totalSurcharge = itemSurcharge + invoiceSurchargeAmt;
+  const subTotal     = totalAmount - totalPromo + totalSurcharge;  // Thành tiền
+  const finalTotal   = Math.max(0, subTotal - deduction);           // Tổng tiền (sau khấu trừ)
+  const grandTotal   = finalTotal;                                   // alias dùng trong submit
+  // Always include directPaidAmount in paid total; paid schedule entries add on top
+  const paid = directPaidAmount + paymentSchedule.filter(p => p.status === "paid").reduce((s, p) => s + p.amount, 0);
+  const paidPercent  = finalTotal > 0 ? Math.round((paid / finalTotal) * 100) : (subTotal > 0 ? 100 : 0);
+
+  // Auto-generate ĐỢT 2 as a real editable entry when directPaidAmount is a partial payment
+  useEffect(() => {
+    if (!open) return;
+    setPaymentSchedule(prev => {
+      // If there are manually-created (non-auto) entries, don't interfere
+      if (prev.some(p => !p.isAuto)) return prev;
+      const remaining = finalTotal - directPaidAmount;
+      if (directPaidAmount > 0 && remaining > 0) {
+        const existing = prev.find(p => p.isAuto);
+        return [{
+          id: existing?.id ?? `auto-${Date.now()}`,
+          label: "ĐỢT 2",
+          code: existing?.code ?? `PT-${Date.now()}`,
+          amount: remaining,
+          due: existing?.due ?? new Date(),
+          status: "unpaid",
+          paymentMethod: existing?.paymentMethod ?? "cash",
+          bank: existing?.bank ?? "",
+          isAuto: true,
+        }];
+      }
+      // paid in full or no partial payment — remove any auto entry
+      return prev.filter(p => !p.isAuto);
+    });
+  }, [directPaidAmount, finalTotal, open]);
+
+  const addProduct = () => setProducts(prev => [...prev, { id: Date.now().toString(), packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, promotionKeys: [], surchargeKeys: [], categoryId: prev[0]?.categoryId ?? "" }]);
+  const removeProduct = (id: string) => setProducts(prev => prev.filter(p => p.id !== id));
+  const scheduleAllocated = paymentSchedule.reduce((s, p) => s + p.amount, 0);
+  // Remaining = total minus what's already paid directly AND what's allocated in schedule
+  const scheduleRemaining = finalTotal - directPaidAmount - scheduleAllocated;
+  const canAddSchedule = scheduleRemaining > 0;
+
+  const addPayment = () => {
+    if (!canAddSchedule) return;
+    setPaymentSchedule(prev => {
+      const allocated = directPaidAmount + prev.reduce((s, p) => s + p.amount, 0);
+      const remaining = Math.max(0, finalTotal - allocated);
+      // When directPaidAmount > 0, schedule starts at ĐỢT 2
+      const nextNum = directPaidAmount > 0 ? prev.length + 2 : prev.length + 1;
+      return [...prev, { id: Date.now().toString(), label: `ĐỢT ${nextNum}`, code: `PT-${Date.now()}`, amount: remaining, due: new Date(), status: "unpaid", paymentMethod: "cash", bank: "" }];
+    });
+  };
+  const removePayment = (id: string) => setPaymentSchedule(prev => prev.filter(p => p.id !== id));
+  const updatePaymentAmount = (id: string, amount: number) => setPaymentSchedule(prev => {
+    // Clear isAuto when user manually edits the amount
+    const updated = prev.map(p => p.id === id ? { ...p, amount, isAuto: false } : p);
+    const lastId = updated[updated.length - 1]?.id;
+    if (lastId && id !== lastId && updated.length > 1) {
+      const othersTotal = updated.slice(0, -1).reduce((s, p) => s + p.amount, 0);
+      const newLastAmount = Math.max(0, finalTotal - directPaidAmount - othersTotal);
+      return updated.map(p => p.id === lastId ? { ...p, amount: newLastAmount } : p);
+    }
+    return updated;
+  });
+  const handleAmountBlur = (id: string, _amount: number) => {
+    setPaymentSchedule(prev => {
+      const lastEntry = prev[prev.length - 1];
+      if (!lastEntry || lastEntry.id !== id) return prev;
+      const allEntriesTotal = prev.reduce((s, p) => s + p.amount, 0);
+      const remaining = finalTotal - directPaidAmount - allEntriesTotal;
+      if (remaining <= 0) return prev;
+      const nextNum = directPaidAmount > 0 ? prev.length + 2 : prev.length + 1;
+      return [...prev, {
+        id: Date.now().toString(),
+        label: `ĐỢT ${nextNum}`,
+        code: `PT-${Date.now()}`,
+        amount: remaining,
+        due: new Date(),
+        status: "unpaid",
+        paymentMethod: "cash",
+        bank: "",
+      }];
+    });
+  };
+  const updatePaymentDue = (id: string, due: Date) => { setPaymentSchedule(prev => prev.map(p => p.id === id ? { ...p, due } : p)); setOpenDuePicker(null); };
+  const updatePaymentStatus = (id: string, status: string) => setPaymentSchedule(prev => prev.map(p => p.id === id ? { ...p, status } : p));
+
+  const handleSelectFeePackage = (productId: string, pkgId: string) => {
+    const pkg = feePackages.find((fp: any) => fp.id === pkgId);
+    if (!pkg) return;
+    const isCoursePackage = pkg.type === "khoá";
+    const suggestedQuantity = Number(pkg.sessions);
+    setProducts(prev => prev.map(x => x.id === productId ? {
+      ...x,
+      packageId: pkg.id,
+      packageType: pkg.type ?? null,
+      name: pkg.name,
+      unitPrice: parseFloat(pkg.totalAmount || pkg.fee || "0"),
+      // A course package's session count is only a display/reference quantity.
+      // calcBase intentionally keeps the package total independent of it.
+      quantity: isCoursePackage && Number.isFinite(suggestedQuantity) && suggestedQuantity > 0
+        ? suggestedQuantity
+        : x.quantity,
+    } : x));
+  };
+
+  const handleSave = () => {
+    if (!locationId) { toast({ title: "Vui lòng chọn Cơ sở", variant: "destructive" }); return; }
+    if (products.some(p => !p.categoryId)) { toast({ title: "Vui lòng chọn Danh mục cho tất cả sản phẩm", variant: "destructive" }); return; }
+    if (!studentId && !subjectName.trim()) { toast({ title: "Vui lòng chọn hoặc nhập Tên", variant: "destructive" }); return; }
+
+    const firstCat = allCategories.find((c: any) => c.id === products[0]?.categoryId);
+
+    const items = products.map(p => {
+      const base = calcBase(p);
+      const promoAmt = calcPromoAmountForProduct(p, promotionOptionsWithVouchers);
+      const surchargeAmt = calcSurchargeAmountForProduct(p, base, surchargeOptions);
+      const itemCat = allCategories.find((c: any) => c.id === p.categoryId);
+      return {
+        packageName: p.name,
+        packageId: p.packageId,
+        packageType: p.packageType,
+        unitPrice: String(p.unitPrice),
+        quantity: p.quantity,
+        promotionKeys: p.promotionKeys,
+        surchargeKeys: p.surchargeKeys,
+        promotionAmount: String(promoAmt),
+        surchargeAmount: String(surchargeAmt),
+        subtotal: String(base - promoAmt + surchargeAmt),
+        category: itemCat?.name ?? "",
+        storeProductId: p.storeProductId ?? null,
+        storeProductCode: p.storeProductCode ?? null,
+        warehouseId: p.warehouseId ?? null,
+        warehouseName: p.warehouseName ?? null,
+      };
+    });
+
+    const baseSchedule = paymentSchedule.map(s => ({
+      label: s.label,
+      code: s.code,
+      amount: String(s.amount),
+      dueDate: s.due ? s.due.toISOString().split("T")[0] : null,
+      status: s.status,
+      paymentMethod: s.paymentMethod || null,
+      appliedBankAccount: s.paymentMethod === "transfer" && s.bank
+        ? locationBanks.find(b => b.bankAccount === s.bank) ?? { bankAccount: s.bank }
+        : null,
+    }));
+
+    // When directPaidAmount > 0 and there are further installments, prepend it as ĐỢT 1 (already paid)
+    const schedule = (directPaidAmount > 0 && baseSchedule.length > 0)
+      ? [
+          {
+            label: "ĐỢT 1",
+            code: `PT1-${Date.now()}`,
+            amount: String(directPaidAmount),
+            dueDate: new Date().toISOString().split("T")[0],
+            status: "paid",
+            paymentMethod: directPaymentMethod || null,
+            appliedBankAccount: directPaymentMethod === "transfer" && directBank
+              ? locationBanks.find(b => b.bankAccount === directBank) ?? { bankAccount: directBank }
+              : null,
+          },
+          ...baseSchedule,
+        ]
+      : baseSchedule;
+
+    const hasSchedule = schedule.length > 0;
+    const effectivePaid = directPaidAmount + (paymentSchedule.filter(s => s.status === "paid").reduce((sum, s) => sum + s.amount, 0));
+    const effectiveRemaining = Math.max(0, grandTotal - effectivePaid);
+
+    // Use invoice-level paymentMethod only when paying in full directly (no schedule)
+    const selectedBank = !hasSchedule && directPaymentMethod === "transfer" && directBank
+      ? locationBanks.find(b => b.bankAccount === directBank) ?? { bankAccount: directBank }
+      : null;
+
+    saveMutation.mutate({
+      type: invoiceType === "income" ? "Thu" : "Chi",
+      locationId,
+      category: firstCat?.name ?? "",
+      classId: classId || null,
+      studentId: studentId || null,
+      subjectName: studentId ? null : subjectName.trim(),
+      account,
+      counterAccount,
+      totalAmount: String(totalAmount),
+      totalPromotion: String(totalPromo),
+      totalSurcharge: String(totalSurcharge),
+      invoicePromotionKeys: invoicePromoKeys,
+      invoiceSurchargeKeys: invoiceSurchargeKeys,
+      invoicePromotionAmount: String(invoicePromoAmt),
+      invoiceSurchargeAmount: String(invoiceSurchargeAmt),
+      grandTotal: String(finalTotal),
+      deduction: String(deduction),
+      paidAmount: String(effectivePaid),
+      remainingAmount: String(effectiveRemaining),
+      paymentMethod: !hasSchedule ? (directPaymentMethod || null) : null,
+      appliedBankAccount: selectedBank,
+      note,
+      dueDate: dueDate || null,
+      status: (grandTotal === 0 && subTotal > 0) || (effectivePaid >= grandTotal && grandTotal > 0) ? "paid" : effectivePaid > 0 ? "partial" : (isEdit ? undefined : "unpaid"),
+      items,
+      paymentSchedule: schedule,
+      commissions: commissions.length > 0 ? commissions : [],
+    });
+  };
+
+  return (
+    <>
+      <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent className="w-screen h-screen max-w-none max-h-none m-0 rounded-none p-0 gap-0 overflow-hidden flex flex-col">
+        <DialogHeader className="px-6 py-4 border-b flex-shrink-0">
+          <DialogTitle className="flex items-center gap-2 text-xs font-semibold">
+            <CreditCard className="h-4 w-4 text-purple-600" />
+            {isEdit ? `Chỉnh sửa phiếu ${editData?.code ?? ""}` : "Tạo phiếu thu / chi"}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="flex flex-1 overflow-hidden">
+          {/* LEFT PANEL */}
+          <div className="flex-1 overflow-y-auto px-6 py-4 border-r space-y-4 min-w-0">
+
+            <div className="flex items-center gap-1 p-1 rounded-lg border bg-muted/30 w-fit">
+              <button
+                onClick={() => { setInvoiceType("income"); setProducts(prev => prev.map(p => ({ ...p, categoryId: "" }))); }}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${invoiceType === "income" ? "bg-purple-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                data-testid="toggle-income"
+              >
+                Phiếu thu
+              </button>
+              <button
+                onClick={() => { setInvoiceType("expense"); setProducts(prev => prev.map(p => ({ ...p, categoryId: "" }))); }}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${invoiceType === "expense" ? "bg-purple-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                data-testid="toggle-expense"
+              >
+                Phiếu chi
+              </button>
+            </div>
+
+            {/* Row 1: Cơ sở, Tên, Lớp */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Cơ sở <span className="text-red-500">*</span></label>
+              <Select value={locationId} onValueChange={v => { setLocationId(v); setStudentId(null); setSubjectName(""); setClassId(""); clearSelectedVouchers(); setProducts(prev => prev.map(p => ({ ...p, packageId: null }))); }}>
+                  <SelectTrigger className="h-9" data-testid="select-branch"><SelectValue placeholder="Chọn cơ sở" /></SelectTrigger>
+                  <SelectContent>
+                    {locations.map((loc: any) => (
+                      <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Tên <span className="text-red-500">*</span></label>
+                <Popover open={studentPickerOpen} onOpenChange={setStudentPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      className="w-full h-9 flex items-center justify-between px-3 rounded-md border bg-background text-sm hover:border-purple-400 transition-colors text-left"
+                      data-testid="button-student-picker"
+                    >
+                      <span className={displayName ? "text-foreground truncate" : "text-muted-foreground"}>
+                        {displayName || "Tên học viên / đối tượng..."}
+                      </span>
+                      <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0 ml-1" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 p-2" align="start">
+                    <div className="mb-2 relative">
+                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        className="h-8 text-xs pl-7"
+                        placeholder="Tìm tên, mã..."
+                        value={studentSearch}
+                        onChange={e => setStudentSearch(e.target.value)}
+                        autoFocus
+                      />
+                    </div>
+                    <div className="max-h-52 overflow-y-auto space-y-0.5">
+                      {students.length === 0 ? (
+                        <p className="text-xs text-center text-muted-foreground py-4">Không tìm thấy</p>
+                      ) : (() => {
+                        const studentItemsRaw = students.filter((s: any) => s.entityType !== "staff");
+                        const studentItems = [...studentItemsRaw].sort((a: any, b: any) => {
+                          const aActive = a.accountStatus !== "Không hoạt động";
+                          const bActive = b.accountStatus !== "Không hoạt động";
+                          if (aActive === bActive) return 0;
+                          return aActive ? -1 : 1;
+                        });
+                        const staffItems = students.filter((s: any) => s.entityType === "staff");
+                        return (
+                          <>
+                            {studentItems.length > 0 && studentSearch && (
+                              <p className="text-[10px] font-medium text-muted-foreground px-2 py-1">Học viên / Phụ huynh</p>
+                            )}
+                            {studentItems.map((s: any) => {
+                              const isInactive = s.accountStatus === "Không hoạt động";
+                              return (
+                                <button
+                                  key={s.id}
+                                  disabled={isInactive}
+                                  className={`w-full text-left px-2 py-1.5 rounded text-xs transition-colors ${isInactive ? "opacity-40 cursor-not-allowed" : "hover:bg-muted/60 cursor-pointer"} ${studentId === s.id ? "bg-purple-50 text-purple-700" : ""}`}
+                                  onClick={() => { if (isInactive) return; clearSelectedVouchers(); setStudentId(s.id); setSelectedStaffId(null); setSubjectName(""); setDeduction(0); setStudentPickerOpen(false); }}
+                                >
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <span className="font-mono text-muted-foreground">[{s.code}]</span> {s.fullName}
+                                    <span className="text-[10px] text-muted-foreground">({s.type})</span>
+                                    {isInactive && <span className="text-amber-500 text-[10px] font-medium">⚠ Không hoạt động</span>}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                            {staffItems.length > 0 && (
+                              <>
+                                <div className="border-t my-1" />
+                                <p className="text-[10px] font-medium text-muted-foreground px-2 py-1">Nhân viên</p>
+                                {staffItems.map((s: any) => (
+                                  <button
+                                    key={s.id}
+                                    className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-muted/60 transition-colors ${selectedStaffId === s.id ? "bg-blue-50 text-blue-700" : ""}`}
+                                    onClick={() => { clearSelectedVouchers(); setStudentId(null); setSelectedStaffId(s.id); setSubjectName(`[${s.code}] ${s.fullName}`); setDeduction(0); setStudentPickerOpen(false); }}
+                                  >
+                                    <span className="font-mono text-muted-foreground">[{s.code}]</span> {s.fullName}
+                                    <span className="ml-1 text-[10px] text-blue-500">(Nhân viên)</span>
+                                  </button>
+                                ))}
+                              </>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Lớp</label>
+                <Select value={classId} onValueChange={setClassId}>
+                  <SelectTrigger className="h-9" data-testid="select-class"><SelectValue placeholder="Chọn lớp" /></SelectTrigger>
+                  <SelectContent>
+                    {classes.map((cls: any) => (
+                      <SelectItem key={cls.id} value={cls.id}>[{cls.classCode}] {cls.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Row 2: Tài khoản thu/chi, Tài khoản đối ứng, Hạn Thanh toán */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">{invoiceType === "income" ? "Tài khoản thu" : "Tài khoản chi"} <span className="text-red-500">*</span></label>
+                <Select value={account} onValueChange={setAccount}>
+                  <SelectTrigger className="h-9" data-testid="select-account"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="111">111 - Tiền mặt</SelectItem>
+                    <SelectItem value="112">112 - Tiền gửi ngân hàng</SelectItem>
+                    <SelectItem value="131">131 - Phải thu khách hàng</SelectItem>
+                    <SelectItem value="141">141 - Tạm ứng</SelectItem>
+                    <SelectItem value="338">338 - Phải trả khác</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Tài khoản đối ứng</label>
+                <Select value={counterAccount} onValueChange={setCounterAccount}>
+                  <SelectTrigger className="h-9" data-testid="select-counterpart"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="511">511 - Doanh thu</SelectItem>
+                    <SelectItem value="711">711 - Thu nhập khác</SelectItem>
+                    <SelectItem value="3387">3387 - Doanh thu chưa thực hiện</SelectItem>
+                    <SelectItem value="331">331 - Phải trả người bán</SelectItem>
+                    <SelectItem value="334">334 - Phải trả người lao động</SelectItem>
+                    <SelectItem value="642">642 - Chi phí quản lý doanh nghiệp</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Hạn thanh toán</label>
+                <Input
+                  type="date"
+                  value={dueDate}
+                  onChange={e => setDueDate(e.target.value)}
+                  className="h-9 text-sm"
+                  data-testid="input-due-date"
+                />
+              </div>
+            </div>
+
+            {/* Product list */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-semibold">Danh sách sản phẩm</span>
+                <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" onClick={addProduct} data-testid="button-add-product">
+                  <Plus className="h-3.5 w-3.5" /> Thêm sản phẩm
+                </Button>
+              </div>
+
+              <div className="rounded-lg border overflow-hidden">
+                <table className="w-full text-xs table-fixed">
+                  <colgroup>
+                    <col style={{ width: "17%" }} />
+                    <col style={{ width: "22%" }} />
+                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "8%" }} />
+                    <col style={{ width: "13%" }} />
+                    <col style={{ width: "13%" }} />
+                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "3%" }} />
+                  </colgroup>
+                  <thead className="bg-muted/60">
+                    <tr className="border-b">
+                      <th className="p-2 text-left font-semibold text-muted-foreground">Danh mục</th>
+                      <th className="p-2 text-left font-semibold text-muted-foreground">Tên gói</th>
+                      <th className="p-2 text-right font-semibold text-muted-foreground">Đơn giá</th>
+                      <th className="p-2 text-center font-semibold text-muted-foreground">SL</th>
+                      <th className="p-2 text-right font-semibold text-muted-foreground">Khuyến mãi</th>
+                      <th className="p-2 text-right font-semibold text-muted-foreground">Phụ thu</th>
+                      <th className="p-2 text-right font-semibold text-muted-foreground">Thành tiền</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {products.map((p, idx) => {
+                      const isKhoa = p.packageType === "khoá";
+                      const isProductHocPhi = allCategories.find((c: any) => c.id === p.categoryId)?.name?.toLowerCase().includes("học phí");
+                      const base = calcBase(p);
+                      const promoAmt = calcPromoAmountForProduct(p, promotionOptionsWithVouchers);
+                      const surchargeAmt = calcSurchargeAmountForProduct(p, base, surchargeOptions);
+                      const subtotal = base - promoAmt + surchargeAmt;
+                      const togglePromo = (key: string) => setProducts(prev => prev.map(x => x.id === p.id ? {
+                        ...x,
+                        promotionKeys: x.promotionKeys.includes(key) ? x.promotionKeys.filter(k => k !== key) : [...x.promotionKeys, key]
+                      } : x));
+                      const toggleSurcharge = (key: string) => setProducts(prev => prev.map(x => x.id === p.id ? {
+                        ...x,
+                        surchargeKeys: x.surchargeKeys.includes(key) ? x.surchargeKeys.filter(k => k !== key) : [...x.surchargeKeys, key]
+                      } : x));
+                      return (
+                        <tr key={p.id} className={`border-b last:border-0 ${idx % 2 === 1 ? "bg-muted/20" : ""}`}>
+                          <td className="p-2">
+                            <Select
+                              value={p.categoryId}
+                              onValueChange={v => {
+                                setProducts(prev => prev.map(x => x.id === p.id ? {
+                                  ...x, categoryId: v, packageId: null, packageType: null, name: "",
+                                  storeProductId: null, storeProductCode: null, warehouseId: null, warehouseName: null, stockAvailable: undefined,
+                                } : x));
+                                setDeduction(0);
+                              }}
+                            >
+                              <SelectTrigger className="h-8 text-[11px]" data-testid={`select-item-category-${p.id}`}>
+                                <SelectValue placeholder="Chọn..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {categories.length === 0
+                                  ? <SelectItem value="_none" disabled>Chưa có danh mục</SelectItem>
+                                  : categories.map((cat: any) => (
+                                      <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                                    ))
+                                }
+                              </SelectContent>
+                            </Select>
+                          </td>
+                          <td className="p-2">
+                            {(() => {
+                              const catName = allCategories.find((c: any) => c.id === p.categoryId)?.name ?? "";
+                              const isProductKho = catName.toLowerCase().includes("kho");
+                              if (isProductHocPhi) {
+                                return (
+                                  <Select value={p.packageId ?? feePackages.find((fp: any) => fp.name === p.name)?.id ?? ""} onValueChange={v => handleSelectFeePackage(p.id, v)}>
+                                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Chọn gói học phí..." /></SelectTrigger>
+                                    <SelectContent>
+                                      {p.packageId && p.name && !feePackages.find((fp: any) => fp.id === p.packageId) && (
+                                        <SelectItem key={p.packageId} value={p.packageId}>{p.name}</SelectItem>
+                                      )}
+                                      {feePackages.length === 0
+                                        ? <SelectItem value="_none" disabled>Chưa có gói học phí</SelectItem>
+                                        : feePackages.map((fp: any) => (
+                                            <SelectItem key={fp.id} value={fp.id}>
+                                              {fp.name} {fp.courseName ? `(${fp.courseName})` : ""}
+                                            </SelectItem>
+                                          ))
+                                      }
+                                    </SelectContent>
+                                  </Select>
+                                );
+                              }
+                              if (isProductKho) {
+                                return (
+                                  <Popover open={khoPickerOpen === p.id} onOpenChange={v => { setKhoPickerOpen(v ? p.id : null); if (!v) setKhoSearch(""); }}>
+                                    <PopoverTrigger asChild>
+                                      <button className="w-full h-8 flex items-center justify-between px-2 rounded-md border bg-background hover:border-purple-400 transition-colors text-[11px] text-left">
+                                        <span className={p.name ? "text-foreground truncate" : "text-muted-foreground"}>
+                                          {p.name || "Chọn sản phẩm kho..."}
+                                        </span>
+                                        <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                                      </button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-72 p-2" align="start">
+                                      <div className="mb-2 relative">
+                                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                                        <Input
+                                          className="h-8 text-xs pl-7"
+                                          placeholder="Tìm sản phẩm kho..."
+                                          value={khoSearch}
+                                          onChange={e => setKhoSearch(e.target.value)}
+                                          autoFocus
+                                        />
+                                      </div>
+                                      <div className="max-h-52 overflow-y-auto space-y-0.5">
+                                        {!locationId ? (
+                                          <p className="text-xs text-center text-muted-foreground py-4">Vui lòng chọn Cơ sở trước</p>
+                                        ) : khoProducts.length === 0 ? (
+                                          <p className="text-xs text-center text-muted-foreground py-4">Không tìm thấy sản phẩm</p>
+                                        ) : khoProducts.map((prod: any) => (
+                                          <button
+                                            key={`${prod.id}-${prod.warehouse_id}`}
+                                            className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-muted/60 cursor-pointer transition-colors"
+                                            onClick={() => {
+                                              setProducts(prev => prev.map(x => x.id === p.id ? {
+                                                ...x,
+                                                name: prod.name,
+                                                unitPrice: parseFloat(prod.sale_price) || 0,
+                                                storeProductId: prod.id,
+                                                storeProductCode: prod.code,
+                                                warehouseId: prod.warehouse_id,
+                                                warehouseName: prod.warehouse_name ?? null,
+                                                stockAvailable: parseInt(String(prod.stock)) || 0,
+                                              } : x));
+                                              setKhoPickerOpen(null);
+                                              setKhoSearch("");
+                                            }}
+                                          >
+                                            <div className="font-medium">{prod.name} <span className="text-muted-foreground font-normal">({prod.code})</span></div>
+                                            <div className="text-muted-foreground flex justify-between mt-0.5">
+                                              <span className="truncate">{prod.warehouse_name || "Kho"}</span>
+                                              <span className="ml-2 flex-shrink-0">Tồn: {prod.stock} | {fmtMoney(parseFloat(prod.sale_price) || 0)}</span>
+                                            </div>
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </PopoverContent>
+                                  </Popover>
+                                );
+                              }
+                              return (
+                                <Input
+                                  className="h-8 text-xs"
+                                  placeholder="Tên gói / dịch vụ..."
+                                  value={p.name}
+                                  onChange={e => setProducts(prev => prev.map(x => x.id === p.id ? { ...x, name: e.target.value } : x))}
+                                />
+                              );
+                            })()}
+                          </td>
+                          <td className="p-2">
+                            <Input
+                              type="number"
+                              value={p.unitPrice}
+                              readOnly={isKhoa}
+                              onChange={e => !isKhoa && setProducts(prev => prev.map(x => x.id === p.id ? { ...x, unitPrice: Number(e.target.value) } : x))}
+                              onFocus={e => e.target.select()}
+                              className={`h-8 text-[11px] text-right px-1.5 ${isKhoa ? "bg-muted/40 cursor-not-allowed opacity-70" : ""}`}
+                              title={isKhoa ? "Gói theo khoá: đơn giá cố định" : undefined}
+                            />
+                          </td>
+                          <td className="p-2">
+                            <Input
+                              type="number"
+                              min={1}
+                              value={p.quantity}
+                              onChange={e => setProducts(prev => prev.map(x => x.id === p.id ? { ...x, quantity: Number(e.target.value) } : x))}
+                              onFocus={e => e.target.select()}
+                              className="h-8 text-[11px] text-center px-1"
+                            />
+                            {isKhoa && (
+                              <p className="text-[9px] text-amber-600 mt-0.5 leading-tight">Gói theo khoá, không ảnh hưởng tổng tiền</p>
+                            )}
+                          </td>
+                          <td className="p-2">
+                            <Popover open={openPromoId === p.id} onOpenChange={v => setOpenPromoId(v ? p.id : null)}>
+                              <PopoverTrigger asChild>
+                                <button className="w-full h-8 flex items-center justify-between px-2 rounded-md border bg-background hover:border-purple-400 transition-colors text-[11px]">
+                                  <span className={promoAmt > 0 ? "text-green-600 font-semibold" : "text-muted-foreground"}>
+                                    {promoAmt > 0 ? `-${fmtMoney(promoAmt)}` : "Chọn..."}
+                                  </span>
+                                  <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                                </button>
+                              </PopoverTrigger>
+                             {hasAvailableVouchers && (
+                               <span className="mt-0.5 block text-[9px] leading-tight text-red-500">
+                                 Có Voucher chưa sử dụng
+                               </span>
+                             )}
+                               <PopoverContent className="w-52 p-2" align="start">
+                                 <div className="flex items-center justify-between gap-2 mb-2">
+                                   <p className="text-xs font-semibold text-muted-foreground">Chọn khuyến mãi</p>
+                                   {canCreatePromotion && (
+                                     <button
+                                       type="button"
+                                       className="inline-flex items-center gap-0.5 text-[11px] font-medium text-purple-600 hover:text-purple-700"
+                                       onClick={() => openQuickCreate("promotion", { scope: "product", productId: p.id })}
+                                       data-testid={`button-quick-add-promotion-${p.id}`}
+                                     >
+                                       <Plus className="h-3 w-3" /> Thêm mới
+                                     </button>
+                                   )}
+                                 </div>
+                                <div className="space-y-1.5">
+                                  {promotionOptionsWithVouchers.length === 0
+                                    ? <p className="text-xs text-muted-foreground">Chưa có khuyến mãi</p>
+                                    : promotionOptionsWithVouchers.map((o: any) => {
+                                        const val = parseFloat(o.valueAmount || "0");
+                                        const amt = o.valueType === "percent" ? Math.round(base * val / 100) : val;
+                                        return (
+                                          <label key={o.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+                                            <Checkbox
+                                              checked={p.promotionKeys.includes(o.id)}
+                                              onCheckedChange={() => togglePromo(o.id)}
+                                            />
+                                            <div className="flex-1 min-w-0">
+                                               <p className="flex items-center gap-1 text-xs font-medium">
+                                                 {o.kind === "voucher" && (
+                                                   <span className="shrink-0 rounded bg-red-100 px-1 text-[9px] font-semibold text-red-600">Voucher</span>
+                                                 )}
+                                                 <span className="truncate">{o.name}</span>
+                                               </p>
+                                              <p className="text-xs text-muted-foreground">-{fmtMoney(amt)}</p>
+                                            </div>
+                                          </label>
+                                        );
+                                      })
+                                  }
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          </td>
+                          <td className="p-2">
+                            <Popover open={openSurchargeId === p.id} onOpenChange={v => setOpenSurchargeId(v ? p.id : null)}>
+                              <PopoverTrigger asChild>
+                                <button className="w-full h-8 flex items-center justify-between px-2 rounded-md border bg-background hover:border-purple-400 transition-colors text-[11px]">
+                                  <span className={surchargeAmt > 0 ? "text-orange-600 font-semibold" : "text-muted-foreground"}>
+                                    {surchargeAmt > 0 ? `+${fmtMoney(surchargeAmt)}` : "Chọn..."}
+                                  </span>
+                                  <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                                </button>
+                              </PopoverTrigger>
+                               <PopoverContent className="w-56 p-2" align="start">
+                                 <div className="flex items-center justify-between gap-2 mb-2">
+                                   <p className="text-xs font-semibold text-muted-foreground">Chọn phụ thu</p>
+                                   {canCreatePromotion && (
+                                     <button
+                                       type="button"
+                                       className="inline-flex items-center gap-0.5 text-[11px] font-medium text-purple-600 hover:text-purple-700"
+                                       onClick={() => openQuickCreate("surcharge", { scope: "product", productId: p.id })}
+                                       data-testid={`button-quick-add-surcharge-${p.id}`}
+                                     >
+                                       <Plus className="h-3 w-3" /> Thêm mới
+                                     </button>
+                                   )}
+                                 </div>
+                                <div className="space-y-1.5">
+                                  {surchargeOptions.length === 0
+                                    ? <p className="text-xs text-muted-foreground">Chưa có phụ thu</p>
+                                    : surchargeOptions.map((o: any) => {
+                                        const val = parseFloat(o.valueAmount || "0");
+                                        const amt = o.valueType === "percent" ? Math.round(base * val / 100) : val;
+                                        return (
+                                          <label key={o.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+                                            <Checkbox
+                                              checked={p.surchargeKeys.includes(o.id)}
+                                              onCheckedChange={() => toggleSurcharge(o.id)}
+                                            />
+                                            <div className="flex-1 min-w-0">
+                                              <p className="text-xs font-medium">{o.name}</p>
+                                              <p className="text-xs text-muted-foreground">+{fmtMoney(amt)}</p>
+                                            </div>
+                                          </label>
+                                        );
+                                      })
+                                  }
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          </td>
+                          <td className="p-2 text-right font-semibold text-xs">{fmtMoney(subtotal)}</td>
+                          <td className="p-2 text-center">
+                            <button
+                              onClick={() => removeProduct(p.id)}
+                              disabled={products.length === 1}
+                              className="text-muted-foreground hover:text-red-500 transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Note */}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Ghi chú</label>
+              <Textarea
+                placeholder="Nhập thông tin chi tiết..."
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                className="text-sm resize-none"
+                rows={3}
+                data-testid="textarea-note"
+              />
+            </div>
+
+            {/* Commission / Doanh thu tính hoa hồng */}
+            <div className="space-y-2">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Doanh thu tính hoa hồng</label>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  Doanh thu của từng nhân sự được tính trên Tổng tiền hóa đơn theo tỷ lệ đã nhập.
+                </p>
+              </div>
+              <Popover
+                open={commissionStaffPickerOpen}
+                onOpenChange={(nextOpen) => {
+                  setCommissionStaffPickerOpen(nextOpen);
+                  if (!nextOpen) setCommissionStaffSearch("");
+                }}
+              >
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="w-full h-9 flex items-center justify-between px-3 rounded-md border bg-background text-sm hover:border-purple-400 transition-colors text-left"
+                    data-testid="button-commission-staff-picker"
+                  >
+                    <span className="text-muted-foreground">[ Chọn nhân sự nhận hoa hồng ]</span>
+                    <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0 ml-1" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[min(520px,calc(100vw-3rem))] p-2" align="start">
+                  <div className="relative mb-2">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      className="h-8 text-xs pl-7"
+                      placeholder="Tìm theo tên hoặc mã nhân sự..."
+                      value={commissionStaffSearch}
+                      onChange={e => setCommissionStaffSearch(e.target.value)}
+                      autoFocus
+                      data-testid="input-commission-staff-search"
+                    />
+                  </div>
+                  <div className="max-h-60 overflow-y-auto space-y-0.5">
+                    {commissionStaffOptions.length === 0 ? (
+                      <p className="text-xs text-center text-muted-foreground py-4">
+                        {commissionStaffSearch ? "Không tìm thấy nhân sự" : "Không còn nhân sự để chọn"}
+                      </p>
+                    ) : commissionStaffOptions.map((s: any) => {
+                      const isInactive = s.status === "Không hoạt động";
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          disabled={isInactive}
+                          className={`w-full text-left px-2 py-1.5 rounded text-xs transition-colors flex items-center gap-1.5 ${isInactive ? "opacity-40 cursor-not-allowed" : "hover:bg-muted/60 cursor-pointer"}`}
+                          onClick={() => {
+                            if (isInactive) return;
+                            setCommissions(prev => [...prev, { staffId: s.id, percentage: 100 }]);
+                            setCommissionStaffPickerOpen(false);
+                            setCommissionStaffSearch("");
+                          }}
+                        >
+                          <span className="font-mono text-muted-foreground">[{s.code}]</span>
+                          <span className="truncate">{s.fullName}</span>
+                          {isInactive && <span className="text-amber-500 text-[10px] font-medium whitespace-nowrap">⚠ Không hoạt động</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              {commissions.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="grid items-center gap-2 text-[11px] text-muted-foreground sm:grid-cols-[minmax(0,1fr)_72px_130px_20px]">
+                    <span>Nhân sự</span>
+                    <span className="text-right">Tỷ lệ</span>
+                    <span className="text-right">Doanh thu tính hoa hồng</span>
+                    <span />
+                  </div>
+                  {commissions.map((c) => {
+                    const s = (staffList as any[]).find((s: any) => s.id === c.staffId);
+                    const commissionRevenue = finalTotal * c.percentage / 100;
+                    return (
+                      <div key={c.staffId} className="grid items-center gap-2 sm:grid-cols-[minmax(0,1fr)_72px_130px_20px]">
+                        <span className="min-w-0 truncate text-xs">{s?.fullName ?? c.staffId} <span className="text-muted-foreground">({s?.code ?? ""})</span></span>
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            value={c.percentage}
+                            onChange={e => {
+                              const val = Math.min(100, Math.max(0, parseFloat(e.target.value) || 0));
+                              setCommissions(prev => prev.map(x => x.staffId === c.staffId ? { ...x, percentage: val } : x));
+                            }}
+                            className="h-7 w-16 text-right text-xs"
+                            aria-label={`Tỷ lệ doanh thu của ${s?.fullName ?? c.staffId}`}
+                          />
+                          <span className="text-xs text-muted-foreground">%</span>
+                        </div>
+                        <div className="text-right text-xs font-medium text-foreground" title="Tổng tiền hóa đơn × tỷ lệ doanh thu">
+                          {fmtMoney(commissionRevenue)} đ
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setCommissions(prev => prev.filter(x => x.staffId !== c.staffId))}
+                          className="text-muted-foreground hover:text-destructive"
+                          aria-label={`Xóa ${s?.fullName ?? c.staffId}`}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* RIGHT PANEL */}
+          <div className="w-[400px] flex-shrink-0 overflow-y-auto px-5 py-4 space-y-4 bg-muted/20">
+            <div className="rounded-xl border bg-card p-4 space-y-3 shadow-sm">
+              <div className="space-y-1.5 text-sm">
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Số tiền:</span>
+                  <span className="font-medium text-foreground">{fmtMoney(totalAmount)}</span>
+                </div>
+                <Popover open={openInvoicePromo} onOpenChange={setOpenInvoicePromo}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="w-full flex justify-between items-center text-green-600 hover:bg-green-50 rounded px-1 -mx-1 py-0.5 transition-colors"
+                      data-testid="button-invoice-promo"
+                    >
+                      <span className="flex items-center gap-1">
+                        Khuyến mãi:
+                        <ChevronDown className="h-3 w-3 opacity-60" />
+                        {hasAvailableVouchers && (
+                          <span className="ml-1 text-[10px] font-medium text-red-500">
+                            Có Voucher chưa sử dụng
+                          </span>
+                        )}
+                      </span>
+                      <span>{totalPromo > 0 ? `-${fmtMoney(totalPromo)}` : "0 ₫"}</span>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 p-3" align="end" side="left">
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-[11px] font-bold text-muted-foreground uppercase mb-1">KM theo sản phẩm</p>
+                        {itemPromo > 0 ? (
+                          <div className="space-y-0.5 max-h-28 overflow-y-auto">
+                            {products.map(p => {
+                              const amt = calcPromoAmountForProduct(p, promotionOptionsWithVouchers);
+                              if (amt <= 0) return null;
+                              const names = p.promotionKeys
+                                .map(k => formatPromotionLabel(promotionOptionsWithVouchers.find((o: any) => o.id === k)))
+                                .filter(Boolean)
+                                .join(", ");
+                              return (
+                                <div key={p.id} className="flex justify-between text-xs">
+                                  <span className="truncate flex-1 text-muted-foreground">{p.name || "(SP)"} – {names}</span>
+                                  <span className="text-green-600 ml-2">-{fmtMoney(amt)}</span>
+                                </div>
+                              );
+                            })}
+                            <p className="text-[10px] text-muted-foreground italic mt-1">Sửa ở bảng "Danh sách sản phẩm"</p>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground italic">Chưa có KM theo SP</p>
+                        )}
+                      </div>
+                      <div className="border-t pt-2">
+                         <div className="flex items-center justify-between gap-2 mb-1">
+                           <p className="text-[11px] font-bold text-muted-foreground uppercase">KM toàn đơn</p>
+                           {canCreatePromotion && (
+                             <button
+                               type="button"
+                               className="inline-flex items-center gap-0.5 text-[11px] font-medium normal-case text-purple-600 hover:text-purple-700"
+                               onClick={() => openQuickCreate("promotion", { scope: "invoice" })}
+                               data-testid="button-quick-add-invoice-promotion"
+                             >
+                               <Plus className="h-3 w-3" /> Thêm mới
+                             </button>
+                           )}
+                         </div>
+                        <div className="max-h-40 overflow-y-auto space-y-0.5">
+                           {promotionOptionsWithVouchers.length === 0 ? (
+                            <p className="text-xs text-muted-foreground italic">Chưa cấu hình KM nào</p>
+                           ) : promotionOptionsWithVouchers.map((o: any) => (
+                            <label key={o.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5 text-xs">
+                              <Checkbox
+                                checked={invoicePromoKeys.includes(o.id)}
+                                onCheckedChange={() => {
+                                  setManualInvoicePromoAmt(0);
+                                  setInvoicePromoKeys(prev =>
+                                    prev.includes(o.id) ? prev.filter(k => k !== o.id) : [...prev, o.id]
+                                  );
+                                }}
+                                data-testid={`checkbox-invoice-promo-${o.id}`}
+                              />
+                               <span className="flex flex-1 items-center gap-1 truncate">
+                                 {o.kind === "voucher" && (
+                                   <span className="shrink-0 rounded bg-red-100 px-1 text-[9px] font-semibold text-red-600">Voucher</span>
+                                 )}
+                                 <span className="truncate">{o.name}</span>
+                               </span>
+                              <span className="text-green-600 text-[10px]">
+                                {o.valueType === "percent" ? `${o.valueAmount}%` : fmtMoney(parseFloat(o.valueAmount || "0"))}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                        {invoicePromoAmt > 0 && (
+                          <div className="flex justify-between text-xs font-medium pt-1 mt-1 border-t">
+                            <span>Tổng KM toàn đơn:</span>
+                            <span className="text-green-600">-{fmtMoney(invoicePromoAmt)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+
+                <Popover open={openInvoiceSurcharge} onOpenChange={setOpenInvoiceSurcharge}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="w-full flex justify-between items-center text-orange-500 hover:bg-orange-50 rounded px-1 -mx-1 py-0.5 transition-colors"
+                      data-testid="button-invoice-surcharge"
+                    >
+                      <span className="flex items-center gap-1">
+                        Phụ thu:
+                        <ChevronDown className="h-3 w-3 opacity-60" />
+                      </span>
+                      <span>{totalSurcharge > 0 ? `+${fmtMoney(totalSurcharge)}` : "0 ₫"}</span>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 p-3" align="end" side="left">
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-[11px] font-bold text-muted-foreground uppercase mb-1">Phụ thu theo sản phẩm</p>
+                        {itemSurcharge > 0 ? (
+                          <div className="space-y-0.5 max-h-28 overflow-y-auto">
+                            {products.map(p => {
+                              const amt = calcSurchargeAmountForProduct(p, calcBase(p), surchargeOptions);
+                              if (amt <= 0) return null;
+                              const names = p.surchargeKeys
+                                .map(k => surchargeOptions.find((o: any) => o.id === k)?.name)
+                                .filter(Boolean)
+                                .join(", ");
+                              return (
+                                <div key={p.id} className="flex justify-between text-xs">
+                                  <span className="truncate flex-1 text-muted-foreground">{p.name || "(SP)"} – {names}</span>
+                                  <span className="text-orange-500 ml-2">+{fmtMoney(amt)}</span>
+                                </div>
+                              );
+                            })}
+                            <p className="text-[10px] text-muted-foreground italic mt-1">Sửa ở bảng "Danh sách sản phẩm"</p>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground italic">Chưa có phụ thu theo SP</p>
+                        )}
+                      </div>
+                      <div className="border-t pt-2">
+                         <div className="flex items-center justify-between gap-2 mb-1">
+                           <p className="text-[11px] font-bold text-muted-foreground uppercase">Phụ thu toàn đơn</p>
+                           {canCreatePromotion && (
+                             <button
+                               type="button"
+                               className="inline-flex items-center gap-0.5 text-[11px] font-medium normal-case text-purple-600 hover:text-purple-700"
+                               onClick={() => openQuickCreate("surcharge", { scope: "invoice" })}
+                               data-testid="button-quick-add-invoice-surcharge"
+                             >
+                               <Plus className="h-3 w-3" /> Thêm mới
+                             </button>
+                           )}
+                         </div>
+                        <div className="max-h-40 overflow-y-auto space-y-0.5">
+                          {surchargeOptions.length === 0 ? (
+                            <p className="text-xs text-muted-foreground italic">Chưa cấu hình phụ thu nào</p>
+                          ) : surchargeOptions.map((o: any) => (
+                            <label key={o.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5 text-xs">
+                              <Checkbox
+                                checked={invoiceSurchargeKeys.includes(o.id)}
+                                onCheckedChange={() => {
+                                  setManualInvoiceSurchargeAmt(0);
+                                  setInvoiceSurchargeKeys(prev =>
+                                    prev.includes(o.id) ? prev.filter(k => k !== o.id) : [...prev, o.id]
+                                  );
+                                }}
+                                data-testid={`checkbox-invoice-surcharge-${o.id}`}
+                              />
+                              <span className="flex-1 truncate">{o.name}</span>
+                              <span className="text-orange-500 text-[10px]">
+                                {o.valueType === "percent" ? `${o.valueAmount}%` : fmtMoney(parseFloat(o.valueAmount || "0"))}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                        {invoiceSurchargeAmt > 0 && (
+                          <div className="flex justify-between text-xs font-medium pt-1 mt-1 border-t">
+                            <span>Tổng phụ thu toàn đơn:</span>
+                            <span className="text-orange-500">+{fmtMoney(invoiceSurchargeAmt)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                <div className="flex justify-between font-semibold pt-1 border-t">
+                  <span>Thành tiền:</span>
+                  <span>{fmtMoney(subTotal)}</span>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground flex-shrink-0">Đặt cọc:</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={studentId && datCocBalance > 0 ? Math.min(subTotal, datCocBalance) : subTotal}
+                      value={deduction}
+                      onChange={e => {
+                        const maxDed = studentId && datCocBalance > 0
+                          ? Math.min(subTotal, datCocBalance)
+                          : subTotal;
+                        setDeduction(Math.min(maxDed, Math.max(0, Number(e.target.value))));
+                      }}
+                      onFocus={e => e.target.select()}
+                      className="h-7 text-xs text-right w-32 border-muted"
+                      data-testid="input-deduction"
+                    />
+                  </div>
+                  {studentId && datCocBalance > 0 && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs text-blue-600 bg-blue-50 rounded px-2 py-1">
+                        <span>Tiền cọc còn:</span>
+                        <span className="font-semibold">{fmtMoney(Math.max(0, datCocBalance - deduction))}</span>
+                      </div>
+                      {deduction > 0 && isHocPhi && (
+                        <p className="text-[10px] text-muted-foreground px-1">Ưu tiên trừ cọc vào danh mục Học phí trước</p>
+                      )}
+                    </div>
+                  )}
+                  {studentId && datCocBalance <= 0 && studentWallet !== undefined && (
+                    <p className="text-xs text-muted-foreground text-right">Học viên không có tiền cọc</p>
+                  )}
+                </div>
+                <div className="flex justify-between font-bold pt-1 border-t text-foreground">
+                  <span>Tổng tiền:</span>
+                  <span className="text-base">{fmtMoney(finalTotal)}</span>
+                </div>
+              </div>
+              <div className="pt-2 border-t space-y-2">
+                <div className="flex items-center justify-between gap-2 text-sm">
+                  <span className="text-muted-foreground flex-shrink-0">Đã thanh toán</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={grandTotal}
+                    value={directPaidAmount}
+                    onChange={e => setDirectPaidAmount(Math.min(grandTotal, Math.max(0, Number(e.target.value))))}
+                    onFocus={e => e.target.select()}
+                    className="h-7 text-xs text-right font-bold text-blue-600 w-32 border-blue-200 focus-visible:ring-blue-400"
+                    data-testid="input-direct-paid"
+                  />
+                </div>
+                <div className="flex gap-2 items-end">
+                    <div className="space-y-0.5 w-36 flex-shrink-0">
+                      <span className="text-xs text-muted-foreground">Hình thức</span>
+                      <Select value={directPaymentMethod} onValueChange={v => { setDirectPaymentMethod(v); if (v === "cash") setDirectBank(""); }}>
+                        <SelectTrigger className="h-8 text-xs" data-testid="select-direct-payment-method"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="cash">Tiền mặt</SelectItem>
+                          <SelectItem value="transfer">Chuyển khoản</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {directPaymentMethod === "transfer" && (
+                      <div className="flex-1 space-y-0.5">
+                        <span className="text-xs text-muted-foreground">Ngân hàng</span>
+                        <Select value={directBank} onValueChange={setDirectBank}>
+                          <SelectTrigger className="h-8 text-xs" data-testid="select-direct-bank"><SelectValue placeholder="Chọn ngân hàng" /></SelectTrigger>
+                          <SelectContent>
+                            {locationBanks.length === 0
+                              ? <SelectItem value="_none" disabled>Chưa cấu hình ngân hàng</SelectItem>
+                              : locationBanks.map((b, i) => (
+                                  <SelectItem key={i} value={b.bankAccount}>
+                                    {b.bankName} - {b.bankAccount}{b.accountHolder ? ` (${b.accountHolder})` : ""}
+                                  </SelectItem>
+                                ))
+                            }
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                <div className="relative h-2 rounded-full bg-muted overflow-hidden">
+                  <div className="absolute inset-y-0 left-0 bg-blue-500 rounded-full transition-all" style={{ width: `${paidPercent}%` }} />
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>{paidPercent}%</span>
+                  <span>{fmtMoney(paid)} / {fmtMoney(grandTotal)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Payment schedule */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Lịch thanh toán</span>
+                <Button
+                  size="sm" variant="outline"
+                  className={`h-7 gap-1 text-xs transition-opacity ${!canAddSchedule ? "opacity-40 cursor-not-allowed" : ""}`}
+                  onClick={addPayment}
+                  disabled={!canAddSchedule}
+                  title={!canAddSchedule ? "Đã phân bổ đủ tổng tiền" : "Thêm đợt thanh toán"}
+                  data-testid="button-add-payment"
+                >
+                  <Plus className="h-3 w-3" /> Thêm
+                </Button>
+              </div>
+              {paymentSchedule.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-3 border rounded-lg">Nhấn "+ Thêm" để tạo đợt thanh toán</p>
+              )}
+              <div className="space-y-2">
+                {paymentSchedule.map(p => (
+                  <div key={p.id} className="rounded-lg border bg-card p-3 space-y-2 shadow-sm">
+                    {/* Header: label + status + delete */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold">{p.label}</span>
+                        <Select value={p.status} onValueChange={v => updatePaymentStatus(p.id, v)}>
+                          <SelectTrigger className={`h-6 text-[10px] px-1.5 py-0 rounded font-medium whitespace-nowrap border-0 shadow-none focus:ring-0 w-auto gap-1 ${p.status === "paid" ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-yellow-100 text-yellow-700 hover:bg-yellow-200"}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unpaid">Chưa thanh toán</SelectItem>
+                            <SelectItem value="paid">Đã thanh toán</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-muted-foreground">Mã: {p.code}</span>
+                        <button
+                          onClick={() => removePayment(p.id)}
+                          className="text-muted-foreground hover:text-red-500 transition-colors ml-1"
+                          data-testid={`button-delete-payment-${p.id}`}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    {/* Số tiền + Hạn on same row */}
+                    <div className="flex gap-2">
+                      <div className="flex-1 space-y-0.5">
+                        <span className="text-xs text-muted-foreground">Số tiền</span>
+                        <Input
+                          type="number"
+                          value={p.amount}
+                          onChange={e => updatePaymentAmount(p.id, Number(e.target.value))}
+                          onBlur={e => handleAmountBlur(p.id, Number(e.target.value))}
+                          onFocus={e => e.target.select()}
+                          className="h-8 text-xs text-right font-semibold"
+                          data-testid={`input-payment-amount-${p.id}`}
+                        />
+                      </div>
+                      <div className="flex-1 space-y-0.5">
+                        <span className="text-xs text-muted-foreground">Hạn</span>
+                        <Popover open={openDuePicker === p.id} onOpenChange={v => setOpenDuePicker(v ? p.id : null)}>
+                          <PopoverTrigger asChild>
+                            <button
+                              className="w-full flex items-center gap-1.5 h-8 px-2 rounded-md border bg-background text-xs hover:border-purple-400 transition-colors"
+                              data-testid={`button-due-date-${p.id}`}
+                            >
+                              <CalendarIcon className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                              <span className={p.due ? "text-foreground" : "text-muted-foreground"}>
+                                {p.due ? format(p.due, "dd/MM/yyyy") : "Chọn ngày..."}
+                              </span>
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start" side="left">
+                            <Calendar
+                              mode="single"
+                              selected={p.due}
+                              onSelect={(date: Date | undefined) => { if (date) updatePaymentDue(p.id, date); }}
+                              locale={vi}
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                    </div>
+                    {/* Hình thức thanh toán */}
+                    <div className="flex gap-2 items-end">
+                      <div className="space-y-0.5 w-36 flex-shrink-0">
+                        <span className="text-xs text-muted-foreground">Hình thức</span>
+                        <Select
+                          value={p.paymentMethod}
+                          onValueChange={v => setPaymentSchedule(prev => prev.map(x => x.id === p.id ? { ...x, paymentMethod: v, bank: v === "cash" ? "" : x.bank } : x))}
+                        >
+                          <SelectTrigger className="h-8 text-xs" data-testid={`select-payment-method-${p.id}`}><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="cash">Tiền mặt</SelectItem>
+                            <SelectItem value="transfer">Chuyển khoản</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {p.paymentMethod === "transfer" && (
+                        <div className="flex-1 space-y-0.5">
+                          <span className="text-xs text-muted-foreground">Ngân hàng</span>
+                          <Select
+                            value={p.bank}
+                            onValueChange={v => setPaymentSchedule(prev => prev.map(x => x.id === p.id ? { ...x, bank: v } : x))}
+                          >
+                            <SelectTrigger className="h-8 text-xs" data-testid={`select-bank-${p.id}`}><SelectValue placeholder="Chọn ngân hàng" /></SelectTrigger>
+                            <SelectContent>
+                              {locationBanks.length === 0
+                                ? <SelectItem value="_none" disabled>Chưa cấu hình ngân hàng</SelectItem>
+                                : locationBanks.map((b, i) => (
+                                    <SelectItem key={i} value={b.bankAccount}>
+                                      {b.bankName} - {b.bankAccount}{b.accountHolder ? ` (${b.accountHolder})` : ""}
+                                    </SelectItem>
+                                  ))
+                              }
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer actions */}
+        <div className="flex items-center justify-end gap-2 px-6 py-3 border-t bg-muted/20 flex-shrink-0">
+          <Button variant="outline" onClick={onClose} disabled={saveMutation.isPending} data-testid="button-cancel">Huỷ</Button>
+          <Button className="bg-purple-600 hover:bg-purple-700 gap-1" onClick={handleSave} disabled={saveMutation.isPending} data-testid="button-save-pay">
+            {saveMutation.isPending ? "Đang lưu..." : isEdit ? "Cập nhật phiếu" : "Lưu"}
+          </Button>
+        </div>
+      </DialogContent>
+      </Dialog>
+      <FinancePromotionDialog
+        open={quickCreateType !== null}
+        onClose={() => {
+          if (!createPromotionMutation.isPending) {
+            setQuickCreateType(null);
+            setQuickCreateTarget(null);
+          }
+        }}
+        title={quickCreateType === "promotion" ? "Thêm mới khuyến mãi" : "Thêm mới phụ thu"}
+        isSaving={createPromotionMutation.isPending}
+        onSave={data => {
+          if (quickCreateType) {
+            createPromotionMutation.mutate({ type: quickCreateType, data });
+          }
+        }}
+      />
+    </>
+  );
+}

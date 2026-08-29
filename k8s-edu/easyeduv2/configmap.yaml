@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: easyeduv2-config
+  namespace: production
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  DATABASE_URL: "postgresql://postgres:chiakhoathanhcong@42.96.40.138:5432/easyedu_new"
+  AWS_ACCESS_KEY_ID: "VR7KMVGVJFKDD7DI4AJJ"
+  AWS_SECRET_ACCESS_KEY: "qsppIkRloxY5Y9ti0efTmFwAnLgztborND94PDKu"
+  S3_ENABLED: "true"
+  S3_ENDPOINT: "https://s3.hn-1.cloud.cmctelecom.vn"
+  S3_BUCKET: "easyedu"
+  S3_REGION: "s3-hn-1"
+  S3_PROTOCOL: "https"
+  S3_HOSTNAME: "s3.hn-1.cloud.cmctelecom.vn"
+  S3_ALIAS_HOST: "cdn3.emso.vn/easyedu"
+  S3_FOLDER_PORTAL: "easyedu"
+  AI_ENCRYPT_SECRET: "83fb9fed117194980efeb027ab416025"
+  SYSTEM_ENCRYPTION_KEY: "83fb9fed117194980efeb027ab416025"
+  SECRET_KEY_BASE: "938939b1ae243dbca8364b42bbbfb2c21a1b9ced874cc060dd673d69da7cba58e53d3cffdd5eaecd77e3c23a4fdaa7fed9fdf17ac9838089809ae4ba5bdaffdd"
+  SESSION_SECRET: "Ka00wbrYlIfT++63ye74jwq01lAOcNbfepXNUWmyq9hfVOwi3jrzGHs00L5mG5U4RsBPVzk0F/PYJ3grukD1Lg=="
+  JWT_SECRET: ""
+  # === Tinode chat integration ===
+  # NOTE: in production, move *_PASS and *_SECRET into a Kubernetes Secret
+  # (envFrom: secretRef) instead of ConfigMap. ConfigMaps are NOT encrypted.
+  TINODE_URL: "https://chattinode.easyedu.vn"
+  TINODE_API_KEY: "AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K"
+  TINODE_BOT_USER: "edumanage_bot_v2"
+  # Password ≤32 chars (bắt buộc — Tinode Web maxLength=32, password dài hơn sẽ
+  # bị cắt khi user gõ vào form → 401). Khi đổi giá trị này phải đồng thời update
+  # bcrypt hash cho user trong MongoDB Tinode.
+  TINODE_BOT_PASS: "M1mwB493gLwB8Sk4+z6k2/66BrE21V5k"
+  TINODE_USER_PASS_SECRET: "DcD4ZGBfstLXTtkXxmPAKZs+ntFRPo5b98Bd1xpWJLo="
+  # Bump khi cần "reset" toàn bộ user account trên Tinode (tạo lại tất cả với
+  # password derive từ TINODE_USER_PASS_SECRET hiện tại). Tăng số nguyên: 2, 3, …
+  # v3 = lần đổi sang quy ước password ≤32 chars (slice hex xuống 32). User account
+  # cũ (64-char password) sẽ bị bỏ và account mới u3_<userId> được tạo tự động.
+  TINODE_LOGIN_VERSION: "3"
+  TINODE_USER_AGENT: "EduManage/1.0"
+  TINODE_REQUEST_TIMEOUT_MS: "10000"
+  # -1 = retry vô hạn (khuyến nghị cho production).
+  # Nếu set số cụ thể (vd "5"), sau đúng N lần disconnect bot sẽ bỏ cuộc vĩnh viễn
+  # → chat chết hoàn toàn cho đến khi restart pod.
+  TINODE_MAX_RETRIES: "-1"
+  TINODE_RETRY_BACKOFF_MS: "5000"
+  # === Multi-tenant ===
+  # Định danh trung tâm — phải UNIQUE giữa các center share cùng Tinode/MongoDB.
+  # Pattern: ^[a-z][a-z0-9_]{2,30}$
+  # Dùng để tag mọi user/topic Tinode tạo từ deployment này
+  # → cho phép off-board sạch (xoá data theo `tenant:<CENTER_ID>` trong MongoDB).
+  # KHÔNG đổi giá trị này sau khi đã chạy production.
+  CENTER_ID: "easyeduv2"
+  SMTP_HOST: "smtp.gmail.com"
+  SMTP_PORT: "587"
+  SMTP_USER: ""
+  SMTP_PASS: ""
+  SMTP_FROM: ""
+  # === Zalo OA integration ===
+  ZALO_APP_ID: "3893082419628875509"
+  ZALO_APP_SECRET: "ESgSX8LBysNDJECWXbUY"
+  ZALO_GATEWAY_CALLBACK_URL: "https://easyeduv2.easyedu.vn/zalo/callback"
+  ZALO_GATEWAY_SHARED_SECRET: "easyedu_secure_2026_key"
+  ZALO_WEBHOOK_URL: "https://easyeduv2.easyedu.vn/zalo/webhook"
+  CENTER_PUBLIC_URL: "https://easyeduv2.easyedu.vn"
+  # === Facebook webhook gateway ===
+  # Webhook URL: https://easyeduv2.easyedu.vn/facebook/webhook
+  # Verify Token: nhập vào Facebook Developer Console → Webhooks → Verify Token
+  FACEBOOK_WEBHOOK_VERIFY_TOKEN: "Easyedu2026_Webhook_Secret"
+  FACEBOOK_APP_ID: "1318733013437062"
+  FACEBOOK_APP_SECRET: "7a691bae8dcc61a108a09c3aa3746034"

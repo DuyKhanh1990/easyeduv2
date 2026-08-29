@@ -1,0 +1,27 @@
+- [Schema consolidation rule](schema-consolidation.md) — shared/schema.ts is the only source of truth; no inline DDL in routes/storage/startup; what is allowed outside schema.ts.
+- [Tinode P2P chat quirks](tinode-p2p-chat.md) — UID format u\d*_xxx, no usr prefix for P2P subscribe, name resolution via scheduleFetchNames+registerName.
+- [Tinode DM-as-group pattern](tinode-dm-as-group.md) — chat 1-1 dùng grp* topic (không dùng native P2P); topicId trả về từ /api/chat/p2p/open; DM topics cần nằm trong allowedGroupTopics.
+- [queryClient null-return bug](queryclient-null-return.md) — default queryFn used to return null (not undefined) when no JWT; fix: remove early-return line so session cookies work and defaults apply.
+- [Exam picker mobile endpoint](exam-picker-mobile.md) — ExamPickerDialog phải dùng /api/mobile/staff/exams, không dùng /api/exams (lý do: location filter + mobile context).
+- [Tinode stale topic & name resolution](tinode-stale-topic-names.md) — stale grp* topics after MongoDB wipe + knownUidsRef caching null names; fix pattern documented.
+- [Multiple npm install roots](monorepo-install-roots.md) — root, gateway/, artifacts/mockup-sandbox/ each need their own npm install or their workflows fail with "command not found".
+- [Invoice staff notifications](invoice-staff-notifications.md) — staff-targeted invoices resolve recipient via subjectName "[CODE]" regex, not studentId; salary-payment path is separate from main invoice PATCH.
+- [Notification deeplink routing](notification-deeplink-routing.md) — prefer stored notifications.deeplink over category/referenceType inference; staff vs student need different route mappings per surface.
+- [Tinode bot subscription 403 fix](tinode-bot-subscription-403.md) — set.sub.mode trong subscribeToTopic gây 403 nếu mode vượt defacs; phải bỏ set hoàn toàn.
+- [Chat push UUID bug](chat-push-uuid-bug.md) — notifications.reference_id is UUID; passing Tinode topic string silently fails inside Promise.allSettled — must use chat_groups.id.
+- [Calendar color consistency](calendar-color-consistency.md) — lịch tháng ưu tiên màu lớp, fallback cùng bảng màu/hash với Schedule, giữ đỏ cho buổi hủy.
+- [Development schema push quirk](dev-schema-push-quirk.md) — khi Drizzle không hoàn tất prompt tương tác, chỉ đồng bộ DDL bảng mới ở development và xác minh lại.
+- [BIDV reconciliation boundary](bidv-reconciliation-boundary.md) — đối soát là lớp bổ sung chỉ đọc; giữ nguyên getbill/paybill, checksum, cấu hình và side effects hiện có.
+- [Deferred tuition receipts](deferred-tuition-receipts.md) — phiếu thu học phí trả sau tạo phiếu thật qua dialog nhanh, hỗ trợ thu đủ hoặc một phần.
+- [Facebook Gateway routing](facebook-gateway-routing.md) — Facebook routing tập trung ở Gateway; pageId → centerId, còn locationId chỉ có ý nghĩa trong DB trung tâm.
+- [BIDV QR visibility](bidv-qr-visibility.md) — cờ hiển thị QR theo cơ sở độc lập với bật/tắt thanh toán BIDV và chỉ ẩn tab QR BIDV.
+- [Invoice summary cards](invoice-summary-cards.md) — thẻ thu-chi độc lập tab trạng thái, bám bộ lọc và loại hóa đơn hủy khỏi dự thu/chi.
+- [Omicall caller routing](omicall-caller-routing.md) — gọi ra phải ghép cấu hình tenant theo cơ sở với máy lẻ của nhân sự đăng nhập ở server.
+- [Imported encrypted provider settings](imported-encrypted-provider-settings.md) — sau khi import, secret mã hóa có thể khác; giữ cấu hình đọc được để admin thay credential thay vì trả 500.
+- [Page guide edit permissions](page-guide-edit-permissions.md) — tài liệu riêng theo từng trang; chỉ host gốc và Super Admin được sửa, host khác chỉ đọc.
+- [Schedule popup responsiveness](schedule-popup-responsiveness.md) — ưu tiên hiển thị popup lịch học trước khi mount cây component nặng; không thay đổi cơ chế chi tiết theo session.
+- [CRM relationship history preservation](crm-relationship-history-preservation.md) — không backfill relationship IDs bằng tên pipeline lúc khởi động; tên trùng có thể khôi phục nhầm quan hệ đã xóa.
+- [Invoice editable dates](invoice-editable-dates.md) — ngày tạo và ngày thanh toán được sửa inline; ngày thanh toán không được trước ngày tạo và mọi thay đổi phải vào audit history.
+- [Deleted account login](deleted-account-login.md) — xoá hồ sơ phải vô hiệu hóa user liên kết; login cũng chặn user mồ côi còn sót lại để tránh đăng nhập bằng mật khẩu cũ.
+- [Commission board rules](commission-board-rules.md) — bảng tính từ cấu hình; ngày nghiệp vụ theo trạng thái, xếp chung các trạng thái và cộng dồn cấu hình trùng.
+- [Customer status card source](customer-status-card-source.md) — các thẻ trạng thái trên /customers lấy từ student_classes; không thay logic báo cáo, bộ lọc hoặc trạng thái từng dòng.

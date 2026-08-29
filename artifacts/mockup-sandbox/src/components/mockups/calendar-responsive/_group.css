@@ -1,0 +1,32 @@
+@import url("https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap");
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 0 0% 13%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 13%;
+  --primary: 207 79% 51%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 96%;
+  --secondary-foreground: 0 0% 13%;
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 46%;
+  --border: 0 0% 74%;
+  --ring: 207 79% 51%;
+  --radius: 0.75rem;
+  --font-sans: "Roboto", Helvetica, Arial, sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+.calendar-mockup-scrollbar-hide {
+  scrollbar-width: none;
+}
+
+.calendar-mockup-scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
