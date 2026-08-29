@@ -7,7 +7,7 @@ interface UpdateStudentMutation {
 }
 
 interface DeleteStudentMutation {
-  mutate: (id: string) => void;
+  mutateAsync: (id: string) => Promise<unknown>;
 }
 
 interface ParentRecord {
@@ -275,11 +275,44 @@ export function useCustomersBulkActions({
     }
   };
 
-  const handleBulkDelete = (selectedIds: string[]) => {
+  const handleBulkDelete = async (selectedIds: string[]) => {
     if (!confirm(`Bạn có chắc chắn muốn xoá ${selectedIds.length} học viên đã chọn?`)) return;
-    selectedIds.forEach((id) => deleteStudent.mutate(id));
-    setSelectedIds([]);
-    toast({ title: "Thành công", description: `Đã xoá ${selectedIds.length} học viên.` });
+
+    const results = await Promise.allSettled(
+      selectedIds.map((id) => deleteStudent.mutateAsync(id))
+    );
+    const failedIds = selectedIds.filter((_, index) => results[index].status === "rejected");
+    const successCount = selectedIds.length - failedIds.length;
+
+    setSelectedIds(failedIds);
+
+    if (failedIds.length === 0) {
+      toast({ title: "Thành công", description: `Đã xoá ${successCount} học viên.` });
+      return;
+    }
+
+    const firstFailure = results.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected"
+    );
+    const errorMessage =
+      firstFailure?.reason instanceof Error
+        ? firstFailure.reason.message
+        : "Không thể xoá một số học viên.";
+
+    if (successCount === 0) {
+      toast({
+        title: "Không thể xoá",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    toast({
+      title: "Chỉ xoá được một phần",
+      description: `Đã xoá ${successCount}/${selectedIds.length} học viên. ${failedIds.length} học viên chưa thể xoá: ${errorMessage}`,
+      variant: "destructive",
+    });
   };
 
   return {
