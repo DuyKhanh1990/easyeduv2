@@ -8,6 +8,16 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -50,6 +60,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
   const [selectedScoreSheetId, setSelectedScoreSheetId] = useState<string>("");
   const [scores, setScores] = useState<Record<string, Record<string, string>>>({});
   const [removedStudentIds, setRemovedStudentIds] = useState<Set<string>>(new Set());
+  const [pendingRemoval, setPendingRemoval] = useState<{ id: string; name: string } | null>(null);
   const [published, setPublished] = useState(false);
   const [studentComments, setStudentComments] = useState<Record<string, string>>({});
   const [commentDialogOpen, setCommentDialogOpen] = useState(false);
@@ -100,8 +111,8 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
 
   const allStudents = activeStudents || [];
   const displayedStudents = allStudents.filter((s: any) => {
-    const id = s.id || s.studentId;
-    return !removedStudentIds.has(id);
+    const actualStudentId = s.studentId || s.student?.id || s.id;
+    return !removedStudentIds.has(actualStudentId);
   });
 
   useEffect(() => {
@@ -259,7 +270,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
     allStudents.forEach((student: any) => {
       const enrollmentId = student.id;
       const actualStudentId = student.studentId || student.student?.id || student.id;
-      if (!removedStudentIds.has(enrollmentId)) {
+      if (!removedStudentIds.has(actualStudentId)) {
         categories.forEach((cat: any) => {
           const score = scores[enrollmentId]?.[cat.id] || "";
           if (score) scoreList.push({ studentId: actualStudentId, categoryId: cat.id, score });
@@ -275,7 +286,30 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
       sessionId: selectedSessionId !== NONE_VALUE ? selectedSessionId : null,
       scores: scoreList,
       studentComments: studentCommentMap,
+      excludedStudentIds: Array.from(removedStudentIds),
       published,
+    });
+  };
+
+  const requestRemoveStudent = (studentId: string, studentName: string) => {
+    setPendingRemoval({ id: studentId, name: studentName });
+  };
+
+  const confirmRemoveStudent = () => {
+    if (!pendingRemoval) return;
+    setRemovedStudentIds((prev) => {
+      const next = new Set(prev);
+      next.add(pendingRemoval.id);
+      return next;
+    });
+    setPendingRemoval(null);
+  };
+
+  const restoreStudent = (studentId: string) => {
+    setRemovedStudentIds((prev) => {
+      const next = new Set(prev);
+      next.delete(studentId);
+      return next;
     });
   };
 
@@ -411,7 +445,44 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
                   <p className="text-sm text-muted-foreground">Bảng điểm này chưa có danh mục điểm</p>
                 </div>
               ) : (
-                <Table>
+                <div>
+                  {removedStudentIds.size > 0 && (
+                    <div className="flex items-center gap-2 px-4 py-2 border-b border-border/40 bg-muted/30">
+                      <span className="text-xs text-muted-foreground">
+                        {removedStudentIds.size} học viên đã được loại khỏi bảng điểm
+                      </span>
+                      <Select onValueChange={restoreStudent}>
+                        <SelectTrigger className="h-7 w-auto min-w-[170px] text-xs">
+                          <SelectValue placeholder="Thêm lại học viên" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {allStudents
+                            .filter((student: any) =>
+                              removedStudentIds.has(
+                                student.studentId || student.student?.id || student.id
+                              )
+                            )
+                            .map((student: any) => {
+                              const restoredStudentId =
+                                student.studentId || student.student?.id || student.id;
+                              return (
+                                <SelectItem
+                                  key={restoredStudentId}
+                                  value={restoredStudentId}
+                                  className="text-xs"
+                                >
+                                  {student.fullName ||
+                                    student.full_name ||
+                                    student.student?.fullName ||
+                                    "Học viên"}
+                                </SelectItem>
+                              );
+                            })}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  <Table>
                   <TableHeader className="sticky top-0 bg-background z-10">
                     <TableRow>
                       <TableHead className="min-w-[180px] sticky left-0 bg-background z-20 border-r">
@@ -448,6 +519,8 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
                     ) : (
                       displayedStudents.map((student: any, idx: number) => {
                         const studentId = student.id || student.studentId;
+                        const actualStudentId =
+                          student.studentId || student.student?.id || student.id;
                         const name =
                           student.fullName || student.full_name || student.student?.fullName || `Học viên ${idx + 1}`;
                         return (
@@ -490,9 +563,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
                                   variant="ghost"
                                   size="icon"
                                   className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                  onClick={() =>
-                                    setRemovedStudentIds((p) => new Set([...p, studentId]))
-                                  }
+                                  onClick={() => requestRemoveStudent(actualStudentId, name)}
                                   title="Xoá học viên khỏi bảng điểm"
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
@@ -504,7 +575,8 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
                       })
                     )}
                   </TableBody>
-                </Table>
+                  </Table>
+                </div>
               )}
             </div>
           </div>
@@ -539,6 +611,27 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={!!pendingRemoval}
+        onOpenChange={(open) => {
+          if (!open) setPendingRemoval(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa học viên khỏi bảng điểm?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bạn có chắc muốn loại {pendingRemoval?.name || "học viên này"} khỏi bảng điểm không?
+              Dữ liệu điểm và nhận xét sẽ được giữ lại để có thể thêm lại.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmRemoveStudent}>Đồng ý</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={commentDialogOpen} onOpenChange={setCommentDialogOpen}>
         <DialogContent className="max-w-[672px]">

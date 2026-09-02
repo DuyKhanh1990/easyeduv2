@@ -5564,6 +5564,7 @@ export function registerClassesRoutes(app: Express): void {
           gb.score_sheet_id,
           gb.session_id,
           gb.published,
+          gb.excluded_student_ids,
           gb.created_by,
           gb.updated_by,
           gb.created_at,
@@ -5595,6 +5596,7 @@ export function registerClassesRoutes(app: Express): void {
         scoreSheetId: z.string().uuid(),
         sessionId: z.string().uuid().nullable().optional(),
         published: z.boolean().optional().default(false),
+        excludedStudentIds: z.array(z.string().uuid()).optional().default([]),
         studentComments: z.record(z.string()).optional().default({}),
         scores: z.array(z.object({
           studentId: z.string().uuid(),
@@ -5609,6 +5611,7 @@ export function registerClassesRoutes(app: Express): void {
         scoreSheetId: body.scoreSheetId,
         sessionId: body.sessionId || null,
         published: body.published ?? false,
+        excludedStudentIds: body.excludedStudentIds,
         createdBy: userId || null,
         updatedBy: userId || null,
       }).returning();
@@ -5650,6 +5653,11 @@ export function registerClassesRoutes(app: Express): void {
   app.get("/api/classes/:classId/grade-books/:id", async (req, res) => {
     try {
       const { id } = req.params;
+      const [book] = await db
+        .select({ excludedStudentIds: classGradeBooks.excludedStudentIds })
+        .from(classGradeBooks)
+        .where(eq(classGradeBooks.id, id))
+        .limit(1);
       const scores = await db
         .select()
         .from(classGradeBookScores)
@@ -5660,7 +5668,7 @@ export function registerClassesRoutes(app: Express): void {
         .where(eq(classGradeBookStudentComments.gradeBookId, id));
       const studentComments: Record<string, string> = {};
       commentRows.forEach(row => { studentComments[row.studentId] = row.comment; });
-      res.json({ scores, studentComments });
+      res.json({ scores, studentComments, excludedStudentIds: book?.excludedStudentIds || [] });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -5675,6 +5683,7 @@ export function registerClassesRoutes(app: Express): void {
         scoreSheetId: z.string().uuid().optional(),
         sessionId: z.string().uuid().nullable().optional(),
         published: z.boolean().optional(),
+        excludedStudentIds: z.array(z.string().uuid()).optional(),
         studentComments: z.record(z.string()).optional(),
         scores: z.array(z.object({
           studentId: z.string().uuid(),
@@ -5702,6 +5711,7 @@ export function registerClassesRoutes(app: Express): void {
       if (body.scoreSheetId) updateData.scoreSheetId = body.scoreSheetId;
       if ('sessionId' in body) updateData.sessionId = body.sessionId;
       if ('published' in body) updateData.published = body.published;
+      if ('excludedStudentIds' in body) updateData.excludedStudentIds = body.excludedStudentIds;
 
       const [updated] = await db.update(classGradeBooks)
         .set(updateData)

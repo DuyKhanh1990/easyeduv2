@@ -10,6 +10,16 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -50,6 +60,7 @@ export function AddGradeBookFromOverviewDialog({ open, onClose }: Props) {
   const [selectedScoreSheetId, setSelectedScoreSheetId] = useState<string>("");
   const [scores, setScores] = useState<Record<string, Record<string, string>>>({});
   const [removedStudentIds, setRemovedStudentIds] = useState<Set<string>>(new Set());
+  const [pendingRemoval, setPendingRemoval] = useState<{ id: string; name: string } | null>(null);
   const [published, setPublished] = useState(false);
   const [commentDialogOpen, setCommentDialogOpen] = useState(false);
   const [commentStudentId, setCommentStudentId] = useState<string>("");
@@ -112,8 +123,8 @@ export function AddGradeBookFromOverviewDialog({ open, onClose }: Props) {
 
   const allStudents = activeStudents || [];
   const displayedStudents = allStudents.filter((s: any) => {
-    const id = s.id || s.studentId;
-    return !removedStudentIds.has(id);
+    const actualStudentId = s.studentId || s.student?.id || s.id;
+    return !removedStudentIds.has(actualStudentId);
   });
 
   const sheetItems = selectedScoreSheet?.items || [];
@@ -154,6 +165,7 @@ export function AddGradeBookFromOverviewDialog({ open, onClose }: Props) {
       setSelectedSessionId(NONE_VALUE);
       setScores({});
       setRemovedStudentIds(new Set());
+      setPendingRemoval(null);
       setStudentComments({});
     }
   }, [selectedClassId]);
@@ -166,6 +178,7 @@ export function AddGradeBookFromOverviewDialog({ open, onClose }: Props) {
     setSelectedScoreSheetId("");
     setScores({});
     setRemovedStudentIds(new Set());
+    setPendingRemoval(null);
     setPublished(false);
     setStudentComments({});
   };
@@ -272,9 +285,32 @@ export function AddGradeBookFromOverviewDialog({ open, onClose }: Props) {
   };
 
   const handleRemoveStudent = (studentId: string) => {
+    const student = allStudents.find((s: any) => {
+      const actualStudentId = s.studentId || s.student?.id || s.id;
+      return actualStudentId === studentId;
+    });
+    const name =
+      student?.fullName ||
+      student?.full_name ||
+      student?.student?.fullName ||
+      "học viên này";
+    setPendingRemoval({ id: studentId, name });
+  };
+
+  const confirmRemoveStudent = () => {
+    if (!pendingRemoval) return;
     setRemovedStudentIds((prev) => {
       const next = new Set(prev);
-      next.add(studentId);
+      next.add(pendingRemoval.id);
+      return next;
+    });
+    setPendingRemoval(null);
+  };
+
+  const restoreStudent = (studentId: string) => {
+    setRemovedStudentIds((prev) => {
+      const next = new Set(prev);
+      next.delete(studentId);
       return next;
     });
   };
@@ -353,6 +389,7 @@ export function AddGradeBookFromOverviewDialog({ open, onClose }: Props) {
       sessionId: selectedSessionId !== NONE_VALUE ? selectedSessionId : null,
       scores: buildScoreList(),
       studentComments: buildStudentComments(),
+      excludedStudentIds: Array.from(removedStudentIds),
       published,
     };
 
@@ -551,6 +588,42 @@ export function AddGradeBookFromOverviewDialog({ open, onClose }: Props) {
                 </div>
               ) : (
                 <div className="h-full">
+                  {removedStudentIds.size > 0 && (
+                    <div className="flex items-center gap-2 px-4 py-2 border-b border-border/40 bg-muted/30">
+                      <span className="text-xs text-muted-foreground">
+                        {removedStudentIds.size} học viên đã được loại khỏi bảng điểm
+                      </span>
+                      <Select onValueChange={restoreStudent}>
+                        <SelectTrigger className="h-7 w-auto min-w-[170px] text-xs">
+                          <SelectValue placeholder="Thêm lại học viên" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {allStudents
+                            .filter((student: any) =>
+                              removedStudentIds.has(
+                                student.studentId || student.student?.id || student.id
+                              )
+                            )
+                            .map((student: any) => {
+                              const restoredStudentId =
+                                student.studentId || student.student?.id || student.id;
+                              return (
+                                <SelectItem
+                                  key={restoredStudentId}
+                                  value={restoredStudentId}
+                                  className="text-xs"
+                                >
+                                  {student.fullName ||
+                                    student.full_name ||
+                                    student.student?.fullName ||
+                                    "Học viên"}
+                                </SelectItem>
+                              );
+                            })}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   <Table>
                     <TableHeader className="sticky top-0 bg-background z-10">
                       <TableRow>
@@ -638,7 +711,7 @@ export function AddGradeBookFromOverviewDialog({ open, onClose }: Props) {
                                     variant="ghost"
                                     size="icon"
                                     className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                    onClick={() => handleRemoveStudent(studentId)}
+                                    onClick={() => handleRemoveStudent(actualStudentId)}
                                     title="Xoá học viên khỏi bảng điểm"
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
@@ -693,6 +766,27 @@ export function AddGradeBookFromOverviewDialog({ open, onClose }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={!!pendingRemoval}
+        onOpenChange={(open) => {
+          if (!open) setPendingRemoval(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa học viên khỏi bảng điểm?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bạn có chắc muốn loại {pendingRemoval?.name || "học viên này"} khỏi bảng điểm không?
+              Dữ liệu điểm và nhận xét sẽ được giữ lại để có thể thêm lại.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmRemoveStudent}>Đồng ý</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Comment dialog */}
       <Dialog open={commentDialogOpen} onOpenChange={setCommentDialogOpen}>

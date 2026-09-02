@@ -42,6 +42,7 @@ export function GradeBookViewDialog({
 }: GradeBookViewDialogProps) {
   const [scores, setScores] = useState<Record<string, Record<string, string>>>({});
   const [comments, setComments] = useState<Record<string, string>>({});
+  const [excludedStudentIds, setExcludedStudentIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [commentViewOpen, setCommentViewOpen] = useState(false);
   const [commentViewName, setCommentViewName] = useState("");
@@ -68,12 +69,16 @@ export function GradeBookViewDialog({
       .filter(Boolean)
   );
 
-  const allStudents = activeStudents || [];
+  const allStudents = (activeStudents || []).filter((s: any) => {
+    const actualStudentId = s.studentId || s.student?.id || s.id;
+    return !excludedStudentIds.has(actualStudentId);
+  });
 
   useEffect(() => {
     if (!open) return;
     setScores({});
     setComments({});
+    setExcludedStudentIds(new Set());
     setLoading(true);
 
     fetch(`/api/classes/${classId}/grade-books/${book.id}`, { credentials: "include" })
@@ -81,6 +86,7 @@ export function GradeBookViewDialog({
       .then((data) => {
         const existingScores: any[] = data.scores || [];
         const existingComments: Record<string, string> = data.studentComments || {};
+        setExcludedStudentIds(new Set(data.excludedStudentIds || []));
 
         const studentIdToEnrollmentId: Record<string, string> = {};
         (activeStudents || []).forEach((s: any) => {

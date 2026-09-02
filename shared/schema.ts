@@ -1603,6 +1603,7 @@ export const classGradeBooks = pgTable("class_grade_books", {
   scoreSheetId: uuid("score_sheet_id").notNull().references(() => scoreSheets.id, { onDelete: "restrict" }),
   sessionId: uuid("session_id").references(() => classSessions.id, { onDelete: "set null" }),
   published: boolean("published").default(false).notNull(),
+  excludedStudentIds: uuid("excluded_student_ids").array().notNull().default(sql`'{}'`),
   studentComments: jsonb("student_comments").default({}).notNull(),
   createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
   updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),

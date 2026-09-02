@@ -20,6 +20,16 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -57,6 +67,7 @@ export function ScoreSheetTabContent({
   const [selectedScoreSheetId, setSelectedScoreSheetId] = useState<string>("");
   const [scores, setScores] = useState<Record<string, Record<string, string>>>({});
   const [removedStudentIds, setRemovedStudentIds] = useState<Set<string>>(new Set());
+  const [pendingRemoval, setPendingRemoval] = useState<{ id: string; name: string } | null>(null);
   const [published, setPublished] = useState(false);
   const [commentDialogOpen, setCommentDialogOpen] = useState(false);
   const [commentStudentId, setCommentStudentId] = useState<string>("");
@@ -105,8 +116,8 @@ export function ScoreSheetTabContent({
 
   const allStudents = activeStudents || [];
   const displayedStudents = allStudents.filter((s: any) => {
-    const id = s.id || s.studentId;
-    return !removedStudentIds.has(id);
+    const actualStudentId = s.studentId || s.student?.id || s.id;
+    return !removedStudentIds.has(actualStudentId);
   });
 
   useEffect(() => {
@@ -166,6 +177,7 @@ export function ScoreSheetTabContent({
     setSelectedScoreSheetId(classData?.scoreSheetId || "");
     setScores({});
     setRemovedStudentIds(new Set());
+    setPendingRemoval(null);
     setPublished(false);
     setStudentComments({});
     setGradePage(0);
@@ -178,6 +190,7 @@ export function ScoreSheetTabContent({
     setSelectedSessionId(book.session_id || NONE_VALUE);
     setSelectedScoreSheetId(book.score_sheet_id);
     setRemovedStudentIds(new Set());
+    setPendingRemoval(null);
     setPublished(book.published || false);
     setStudentComments({});
     setScores({});
@@ -190,6 +203,7 @@ export function ScoreSheetTabContent({
       const data = await resp.json();
       const existingScores: any[] = data.scores || [];
       const existingComments: Record<string, string> = data.studentComments || {};
+      setRemovedStudentIds(new Set(data.excludedStudentIds || []));
 
       const studentIdToEnrollmentId: Record<string, string> = {};
       (activeStudents || []).forEach((s: any) => {
@@ -344,10 +358,24 @@ export function ScoreSheetTabContent({
     });
   };
 
-  const handleRemoveStudent = (studentId: string) => {
+  const handleRemoveStudent = (studentId: string, studentName: string) => {
+    setPendingRemoval({ id: studentId, name: studentName });
+  };
+
+  const confirmRemoveStudent = () => {
+    if (!pendingRemoval) return;
     setRemovedStudentIds((prev) => {
       const next = new Set(prev);
-      next.add(studentId);
+      next.add(pendingRemoval.id);
+      return next;
+    });
+    setPendingRemoval(null);
+  };
+
+  const restoreStudent = (studentId: string) => {
+    setRemovedStudentIds((prev) => {
+      const next = new Set(prev);
+      next.delete(studentId);
       return next;
     });
   };
@@ -407,6 +435,7 @@ export function ScoreSheetTabContent({
       sessionId: selectedSessionId !== NONE_VALUE ? selectedSessionId : null,
       scores: scoreList,
       studentComments: buildStudentComments(),
+      excludedStudentIds: Array.from(removedStudentIds),
       published,
     };
 
@@ -675,6 +704,42 @@ export function ScoreSheetTabContent({
                 </div>
               ) : (
                 <div className="h-full flex flex-col">
+                  {removedStudentIds.size > 0 && (
+                    <div className="flex items-center gap-2 px-4 py-2 border-b border-border/40 bg-muted/30">
+                      <span className="text-xs text-muted-foreground">
+                        {removedStudentIds.size} học viên đã được loại khỏi bảng điểm
+                      </span>
+                      <Select onValueChange={restoreStudent}>
+                        <SelectTrigger className="h-7 w-auto min-w-[170px] text-xs">
+                          <SelectValue placeholder="Thêm lại học viên" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {allStudents
+                            .filter((student: any) =>
+                              removedStudentIds.has(
+                                student.studentId || student.student?.id || student.id
+                              )
+                            )
+                            .map((student: any) => {
+                              const restoredStudentId =
+                                student.studentId || student.student?.id || student.id;
+                              return (
+                                <SelectItem
+                                  key={restoredStudentId}
+                                  value={restoredStudentId}
+                                  className="text-xs"
+                                >
+                                  {student.fullName ||
+                                    student.full_name ||
+                                    student.student?.fullName ||
+                                    "Học viên"}
+                                </SelectItem>
+                              );
+                            })}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   <div className="flex-1 overflow-auto">
                   <Table>
                     <TableHeader className="sticky top-0 bg-background z-10">
@@ -756,7 +821,7 @@ export function ScoreSheetTabContent({
                                     size="icon"
                                     className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
                                     data-testid={`button-remove-student-${studentId}`}
-                                    onClick={() => handleRemoveStudent(studentId)}
+                                    onClick={() => handleRemoveStudent(actualStudentId, name)}
                                     title="Xoá học viên khỏi bảng điểm"
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
@@ -847,6 +912,27 @@ export function ScoreSheetTabContent({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={!!pendingRemoval}
+        onOpenChange={(open) => {
+          if (!open) setPendingRemoval(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa học viên khỏi bảng điểm?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bạn có chắc muốn loại {pendingRemoval?.name || "học viên này"} khỏi bảng điểm không?
+              Dữ liệu điểm và nhận xét sẽ được giữ lại để có thể thêm lại.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmRemoveStudent}>Đồng ý</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Comment dialog */}
       <Dialog open={commentDialogOpen} onOpenChange={setCommentDialogOpen}>
