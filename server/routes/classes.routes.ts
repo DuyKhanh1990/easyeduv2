@@ -3314,15 +3314,15 @@ export function registerClassesRoutes(app: Express): void {
     if (activeClasses.length === 0) return { holidays: holidayRows, classes: [], totalSessions: 0 };
     const activeClassIds = activeClasses.map(c => c.id);
 
-    // 3. Find all sessions in any holiday date range for these classes
-    //    Build a big OR of date ranges so we only hit the DB once
+    // 3. Find all scheduled sessions in any holiday date range for these classes.
+    //    Include past sessions: schedules can be created or corrected retroactively.
+    //    Build a big OR of date ranges so we only hit the DB once.
     const dateConditions = holidayRows.map(h =>
       and(
         gte(classSessions.sessionDate, h.startDate),
         lte(classSessions.sessionDate, h.endDate)
       )
     );
-    const today = new Date().toISOString().slice(0, 10); // yyyy-MM-dd
     const allMatchingSessions = await db.select({
       id: classSessions.id,
       classId: classSessions.classId,
@@ -3331,9 +3331,8 @@ export function registerClassesRoutes(app: Express): void {
       teacherIds: classSessions.teacherIds,
     }).from(classSessions).where(and(
       inArray(classSessions.classId, activeClassIds),
-      eq(classSessions.status, "scheduled"),    // only future/pending sessions
+      eq(classSessions.status, "scheduled"),    // only sessions not already attended/cancelled
       isNotNull(classSessions.sessionIndex),    // skip sessions missing sessionIndex (would map to 0 and cause wrong exclusion)
-      gte(classSessions.sessionDate, today),     // never touch past sessions
       or(...dateConditions)
     ));
 
