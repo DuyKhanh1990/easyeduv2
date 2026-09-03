@@ -697,6 +697,88 @@ function BulkDueDateDialog({
   );
 }
 
+function BulkInvoiceDateDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+  field,
+  selectedDate,
+  onDateChange,
+  selectedInvoices,
+  isPending,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onConfirm: (date: Date) => void;
+  field: "createdAt" | "paidAt";
+  selectedDate: Date | undefined;
+  onDateChange: (d: Date | undefined) => void;
+  selectedInvoices: InvoiceRow[];
+  isPending: boolean;
+}) {
+  const label = field === "createdAt" ? "ngày tạo" : "ngày thanh toán";
+  const selectedDateText = selectedDate ? format(selectedDate, "yyyy-MM-dd") : "";
+  const conflictingInvoices = selectedDate
+    ? selectedInvoices.filter((invoice) => {
+        if (field === "createdAt" && invoice.paidAt) {
+          return selectedDateText > format(new Date(invoice.paidAt), "yyyy-MM-dd");
+        }
+        if (field === "paidAt" && invoice.createdAt) {
+          return selectedDateText < format(new Date(invoice.createdAt), "yyyy-MM-dd");
+        }
+        return false;
+      })
+    : [];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CalendarIcon className="w-4 h-4 text-purple-600" />
+            Cập nhật {label} hàng loạt
+          </DialogTitle>
+        </DialogHeader>
+        <div className="py-2 flex flex-col items-center gap-3">
+          <p className="text-sm text-muted-foreground w-full">
+            Chọn {label} áp dụng cho {selectedInvoices.length} hoá đơn đã chọn.
+          </p>
+          <Calendar
+            mode="single"
+            selected={selectedDate}
+            onSelect={onDateChange}
+            locale={vi}
+            className="rounded-md border"
+          />
+          {selectedDate && (
+            <p className="text-sm font-medium text-purple-700">
+              Ngày đã chọn: {format(selectedDate, "dd/MM/yyyy")}
+            </p>
+          )}
+          {conflictingInvoices.length > 0 && (
+            <div className="w-full rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+              Không thể áp dụng cho {conflictingInvoices.length} hoá đơn vì ngày thanh toán
+              không được trước ngày tạo. Vui lòng chọn ngày khác.
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
+            Hủy
+          </Button>
+          <Button
+            className="bg-purple-600 hover:bg-purple-700"
+            disabled={!selectedDate || conflictingInvoices.length > 0 || isPending}
+            onClick={() => selectedDate && onConfirm(selectedDate)}
+          >
+            {isPending ? "Đang cập nhật..." : "Xác nhận"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function BulkAssignCommissionDialog({
   open,
   onOpenChange,
@@ -1063,6 +1145,8 @@ export default function Invoices() {
   const [bulkAssignClassId, setBulkAssignClassId] = useState<string>("");
   const [bulkDueDateOpen, setBulkDueDateOpen] = useState(false);
   const [bulkDueDate, setBulkDueDate] = useState<Date | undefined>(undefined);
+  const [bulkInvoiceDateField, setBulkInvoiceDateField] = useState<"createdAt" | "paidAt" | null>(null);
+  const [bulkInvoiceDate, setBulkInvoiceDate] = useState<Date | undefined>(undefined);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkCollectOpen, setBulkCollectOpen] = useState(false);
   const [bulkCollectPrintData, setBulkCollectPrintData] = useState<BulkCollectPrintData | null>(null);
@@ -1227,6 +1311,40 @@ export default function Invoices() {
     onError: (err: any) => {
       toast({
         title: "Lỗi cập nhật hạn thanh toán",
+        description: err?.message ?? "Không thể cập nhật, vui lòng thử lại.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const bulkUpdateInvoiceDateMutation = useMutation({
+    mutationFn: async ({
+      ids,
+      field,
+      date,
+    }: {
+      ids: string[];
+      field: "createdAt" | "paidAt";
+      date: string;
+    }) => {
+      await Promise.all(
+        ids.map(id => apiRequest("PATCH", `/api/finance/invoices/${id}`, { [field]: date }))
+      );
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
+      const label = vars.field === "createdAt" ? "ngày tạo" : "ngày thanh toán";
+      toast({
+        title: `Cập nhật ${label} thành công`,
+        description: `Đã cập nhật ${label} cho ${vars.ids.length} hoá đơn.`,
+      });
+      setSelectedIds(new Set());
+      setBulkInvoiceDate(undefined);
+      setBulkInvoiceDateField(null);
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Không thể cập nhật ngày",
         description: err?.message ?? "Không thể cập nhật, vui lòng thử lại.",
         variant: "destructive",
       });
@@ -1682,6 +1800,28 @@ export default function Invoices() {
                       }}
                     >
                       <CalendarIcon className="w-4 h-4 text-purple-600" /><span>Cập nhật Hạn thanh toán</span>
+                    </ActionMenuItem>
+                    <ActionMenuItem
+                      className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
+                      disabled={bulkUpdateInvoiceDateMutation.isPending}
+                      onClick={() => {
+                        setBulkInvoiceDate(undefined);
+                        setBulkInvoiceDateField("createdAt");
+                        setIsActionMenuOpen(false);
+                      }}
+                    >
+                      <CalendarIcon className="w-4 h-4 text-blue-600" /><span>Cập nhật Ngày tạo</span>
+                    </ActionMenuItem>
+                    <ActionMenuItem
+                      className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
+                      disabled={bulkUpdateInvoiceDateMutation.isPending}
+                      onClick={() => {
+                        setBulkInvoiceDate(undefined);
+                        setBulkInvoiceDateField("paidAt");
+                        setIsActionMenuOpen(false);
+                      }}
+                    >
+                      <CalendarIcon className="w-4 h-4 text-green-600" /><span>Cập nhật Ngày thanh toán</span>
                     </ActionMenuItem>
                     <div className="my-1 border-t" />
                     {(() => {
@@ -2360,6 +2500,29 @@ export default function Invoices() {
             dueDate: format(date, "yyyy-MM-dd"),
           });
           setBulkDueDateOpen(false);
+        }}
+      />
+
+      <BulkInvoiceDateDialog
+        open={bulkInvoiceDateField !== null}
+        onOpenChange={(open) => {
+          if (!open && !bulkUpdateInvoiceDateMutation.isPending) {
+            setBulkInvoiceDateField(null);
+            setBulkInvoiceDate(undefined);
+          }
+        }}
+        field={bulkInvoiceDateField ?? "createdAt"}
+        selectedDate={bulkInvoiceDate}
+        onDateChange={setBulkInvoiceDate}
+        selectedInvoices={invoices.filter(invoice => selectedIds.has(invoice.id))}
+        isPending={bulkUpdateInvoiceDateMutation.isPending}
+        onConfirm={(date) => {
+          if (!bulkInvoiceDateField) return;
+          bulkUpdateInvoiceDateMutation.mutate({
+            ids: Array.from(selectedIds),
+            field: bulkInvoiceDateField,
+            date: format(date, "yyyy-MM-dd"),
+          });
         }}
       />
 
