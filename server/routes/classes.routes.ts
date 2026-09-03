@@ -3303,19 +3303,21 @@ export function registerClassesRoutes(app: Express): void {
 
     if (holidayRows.length === 0) return { holidays: [], classes: [], totalSessions: 0 };
 
-    // 2. Resolve active classes (and optionally filter by location)
-    // Include planning/recruiting/active — same as /api/schedule which shows all non-closed classes
-    const classConditions: any[] = [inArray(classes.status, ["planning", "recruiting", "active"])];
-    if (locationIds && locationIds.length > 0) classConditions.push(inArray(classes.locationId, locationIds));
+    // 2. Resolve classes in the selected locations. An empty location selection means
+    //    all locations, regardless of class status.
+    const eligibleClasses = locationIds && locationIds.length > 0
+      ? await db.select({ id: classes.id, name: classes.name, classCode: classes.classCode })
+          .from(classes)
+          .where(inArray(classes.locationId, locationIds))
+      : await db.select({ id: classes.id, name: classes.name, classCode: classes.classCode })
+          .from(classes);
 
-    const activeClasses = await db.select({ id: classes.id, name: classes.name, classCode: classes.classCode })
-      .from(classes).where(and(...classConditions));
+    if (eligibleClasses.length === 0) return { holidays: holidayRows, classes: [], totalSessions: 0 };
+    const eligibleClassIds = eligibleClasses.map(c => c.id);
 
-    if (activeClasses.length === 0) return { holidays: holidayRows, classes: [], totalSessions: 0 };
-    const activeClassIds = activeClasses.map(c => c.id);
-
-    // 3. Find all scheduled sessions in any holiday date range for these classes.
-    //    Include past sessions: schedules can be created or corrected retroactively.
+    // 3. Find every indexed session in any selected holiday date range.
+    //    Do not filter by date direction, class status, or session status: selecting
+    //    "all" must include every lesson record in the holiday period.
     //    Build a big OR of date ranges so we only hit the DB once.
     const dateConditions = holidayRows.map(h =>
       and(
@@ -3330,8 +3332,7 @@ export function registerClassesRoutes(app: Express): void {
       sessionDate: classSessions.sessionDate,
       teacherIds: classSessions.teacherIds,
     }).from(classSessions).where(and(
-      inArray(classSessions.classId, activeClassIds),
-      eq(classSessions.status, "scheduled"),    // only sessions not already attended/cancelled
+      inArray(classSessions.classId, eligibleClassIds),
       isNotNull(classSessions.sessionIndex),    // skip sessions missing sessionIndex (would map to 0 and cause wrong exclusion)
       or(...dateConditions)
     ));
@@ -3352,7 +3353,7 @@ export function registerClassesRoutes(app: Express): void {
     // 5. Build ranges per class
     const classResults = [];
     for (const [classId, sessions] of classSessionMap) {
-      const classInfo = activeClasses.find(c => c.id === classId)!;
+      const classInfo = eligibleClasses.find(c => c.id === classId)!;
       const ranges = groupIntoContiguousRanges(sessions);
       classResults.push({
         classId,
