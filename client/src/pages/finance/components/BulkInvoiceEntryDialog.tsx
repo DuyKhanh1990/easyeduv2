@@ -923,7 +923,7 @@ export function BulkInvoiceEntryDialog({
           )}
         </DialogHeader>
 
-        <div className="relative isolate flex-1 overflow-auto px-6 py-4">
+        <div className="relative isolate flex-1 overflow-auto pl-6 pr-0 py-4">
           <table className="w-full text-sm border-separate border-spacing-0 min-w-[2520px]">
             <thead className="sticky top-0 bg-muted z-20">
               <tr className="border-b">
