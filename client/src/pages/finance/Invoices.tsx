@@ -1691,30 +1691,16 @@ export default function Invoices() {
             )}
 
             {invPerm.canCreate && (
-            <ActionMenu>
-              <ActionMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-9 gap-1.5 rounded-lg border-slate-200 bg-white shadow-sm font-medium text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-all" data-testid="button-upload">
-                  <Upload className="h-4 w-4 text-slate-400" />
-                  Tải lên
-                </Button>
-              </ActionMenuTrigger>
-              <ActionMenuContent align="end" className="w-48">
-                <ActionMenuItem
-                  data-testid="menu-upload-excel"
-                  onClick={() => {
-                    setIsActionMenuOpen(false);
-                    invoiceExcelInputRef.current?.click();
-                  }}
-                >
-                  <FileSpreadsheet className="h-3.5 w-3.5 mr-2 text-emerald-600" />
-                  Tải lên excel
-                </ActionMenuItem>
-                <ActionMenuItem data-testid="menu-upload-direct" onClick={() => setBulkEntryOpen(true)}>
-                  <Keyboard className="h-3.5 w-3.5 mr-2 text-blue-600" />
-                  Nhập trực tiếp
-                </ActionMenuItem>
-              </ActionMenuContent>
-            </ActionMenu>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 gap-1.5 rounded-lg border-slate-200 bg-white shadow-sm font-medium text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-all"
+                data-testid="button-upload-direct"
+                onClick={() => setBulkEntryOpen(true)}
+              >
+                <Keyboard className="h-4 w-4 text-blue-600" />
+                Nhập trực tiếp
+              </Button>
             )}
 
             <ActionMenu open={isActionMenuOpen} onOpenChange={setIsActionMenuOpen} modal={false}>
