@@ -12,7 +12,7 @@ import {
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from "@/components/ui/command";
-import { Trash2, Copy, Plus, Check, ChevronsUpDown, ChevronDown, Keyboard, Save, FileText, Users, Loader2, X } from "lucide-react";
+import { Trash2, Copy, Plus, Check, ChevronsUpDown, ChevronDown, Keyboard, Save, FileText, FileSpreadsheet, Download, Upload, Users, Loader2, X } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
