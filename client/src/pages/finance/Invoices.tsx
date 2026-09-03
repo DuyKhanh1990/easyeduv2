@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useParams } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
@@ -1080,6 +1080,8 @@ export default function Invoices() {
   const [expandedIds, setExpandedIds]   = useState<Set<string>>(new Set());
   const [dialogOpen, setDialogOpen]     = useState(() => !!urlInvoiceId);
   const [bulkEntryOpen, setBulkEntryOpen] = useState(false);
+  const [invoiceExcelFile, setInvoiceExcelFile] = useState<File | null>(null);
+  const invoiceExcelInputRef = useRef<HTMLInputElement>(null);
   const [editInvoiceId, setEditInvoiceId] = useState<string | null>(() =>
     urlInvoiceId && urlInvoiceId !== "new" ? urlInvoiceId : null
   );
@@ -1697,7 +1699,13 @@ export default function Invoices() {
                 </Button>
               </ActionMenuTrigger>
               <ActionMenuContent align="end" className="w-48">
-                <ActionMenuItem data-testid="menu-upload-excel">
+                <ActionMenuItem
+                  data-testid="menu-upload-excel"
+                  onClick={() => {
+                    setIsActionMenuOpen(false);
+                    invoiceExcelInputRef.current?.click();
+                  }}
+                >
                   <FileSpreadsheet className="h-3.5 w-3.5 mr-2 text-emerald-600" />
                   Tải lên excel
                 </ActionMenuItem>
@@ -2398,7 +2406,26 @@ export default function Invoices() {
 
       <BulkInvoiceEntryDialog
         open={bulkEntryOpen}
-        onOpenChange={setBulkEntryOpen}
+        onOpenChange={(open) => {
+          setBulkEntryOpen(open);
+          if (!open) setInvoiceExcelFile(null);
+        }}
+        importFile={invoiceExcelFile}
+        onImportFileConsumed={() => setInvoiceExcelFile(null)}
+      />
+      <input
+        ref={invoiceExcelInputRef}
+        type="file"
+        accept=".xlsx,.xls,.csv"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0] ?? null;
+          event.target.value = "";
+          if (file) {
+            setInvoiceExcelFile(file);
+            setBulkEntryOpen(true);
+          }
+        }}
       />
 
       {deleteInvoiceTarget && (

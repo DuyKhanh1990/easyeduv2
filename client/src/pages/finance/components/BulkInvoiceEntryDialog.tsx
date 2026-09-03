@@ -17,6 +17,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import * as XLSX from "xlsx";
 
 const DRAFTS_KEY = "bulk-invoice-entry-drafts-v1";
 const MAX_ROWS = 300;
@@ -102,7 +103,17 @@ const toInt = (v: string) => {
 
 const HOC_PHI = "Học phí";
 
-export function BulkInvoiceEntryDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+export function BulkInvoiceEntryDialog({
+  open,
+  onOpenChange,
+  importFile,
+  onImportFileConsumed,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  importFile?: File | null;
+  onImportFileConsumed?: () => void;
+}) {
   const { toast } = useToast();
   const [rows, setRows] = useState<RowData[]>([newRow()]);
   const [draftCount, setDraftCount] = useState(0);
@@ -160,6 +171,138 @@ export function BulkInvoiceEntryDialog({ open, onOpenChange }: { open: boolean; 
     setRestoredBanner(null);
   }, [open]);
 
+  const { data: locations = [] } = useQuery<any[]>({ queryKey: ["/api/locations"], enabled: open });
+  const { data: categories = [] } = useQuery<any[]>({ queryKey: ["/api/finance/transaction-categories"], enabled: open });
+  const { data: classes = [] } = useQuery<any[]>({ queryKey: ["/api/classes"], enabled: open });
+  const { data: promotionOptions = [] } = useQuery<any[]>({
+    queryKey: ["/api/finance/promotions", { type: "promotion" }],
+    queryFn: () => apiRequest("GET", "/api/finance/promotions?type=promotion").then(r => r.json()),
+    enabled: open,
+  });
+  const { data: surchargeOptions = [] } = useQuery<any[]>({
+    queryKey: ["/api/finance/promotions", { type: "surcharge" }],
+    queryFn: () => apiRequest("GET", "/api/finance/promotions?type=surcharge").then(r => r.json()),
+    enabled: open,
+  });
+
+  // Parse the invoice workbook into the same editable rows used by direct entry.
+  // Supported headers include Vietnamese labels and the corresponding API-style names.
+  useEffect(() => {
+    if (!open || !importFile) return;
+    if (locations.length === 0) return;
+
+    let cancelled = false;
+    const normalizeHeader = (value: unknown) =>
+      String(value ?? "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "");
+    const readCell = (row: Record<string, unknown>, aliases: string[]) => {
+      const entries = Object.entries(row);
+      const wanted = aliases.map(normalizeHeader);
+      const match = entries.find(([key]) => wanted.includes(normalizeHeader(key)));
+      return match?.[1] ?? "";
+    };
+    const asText = (value: unknown) => String(value ?? "").trim();
+    const asMoney = (value: unknown) => {
+      if (typeof value === "number") return String(Math.round(value));
+      const digitsOnly = asText(value).replace(/[^\d-]/g, "");
+      return digitsOnly || "";
+    };
+    const asDate = (value: unknown) => {
+      if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        const y = value.getFullYear();
+        const m = String(value.getMonth() + 1).padStart(2, "0");
+        const d = String(value.getDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+      }
+      const raw = asText(value);
+      if (!raw) return "";
+      const ymd = raw.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+      if (ymd) return `${ymd[1]}-${ymd[2].padStart(2, "0")}-${ymd[3].padStart(2, "0")}`;
+      const dmy = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+      if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+      if (/^\d+(\.\d+)?$/.test(raw)) {
+        const parsed = XLSX.SSF.parse_date_code(Number(raw));
+        if (parsed) return `${parsed.y}-${String(parsed.m).padStart(2, "0")}-${String(parsed.d).padStart(2, "0")}`;
+      }
+      return "";
+    };
+    const isUuid = (value: string) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
+    const parseWorkbook = async () => {
+      try {
+        const workbook = XLSX.read(await importFile.arrayBuffer(), { type: "array", cellDates: true });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const records = sheet
+          ? XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" })
+          : [];
+        if (records.length === 0) {
+          toast({ title: "File Excel không có dữ liệu", description: "Hãy kiểm tra dòng tiêu đề và các dòng dữ liệu.", variant: "destructive" });
+          return;
+        }
+        const imported = records.slice(0, MAX_ROWS).map((record, index): RowData => {
+          const locationRaw = asText(readCell(record, ["Cơ sở", "Mã cơ sở", "locationId", "locationCode"]));
+          const location = locations.find((item: any) =>
+            [item.id, item.code, item.name].some(value => asText(value).toLowerCase() === locationRaw.toLowerCase())
+          );
+          const categoryRaw = asText(readCell(record, ["Danh mục", "category", "categoryId"]));
+          const category = categories.find((item: any) =>
+            [item.id, item.name].some(value => asText(value).toLowerCase() === categoryRaw.toLowerCase())
+          );
+          const studentIdRaw = asText(readCell(record, ["Mã học viên", "studentId", "student_id"]));
+          const studentLabel = asText(readCell(record, ["Họ và tên", "Tên đối tượng", "Tên", "subjectName", "studentName"]));
+          const paid = asMoney(readCell(record, ["Đã thanh toán", "paidAmount", "paid"]));
+          return {
+            id: `excel-${Date.now()}-${index}`,
+            branchId: location?.id ?? (isUuid(locationRaw) ? locationRaw : ""),
+            studentId: isUuid(studentIdRaw) ? studentIdRaw : "",
+            studentLabel,
+            type: /^(chi|expense|out|ra)$/i.test(asText(readCell(record, ["Loại", "type"]))) ? "expense" : "income",
+            categoryId: category?.id ?? (isUuid(categoryRaw) ? categoryRaw : ""),
+            product: asText(readCell(record, ["Mã sản phẩm", "packageId", "productId"])),
+            productLabel: asText(readCell(record, ["Sản phẩm", "Gói", "packageName", "product"])),
+            description: asText(readCell(record, ["Mô tả", "description"])),
+            paymentMethod: /^(chuyen khoan|transfer|bank)$/i.test(
+              normalizeHeader(readCell(record, ["Hình thức thanh toán", "paymentMethod"]))
+            ) ? "transfer" : "cash",
+            amount: asMoney(readCell(record, ["Số tiền", "Tổng tiền", "totalAmount", "amount"])),
+            promotionKeys: [],
+            surchargeKeys: [],
+            installment1: paid,
+            installment2: asMoney(readCell(record, ["Đợt 2", "installment2"])),
+            installment3: asMoney(readCell(record, ["Đợt 3", "installment3"])),
+            installment4: asMoney(readCell(record, ["Đợt 4", "installment4"])),
+            dueDate: asDate(readCell(record, ["Hạn thanh toán", "dueDate"])),
+            classId: asText(readCell(record, ["Mã lớp", "classId"])),
+          };
+        });
+        if (cancelled) return;
+        setRows(prev => {
+          const hasOnlyEmptyDefault = prev.length === 1 && isRowEmpty(prev[0]);
+          return hasOnlyEmptyDefault ? imported : [...prev, ...imported].slice(0, MAX_ROWS);
+        });
+        setVisibleRowCount(Math.min(imported.length, INITIAL_RENDER_CHUNK));
+        toast({
+          title: "Đã đọc file Excel",
+          description: `Đã nạp ${imported.length} dòng. Vui lòng kiểm tra rồi bấm Lưu tất cả.`,
+        });
+      } catch (error: any) {
+        toast({
+          title: "Không thể đọc file Excel",
+          description: error?.message ?? "Vui lòng sử dụng file .xlsx hoặc .xls hợp lệ.",
+          variant: "destructive",
+        });
+      } finally {
+        if (!cancelled) onImportFileConsumed?.();
+      }
+    };
+    void parseWorkbook();
+    return () => { cancelled = true; };
+  }, [open, importFile, locations, categories, toast, onImportFileConsumed]);
+
   // Chunked initial render: progressively reveal more rows after first paint.
   useEffect(() => {
     if (!open) return;
@@ -176,20 +319,6 @@ export function BulkInvoiceEntryDialog({ open, onOpenChange }: { open: boolean; 
   useEffect(() => {
     if (visibleRowCount > rows.length) setVisibleRowCount(rows.length);
   }, [rows.length, visibleRowCount]);
-
-  const { data: locations = [] } = useQuery<any[]>({ queryKey: ["/api/locations"], enabled: open });
-  const { data: categories = [] } = useQuery<any[]>({ queryKey: ["/api/finance/transaction-categories"], enabled: open });
-  const { data: classes = [] } = useQuery<any[]>({ queryKey: ["/api/classes"], enabled: open });
-  const { data: promotionOptions = [] } = useQuery<any[]>({
-    queryKey: ["/api/finance/promotions", { type: "promotion" }],
-    queryFn: () => apiRequest("GET", "/api/finance/promotions?type=promotion").then(r => r.json()),
-    enabled: open,
-  });
-  const { data: surchargeOptions = [] } = useQuery<any[]>({
-    queryKey: ["/api/finance/promotions", { type: "surcharge" }],
-    queryFn: () => apiRequest("GET", "/api/finance/promotions?type=surcharge").then(r => r.json()),
-    enabled: open,
-  });
 
   // Stable callbacks so memoized rows don't re-render unnecessarily.
   const updateRow = useCallback((id: string, patch: Partial<RowData>) => {
