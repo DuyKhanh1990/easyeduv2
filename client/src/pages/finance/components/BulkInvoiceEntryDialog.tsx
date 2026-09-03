@@ -44,6 +44,7 @@ type RowData = {
   installment3: string;
   installment4: string;
   dueDate: string;
+  paymentDate: string;
   classId: string;
   _error?: string;
 };
@@ -74,6 +75,7 @@ const newRow = (): RowData => ({
   installment3: "",
   installment4: "",
   dueDate: todayStr(),
+  paymentDate: "",
   classId: "",
 });
 
@@ -276,6 +278,7 @@ export function BulkInvoiceEntryDialog({
             installment3: asMoney(readCell(record, ["Đợt 3", "installment3"])),
             installment4: asMoney(readCell(record, ["Đợt 4", "installment4"])),
             dueDate: asDate(readCell(record, ["Hạn thanh toán", "dueDate"])),
+            paymentDate: asDate(readCell(record, ["Ngày thanh toán", "paymentDate", "paidAt"])),
             classId: asText(readCell(record, ["Mã lớp", "classId"])),
           };
         });
@@ -428,6 +431,7 @@ export function BulkInvoiceEntryDialog({
     r.promotionKeys.length === 0 &&
     r.surchargeKeys.length === 0 &&
     !r.installment1 && !r.installment2 && !r.installment3 && !r.installment4 &&
+    !r.paymentDate &&
     !r.classId;
 
   // Save current rows as drafts in localStorage.
@@ -502,6 +506,7 @@ export function BulkInvoiceEntryDialog({
           amount: String(amount),
           dueDate: row.dueDate || null,
           status: isPaidEntry ? "paid" : "unpaid",
+          paidAt: isPaidEntry ? historicalPaymentDate : undefined,
           paymentMethod: row.paymentMethod,
           sortOrder: i,
         };
@@ -513,6 +518,7 @@ export function BulkInvoiceEntryDialog({
       paidAmount >= total ? "paid"
       : paidAmount > 0 ? "partial"
       : "unpaid";
+    const historicalPaymentDate = row.paymentDate || undefined;
 
     const itemName = (isHocPhi ? row.productLabel : row.product) || row.productLabel || row.product || catName || "Dịch vụ";
 
@@ -527,6 +533,8 @@ export function BulkInvoiceEntryDialog({
         description: row.description || null,
         paymentMethod: row.paymentMethod,
         dueDate: row.dueDate || null,
+          createdAt: historicalPaymentDate,
+          paidAt: status === "paid" ? historicalPaymentDate : undefined,
         totalAmount: String(base),
         totalPromotion: String(promoAmt),
         totalSurcharge: String(surchargeAmt),
@@ -1501,6 +1509,15 @@ const RowEditor = memo(function RowEditor({
           value={row.dueDate}
           onChange={e => updateRow(row.id, { dueDate: e.target.value })}
           data-testid={`input-duedate-${row.id}`}
+        />
+      </Td>
+      <Td>
+        <Input
+          type="date"
+          className="h-8 text-xs"
+          value={row.paymentDate}
+          onChange={e => updateRow(row.id, { paymentDate: e.target.value })}
+          data-testid={`input-payment-date-${row.id}`}
         />
       </Td>
       <Td>
