@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef, memo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -1082,6 +1082,136 @@ export function BulkInvoiceEntryDialog({
               )}
             </Button>
           </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function InvoiceExcelImportDialog({
+  open,
+  onOpenChange,
+  onImport,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onImport: (file: File) => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const downloadTemplate = () => {
+    const headers = [
+      "Cơ sở",
+      "Mã học viên",
+      "Họ và tên",
+      "Loại",
+      "Danh mục",
+      "Mã sản phẩm",
+      "Sản phẩm",
+      "Mô tả",
+      "Hình thức thanh toán",
+      "Số tiền",
+      "Đã thanh toán",
+      "Đợt 2",
+      "Đợt 3",
+      "Đợt 4",
+      "Hạn thanh toán",
+      "Mã lớp",
+    ];
+    const workbook = XLSX.utils.book_new();
+    const sheet = XLSX.utils.aoa_to_sheet([
+      headers,
+      ["Cơ sở 1", "", "Nguyễn Văn A", "Thu", "Học phí", "", "Học phí tháng 9", "", "Tiền mặt", 1000000, 0, "", "", "", "30/09/2026", ""],
+    ]);
+    sheet["!cols"] = headers.map((header) => ({ wch: Math.max(16, Math.min(28, header.length + 4)) }));
+    sheet["!freeze"] = { ySplit: 1 };
+    sheet["!autofilter"] = { ref: `A1:P2` };
+    const headerStyle = {
+      font: { bold: true, color: { rgb: "FFFFFF" } },
+      fill: { patternType: "solid", fgColor: { rgb: "4F46E5" } },
+      alignment: { horizontal: "center", vertical: "center", wrapText: true },
+    };
+    headers.forEach((_, index) => {
+      const cell = sheet[XLSX.utils.encode_cell({ r: 0, c: index })];
+      if (cell) cell.s = headerStyle;
+    });
+    XLSX.utils.book_append_sheet(workbook, sheet, "Nhap_hoa_don");
+    const guide = XLSX.utils.aoa_to_sheet([
+      ["Hướng dẫn nhập hóa đơn"],
+      ["Cột bắt buộc", "Cơ sở, Họ và tên hoặc Mã học viên, Số tiền"],
+      ["Cơ sở", "Nhập đúng tên, mã cơ sở hoặc UUID cơ sở đang có trên hệ thống."],
+      ["Mã học viên", "Có thể để trống nếu đã nhập Họ và tên. UUID học viên sẽ được liên kết đúng hồ sơ."],
+      ["Loại", "Thu hoặc Chi. Mặc định là Thu nếu để trống."],
+      ["Danh mục", "Nhập đúng tên danh mục đang có trên hệ thống."],
+      ["Đã thanh toán", "Số tiền đã thu. Để 0 nếu chưa thanh toán."],
+      ["Đợt 2–4", "Nhập số tiền từng đợt nếu muốn chia nhiều đợt."],
+      ["Hạn thanh toán", "Ngày đến hạn, định dạng dd/mm/yyyy hoặc yyyy-mm-dd; đây không phải ngày đã thanh toán."],
+      ["Lưu ý", "Sau khi nhập file, hãy kiểm tra các dòng trong bảng rồi mới bấm Lưu tất cả."],
+    ]);
+    guide["!cols"] = [{ wch: 24 }, { wch: 90 }];
+    XLSX.utils.book_append_sheet(workbook, guide, "Huong_dan");
+    XLSX.writeFile(workbook, "mau_nhap_hoa_don.xlsx");
+  };
+
+  const handleClose = (nextOpen: boolean) => {
+    if (!nextOpen) setFile(null);
+    onOpenChange(nextOpen);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileSpreadsheet className="h-5 w-5 text-emerald-600" />
+            Nhập hóa đơn bằng Excel
+          </DialogTitle>
+          <DialogDescription>
+            Tải file mẫu, điền dữ liệu rồi nhập vào bảng để kiểm tra trước khi lưu.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+            <p className="font-semibold mb-1">Các cột bắt buộc</p>
+            <p>Cơ sở, Họ và tên hoặc Mã học viên, Số tiền.</p>
+            <p className="mt-1 text-xs text-blue-700">
+              Bạn có thể dùng tên/mã cơ sở. Ngày ở cột Hạn thanh toán không phải ngày đã thanh toán.
+            </p>
+          </div>
+          <Button variant="outline" className="w-full gap-2" onClick={downloadTemplate}>
+            <Download className="h-4 w-4 text-indigo-600" />
+            Tải file mẫu Excel
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={(event) => {
+              const selected = event.target.files?.[0] ?? null;
+              event.target.value = "";
+              setFile(selected);
+            }}
+          />
+          <Button
+            variant="outline"
+            className="w-full justify-start gap-2"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload className="h-4 w-4 text-emerald-600" />
+            {file ? file.name : "Chọn file Excel đã điền"}
+          </Button>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => handleClose(false)}>Hủy</Button>
+          <Button
+            className="bg-purple-600 hover:bg-purple-700"
+            disabled={!file}
+            onClick={() => file && onImport(file)}
+          >
+            Nhập vào bảng
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
