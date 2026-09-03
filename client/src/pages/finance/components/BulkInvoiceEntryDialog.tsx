@@ -468,6 +468,7 @@ export function BulkInvoiceEntryDialog({
 
     const catName = categoryName(row.categoryId);
     const isHocPhi = catName === HOC_PHI;
+    const historicalPaymentDate = row.paymentDate || undefined;
 
     // Build payment schedule from installments (empty = excluded).
     const order = ["installment1", "installment2", "installment3", "installment4"] as const;
@@ -518,7 +519,6 @@ export function BulkInvoiceEntryDialog({
       paidAmount >= total ? "paid"
       : paidAmount > 0 ? "partial"
       : "unpaid";
-    const historicalPaymentDate = row.paymentDate || undefined;
 
     const itemName = (isHocPhi ? row.productLabel : row.product) || row.productLabel || row.product || catName || "Dịch vụ";
 
@@ -952,6 +952,7 @@ export function BulkInvoiceEntryDialog({
                 <Th className="w-40 text-right">Đợt 3</Th>
                 <Th className="w-40 text-right">Đợt 4</Th>
                 <Th className="w-40">Hạn thanh toán</Th>
+                <Th className="w-40">Ngày thanh toán</Th>
                 <Th className="w-44">
                   Lớp <span className="font-normal text-muted-foreground">(không bắt buộc)</span>
                 </Th>
@@ -983,7 +984,7 @@ export function BulkInvoiceEntryDialog({
               ))}
               {visibleRowCount < rows.length && (
                 <tr data-testid="row-skeleton-loading">
-                  <td colSpan={19} className="p-4 text-center text-xs text-muted-foreground">
+                  <td colSpan={20} className="p-4 text-center text-xs text-muted-foreground">
                     <Loader2 className="inline h-3 w-3 mr-2 animate-spin" />
                     Đang hiển thị {visibleRowCount}/{rows.length} dòng...
                   </td>
@@ -1125,12 +1126,13 @@ export function InvoiceExcelImportDialog({
       "Đợt 3",
       "Đợt 4",
       "Hạn thanh toán",
+      "Ngày thanh toán",
       "Mã lớp",
     ];
     const workbook = XLSX.utils.book_new();
     const sheet = XLSX.utils.aoa_to_sheet([
       headers,
-      ["Cơ sở 1", "", "Nguyễn Văn A", "Thu", "Học phí", "", "Học phí tháng 9", "", "Tiền mặt", 1000000, 0, "", "", "", "30/09/2026", ""],
+      ["Cơ sở 1", "", "Nguyễn Văn A", "Thu", "Học phí", "", "Học phí tháng 9", "", "Tiền mặt", 1000000, 0, "", "", "", "30/09/2026", "", ""],
     ]);
     sheet["!cols"] = headers.map((header) => ({ wch: Math.max(16, Math.min(28, header.length + 4)) }));
     sheet["!freeze"] = { ySplit: 1 };
@@ -1154,6 +1156,7 @@ export function InvoiceExcelImportDialog({
       ["Danh mục", "Nhập đúng tên danh mục đang có trên hệ thống."],
       ["Đã thanh toán", "Số tiền đã thu. Để 0 nếu chưa thanh toán."],
       ["Đợt 2–4", "Nhập số tiền từng đợt nếu muốn chia nhiều đợt."],
+      ["Ngày thanh toán", "Có thể để trống. Nếu nhập, ngày này được ưu tiên làm ngày tạo và ngày thanh toán của các khoản đã thu."],
       ["Hạn thanh toán", "Ngày đến hạn, định dạng dd/mm/yyyy hoặc yyyy-mm-dd; đây không phải ngày đã thanh toán."],
       ["Lưu ý", "Sau khi nhập file, hãy kiểm tra các dòng trong bảng rồi mới bấm Lưu tất cả."],
     ]);

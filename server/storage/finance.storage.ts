@@ -1129,7 +1129,7 @@ export async function createInvoice(data: any): Promise<any> {
             amount: s.amount?.toString() ?? "0",
             dueDate: s.dueDate ?? null,
             status: s.status ?? "unpaid",
-            paidAt: s.status === "paid" ? new Date() : null,
+            paidAt: s.status === "paid" ? (s.paidAt ?? new Date()) : null,
             sortOrder: idx,
             paymentMethod: s.paymentMethod ?? null,
             appliedBankAccount: s.appliedBankAccount ?? null,

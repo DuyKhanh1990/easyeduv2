@@ -163,6 +163,8 @@ const invoiceItemBodySchema = insertInvoiceItemSchema.omit({ invoiceId: true }).
 const invoiceScheduleBodySchema = insertInvoicePaymentScheduleSchema.omit({ invoiceId: true }).partial({ invoiceId: true });
 
 const createInvoiceBodySchema = insertInvoiceSchema.extend({
+  createdAt: z.coerce.date().optional(),
+  paidAt: z.coerce.date().nullable().optional(),
   items: z.array(invoiceItemBodySchema).optional().default([]),
   paymentSchedule: z.array(invoiceScheduleBodySchema).optional().default([]),
 }).omit({ createdBy: true, updatedBy: true });
