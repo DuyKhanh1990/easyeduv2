@@ -923,8 +923,8 @@ export function BulkInvoiceEntryDialog({
           )}
         </DialogHeader>
 
-        <div className="flex-1 overflow-auto px-6 py-4">
-          <table className="w-full text-sm border-collapse min-w-[2520px]">
+        <div className="relative isolate flex-1 overflow-auto px-6 py-4">
+          <table className="w-full text-sm border-separate border-spacing-0 min-w-[2520px]">
             <thead className="sticky top-0 bg-muted z-20">
               <tr className="border-b">
                 <Th className="w-10">#</Th>
@@ -947,7 +947,7 @@ export function BulkInvoiceEntryDialog({
                 <Th className="w-44">
                   Lớp <span className="font-normal text-muted-foreground">(không bắt buộc)</span>
                 </Th>
-                <Th className="w-28 min-w-[7rem] max-w-[7rem] text-center sticky right-0 z-30 bg-muted shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.15)] border-l">
+                <Th className="w-28 min-w-[7rem] max-w-[7rem] text-center sticky right-0 z-[100] !bg-muted shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.15)] border-l">
                   Thao tác
                 </Th>
               </tr>
@@ -1385,8 +1385,8 @@ const RowEditor = memo(function RowEditor({
           </SelectContent>
         </Select>
       </Td>
-      <Td className="w-28 min-w-[7rem] max-w-[7rem] sticky right-0 z-20 bg-white dark:bg-background border-l shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.15)] group-hover:bg-muted/30 dark:group-hover:bg-muted/30">
-        <div className="flex items-center justify-center gap-0.5">
+      <Td className="w-28 min-w-[7rem] max-w-[7rem] sticky right-0 z-[90] !bg-white dark:!bg-background border-l shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.15)]">
+        <div className="relative z-[91] flex items-center justify-center gap-0.5 bg-white dark:bg-background group-hover:bg-muted/30 dark:group-hover:bg-muted/30">
           <Button
             size="icon" variant="ghost" className="h-7 w-7 text-red-600 hover:bg-red-50"
             onClick={() => deleteRow(row.id)}
