@@ -947,7 +947,7 @@ export function BulkInvoiceEntryDialog({
                 <Th className="w-44">
                   Lớp <span className="font-normal text-muted-foreground">(không bắt buộc)</span>
                 </Th>
-                <Th className="w-28 text-center sticky right-0 bg-muted shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.15)] border-l">
+                <Th className="w-28 min-w-[7rem] max-w-[7rem] text-center sticky right-0 z-30 bg-muted shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.15)] border-l">
                   Thao tác
                 </Th>
               </tr>
@@ -1385,7 +1385,7 @@ const RowEditor = memo(function RowEditor({
           </SelectContent>
         </Select>
       </Td>
-      <Td className="sticky right-0 bg-white dark:bg-background border-l shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.15)] group-hover:bg-muted/30 dark:group-hover:bg-muted/30">
+      <Td className="w-28 min-w-[7rem] max-w-[7rem] sticky right-0 z-20 bg-white dark:bg-background border-l shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.15)] group-hover:bg-muted/30 dark:group-hover:bg-muted/30">
         <div className="flex items-center justify-center gap-0.5">
           <Button
             size="icon" variant="ghost" className="h-7 w-7 text-red-600 hover:bg-red-50"
