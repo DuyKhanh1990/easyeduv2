@@ -12,7 +12,7 @@ import {
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from "@/components/ui/command";
-import { Trash2, Copy, Plus, Check, ChevronsUpDown, ChevronDown, Keyboard, Save, FileText, FileSpreadsheet, Download, Upload, Users, Loader2, X } from "lucide-react";
+import { Trash2, Copy, Plus, Check, ChevronsUpDown, ChevronDown, Keyboard, Save, FileText, FileSpreadsheet, Download, Upload, Users, Loader2, X, AlertTriangle } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -121,6 +121,7 @@ export function BulkInvoiceEntryDialog({
   const [draftCount, setDraftCount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [submitElapsedSec, setSubmitElapsedSec] = useState(0);
+  const [submitTotal, setSubmitTotal] = useState(0);
   const [classPickerOpen, setClassPickerOpen] = useState(false);
   const [pickedClassIds, setPickedClassIds] = useState<string[]>([]);
   const [classSearch, setClassSearch] = useState("");
@@ -144,7 +145,7 @@ export function BulkInvoiceEntryDialog({
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length > 0) {
           // Re-issue ids so React keys are unique even if the user duplicates after reload.
-          const restored = parsed.map((r: any) => ({
+           const restored = parsed.slice(0, MAX_ROWS).map((r: any) => ({
             ...newRow(),
             ...r,
             id: Math.random().toString(36).slice(2),
@@ -158,9 +159,9 @@ export function BulkInvoiceEntryDialog({
             _error: undefined,
           })) as RowData[];
           setRows(restored);
-          setDraftCount(restored.length);
+           setDraftCount(restored.length);
           setVisibleRowCount(Math.min(restored.length, INITIAL_RENDER_CHUNK));
-          setRestoredBanner({ count: restored.length });
+           setRestoredBanner({ count: parsed.length });
           return;
         }
       }
@@ -570,7 +571,9 @@ export function BulkInvoiceEntryDialog({
       setClassPickerOpen(false);
       return;
     }
-    if (rows.length >= MAX_ROWS) {
+     const hasOnlyEmptyDefault = rows.length === 1 && isRowEmpty(rows[0]);
+     const availableSlots = MAX_ROWS - (hasOnlyEmptyDefault ? 0 : rows.length);
+     if (availableSlots <= 0) {
       toast({
         title: "Đã đạt giới hạn",
         description: `Bảng đã có ${rows.length} dòng (tối đa ${MAX_ROWS}). Hãy lưu hoặc xoá bớt trước khi tải thêm.`,
@@ -607,6 +610,7 @@ export function BulkInvoiceEntryDialog({
         const [enrolled, pkg] = await Promise.all([studentsPromise, pkgPromise]);
 
         for (const sc of enrolled as any[]) {
+          if (newRows.length >= availableSlots) break;
           const studentId = sc.studentId ?? sc.student?.id;
           if (!studentId) continue;
           const pairKey = `${classId}|${studentId}`;
@@ -631,9 +635,11 @@ export function BulkInvoiceEntryDialog({
             amount: amountStr,
           });
         }
+        if (newRows.length >= availableSlots) break;
       }
 
-      if (newRows.length === 0) {
+      const rowsToAdd = newRows.slice(0, availableSlots);
+      if (rowsToAdd.length === 0) {
         toast({
           title: "Không có học viên mới",
           description: "Các lớp đã chọn không có học viên đang học, hoặc tất cả đã có dòng trong bảng.",
@@ -642,11 +648,13 @@ export function BulkInvoiceEntryDialog({
         // Replace the leading empty row if we still have only the default empty placeholder.
         setRows(prev => {
           const hasOnlyEmptyDefault = prev.length === 1 && isRowEmpty(prev[0]);
-          return hasOnlyEmptyDefault ? newRows : [...prev, ...newRows];
+          return hasOnlyEmptyDefault ? rowsToAdd : [...prev, ...rowsToAdd];
         });
         toast({
           title: "Đã tải học viên",
-          description: `Thêm ${newRows.length} dòng từ ${pickedClassIds.length} lớp.`,
+          description: newRows.length > rowsToAdd.length
+            ? `Đã thêm ${rowsToAdd.length} dòng. Bảng đã đạt tối đa ${MAX_ROWS} dòng.`
+            : `Thêm ${rowsToAdd.length} dòng từ ${pickedClassIds.length} lớp.`,
         });
       }
       setPickedClassIds([]);
@@ -700,6 +708,7 @@ export function BulkInvoiceEntryDialog({
       toast({ title: "Vượt giới hạn", description: `Tối đa ${MAX_ROWS} hoá đơn/lần.`, variant: "destructive" });
       return;
     }
+    setSubmitTotal(candidates.length);
 
     // Pre-validate. Mark invalid rows with _error so the UI highlights them.
     const validBatch: { row: RowData; payload: any }[] = [];
@@ -780,6 +789,7 @@ export function BulkInvoiceEntryDialog({
       toast({ title: "Lưu thất bại", description: err?.message ?? "Lỗi mạng", variant: "destructive" });
     } finally {
       setSubmitting(false);
+      setSubmitTotal(0);
     }
   };
 
@@ -790,8 +800,8 @@ export function BulkInvoiceEntryDialog({
           <div className="flex items-center justify-between gap-4">
             <DialogTitle className="flex items-center gap-2 text-lg">
               <Keyboard className="h-5 w-5 text-blue-600" />
-              Nhập trực tiếp hoá đơn
-              <span className="text-xs font-normal text-muted-foreground">(tối đa {MAX_ROWS} dòng/lần)</span>
+               Nhập trực tiếp hoá đơn
+               <span className="text-xs font-normal text-muted-foreground">(tối đa {MAX_ROWS} hoá đơn/lần)</span>
             </DialogTitle>
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">Tải học viên từ lớp:</span>
@@ -931,6 +941,37 @@ export function BulkInvoiceEntryDialog({
           )}
         </DialogHeader>
 
+        {submitting && (
+          <div
+            className="mx-6 mt-3 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2.5 text-xs text-purple-900 dark:border-purple-900 dark:bg-purple-950/30 dark:text-purple-100"
+            role="status"
+            aria-live="polite"
+            data-testid="bulk-submit-progress"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex min-w-0 items-center gap-2 font-medium">
+                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                <span className="truncate">Đang lưu {submitTotal} hoá đơn...</span>
+              </span>
+              <span className="shrink-0 tabular-nums text-purple-700 dark:text-purple-300">
+                Đã chờ {submitElapsedSec}s
+              </span>
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-purple-200 dark:bg-purple-900">
+              <div className="h-full w-2/5 animate-pulse rounded-full bg-purple-600 dark:bg-purple-400" />
+            </div>
+            <p className="mt-1.5 text-[11px] text-purple-700 dark:text-purple-300">
+              Hệ thống đang xử lý tuần tự. Không đóng hoặc tải lại trang trong lúc lưu.
+            </p>
+            {submitElapsedSec >= 15 && (
+              <p className="mt-1 flex items-center gap-1 font-medium text-amber-700 dark:text-amber-300" data-testid="bulk-submit-slow-warning">
+                <AlertTriangle className="h-3 w-3 shrink-0" />
+                Đợt này đang mất nhiều thời gian hơn dự kiến; hãy tiếp tục chờ phản hồi.
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="relative isolate flex-1 overflow-auto pl-6 pr-0 py-4">
           <table className="w-full text-sm border-separate border-spacing-0 min-w-[2520px]">
             <thead className="sticky top-0 bg-muted z-20">
@@ -1064,8 +1105,19 @@ export function BulkInvoiceEntryDialog({
               }
               data-testid="text-rows-counter"
             >
-              {rows.length}/{MAX_ROWS} dòng
+               {rows.length}/{MAX_ROWS} hoá đơn
             </span>
+             {!submitting && rows.length >= WARN_ROWS && (
+               <span
+                 className="hidden text-xs text-amber-700 dark:text-amber-300 md:inline-flex md:items-center md:gap-1"
+                 data-testid="text-rows-warning"
+               >
+                 <AlertTriangle className="h-3 w-3" />
+                 {rows.length >= MAX_ROWS
+                   ? "Đã đạt giới hạn"
+                   : `Còn ${MAX_ROWS - rows.length} chỗ trống`}
+               </span>
+             )}
             <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel-bulk" disabled={submitting}>
               Đóng
             </Button>

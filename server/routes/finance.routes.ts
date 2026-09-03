@@ -911,7 +911,7 @@ export function registerFinanceRoutes(app: Express): void {
   });
 
   // Bulk creation: accepts { invoices: [...] }, processes per-row with try/catch (partial mode).
-  // Cap at 350 rows to match the dialog's hard cap.
+  // Keep the API cap aligned with the direct-entry dialog's hard cap.
   app.post("/api/finance/invoices/bulk", async (req, res) => {
     try {
       const invPerms = await getInvoicePermissions(req);
@@ -920,7 +920,7 @@ export function registerFinanceRoutes(app: Express): void {
       const list = Array.isArray(body.invoices) ? body.invoices : null;
       if (!list) return res.status(400).json({ message: "Body phải có field 'invoices' là mảng" });
       if (list.length === 0) return res.status(400).json({ message: "Mảng rỗng" });
-      if (list.length > 350) return res.status(400).json({ message: `Tối đa 350 hoá đơn/lần (đang có ${list.length})` });
+       if (list.length > 300) return res.status(400).json({ message: `Tối đa 300 hoá đơn/lần (đang có ${list.length})` });
 
       const userId = (req as any).user?.id;
       const results: Array<{ index: number; ok: boolean; id?: string; code?: string; error?: string }> = [];
