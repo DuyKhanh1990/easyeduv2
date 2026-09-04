@@ -179,6 +179,11 @@ export function CreateTutorClass() {
     ? classrooms.filter((r) => String(r.locationId) === String(selectedLocationId))
     : [];
 
+  useFieldArray({
+    control: form.control,
+    name: "schedule_config",
+  });
+
   const { fields: teacherFields, append: appendTeacher, remove: removeTeacher } = useFieldArray({
     control: form.control,
     name: "teachers_config",
@@ -501,7 +506,7 @@ export function CreateTutorClass() {
                               </FormControl>
                               <SelectContent>
                                 {(locations as any[])?.map((l: any) => (
-                                  <SelectItem key={l.id} value={l.id} selectOnPointerDown onPointerDownSelect={() => field.onChange(l.id)}>{l.name}</SelectItem>
+                                  <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
@@ -616,8 +621,8 @@ export function CreateTutorClass() {
                                 <SelectTrigger><SelectValue placeholder="Chọn hình thức học" /></SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                <SelectItem value="offline" selectOnPointerDown onPointerDownSelect={() => field.onChange("offline")}>Offline</SelectItem>
-                                <SelectItem value="online" selectOnPointerDown onPointerDownSelect={() => field.onChange("online")}>Online</SelectItem>
+                                <SelectItem value="offline">Offline</SelectItem>
+                                <SelectItem value="online">Online</SelectItem>
                               </SelectContent>
                             </Select>
                             <FormMessage />
@@ -640,7 +645,7 @@ export function CreateTutorClass() {
                               </FormControl>
                               <SelectContent>
                                 {(courses as any[])?.map((c: any) => (
-                                  <SelectItem key={c.id} value={c.id} selectOnPointerDown onPointerDownSelect={() => field.onChange(c.id)}>{c.name}</SelectItem>
+                                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
@@ -668,7 +673,7 @@ export function CreateTutorClass() {
                               </FormControl>
                               <SelectContent>
                                 {feePackages?.map((p: any) => (
-                                  <SelectItem key={p.id} value={p.id} selectOnPointerDown onPointerDownSelect={() => field.onChange(p.id)}>{p.name}</SelectItem>
+                                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
@@ -690,7 +695,6 @@ export function CreateTutorClass() {
                                 placeholder={selectedLocationId ? "Chọn nhân sự" : "Chọn cơ sở trước"}
                                 searchPlaceholder="Tìm kiếm nhân sự..."
                                 disabled={!selectedLocationId}
-                                selectOnPointerDown
                               />
                             </FormControl>
                             <FormMessage />
@@ -732,7 +736,7 @@ export function CreateTutorClass() {
                                 </FormControl>
                                 <SelectContent>
                                   {(programs as any[])?.map((p: any) => (
-                                    <SelectItem key={p.id} value={p.id} selectOnPointerDown onPointerDownSelect={() => field.onChange(p.id)}>{p.name}</SelectItem>
+                                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
@@ -754,9 +758,9 @@ export function CreateTutorClass() {
                                   <SelectTrigger><SelectValue placeholder="Chọn bảng điểm (tuỳ chọn)" /></SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                  <SelectItem value="none" selectOnPointerDown onPointerDownSelect={() => field.onChange("")}>— Không chọn —</SelectItem>
+                                  <SelectItem value="none">— Không chọn —</SelectItem>
                                   {scoreSheets?.map((s: any) => (
-                                    <SelectItem key={s.id} value={s.id} selectOnPointerDown onPointerDownSelect={() => field.onChange(s.id)}>{s.name}</SelectItem>
+                                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
@@ -778,9 +782,9 @@ export function CreateTutorClass() {
                                   <SelectTrigger><SelectValue placeholder="Chọn bộ môn (tuỳ chọn)" /></SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                  <SelectItem value="none" selectOnPointerDown onPointerDownSelect={() => field.onChange("")}>— Không chọn —</SelectItem>
+                                  <SelectItem value="none">— Không chọn —</SelectItem>
                                   {subjects?.map((s: any) => (
-                                    <SelectItem key={s.id} value={s.id} selectOnPointerDown onPointerDownSelect={() => field.onChange(s.id)}>{s.name}</SelectItem>
+                                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
@@ -801,7 +805,6 @@ export function CreateTutorClass() {
                                   onChange={field.onChange}
                                   placeholder="Chọn tiêu chí (tuỳ chọn)"
                                   searchPlaceholder="Tìm kiếm tiêu chí..."
-                                  selectOnPointerDown
                                 />
                               </FormControl>
                               <FormMessage />
@@ -848,8 +851,8 @@ export function CreateTutorClass() {
                           <Select value={endType} onValueChange={(v) => setEndType(v as "date" | "sessions")}>
                             <SelectTrigger><SelectValue /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="date" selectOnPointerDown onPointerDownSelect={() => setEndType("date")}>Kết thúc vào ngày</SelectItem>
-                              <SelectItem value="sessions" selectOnPointerDown onPointerDownSelect={() => setEndType("sessions")}>Kết thúc sau số buổi</SelectItem>
+                              <SelectItem value="date">Kết thúc vào ngày</SelectItem>
+                              <SelectItem value="sessions">Kết thúc sau số buổi</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -966,7 +969,6 @@ export function CreateTutorClass() {
                                           locationId={selectedLocationId}
                                           placeholder="Chọn ca"
                                           triggerClassName="h-9"
-                                          selectOnPointerDown
                                         />
                                       </div>
                                       <div className="col-span-4">
@@ -988,18 +990,7 @@ export function CreateTutorClass() {
                                                 </SelectTrigger>
                                                 <SelectContent>
                                                   {filteredClassrooms?.map((r: any) => (
-                                                    <SelectItem
-                                                      key={r.id}
-                                                      value={r.id}
-                                                      selectOnPointerDown
-                                                      onPointerDownSelect={() => {
-                                                        const newConfig = [...scheduleConfig];
-                                                        newConfig[dayIdx].shifts[shiftIdx].room_id = r.id;
-                                                        form.setValue("schedule_config", newConfig);
-                                                      }}
-                                                    >
-                                                      {r.name}
-                                                    </SelectItem>
+                                                    <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
                                                   ))}
                                                 </SelectContent>
                                               </Select>
@@ -1091,18 +1082,7 @@ export function CreateTutorClass() {
                               }).map((s: any) => {
                                 const isInactive = s.status === "Không hoạt động";
                                 return (
-                                  <SelectItem
-                                    key={s.id}
-                                    value={s.id}
-                                    disabled={isInactive}
-                                    className={isInactive ? "opacity-40" : ""}
-                                    selectOnPointerDown
-                                    onPointerDownSelect={() => {
-                                      if (!isInactive && !teachersConfig.some((t: any) => t.teacher_id === s.id)) {
-                                        appendTeacher({ teacher_id: s.id, mode: "all", shift_keys: [] });
-                                      }
-                                    }}
-                                  >
+                                  <SelectItem key={s.id} value={s.id} disabled={isInactive} className={isInactive ? "opacity-40" : ""}>
                                     <span className="flex items-center gap-1.5">
                                       <span>{s.fullName}</span>
                                       {s.code && <span className="text-[11px] text-muted-foreground">({s.code})</span>}

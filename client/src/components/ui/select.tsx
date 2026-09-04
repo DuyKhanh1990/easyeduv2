@@ -111,15 +111,10 @@ const SelectLabel = React.forwardRef<
 ))
 SelectLabel.displayName = SelectPrimitive.Label.displayName
 
-type SelectItemProps = React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & {
-  selectOnPointerDown?: boolean
-  onPointerDownSelect?: () => void
-}
-
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
-  SelectItemProps
->(({ className, children, selectOnPointerDown = false, onPointerDownSelect, onPointerDown, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
+>(({ className, children, ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
@@ -127,19 +122,6 @@ const SelectItem = React.forwardRef<
       className
     )}
     {...props}
-    onPointerDown={(event) => {
-      onPointerDown?.(event)
-      if (!event.defaultPrevented && onPointerDownSelect) {
-        onPointerDownSelect()
-      }
-      if (selectOnPointerDown && !event.defaultPrevented && event.pointerType === "mouse") {
-        // Radix selects mouse options on pointerup. Selecting through a synthetic
-        // click before Radix records the mouse pointer makes slow/dragged clicks
-        // reliable while preserving the default behavior everywhere else.
-        event.currentTarget.click()
-        event.preventDefault()
-      }
-    }}
   >
     <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
       <SelectPrimitive.ItemIndicator>

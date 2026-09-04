@@ -21,7 +21,6 @@ interface SearchableMultiSelectProps {
   searchPlaceholder?: string;
   disabled?: boolean;
   className?: string;
-  selectOnPointerDown?: boolean;
   "data-testid"?: string;
 }
 
@@ -33,7 +32,6 @@ export function SearchableMultiSelect({
   searchPlaceholder = "Tìm kiếm...",
   disabled = false,
   className,
-  selectOnPointerDown = false,
   "data-testid": testId,
 }: SearchableMultiSelectProps) {
   const [open, setOpen] = useState(false);
@@ -139,17 +137,7 @@ export function SearchableMultiSelect({
                   key={option.value}
                   type="button"
                   data-testid={`option-${option.value}`}
-                  onMouseDown={(event) => {
-                    if (selectOnPointerDown && !isInactive) {
-                      event.preventDefault();
-                      toggle(option.value);
-                    }
-                  }}
-                  onClick={(event) => {
-                    if (!isInactive && (!selectOnPointerDown || event.detail === 0)) {
-                      toggle(option.value);
-                    }
-                  }}
+                  onClick={() => !isInactive && toggle(option.value)}
                   disabled={isInactive}
                   className={cn(
                     "flex w-full items-center gap-2 px-3 py-1.5 text-sm cursor-pointer",
