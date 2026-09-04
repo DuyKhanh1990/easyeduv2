@@ -39,6 +39,7 @@ import { ShiftSelectWithCreate } from "@/components/ui/shift-select-with-create"
 import { insertClassSchema } from "@shared/schema";
 import { ConflictWarningDialog } from "@/components/education/ConflictWarningDialog";
 import { ConflictDetailSheet } from "@/components/education/ConflictDetailSheet";
+import { PageGuideButton } from "@/components/guides/PageGuideDialog";
 
 const CLASS_PALETTE = [
   "#3b82f6","#8b5cf6","#10b981","#f59e0b","#ef4444",
@@ -450,7 +451,10 @@ export function CreateTutorClass() {
       />
       <div className="max-w-7xl mx-auto space-y-8">
         <div>
-          <h1 className="text-3xl font-display font-bold">Tạo Lớp Gia sư (1-1)</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-display font-bold">Tạo Lớp Gia sư (1-1)</h1>
+            <PageGuideButton pageTitle="Lớp học" className="shrink-0" />
+          </div>
           <p className="text-muted-foreground">Thiết lập lớp học kèm riêng lẻ cho một học viên</p>
         </div>
 

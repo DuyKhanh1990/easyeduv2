@@ -24,6 +24,7 @@ import { ChevronRight, ChevronLeft, Check, Loader2, Plus, X, User, AlertTriangle
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
+import { PageGuideButton } from "@/components/guides/PageGuideDialog";
 
 const STEPS = [
   { id: 1, name: "Thông tin cơ bản" },
@@ -420,7 +421,10 @@ export function CreateClass() {
       />
       <div className="max-w-7xl mx-auto space-y-8">
         <div>
-          <h1 className="text-3xl font-display font-bold">Tạo lớp học mới</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-display font-bold">Tạo lớp học mới</h1>
+            <PageGuideButton pageTitle="Lớp học" className="shrink-0" />
+          </div>
           <p className="text-muted-foreground">Thiết kế khung lịch học cho lớp mới</p>
         </div>
 

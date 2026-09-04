@@ -28,6 +28,7 @@ const GUIDE_PAGE_TITLES: Record<string, string> = {
 
 function getGuidePageTitle(location: string) {
   const pathname = location.split("?")[0].replace(/\/+$/, "") || "/";
+  if (pathname === "/classes/create" || pathname === "/classes/create-tutor") return null;
   if (pathname === "/staff" || pathname === "/don-tu" || pathname === "/schedule" || pathname === "/my-space/don-tu" || pathname === "/my-space/invoices" || pathname === "/my-space/score-sheet") return null;
   const exactTitle = GUIDE_PAGE_TITLES[pathname];
   if (exactTitle) return exactTitle;
