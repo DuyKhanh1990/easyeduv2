@@ -1344,7 +1344,7 @@ export function registerFinanceRoutes(app: Express): void {
       if (!parsed.success) {
         return res.status(400).json({ message: "splitAmount không hợp lệ", errors: parsed.error.errors });
       }
-      const result = await storage.splitInvoiceSchedule(req.params.id, Number(parsed.data.splitAmount));
+      const result = await storage.splitInvoiceSchedule(req.params.id, Number(parsed.data.splitAmount), (req as any).user?.id ?? null);
       res.json(result);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -1361,6 +1361,7 @@ export function registerFinanceRoutes(app: Express): void {
       const data: Record<string, unknown> = {};
       if (amount !== undefined) data.amount = Number(amount);
       if (dueDate !== undefined) data.dueDate = dueDate;
+      data.updatedBy = (req as any).user?.id ?? null;
       const updated = await storage.updateInvoiceSchedule(req.params.id, data as any);
       res.json(updated);
     } catch (err: any) {
@@ -1383,7 +1384,7 @@ export function registerFinanceRoutes(app: Express): void {
         .where(eq(invoicePaymentSchedule.id, req.params.id))
         .limit(1);
 
-      const updated = await storage.updateInvoiceScheduleStatus(req.params.id, status);
+      const updated = await storage.updateInvoiceScheduleStatus(req.params.id, status, userId);
 
       // Create wallet entry for Học phí if applicable
       if (scheduleBefore && scheduleBefore.invoiceId) {
@@ -1557,6 +1558,9 @@ export function registerFinanceRoutes(app: Express): void {
                 status: "paid",
                 paidAt,
                 paymentMethod: paymentMethod ?? null,
+                paidBy: userId ?? null,
+                updatedAt: new Date(),
+                updatedBy: userId ?? null,
               } as any).where(eq(invoicePaymentSchedule.id, s.id));
             }
           }
@@ -1630,6 +1634,9 @@ export function registerFinanceRoutes(app: Express): void {
             status: "paid",
             paidAt,
             paymentMethod: paymentMethod ?? null,
+            paidBy: userId ?? null,
+            updatedAt: new Date(),
+            updatedBy: userId ?? null,
           } as any).where(eq(invoicePaymentSchedule.id, schedId));
 
           // Assign settle code

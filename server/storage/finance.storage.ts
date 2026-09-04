@@ -490,7 +490,18 @@ export async function getInvoices(filters: {
   if (f.paymentMethods?.length) conditions.push(inArray(invoices.paymentMethod, f.paymentMethods) as any);
   if (f.classNames?.length)     conditions.push(inArray(classes.name, f.classNames) as any);
   if (f.creatorNames?.length)   conditions.push(inArray(creatorStaff.fullName, f.creatorNames) as any);
-  if (f.payerNames?.length)     conditions.push(inArray(paidByStaff.fullName, f.payerNames) as any);
+  if (f.payerNames?.length) {
+    const schedulePayerStaff = alias(staff, "schedule_payer_filter");
+    const schedulePayerInvoiceIds = db
+      .select({ invoiceId: invoicePaymentSchedule.invoiceId })
+      .from(invoicePaymentSchedule)
+      .innerJoin(schedulePayerStaff, eq(invoicePaymentSchedule.paidBy, schedulePayerStaff.userId))
+      .where(inArray(schedulePayerStaff.fullName, f.payerNames));
+    conditions.push(or(
+      inArray(paidByStaff.fullName, f.payerNames),
+      inArray(invoices.id, schedulePayerInvoiceIds),
+    ) as any);
+  }
   if (f.commissionStaffNames?.length) {
     const commStaffSub = alias(staff, "comm_staff_sub");
     conditions.push(
@@ -721,7 +732,8 @@ export async function getInvoiceFilterOptions(filters: {
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
   const commOptStaff = alias(staff, "comm_opts");
-  const [rows, commRows] = await Promise.all([
+  const schedulePayerOptStaff = alias(staff, "schedule_payer_opts");
+  const [rows, commRows, schedulePayerRows] = await Promise.all([
     db.select({
       locationName: locations.name,
       category: invoices.category,
@@ -745,6 +757,13 @@ export async function getInvoiceFilterOptions(filters: {
         ? inArray(invoiceCommissions.invoiceId, db.select({ id: invoices.id }).from(invoices).where(where))
         : undefined
     ),
+
+    db.select({ payerName: schedulePayerOptStaff.fullName })
+      .from(invoicePaymentSchedule)
+      .innerJoin(invoices, eq(invoicePaymentSchedule.invoiceId, invoices.id))
+      .leftJoin(locations, eq(invoices.locationId, locations.id))
+      .innerJoin(schedulePayerOptStaff, eq(invoicePaymentSchedule.paidBy, schedulePayerOptStaff.userId))
+      .where(where),
   ]);
 
   const uniq = (arr: (string | null | undefined)[]) =>
@@ -755,7 +774,10 @@ export async function getInvoiceFilterOptions(filters: {
     categories: uniq(rows.map(r => r.category)),
     classNames: uniq(rows.map(r => r.className)),
     creatorNames: uniq(rows.map(r => r.creatorName)),
-    payerNames: uniq(rows.map(r => r.payerName)),
+    payerNames: uniq([
+      ...rows.map(r => r.payerName),
+      ...schedulePayerRows.map(r => r.payerName),
+    ]),
     paymentMethods: uniq(rows.map(r => r.paymentMethod)),
     commissionStaffNames: uniq(commRows.map(r => r.staffName)),
   };
@@ -1012,14 +1034,29 @@ export async function getInvoice(id: string): Promise<any | undefined> {
     locationBankAccounts,
   } = rows[0];
   const commStaff2 = alias(staff, "comm_staff2");
-  const [items, schedule, commRows2] = await Promise.all([
+  const scheduleCreatorStaff = alias(staff, "schedule_creator_staff");
+  const schedulePaidByStaff = alias(staff, "schedule_paid_by_staff");
+  const scheduleUpdaterStaff = alias(staff, "schedule_updater_staff");
+  const [items, scheduleRows, commRows2] = await Promise.all([
     db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, id)).orderBy(asc(invoiceItems.sortOrder)),
-    db.select().from(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.invoiceId, id)).orderBy(asc(invoicePaymentSchedule.sortOrder)),
+    db.select({
+      schedule: invoicePaymentSchedule,
+      createdByName: scheduleCreatorStaff.fullName,
+      paidByName: schedulePaidByStaff.fullName,
+      updatedByName: scheduleUpdaterStaff.fullName,
+    })
+      .from(invoicePaymentSchedule)
+      .leftJoin(scheduleCreatorStaff, eq(invoicePaymentSchedule.createdBy, scheduleCreatorStaff.userId))
+      .leftJoin(schedulePaidByStaff, eq(invoicePaymentSchedule.paidBy, schedulePaidByStaff.userId))
+      .leftJoin(scheduleUpdaterStaff, eq(invoicePaymentSchedule.updatedBy, scheduleUpdaterStaff.userId))
+      .where(eq(invoicePaymentSchedule.invoiceId, id))
+      .orderBy(asc(invoicePaymentSchedule.sortOrder)),
     db.select({ staffId: invoiceCommissions.staffId, staffCode: commStaff2.code, staffName: commStaff2.fullName, percentage: invoiceCommissions.percentage })
       .from(invoiceCommissions)
       .leftJoin(commStaff2, eq(invoiceCommissions.staffId, commStaff2.id))
       .where(eq(invoiceCommissions.invoiceId, id)),
   ]);
+  const schedule = scheduleRows.map(({ schedule: row, ...names }) => ({ ...row, ...names }));
   const commissions = commRows2.map(r => ({ staffId: r.staffId, staffCode: r.staffCode ?? "", staffName: r.staffName ?? "", percentage: parseFloat(r.percentage ?? "0") }));
   return {
     ...row,
@@ -1130,9 +1167,13 @@ export async function createInvoice(data: any): Promise<any> {
             dueDate: s.dueDate ?? null,
             status: s.status ?? "unpaid",
             paidAt: s.status === "paid" ? (s.paidAt ?? new Date()) : null,
+            paidBy: s.status === "paid" ? (s.paidBy ?? invoiceData.createdBy ?? null) : null,
             sortOrder: idx,
             paymentMethod: s.paymentMethod ?? null,
             appliedBankAccount: s.appliedBankAccount ?? null,
+            createdBy: invoiceData.createdBy ?? null,
+            updatedAt: new Date(),
+            updatedBy: invoiceData.updatedBy ?? invoiceData.createdBy ?? null,
           }))
         ).returning()
       : [];
@@ -1262,20 +1303,34 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
     }
 
     if (Array.isArray(paymentSchedule)) {
+      const existingSchedules = await tx
+        .select()
+        .from(invoicePaymentSchedule)
+        .where(eq(invoicePaymentSchedule.invoiceId, id));
       await tx.delete(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.invoiceId, id));
       if (paymentSchedule.length > 0) {
         await tx.insert(invoicePaymentSchedule).values(
           paymentSchedule.map((s: any, idx: number) => ({
+            ...(() => {
+              const previous = existingSchedules.find((row) => row.id === s.id);
+              return {
+                createdAt: previous?.createdAt ?? new Date(),
+                createdBy: previous?.createdBy ?? inv.createdBy ?? invoiceData.updatedBy ?? null,
+                paidAt: s.status === "paid" ? (previous?.paidAt ?? s.paidAt ?? new Date()) : null,
+                paidBy: s.status === "paid" ? (previous?.paidBy ?? s.paidBy ?? invoiceData.updatedBy ?? null) : null,
+              };
+            })(),
             invoiceId: id,
             label: s.label,
             code: `${inv.code}-${idx + 1}`,
             amount: s.amount?.toString() ?? "0",
             dueDate: s.dueDate ?? null,
             status: s.status ?? "unpaid",
-            paidAt: s.status === "paid" ? new Date() : null,
             sortOrder: idx,
             paymentMethod: s.paymentMethod ?? null,
             appliedBankAccount: s.appliedBankAccount ?? null,
+            updatedAt: new Date(),
+            updatedBy: invoiceData.updatedBy ?? null,
           }))
         );
       }
@@ -1288,14 +1343,26 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
 }
 
 export async function getInvoicePaymentSchedules(invoiceId: string): Promise<any[]> {
-  return db
-    .select()
+  const scheduleCreatorStaff = alias(staff, "schedule_creator_staff_list");
+  const schedulePaidByStaff = alias(staff, "schedule_paid_by_staff_list");
+  const scheduleUpdaterStaff = alias(staff, "schedule_updater_staff_list");
+  const rows = await db
+    .select({
+      schedule: invoicePaymentSchedule,
+      createdByName: scheduleCreatorStaff.fullName,
+      paidByName: schedulePaidByStaff.fullName,
+      updatedByName: scheduleUpdaterStaff.fullName,
+    })
     .from(invoicePaymentSchedule)
+    .leftJoin(scheduleCreatorStaff, eq(invoicePaymentSchedule.createdBy, scheduleCreatorStaff.userId))
+    .leftJoin(schedulePaidByStaff, eq(invoicePaymentSchedule.paidBy, schedulePaidByStaff.userId))
+    .leftJoin(scheduleUpdaterStaff, eq(invoicePaymentSchedule.updatedBy, scheduleUpdaterStaff.userId))
     .where(eq(invoicePaymentSchedule.invoiceId, invoiceId))
     .orderBy(asc(invoicePaymentSchedule.sortOrder));
+  return rows.map(({ schedule, ...names }) => ({ ...schedule, ...names }));
 }
 
-export async function splitInvoiceSchedule(scheduleId: string, splitAmount: number): Promise<{ updated: any; affected: any }> {
+export async function splitInvoiceSchedule(scheduleId: string, splitAmount: number, userId?: string | null): Promise<{ updated: any; affected: any }> {
   return db.transaction(async (tx) => {
     const [schedule] = await tx.select().from(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.id, scheduleId));
     if (!schedule) throw new Error("Không tìm thấy đợt thanh toán");
@@ -1310,7 +1377,7 @@ export async function splitInvoiceSchedule(scheduleId: string, splitAmount: numb
     // Update the current installment to the new (smaller) amount entered by user
     const [updated] = await tx
       .update(invoicePaymentSchedule)
-      .set({ amount: splitAmount.toFixed(2) })
+      .set({ amount: splitAmount.toFixed(2), updatedAt: new Date(), updatedBy: userId ?? null })
       .where(eq(invoicePaymentSchedule.id, scheduleId))
       .returning();
 
@@ -1332,7 +1399,7 @@ export async function splitInvoiceSchedule(scheduleId: string, splitAmount: numb
       const nextNewAmount = parseFloat(nextSchedule.amount ?? "0") + remainingAmount;
       const [updatedNext] = await tx
         .update(invoicePaymentSchedule)
-        .set({ amount: nextNewAmount.toFixed(2) })
+        .set({ amount: nextNewAmount.toFixed(2), updatedAt: new Date(), updatedBy: userId ?? null })
         .where(eq(invoicePaymentSchedule.id, nextSchedule.id))
         .returning();
       affected = updatedNext;
@@ -1357,6 +1424,9 @@ export async function splitInvoiceSchedule(scheduleId: string, splitAmount: numb
           status: "unpaid",
           dueDate: schedule.dueDate,
           sortOrder: newSortOrder,
+          createdBy: schedule.createdBy ?? null,
+          updatedBy: userId ?? schedule.updatedBy ?? null,
+          updatedAt: new Date(),
         })
         .returning();
       affected = created;
@@ -1366,13 +1436,15 @@ export async function splitInvoiceSchedule(scheduleId: string, splitAmount: numb
   });
 }
 
-export async function updateInvoiceSchedule(scheduleId: string, data: { amount?: number; dueDate?: string | null }): Promise<any> {
+export async function updateInvoiceSchedule(scheduleId: string, data: { amount?: number; dueDate?: string | null; updatedBy?: string | null }): Promise<any> {
   const [schedule] = await db.select().from(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.id, scheduleId));
   if (!schedule) throw new Error("Không tìm thấy đợt thanh toán");
   if (schedule.status === "paid") throw new Error("Không thể sửa đợt đã thanh toán");
   const updateData: any = {};
   if (data.amount !== undefined) updateData.amount = data.amount.toFixed(2);
   if (data.dueDate !== undefined) updateData.dueDate = data.dueDate;
+  updateData.updatedAt = new Date();
+  if (data.updatedBy !== undefined) updateData.updatedBy = data.updatedBy;
   const [updated] = await db
     .update(invoicePaymentSchedule)
     .set(updateData)
@@ -1381,12 +1453,18 @@ export async function updateInvoiceSchedule(scheduleId: string, data: { amount?:
   return updated;
 }
 
-export async function updateInvoiceScheduleStatus(scheduleId: string, status: string): Promise<any> {
+export async function updateInvoiceScheduleStatus(scheduleId: string, status: string, userId?: string | null): Promise<any> {
   return db.transaction(async (tx) => {
     const paidAt = status === "paid" ? new Date() : null;
     const [updated] = await tx
       .update(invoicePaymentSchedule)
-      .set({ status, paidAt })
+      .set({
+        status,
+        paidAt,
+        paidBy: status === "paid" ? (userId ?? null) : null,
+        updatedAt: new Date(),
+        updatedBy: userId ?? null,
+      })
       .where(eq(invoicePaymentSchedule.id, scheduleId))
       .returning();
 

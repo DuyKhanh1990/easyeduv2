@@ -182,6 +182,7 @@ export const invoicePaymentSchedule = pgTable("invoice_payment_schedule", {
   dueDate: date("due_date"),                                  // Hạn thanh toán đợt này
   status: varchar("status", { length: 20 }).notNull().default("unpaid"), // unpaid | paid
   paidAt: timestamp("paid_at"),
+  paidBy: uuid("paid_by").references(() => users.id),
   sortOrder: integer("sort_order").default(0),
   settleCode: varchar("settle_code", { length: 50 }),              // KT0001 khi đợt được thanh toán
   paymentMethod: varchar("payment_method", { length: 20 }),         // cash | transfer
@@ -193,6 +194,9 @@ export const invoicePaymentSchedule = pgTable("invoice_payment_schedule", {
   einvoiceMessage: text("einvoice_message"),
   einvoiceUpdatedAt: timestamp("einvoice_updated_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdBy: uuid("created_by").references(() => users.id),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  updatedBy: uuid("updated_by").references(() => users.id),
 });
 
 // ==========================================

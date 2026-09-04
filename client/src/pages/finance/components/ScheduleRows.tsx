@@ -139,6 +139,18 @@ export function ScheduleRows({
             {fmtDate(s.dueDate)}
           </td>
         );
+      case "creator":
+        return <td key="creator" className="py-2 px-3 whitespace-nowrap text-xs text-muted-foreground">{s.createdByName ?? "—"}</td>;
+      case "createdAt":
+        return <td key="createdAt" className="py-2 px-3 whitespace-nowrap text-xs text-muted-foreground">{fmtDate(s.createdAt)}</td>;
+      case "paidBy":
+        return <td key="paidBy" className="py-2 px-3 whitespace-nowrap text-xs text-muted-foreground">{s.paidByName ?? "—"}</td>;
+      case "paidAt":
+        return <td key="paidAt" className="py-2 px-3 whitespace-nowrap text-xs text-muted-foreground">{fmtDate(s.paidAt)}</td>;
+      case "updater":
+        return <td key="updater" className="py-2 px-3 whitespace-nowrap text-xs text-muted-foreground">{s.updatedByName ?? "—"}</td>;
+      case "updatedAt":
+        return <td key="updatedAt" className="py-2 px-3 whitespace-nowrap text-xs text-muted-foreground">{fmtDate(s.updatedAt)}</td>;
       default:
         return <td key={colKey} className="py-2 px-3" />;
     }

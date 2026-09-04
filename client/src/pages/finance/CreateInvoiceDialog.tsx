@@ -602,6 +602,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     });
 
     const baseSchedule = paymentSchedule.map(s => ({
+      id: s.id.startsWith("auto-") ? undefined : s.id,
       label: s.label,
       code: s.code,
       amount: String(s.amount),

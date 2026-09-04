@@ -62,6 +62,11 @@ export interface ScheduleItem {
   sortOrder: number;
   paymentMethod?: string | null;
   paidAt?: string | Date | null;
+  paidByName?: string | null;
+  createdAt?: string | Date | null;
+  createdByName?: string | null;
+  updatedAt?: string | Date | null;
+  updatedByName?: string | null;
   einvoiceStatus?: "draft" | "published" | null;
   einvoiceFkey?: string | null;
   einvoiceMaTraCuu?: string | null;
