@@ -635,6 +635,32 @@ export async function extendStudentSessions(data: {
       return pkg ?? null;
     };
 
+    // Resolve the actual schedule metadata once for the whole extension.
+    // Legacy/imported classes may have an empty classes.shift_template_ids even though
+    // their existing class_sessions still contain valid shift assignments.
+    const existingScheduleConfigs = await tx
+      .select({
+        weekday: classSessions.weekday,
+        shiftTemplateId: classSessions.shiftTemplateId,
+        roomId: classSessions.roomId,
+        teacherIds: classSessions.teacherIds,
+      })
+      .from(classSessions)
+      .where(eq(classSessions.classId, data.classId))
+      .orderBy(desc(classSessions.sessionDate));
+
+    const scheduleConfigByWeekday = new Map<number, typeof existingScheduleConfigs[number]>();
+    for (const config of existingScheduleConfigs) {
+      const normalizedWeekday = config.weekday === 7 ? 0 : config.weekday;
+      if (!scheduleConfigByWeekday.has(normalizedWeekday) && config.shiftTemplateId) {
+        scheduleConfigByWeekday.set(normalizedWeekday, config);
+      }
+    }
+
+    const configuredClassShiftId = (cls.shiftTemplateIds || []).find((id: string | null) => !!id) ?? null;
+    const latestScheduleConfig = existingScheduleConfigs.find((config) => !!config.shiftTemplateId);
+    const fallbackShiftTemplateId = configuredClassShiftId ?? latestScheduleConfig?.shiftTemplateId ?? null;
+
     // ── Pre-loop batch fetches (replaces 2 queries/student) ────────────────
     // 1. Fetch all student_classes records for this class in one query
     const allSCRows = await tx
@@ -750,22 +776,37 @@ export async function extendStudentSessions(data: {
       // Step 3: batch-insert any missing class sessions (1 query)
       const missingDays = candidateDays.filter((d) => !existingCSMap[d.dateStr]);
       if (missingDays.length > 0) {
+        if (!fallbackShiftTemplateId && missingDays.some((d) => !scheduleConfigByWeekday.get(d.dbWeekday)?.shiftTemplateId)) {
+          throw new Error("Lớp chưa có ca học hợp lệ để tạo buổi gia hạn. Vui lòng kiểm tra cấu hình lịch học của lớp.");
+        }
+
         const [maxRow] = await tx
           .select({ maxIdx: sql<number>`MAX(${classSessions.sessionIndex})` })
           .from(classSessions)
           .where(eq(classSessions.classId, data.classId));
         let nextIdx = (maxRow?.maxIdx || 0) + 1;
 
-        const toInsert = missingDays.map((d) => ({
-          classId: data.classId,
-          sessionDate: d.dateStr,
-          weekday: d.dbWeekday === 0 ? 7 : d.dbWeekday,
-          shiftTemplateId: (cls.shiftTemplateIds || [])[0] || null,
-          roomId: cls.roomId || "00000000-0000-0000-0000-000000000000",
-          teacherIds: cls.teacherIds && cls.teacherIds.length > 0 ? cls.teacherIds : null,
-          sessionIndex: nextIdx++,
-          status: "scheduled" as const,
-        }));
+        const toInsert = missingDays.map((d) => {
+          const weekdayConfig = scheduleConfigByWeekday.get(d.dbWeekday);
+          const shiftTemplateId = weekdayConfig?.shiftTemplateId ?? fallbackShiftTemplateId;
+
+          if (!shiftTemplateId) {
+            throw new Error("Lớp chưa có ca học hợp lệ để tạo buổi gia hạn. Vui lòng kiểm tra cấu hình lịch học của lớp.");
+          }
+
+          return {
+            classId: data.classId,
+            sessionDate: d.dateStr,
+            weekday: d.dbWeekday === 0 ? 7 : d.dbWeekday,
+            shiftTemplateId,
+            roomId: weekdayConfig?.roomId ?? cls.roomId ?? latestScheduleConfig?.roomId ?? "00000000-0000-0000-0000-000000000000",
+            teacherIds: weekdayConfig?.teacherIds?.length
+              ? weekdayConfig.teacherIds
+              : (cls.teacherIds && cls.teacherIds.length > 0 ? cls.teacherIds : latestScheduleConfig?.teacherIds ?? null),
+            sessionIndex: nextIdx++,
+            status: "scheduled" as const,
+          };
+        });
 
         const inserted = await tx.insert(classSessions).values(toInsert).returning();
         for (const row of inserted) existingCSMap[row.sessionDate] = row;
