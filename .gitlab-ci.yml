@@ -11,14 +11,14 @@ variables:
   REGISTRY_IMAGE: new-easyedu
   DOCKER_IMAGE: $DOCKER_REGISTRY/$REGISTRY_PROJECT/$REGISTRY_IMAGE
   # REGISTRY_TAG: ${CI_COMMIT_TAG:-${CI_COMMIT_REF_SLUG}-${CI_COMMIT_SHORT_SHA}}
-  REGISTRY_TAG: 0.1.93 #Thêm sync_user_tokens_controller.rb nân nodejs
+  REGISTRY_TAG: 0.1.94 #Thêm sync_user_tokens_controller.rb nân nodejs
 emso-build-image:
   stage: build_images
   tags: [emso-runner]
   script:
     - echo "Login to Docker Registry"
     - echo "$HARBOR_ROBOT_TOKEN" | docker login --username "$HARBOR_ROBOT_USER" --password-stdin "$DOCKER_REGISTRY"
-    - DOCKER_BUILDKIT=1 docker build --progress=plain --build-arg "APP_VERSION=$REGISTRY_TAG" -t "$DOCKER_IMAGE:$REGISTRY_TAG" .
+    - DOCKER_BUILDKIT=1 docker build --progress=plain -t "$DOCKER_IMAGE:$REGISTRY_TAG" .
     # Harbor có thể trả 500 tạm thời khi upload một layer lớn.
     # Retry toàn bộ push để Docker tiếp tục dùng lại các layer đã upload thành công.
     - |
