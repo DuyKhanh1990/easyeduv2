@@ -553,6 +553,12 @@ export function CreateTutorClass() {
                                       type="button"
                                       disabled={isInactive}
                                       className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors border-b last:border-b-0 ${isInactive ? "opacity-40 cursor-not-allowed" : "hover:bg-purple-50 cursor-pointer"}`}
+                                      onMouseDown={(event) => {
+                                        // Keep the search input focused until click is dispatched.
+                                        // Without this, the input onBlur timer can close the list
+                                        // before a slower click reaches the result button.
+                                        if (!isInactive) event.preventDefault();
+                                      }}
                                       onClick={() => { if (!isInactive) handleStudentSelect(s); }}
                                     >
                                       <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center shrink-0">
