@@ -81,6 +81,7 @@ export function CreateTutorClass() {
   const [sessionCount, setSessionCount] = useState("10");
   const [selectedColor, setSelectedColor] = useState(CLASS_PALETTE[1]);
   const [selectedStudentId, setSelectedStudentId] = useState<string>("");
+  const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
   const [studentSearch, setStudentSearch] = useState("");
   const [debouncedStudentSearch, setDebouncedStudentSearch] = useState("");
   const [studentFocused, setStudentFocused] = useState(false);
@@ -231,6 +232,7 @@ export function CreateTutorClass() {
 
   useEffect(() => {
     setSelectedStudentId("");
+    setSelectedStudent(null);
     setStudentSearch("");
     setDebouncedStudentSearch("");
   }, [selectedLocationId]);
@@ -266,12 +268,9 @@ export function CreateTutorClass() {
       })
     : [];
 
-  const selectedStudent = Array.isArray(studentsData)
-    ? studentsData.find((s: any) => s.id === selectedStudentId)
-    : null;
-
   const handleStudentSelect = async (student: any) => {
     setSelectedStudentId(student.id);
+    setSelectedStudent(student);
     const baseName = student.fullName;
     let autoCode = `GS-${baseName}`;
     let counter = 1;
@@ -526,7 +525,10 @@ export function CreateTutorClass() {
                               variant="ghost"
                               size="sm"
                               className="text-destructive h-6 px-2 shrink-0"
-                              onClick={() => setSelectedStudentId("")}
+                              onClick={() => {
+                                setSelectedStudentId("");
+                                setSelectedStudent(null);
+                              }}
                             >
                               <X className="h-3.5 w-3.5" />
                             </Button>
