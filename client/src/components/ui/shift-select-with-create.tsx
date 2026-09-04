@@ -124,12 +124,22 @@ export function ShiftSelectWithCreate({
         </SelectTrigger>
         <SelectContent>
           {shifts.map((s) => (
-            <SelectItem key={s.id} value={s.id} selectOnPointerDown={selectOnPointerDown}>
+            <SelectItem
+              key={s.id}
+              value={s.id}
+              selectOnPointerDown={selectOnPointerDown}
+              onPointerDownSelect={() => handleSelectChange(s.id)}
+            >
               {s.name} ({s.startTime}-{s.endTime})
             </SelectItem>
           ))}
           <div className="border-t mt-1 pt-1">
-            <SelectItem value={CREATE_NEW_VALUE} className="text-primary font-medium" selectOnPointerDown={selectOnPointerDown}>
+            <SelectItem
+              value={CREATE_NEW_VALUE}
+              className="text-primary font-medium"
+              selectOnPointerDown={selectOnPointerDown}
+              onPointerDownSelect={() => handleSelectChange(CREATE_NEW_VALUE)}
+            >
               <span className="flex items-center gap-1.5">
                 <Plus className="h-3.5 w-3.5" />
                 Thêm ca mới...
