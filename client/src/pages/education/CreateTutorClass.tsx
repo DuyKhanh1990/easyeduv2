@@ -501,7 +501,7 @@ export function CreateTutorClass() {
                               </FormControl>
                               <SelectContent>
                                 {(locations as any[])?.map((l: any) => (
-                                  <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                                  <SelectItem key={l.id} value={l.id} selectOnPointerDown>{l.name}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
@@ -616,8 +616,8 @@ export function CreateTutorClass() {
                                 <SelectTrigger><SelectValue placeholder="Chọn hình thức học" /></SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                <SelectItem value="offline">Offline</SelectItem>
-                                <SelectItem value="online">Online</SelectItem>
+                                <SelectItem value="offline" selectOnPointerDown>Offline</SelectItem>
+                                <SelectItem value="online" selectOnPointerDown>Online</SelectItem>
                               </SelectContent>
                             </Select>
                             <FormMessage />
@@ -640,7 +640,7 @@ export function CreateTutorClass() {
                               </FormControl>
                               <SelectContent>
                                 {(courses as any[])?.map((c: any) => (
-                                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                                  <SelectItem key={c.id} value={c.id} selectOnPointerDown>{c.name}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
@@ -668,7 +668,7 @@ export function CreateTutorClass() {
                               </FormControl>
                               <SelectContent>
                                 {feePackages?.map((p: any) => (
-                                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                                  <SelectItem key={p.id} value={p.id} selectOnPointerDown>{p.name}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
@@ -690,6 +690,7 @@ export function CreateTutorClass() {
                                 placeholder={selectedLocationId ? "Chọn nhân sự" : "Chọn cơ sở trước"}
                                 searchPlaceholder="Tìm kiếm nhân sự..."
                                 disabled={!selectedLocationId}
+                                selectOnPointerDown
                               />
                             </FormControl>
                             <FormMessage />
@@ -731,7 +732,7 @@ export function CreateTutorClass() {
                                 </FormControl>
                                 <SelectContent>
                                   {(programs as any[])?.map((p: any) => (
-                                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                                    <SelectItem key={p.id} value={p.id} selectOnPointerDown>{p.name}</SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
@@ -753,9 +754,9 @@ export function CreateTutorClass() {
                                   <SelectTrigger><SelectValue placeholder="Chọn bảng điểm (tuỳ chọn)" /></SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                  <SelectItem value="none">— Không chọn —</SelectItem>
+                                  <SelectItem value="none" selectOnPointerDown>— Không chọn —</SelectItem>
                                   {scoreSheets?.map((s: any) => (
-                                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                                    <SelectItem key={s.id} value={s.id} selectOnPointerDown>{s.name}</SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
@@ -777,9 +778,9 @@ export function CreateTutorClass() {
                                   <SelectTrigger><SelectValue placeholder="Chọn bộ môn (tuỳ chọn)" /></SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                  <SelectItem value="none">— Không chọn —</SelectItem>
+                                  <SelectItem value="none" selectOnPointerDown>— Không chọn —</SelectItem>
                                   {subjects?.map((s: any) => (
-                                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                                    <SelectItem key={s.id} value={s.id} selectOnPointerDown>{s.name}</SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
@@ -800,6 +801,7 @@ export function CreateTutorClass() {
                                   onChange={field.onChange}
                                   placeholder="Chọn tiêu chí (tuỳ chọn)"
                                   searchPlaceholder="Tìm kiếm tiêu chí..."
+                                  selectOnPointerDown
                                 />
                               </FormControl>
                               <FormMessage />
@@ -846,8 +848,8 @@ export function CreateTutorClass() {
                           <Select value={endType} onValueChange={(v) => setEndType(v as "date" | "sessions")}>
                             <SelectTrigger><SelectValue /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="date">Kết thúc vào ngày</SelectItem>
-                              <SelectItem value="sessions">Kết thúc sau số buổi</SelectItem>
+                              <SelectItem value="date" selectOnPointerDown>Kết thúc vào ngày</SelectItem>
+                              <SelectItem value="sessions" selectOnPointerDown>Kết thúc sau số buổi</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -964,6 +966,7 @@ export function CreateTutorClass() {
                                           locationId={selectedLocationId}
                                           placeholder="Chọn ca"
                                           triggerClassName="h-9"
+                                          selectOnPointerDown
                                         />
                                       </div>
                                       <div className="col-span-4">
@@ -985,7 +988,7 @@ export function CreateTutorClass() {
                                                 </SelectTrigger>
                                                 <SelectContent>
                                                   {filteredClassrooms?.map((r: any) => (
-                                                    <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                                                    <SelectItem key={r.id} value={r.id} selectOnPointerDown>{r.name}</SelectItem>
                                                   ))}
                                                 </SelectContent>
                                               </Select>
@@ -1077,7 +1080,7 @@ export function CreateTutorClass() {
                               }).map((s: any) => {
                                 const isInactive = s.status === "Không hoạt động";
                                 return (
-                                  <SelectItem key={s.id} value={s.id} disabled={isInactive} className={isInactive ? "opacity-40" : ""}>
+                                  <SelectItem key={s.id} value={s.id} disabled={isInactive} className={isInactive ? "opacity-40" : ""} selectOnPointerDown>
                                     <span className="flex items-center gap-1.5">
                                       <span>{s.fullName}</span>
                                       {s.code && <span className="text-[11px] text-muted-foreground">({s.code})</span>}

@@ -30,6 +30,7 @@ interface ShiftSelectWithCreateProps {
   placeholder?: string;
   disabled?: boolean;
   triggerClassName?: string;
+  selectOnPointerDown?: boolean;
 }
 
 const CREATE_NEW_VALUE = "__create_new__";
@@ -41,6 +42,7 @@ export function ShiftSelectWithCreate({
   placeholder = "Chọn ca học",
   disabled = false,
   triggerClassName,
+  selectOnPointerDown = false,
 }: ShiftSelectWithCreateProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -122,12 +124,12 @@ export function ShiftSelectWithCreate({
         </SelectTrigger>
         <SelectContent>
           {shifts.map((s) => (
-            <SelectItem key={s.id} value={s.id}>
+            <SelectItem key={s.id} value={s.id} selectOnPointerDown={selectOnPointerDown}>
               {s.name} ({s.startTime}-{s.endTime})
             </SelectItem>
           ))}
           <div className="border-t mt-1 pt-1">
-            <SelectItem value={CREATE_NEW_VALUE} className="text-primary font-medium">
+            <SelectItem value={CREATE_NEW_VALUE} className="text-primary font-medium" selectOnPointerDown={selectOnPointerDown}>
               <span className="flex items-center gap-1.5">
                 <Plus className="h-3.5 w-3.5" />
                 Thêm ca mới...
