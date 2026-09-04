@@ -33,6 +33,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Check, ChevronLeft, Plus, X, User, Loader2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { normalizeSearchText } from "@/lib/search-text";
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { ShiftSelectWithCreate } from "@/components/ui/shift-select-with-create";
 import { insertClassSchema } from "@shared/schema";
@@ -81,6 +82,7 @@ export function CreateTutorClass() {
   const [selectedColor, setSelectedColor] = useState(CLASS_PALETTE[1]);
   const [selectedStudentId, setSelectedStudentId] = useState<string>("");
   const [studentSearch, setStudentSearch] = useState("");
+  const [debouncedStudentSearch, setDebouncedStudentSearch] = useState("");
   const [studentFocused, setStudentFocused] = useState(false);
   const [step2Conflicts, setStep2Conflicts] = useState<any[]>([]);
   const [isCheckingStep2, setIsCheckingStep2] = useState(false);
@@ -145,9 +147,27 @@ export function CreateTutorClass() {
     enabled: !!selectedCourseId,
   });
 
+  const studentListUrl = (() => {
+    const params = new URLSearchParams({
+      minimal: "true",
+      limit: "200",
+    });
+    if (selectedLocationId) params.set("locationId", selectedLocationId);
+    if (debouncedStudentSearch.trim()) {
+      params.set("searchTerm", debouncedStudentSearch.trim());
+    }
+    return `/api/students?${params.toString()}`;
+  })();
+
   const { data: studentsData } = useQuery<any[]>({
-    queryKey: [selectedLocationId ? `/api/students?minimal=true&locationId=${selectedLocationId}` : "/api/students?minimal=true"],
-    select: (data: any) => Array.isArray(data) ? data : (data?.students ?? []),
+    queryKey: [studentListUrl],
+    queryFn: async () => {
+      const response = await fetch(studentListUrl, { credentials: "include" });
+      if (!response.ok) throw new Error("Không thể tải danh sách học viên");
+      const data = await response.json();
+      return Array.isArray(data) ? data : (data?.students ?? []);
+    },
+    enabled: !!selectedLocationId,
     staleTime: STATIC_STALE_TIME,
   });
 
@@ -212,7 +232,13 @@ export function CreateTutorClass() {
   useEffect(() => {
     setSelectedStudentId("");
     setStudentSearch("");
+    setDebouncedStudentSearch("");
   }, [selectedLocationId]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedStudentSearch(studentSearch), 250);
+    return () => clearTimeout(timer);
+  }, [studentSearch]);
 
   useEffect(() => {
     const currentConfig = form.getValues("schedule_config") || [];
@@ -226,11 +252,11 @@ export function CreateTutorClass() {
 
   const filteredStudents = Array.isArray(studentsData)
     ? [...studentsData.filter((s: any) => {
-        if (!studentSearch) return true;
-        const q = studentSearch.toLowerCase();
+        const q = normalizeSearchText(studentSearch);
+        if (!q) return true;
         return (
-          (s.fullName || "").toLowerCase().includes(q) ||
-          (s.code || "").toLowerCase().includes(q)
+          normalizeSearchText(s.fullName).includes(q) ||
+          normalizeSearchText(s.code).includes(q)
         );
       })].sort((a: any, b: any) => {
         const aActive = a.accountStatus !== "Không hoạt động";

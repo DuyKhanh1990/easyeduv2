@@ -9,6 +9,7 @@ import {
   studentRelationshipHistory, studentNotificationChannels,
 } from "./base";
 import { hashPassword } from "../auth";
+import { normalizeSearchText, normalizedSearchSql } from "../lib/search-text";
 import type {
   StudentResponse, Staff as StaffType,
   CrmPipelineGroup, InsertCrmPipelineGroup,
@@ -228,9 +229,12 @@ export async function getStudents(params: {
       ) IN ${learningStatuses}
     )`;
   }
-  if (searchTerm) {
-    const search = `%${searchTerm.toLowerCase()}%`;
-    whereClause = sql`${whereClause} AND (LOWER(${students.fullName}) LIKE ${search} OR LOWER(${students.code}) LIKE ${search})`;
+  const normalizedSearch = normalizeSearchText(searchTerm);
+  if (normalizedSearch) {
+    const search = `%${normalizedSearch}%`;
+    const normalizedName = normalizedSearchSql(students.fullName);
+    const normalizedCode = normalizedSearchSql(students.code);
+    whereClause = sql`${whereClause} AND (${normalizedName} LIKE ${search} OR ${normalizedCode} LIKE ${search})`;
   }
 
   const studentIdRows = await db
@@ -243,10 +247,10 @@ export async function getStudents(params: {
     .limit(limit ?? 20)
     .offset(offset ?? 0)
     .orderBy(
-      searchTerm
+      normalizedSearch
         ? sql`CASE
-            WHEN LOWER(${students.fullName}) = LOWER(${searchTerm}) OR LOWER(${students.code}) = LOWER(${searchTerm}) THEN 0
-            WHEN LOWER(${students.fullName}) LIKE LOWER(${searchTerm + "%"}) OR LOWER(${students.code}) LIKE LOWER(${searchTerm + "%"}) THEN 1
+            WHEN ${normalizedSearchSql(students.fullName)} = ${normalizedSearch} OR ${normalizedSearchSql(students.code)} = ${normalizedSearch} THEN 0
+            WHEN ${normalizedSearchSql(students.fullName)} LIKE ${normalizedSearch + "%"} OR ${normalizedSearchSql(students.code)} LIKE ${normalizedSearch + "%"} THEN 1
             ELSE 2
           END, ${students.fullName}`
         : sql`${students.createdAt} DESC`
@@ -466,13 +470,19 @@ export async function getStudentsMinimal(params: {
     whereClause = sql`${whereClause} AND EXISTS (SELECT 1 FROM ${studentLocations} sl WHERE sl.student_id = ${students.id} AND sl.location_id = ${locationId}::uuid)`;
   }
 
-  if (searchTerm && searchTerm.trim()) {
-    const search = `%${searchTerm.trim().toLowerCase()}%`;
-    whereClause = sql`${whereClause} AND (LOWER(${students.fullName}) LIKE ${search} OR LOWER(${students.code}) LIKE ${search} OR ${students.phone} LIKE ${search} OR ${students.parentPhone} LIKE ${search})`;
+  const normalizedSearch = normalizeSearchText(searchTerm);
+  if (normalizedSearch) {
+    const search = `%${normalizedSearch}%`;
+    whereClause = sql`${whereClause} AND (
+      ${normalizedSearchSql(students.fullName)} LIKE ${search}
+      OR ${normalizedSearchSql(students.code)} LIKE ${search}
+      OR LOWER(${students.phone}) LIKE ${search}
+      OR LOWER(${students.parentPhone}) LIKE ${search}
+    )`;
   }
 
-  const orderBy = searchTerm?.trim()
-    ? sql`CASE WHEN LOWER(${students.fullName}) LIKE LOWER(${searchTerm.trim() + "%"}) THEN 0 ELSE 1 END, ${students.fullName} ASC`
+  const orderBy = normalizedSearch
+    ? sql`CASE WHEN ${normalizedSearchSql(students.fullName)} LIKE ${normalizedSearch + "%"} THEN 0 ELSE 1 END, ${students.fullName} ASC`
     : sql`${students.fullName} ASC`;
 
   const rows = await db
