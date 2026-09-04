@@ -18,7 +18,7 @@ emso-build-image:
   script:
     - echo "Login to Docker Registry"
     - echo "$HARBOR_ROBOT_TOKEN" | docker login --username "$HARBOR_ROBOT_USER" --password-stdin "$DOCKER_REGISTRY"
-    - DOCKER_BUILDKIT=1 docker build --progress=plain -t "$DOCKER_IMAGE:$REGISTRY_TAG" .
+    - DOCKER_BUILDKIT=1 docker build --progress=plain --build-arg "APP_VERSION=$REGISTRY_TAG" -t "$DOCKER_IMAGE:$REGISTRY_TAG" .
     # Harbor có thể trả 500 tạm thời khi upload một layer lớn.
     # Retry toàn bộ push để Docker tiếp tục dùng lại các layer đã upload thành công.
     - |

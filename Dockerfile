@@ -15,6 +15,10 @@ RUN sed -i 's|http://package-firewall.replit.local/npm/|https://registry.npmjs.o
 # Copy source code
 COPY . .
 
+# Embed the image version in the frontend bundle.
+ARG APP_VERSION=dev
+ENV VITE_APP_VERSION=$APP_VERSION
+
 # Build: Vite (frontend) + esbuild (backend → dist/index.cjs)
 RUN npm run build
 

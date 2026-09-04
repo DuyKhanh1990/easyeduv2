@@ -23,6 +23,8 @@ import { useSidebarVisibility } from "@/hooks/use-sidebar-visibility";
 import { useMyPermissions, canAccessItem } from "@/hooks/use-my-permissions";
 import { useTinodeContext } from "@/hooks/use-tinode";
 
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || "0.1.93";
+
 function LanguageToggle() {
   const { lang, setLang } = useLanguage();
   return (
@@ -357,6 +359,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps = {}) {
                   <div className="flex flex-col overflow-hidden text-left flex-1 min-w-0">
                     <span className="text-sm font-semibold text-foreground truncate">{user?.username || 'Admin'}</span>
                     <span className="text-xs text-muted-foreground capitalize">{t("sidebar.system")}</span>
+                    <span className="text-[10px] leading-none text-muted-foreground/70 mt-0.5">Version {APP_VERSION}</span>
                   </div>
                   <LogOut className="w-4 h-4 text-muted-foreground shrink-0 ml-1" />
                 </>
