@@ -1225,11 +1225,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                </span>
                              )}
                                 <DialogContent
-                                  className="w-[min(98vw,64rem)] max-h-[92vh] overflow-y-auto rounded-xl p-6 sm:p-10"
+                                  className="w-[min(80vw,52rem)] max-h-[86vh] overflow-y-auto rounded-xl p-6 sm:p-16"
                                   overlayClassName="bg-black/30 backdrop-blur-[1px]"
                                 >
                                  <div className="flex items-center justify-between gap-2 mb-2">
-                                    <DialogTitle className="text-2xl font-semibold">Chọn khuyến mãi</DialogTitle>
+                                    <DialogTitle className="text-3xl font-semibold">Chọn khuyến mãi</DialogTitle>
                                    {canCreatePromotion && (
                                      <button
                                        type="button"
@@ -1296,13 +1296,13 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                     </PopoverContent>
                                   </Popover>
 
-                                      <div className="mt-5 space-y-2">
+                                      <div className="mt-10 space-y-2">
                                    {p.manualPromotionRows.map(row => (
                                      <div key={row.id} className="flex items-center gap-1.5">
                                        <select
                                          value={row.valueType}
                                          onChange={e => updateManualAdjustmentRow(p.id, "promotion", row.id, { valueType: e.target.value as ManualAdjustment["valueType"] })}
-                                         className="h-14 w-36 rounded-lg border bg-background px-3 text-base"
+                                         className="h-14 w-52 rounded-lg border bg-background px-3 text-base"
                                        >
                                          <option value="amount">Số tiền</option>
                                          <option value="percent">Phần trăm</option>
@@ -1338,7 +1338,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                      + Thêm
                                    </button>
                                  </div>
-                                  <div className="mt-5 flex justify-between border-t pt-5 text-lg font-semibold">
+                                  <div className="mt-10 flex justify-between border-t pt-5 text-lg font-semibold">
                                    <span>Tổng khuyến mãi</span>
                                    <span className="text-green-600">-{fmtMoney(promoAmt)}</span>
                                  </div>
@@ -1373,11 +1373,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                 </button>
                               </DialogTrigger>
                                 <DialogContent
-                                  className="w-[min(98vw,64rem)] max-h-[92vh] overflow-y-auto rounded-xl p-6 sm:p-10"
+                                  className="w-[min(80vw,52rem)] max-h-[86vh] overflow-y-auto rounded-xl p-6 sm:p-16"
                                   overlayClassName="bg-black/30 backdrop-blur-[1px]"
                                 >
                                  <div className="flex items-center justify-between gap-2 mb-2">
-                                   <DialogTitle className="text-2xl font-semibold">Chọn phụ thu</DialogTitle>
+                                   <DialogTitle className="text-3xl font-semibold">Chọn phụ thu</DialogTitle>
                                    {canCreatePromotion && (
                                      <button
                                        type="button"
@@ -1439,13 +1439,13 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                       </PopoverContent>
                                     </Popover>
 
-                                  <div className="mt-5 space-y-2">
+                                  <div className="mt-10 space-y-2">
                                    {p.manualSurchargeRows.map(row => (
                                      <div key={row.id} className="flex items-center gap-1.5">
                                        <select
                                          value={row.valueType}
                                          onChange={e => updateManualAdjustmentRow(p.id, "surcharge", row.id, { valueType: e.target.value as ManualAdjustment["valueType"] })}
-                                         className="h-14 w-36 rounded-lg border bg-background px-3 text-base"
+                                         className="h-14 w-52 rounded-lg border bg-background px-3 text-base"
                                        >
                                          <option value="amount">Số tiền</option>
                                          <option value="percent">Phần trăm</option>
@@ -1481,7 +1481,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                      + Thêm
                                    </button>
                                  </div>
-                                  <div className="mt-5 flex justify-between border-t pt-5 text-lg font-semibold">
+                                  <div className="mt-10 flex justify-between border-t pt-5 text-lg font-semibold">
                                    <span>Tổng phụ thu</span>
                                    <span className="text-orange-600">+{fmtMoney(surchargeAmt)}</span>
                                  </div>
@@ -1786,7 +1786,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
 
                       <div className="flex justify-between border-t pt-5 text-lg font-semibold">
                         <span>Tổng khuyến mãi</span>
-                        <span className="text-green-600">-{fmtMoney(invoicePromoAmt)} ₫</span>
+                        <span className="text-green-600">-{fmtMoney(invoicePromoAmt)}</span>
                       </div>
                     </div>
                   </DialogContent>
@@ -1925,7 +1925,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
 
                       <div className="flex justify-between border-t pt-5 text-lg font-semibold">
                         <span>Tổng phụ thu</span>
-                        <span className="text-orange-500">+{fmtMoney(invoiceSurchargeAmt)} ₫</span>
+                        <span className="text-orange-500">+{fmtMoney(invoiceSurchargeAmt)}</span>
                       </div>
                     </div>
                   </DialogContent>
