@@ -37,6 +37,8 @@ interface Product {
   quantity: number;
   promotionKeys: string[];
   surchargeKeys: string[];
+  manualPromotionRows: ManualAdjustment[];
+  manualSurchargeRows: ManualAdjustment[];
   categoryId: string;
   storeProductId?: string | null;
   storeProductCode?: string | null;
@@ -45,26 +47,43 @@ interface Product {
   stockAvailable?: number;
 }
 
+type ManualAdjustment = {
+  id: string;
+  valueType: "amount" | "percent";
+  value: number;
+};
+
 const calcBase = (p: Product) =>
   p.packageType === "khoá" ? p.unitPrice : p.unitPrice * p.quantity;
 
 const calcPromoAmountForProduct = (p: Product, promotionOptions: any[]) => {
   const base = calcBase(p);
-  return p.promotionKeys.reduce((sum, key) => {
+  const configuredAmount = p.promotionKeys.reduce((sum, key) => {
     const opt = promotionOptions.find((o: any) => o.id === key);
     if (!opt) return sum;
     const val = parseFloat(opt.valueAmount || "0");
     return sum + (opt.valueType === "percent" ? Math.round(base * val / 100) : val);
   }, 0);
+  const manualAmount = p.manualPromotionRows.reduce(
+    (sum, row) => sum + (row.valueType === "percent" ? Math.round(base * row.value / 100) : row.value),
+    0,
+  );
+  return configuredAmount + manualAmount;
 };
 
-const calcSurchargeAmountForProduct = (p: Product, base: number, surchargeOptions: any[]) =>
-  p.surchargeKeys.reduce((sum, key) => {
+const calcSurchargeAmountForProduct = (p: Product, base: number, surchargeOptions: any[]) => {
+  const configuredAmount = p.surchargeKeys.reduce((sum, key) => {
     const opt = surchargeOptions.find((o: any) => o.id === key);
     if (!opt) return sum;
     const val = parseFloat(opt.valueAmount || "0");
     return sum + (opt.valueType === "percent" ? Math.round(base * val / 100) : val);
   }, 0);
+  const manualAmount = p.manualSurchargeRows.reduce(
+    (sum, row) => sum + (row.valueType === "percent" ? Math.round(base * row.value / 100) : row.value),
+    0,
+  );
+  return configuredAmount + manualAmount;
+};
 
 const isVoucherKey = (key: string) => key.startsWith("voucher:");
 const formatPromotionLabel = (option: any) =>
@@ -91,6 +110,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   ]);
   const [openPromoId, setOpenPromoId] = useState<string | null>(null);
   const [openSurchargeId, setOpenSurchargeId] = useState<string | null>(null);
+  const [openProductPromoPicker, setOpenProductPromoPicker] = useState<string | null>(null);
+  const [openProductSurchargePicker, setOpenProductSurchargePicker] = useState<string | null>(null);
   const [promotionSearch, setPromotionSearch] = useState("");
   const [surchargeSearch, setSurchargeSearch] = useState("");
   const [khoPickerOpen, setKhoPickerOpen] = useState<string | null>(null);
@@ -147,7 +168,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         setSelectedStaffId(null);
         setSubjectName("");
         setStudentSearch("");
-        setProducts([{ id: "1", packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, promotionKeys: [], surchargeKeys: [], categoryId: "" }]);
+        setProducts([{ id: "1", packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: "" }]);
         setInvoicePromoKeys([]);
         setInvoiceSurchargeKeys([]);
         setManualInvoicePromoAmt(0);
@@ -227,11 +248,17 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
           quantity: item.quantity ?? 1,
           promotionKeys: item.promotionKeys ?? [],
           surchargeKeys: item.surchargeKeys ?? [],
+          manualPromotionRows: (item.promotionKeys?.length ?? 0) === 0 && parseFloat(item.promotionAmount) > 0
+            ? [{ id: `manual-promo-${item.id ?? i}`, valueType: "amount", value: parseFloat(item.promotionAmount) }]
+            : [],
+          manualSurchargeRows: (item.surchargeKeys?.length ?? 0) === 0 && parseFloat(item.surchargeAmount) > 0
+            ? [{ id: `manual-surcharge-${item.id ?? i}`, valueType: "amount", value: parseFloat(item.surchargeAmount) }]
+            : [],
           categoryId: itemCat?.id ?? fallbackCatId,
         };
       }));
     } else {
-      setProducts([{ id: "1", packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, promotionKeys: [], surchargeKeys: [], categoryId: fallbackCatId }]);
+      setProducts([{ id: "1", packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: fallbackCatId }]);
     }
 
     if (Array.isArray(inv.paymentSchedule) && inv.paymentSchedule.length > 0) {
@@ -512,7 +539,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     });
   }, [directPaidAmount, finalTotal, open]);
 
-  const addProduct = () => setProducts(prev => [...prev, { id: Date.now().toString(), packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, promotionKeys: [], surchargeKeys: [], categoryId: prev[0]?.categoryId ?? "" }]);
+  const addProduct = () => setProducts(prev => [...prev, { id: Date.now().toString(), packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: prev[0]?.categoryId ?? "" }]);
   const removeProduct = (id: string) => setProducts(prev => prev.filter(p => p.id !== id));
   const scheduleAllocated = paymentSchedule.reduce((s, p) => s + p.amount, 0);
   // Remaining = total minus what's already paid directly AND what's allocated in schedule
