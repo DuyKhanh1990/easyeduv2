@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/tooltip";
 import {
   Search, SlidersHorizontal, CalendarIcon, Plus, ChevronUp, ChevronDown,
-  Pencil, Trash2, Eye, CreditCard, ChevronRight, Settings2, GripVertical, AlertCircle, QrCode, CheckCircle,
+  Pencil, Trash2, Eye, CreditCard, Settings2, GripVertical, AlertCircle, QrCode, CheckCircle,
   FileSignature, FileText, Download, Upload, FileSpreadsheet, Keyboard, Percent, BookOpen, Merge, TrendingUp, TrendingDown, Check, X,
 } from "lucide-react";
 import {
@@ -459,7 +459,7 @@ function renderInvoiceCell(
       return <td key="type" className="p-3"><span className={`text-[11px] px-2.5 py-1 rounded-full font-bold tracking-wide ${inv.type === "Thu" ? "bg-sky-100 text-sky-700 border border-sky-200" : "bg-orange-100 text-orange-700 border border-orange-200"}`}>{inv.type}</span></td>;
     case "name":
       return (
-        <td key="name" className={`p-3 font-medium whitespace-nowrap sticky left-[72px] z-10 will-change-transform ${nameBg} min-w-[160px] border-r border-slate-100`}>
+        <td key="name" className={`p-3 font-medium whitespace-nowrap sticky left-10 z-10 will-change-transform ${nameBg} min-w-[160px] border-r border-slate-100`}>
           <StudentNameLink studentId={inv.studentId} name={inv.name} code={inv.studentCode} />
         </td>
       );
@@ -509,12 +509,22 @@ function renderInvoiceCell(
     }
     case "scheduleProgress": {
       if (inv.isScheduleRow) {
+        const parentInvoice = inv.parentInvoice ?? inv;
         return (
           <td key="scheduleProgress" className="p-2 text-center" style={{ minWidth: 140 }}>
-            <span className="text-sm font-semibold text-slate-700">
-              Đợt {inv.scheduleSortOrder ?? "—"} / {inv.paymentSchedule?.length ?? "—"}
-            </span>
-            {inv.dueDate && <div className="text-[11px] text-muted-foreground mt-0.5">Hạn: {fmtDate(inv.dueDate)}</div>}
+            <ScheduleProgressPopover inv={parentInvoice}>
+              <button
+                type="button"
+                className="w-full rounded-md py-1 hover:bg-violet-50 transition-colors cursor-pointer"
+                title="Xem hóa đơn và các đợt thanh toán"
+                data-testid={`button-schedule-progress-${inv.scheduleId}`}
+              >
+                <span className="text-sm font-semibold text-slate-700">
+                  Đợt {inv.scheduleSortOrder ?? "—"} / {inv.paymentSchedule?.length ?? "—"}
+                </span>
+                {inv.dueDate && <div className="text-[11px] text-muted-foreground mt-0.5">Hạn: {fmtDate(inv.dueDate)}</div>}
+              </button>
+            </ScheduleProgressPopover>
           </td>
         );
       }
@@ -2005,10 +2015,9 @@ export default function Invoices() {
           <table className="w-full min-w-[1120px] text-xs border-separate border-spacing-0">
             <thead>
               <tr className="border-b border-border">
-                <th className="p-3 w-8 sticky top-0 left-0 z-40 bg-muted"></th>
-                <th className="p-3 w-10 sticky top-0 left-8 z-40 bg-muted">{invPerm.canDelete && <Checkbox checked={allSelected} onCheckedChange={toggleAll} data-testid="checkbox-all" />}</th>
+                <th className="p-3 w-10 sticky top-0 left-0 z-40 bg-muted">{invPerm.canDelete && <Checkbox checked={allSelected} onCheckedChange={toggleAll} data-testid="checkbox-all" />}</th>
                 {visibleColumns.map(col => (
-                  <th key={col.key} className={`px-3 py-2.5 sticky top-0 z-30 bg-muted text-[10px] font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-muted/70 hover:text-foreground transition-colors ${col.align === "right" ? "text-right" : "text-left"} ${col.key === "name" ? "left-[72px] z-40 min-w-[160px] border-r border-border" : ""}`} onClick={() => col.sortKey && handleSort(col.sortKey)}>
+                  <th key={col.key} className={`px-3 py-2.5 sticky top-0 z-30 bg-muted text-[10px] font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-muted/70 hover:text-foreground transition-colors ${col.align === "right" ? "text-right" : "text-left"} ${col.key === "name" ? "left-10 z-40 min-w-[160px] border-r border-border" : ""}`} onClick={() => col.sortKey && handleSort(col.sortKey)}>
                     <span className={`flex items-center gap-0.5 ${col.align === "right" ? "justify-end" : ""}`}>
                       {col.label}
                       {col.sortKey && <SortIcon k={col.sortKey} activeSortKey={sortKey} activeSortDir={sortDir} />}
@@ -2020,7 +2029,7 @@ export default function Invoices() {
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={visibleColumns.length + 3} className="py-20 text-center">
+                <tr><td colSpan={visibleColumns.length + 2} className="py-20 text-center">
                   <div className="flex flex-col items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-violet-100 flex items-center justify-center">
                       <div className="h-5 w-5 animate-spin rounded-full border-2 border-violet-600 border-t-transparent" />
@@ -2029,7 +2038,7 @@ export default function Invoices() {
                   </div>
                 </td></tr>
               ) : invoices.length === 0 ? (
-                <tr><td colSpan={visibleColumns.length + 3} className="py-20 text-center">
+                <tr><td colSpan={visibleColumns.length + 2} className="py-20 text-center">
                   <div className="flex flex-col items-center gap-3">
                     <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center">
                       <CreditCard className="h-6 w-6 text-slate-300" />
@@ -2049,33 +2058,7 @@ export default function Invoices() {
 
                 return [
                   <tr key={rowKey} className={`border-b border-slate-100 transition-colors hover:bg-violet-50/40 ${isSelected ? "bg-violet-50" : idx % 2 === 1 ? "bg-slate-50/60" : "bg-white"}`} data-testid={`row-invoice-${rowKey}`}>
-                    <td className={`p-2 w-8 sticky left-0 z-10 will-change-transform ${isSelected ? "bg-violet-50" : idx % 2 === 1 ? "bg-slate-50" : "bg-white"}`}>
-                      {isScheduleRow ? (
-                        <ScheduleProgressPopover inv={parentInvoice}>
-                          <button
-                            type="button"
-                            className="flex items-center justify-center w-6 h-6 rounded-md hover:bg-violet-100 transition-colors text-slate-400 hover:text-violet-600"
-                            title="Xem hóa đơn cha và các đợt thanh toán"
-                            data-testid={`button-details-${inv.scheduleId}`}
-                          >
-                            <ChevronRight className="h-4 w-4" />
-                          </button>
-                        </ScheduleProgressPopover>
-                      ) : (inv.scheduleCount ?? 0) >= 1 ? (
-                        <button
-                          onClick={() => toggleExpand(inv.id)}
-                          className="flex items-center justify-center w-6 h-6 rounded-md hover:bg-violet-100 transition-colors text-slate-400 hover:text-violet-600"
-                          data-testid={`button-expand-${inv.id}`}
-                        >
-                          <ChevronRight className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
-                        </button>
-                      ) : (
-                        <span className="flex items-center justify-center w-6 h-6 text-slate-200">
-                          <ChevronRight className="h-4 w-4" />
-                        </span>
-                      )}
-                    </td>
-                    <td className={`p-3 sticky left-8 z-10 will-change-transform ${isSelected ? "bg-violet-50" : idx % 2 === 1 ? "bg-slate-50" : "bg-white"}`}>
+                    <td className={`p-3 sticky left-0 z-10 will-change-transform ${isSelected ? "bg-violet-50" : idx % 2 === 1 ? "bg-slate-50" : "bg-white"}`}>
                       {invPerm.canDelete && (
                         <Checkbox
                           checked={isSelected}
