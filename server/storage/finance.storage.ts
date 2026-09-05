@@ -1498,7 +1498,7 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
           id: previous?.id,
           invoiceId: id,
           label: wasPaid ? previous.label : (s.label ?? previous?.label ?? `ĐỢT ${idx + 1}`),
-          code: previous?.code ?? s.code ?? `${inv.code}-${idx + 1}`,
+          code: previous?.code ?? `${inv.code}-${idx + 1}`,
           // A paid installment is immutable. Never trust an edited form value
           // for its amount or payment metadata.
           amount: wasPaid ? previous.amount : (s.amount?.toString() ?? previous?.amount ?? "0"),
