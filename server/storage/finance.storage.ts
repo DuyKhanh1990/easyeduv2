@@ -1247,6 +1247,7 @@ export async function getInvoicesByCategory(filters: { locationId?: string; date
 }
 
 export async function getInvoice(id: string): Promise<any | undefined> {
+  const invoicePaidByStaff = alias(staff, "invoice_detail_paid_by_staff");
   const rows = await db
     .select({
       invoice: invoices,
@@ -1258,6 +1259,7 @@ export async function getInvoice(id: string): Promise<any | undefined> {
       classCode: classes.classCode,
       createdByName: staff.fullName,
       createdByUsername: users.username,
+      paidByName: invoicePaidByStaff.fullName,
       locationName: locations.name,
       locationAddress: locations.address,
       locationPhone: locations.phone,
@@ -1268,6 +1270,7 @@ export async function getInvoice(id: string): Promise<any | undefined> {
     .leftJoin(classes, eq(invoices.classId, classes.id))
     .leftJoin(users, eq(invoices.createdBy, users.id))
     .leftJoin(staff, eq(staff.userId, users.id))
+    .leftJoin(invoicePaidByStaff, eq(invoicePaidByStaff.userId, invoices.paidBy))
     .leftJoin(locations, eq(invoices.locationId, locations.id))
     .where(eq(invoices.id, id))
     .limit(1);
@@ -1275,7 +1278,7 @@ export async function getInvoice(id: string): Promise<any | undefined> {
   const {
     invoice: row,
     studentFullName, studentCode, studentPhone, studentAddress,
-    className, classCode, createdByName,
+    className, classCode, createdByName, paidByName,
     locationName, locationAddress, locationPhone,
     locationBankAccounts,
   } = rows[0];
@@ -1316,6 +1319,7 @@ export async function getInvoice(id: string): Promise<any | undefined> {
     className: className ?? null,
     classCode: classCode ?? null,
     createdByName: createdByName ?? null,
+    paidByName: paidByName ?? null,
     locationName: locationName ?? null,
     locationAddress: locationAddress ?? null,
     locationPhone: locationPhone ?? null,

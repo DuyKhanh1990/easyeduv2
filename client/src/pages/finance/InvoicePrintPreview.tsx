@@ -15,6 +15,7 @@ interface InvoicePrintData {
   paidAmount: string;
   remainingAmount?: string | null;
   createdAt: string;
+  status?: string | null;
   items?: Array<{
     name?: string;
     packageName?: string;
@@ -491,7 +492,14 @@ function renderTemplate(
     thu_ky_nay: paid,
     phuong_thuc: paymentMethodLabel(invoice.paymentMethod),
     nguoi_tao: invoice.createdByName ?? "",
-    nguoi_thanh_toan: invoice.paidByName ?? "",
+    nguoi_thanh_toan: invoice.paidByName
+      ?? (
+        !(invoice.paymentSchedule?.length)
+        && Number(invoice.paidAmount || 0) > 0
+          ? invoice.createdByName
+          : ""
+      )
+      ?? "",
     // KM / PT / Khấu trừ
     tong_truoc_kmpt: tongTruocKmpt,
     km_theo_sp: kmTheoSp,

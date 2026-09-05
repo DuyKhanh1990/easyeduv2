@@ -808,7 +808,18 @@ export function registerFinanceRoutes(app: Express): void {
       }
     }
 
-    const data = await storage.createInvoice({ ...payload, studentId: validatedStudentId, subjectName: resolvedSubjectName, createdBy: userId, updatedBy: userId });
+    const paidOnCreate = payload.status === "paid" && !(payload.paymentSchedule?.length ?? 0);
+    const data = await storage.createInvoice({
+      ...payload,
+      studentId: validatedStudentId,
+      subjectName: resolvedSubjectName,
+      createdBy: userId,
+      updatedBy: userId,
+      ...(paidOnCreate ? {
+        paidBy: userId ?? null,
+        paidAt: new Date(),
+      } : {}),
+    });
     if (data.studentId && data.classId && data.category === "Học phí") {
       await distributeInvoiceFeeToSessions(data.id, data.studentId, data.classId);
     }
