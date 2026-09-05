@@ -44,6 +44,12 @@ export interface InvoiceRow {
   einvoiceMaTraCuu?: string | null;
   einvoiceMessage?: string | null;
   einvoiceUpdatedAt?: string | Date | null;
+  paymentSchedule?: ScheduleItem[];
+  scheduleId?: string;
+  isScheduleRow?: boolean;
+  parentInvoice?: InvoiceRow;
+  scheduleLabel?: string | null;
+  scheduleSortOrder?: number;
 }
 
 export const EINVOICE_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
@@ -61,6 +67,7 @@ export interface ScheduleItem {
   dueDate: string | null;
   sortOrder: number;
   paymentMethod?: string | null;
+  settleCode?: string | null;
   paidAt?: string | Date | null;
   paidByName?: string | null;
   createdAt?: string | Date | null;

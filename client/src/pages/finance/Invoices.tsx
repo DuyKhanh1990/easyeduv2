@@ -382,6 +382,50 @@ function EditableInvoiceDateCell({
   );
 }
 
+function flattenInvoiceRows(invoices: InvoiceRow[]): InvoiceRow[] {
+  return invoices.flatMap((invoice) => {
+    const schedules = invoice.paymentSchedule ?? [];
+    if (schedules.length < 2) return [invoice];
+
+    return schedules.map((schedule, index) => {
+      const amount = schedule.amount ?? "0";
+      const isPaid = schedule.status === "paid";
+      const sortOrder = schedule.sortOrder || index + 1;
+      return {
+        ...invoice,
+        code: schedule.code ?? `${invoice.code ?? ""}-${sortOrder}`,
+        settleCode: schedule.settleCode ?? invoice.settleCode,
+        totalAmount: amount,
+        totalPromotion: "0",
+        totalSurcharge: "0",
+        deduction: "0",
+        grandTotal: amount,
+        paidAmount: isPaid ? amount : "0",
+        remainingAmount: isPaid ? "0" : amount,
+        status: schedule.status,
+        dueDate: schedule.dueDate ?? invoice.dueDate,
+        paidByName: schedule.paidByName ?? null,
+        paidAt: schedule.paidAt ?? null,
+        paymentMethod: schedule.paymentMethod ?? invoice.paymentMethod,
+        creatorName: schedule.createdByName ?? invoice.creatorName,
+        createdAt: schedule.createdAt ?? invoice.createdAt,
+        updaterName: schedule.updatedByName ?? invoice.updaterName,
+        updatedAt: schedule.updatedAt ?? invoice.updatedAt,
+        einvoiceStatus: schedule.einvoiceStatus ?? null,
+        einvoiceFkey: schedule.einvoiceFkey ?? null,
+        einvoiceMaTraCuu: schedule.einvoiceMaTraCuu ?? null,
+        einvoiceMessage: schedule.einvoiceMessage ?? null,
+        einvoiceUpdatedAt: schedule.einvoiceUpdatedAt ?? null,
+        scheduleId: schedule.id,
+        isScheduleRow: true,
+        parentInvoice: invoice,
+        scheduleLabel: schedule.label,
+        scheduleSortOrder: sortOrder,
+      };
+    });
+  });
+}
+
 function renderInvoiceCell(colKey: string, inv: InvoiceRow, updateStatusMutation: InvoiceUpdateStatusMutation, canEdit: boolean, isSelected?: boolean, isOdd?: boolean) {
   const nameBg = isSelected ? "bg-violet-50" : isOdd ? "bg-slate-50" : "bg-white";
   switch (colKey) {
@@ -444,6 +488,16 @@ function renderInvoiceCell(colKey: string, inv: InvoiceRow, updateStatusMutation
       );
     }
     case "scheduleProgress": {
+      if (inv.isScheduleRow) {
+        return (
+          <td key="scheduleProgress" className="p-2 text-center" style={{ minWidth: 140 }}>
+            <span className="text-sm font-semibold text-slate-700">
+              Đợt {inv.scheduleSortOrder ?? "—"} / {inv.paymentSchedule?.length ?? "—"}
+            </span>
+            {inv.dueDate && <div className="text-[11px] text-muted-foreground mt-0.5">Hạn: {fmtDate(inv.dueDate)}</div>}
+          </td>
+        );
+      }
       const hasSchedules = inv.hasSchedules && (inv.scheduleCount ?? 0) > 0;
       // Treat all invoices as at least 1 installment
       const total    = hasSchedules ? (inv.scheduleCount ?? 1) : 1;
@@ -524,7 +578,7 @@ function renderInvoiceCell(colKey: string, inv: InvoiceRow, updateStatusMutation
       );
     case "status": {
       const status = STATUS_CONFIG[inv.status] ?? STATUS_CONFIG.unpaid;
-      return <td key="status" className="p-3 whitespace-nowrap">{inv.hasSchedules ? <Badge className={`text-xs font-medium ${status.className}`}>{status.label}</Badge> : <InvoiceStatusDropdown invoiceId={inv.id} currentStatus={inv.status} updateStatusMutation={updateStatusMutation} />}</td>;
+      return <td key="status" className="p-3 whitespace-nowrap">{inv.hasSchedules || inv.isScheduleRow ? <Badge className={`text-xs font-medium ${status.className}`}>{status.label}</Badge> : <InvoiceStatusDropdown invoiceId={inv.id} currentStatus={inv.status} updateStatusMutation={updateStatusMutation} />}</td>;
     }
     case "einvoice": {
       if (inv.status !== "paid") {
@@ -550,11 +604,15 @@ function renderInvoiceCell(colKey: string, inv: InvoiceRow, updateStatusMutation
     case "creator":
       return <td key="creator" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{inv.creatorName || "—"}</td>;
     case "createdAt":
-      return <EditableInvoiceDateCell invoice={inv} field="createdAt" canEdit={canEdit} isSelected={isSelected} isOdd={isOdd} />;
+      return inv.isScheduleRow
+        ? <td key="createdAt" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{fmtDate(inv.createdAt)}</td>
+        : <EditableInvoiceDateCell invoice={inv} field="createdAt" canEdit={canEdit} isSelected={isSelected} isOdd={isOdd} />;
     case "paidBy":
       return <td key="paidBy" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{inv.paidByName || "—"}</td>;
     case "paidAt":
-      return <EditableInvoiceDateCell invoice={inv} field="paidAt" canEdit={canEdit} isSelected={isSelected} isOdd={isOdd} />;
+      return inv.isScheduleRow
+        ? <td key="paidAt" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{fmtDate(inv.paidAt)}</td>
+        : <EditableInvoiceDateCell invoice={inv} field="paidAt" canEdit={canEdit} isSelected={isSelected} isOdd={isOdd} />;
     case "updater":
       return <td key="updater" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{inv.updaterName || "—"}</td>;
     case "updatedAt":

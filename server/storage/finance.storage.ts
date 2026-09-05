@@ -678,6 +678,34 @@ export async function getInvoices(filters: {
   }
 
   if (invoiceIds.length > 0) {
+    const scheduleCreatorStaff = alias(staff, "list_schedule_creator");
+    const schedulePaidByStaff = alias(staff, "list_schedule_paid_by");
+    const scheduleUpdaterStaff = alias(staff, "list_schedule_updater");
+    const scheduleRows = await db
+      .select({
+        schedule: invoicePaymentSchedule,
+        createdByName: scheduleCreatorStaff.fullName,
+        paidByName: schedulePaidByStaff.fullName,
+        updatedByName: scheduleUpdaterStaff.fullName,
+      })
+      .from(invoicePaymentSchedule)
+      .leftJoin(scheduleCreatorStaff, eq(invoicePaymentSchedule.createdBy, scheduleCreatorStaff.userId))
+      .leftJoin(schedulePaidByStaff, eq(invoicePaymentSchedule.paidBy, schedulePaidByStaff.userId))
+      .leftJoin(scheduleUpdaterStaff, eq(invoicePaymentSchedule.updatedBy, scheduleUpdaterStaff.userId))
+      .where(inArray(invoicePaymentSchedule.invoiceId, invoiceIds))
+      .orderBy(asc(invoicePaymentSchedule.sortOrder));
+
+    const schedulesByInvoice: Record<string, any[]> = {};
+    for (const { schedule, ...names } of scheduleRows) {
+      if (!schedulesByInvoice[schedule.invoiceId]) schedulesByInvoice[schedule.invoiceId] = [];
+      schedulesByInvoice[schedule.invoiceId].push({ ...schedule, ...names });
+    }
+    for (const row of invoiceRows) {
+      (row as any).paymentSchedule = schedulesByInvoice[row.id] ?? [];
+    }
+  }
+
+  if (invoiceIds.length > 0) {
     const commStaff = alias(staff, "comm_staff");
     const commRows = await db
       .select({
