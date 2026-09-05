@@ -1485,11 +1485,23 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
         .from(invoicePaymentSchedule)
         .where(eq(invoicePaymentSchedule.invoiceId, id));
       const existingById = new Map(existingSchedules.map((row) => [row.id, row]));
+      const existingByCode = new Map<string, (typeof existingSchedules)[number]>();
+      for (const row of [...existingSchedules].sort(
+        (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+      )) {
+        if (row.code && !existingByCode.has(row.code)) {
+          existingByCode.set(row.code, row);
+        }
+      }
       const retainedIds = new Set<string>();
       const now = new Date();
 
       const scheduleRows = paymentSchedule.map((s: any, idx: number) => {
-        const previous = s.id ? existingById.get(s.id) : undefined;
+        // Some edit surfaces may send a temporary or stale schedule ID. The
+        // installment code is stable within an invoice, so use it as a safe
+        // fallback instead of inserting a duplicate paid installment.
+        const previous = (s.id ? existingById.get(s.id) : undefined)
+          ?? (s.code ? existingByCode.get(s.code) : undefined);
         if (previous) retainedIds.add(previous.id);
         const wasPaid = previous?.status === "paid";
         const nextStatus = wasPaid ? "paid" : (s.status ?? previous?.status ?? "unpaid");
