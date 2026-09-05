@@ -1225,11 +1225,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                </span>
                              )}
                                 <DialogContent
-                                  className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
+                                  className="w-[min(98vw,64rem)] max-h-[92vh] overflow-y-auto rounded-xl p-6 sm:p-10"
                                   overlayClassName="bg-black/30 backdrop-blur-[1px]"
                                 >
                                  <div className="flex items-center justify-between gap-2 mb-2">
-                                    <DialogTitle className="text-xl font-semibold">Chọn khuyến mãi</DialogTitle>
+                                    <DialogTitle className="text-2xl font-semibold">Chọn khuyến mãi</DialogTitle>
                                    {canCreatePromotion && (
                                      <button
                                        type="button"
@@ -1249,12 +1249,12 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                    <PopoverTrigger asChild>
                                      <button
                                        type="button"
-                                       className="w-full min-h-9 flex items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-1.5 text-left text-xs hover:border-purple-400"
+                                       className="w-full min-h-14 flex items-center justify-between gap-3 rounded-lg border bg-background px-4 py-3 text-left text-base hover:border-purple-400"
                                      >
                                        <span className={selectedPromoLabels.length > 0 ? "truncate" : "text-muted-foreground"}>
                                          {selectedPromoLabels.length > 0 ? selectedPromoLabels.join(", ") : "Chọn khuyến mãi..."}
                                        </span>
-                                       <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                       <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
                                      </button>
                                    </PopoverTrigger>
                                    <PopoverContent className="w-[26rem] max-w-[calc(100vw-2rem)] p-3" align="start">
@@ -1296,13 +1296,13 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                     </PopoverContent>
                                   </Popover>
 
-                                 <div className="mt-3 space-y-2">
+                                      <div className="mt-5 space-y-2">
                                    {p.manualPromotionRows.map(row => (
                                      <div key={row.id} className="flex items-center gap-1.5">
                                        <select
                                          value={row.valueType}
                                          onChange={e => updateManualAdjustmentRow(p.id, "promotion", row.id, { valueType: e.target.value as ManualAdjustment["valueType"] })}
-                                         className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
+                                         className="h-14 w-36 rounded-lg border bg-background px-3 text-base"
                                        >
                                          <option value="amount">Số tiền</option>
                                          <option value="percent">Phần trăm</option>
@@ -1314,31 +1314,31 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                            value={row.value || ""}
                                            onChange={e => updateManualAdjustmentRow(p.id, "promotion", row.id, { value: Math.max(0, Number(e.target.value) || 0) })}
                                            placeholder="Nhập nhanh..."
-                                           className="h-8 pr-8 text-xs"
+                                           className="h-14 pr-10 text-base"
                                          />
-                                         <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
+                                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
                                            {row.valueType === "percent" ? "%" : "₫"}
                                          </span>
                                        </div>
-                                       <button
+                                         <button
                                          type="button"
-                                         className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
+                                           className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-destructive"
                                          onClick={() => removeManualAdjustmentRow(p.id, "promotion", row.id)}
                                          aria-label="Xóa dòng khuyến mãi"
                                        >
-                                         <X className="h-4 w-4" />
+                                           <X className="h-6 w-6" />
                                        </button>
                                      </div>
                                    ))}
                                    <button
                                      type="button"
-                                     className="text-xs font-medium text-purple-600 hover:text-purple-700"
+                                     className="text-lg font-medium text-purple-600 hover:text-purple-700"
                                      onClick={() => addManualAdjustmentRow(p.id, "promotion")}
                                    >
                                      + Thêm
                                    </button>
                                  </div>
-                                 <div className="mt-3 flex justify-between border-t pt-2 text-xs font-semibold">
+                                  <div className="mt-5 flex justify-between border-t pt-5 text-lg font-semibold">
                                    <span>Tổng khuyến mãi</span>
                                    <span className="text-green-600">-{fmtMoney(promoAmt)}</span>
                                  </div>
@@ -1373,11 +1373,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                 </button>
                               </DialogTrigger>
                                 <DialogContent
-                                  className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
+                                  className="w-[min(98vw,64rem)] max-h-[92vh] overflow-y-auto rounded-xl p-6 sm:p-10"
                                   overlayClassName="bg-black/30 backdrop-blur-[1px]"
                                 >
                                  <div className="flex items-center justify-between gap-2 mb-2">
-                                   <DialogTitle className="text-xl font-semibold">Chọn phụ thu</DialogTitle>
+                                   <DialogTitle className="text-2xl font-semibold">Chọn phụ thu</DialogTitle>
                                    {canCreatePromotion && (
                                      <button
                                        type="button"
@@ -1397,12 +1397,12 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                    <PopoverTrigger asChild>
                                      <button
                                        type="button"
-                                       className="w-full min-h-9 flex items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-1.5 text-left text-xs hover:border-purple-400"
+                                       className="w-full min-h-14 flex items-center justify-between gap-3 rounded-lg border bg-background px-4 py-3 text-left text-base hover:border-purple-400"
                                      >
                                        <span className={selectedSurchargeLabels.length > 0 ? "truncate" : "text-muted-foreground"}>
                                          {selectedSurchargeLabels.length > 0 ? selectedSurchargeLabels.join(", ") : "Chọn phụ thu..."}
                                        </span>
-                                       <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                       <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
                                      </button>
                                    </PopoverTrigger>
                                    <PopoverContent className="w-[28rem] max-w-[calc(100vw-2rem)] p-3" align="start">
@@ -1439,13 +1439,13 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                       </PopoverContent>
                                     </Popover>
 
-                                 <div className="mt-3 space-y-2">
+                                  <div className="mt-5 space-y-2">
                                    {p.manualSurchargeRows.map(row => (
                                      <div key={row.id} className="flex items-center gap-1.5">
                                        <select
                                          value={row.valueType}
                                          onChange={e => updateManualAdjustmentRow(p.id, "surcharge", row.id, { valueType: e.target.value as ManualAdjustment["valueType"] })}
-                                         className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
+                                         className="h-14 w-36 rounded-lg border bg-background px-3 text-base"
                                        >
                                          <option value="amount">Số tiền</option>
                                          <option value="percent">Phần trăm</option>
@@ -1457,31 +1457,31 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                            value={row.value || ""}
                                            onChange={e => updateManualAdjustmentRow(p.id, "surcharge", row.id, { value: Math.max(0, Number(e.target.value) || 0) })}
                                            placeholder="Nhập nhanh..."
-                                           className="h-8 pr-8 text-xs"
+                                           className="h-14 pr-10 text-base"
                                          />
-                                         <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
+                                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
                                            {row.valueType === "percent" ? "%" : "₫"}
                                          </span>
                                        </div>
-                                       <button
+                                         <button
                                          type="button"
-                                         className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
+                                           className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-destructive"
                                          onClick={() => removeManualAdjustmentRow(p.id, "surcharge", row.id)}
                                          aria-label="Xóa dòng phụ thu"
                                        >
-                                         <X className="h-4 w-4" />
+                                           <X className="h-6 w-6" />
                                        </button>
                                      </div>
                                    ))}
                                    <button
                                      type="button"
-                                     className="text-xs font-medium text-purple-600 hover:text-purple-700"
+                                     className="text-lg font-medium text-purple-600 hover:text-purple-700"
                                      onClick={() => addManualAdjustmentRow(p.id, "surcharge")}
                                    >
                                      + Thêm
                                    </button>
                                  </div>
-                                 <div className="mt-3 flex justify-between border-t pt-2 text-xs font-semibold">
+                                  <div className="mt-5 flex justify-between border-t pt-5 text-lg font-semibold">
                                    <span>Tổng phụ thu</span>
                                    <span className="text-orange-600">+{fmtMoney(surchargeAmt)}</span>
                                  </div>
