@@ -54,6 +54,7 @@ import { DebtInvoiceRow } from "./components/DebtInvoiceRow";
 import { DebtScheduleLoader } from "./components/DebtScheduleLoader";
 import { StudentNameLink } from "@/components/ui/StudentNameLink";
 import { ScheduleRows } from "./components/ScheduleRows";
+import { ScheduleStatusDropdown } from "./components/ScheduleStatusDropdown";
 import { SplitScheduleDialog } from "./components/SplitScheduleDialog";
 import { InvoiceTemplateList } from "./InvoiceTemplateList";
 import { InvoicePrintPreview } from "./InvoicePrintPreview";
@@ -431,7 +432,21 @@ function getScheduleForRow(inv: InvoiceRow): ScheduleItem | undefined {
   return inv.parentInvoice?.paymentSchedule?.find(s => s.id === inv.scheduleId);
 }
 
-function renderInvoiceCell(colKey: string, inv: InvoiceRow, updateStatusMutation: InvoiceUpdateStatusMutation, canEdit: boolean, isSelected?: boolean, isOdd?: boolean) {
+function renderInvoiceCell(
+  colKey: string,
+  inv: InvoiceRow,
+  updateStatusMutation: InvoiceUpdateStatusMutation,
+  updateScheduleStatusMutation: {
+    mutate: (
+      vars: { scheduleId: string; status: string },
+      options?: { onSuccess?: () => void; onError?: (err: Error) => void },
+    ) => void;
+    isPending: boolean;
+  },
+  canEdit: boolean,
+  isSelected?: boolean,
+  isOdd?: boolean,
+) {
   const nameBg = isSelected ? "bg-violet-50" : isOdd ? "bg-slate-50" : "bg-white";
   switch (colKey) {
     case "branch":
@@ -583,7 +598,21 @@ function renderInvoiceCell(colKey: string, inv: InvoiceRow, updateStatusMutation
       );
     case "status": {
       const status = STATUS_CONFIG[inv.status] ?? STATUS_CONFIG.unpaid;
-      return <td key="status" className="p-3 whitespace-nowrap">{inv.hasSchedules || inv.isScheduleRow ? <Badge className={`text-xs font-medium ${status.className}`}>{status.label}</Badge> : <InvoiceStatusDropdown invoiceId={inv.id} currentStatus={inv.status} updateStatusMutation={updateStatusMutation} />}</td>;
+      return (
+        <td key="status" className="p-3 whitespace-nowrap">
+          {inv.isScheduleRow && inv.scheduleId ? (
+            <ScheduleStatusDropdown
+              scheduleId={inv.scheduleId}
+              currentStatus={inv.status}
+              updateStatusMutation={updateScheduleStatusMutation}
+            />
+          ) : inv.hasSchedules ? (
+            <Badge className={`text-xs font-medium ${status.className}`}>{status.label}</Badge>
+          ) : (
+            <InvoiceStatusDropdown invoiceId={inv.id} currentStatus={inv.status} updateStatusMutation={updateStatusMutation} />
+          )}
+        </td>
+      );
     }
     case "einvoice": {
       if (inv.status !== "paid") {
@@ -1461,6 +1490,13 @@ export default function Invoices() {
   const { invoices, total, tabCounts, isLoading, deleteMutation: deleteInvoiceMutation, updateStatusMutation } = useInvoices(queryParams);
   const { summary: invoiceSummary, isLoading: isSummaryLoading } = useInvoiceSummary(queryParams);
   const displayInvoices = flattenInvoiceRows(invoices);
+  const updateScheduleStatusMutation = useMutation({
+    mutationFn: ({ scheduleId, status }: { scheduleId: string; status: string }) =>
+      apiRequest("PATCH", `/api/finance/invoice-schedules/${scheduleId}/status`, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
+    },
+  });
 
   const {
     columnOrder,
@@ -2051,7 +2087,15 @@ export default function Invoices() {
                         />
                       )}
                     </td>
-                    {visibleColumns.map(col => renderInvoiceCell(col.key, inv, updateStatusMutation, invPerm.canEdit, isSelected, idx % 2 === 1))}
+                    {visibleColumns.map(col => renderInvoiceCell(
+                      col.key,
+                      inv,
+                      updateStatusMutation,
+                      updateScheduleStatusMutation,
+                      invPerm.canEdit,
+                      isSelected,
+                      idx % 2 === 1,
+                    ))}
                     <td className={`p-3 sticky right-0 border-l border-slate-100 will-change-transform ${isSelected ? "bg-violet-50" : idx % 2 === 1 ? "bg-slate-50" : "bg-white"}`}>
                       <div className="flex items-center justify-center">
                         <ActionMenu>
