@@ -57,33 +57,54 @@ type ManualAdjustment = {
 const calcBase = (p: Product) =>
   p.packageType === "khoá" ? p.unitPrice : p.unitPrice * p.quantity;
 
-const calcPromoAmountForProduct = (p: Product, promotionOptions: any[]) => {
-  const base = calcBase(p);
-  const configuredAmount = p.promotionKeys.reduce((sum, key) => {
-    const opt = promotionOptions.find((o: any) => o.id === key);
-    if (!opt) return sum;
-    const val = parseFloat(opt.valueAmount || "0");
-    return sum + (opt.valueType === "percent" ? Math.round(base * val / 100) : val);
-  }, 0);
-  const manualAmount = p.manualPromotionRows.reduce(
-    (sum, row) => sum + (row.valueType === "percent" ? Math.round(base * row.value / 100) : row.value),
-    0,
-  );
-  return configuredAmount + manualAmount;
-};
+const applySequentialAdjustments = (
+  startingAmount: number,
+  keys: string[],
+  rows: ManualAdjustment[],
+  options: any[],
+  kind: "promotion" | "surcharge",
+) => {
+  const representedKeys = new Set(rows.map(row => row.optionKey).filter(Boolean));
+  const orderedRows: ManualAdjustment[] = [
+    ...rows,
+    ...keys
+      .filter(key => !representedKeys.has(key))
+      .map((key, index) => ({
+        id: `legacy-${kind}-${index}-${key}`,
+        optionKey: key,
+        valueType: "amount" as const,
+        value: 0,
+      })),
+  ];
+  let currentAmount = Math.max(0, startingAmount);
+  const appliedOptionKeys = new Set<string>();
+  const applyValue = (valueType: "amount" | "percent", rawValue: number) => {
+    const value = Math.max(0, Number(rawValue) || 0);
+    const adjustment = valueType === "percent"
+      ? Math.round(currentAmount * value / 100)
+      : value;
+    currentAmount = kind === "promotion"
+      ? Math.max(0, currentAmount - adjustment)
+      : currentAmount + adjustment;
+  };
 
-const calcSurchargeAmountForProduct = (p: Product, base: number, surchargeOptions: any[]) => {
-  const configuredAmount = p.surchargeKeys.reduce((sum, key) => {
-    const opt = surchargeOptions.find((o: any) => o.id === key);
-    if (!opt) return sum;
-    const val = parseFloat(opt.valueAmount || "0");
-    return sum + (opt.valueType === "percent" ? Math.round(base * val / 100) : val);
-  }, 0);
-  const manualAmount = p.manualSurchargeRows.reduce(
-    (sum, row) => sum + (row.valueType === "percent" ? Math.round(base * row.value / 100) : row.value),
-    0,
-  );
-  return configuredAmount + manualAmount;
+  orderedRows.forEach(row => {
+    if (row.optionKey && !appliedOptionKeys.has(row.optionKey)) {
+      appliedOptionKeys.add(row.optionKey);
+      const option = options.find((o: any) => o.id === row.optionKey);
+      if (option) {
+        applyValue(option.valueType === "percent" ? "percent" : "amount", parseFloat(option.valueAmount || "0"));
+      }
+    }
+    if (row.value > 0) applyValue(row.valueType, row.value);
+  });
+
+  return {
+    finalAmount: currentAmount,
+    adjustmentAmount: kind === "promotion"
+      ? Math.max(0, startingAmount - currentAmount)
+      : Math.max(0, currentAmount - startingAmount),
+  };
 };
 
 const isVoucherKey = (key: string) => key.startsWith("voucher:");
@@ -514,31 +535,53 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       });
   }, [staffList, commissions, commissionStaffSearch]);
 
-  const totalAmount    = products.reduce((s, p) => s + calcBase(p), 0);
-  const itemPromo      = products.reduce((s, p) => s + calcPromoAmountForProduct(p, promotionOptionsWithVouchers), 0);
-  const itemSurcharge  = products.reduce((s, p) => {
-    return s + calcSurchargeAmountForProduct(p, calcBase(p), surchargeOptions);
-  }, 0);
-  // KM/Phụ thu áp lên TOÀN hoá đơn (tính trên Thành tiền của các dòng — đã trừ KM / cộng phụ thu theo SP)
-  const lineSubtotal = totalAmount - itemPromo + itemSurcharge;
-  const calcAdjustment = (keys: string[], opts: any[]) =>
-    keys.reduce((sum, key) => {
-      const opt = opts.find((o: any) => o.id === key);
-      if (!opt) return sum;
-      const v = parseFloat(opt.valueAmount || "0");
-      return sum + (opt.valueType === "percent" ? Math.round(lineSubtotal * v / 100) : v);
-    }, 0);
-  const calcManualInvoiceAdjustment = (rows: ManualAdjustment[]) =>
-    rows.reduce((sum, row) => sum + (
-      row.valueType === "percent" ? Math.round(lineSubtotal * row.value / 100) : row.value
-    ), 0);
-  const invoicePromoAmt = calcAdjustment(invoicePromoKeys, promotionOptionsWithVouchers)
-    + calcManualInvoiceAdjustment(invoicePromotionRows);
-  const invoiceSurchargeAmt = calcAdjustment(invoiceSurchargeKeys, surchargeOptions)
-    + calcManualInvoiceAdjustment(invoiceSurchargeRows);
+  const productAdjustmentTotals = products.map(product => {
+    const base = calcBase(product);
+    const promotionResult = applySequentialAdjustments(
+      base,
+      product.promotionKeys,
+      product.manualPromotionRows,
+      promotionOptionsWithVouchers,
+      "promotion",
+    );
+    const surchargeResult = applySequentialAdjustments(
+      promotionResult.finalAmount,
+      product.surchargeKeys,
+      product.manualSurchargeRows,
+      surchargeOptions,
+      "surcharge",
+    );
+    return {
+      productId: product.id,
+      base,
+      promoAmount: promotionResult.adjustmentAmount,
+      surchargeAmount: surchargeResult.adjustmentAmount,
+      finalAmount: surchargeResult.finalAmount,
+    };
+  });
+  const totalAmount = productAdjustmentTotals.reduce((sum, item) => sum + item.base, 0);
+  const itemPromo = productAdjustmentTotals.reduce((sum, item) => sum + item.promoAmount, 0);
+  const itemSurcharge = productAdjustmentTotals.reduce((sum, item) => sum + item.surchargeAmount, 0);
+  const lineSubtotal = productAdjustmentTotals.reduce((sum, item) => sum + item.finalAmount, 0);
+  const invoicePromotionResult = applySequentialAdjustments(
+    lineSubtotal,
+    invoicePromoKeys,
+    invoicePromotionRows,
+    promotionOptionsWithVouchers,
+    "promotion",
+  );
+  const invoiceSurchargeResult = applySequentialAdjustments(
+    invoicePromotionResult.finalAmount,
+    invoiceSurchargeKeys,
+    invoiceSurchargeRows,
+    surchargeOptions,
+    "surcharge",
+  );
+  const invoicePromoAmt = invoicePromotionResult.adjustmentAmount;
+  const invoiceSurchargeAmt = invoiceSurchargeResult.adjustmentAmount;
   const totalPromo     = itemPromo + invoicePromoAmt;
   const totalSurcharge = itemSurcharge + invoiceSurchargeAmt;
-  const subTotal     = totalAmount - totalPromo + totalSurcharge;  // Thành tiền
+  const subTotal = invoiceSurchargeResult.finalAmount;
   const finalTotal   = Math.max(0, subTotal - deduction);           // Tổng tiền (sau khấu trừ)
   const grandTotal   = finalTotal;                                   // alias dùng trong submit
   // Always include directPaidAmount in paid total; paid schedule entries add on top
@@ -789,8 +832,22 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
 
     const items = products.map(p => {
       const base = calcBase(p);
-      const promoAmt = calcPromoAmountForProduct(p, promotionOptionsWithVouchers);
-      const surchargeAmt = calcSurchargeAmountForProduct(p, base, surchargeOptions);
+      const promotionResult = applySequentialAdjustments(
+        base,
+        p.promotionKeys,
+        p.manualPromotionRows,
+        promotionOptionsWithVouchers,
+        "promotion",
+      );
+      const surchargeResult = applySequentialAdjustments(
+        promotionResult.finalAmount,
+        p.surchargeKeys,
+        p.manualSurchargeRows,
+        surchargeOptions,
+        "surcharge",
+      );
+      const promoAmt = promotionResult.adjustmentAmount;
+      const surchargeAmt = surchargeResult.adjustmentAmount;
       const itemCat = allCategories.find((c: any) => c.id === p.categoryId);
       return {
         packageName: p.name,
@@ -802,7 +859,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         surchargeKeys: p.surchargeKeys,
         promotionAmount: String(promoAmt),
         surchargeAmount: String(surchargeAmt),
-        subtotal: String(base - promoAmt + surchargeAmt),
+        subtotal: String(surchargeResult.finalAmount),
         category: itemCat?.name ?? "",
         storeProductId: p.storeProductId ?? null,
         storeProductCode: p.storeProductCode ?? null,
@@ -939,7 +996,6 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       </p>
                     ) : filteredOptions.map((o: any) => {
                       const val = parseFloat(o.valueAmount || "0");
-                      const amount = o.valueType === "percent" ? Math.round(lineSubtotal * val / 100) : val;
                       return (
                         <button
                           key={o.id}
@@ -958,7 +1014,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               <span className="truncate">{o.name}</span>
                             </span>
                             <span className="block text-xs text-muted-foreground">
-                              {isPromotion ? "-" : "+"}{fmtMoney(amount)}
+                              {isPromotion ? "-" : "+"}{o.valueType === "percent" ? `${val}%` : fmtMoney(val)}
                             </span>
                           </span>
                         </button>
@@ -1238,9 +1294,23 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       const isKhoa = p.packageType === "khoá";
                       const isProductHocPhi = allCategories.find((c: any) => c.id === p.categoryId)?.name?.toLowerCase().includes("học phí");
                       const base = calcBase(p);
-                      const promoAmt = calcPromoAmountForProduct(p, promotionOptionsWithVouchers);
-                      const surchargeAmt = calcSurchargeAmountForProduct(p, base, surchargeOptions);
-                      const subtotal = base - promoAmt + surchargeAmt;
+                      const promotionResult = applySequentialAdjustments(
+                        base,
+                        p.promotionKeys,
+                        p.manualPromotionRows,
+                        promotionOptionsWithVouchers,
+                        "promotion",
+                      );
+                      const surchargeResult = applySequentialAdjustments(
+                        promotionResult.finalAmount,
+                        p.surchargeKeys,
+                        p.manualSurchargeRows,
+                        surchargeOptions,
+                        "surcharge",
+                      );
+                      const promoAmt = promotionResult.adjustmentAmount;
+                      const surchargeAmt = surchargeResult.adjustmentAmount;
+                      const subtotal = surchargeResult.finalAmount;
                       return (
                         <tr key={p.id} className={`border-b last:border-0 ${idx % 2 === 1 ? "bg-muted/20" : ""}`}>
                           <td className="p-2">
@@ -1466,7 +1536,6 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                                  <p className="py-3 text-center text-xs text-muted-foreground">Không tìm thấy khuyến mãi phù hợp</p>
                                                ) : filteredPromotionOptionsWithVouchers.map((o: any) => {
                                                  const val = parseFloat(o.valueAmount || "0");
-                                                 const amt = o.valueType === "percent" ? Math.round(base * val / 100) : val;
                                                  return (
                                                    <button
                                                      key={o.id}
@@ -1484,7 +1553,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                                          )}
                                                          <span className="truncate">{o.name}</span>
                                                        </span>
-                                                       <span className="block text-xs text-muted-foreground">-{fmtMoney(amt)}</span>
+                                                       <span className="block text-xs text-muted-foreground">
+                                                         -{o.valueType === "percent" ? `${val}%` : fmtMoney(val)}
+                                                       </span>
                                                      </span>
                                                    </button>
                                                  );
@@ -1619,7 +1690,6 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                                   <p className="py-3 text-center text-xs text-muted-foreground">Không tìm thấy phụ thu phù hợp</p>
                                                 ) : filteredSurchargeOptions.map((o: any) => {
                                                   const val = parseFloat(o.valueAmount || "0");
-                                                  const amt = o.valueType === "percent" ? Math.round(base * val / 100) : val;
                                                   return (
                                                     <button
                                                       key={o.id}
@@ -1632,7 +1702,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                                     >
                                                       <span className="min-w-0 flex-1">
                                                         <span className="block truncate text-xs font-medium">{o.name}</span>
-                                                        <span className="block text-xs text-muted-foreground">+{fmtMoney(amt)}</span>
+                                                         <span className="block text-xs text-muted-foreground">
+                                                           +{o.valueType === "percent" ? `${val}%` : fmtMoney(val)}
+                                                         </span>
                                                       </span>
                                                     </button>
                                                   );
