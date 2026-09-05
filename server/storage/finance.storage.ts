@@ -1570,7 +1570,7 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
           paidAmount: paidAmount.toFixed(2),
           remainingAmount: remainingAmount.toFixed(2),
           status: scheduleStatus,
-          updatedAt: now,
+          updatedAt: new Date(),
         })
         .where(eq(invoices.id, id))
         .returning();
