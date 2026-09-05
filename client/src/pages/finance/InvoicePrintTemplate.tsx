@@ -226,13 +226,12 @@ const SAMPLE_DATA = {
   da_thanh_toan: 2000000,
   con_lai: 3000000,
   lop: "A1 - Toán nâng cao 6",
-  noi_dung: "Học phí khóa Toán nâng cao 6 (Tháng 4 - Tháng 8/2025)",
+  noi_dung: "Ghi chú mẫu cho hóa đơn",
   khoan_thu: "Học phí tháng 5",
   thu_ky_nay: 1000000,
   phuong_thuc: "Tiền mặt",
   nguoi_tao: "Nguyễn Văn A",
   nguoi_thanh_toan: "Nguyễn Thị Thu",
-  ghi_chu: "-",
   // KM / PT / Khấu trừ (sample)
   tong_truoc_kmpt: 5300000,
   km_theo_sp: 50000,
@@ -279,7 +278,7 @@ const VARIABLES: VariableDef[] = [
   { group: "Khách hàng & Hoá đơn", label: "Mã hoá đơn", key: "invoice_code", description: "{{invoice_code}}" },
   { group: "Khách hàng & Hoá đơn", label: "Ngày lập", key: "date", description: "{{date}}" },
   { group: "Khách hàng & Hoá đơn", label: "Lớp", key: "lop", description: "{{lop}}" },
-  { group: "Khách hàng & Hoá đơn", label: "Nội dung", key: "noi_dung", description: "{{noi_dung}}" },
+  { group: "Khách hàng & Hoá đơn", label: "Ghi chú hóa đơn", key: "noi_dung", description: "{{noi_dung}}" },
   { group: "Khách hàng & Hoá đơn", label: "Khoản thu", key: "khoan_thu", description: "{{khoan_thu}}" },
 
   // ── KM / PT / Khấu trừ / Thành tiền ──
@@ -303,7 +302,6 @@ const VARIABLES: VariableDef[] = [
   { group: "Thanh toán", label: "Phương thức TT", key: "phuong_thuc", description: "{{phuong_thuc}}" },
   { group: "Thanh toán", label: "Người tạo", key: "nguoi_tao", description: "{{nguoi_tao}}" },
   { group: "Thanh toán", label: "Người thanh toán", key: "nguoi_thanh_toan", description: "{{nguoi_thanh_toan}}" },
-  { group: "Thanh toán", label: "Ghi chú", key: "ghi_chu", description: "{{ghi_chu}}" },
 
   // ── Hoá đơn gốc (cha) – khi in một đợt ──
   { group: "Hoá đơn gốc", label: "Mã HĐ gốc", key: "ma_hd_goc", description: "{{ma_hd_goc}}" },

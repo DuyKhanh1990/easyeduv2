@@ -8,7 +8,7 @@
  *             {{invoice_code}}   {{date}}
  *   Số tiền:  {{total}}  {{da_thanh_toan}}  {{con_lai}}  {{thu_ky_nay}}
  *   Học vụ:   {{lop}}  {{noi_dung}}  {{khoan_thu}}
- *   Thanh toán:{{phuong_thuc}}  {{nguoi_tao}}  {{nguoi_thanh_toan}}  {{ghi_chu}}
+ *   Thanh toán:{{phuong_thuc}}  {{nguoi_tao}}  {{nguoi_thanh_toan}}
  *   Bảng:     {{items}}  {{lich_su_thanh_toan}}
  * ────────────────────────────────────────────────────────────────────────── */
 
@@ -59,7 +59,7 @@ const TUITION_RECEIPT_HTML = `<div style="font-family: Arial, sans-serif; font-s
     </tr>
     <tr>
       <td style="padding:2px 4px;vertical-align:top;"><span style="color:#555;">Địa chỉ:</span> {{address}}</td>
-      <td style="padding:2px 4px;vertical-align:top;"><span style="color:#555;">Nội dung:</span> {{noi_dung}}</td>
+      <td style="padding:2px 4px;vertical-align:top;"><span style="color:#555;">Ghi chú:</span> {{noi_dung}}</td>
     </tr>
   </table>
 
@@ -89,7 +89,6 @@ const TUITION_RECEIPT_HTML = `<div style="font-family: Arial, sans-serif; font-s
           <tr><td style="padding:2px 0;">Phương thức TT</td><td style="padding:2px 0;">:</td><td style="padding:2px 0;">{{phuong_thuc}}</td></tr>
           <tr><td style="padding:2px 0;">Người tạo</td><td style="padding:2px 0;">:</td><td style="padding:2px 0;">{{nguoi_tao}}</td></tr>
           <tr><td style="padding:2px 0;">Người thanh toán</td><td style="padding:2px 0;">:</td><td style="padding:2px 0;">{{nguoi_thanh_toan}}</td></tr>
-          <tr><td style="padding:2px 0;">Ghi chú</td><td style="padding:2px 0;">:</td><td style="padding:2px 0;">{{ghi_chu}}</td></tr>
         </table>
       </td>
     </tr>
@@ -176,10 +175,6 @@ const BULK_COLLECT_HTML = `<div style="font-family: Arial, sans-serif; font-size
      <tr>
        <td style="padding:3px 0;color:#555;">Người thanh toán:</td>
        <td style="padding:3px 0;font-weight:bold;">{{nguoi_thanh_toan}}</td>
-    </tr>
-    <tr>
-      <td style="padding:3px 0;color:#555;">Ghi chú:</td>
-      <td style="padding:3px 0;">{{ghi_chu}}</td>
     </tr>
   </table>
 

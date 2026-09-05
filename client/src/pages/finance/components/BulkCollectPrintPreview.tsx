@@ -129,7 +129,7 @@ function renderBulkTemplate(
     phuong_thuc: paymentMethodLabel(data.paymentMethod),
     nguoi_thanh_toan: data.collectorName || "",
     nguoi_chi: data.collectorName || "",
-    ghi_chu: data.note || "—",
+    noi_dung: data.note || "—",
     ten_co_so: locationName,
     dia_chi_co_so: locationAddress,
     sdt_co_so: locationPhone,
