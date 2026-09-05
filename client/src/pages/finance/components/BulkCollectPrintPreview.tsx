@@ -127,7 +127,7 @@ function renderBulkTemplate(
     thanh_chu: numberToVietnameseWords(data.totalAmount),
     date: fmtDate(data.paymentDate),
     phuong_thuc: paymentMethodLabel(data.paymentMethod),
-    nguoi_thu: data.collectorName || "",
+    nguoi_thanh_toan: data.collectorName || "",
     nguoi_chi: data.collectorName || "",
     ghi_chu: data.note || "—",
     ten_co_so: locationName,
