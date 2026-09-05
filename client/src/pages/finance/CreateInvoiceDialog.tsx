@@ -1247,8 +1247,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                          );
                                        })}
                                      </div>
-                               </DialogContent>
-                             </Dialog>
+                                    </PopoverContent>
+                                  </Popover>
 
                                  <div className="mt-3 space-y-2">
                                    {p.manualPromotionRows.map(row => (
@@ -1296,8 +1296,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                    <span>Tổng khuyến mãi</span>
                                    <span className="text-green-600">-{fmtMoney(promoAmt)}</span>
                                  </div>
-                              </PopoverContent>
-                            </Popover>
+                                </DialogContent>
+                              </Dialog>
                           </td>
                           <td className="p-2">
                             <Dialog open={openSurchargeId === p.id} onOpenChange={v => {
@@ -1390,8 +1390,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                          );
                                        })}
                                      </div>
-                               </DialogContent>
-                             </Dialog>
+                                      </PopoverContent>
+                                    </Popover>
 
                                  <div className="mt-3 space-y-2">
                                    {p.manualSurchargeRows.map(row => (
@@ -1439,8 +1439,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                    <span>Tổng phụ thu</span>
                                    <span className="text-orange-600">+{fmtMoney(surchargeAmt)}</span>
                                  </div>
-                              </PopoverContent>
-                            </Popover>
+                                </DialogContent>
+                              </Dialog>
                           </td>
                           <td className="p-2 text-right font-semibold text-xs">{fmtMoney(subtotal)}</td>
                           <td className="p-2 text-center">
