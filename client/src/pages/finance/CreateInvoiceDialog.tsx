@@ -1185,15 +1185,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               setOpenPromoId(v ? p.id : null);
                               if (v) {
                                 setPromotionSearch("");
-                                setProducts(prev => prev.map(x => x.id === p.id && x.manualPromotionRows.length === 0
-                                  ? {
-                                    ...x,
-                                    manualPromotionRows: [{
-                                      id: `manual-promo-${x.id}`,
-                                      valueType: "amount",
-                                      value: 0,
-                                    }],
-                                  }
+                                setProducts(prev => prev.map(x => x.id === p.id
+                                  ? { ...x, manualPromotionRows: ensureAdjustmentRows(x.promotionKeys, x.manualPromotionRows, `manual-promo-${x.id}`) }
                                   : x));
                               } else {
                                 setOpenProductPromoPicker(null);
@@ -1230,94 +1223,106 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                    )}
                                  </div>
 
-                                 <Popover open={openProductPromoPicker === p.id} onOpenChange={v => {
-                                   setOpenProductPromoPicker(v ? p.id : null);
-                                   if (v) setPromotionSearch("");
-                                 }}>
-                                   <PopoverTrigger asChild>
-                                     <button
-                                       type="button"
-                                       className="w-full min-h-9 flex items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-1.5 text-left text-xs hover:border-purple-400"
-                                     >
-                                       <span className={selectedPromoLabels.length > 0 ? "truncate" : "text-muted-foreground"}>
-                                         {selectedPromoLabels.length > 0 ? selectedPromoLabels.join(", ") : "Chọn khuyến mãi..."}
-                                       </span>
-                                       <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                     </button>
-                                   </PopoverTrigger>
-                                   <PopoverContent className="w-[26rem] max-w-[calc(100vw-2rem)] p-3" align="start">
-                                     <div className="mb-2 relative">
-                                       <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                                       <Input
-                                         value={promotionSearch}
-                                         onChange={e => setPromotionSearch(e.target.value)}
-                                         placeholder="Tìm theo tên hoặc mã khuyến mãi..."
-                                         className="h-8 pl-7 text-xs"
-                                         autoFocus
-                                         onKeyDown={e => e.stopPropagation()}
-                                       />
-                                     </div>
-                                     <div className="max-h-64 overflow-y-auto space-y-1">
-                                       {promotionOptionsWithVouchers.length === 0 ? (
-                                         <p className="py-3 text-center text-xs text-muted-foreground">Chưa có khuyến mãi</p>
-                                       ) : filteredPromotionOptionsWithVouchers.length === 0 ? (
-                                         <p className="py-3 text-center text-xs text-muted-foreground">Không tìm thấy khuyến mãi phù hợp</p>
-                                       ) : filteredPromotionOptionsWithVouchers.map((o: any) => {
-                                         const val = parseFloat(o.valueAmount || "0");
-                                         const amt = o.valueType === "percent" ? Math.round(base * val / 100) : val;
-                                         return (
-                                           <label key={o.id} className="flex items-center gap-2 cursor-pointer rounded px-1.5 py-1 hover:bg-muted/60">
-                                             <Checkbox checked={p.promotionKeys.includes(o.id)} onCheckedChange={() => togglePromo(o.id)} />
-                                             <span className="min-w-0 flex-1">
-                                               <span className="flex items-center gap-1 text-xs font-medium">
-                                                 {o.kind === "voucher" && (
-                                                   <span className="shrink-0 rounded bg-red-100 px-1 text-[9px] font-semibold text-red-600">Voucher</span>
-                                                 )}
-                                                 <span className="truncate">{o.name}</span>
+                                 <div className="mt-3 space-y-4">
+                                   {p.manualPromotionRows.map(row => {
+                                     const pickerId = `${p.id}:${row.id}`;
+                                     const selectedOption = promotionOptionsWithVouchers.find((o: any) => o.id === row.optionKey);
+                                     return (
+                                       <div key={row.id} className="space-y-2 rounded-lg border border-muted p-2">
+                                         <Popover open={openProductPromoPicker === pickerId} onOpenChange={v => {
+                                           setOpenProductPromoPicker(v ? pickerId : null);
+                                           if (v) setPromotionSearch("");
+                                         }}>
+                                           <PopoverTrigger asChild>
+                                             <button
+                                               type="button"
+                                               className="w-full min-h-9 flex items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-1.5 text-left text-xs hover:border-purple-400"
+                                             >
+                                               <span className={selectedOption ? "truncate" : "text-muted-foreground"}>
+                                                 {selectedOption ? formatPromotionLabel(selectedOption) : "Chọn khuyến mãi..."}
                                                </span>
-                                               <span className="block text-xs text-muted-foreground">-{fmtMoney(amt)}</span>
+                                               <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                             </button>
+                                           </PopoverTrigger>
+                                           <PopoverContent className="w-[26rem] max-w-[calc(100vw-2rem)] p-3" align="start">
+                                             <div className="mb-2 relative">
+                                               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                                               <Input
+                                                 value={promotionSearch}
+                                                 onChange={e => setPromotionSearch(e.target.value)}
+                                                 placeholder="Tìm theo tên hoặc mã khuyến mãi..."
+                                                 className="h-8 pl-7 text-xs"
+                                                 autoFocus
+                                                 onKeyDown={e => e.stopPropagation()}
+                                               />
+                                             </div>
+                                             <div className="max-h-64 overflow-y-auto space-y-1">
+                                               {promotionOptionsWithVouchers.length === 0 ? (
+                                                 <p className="py-3 text-center text-xs text-muted-foreground">Chưa có khuyến mãi</p>
+                                               ) : filteredPromotionOptionsWithVouchers.length === 0 ? (
+                                                 <p className="py-3 text-center text-xs text-muted-foreground">Không tìm thấy khuyến mãi phù hợp</p>
+                                               ) : filteredPromotionOptionsWithVouchers.map((o: any) => {
+                                                 const val = parseFloat(o.valueAmount || "0");
+                                                 const amt = o.valueType === "percent" ? Math.round(base * val / 100) : val;
+                                                 return (
+                                                   <button
+                                                     key={o.id}
+                                                     type="button"
+                                                     className="w-full flex items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-muted/60"
+                                                     onClick={() => {
+                                                       selectProductAdjustmentOption(p.id, "promotion", row.id, o.id);
+                                                       setOpenProductPromoPicker(null);
+                                                     }}
+                                                   >
+                                                     <span className="min-w-0 flex-1">
+                                                       <span className="flex items-center gap-1 text-xs font-medium">
+                                                         {o.kind === "voucher" && (
+                                                           <span className="shrink-0 rounded bg-red-100 px-1 text-[9px] font-semibold text-red-600">Voucher</span>
+                                                         )}
+                                                         <span className="truncate">{o.name}</span>
+                                                       </span>
+                                                       <span className="block text-xs text-muted-foreground">-{fmtMoney(amt)}</span>
+                                                     </span>
+                                                   </button>
+                                                 );
+                                               })}
+                                             </div>
+                                           </PopoverContent>
+                                         </Popover>
+                                         <div className="flex items-center gap-1.5">
+                                           <select
+                                             value={row.valueType}
+                                             onChange={e => updateManualAdjustmentRow(p.id, "promotion", row.id, { valueType: e.target.value as ManualAdjustment["valueType"] })}
+                                             className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
+                                           >
+                                             <option value="amount">Số tiền</option>
+                                             <option value="percent">Phần trăm</option>
+                                           </select>
+                                           <div className="relative min-w-0 flex-1">
+                                             <Input
+                                               type="number"
+                                               min={0}
+                                               value={row.value || ""}
+                                               onChange={e => updateManualAdjustmentRow(p.id, "promotion", row.id, { value: Math.max(0, Number(e.target.value) || 0) })}
+                                               placeholder="Nhập nhanh..."
+                                               className="h-8 pr-8 text-xs"
+                                             />
+                                             <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
+                                               {row.valueType === "percent" ? "%" : "₫"}
                                              </span>
-                                           </label>
-                                         );
-                                       })}
-                                     </div>
-                                    </PopoverContent>
-                                  </Popover>
-
-                                 <div className="mt-3 space-y-2">
-                                   {p.manualPromotionRows.map(row => (
-                                     <div key={row.id} className="flex items-center gap-1.5">
-                                       <select
-                                         value={row.valueType}
-                                         onChange={e => updateManualAdjustmentRow(p.id, "promotion", row.id, { valueType: e.target.value as ManualAdjustment["valueType"] })}
-                                         className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
-                                       >
-                                         <option value="amount">Số tiền</option>
-                                         <option value="percent">Phần trăm</option>
-                                       </select>
-                                       <div className="relative min-w-0 flex-1">
-                                         <Input
-                                           type="number"
-                                           min={0}
-                                           value={row.value || ""}
-                                           onChange={e => updateManualAdjustmentRow(p.id, "promotion", row.id, { value: Math.max(0, Number(e.target.value) || 0) })}
-                                           placeholder="Nhập nhanh..."
-                                           className="h-8 pr-8 text-xs"
-                                         />
-                                         <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
-                                           {row.valueType === "percent" ? "%" : "₫"}
-                                         </span>
+                                           </div>
+                                           <button
+                                             type="button"
+                                             className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
+                                             onClick={() => removeManualAdjustmentRow(p.id, "promotion", row.id)}
+                                             aria-label="Xóa dòng khuyến mãi"
+                                           >
+                                             <X className="h-4 w-4" />
+                                           </button>
+                                         </div>
                                        </div>
-                                       <button
-                                         type="button"
-                                         className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
-                                         onClick={() => removeManualAdjustmentRow(p.id, "promotion", row.id)}
-                                         aria-label="Xóa dòng khuyến mãi"
-                                       >
-                                         <X className="h-4 w-4" />
-                                       </button>
-                                     </div>
-                                   ))}
+                                     );
+                                   })}
                                    <button
                                      type="button"
                                      className="text-xs font-medium text-purple-600 hover:text-purple-700"
@@ -1338,15 +1343,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               setOpenSurchargeId(v ? p.id : null);
                               if (v) {
                                 setSurchargeSearch("");
-                                setProducts(prev => prev.map(x => x.id === p.id && x.manualSurchargeRows.length === 0
-                                  ? {
-                                    ...x,
-                                    manualSurchargeRows: [{
-                                      id: `manual-surcharge-${x.id}`,
-                                      valueType: "amount",
-                                      value: 0,
-                                    }],
-                                  }
+                                setProducts(prev => prev.map(x => x.id === p.id
+                                  ? { ...x, manualSurchargeRows: ensureAdjustmentRows(x.surchargeKeys, x.manualSurchargeRows, `manual-surcharge-${x.id}`) }
                                   : x));
                               } else {
                                 setOpenProductSurchargePicker(null);
@@ -1378,89 +1376,101 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                    )}
                                  </div>
 
-                                 <Popover open={openProductSurchargePicker === p.id} onOpenChange={v => {
-                                   setOpenProductSurchargePicker(v ? p.id : null);
-                                   if (v) setSurchargeSearch("");
-                                 }}>
-                                   <PopoverTrigger asChild>
-                                     <button
-                                       type="button"
-                                       className="w-full min-h-9 flex items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-1.5 text-left text-xs hover:border-purple-400"
-                                     >
-                                       <span className={selectedSurchargeLabels.length > 0 ? "truncate" : "text-muted-foreground"}>
-                                         {selectedSurchargeLabels.length > 0 ? selectedSurchargeLabels.join(", ") : "Chọn phụ thu..."}
-                                       </span>
-                                       <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                     </button>
-                                   </PopoverTrigger>
-                                   <PopoverContent className="w-[28rem] max-w-[calc(100vw-2rem)] p-3" align="start">
-                                     <div className="mb-2 relative">
-                                       <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                                       <Input
-                                         value={surchargeSearch}
-                                         onChange={e => setSurchargeSearch(e.target.value)}
-                                         placeholder="Tìm theo tên hoặc mã phụ thu..."
-                                         className="h-8 pl-7 text-xs"
-                                         autoFocus
-                                         onKeyDown={e => e.stopPropagation()}
-                                       />
-                                     </div>
-                                     <div className="max-h-64 overflow-y-auto space-y-1">
-                                       {surchargeOptions.length === 0 ? (
-                                         <p className="py-3 text-center text-xs text-muted-foreground">Chưa có phụ thu</p>
-                                       ) : filteredSurchargeOptions.length === 0 ? (
-                                         <p className="py-3 text-center text-xs text-muted-foreground">Không tìm thấy phụ thu phù hợp</p>
-                                       ) : filteredSurchargeOptions.map((o: any) => {
-                                         const val = parseFloat(o.valueAmount || "0");
-                                         const amt = o.valueType === "percent" ? Math.round(base * val / 100) : val;
-                                         return (
-                                           <label key={o.id} className="flex items-center gap-2 cursor-pointer rounded px-1.5 py-1 hover:bg-muted/60">
-                                             <Checkbox checked={p.surchargeKeys.includes(o.id)} onCheckedChange={() => toggleSurcharge(o.id)} />
-                                             <span className="min-w-0 flex-1">
-                                               <span className="block truncate text-xs font-medium">{o.name}</span>
-                                               <span className="block text-xs text-muted-foreground">+{fmtMoney(amt)}</span>
-                                             </span>
-                                           </label>
-                                         );
-                                       })}
-                                     </div>
-                                      </PopoverContent>
-                                    </Popover>
-
-                                 <div className="mt-3 space-y-2">
-                                   {p.manualSurchargeRows.map(row => (
-                                     <div key={row.id} className="flex items-center gap-1.5">
-                                       <select
-                                         value={row.valueType}
-                                         onChange={e => updateManualAdjustmentRow(p.id, "surcharge", row.id, { valueType: e.target.value as ManualAdjustment["valueType"] })}
-                                         className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
-                                       >
-                                         <option value="amount">Số tiền</option>
-                                         <option value="percent">Phần trăm</option>
-                                       </select>
-                                       <div className="relative min-w-0 flex-1">
-                                         <Input
-                                           type="number"
-                                           min={0}
-                                           value={row.value || ""}
-                                           onChange={e => updateManualAdjustmentRow(p.id, "surcharge", row.id, { value: Math.max(0, Number(e.target.value) || 0) })}
-                                           placeholder="Nhập nhanh..."
-                                           className="h-8 pr-8 text-xs"
-                                         />
-                                         <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
-                                           {row.valueType === "percent" ? "%" : "₫"}
-                                         </span>
-                                       </div>
-                                       <button
-                                         type="button"
-                                         className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
-                                         onClick={() => removeManualAdjustmentRow(p.id, "surcharge", row.id)}
-                                         aria-label="Xóa dòng phụ thu"
-                                       >
-                                         <X className="h-4 w-4" />
-                                       </button>
-                                     </div>
-                                   ))}
+                                  <div className="mt-3 space-y-4">
+                                    {p.manualSurchargeRows.map(row => {
+                                      const pickerId = `${p.id}:${row.id}`;
+                                      const selectedOption = surchargeOptions.find((o: any) => o.id === row.optionKey);
+                                      return (
+                                        <div key={row.id} className="space-y-2 rounded-lg border border-muted p-2">
+                                          <Popover open={openProductSurchargePicker === pickerId} onOpenChange={v => {
+                                            setOpenProductSurchargePicker(v ? pickerId : null);
+                                            if (v) setSurchargeSearch("");
+                                          }}>
+                                            <PopoverTrigger asChild>
+                                              <button
+                                                type="button"
+                                                className="w-full min-h-9 flex items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-1.5 text-left text-xs hover:border-purple-400"
+                                              >
+                                                <span className={selectedOption ? "truncate" : "text-muted-foreground"}>
+                                                  {selectedOption ? selectedOption.name : "Chọn phụ thu..."}
+                                                </span>
+                                                <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                              </button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-[28rem] max-w-[calc(100vw-2rem)] p-3" align="start">
+                                              <div className="mb-2 relative">
+                                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                                                <Input
+                                                  value={surchargeSearch}
+                                                  onChange={e => setSurchargeSearch(e.target.value)}
+                                                  placeholder="Tìm theo tên hoặc mã phụ thu..."
+                                                  className="h-8 pl-7 text-xs"
+                                                  autoFocus
+                                                  onKeyDown={e => e.stopPropagation()}
+                                                />
+                                              </div>
+                                              <div className="max-h-64 overflow-y-auto space-y-1">
+                                                {surchargeOptions.length === 0 ? (
+                                                  <p className="py-3 text-center text-xs text-muted-foreground">Chưa có phụ thu</p>
+                                                ) : filteredSurchargeOptions.length === 0 ? (
+                                                  <p className="py-3 text-center text-xs text-muted-foreground">Không tìm thấy phụ thu phù hợp</p>
+                                                ) : filteredSurchargeOptions.map((o: any) => {
+                                                  const val = parseFloat(o.valueAmount || "0");
+                                                  const amt = o.valueType === "percent" ? Math.round(base * val / 100) : val;
+                                                  return (
+                                                    <button
+                                                      key={o.id}
+                                                      type="button"
+                                                      className="w-full flex items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-muted/60"
+                                                      onClick={() => {
+                                                        selectProductAdjustmentOption(p.id, "surcharge", row.id, o.id);
+                                                        setOpenProductSurchargePicker(null);
+                                                      }}
+                                                    >
+                                                      <span className="min-w-0 flex-1">
+                                                        <span className="block truncate text-xs font-medium">{o.name}</span>
+                                                        <span className="block text-xs text-muted-foreground">+{fmtMoney(amt)}</span>
+                                                      </span>
+                                                    </button>
+                                                  );
+                                                })}
+                                              </div>
+                                            </PopoverContent>
+                                          </Popover>
+                                          <div className="flex items-center gap-1.5">
+                                            <select
+                                              value={row.valueType}
+                                              onChange={e => updateManualAdjustmentRow(p.id, "surcharge", row.id, { valueType: e.target.value as ManualAdjustment["valueType"] })}
+                                              className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
+                                            >
+                                              <option value="amount">Số tiền</option>
+                                              <option value="percent">Phần trăm</option>
+                                            </select>
+                                            <div className="relative min-w-0 flex-1">
+                                              <Input
+                                                type="number"
+                                                min={0}
+                                                value={row.value || ""}
+                                                onChange={e => updateManualAdjustmentRow(p.id, "surcharge", row.id, { value: Math.max(0, Number(e.target.value) || 0) })}
+                                                placeholder="Nhập nhanh..."
+                                                className="h-8 pr-8 text-xs"
+                                              />
+                                              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
+                                                {row.valueType === "percent" ? "%" : "₫"}
+                                              </span>
+                                            </div>
+                                            <button
+                                              type="button"
+                                              className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
+                                              onClick={() => removeManualAdjustmentRow(p.id, "surcharge", row.id)}
+                                              aria-label="Xóa dòng phụ thu"
+                                            >
+                                              <X className="h-4 w-4" />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
                                    <button
                                      type="button"
                                      className="text-xs font-medium text-purple-600 hover:text-purple-700"
