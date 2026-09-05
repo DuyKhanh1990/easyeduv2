@@ -34,7 +34,7 @@ function defaultCurrentMonth(): { from: Date; to: Date } {
   return { from, to };
 }
 
-const TAB_FILTERS = new Set(["unpaid", "partial", "paid", "debt"]);
+const TAB_FILTERS = new Set(["unpaid", "paid", "debt"]);
 
 export function useInvoiceFilters(activeTab: string) {
   const [search, setSearchRaw]               = useState("");

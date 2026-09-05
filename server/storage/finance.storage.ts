@@ -517,9 +517,11 @@ export async function getInvoices(filters: {
   const baseWhere = conditions.length > 0 ? and(...conditions) : undefined;
 
   const tabConditions = [...conditions];
-  if (f.tabFilter === "unpaid")       tabConditions.push(eq(invoices.status, "unpaid"));
-  else if (f.tabFilter === "partial") tabConditions.push(eq(invoices.status, "partial"));
-  else if (f.tabFilter === "paid")    tabConditions.push(eq(invoices.status, "paid"));
+  if (f.tabFilter === "unpaid") {
+    tabConditions.push(inArray(invoices.status, ["unpaid", "partial"]));
+  } else if (f.tabFilter === "paid") {
+    tabConditions.push(inArray(invoices.status, ["paid", "partial"]));
+  }
   else if (f.tabFilter === "debt")    tabConditions.push(sql`${invoices.remainingAmount}::numeric > 0` as any);
   const tabWhere = tabConditions.length > 0 ? and(...tabConditions) : undefined;
 
@@ -543,9 +545,9 @@ export async function getInvoices(filters: {
   if (f.includeTabCounts) {
     const [tc] = await db.select({
       all:     sql<number>`COUNT(*)::int`,
-      unpaid:  sql<number>`COUNT(*) FILTER (WHERE ${invoices.status} = 'unpaid')::int`,
+       unpaid:  sql<number>`COUNT(*) FILTER (WHERE ${invoices.status} IN ('unpaid', 'partial'))::int`,
       partial: sql<number>`COUNT(*) FILTER (WHERE ${invoices.status} = 'partial')::int`,
-      paid:    sql<number>`COUNT(*) FILTER (WHERE ${invoices.status} = 'paid')::int`,
+       paid:    sql<number>`COUNT(*) FILTER (WHERE ${invoices.status} IN ('paid', 'partial'))::int`,
       debt:    sql<number>`COUNT(*) FILTER (WHERE ${invoices.remainingAmount}::numeric > 0 AND ${invoices.status} != 'cancelled')::int`,
     })
     .from(invoices)

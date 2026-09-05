@@ -65,13 +65,12 @@ import { HistoryDialog } from "@/components/common/HistoryDialog";
 import { useLocations } from "@/hooks/use-locations";
 import type { SortKey } from "@/hooks/use-invoice-filters";
 
-type TabKey = "all" | "unpaid" | "partial" | "paid" | "debt" | "history" | "print-template";
+type TabKey = "all" | "unpaid" | "paid" | "debt" | "history" | "print-template";
 type DebtCondition = "all" | "overdue" | "today" | "soon" | "upcoming" | "no-due-date";
 
 const TABS: { key: TabKey; label: string; statusFilter?: string; color: string }[] = [
   { key: "all",              label: "Tất cả",            color: "#64748b" },
   { key: "unpaid",           label: "Chưa thanh toán",   statusFilter: "unpaid",  color: "#ca8a04" },
-  { key: "partial",          label: "Thanh toán 1 phần", statusFilter: "partial", color: "#ea580c" },
   { key: "paid",             label: "Đã thanh toán",     statusFilter: "paid",    color: "#16a34a" },
   { key: "debt",             label: "Công nợ",           statusFilter: "debt",    color: "#dc2626" },
   { key: "history",          label: "Lịch sử",                                    color: "#7c3aed" },
@@ -1499,7 +1498,17 @@ export default function Invoices() {
 
   const { invoices, total, tabCounts, isLoading, deleteMutation: deleteInvoiceMutation, updateStatusMutation } = useInvoices(queryParams);
   const { summary: invoiceSummary, isLoading: isSummaryLoading } = useInvoiceSummary(queryParams);
-  const displayInvoices = flattenInvoiceRows(invoices);
+  const displayInvoices = flattenInvoiceRows(invoices).filter((invoice) => {
+    if (activeTab === "unpaid") {
+      return invoice.isScheduleRow
+        ? invoice.status !== "paid"
+        : invoice.status !== "paid";
+    }
+    if (activeTab === "paid") {
+      return invoice.status === "paid";
+    }
+    return true;
+  });
   const updateScheduleStatusMutation = useMutation({
     mutationFn: ({ scheduleId, status }: { scheduleId: string; status: string }) =>
       apiRequest("PATCH", `/api/finance/invoice-schedules/${scheduleId}/status`, { status }),
