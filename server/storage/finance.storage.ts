@@ -1495,6 +1495,7 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
         const nextStatus = wasPaid ? "paid" : (s.status ?? previous?.status ?? "unpaid");
 
         return {
+          id: previous?.id,
           invoiceId: id,
           label: wasPaid ? previous.label : (s.label ?? previous?.label ?? `ĐỢT ${idx + 1}`),
           code: previous?.code ?? s.code ?? `${inv.code}-${idx + 1}`,
@@ -1556,10 +1557,11 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
 
       for (const row of scheduleRows) {
         if (row.id) {
+          const { id: scheduleRowId, ...scheduleUpdate } = row;
           await tx
             .update(invoicePaymentSchedule)
-            .set(row)
-            .where(eq(invoicePaymentSchedule.id, row.id));
+            .set(scheduleUpdate)
+            .where(eq(invoicePaymentSchedule.id, scheduleRowId));
         } else {
           await tx.insert(invoicePaymentSchedule).values(row);
         }

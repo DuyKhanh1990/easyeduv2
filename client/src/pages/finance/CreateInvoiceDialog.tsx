@@ -516,26 +516,44 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       return [...prev, { id: Date.now().toString(), label: `ĐỢT ${nextNum}`, code: `PT-${Date.now()}`, amount: remaining, due: new Date(), status: "unpaid", paymentMethod: "cash", bank: "" }];
     });
   };
-  const removePayment = (id: string) => setPaymentSchedule(prev => prev.filter(p => p.id !== id));
+  const removePayment = (id: string) => setPaymentSchedule(prev => {
+    if (prev.find(p => p.id === id)?.status === "paid") return prev;
+    return prev.filter(p => p.id !== id);
+  });
   const updatePaymentAmount = (id: string, amount: number) => setPaymentSchedule(prev => {
+    if (prev.find(p => p.id === id)?.status === "paid") return prev;
     // Clear isAuto when user manually edits the amount
     const updated = prev.map(p => p.id === id ? { ...p, amount, isAuto: false } : p);
-    const lastId = updated[updated.length - 1]?.id;
-    if (lastId && id !== lastId && updated.length > 1) {
-      const othersTotal = updated.slice(0, -1).reduce((s, p) => s + p.amount, 0);
+    const editableSchedules = updated.filter(p => p.status !== "paid");
+    const lastEditableId = editableSchedules[editableSchedules.length - 1]?.id;
+    if (lastEditableId && id !== lastEditableId && editableSchedules.length > 1) {
+      const othersTotal = updated
+        .filter(p => p.id !== lastEditableId)
+        .reduce((s, p) => s + p.amount, 0);
       const newLastAmount = Math.max(0, finalTotal - directPaidAmount - othersTotal);
-      return updated.map(p => p.id === lastId ? { ...p, amount: newLastAmount } : p);
+      return updated.map(p => p.id === lastEditableId ? { ...p, amount: newLastAmount } : p);
     }
     return updated;
   });
   const handleAmountBlur = (id: string, _amount: number) => {
     setPaymentSchedule(prev => {
-      const lastEntry = prev[prev.length - 1];
-      if (!lastEntry || lastEntry.id !== id) return prev;
+      const editedIndex = prev.findIndex(p => p.id === id);
+      const editedEntry = prev[editedIndex];
+      if (!editedEntry || editedEntry.status === "paid") return prev;
       const allEntriesTotal = prev.reduce((s, p) => s + p.amount, 0);
       const remaining = finalTotal - directPaidAmount - allEntriesTotal;
       if (remaining <= 0) return prev;
-      const nextNum = directPaidAmount > 0 ? prev.length + 2 : prev.length + 1;
+
+      const nextUnpaid = prev.find((p, index) =>
+        index > editedIndex && p.status !== "paid"
+      ) ?? prev.find((p, index) => index !== editedIndex && p.status !== "paid");
+      if (nextUnpaid) {
+        return prev.map(p => p.id === nextUnpaid.id
+          ? { ...p, amount: p.amount + remaining }
+          : p);
+      }
+
+      const nextNum = prev.length + 1;
       return [...prev, {
         id: Date.now().toString(),
         label: `ĐỢT ${nextNum}`,
@@ -548,8 +566,13 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       }];
     });
   };
-  const updatePaymentDue = (id: string, due: Date) => { setPaymentSchedule(prev => prev.map(p => p.id === id ? { ...p, due } : p)); setOpenDuePicker(null); };
-  const updatePaymentStatus = (id: string, status: string) => setPaymentSchedule(prev => prev.map(p => p.id === id ? { ...p, status } : p));
+  const updatePaymentDue = (id: string, due: Date) => {
+    setPaymentSchedule(prev => prev.map(p => p.id === id && p.status !== "paid" ? { ...p, due } : p));
+    setOpenDuePicker(null);
+  };
+  const updatePaymentStatus = (id: string, status: string) => setPaymentSchedule(prev => prev.map(p =>
+    p.id === id && p.status !== "paid" ? { ...p, status } : p
+  ));
 
   const handleSelectFeePackage = (productId: string, pkgId: string) => {
     const pkg = feePackages.find((fp: any) => fp.id === pkgId);
