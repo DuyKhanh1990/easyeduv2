@@ -1480,8 +1480,25 @@ export default function Invoices() {
     });
   };
 
-  const allSelected = invoices.length > 0 && invoices.every(i => selectedIds.has(i.id));
-  const toggleAll   = () => setSelectedIds(allSelected ? new Set() : new Set(invoices.map(i => i.id)));
+  const selectedScheduleIdSet = new Set(selectedSchedules.keys());
+  const allSelected = displayInvoices.length > 0 && displayInvoices.every(i =>
+    i.isScheduleRow
+      ? !!i.scheduleId && selectedScheduleIdSet.has(i.scheduleId)
+      : selectedIds.has(i.id),
+  );
+  const toggleAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+      setSelectedSchedules(new Map());
+      return;
+    }
+    const parentIds = displayInvoices.filter(i => !i.isScheduleRow).map(i => i.id);
+    const scheduleEntries = displayInvoices
+      .map(i => getScheduleForRow(i))
+      .filter((s): s is ScheduleItem => !!s);
+    setSelectedIds(new Set(parentIds));
+    setSelectedSchedules(new Map(scheduleEntries.map(s => [s.id, s])));
+  };
   const toggleOne   = (id: string) => setSelectedIds(prev => {
     const next = new Set(prev);
     next.has(id) ? next.delete(id) : next.add(id);
@@ -1495,7 +1512,6 @@ export default function Invoices() {
     return next;
   });
 
-  const selectedScheduleIdSet = new Set(selectedSchedules.keys());
   const totalSelectedCount = selectedIds.size + selectedSchedules.size;
   const hasPaidAtFilter = !!(paidAtRange.from || paidAtRange.to);
   const hasAnyToolbarFilter = hasActiveFilters(filters) || hasPaidAtFilter;
