@@ -783,6 +783,155 @@ export async function getInvoiceFilterOptions(filters: {
   };
 }
 
+/**
+ * Returns cash-flow rows at the payment-event level.
+ *
+ * Invoices without schedules, and invoices with exactly one schedule, are
+ * represented by the invoice row. Invoices with multiple schedules are
+ * represented by one row per paid schedule so the report date and amount
+ * follow the actual installment payment.
+ */
+export async function getThuChiReportEntries(filters: {
+  paidAtFrom?: string;
+  paidAtTo?: string;
+  types?: string[];
+  locationNames?: string[];
+  search?: string;
+  creatorNames?: string[];
+  paymentMethods?: string[];
+  allowedLocationIds?: string[] | null;
+  isSuperAdmin?: boolean;
+  page?: number;
+  limit?: number;
+} = {}): Promise<{ data: any[]; total: number }> {
+  const parentResult = await getInvoices({
+    ...filters,
+    paidAtFrom: undefined,
+    paidAtTo: undefined,
+    paymentMethods: undefined,
+    payerNames: undefined,
+    page: undefined,
+    limit: undefined,
+    includeTabCounts: false,
+  });
+  const parentRows = parentResult.data as any[];
+  const invoiceIds = parentRows.map(row => row.id).filter(Boolean);
+
+  const scheduleByInvoice = new Map<string, any[]>();
+  if (invoiceIds.length > 0) {
+    const reportSchedulePayer = alias(staff, "report_schedule_payer");
+    const scheduleRows = await db
+      .select({
+        schedule: invoicePaymentSchedule,
+        paidByName: reportSchedulePayer.fullName,
+      })
+      .from(invoicePaymentSchedule)
+      .leftJoin(reportSchedulePayer, eq(invoicePaymentSchedule.paidBy, reportSchedulePayer.userId))
+      .where(inArray(invoicePaymentSchedule.invoiceId, invoiceIds))
+      .orderBy(asc(invoicePaymentSchedule.sortOrder));
+
+    for (const { schedule, paidByName } of scheduleRows) {
+      const list = scheduleByInvoice.get(schedule.invoiceId) ?? [];
+      list.push({ ...schedule, paidByName });
+      scheduleByInvoice.set(schedule.invoiceId, list);
+    }
+  }
+
+  const fromMs = filters.paidAtFrom
+    ? new Date(`${filters.paidAtFrom}T00:00:00.000Z`).getTime()
+    : Number.NEGATIVE_INFINITY;
+  const toMs = filters.paidAtTo
+    ? new Date(`${filters.paidAtTo}T23:59:59.999Z`).getTime()
+    : Number.POSITIVE_INFINITY;
+  const paymentMethods = new Set(filters.paymentMethods ?? []);
+
+  const isInSelectedPeriod = (value: unknown): boolean => {
+    if (!value) return false;
+    const time = value instanceof Date ? value.getTime() : new Date(String(value)).getTime();
+    return Number.isFinite(time) && time >= fromMs && time <= toMs;
+  };
+
+  const matchesPaymentMethod = (method: unknown): boolean =>
+    paymentMethods.size === 0 || paymentMethods.has(String(method ?? ""));
+
+  const reportRows: any[] = [];
+  for (const invoice of parentRows) {
+    const schedules = scheduleByInvoice.get(invoice.id) ?? [];
+
+    if (schedules.length > 1) {
+      for (const schedule of schedules) {
+        // A missing installment paidAt cannot be assigned to a reporting
+        // period without inventing a payment date.
+        if (schedule.status !== "paid" || !isInSelectedPeriod(schedule.paidAt)) continue;
+        const paymentMethod = schedule.paymentMethod ?? invoice.paymentMethod;
+        if (!matchesPaymentMethod(paymentMethod)) continue;
+
+        reportRows.push({
+          ...invoice,
+          id: `${invoice.id}:schedule:${schedule.id}`,
+          invoiceId: invoice.id,
+          reportAmount: schedule.amount,
+          paidAmount: schedule.amount,
+          paidAt: schedule.paidAt,
+          paymentMethod,
+          appliedBankAccount: schedule.appliedBankAccount ?? invoice.appliedBankAccount,
+          settleCode: schedule.settleCode ?? invoice.settleCode,
+          scheduleId: schedule.id,
+          scheduleLabel: schedule.label,
+          scheduleCode: schedule.code,
+          schedulePaidByName: schedule.paidByName ?? null,
+          paymentEventType: "schedule",
+        });
+      }
+      continue;
+    }
+
+    const singleSchedule = schedules[0];
+    const paymentAt = singleSchedule?.paidAt ?? invoice.paidAt;
+    const isPaid = singleSchedule
+      ? singleSchedule.status === "paid" || invoice.status === "paid"
+      : invoice.paidAt != null || invoice.status === "paid";
+    if (!isPaid || !isInSelectedPeriod(paymentAt)) continue;
+
+    const paymentMethod = singleSchedule?.paymentMethod ?? invoice.paymentMethod;
+    if (!matchesPaymentMethod(paymentMethod)) continue;
+    const reportAmount = singleSchedule?.amount ?? invoice.grandTotal;
+
+    reportRows.push({
+      ...invoice,
+      reportAmount,
+      paidAmount: reportAmount,
+      paidAt: paymentAt,
+      paymentMethod,
+      appliedBankAccount: singleSchedule?.appliedBankAccount ?? invoice.appliedBankAccount,
+      settleCode: singleSchedule?.settleCode ?? invoice.settleCode,
+      scheduleId: singleSchedule?.id ?? null,
+      scheduleLabel: null,
+      scheduleCode: null,
+      schedulePaidByName: singleSchedule?.paidByName ?? null,
+      paymentEventType: "invoice",
+    });
+  }
+
+  reportRows.sort((a, b) => {
+    const aTime = new Date(a.paidAt).getTime();
+    const bTime = new Date(b.paidAt).getTime();
+    return bTime - aTime;
+  });
+
+  const total = reportRows.length;
+  const limit = filters.limit ?? 20;
+  const page = filters.page ?? 1;
+  const offset = Math.max(0, page - 1) * limit;
+
+  return {
+    data: typeof filters.page === "number" && typeof filters.limit === "number"
+      ? reportRows.slice(offset, offset + limit)
+      : reportRows,
+    total,
+  };
+}
+
 export async function getInvoicesSummary(filters: {
   locationId?: string;
   locationNames?: string[];

@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { storage } from "../storage";
 import { distributeInvoiceFeeToSessions } from "../storage/invoice-session-allocation.storage";
 import { createWalletEntry, getNetWalletAmountByInvoiceAndCategory } from "../storage/wallet.storage";
-import { saveInvoiceCommissions, getInvoiceFilterOptions, getNextLocationCode, getAvailableFinanceVouchers } from "../storage/finance.storage";
+import { saveInvoiceCommissions, getInvoiceFilterOptions, getThuChiReportEntries, getNextLocationCode, getAvailableFinanceVouchers } from "../storage/finance.storage";
 import { createInvoiceAuditLog } from "../storage/invoice-audit-log.storage";
 import { createIssueReceiptsForInvoice, cancelIssueReceiptForInvoice } from "./store-issue-receipt.routes";
 
@@ -422,6 +422,33 @@ export function registerFinanceRoutes(app: Express): void {
     try {
        const { dateFrom, dateTo, dueDateFrom, dueDateTo } = req.query as Record<string, string>;
        const data = await getInvoiceFilterOptions({ dateFrom, dateTo, dueDateFrom, dueDateTo, allowedLocationIds: req.allowedLocationIds, isSuperAdmin: req.isSuperAdmin });
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/finance/reports/thu-chi", async (req, res) => {
+    try {
+      const q = req.query as Record<string, any>;
+      const getArr = (v: any): string[] | undefined => {
+        if (!v) return undefined;
+        const a = Array.isArray(v) ? v : [v];
+        return a.length > 0 ? a : undefined;
+      };
+      const data = await getThuChiReportEntries({
+        paidAtFrom: q.paidAtFrom as string | undefined,
+        paidAtTo: q.paidAtTo as string | undefined,
+        search: q.search as string | undefined,
+        types: getArr(q.types),
+        locationNames: getArr(q.locationNames),
+        creatorNames: getArr(q.creatorNames),
+        paymentMethods: getArr(q.paymentMethods),
+        page: q.page ? parseInt(q.page as string) : undefined,
+        limit: q.limit ? parseInt(q.limit as string) : undefined,
+        allowedLocationIds: req.allowedLocationIds,
+        isSuperAdmin: req.isSuperAdmin,
+      });
       res.json(data);
     } catch (err: any) {
       res.status(500).json({ message: err.message });

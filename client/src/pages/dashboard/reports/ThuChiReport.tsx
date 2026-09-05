@@ -226,9 +226,9 @@ export function ThuChiReport({ onBack }: Props) {
   }, [paidAtFrom, filterType, filterLocation, filterCreator, filterPaymentMethod]);
 
   const { data: mainData, isLoading, refetch } = useQuery<{ data: any[]; total: number }>({
-    queryKey: ["/api/finance/invoices", "thu-chi-report-page", mainQS],
+      queryKey: ["/api/finance/reports/thu-chi", "thu-chi-report-page", mainQS],
     queryFn: async () => {
-      const res = await fetch(`/api/finance/invoices?${mainQS}`, { credentials: "include" });
+      const res = await fetch(`/api/finance/reports/thu-chi?${mainQS}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -236,9 +236,9 @@ export function ThuChiReport({ onBack }: Props) {
   });
 
   const { data: allData } = useQuery<{ data: any[]; total: number }>({
-    queryKey: ["/api/finance/invoices", "thu-chi-report-all", allQS],
+      queryKey: ["/api/finance/reports/thu-chi", "thu-chi-report-all", allQS],
     queryFn: async () => {
-      const res = await fetch(`/api/finance/invoices?${allQS}`, { credentials: "include" });
+      const res = await fetch(`/api/finance/reports/thu-chi?${allQS}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -246,10 +246,10 @@ export function ThuChiReport({ onBack }: Props) {
   });
 
   const { data: preData } = useQuery<{ data: any[]; total: number }>({
-    queryKey: ["/api/finance/invoices", "thu-chi-report-pre", preQS],
+      queryKey: ["/api/finance/reports/thu-chi", "thu-chi-report-pre", preQS],
     queryFn: async () => {
       if (!paidAtFrom) return { data: [], total: 0 };
-      const res = await fetch(`/api/finance/invoices?${preQS}`, { credentials: "include" });
+      const res = await fetch(`/api/finance/reports/thu-chi?${preQS}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -344,24 +344,27 @@ export function ThuChiReport({ onBack }: Props) {
     const pmLabel = (m: string) =>
       m === "cash" ? "Tiền mặt" : m === "transfer" ? "Chuyển khoản" : m ?? "";
 
-    const dataRows = allRows.map((inv, idx) => {
+      const dataRows = allRows.map((inv, idx) => {
       const isIncome = inv.type === "Thu";
-      const grand    = parseNum(inv.grandTotal);
+        const amount   = parseNum(inv.reportAmount ?? inv.paidAmount ?? inv.grandTotal);
+        const reference = inv.scheduleCode
+          ? `${inv.code ?? ""} / ${inv.scheduleCode}`
+          : inv.code ?? "";
       return [
         idx + 1,
         isIncome ? "Phiếu thu" : "Phiếu chi",
-        inv.settleCode ?? "",
+          inv.settleCode ?? "",
         fmtDate(inv.paidAt),
         inv.name ?? "",
         inv.category ?? "",
         inv.description ?? "",
         inv.creatorName ?? "",
         pmLabel(inv.paymentMethod),
-        inv.code ?? "",
+          reference,
         inv.account ?? "",
         inv.counterAccount ?? "",
-        isIncome ? grand : "",
-        !isIncome ? grand : "",
+          isIncome ? amount : "",
+          !isIncome ? amount : "",
       ];
     });
 
@@ -380,7 +383,7 @@ export function ThuChiReport({ onBack }: Props) {
         { header: "Mô tả",                  width: 32 },
         { header: "Người thực hiện",        width: 20 },
         { header: "Hình thức TT",           width: 15 },
-        { header: "Tham chiếu TT",          width: 20 },
+                  { header: "Mã hóa đơn / đợt",         width: 24 },
         { header: "TK thu/chi",             width: 14 },
         { header: "TK đối ứng",             width: 14 },
         { header: "Thu / Nợ",               width: 18 },
@@ -693,7 +696,7 @@ export function ThuChiReport({ onBack }: Props) {
               ) : (
                 rows.map((inv, idx) => {
                   const isIncome   = inv.type === "Thu";
-                  const grandTotal = parseNum(inv.grandTotal);
+                  const reportAmount = parseNum(inv.reportAmount ?? inv.paidAmount ?? inv.grandTotal);
                   const pmLabel    = inv.paymentMethod === "cash" ? "Tiền mặt"
                                    : inv.paymentMethod === "transfer" ? "Chuyển khoản"
                                    : inv.paymentMethod ?? "—";
@@ -722,14 +725,19 @@ export function ThuChiReport({ onBack }: Props) {
                       </td>
                       <td className="px-3 py-2 border-r border-border/30">{inv.creatorName ?? "—"}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-r border-border/30">{pmLabel}</td>
-                      <td className="px-3 py-2 text-muted-foreground font-mono border-r border-border/30">{inv.code ?? "—"}</td>
+                      <td className="px-3 py-2 text-muted-foreground font-mono border-r border-border/30">
+                        <div>{inv.code ?? "—"}</div>
+                        {inv.scheduleCode && (
+                          <div className="text-[10px] text-indigo-600">{inv.scheduleLabel ?? inv.scheduleCode}</div>
+                        )}
+                      </td>
                       <td className="px-3 py-2 font-mono text-indigo-700 font-medium border-r border-border/30">{inv.account ?? "—"}</td>
                       <td className="px-3 py-2 font-mono text-indigo-700 font-medium border-r border-border/30">{inv.counterAccount ?? "—"}</td>
                       <td className="px-3 py-2 text-right tabular-nums font-medium text-emerald-700 border-r border-border/30">
-                        {isIncome ? fmtMoney(grandTotal) : ""}
+                        {isIncome ? fmtMoney(reportAmount) : ""}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums font-medium text-orange-700">
-                        {!isIncome ? fmtMoney(grandTotal) : ""}
+                        {!isIncome ? fmtMoney(reportAmount) : ""}
                       </td>
                     </tr>
                   );
