@@ -1567,8 +1567,15 @@ export async function splitInvoiceSchedule(scheduleId: string, splitAmount: numb
 
     const currentSortOrder = schedule.sortOrder ?? 0;
 
-    // Find the next installment (first one with sortOrder > current)
-    const nextSchedule = allSchedules.find(s => (s.sortOrder ?? 0) > currentSortOrder && s.id !== scheduleId);
+    // Never change an installment that has already been paid. Prefer the next
+    // unpaid installment; if there is none after the current one, reuse the
+    // first unpaid installment elsewhere in the schedule.
+    const unpaidSchedules = allSchedules
+      .filter(s => s.id !== scheduleId && s.status !== "paid")
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    const nextSchedule =
+      unpaidSchedules.find(s => (s.sortOrder ?? 0) > currentSortOrder) ??
+      unpaidSchedules[0];
 
     let affected: any;
     if (nextSchedule) {
