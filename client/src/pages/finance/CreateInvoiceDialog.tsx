@@ -91,6 +91,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   ]);
   const [openPromoId, setOpenPromoId] = useState<string | null>(null);
   const [openSurchargeId, setOpenSurchargeId] = useState<string | null>(null);
+  const [promotionSearch, setPromotionSearch] = useState("");
+  const [surchargeSearch, setSurchargeSearch] = useState("");
   const [khoPickerOpen, setKhoPickerOpen] = useState<string | null>(null);
   const [khoSearch, setKhoSearch] = useState<string>("");
   const [invoicePromoKeys, setInvoicePromoKeys] = useState<string[]>([]);
@@ -326,6 +328,17 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     queryKey: ["/api/finance/promotions", { type: "surcharge" }],
     queryFn: () => apiRequest("GET", "/api/finance/promotions?type=surcharge").then(r => r.json()),
     enabled: open,
+  });
+
+  const normalizedPromotionSearch = promotionSearch.trim().toLowerCase();
+  const normalizedSurchargeSearch = surchargeSearch.trim().toLowerCase();
+  const filteredPromotionOptionsWithVouchers = promotionOptionsWithVouchers.filter((o: any) => {
+    if (!normalizedPromotionSearch) return true;
+    return `${o.name ?? ""} ${o.code ?? ""}`.toLowerCase().includes(normalizedPromotionSearch);
+  });
+  const filteredSurchargeOptions = surchargeOptions.filter((o: any) => {
+    if (!normalizedSurchargeSearch) return true;
+    return `${o.name ?? ""} ${o.code ?? ""}`.toLowerCase().includes(normalizedSurchargeSearch);
   });
 
   const createPromotionMutation = useMutation({
@@ -1068,7 +1081,10 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                             )}
                           </td>
                           <td className="p-2">
-                            <Popover open={openPromoId === p.id} onOpenChange={v => setOpenPromoId(v ? p.id : null)}>
+                            <Popover open={openPromoId === p.id} onOpenChange={v => {
+                              setOpenPromoId(v ? p.id : null);
+                              if (v) setPromotionSearch("");
+                            }}>
                               <PopoverTrigger asChild>
                                 <button className="w-full h-8 flex items-center justify-between px-2 rounded-md border bg-background hover:border-purple-400 transition-colors text-[11px]">
                                   <span className={promoAmt > 0 ? "text-green-600 font-semibold" : "text-muted-foreground"}>
@@ -1082,7 +1098,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                  Có Voucher chưa sử dụng
                                </span>
                              )}
-                               <PopoverContent className="w-52 p-2" align="start">
+                               <PopoverContent className="w-[26rem] max-w-[calc(100vw-2rem)] p-3" align="start">
                                  <div className="flex items-center justify-between gap-2 mb-2">
                                    <p className="text-xs font-semibold text-muted-foreground">Chọn khuyến mãi</p>
                                    {canCreatePromotion && (
@@ -1096,10 +1112,19 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                      </button>
                                    )}
                                  </div>
-                                <div className="space-y-1.5">
-                                  {promotionOptionsWithVouchers.length === 0
+                                 <Input
+                                   value={promotionSearch}
+                                   onChange={e => setPromotionSearch(e.target.value)}
+                                   placeholder="Tìm theo tên hoặc mã khuyến mãi..."
+                                   className="h-8 mb-2 text-xs"
+                                   onKeyDown={e => e.stopPropagation()}
+                                 />
+                                 <div className="max-h-72 overflow-y-auto space-y-1.5">
+                                   {promotionOptionsWithVouchers.length === 0
                                     ? <p className="text-xs text-muted-foreground">Chưa có khuyến mãi</p>
-                                    : promotionOptionsWithVouchers.map((o: any) => {
+                                     : filteredPromotionOptionsWithVouchers.length === 0
+                                       ? <p className="text-xs text-muted-foreground">Không tìm thấy khuyến mãi phù hợp</p>
+                                       : filteredPromotionOptionsWithVouchers.map((o: any) => {
                                         const val = parseFloat(o.valueAmount || "0");
                                         const amt = o.valueType === "percent" ? Math.round(base * val / 100) : val;
                                         return (
@@ -1121,12 +1146,15 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                         );
                                       })
                                   }
-                                </div>
+                                 </div>
                               </PopoverContent>
                             </Popover>
                           </td>
                           <td className="p-2">
-                            <Popover open={openSurchargeId === p.id} onOpenChange={v => setOpenSurchargeId(v ? p.id : null)}>
+                            <Popover open={openSurchargeId === p.id} onOpenChange={v => {
+                              setOpenSurchargeId(v ? p.id : null);
+                              if (v) setSurchargeSearch("");
+                            }}>
                               <PopoverTrigger asChild>
                                 <button className="w-full h-8 flex items-center justify-between px-2 rounded-md border bg-background hover:border-purple-400 transition-colors text-[11px]">
                                   <span className={surchargeAmt > 0 ? "text-orange-600 font-semibold" : "text-muted-foreground"}>
@@ -1135,7 +1163,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                   <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                                 </button>
                               </PopoverTrigger>
-                               <PopoverContent className="w-56 p-2" align="start">
+                                <PopoverContent className="w-[28rem] max-w-[calc(100vw-2rem)] p-3" align="start">
                                  <div className="flex items-center justify-between gap-2 mb-2">
                                    <p className="text-xs font-semibold text-muted-foreground">Chọn phụ thu</p>
                                    {canCreatePromotion && (
@@ -1149,10 +1177,19 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                      </button>
                                    )}
                                  </div>
-                                <div className="space-y-1.5">
+                                 <Input
+                                   value={surchargeSearch}
+                                   onChange={e => setSurchargeSearch(e.target.value)}
+                                   placeholder="Tìm theo tên hoặc mã phụ thu..."
+                                   className="h-8 mb-2 text-xs"
+                                   onKeyDown={e => e.stopPropagation()}
+                                 />
+                                 <div className="max-h-72 overflow-y-auto space-y-1.5">
                                   {surchargeOptions.length === 0
                                     ? <p className="text-xs text-muted-foreground">Chưa có phụ thu</p>
-                                    : surchargeOptions.map((o: any) => {
+                                     : filteredSurchargeOptions.length === 0
+                                       ? <p className="text-xs text-muted-foreground">Không tìm thấy phụ thu phù hợp</p>
+                                       : filteredSurchargeOptions.map((o: any) => {
                                         const val = parseFloat(o.valueAmount || "0");
                                         const amt = o.valueType === "percent" ? Math.round(base * val / 100) : val;
                                         return (
@@ -1328,7 +1365,10 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                   <span>Số tiền:</span>
                   <span className="font-medium text-foreground">{fmtMoney(totalAmount)}</span>
                 </div>
-                <Popover open={openInvoicePromo} onOpenChange={setOpenInvoicePromo}>
+                <Popover open={openInvoicePromo} onOpenChange={v => {
+                  setOpenInvoicePromo(v);
+                  if (v) setPromotionSearch("");
+                }}>
                   <PopoverTrigger asChild>
                     <button
                       type="button"
@@ -1347,7 +1387,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       <span>{totalPromo > 0 ? `-${fmtMoney(totalPromo)}` : "0 ₫"}</span>
                     </button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-80 p-3" align="end" side="left">
+                  <PopoverContent className="w-[40rem] max-w-[calc(100vw-2rem)] p-3" align="end" side="left">
                     <div className="space-y-3">
                       <div>
                         <p className="text-[11px] font-bold text-muted-foreground uppercase mb-1">KM theo sản phẩm</p>
@@ -1387,10 +1427,19 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                              </button>
                            )}
                          </div>
-                        <div className="max-h-40 overflow-y-auto space-y-0.5">
+                         <Input
+                           value={promotionSearch}
+                           onChange={e => setPromotionSearch(e.target.value)}
+                           placeholder="Tìm theo tên hoặc mã khuyến mãi..."
+                           className="h-8 mb-2 text-xs"
+                           onKeyDown={e => e.stopPropagation()}
+                         />
+                         <div className="max-h-40 overflow-y-auto space-y-0.5">
                            {promotionOptionsWithVouchers.length === 0 ? (
                             <p className="text-xs text-muted-foreground italic">Chưa cấu hình KM nào</p>
-                           ) : promotionOptionsWithVouchers.map((o: any) => (
+                            ) : filteredPromotionOptionsWithVouchers.length === 0 ? (
+                              <p className="text-xs text-muted-foreground italic">Không tìm thấy khuyến mãi phù hợp</p>
+                            ) : filteredPromotionOptionsWithVouchers.map((o: any) => (
                             <label key={o.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5 text-xs">
                               <Checkbox
                                 checked={invoicePromoKeys.includes(o.id)}
@@ -1425,7 +1474,10 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                   </PopoverContent>
                 </Popover>
 
-                <Popover open={openInvoiceSurcharge} onOpenChange={setOpenInvoiceSurcharge}>
+                <Popover open={openInvoiceSurcharge} onOpenChange={v => {
+                  setOpenInvoiceSurcharge(v);
+                  if (v) setSurchargeSearch("");
+                }}>
                   <PopoverTrigger asChild>
                     <button
                       type="button"
@@ -1439,7 +1491,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       <span>{totalSurcharge > 0 ? `+${fmtMoney(totalSurcharge)}` : "0 ₫"}</span>
                     </button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-80 p-3" align="end" side="left">
+                  <PopoverContent className="w-[40rem] max-w-[calc(100vw-2rem)] p-3" align="end" side="left">
                     <div className="space-y-3">
                       <div>
                         <p className="text-[11px] font-bold text-muted-foreground uppercase mb-1">Phụ thu theo sản phẩm</p>
@@ -1479,10 +1531,19 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                              </button>
                            )}
                          </div>
-                        <div className="max-h-40 overflow-y-auto space-y-0.5">
+                         <Input
+                           value={surchargeSearch}
+                           onChange={e => setSurchargeSearch(e.target.value)}
+                           placeholder="Tìm theo tên hoặc mã phụ thu..."
+                           className="h-8 mb-2 text-xs"
+                           onKeyDown={e => e.stopPropagation()}
+                         />
+                         <div className="max-h-40 overflow-y-auto space-y-0.5">
                           {surchargeOptions.length === 0 ? (
                             <p className="text-xs text-muted-foreground italic">Chưa cấu hình phụ thu nào</p>
-                          ) : surchargeOptions.map((o: any) => (
+                           ) : filteredSurchargeOptions.length === 0 ? (
+                             <p className="text-xs text-muted-foreground italic">Không tìm thấy phụ thu phù hợp</p>
+                           ) : filteredSurchargeOptions.map((o: any) => (
                             <label key={o.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5 text-xs">
                               <Checkbox
                                 checked={invoiceSurchargeKeys.includes(o.id)}
