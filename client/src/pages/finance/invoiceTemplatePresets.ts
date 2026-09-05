@@ -8,7 +8,7 @@
  *             {{invoice_code}}   {{date}}
  *   Số tiền:  {{total}}  {{da_thanh_toan}}  {{con_lai}}  {{thu_ky_nay}}
  *   Học vụ:   {{lop}}  {{noi_dung}}  {{khoan_thu}}
- *   Thanh toán:{{phuong_thuc}}  {{nguoi_thu}}  {{ghi_chu}}
+ *   Thanh toán:{{phuong_thuc}}  {{nguoi_tao}}  {{nguoi_thanh_toan}}  {{ghi_chu}}
  *   Bảng:     {{items}}  {{lich_su_thanh_toan}}
  * ────────────────────────────────────────────────────────────────────────── */
 
@@ -87,7 +87,8 @@ const TUITION_RECEIPT_HTML = `<div style="font-family: Arial, sans-serif; font-s
           <tr><td style="padding:2px 0;width:42%;">Khoản thu</td><td style="padding:2px 0;width:8px;">:</td><td style="padding:2px 0;">{{khoan_thu}}</td></tr>
           <tr><td style="padding:2px 0;">Số tiền</td><td style="padding:2px 0;">:</td><td style="padding:2px 0;">{{thu_ky_nay}} đ</td></tr>
           <tr><td style="padding:2px 0;">Phương thức TT</td><td style="padding:2px 0;">:</td><td style="padding:2px 0;">{{phuong_thuc}}</td></tr>
-          <tr><td style="padding:2px 0;">Người thu</td><td style="padding:2px 0;">:</td><td style="padding:2px 0;">{{nguoi_thu}}</td></tr>
+          <tr><td style="padding:2px 0;">Người tạo</td><td style="padding:2px 0;">:</td><td style="padding:2px 0;">{{nguoi_tao}}</td></tr>
+          <tr><td style="padding:2px 0;">Người thanh toán</td><td style="padding:2px 0;">:</td><td style="padding:2px 0;">{{nguoi_thanh_toan}}</td></tr>
           <tr><td style="padding:2px 0;">Ghi chú</td><td style="padding:2px 0;">:</td><td style="padding:2px 0;">{{ghi_chu}}</td></tr>
         </table>
       </td>
@@ -169,8 +170,12 @@ const BULK_COLLECT_HTML = `<div style="font-family: Arial, sans-serif; font-size
       <td style="padding:3px 0;font-weight:bold;">{{phuong_thuc}}</td>
     </tr>
     <tr>
-      <td style="padding:3px 0;color:#555;">Người thu:</td>
-      <td style="padding:3px 0;font-weight:bold;">{{nguoi_thu}}</td>
+       <td style="padding:3px 0;color:#555;">Người tạo:</td>
+       <td style="padding:3px 0;font-weight:bold;">{{nguoi_tao}}</td>
+     </tr>
+     <tr>
+       <td style="padding:3px 0;color:#555;">Người thanh toán:</td>
+       <td style="padding:3px 0;font-weight:bold;">{{nguoi_thanh_toan}}</td>
     </tr>
     <tr>
       <td style="padding:3px 0;color:#555;">Ghi chú:</td>
@@ -190,7 +195,7 @@ const BULK_COLLECT_HTML = `<div style="font-family: Arial, sans-serif; font-size
         <div style="font-weight:bold;">NGƯỜI THU TIỀN</div>
         <div style="font-style:italic;color:#555;font-size:10px;">(Ký và ghi rõ họ tên)</div>
         <div style="height:50px;"></div>
-        <div style="font-style:italic;">{{nguoi_thu}}</div>
+         <div style="font-style:italic;">{{nguoi_tao}}</div>
       </td>
     </tr>
   </table>
@@ -203,8 +208,10 @@ const BULK_EXPENSE_HTML = BULK_COLLECT_HTML
   .replace(/Ngày thu:/g, "Ngày chi:")
   .replace(/NGƯỜI NỘP TIỀN/g, "NGƯỜI NHẬN TIỀN")
   .replace(/NGƯỜI THU TIỀN/g, "NGƯỜI CHI TIỀN")
-  .replace(/Người thu:/g, "Người chi:")
-  .replace(/nguoi_thu/g, "nguoi_chi");
+  .replace(/Người tạo:/g, "Người nhận:")
+  .replace(/Người thanh toán:/g, "Người chi:")
+  .replace(/nguoi_tao/g, "nguoi_nhan")
+  .replace(/nguoi_thanh_toan/g, "nguoi_chi");
 
 export const TEMPLATE_PRESETS: TemplatePreset[] = [
   {

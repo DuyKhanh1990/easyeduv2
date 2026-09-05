@@ -39,6 +39,7 @@ interface InvoicePrintData {
   studentPhone?: string | null;
   studentAddress?: string | null;
   createdByName?: string | null;
+  paidByName?: string | null;
   locationName?: string | null;
   locationAddress?: string | null;
   locationPhone?: string | null;
@@ -489,7 +490,8 @@ function renderTemplate(
     khoan_thu: khoanThu,
     thu_ky_nay: paid,
     phuong_thuc: paymentMethodLabel(invoice.paymentMethod),
-    nguoi_thu: invoice.createdByName ?? "",
+    nguoi_tao: invoice.createdByName ?? "",
+    nguoi_thanh_toan: invoice.paidByName ?? "",
     ghi_chu: invoice.note ?? "-",
     // KM / PT / Khấu trừ
     tong_truoc_kmpt: tongTruocKmpt,

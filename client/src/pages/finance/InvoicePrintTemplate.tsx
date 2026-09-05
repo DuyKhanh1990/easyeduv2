@@ -230,7 +230,8 @@ const SAMPLE_DATA = {
   khoan_thu: "Học phí tháng 5",
   thu_ky_nay: 1000000,
   phuong_thuc: "Tiền mặt",
-  nguoi_thu: "Nguyễn Thị Thu",
+  nguoi_tao: "Nguyễn Văn A",
+  nguoi_thanh_toan: "Nguyễn Thị Thu",
   ghi_chu: "-",
   // KM / PT / Khấu trừ (sample)
   tong_truoc_kmpt: 5300000,
@@ -300,7 +301,8 @@ const VARIABLES: VariableDef[] = [
   { group: "Thanh toán", label: "Còn lại", key: "con_lai", description: "{{con_lai}}" },
   { group: "Thanh toán", label: "Thu kỳ này", key: "thu_ky_nay", description: "{{thu_ky_nay}}" },
   { group: "Thanh toán", label: "Phương thức TT", key: "phuong_thuc", description: "{{phuong_thuc}}" },
-  { group: "Thanh toán", label: "Người thu", key: "nguoi_thu", description: "{{nguoi_thu}}" },
+  { group: "Thanh toán", label: "Người tạo", key: "nguoi_tao", description: "{{nguoi_tao}}" },
+  { group: "Thanh toán", label: "Người thanh toán", key: "nguoi_thanh_toan", description: "{{nguoi_thanh_toan}}" },
   { group: "Thanh toán", label: "Ghi chú", key: "ghi_chu", description: "{{ghi_chu}}" },
 
   // ── Hoá đơn gốc (cha) – khi in một đợt ──
