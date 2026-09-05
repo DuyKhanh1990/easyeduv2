@@ -1500,13 +1500,58 @@ export default function Invoices() {
   const { summary: invoiceSummary, isLoading: isSummaryLoading } = useInvoiceSummary(queryParams);
   const displayInvoices = flattenInvoiceRows(invoices).filter((invoice) => {
     if (activeTab === "unpaid") {
-      return invoice.isScheduleRow
-        ? invoice.status !== "paid"
-        : invoice.status !== "paid";
+      if (invoice.status === "paid") return false;
     }
     if (activeTab === "paid") {
-      return invoice.status === "paid";
+      if (invoice.status !== "paid") return false;
     }
+
+    if (filters.payers.length > 0 && !filters.payers.includes(invoice.paidByName ?? "")) {
+      return false;
+    }
+    if (filters.creators.length > 0 && !filters.creators.includes(invoice.creatorName ?? "")) {
+      return false;
+    }
+    if (filters.paymentMethods.length > 0 && !filters.paymentMethods.includes(invoice.paymentMethod ?? "")) {
+      return false;
+    }
+
+    const rowDateMatches = (
+      value: string | Date | null | undefined,
+      from?: string,
+      to?: string,
+    ) => {
+      if (!from && !to) return true;
+      if (!value) return false;
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return false;
+      const day = format(date, "yyyy-MM-dd");
+      return (!from || day >= from) && (!to || day <= to);
+    };
+
+    if (queryParams.paidAtFrom || queryParams.paidAtTo) {
+      if (!rowDateMatches(invoice.paidAt, queryParams.paidAtFrom, queryParams.paidAtTo)) return false;
+    } else if (queryParams.dueDateFrom || queryParams.dueDateTo) {
+      if (!rowDateMatches(invoice.dueDate, queryParams.dueDateFrom, queryParams.dueDateTo)) return false;
+    } else if (queryParams.dateFrom || queryParams.dateTo) {
+      if (!rowDateMatches(invoice.createdAt, queryParams.dateFrom, queryParams.dateTo)) return false;
+    }
+
+    const searchTerms = search.trim().toLocaleLowerCase("vi").split(/\s+/).filter(Boolean);
+    if (searchTerms.length > 0) {
+      const searchableText = [
+        invoice.name,
+        invoice.code,
+        invoice.settleCode,
+        invoice.category,
+        invoice.description,
+        invoice.note,
+        invoice.paymentNote,
+        invoice.scheduleLabel,
+      ].filter(Boolean).join(" ").toLocaleLowerCase("vi");
+      if (!searchTerms.every((term) => searchableText.includes(term))) return false;
+    }
+
     return true;
   });
   const updateScheduleStatusMutation = useMutation({

@@ -433,22 +433,69 @@ export async function getInvoices(filters: {
   }
 
   if (f.paidAtFrom || f.paidAtTo) {
-    conditions.push(sql`${invoices.paidAt} IS NOT NULL` as any);
-    if (f.paidAtFrom) conditions.push(gte(invoices.paidAt, new Date(f.paidAtFrom)));
+    const invoicePaidAtConditions: any[] = [isNotNull(invoices.paidAt)];
+    const schedulePaidAtConditions: any[] = [isNotNull(invoicePaymentSchedule.paidAt)];
+    if (f.paidAtFrom) {
+      const from = new Date(f.paidAtFrom);
+      invoicePaidAtConditions.push(gte(invoices.paidAt, from));
+      schedulePaidAtConditions.push(gte(invoicePaymentSchedule.paidAt, from));
+    }
     if (f.paidAtTo) {
       const toEnd = new Date(f.paidAtTo);
       toEnd.setHours(23, 59, 59, 999);
-      conditions.push(lte(invoices.paidAt, toEnd));
+      invoicePaidAtConditions.push(lte(invoices.paidAt, toEnd));
+      schedulePaidAtConditions.push(lte(invoicePaymentSchedule.paidAt, toEnd));
     }
+    const schedulePaidAtInvoiceIds = db
+      .select({ invoiceId: invoicePaymentSchedule.invoiceId })
+      .from(invoicePaymentSchedule)
+      .where(and(...schedulePaidAtConditions));
+    conditions.push(or(
+      and(...invoicePaidAtConditions),
+      inArray(invoices.id, schedulePaidAtInvoiceIds),
+    ) as any);
   } else if (f.dueDateFrom || f.dueDateTo) {
-    if (f.dueDateFrom) conditions.push(gte(invoices.dueDate, f.dueDateFrom));
-    if (f.dueDateTo) conditions.push(lte(invoices.dueDate, f.dueDateTo));
+    const invoiceDueConditions: any[] = [];
+    const scheduleDueConditions: any[] = [];
+    if (f.dueDateFrom) {
+      invoiceDueConditions.push(gte(invoices.dueDate, f.dueDateFrom));
+      scheduleDueConditions.push(gte(invoicePaymentSchedule.dueDate, f.dueDateFrom));
+    }
+    if (f.dueDateTo) {
+      invoiceDueConditions.push(lte(invoices.dueDate, f.dueDateTo));
+      scheduleDueConditions.push(lte(invoicePaymentSchedule.dueDate, f.dueDateTo));
+    }
+    const scheduleDueInvoiceIds = db
+      .select({ invoiceId: invoicePaymentSchedule.invoiceId })
+      .from(invoicePaymentSchedule)
+      .where(and(...scheduleDueConditions));
+    conditions.push(or(
+      and(...invoiceDueConditions),
+      inArray(invoices.id, scheduleDueInvoiceIds),
+    ) as any);
   } else {
-    if (f.dateFrom) conditions.push(gte(invoices.createdAt, new Date(f.dateFrom)));
+    const invoiceCreatedConditions: any[] = [];
+    const scheduleCreatedConditions: any[] = [];
+    if (f.dateFrom) {
+      const from = new Date(f.dateFrom);
+      invoiceCreatedConditions.push(gte(invoices.createdAt, from));
+      scheduleCreatedConditions.push(gte(invoicePaymentSchedule.createdAt, from));
+    }
     if (f.dateTo) {
       const toEnd = new Date(f.dateTo);
       toEnd.setHours(23, 59, 59, 999);
-      conditions.push(lte(invoices.createdAt, toEnd));
+      invoiceCreatedConditions.push(lte(invoices.createdAt, toEnd));
+      scheduleCreatedConditions.push(lte(invoicePaymentSchedule.createdAt, toEnd));
+    }
+    if (invoiceCreatedConditions.length > 0) {
+      const scheduleCreatedInvoiceIds = db
+        .select({ invoiceId: invoicePaymentSchedule.invoiceId })
+        .from(invoicePaymentSchedule)
+        .where(and(...scheduleCreatedConditions));
+      conditions.push(or(
+        and(...invoiceCreatedConditions),
+        inArray(invoices.id, scheduleCreatedInvoiceIds),
+      ) as any);
     }
   }
 
@@ -487,9 +534,29 @@ export async function getInvoices(filters: {
   }
 
   if (f.categories?.length)     conditions.push(inArray(invoices.category, f.categories) as any);
-  if (f.paymentMethods?.length) conditions.push(inArray(invoices.paymentMethod, f.paymentMethods) as any);
+  if (f.paymentMethods?.length) {
+    const scheduleMethodInvoiceIds = db
+      .select({ invoiceId: invoicePaymentSchedule.invoiceId })
+      .from(invoicePaymentSchedule)
+      .where(inArray(invoicePaymentSchedule.paymentMethod, f.paymentMethods));
+    conditions.push(or(
+      inArray(invoices.paymentMethod, f.paymentMethods),
+      inArray(invoices.id, scheduleMethodInvoiceIds),
+    ) as any);
+  }
   if (f.classNames?.length)     conditions.push(inArray(classes.name, f.classNames) as any);
-  if (f.creatorNames?.length)   conditions.push(inArray(creatorStaff.fullName, f.creatorNames) as any);
+  if (f.creatorNames?.length) {
+    const scheduleCreatorStaff = alias(staff, "schedule_creator_filter");
+    const scheduleCreatorInvoiceIds = db
+      .select({ invoiceId: invoicePaymentSchedule.invoiceId })
+      .from(invoicePaymentSchedule)
+      .innerJoin(scheduleCreatorStaff, eq(invoicePaymentSchedule.createdBy, scheduleCreatorStaff.userId))
+      .where(inArray(scheduleCreatorStaff.fullName, f.creatorNames));
+    conditions.push(or(
+      inArray(creatorStaff.fullName, f.creatorNames),
+      inArray(invoices.id, scheduleCreatorInvoiceIds),
+    ) as any);
+  }
   if (f.payerNames?.length) {
     const schedulePayerStaff = alias(staff, "schedule_payer_filter");
     const schedulePayerInvoiceIds = db
