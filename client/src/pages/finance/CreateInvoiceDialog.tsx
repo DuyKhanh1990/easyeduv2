@@ -381,6 +381,12 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     if (!normalizedSurchargeSearch) return true;
     return `${o.name ?? ""} ${o.code ?? ""}`.toLowerCase().includes(normalizedSurchargeSearch);
   });
+  const selectedInvoicePromoLabels = invoicePromoKeys
+    .map(key => formatPromotionLabel(promotionOptionsWithVouchers.find((o: any) => o.id === key)))
+    .filter(Boolean);
+  const selectedInvoiceSurchargeLabels = invoiceSurchargeKeys
+    .map(key => surchargeOptions.find((o: any) => o.id === key)?.name)
+    .filter(Boolean);
 
   const createPromotionMutation = useMutation({
     mutationFn: async ({ type, data }: {
@@ -559,6 +565,28 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
 
   const addProduct = () => setProducts(prev => [...prev, { id: Date.now().toString(), packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: prev[0]?.categoryId ?? "" }]);
   const removeProduct = (id: string) => setProducts(prev => prev.filter(p => p.id !== id));
+  const addInvoiceManualAdjustmentRow = (kind: "promotion" | "surcharge") => {
+    const row: ManualAdjustment = {
+      id: `invoice-${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      valueType: "amount",
+      value: 0,
+    };
+    if (kind === "promotion") setManualInvoicePromoRows(prev => [...prev, row]);
+    else setManualInvoiceSurchargeRows(prev => [...prev, row]);
+  };
+  const updateInvoiceManualAdjustmentRow = (
+    kind: "promotion" | "surcharge",
+    rowId: string,
+    patch: Partial<ManualAdjustment>,
+  ) => {
+    const update = (rows: ManualAdjustment[]) => rows.map(row => row.id === rowId ? { ...row, ...patch } : row);
+    if (kind === "promotion") setManualInvoicePromoRows(update);
+    else setManualInvoiceSurchargeRows(update);
+  };
+  const removeInvoiceManualAdjustmentRow = (kind: "promotion" | "surcharge", rowId: string) => {
+    if (kind === "promotion") setManualInvoicePromoRows(prev => prev.filter(row => row.id !== rowId));
+    else setManualInvoiceSurchargeRows(prev => prev.filter(row => row.id !== rowId));
+  };
   const addManualAdjustmentRow = (productId: string, kind: "promotion" | "surcharge") => {
     const row: ManualAdjustment = {
       id: `${kind}-${productId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -1641,88 +1669,114 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
                     overlayClassName="bg-black/30 backdrop-blur-[1px]"
                   >
-                    <div className="space-y-3">
-                      <div>
-                        <DialogTitle className="text-xl font-semibold mb-3">Khuyến mãi</DialogTitle>
-                        <p className="text-[11px] font-bold text-muted-foreground uppercase mb-1">KM theo sản phẩm</p>
-                        {itemPromo > 0 ? (
-                          <div className="space-y-0.5 max-h-28 overflow-y-auto">
-                            {products.map(p => {
-                              const amt = calcPromoAmountForProduct(p, promotionOptionsWithVouchers);
-                              if (amt <= 0) return null;
-                              const names = p.promotionKeys
-                                .map(k => formatPromotionLabel(promotionOptionsWithVouchers.find((o: any) => o.id === k)))
-                                .filter(Boolean)
-                                .join(", ");
-                              return (
-                                <div key={p.id} className="flex justify-between text-xs">
-                                  <span className="truncate flex-1 text-muted-foreground">{p.name || "(SP)"} – {names}</span>
-                                  <span className="text-green-600 ml-2">-{fmtMoney(amt)}</span>
-                                </div>
-                              );
-                            })}
-                            <p className="text-[10px] text-muted-foreground italic mt-1">Sửa ở bảng "Danh sách sản phẩm"</p>
-                          </div>
-                        ) : (
-                          <p className="text-xs text-muted-foreground italic">Chưa có KM theo SP</p>
+                    <div className="space-y-5">
+                      <div className="flex items-center justify-between gap-3 pr-7">
+                        <DialogTitle className="text-2xl font-semibold">Chọn khuyến mãi</DialogTitle>
+                        {canCreatePromotion && (
+                          <button
+                            type="button"
+                            className="inline-flex shrink-0 items-center gap-1 text-lg font-medium text-purple-600 hover:text-purple-700"
+                            onClick={() => openQuickCreate("promotion", { scope: "invoice" })}
+                            data-testid="button-quick-add-invoice-promotion"
+                          >
+                            <Plus className="h-5 w-5" /> Thêm mới
+                          </button>
                         )}
                       </div>
-                      <div className="border-t pt-2">
-                         <div className="flex items-center justify-between gap-2 mb-1">
-                           <p className="text-[11px] font-bold text-muted-foreground uppercase">KM toàn đơn</p>
-                           {canCreatePromotion && (
-                             <button
-                               type="button"
-                               className="inline-flex items-center gap-0.5 text-[11px] font-medium normal-case text-purple-600 hover:text-purple-700"
-                               onClick={() => openQuickCreate("promotion", { scope: "invoice" })}
-                               data-testid="button-quick-add-invoice-promotion"
-                             >
-                               <Plus className="h-3 w-3" /> Thêm mới
-                             </button>
-                           )}
-                         </div>
-                         <Input
-                           value={promotionSearch}
-                           onChange={e => setPromotionSearch(e.target.value)}
-                           placeholder="Tìm theo tên hoặc mã khuyến mãi..."
-                           className="h-8 mb-2 text-xs"
-                           onKeyDown={e => e.stopPropagation()}
-                         />
-                         <div className="max-h-40 overflow-y-auto space-y-0.5">
-                           {promotionOptionsWithVouchers.length === 0 ? (
-                            <p className="text-xs text-muted-foreground italic">Chưa cấu hình KM nào</p>
-                            ) : filteredPromotionOptionsWithVouchers.length === 0 ? (
-                              <p className="text-xs text-muted-foreground italic">Không tìm thấy khuyến mãi phù hợp</p>
-                            ) : filteredPromotionOptionsWithVouchers.map((o: any) => (
-                            <label key={o.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5 text-xs">
-                              <Checkbox
-                                checked={invoicePromoKeys.includes(o.id)}
-                                onCheckedChange={() => {
-                                  setManualInvoicePromoAmt(0);
-                                  setInvoicePromoKeys(prev =>
-                                    prev.includes(o.id) ? prev.filter(k => k !== o.id) : [...prev, o.id]
-                                  );
-                                }}
-                                data-testid={`checkbox-invoice-promo-${o.id}`}
-                              />
-                               <span className="flex flex-1 items-center gap-1 truncate">
-                                 {o.kind === "voucher" && (
-                                   <span className="shrink-0 rounded bg-red-100 px-1 text-[9px] font-semibold text-red-600">Voucher</span>
-                                 )}
-                                 <span className="truncate">{o.name}</span>
-                               </span>
-                              <span className="text-green-600 text-[10px]">
-                                {o.valueType === "percent" ? `${o.valueAmount}%` : fmtMoney(parseFloat(o.valueAmount || "0"))}
-                              </span>
-                            </label>
-                          ))}
-                        </div>
-                        {invoicePromoAmt > 0 && (
-                          <div className="flex justify-between text-xs font-medium pt-1 mt-1 border-t">
-                            <span>Tổng KM toàn đơn:</span>
-                            <span className="text-green-600">-{fmtMoney(invoicePromoAmt)}</span>
+
+                      <Popover open={openInvoicePromoPicker} onOpenChange={v => {
+                        setOpenInvoicePromoPicker(v);
+                        if (v) setPromotionSearch("");
+                      }}>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className="w-full min-h-14 flex items-center justify-between gap-3 rounded-lg border bg-background px-4 py-3 text-left text-base hover:border-purple-400"
+                          >
+                            <span className={selectedInvoicePromoLabels.length > 0 ? "truncate" : "text-muted-foreground"}>
+                              {selectedInvoicePromoLabels.length > 0 ? selectedInvoicePromoLabels.join(", ") : "Chọn khuyến mãi..."}
+                            </span>
+                            <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[min(82vw,36rem)] p-3" align="start">
+                          <div className="mb-2 relative">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              value={promotionSearch}
+                              onChange={e => setPromotionSearch(e.target.value)}
+                              placeholder="Tìm theo tên hoặc mã khuyến mãi..."
+                              className="h-10 pl-8 text-sm"
+                              autoFocus
+                              onKeyDown={e => e.stopPropagation()}
+                            />
                           </div>
-                        )}
+                          <div className="max-h-64 overflow-y-auto space-y-1">
+                            {promotionOptionsWithVouchers.length === 0 ? (
+                              <p className="py-3 text-center text-sm text-muted-foreground">Chưa có khuyến mãi</p>
+                            ) : filteredPromotionOptionsWithVouchers.length === 0 ? (
+                              <p className="py-3 text-center text-sm text-muted-foreground">Không tìm thấy khuyến mãi phù hợp</p>
+                            ) : filteredPromotionOptionsWithVouchers.map((o: any) => (
+                              <label key={o.id} className="flex items-center gap-3 cursor-pointer rounded px-2 py-2 hover:bg-muted/60">
+                                <Checkbox
+                                  checked={invoicePromoKeys.includes(o.id)}
+                                  onCheckedChange={() => setInvoicePromoKeys(prev =>
+                                    prev.includes(o.id) ? prev.filter(k => k !== o.id) : [...prev, o.id]
+                                  )}
+                                  data-testid={`checkbox-invoice-promo-${o.id}`}
+                                />
+                                <span className="flex min-w-0 flex-1 items-center gap-1 text-sm">
+                                  {o.kind === "voucher" && (
+                                    <span className="shrink-0 rounded bg-red-100 px-1 text-[10px] font-semibold text-red-600">Voucher</span>
+                                  )}
+                                  <span className="truncate">{o.name}</span>
+                                </span>
+                                <span className="text-green-600 text-xs">
+                                  {o.valueType === "percent" ? `${o.valueAmount}%` : fmtMoney(parseFloat(o.valueAmount || "0"))}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+
+                      <div className="space-y-2">
+                        {manualInvoicePromoRows.map(row => (
+                          <div key={row.id} className="flex items-center gap-2">
+                            <select
+                              value={row.valueType}
+                              onChange={e => updateInvoiceManualAdjustmentRow("promotion", row.id, { valueType: e.target.value as ManualAdjustment["valueType"] })}
+                              className="h-14 w-36 rounded-lg border bg-background px-3 text-base"
+                            >
+                              <option value="amount">Số tiền</option>
+                              <option value="percent">Phần trăm</option>
+                            </select>
+                            <div className="relative min-w-0 flex-1">
+                              <Input
+                                type="number"
+                                min={0}
+                                value={row.value || ""}
+                                onChange={e => updateInvoiceManualAdjustmentRow("promotion", row.id, { value: Math.max(0, Number(e.target.value) || 0) })}
+                                placeholder="Nhập nhanh..."
+                                className="h-14 pr-10 text-base"
+                              />
+                              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                                {row.valueType === "percent" ? "%" : "₫"}
+                              </span>
+                            </div>
+                            <button type="button" className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-destructive" onClick={() => removeInvoiceManualAdjustmentRow("promotion", row.id)} aria-label="Xóa dòng khuyến mãi">
+                              <X className="h-6 w-6" />
+                            </button>
+                          </div>
+                        ))}
+                        <button type="button" className="text-lg font-medium text-purple-600 hover:text-purple-700" onClick={() => addInvoiceManualAdjustmentRow("promotion")}>
+                          + Thêm
+                        </button>
+                      </div>
+
+                      <div className="flex justify-between border-t pt-5 text-lg font-semibold">
+                        <span>Tổng khuyến mãi</span>
+                        <span className="text-green-600">-{fmtMoney(invoicePromoAmt)} ₫</span>
                       </div>
                     </div>
                   </DialogContent>
