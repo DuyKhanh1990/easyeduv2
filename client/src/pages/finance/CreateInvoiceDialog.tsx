@@ -1225,7 +1225,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                </span>
                              )}
                                 <DialogContent
-                                  className="w-[min(80vw,52rem)] max-h-[86vh] overflow-y-auto rounded-xl p-6 sm:p-16"
+                                  className="w-screen max-w-none min-h-[74vh] max-h-[90vh] overflow-y-auto rounded-xl p-6 sm:p-11"
                                   overlayClassName="bg-black/30 backdrop-blur-[1px]"
                                 >
                                  <div className="flex items-center justify-between gap-2 mb-2">
@@ -1373,7 +1373,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                 </button>
                               </DialogTrigger>
                                 <DialogContent
-                                  className="w-[min(80vw,52rem)] max-h-[86vh] overflow-y-auto rounded-xl p-6 sm:p-16"
+                                  className="w-screen max-w-none min-h-[74vh] max-h-[90vh] overflow-y-auto rounded-xl p-6 sm:p-11"
                                   overlayClassName="bg-black/30 backdrop-blur-[1px]"
                                 >
                                  <div className="flex items-center justify-between gap-2 mb-2">
@@ -1676,7 +1676,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     </button>
                   </DialogTrigger>
                   <DialogContent
-                    className="w-[min(80vw,52rem)] max-h-[86vh] overflow-y-auto rounded-xl p-6 sm:p-16"
+                    className="w-screen max-w-none min-h-[74vh] max-h-[90vh] overflow-y-auto rounded-xl p-6 sm:p-11"
                     overlayClassName="bg-black/30 backdrop-blur-[1px]"
                   >
                     <div className="space-y-5">
@@ -1820,7 +1820,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     </button>
                   </DialogTrigger>
                   <DialogContent
-                    className="w-[min(80vw,52rem)] max-h-[86vh] overflow-y-auto rounded-xl p-6 sm:p-16"
+                    className="w-screen max-w-none min-h-[74vh] max-h-[90vh] overflow-y-auto rounded-xl p-6 sm:p-11"
                     overlayClassName="bg-black/30 backdrop-blur-[1px]"
                   >
                     <div className="space-y-5">
