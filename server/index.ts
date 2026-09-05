@@ -51,6 +51,9 @@ app.use(cors({
 
 app.use(
   express.json({
+    // Invoice print templates are HTML documents and can exceed Express's
+    // default 100 KB parser limit after editing tables and inline styles.
+    limit: "5mb",
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
