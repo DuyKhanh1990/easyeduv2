@@ -56,6 +56,12 @@ type ManualAdjustment = {
 const calcBase = (p: Product) =>
   p.packageType === "khoá" ? p.unitPrice : p.unitPrice * p.quantity;
 
+const calcManualAdjustmentAmount = (rows: ManualAdjustment[], base: number) =>
+  rows.reduce(
+    (sum, row) => sum + (row.valueType === "percent" ? Math.round(base * row.value / 100) : row.value),
+    0,
+  );
+
 const calcPromoAmountForProduct = (p: Product, promotionOptions: any[]) => {
   const base = calcBase(p);
   const configuredAmount = p.promotionKeys.reduce((sum, key) => {
@@ -64,10 +70,7 @@ const calcPromoAmountForProduct = (p: Product, promotionOptions: any[]) => {
     const val = parseFloat(opt.valueAmount || "0");
     return sum + (opt.valueType === "percent" ? Math.round(base * val / 100) : val);
   }, 0);
-  const manualAmount = p.manualPromotionRows.reduce(
-    (sum, row) => sum + (row.valueType === "percent" ? Math.round(base * row.value / 100) : row.value),
-    0,
-  );
+  const manualAmount = calcManualAdjustmentAmount(p.manualPromotionRows, base);
   return configuredAmount + manualAmount;
 };
 
@@ -78,10 +81,7 @@ const calcSurchargeAmountForProduct = (p: Product, base: number, surchargeOption
     const val = parseFloat(opt.valueAmount || "0");
     return sum + (opt.valueType === "percent" ? Math.round(base * val / 100) : val);
   }, 0);
-  const manualAmount = p.manualSurchargeRows.reduce(
-    (sum, row) => sum + (row.valueType === "percent" ? Math.round(base * row.value / 100) : row.value),
-    0,
-  );
+  const manualAmount = calcManualAdjustmentAmount(p.manualSurchargeRows, base);
   return configuredAmount + manualAmount;
 };
 
@@ -120,8 +120,12 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const [invoiceSurchargeKeys, setInvoiceSurchargeKeys] = useState<string[]>([]);
   const [manualInvoicePromoAmt, setManualInvoicePromoAmt] = useState<number>(0);
   const [manualInvoiceSurchargeAmt, setManualInvoiceSurchargeAmt] = useState<number>(0);
+  const [manualInvoicePromoRows, setManualInvoicePromoRows] = useState<ManualAdjustment[]>([]);
+  const [manualInvoiceSurchargeRows, setManualInvoiceSurchargeRows] = useState<ManualAdjustment[]>([]);
   const [openInvoicePromo, setOpenInvoicePromo] = useState(false);
   const [openInvoiceSurcharge, setOpenInvoiceSurcharge] = useState(false);
+  const [openInvoicePromoPicker, setOpenInvoicePromoPicker] = useState(false);
+  const [openInvoiceSurchargePicker, setOpenInvoiceSurchargePicker] = useState(false);
   const [quickCreateType, setQuickCreateType] = useState<FinancePromotionType | null>(null);
   const [quickCreateTarget, setQuickCreateTarget] = useState<
     { scope: "product"; productId: string } | { scope: "invoice" } | null
@@ -173,6 +177,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         setInvoiceSurchargeKeys([]);
         setManualInvoicePromoAmt(0);
         setManualInvoiceSurchargeAmt(0);
+        setManualInvoicePromoRows([]);
+        setManualInvoiceSurchargeRows([]);
         setPaymentSchedule([]);
         setNote("");
         setDueDate(new Date().toISOString().split("T")[0]);
@@ -230,8 +236,16 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     setInvoicePromoKeys(loadedPromoKeys);
     setInvoiceSurchargeKeys(loadedSurchargeKeys);
     // When no promo/surcharge keys are stored but amounts exist (e.g. receipt-created invoices), use stored amounts as manual override
-    setManualInvoicePromoAmt(loadedPromoKeys.length === 0 ? (parseFloat(inv.invoicePromotionAmount) || 0) : 0);
-    setManualInvoiceSurchargeAmt(loadedSurchargeKeys.length === 0 ? (parseFloat(inv.invoiceSurchargeAmount) || 0) : 0);
+    const loadedPromoAmount = parseFloat(inv.invoicePromotionAmount) || 0;
+    const loadedSurchargeAmount = parseFloat(inv.invoiceSurchargeAmount) || 0;
+    setManualInvoicePromoAmt(0);
+    setManualInvoiceSurchargeAmt(0);
+    setManualInvoicePromoRows(loadedPromoKeys.length === 0 && loadedPromoAmount > 0
+      ? [{ id: "manual-invoice-promo", valueType: "amount", value: loadedPromoAmount }]
+      : []);
+    setManualInvoiceSurchargeRows(loadedSurchargeKeys.length === 0 && loadedSurchargeAmount > 0
+      ? [{ id: "manual-invoice-surcharge", valueType: "amount", value: loadedSurchargeAmount }]
+      : []);
 
     if (Array.isArray(inv.items) && inv.items.length > 0) {
       setProducts(inv.items.map((item: any, i: number) => {
@@ -502,8 +516,12 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       const v = parseFloat(opt.valueAmount || "0");
       return sum + (opt.valueType === "percent" ? Math.round(lineSubtotal * v / 100) : v);
     }, 0);
-  const invoicePromoAmt    = invoicePromoKeys.length > 0 ? calcAdjustment(invoicePromoKeys, promotionOptionsWithVouchers) : manualInvoicePromoAmt;
-  const invoiceSurchargeAmt = invoiceSurchargeKeys.length > 0 ? calcAdjustment(invoiceSurchargeKeys, surchargeOptions) : manualInvoiceSurchargeAmt;
+  const invoicePromoAmt    = calcAdjustment(invoicePromoKeys, promotionOptionsWithVouchers)
+    + calcManualAdjustmentAmount(manualInvoicePromoRows, lineSubtotal)
+    + (manualInvoicePromoRows.length === 0 ? manualInvoicePromoAmt : 0);
+  const invoiceSurchargeAmt = calcAdjustment(invoiceSurchargeKeys, surchargeOptions)
+    + calcManualAdjustmentAmount(manualInvoiceSurchargeRows, lineSubtotal)
+    + (manualInvoiceSurchargeRows.length === 0 ? manualInvoiceSurchargeAmt : 0);
   const totalPromo     = itemPromo + invoicePromoAmt;
   const totalSurcharge = itemSurcharge + invoiceSurchargeAmt;
   const subTotal     = totalAmount - totalPromo + totalSurcharge;  // Thành tiền
