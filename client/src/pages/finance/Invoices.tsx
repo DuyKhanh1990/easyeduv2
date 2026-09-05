@@ -1990,7 +1990,7 @@ export default function Invoices() {
                 const schedule = getScheduleForRow(inv);
                 const parentInvoice = inv.parentInvoice ?? inv;
                 const isSelected = isScheduleRow
-                  ? !!inv.scheduleId && selectedScheduleIds.has(inv.scheduleId)
+                  ? !!inv.scheduleId && selectedScheduleIdSet.has(inv.scheduleId)
                   : selectedIds.has(inv.id);
                 const isExpanded = expandedIds.has(inv.id);
                 const rowKey = isScheduleRow ? `schedule-${inv.scheduleId}` : inv.id;
