@@ -1204,7 +1204,7 @@ function WeekView({
   const colTemplate = "repeat(7, minmax(0, 1fr))";
 
   return (
-    <div className="h-full flex flex-col overflow-hidden w-full">
+    <div className="h-full min-h-0 flex flex-col overflow-hidden w-full">
       {/* Header row — sticky, separate grid to allow content to flex-grow */}
       <div className="grid flex-shrink-0 border-b w-full" style={{ gridTemplateColumns: colTemplate }}>
         {days.map(day => {
@@ -1230,13 +1230,13 @@ function WeekView({
       </div>
       {/* Content row — flex-1 so it always fills remaining height, overflow-y-auto for many sessions */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 w-full">
-        <div className="grid h-full w-full" style={{ gridTemplateColumns: colTemplate, gridTemplateRows: "1fr" }}>
+        <div className="grid min-h-full w-full items-start" style={{ gridTemplateColumns: colTemplate }}>
           {days.map(day => {
             const dateStr = format(day, "yyyy-MM-dd");
             const daySessions = (byDay.get(dateStr) || []).sort((a, b) => a.shiftStart.localeCompare(b.shiftStart));
             const today = isToday(day);
             return (
-              <div key={`body-${dateStr}`} className={`border-r last:border-r-0 p-2 space-y-1.5 min-w-0 overflow-hidden ${isHolidayDate(dateStr, holidays) ? "bg-red-50" : today ? "bg-blue-50/40" : ""}`}>
+              <div key={`body-${dateStr}`} className={`border-r last:border-r-0 p-2 space-y-1.5 min-w-0 overflow-visible ${isHolidayDate(dateStr, holidays) ? "bg-red-50" : today ? "bg-blue-50/40" : ""}`}>
                 {daySessions.length === 0
                   ? <div className="h-full min-h-[300px] flex items-center justify-center text-xs text-muted-foreground/40 select-none">—</div>
                   : daySessions.map(s => (
