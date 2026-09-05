@@ -1597,11 +1597,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                   <span>Số tiền:</span>
                   <span className="font-medium text-foreground">{fmtMoney(totalAmount)}</span>
                 </div>
-                <Popover open={openInvoicePromo} onOpenChange={v => {
+                <Dialog open={openInvoicePromo} onOpenChange={v => {
                   setOpenInvoicePromo(v);
                   if (v) setPromotionSearch("");
                 }}>
-                  <PopoverTrigger asChild>
+                  <DialogTrigger asChild>
                     <button
                       type="button"
                       className="w-full flex justify-between items-center text-green-600 hover:bg-green-50 rounded px-1 -mx-1 py-0.5 transition-colors"
@@ -1618,10 +1618,14 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       </span>
                       <span>{totalPromo > 0 ? `-${fmtMoney(totalPromo)}` : "0 ₫"}</span>
                     </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[40rem] max-w-[calc(100vw-2rem)] p-3" align="end" side="left">
+                  </DialogTrigger>
+                  <DialogContent
+                    className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
+                    overlayClassName="bg-black/30 backdrop-blur-[1px]"
+                  >
                     <div className="space-y-3">
                       <div>
+                        <DialogTitle className="text-xl font-semibold mb-3">Khuyến mãi</DialogTitle>
                         <p className="text-[11px] font-bold text-muted-foreground uppercase mb-1">KM theo sản phẩm</p>
                         {itemPromo > 0 ? (
                           <div className="space-y-0.5 max-h-28 overflow-y-auto">
@@ -1703,14 +1707,14 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         )}
                       </div>
                     </div>
-                  </PopoverContent>
-                </Popover>
+                  </DialogContent>
+                </Dialog>
 
-                <Popover open={openInvoiceSurcharge} onOpenChange={v => {
+                <Dialog open={openInvoiceSurcharge} onOpenChange={v => {
                   setOpenInvoiceSurcharge(v);
                   if (v) setSurchargeSearch("");
                 }}>
-                  <PopoverTrigger asChild>
+                  <DialogTrigger asChild>
                     <button
                       type="button"
                       className="w-full flex justify-between items-center text-orange-500 hover:bg-orange-50 rounded px-1 -mx-1 py-0.5 transition-colors"
@@ -1722,10 +1726,14 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       </span>
                       <span>{totalSurcharge > 0 ? `+${fmtMoney(totalSurcharge)}` : "0 ₫"}</span>
                     </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[40rem] max-w-[calc(100vw-2rem)] p-3" align="end" side="left">
+                  </DialogTrigger>
+                  <DialogContent
+                    className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
+                    overlayClassName="bg-black/30 backdrop-blur-[1px]"
+                  >
                     <div className="space-y-3">
                       <div>
+                        <DialogTitle className="text-xl font-semibold mb-3">Phụ thu</DialogTitle>
                         <p className="text-[11px] font-bold text-muted-foreground uppercase mb-1">Phụ thu theo sản phẩm</p>
                         {itemSurcharge > 0 ? (
                           <div className="space-y-0.5 max-h-28 overflow-y-auto">
@@ -1802,8 +1810,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         )}
                       </div>
                     </div>
-                  </PopoverContent>
-                </Popover>
+                  </DialogContent>
+                </Dialog>
                 <div className="flex justify-between font-semibold pt-1 border-t">
                   <span>Thành tiền:</span>
                   <span>{fmtMoney(subTotal)}</span>
