@@ -1230,7 +1230,7 @@ function WeekView({
       </div>
       {/* Content row — flex-1 so it always fills remaining height, overflow-y-auto for many sessions */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 w-full">
-        <div className="grid min-h-full w-full items-start" style={{ gridTemplateColumns: colTemplate }}>
+        <div className="grid min-h-full w-full" style={{ gridTemplateColumns: colTemplate }}>
           {days.map(day => {
             const dateStr = format(day, "yyyy-MM-dd");
             const daySessions = (byDay.get(dateStr) || []).sort((a, b) => a.shiftStart.localeCompare(b.shiftStart));
