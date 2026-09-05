@@ -40,6 +40,7 @@ export function ScheduleRows({
   onToggleSchedule,
   canSelect = true,
   onViewPrint,
+  payerNames = [],
 }: {
   invoiceId: string;
   isExpanded: boolean;
@@ -50,6 +51,7 @@ export function ScheduleRows({
   onToggleSchedule?: (s: ScheduleItem) => void;
   canSelect?: boolean;
   onViewPrint?: (s: ScheduleItem) => void;
+  payerNames?: string[];
 }) {
   const { toast } = useToast();
   const [editTarget, setEditTarget] = useState<ScheduleItem | null>(null);
@@ -84,10 +86,25 @@ export function ScheduleRows({
     );
   }
 
+  const totalSchedules = schedules.length;
+  const hasPayerFilter = payerNames.length > 0;
+  const visibleSchedules = hasPayerFilter
+    ? schedules.filter(s => s.paidByName && payerNames.includes(s.paidByName))
+    : schedules;
+
   if (!isExpanded) return null;
 
-  const totalSchedules = schedules.length;
-  const visibleSchedules = schedules;
+  if (hasPayerFilter && visibleSchedules.length === 0) {
+    return (
+      <tr>
+        <td colSpan={totalCols} className="bg-blue-50/30 dark:bg-blue-900/10 py-2 px-6">
+          <p className="text-xs text-muted-foreground pl-10">
+            Không có đợt thanh toán phù hợp với người thanh toán đã chọn.
+          </p>
+        </td>
+      </tr>
+    );
+  }
 
   const renderScheduleCell = (colKey: string, s: ScheduleItem) => {
     switch (colKey) {

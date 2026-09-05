@@ -2058,6 +2058,7 @@ export default function Invoices() {
                       selectedScheduleIds={selectedScheduleIdSet}
                       onToggleSchedule={toggleSchedule}
                       canSelect={invPerm.canDelete}
+                      payerNames={filters.payers}
                       onViewPrint={(s) => setPrintPreviewSchedule({ schedule: s, invoice: inv })}
                     />
                   ),
