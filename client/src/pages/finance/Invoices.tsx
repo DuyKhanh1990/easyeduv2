@@ -390,10 +390,10 @@ function flattenInvoiceRows(invoices: InvoiceRow[]): InvoiceRow[] {
     return schedules.map((schedule, index) => {
       const amount = schedule.amount ?? "0";
       const isPaid = schedule.status === "paid";
-      const sortOrder = schedule.sortOrder || index + 1;
+      const installmentNumber = index + 1;
       return {
         ...invoice,
-        code: schedule.code ?? `${invoice.code ?? ""}-${sortOrder}`,
+        code: schedule.code ?? `${invoice.code ?? ""}-${installmentNumber}`,
         settleCode: schedule.settleCode ?? invoice.settleCode,
         totalAmount: amount,
         totalPromotion: "0",
@@ -420,7 +420,7 @@ function flattenInvoiceRows(invoices: InvoiceRow[]): InvoiceRow[] {
         isScheduleRow: true,
         parentInvoice: invoice,
         scheduleLabel: schedule.label,
-        scheduleSortOrder: sortOrder,
+        scheduleSortOrder: installmentNumber,
       };
     });
   });
