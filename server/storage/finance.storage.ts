@@ -1484,37 +1484,113 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
         .select()
         .from(invoicePaymentSchedule)
         .where(eq(invoicePaymentSchedule.invoiceId, id));
-      await tx.delete(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.invoiceId, id));
-      if (paymentSchedule.length > 0) {
-        await tx.insert(invoicePaymentSchedule).values(
-          paymentSchedule.map((s: any, idx: number) => ({
-            ...(() => {
-              const previous = existingSchedules.find((row) => row.id === s.id);
-              return {
-                createdAt: previous?.createdAt ?? new Date(),
-                createdBy: previous?.createdBy ?? inv.createdBy ?? invoiceData.updatedBy ?? null,
-                paidAt: s.status === "paid" ? (previous?.paidAt ?? s.paidAt ?? new Date()) : null,
-                paidBy: s.status === "paid" ? (previous?.paidBy ?? s.paidBy ?? invoiceData.updatedBy ?? null) : null,
-              };
-            })(),
+      const existingById = new Map(existingSchedules.map((row) => [row.id, row]));
+      const retainedIds = new Set<string>();
+      const now = new Date();
+
+      const scheduleRows = paymentSchedule.map((s: any, idx: number) => {
+        const previous = s.id ? existingById.get(s.id) : undefined;
+        if (previous) retainedIds.add(previous.id);
+        const wasPaid = previous?.status === "paid";
+        const nextStatus = wasPaid ? "paid" : (s.status ?? previous?.status ?? "unpaid");
+
+        return {
+          invoiceId: id,
+          label: wasPaid ? previous.label : (s.label ?? previous?.label ?? `ĐỢT ${idx + 1}`),
+          code: previous?.code ?? s.code ?? `${inv.code}-${idx + 1}`,
+          // A paid installment is immutable. Never trust an edited form value
+          // for its amount or payment metadata.
+          amount: wasPaid ? previous.amount : (s.amount?.toString() ?? previous?.amount ?? "0"),
+          dueDate: wasPaid ? previous.dueDate : (s.dueDate ?? previous?.dueDate ?? null),
+          status: nextStatus,
+          sortOrder: previous?.sortOrder ?? idx,
+          paymentMethod: wasPaid ? previous.paymentMethod : (s.paymentMethod ?? previous?.paymentMethod ?? null),
+          appliedBankAccount: wasPaid ? previous.appliedBankAccount : (s.appliedBankAccount ?? previous?.appliedBankAccount ?? null),
+          createdAt: previous?.createdAt ?? now,
+          createdBy: previous?.createdBy ?? inv.createdBy ?? invoiceData.updatedBy ?? null,
+          paidAt: wasPaid
+            ? previous.paidAt
+            : nextStatus === "paid"
+              ? (previous?.paidAt ?? s.paidAt ?? now)
+              : null,
+          paidBy: wasPaid
+            ? previous.paidBy
+            : nextStatus === "paid"
+              ? (previous?.paidBy ?? s.paidBy ?? invoiceData.updatedBy ?? null)
+              : null,
+          updatedAt: now,
+          updatedBy: invoiceData.updatedBy ?? null,
+        };
+      });
+
+      // A paid row must survive even if an older client omitted it from the
+      // submitted schedule. Unpaid rows may still be removed intentionally.
+      for (const previous of existingSchedules) {
+        if (previous.status === "paid" && !retainedIds.has(previous.id)) {
+          retainedIds.add(previous.id);
+          scheduleRows.push({
             invoiceId: id,
-            label: s.label,
-            code: `${inv.code}-${idx + 1}`,
-            amount: s.amount?.toString() ?? "0",
-            dueDate: s.dueDate ?? null,
-            status: s.status ?? "unpaid",
-            sortOrder: idx,
-            paymentMethod: s.paymentMethod ?? null,
-            appliedBankAccount: s.appliedBankAccount ?? null,
-            updatedAt: new Date(),
+            label: previous.label,
+            code: previous.code,
+            amount: previous.amount,
+            dueDate: previous.dueDate,
+            status: "paid",
+            sortOrder: previous.sortOrder ?? scheduleRows.length,
+            paymentMethod: previous.paymentMethod,
+            appliedBankAccount: previous.appliedBankAccount,
+            createdAt: previous.createdAt ?? now,
+            createdBy: previous.createdBy ?? inv.createdBy ?? invoiceData.updatedBy ?? null,
+            paidAt: previous.paidAt,
+            paidBy: previous.paidBy,
+            updatedAt: now,
             updatedBy: invoiceData.updatedBy ?? null,
-          }))
-        );
+          });
+        }
+      }
+
+      for (const previous of existingSchedules) {
+        if (previous.status !== "paid" && !retainedIds.has(previous.id)) {
+          await tx.delete(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.id, previous.id));
+        }
+      }
+
+      for (const row of scheduleRows) {
+        if (row.id) {
+          await tx
+            .update(invoicePaymentSchedule)
+            .set(row)
+            .where(eq(invoicePaymentSchedule.id, row.id));
+        } else {
+          await tx.insert(invoicePaymentSchedule).values(row);
+        }
       }
     }
 
     const savedItems = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, id)).orderBy(asc(invoiceItems.sortOrder));
     const savedSchedule = await tx.select().from(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.invoiceId, id)).orderBy(asc(invoicePaymentSchedule.sortOrder));
+    if (savedSchedule.length > 0) {
+      const grandTotal = parseFloat((toUpdate.grandTotal ?? inv.grandTotal) ?? "0");
+      const paidAmount = savedSchedule
+        .filter((schedule) => schedule.status === "paid")
+        .reduce((sum, schedule) => sum + parseFloat(schedule.amount ?? "0"), 0);
+      const remainingAmount = Math.max(0, grandTotal - paidAmount);
+      const scheduleStatus = paidAmount >= grandTotal && grandTotal > 0
+        ? "paid"
+        : paidAmount > 0
+          ? "partial"
+          : "unpaid";
+      const [summaryInvoice] = await tx
+        .update(invoices)
+        .set({
+          paidAmount: paidAmount.toFixed(2),
+          remainingAmount: remainingAmount.toFixed(2),
+          status: scheduleStatus,
+          updatedAt: now,
+        })
+        .where(eq(invoices.id, id))
+        .returning();
+      return { ...summaryInvoice, items: savedItems, paymentSchedule: savedSchedule };
+    }
     return { ...inv, items: savedItems, paymentSchedule: savedSchedule };
   });
 }
