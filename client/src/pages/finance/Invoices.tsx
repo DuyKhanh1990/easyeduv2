@@ -426,6 +426,11 @@ function flattenInvoiceRows(invoices: InvoiceRow[]): InvoiceRow[] {
   });
 }
 
+function getScheduleForRow(inv: InvoiceRow): ScheduleItem | undefined {
+  if (!inv.isScheduleRow || !inv.scheduleId) return undefined;
+  return inv.parentInvoice?.paymentSchedule?.find(s => s.id === inv.scheduleId);
+}
+
 function renderInvoiceCell(colKey: string, inv: InvoiceRow, updateStatusMutation: InvoiceUpdateStatusMutation, canEdit: boolean, isSelected?: boolean, isOdd?: boolean) {
   const nameBg = isSelected ? "bg-violet-50" : isOdd ? "bg-slate-50" : "bg-white";
   switch (colKey) {
@@ -1455,6 +1460,7 @@ export default function Invoices() {
 
   const { invoices, total, tabCounts, isLoading, deleteMutation: deleteInvoiceMutation, updateStatusMutation } = useInvoices(queryParams);
   const { summary: invoiceSummary, isLoading: isSummaryLoading } = useInvoiceSummary(queryParams);
+  const displayInvoices = flattenInvoiceRows(invoices);
 
   const {
     columnOrder,
@@ -1979,14 +1985,31 @@ export default function Invoices() {
                     <p className="text-sm text-slate-400 font-medium">Không có hoá đơn nào</p>
                   </div>
                 </td></tr>
-              ) : invoices.map((inv, idx) => {
-                const isSelected = selectedIds.has(inv.id);
+              ) : displayInvoices.map((inv, idx) => {
+                const isScheduleRow = !!inv.isScheduleRow;
+                const schedule = getScheduleForRow(inv);
+                const parentInvoice = inv.parentInvoice ?? inv;
+                const isSelected = isScheduleRow
+                  ? !!inv.scheduleId && selectedScheduleIds.has(inv.scheduleId)
+                  : selectedIds.has(inv.id);
                 const isExpanded = expandedIds.has(inv.id);
+                const rowKey = isScheduleRow ? `schedule-${inv.scheduleId}` : inv.id;
 
                 return [
-                  <tr key={inv.id} className={`border-b border-slate-100 transition-colors hover:bg-violet-50/40 ${isSelected ? "bg-violet-50" : idx % 2 === 1 ? "bg-slate-50/60" : "bg-white"}`} data-testid={`row-invoice-${inv.id}`}>
+                  <tr key={rowKey} className={`border-b border-slate-100 transition-colors hover:bg-violet-50/40 ${isSelected ? "bg-violet-50" : idx % 2 === 1 ? "bg-slate-50/60" : "bg-white"}`} data-testid={`row-invoice-${rowKey}`}>
                     <td className={`p-2 w-8 sticky left-0 z-10 will-change-transform ${isSelected ? "bg-violet-50" : idx % 2 === 1 ? "bg-slate-50" : "bg-white"}`}>
-                      {(inv.scheduleCount ?? 0) >= 1 ? (
+                      {isScheduleRow ? (
+                        <ScheduleProgressPopover inv={parentInvoice}>
+                          <button
+                            type="button"
+                            className="flex items-center justify-center w-6 h-6 rounded-md hover:bg-violet-100 transition-colors text-slate-400 hover:text-violet-600"
+                            title="Xem hóa đơn cha và các đợt thanh toán"
+                            data-testid={`button-details-${inv.scheduleId}`}
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </ScheduleProgressPopover>
+                      ) : (inv.scheduleCount ?? 0) >= 1 ? (
                         <button
                           onClick={() => toggleExpand(inv.id)}
                           className="flex items-center justify-center w-6 h-6 rounded-md hover:bg-violet-100 transition-colors text-slate-400 hover:text-violet-600"
@@ -2000,7 +2023,18 @@ export default function Invoices() {
                         </span>
                       )}
                     </td>
-                    <td className={`p-3 sticky left-8 z-10 will-change-transform ${isSelected ? "bg-violet-50" : idx % 2 === 1 ? "bg-slate-50" : "bg-white"}`}>{invPerm.canDelete && <Checkbox checked={isSelected} onCheckedChange={() => toggleOne(inv.id)} data-testid={`checkbox-${inv.id}`} />}</td>
+                    <td className={`p-3 sticky left-8 z-10 will-change-transform ${isSelected ? "bg-violet-50" : idx % 2 === 1 ? "bg-slate-50" : "bg-white"}`}>
+                      {invPerm.canDelete && (
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => {
+                            if (isScheduleRow && schedule) toggleSchedule(schedule);
+                            else toggleOne(inv.id);
+                          }}
+                          data-testid={`checkbox-${rowKey}`}
+                        />
+                      )}
+                    </td>
                     {visibleColumns.map(col => renderInvoiceCell(col.key, inv, updateStatusMutation, invPerm.canEdit, isSelected, idx % 2 === 1))}
                     <td className={`p-3 sticky right-0 border-l border-slate-100 will-change-transform ${isSelected ? "bg-violet-50" : idx % 2 === 1 ? "bg-slate-50" : "bg-white"}`}>
                       <div className="flex items-center justify-center">
@@ -2019,7 +2053,10 @@ export default function Invoices() {
                             <ActionMenuItem
                               className="gap-2 cursor-pointer"
                               data-testid={`menuitem-view-${inv.id}`}
-                              onClick={() => setPrintPreviewInvoice(inv)}
+                              onClick={() => {
+                                if (isScheduleRow && schedule) setPrintPreviewSchedule({ schedule, invoice: parentInvoice });
+                                else setPrintPreviewInvoice(inv);
+                              }}
                             >
                               <Eye className="h-3.5 w-3.5 text-blue-600" />
                               Xem
@@ -2028,7 +2065,7 @@ export default function Invoices() {
                               <ActionMenuItem
                                 className="gap-2 cursor-pointer"
                                 data-testid={`menuitem-edit-${inv.id}`}
-                                onClick={() => handleOpenEdit(inv.id)}
+                                onClick={() => handleOpenEdit(parentInvoice.id)}
                               >
                                 <Pencil className="h-3.5 w-3.5 text-amber-600" />
                                 Sửa
@@ -2040,7 +2077,9 @@ export default function Invoices() {
                                 <ActionMenuItem
                                   className="gap-2 cursor-pointer"
                                   data-testid={`menuitem-qr-${inv.id}`}
-                                  onClick={() => setQrInvoice(inv)}
+                                   onClick={() => setQrInvoice(isScheduleRow && schedule
+                                     ? { ...parentInvoice, scheduleId: schedule.id, code: inv.code, grandTotal: inv.grandTotal, paidAmount: inv.paidAmount, remainingAmount: inv.remainingAmount, status: inv.status } as any
+                                     : inv)}
                                 >
                                   <QrCode className="h-3.5 w-3.5 text-purple-600" />
                                   Mã QR
@@ -2053,7 +2092,11 @@ export default function Invoices() {
                                 <ActionMenuItem
                                   className="gap-2 cursor-pointer"
                                   data-testid={`menuitem-einvoice-preview-${inv.id}`}
-                                  onClick={() => window.open(`/api/einvoice/pdf/${inv.id}`, "_blank", "noopener,noreferrer")}
+                                  onClick={() => window.open(
+                                    isScheduleRow && schedule ? `/api/einvoice/schedule-pdf/${schedule.id}` : `/api/einvoice/pdf/${inv.id}`,
+                                    "_blank",
+                                    "noopener,noreferrer",
+                                  )}
                                 >
                                   <FileText className="h-3.5 w-3.5 text-indigo-600" />
                                   Xem thử PDF
@@ -2066,14 +2109,18 @@ export default function Invoices() {
                                 <ActionMenuItem
                                   className="gap-2 cursor-pointer"
                                   data-testid={`menuitem-einvoice-pdf-${inv.id}`}
-                                  onClick={() => window.open(`/api/einvoice/pdf/${inv.id}`, "_blank", "noopener,noreferrer")}
+                                  onClick={() => window.open(
+                                    isScheduleRow && schedule ? `/api/einvoice/schedule-pdf/${schedule.id}` : `/api/einvoice/pdf/${inv.id}`,
+                                    "_blank",
+                                    "noopener,noreferrer",
+                                  )}
                                 >
                                   <Download className="h-3.5 w-3.5 text-emerald-600" />
                                   Tải PDF hoá đơn
                                 </ActionMenuItem>
                               </>
                             )}
-                            {invPerm.canDelete && (
+                            {invPerm.canDelete && !isScheduleRow && (
                               <>
                                 <ActionMenuSeparator />
                                 <TooltipProvider>
@@ -2105,7 +2152,7 @@ export default function Invoices() {
                       </div>
                     </td>
                   </tr>,
-                  inv.hasSchedules && (
+                    !inv.isScheduleRow && inv.hasSchedules && (
                     <ScheduleRows
                       key={`sched-${inv.id}`}
                       invoiceId={inv.id}
