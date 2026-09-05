@@ -1628,12 +1628,12 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
               )}
               <div className="space-y-2">
                 {paymentSchedule.map(p => (
-                  <div key={p.id} className="rounded-lg border bg-card p-3 space-y-2 shadow-sm">
+                  <div key={p.id} className={`rounded-lg border bg-card p-3 space-y-2 shadow-sm ${p.status === "paid" ? "border-green-200 bg-green-50/30" : ""}`}>
                     {/* Header: label + status + delete */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold">{p.label}</span>
-                        <Select value={p.status} onValueChange={v => updatePaymentStatus(p.id, v)}>
+                        <Select value={p.status} onValueChange={v => updatePaymentStatus(p.id, v)} disabled={p.status === "paid"}>
                           <SelectTrigger className={`h-6 text-[10px] px-1.5 py-0 rounded font-medium whitespace-nowrap border-0 shadow-none focus:ring-0 w-auto gap-1 ${p.status === "paid" ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-yellow-100 text-yellow-700 hover:bg-yellow-200"}`}>
                             <SelectValue />
                           </SelectTrigger>
@@ -1647,7 +1647,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         <span className="text-[10px] text-muted-foreground">Mã: {p.code}</span>
                         <button
                           onClick={() => removePayment(p.id)}
-                          className="text-muted-foreground hover:text-red-500 transition-colors ml-1"
+                          disabled={p.status === "paid"}
+                          className={`text-muted-foreground transition-colors ml-1 ${p.status === "paid" ? "opacity-30 cursor-not-allowed" : "hover:text-red-500"}`}
                           data-testid={`button-delete-payment-${p.id}`}
                         >
                           <X className="h-3.5 w-3.5" />
@@ -1664,7 +1665,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                           onChange={e => updatePaymentAmount(p.id, Number(e.target.value))}
                           onBlur={e => handleAmountBlur(p.id, Number(e.target.value))}
                           onFocus={e => e.target.select()}
-                          className="h-8 text-xs text-right font-semibold"
+                          readOnly={p.status === "paid"}
+                          className={`h-8 text-xs text-right font-semibold ${p.status === "paid" ? "bg-green-50 text-green-700 cursor-not-allowed" : ""}`}
                           data-testid={`input-payment-amount-${p.id}`}
                         />
                       </div>
@@ -1673,6 +1675,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         <Popover open={openDuePicker === p.id} onOpenChange={v => setOpenDuePicker(v ? p.id : null)}>
                           <PopoverTrigger asChild>
                             <button
+                              disabled={p.status === "paid"}
                               className="w-full flex items-center gap-1.5 h-8 px-2 rounded-md border bg-background text-xs hover:border-purple-400 transition-colors"
                               data-testid={`button-due-date-${p.id}`}
                             >
@@ -1699,6 +1702,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         <span className="text-xs text-muted-foreground">Hình thức</span>
                         <Select
                           value={p.paymentMethod}
+                            disabled={p.status === "paid"}
                           onValueChange={v => setPaymentSchedule(prev => prev.map(x => x.id === p.id ? { ...x, paymentMethod: v, bank: v === "cash" ? "" : x.bank } : x))}
                         >
                           <SelectTrigger className="h-8 text-xs" data-testid={`select-payment-method-${p.id}`}><SelectValue /></SelectTrigger>
@@ -1713,6 +1717,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                           <span className="text-xs text-muted-foreground">Ngân hàng</span>
                           <Select
                             value={p.bank}
+                              disabled={p.status === "paid"}
                             onValueChange={v => setPaymentSchedule(prev => prev.map(x => x.id === p.id ? { ...x, bank: v } : x))}
                           >
                             <SelectTrigger className="h-8 text-xs" data-testid={`select-bank-${p.id}`}><SelectValue placeholder="Chọn ngân hàng" /></SelectTrigger>
