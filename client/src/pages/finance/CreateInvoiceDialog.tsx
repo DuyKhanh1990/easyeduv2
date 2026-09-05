@@ -49,6 +49,7 @@ interface Product {
 
 type ManualAdjustment = {
   id: string;
+  optionKey?: string;
   valueType: "amount" | "percent";
   value: number;
 };
@@ -541,9 +542,42 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
 
   const addProduct = () => setProducts(prev => [...prev, { id: Date.now().toString(), packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: prev[0]?.categoryId ?? "" }]);
   const removeProduct = (id: string) => setProducts(prev => prev.filter(p => p.id !== id));
+  const ensureAdjustmentRows = (
+    keys: string[],
+    rows: ManualAdjustment[],
+    prefix: string,
+  ): ManualAdjustment[] => {
+    const representedKeys = new Set(rows.map(row => row.optionKey).filter(Boolean));
+    const keyRows = keys
+      .filter(key => !representedKeys.has(key))
+      .map((key, index) => ({
+        id: `${prefix}-option-${index}-${key}`,
+        optionKey: key,
+        valueType: "amount" as const,
+        value: 0,
+      }));
+    if (rows.length > 0 || keyRows.length > 0) return [...rows, ...keyRows];
+    return [{ id: `${prefix}-blank`, valueType: "amount", value: 0 }];
+  };
+  const selectProductAdjustmentOption = (
+    productId: string,
+    kind: "promotion" | "surcharge",
+    rowId: string,
+    optionKey: string,
+  ) => {
+    setProducts(prev => prev.map(p => {
+      if (p.id !== productId) return p;
+      const rowsKey = kind === "promotion" ? "manualPromotionRows" : "manualSurchargeRows";
+      const keysKey = kind === "promotion" ? "promotionKeys" : "surchargeKeys";
+      const rows = p[rowsKey].map(row => row.id === rowId ? { ...row, optionKey } : row);
+      const selectedKeys = Array.from(new Set(rows.map(row => row.optionKey).filter((key): key is string => Boolean(key))));
+      return { ...p, [rowsKey]: rows, [keysKey]: selectedKeys };
+    }));
+  };
   const addManualAdjustmentRow = (productId: string, kind: "promotion" | "surcharge") => {
     const row: ManualAdjustment = {
       id: `${kind}-${productId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      optionKey: undefined,
       valueType: "amount",
       value: 0,
     };
