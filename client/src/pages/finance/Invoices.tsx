@@ -2662,6 +2662,8 @@ export default function Invoices() {
           paidAmount: isPaid ? String(amount) : "0",
           remainingAmount: isPaid ? "0" : String(amount),
           createdAt: typeof inv.createdAt === "string" ? inv.createdAt : new Date(inv.createdAt).toISOString(),
+           scheduleCount: invAny.scheduleCount ?? 2,
+           hasSchedules: true,
            createdByName: invAny.createdByName ?? null,
            paidByName: s.paidByName ?? null,
           // "Thu kỳ này" + phương thức/ngày = thông tin của đợt

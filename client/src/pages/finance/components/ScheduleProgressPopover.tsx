@@ -143,6 +143,8 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
       paidAmount: isPaid ? String(amount) : "0",
       remainingAmount: isPaid ? "0" : String(amount),
       createdAt: typeof inv.createdAt === "string" ? inv.createdAt : new Date(inv.createdAt).toISOString(),
+      scheduleCount: schedules.length,
+      hasSchedules: schedules.length > 0,
       createdByName: invAny.createdByName ?? null,
       paidByName: s.paidByName ?? null,
       paymentMethod: s.paymentMethod ?? invAny.paymentMethod ?? null,
