@@ -604,8 +604,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const removeManualAdjustmentRow = (productId: string, kind: "promotion" | "surcharge", rowId: string) => {
     setProducts(prev => prev.map(p => {
       if (p.id !== productId) return p;
-      const key = kind === "promotion" ? "manualPromotionRows" : "manualSurchargeRows";
-      return { ...p, [key]: p[key].filter(row => row.id !== rowId) };
+      const rowsKey = kind === "promotion" ? "manualPromotionRows" : "manualSurchargeRows";
+      const keysKey = kind === "promotion" ? "promotionKeys" : "surchargeKeys";
+      const rows = p[rowsKey].filter(row => row.id !== rowId);
+      const selectedKeys = Array.from(new Set(rows.map(row => row.optionKey).filter((key): key is string => Boolean(key))));
+      return { ...p, [rowsKey]: rows, [keysKey]: selectedKeys };
     }));
   };
   const scheduleAllocated = paymentSchedule.reduce((s, p) => s + p.amount, 0);
@@ -1024,20 +1027,6 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       const promoAmt = calcPromoAmountForProduct(p, promotionOptionsWithVouchers);
                       const surchargeAmt = calcSurchargeAmountForProduct(p, base, surchargeOptions);
                       const subtotal = base - promoAmt + surchargeAmt;
-                      const togglePromo = (key: string) => setProducts(prev => prev.map(x => x.id === p.id ? {
-                        ...x,
-                        promotionKeys: x.promotionKeys.includes(key) ? x.promotionKeys.filter(k => k !== key) : [...x.promotionKeys, key]
-                      } : x));
-                      const toggleSurcharge = (key: string) => setProducts(prev => prev.map(x => x.id === p.id ? {
-                        ...x,
-                        surchargeKeys: x.surchargeKeys.includes(key) ? x.surchargeKeys.filter(k => k !== key) : [...x.surchargeKeys, key]
-                      } : x));
-                      const selectedPromoLabels = p.promotionKeys
-                        .map(key => formatPromotionLabel(promotionOptionsWithVouchers.find((o: any) => o.id === key)))
-                        .filter(Boolean);
-                      const selectedSurchargeLabels = p.surchargeKeys
-                        .map(key => surchargeOptions.find((o: any) => o.id === key)?.name)
-                        .filter(Boolean);
                       return (
                         <tr key={p.id} className={`border-b last:border-0 ${idx % 2 === 1 ? "bg-muted/20" : ""}`}>
                           <td className="p-2">
