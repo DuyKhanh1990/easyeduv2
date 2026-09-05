@@ -1529,23 +1529,6 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
       for (const previous of existingSchedules) {
         if (previous.status === "paid" && !retainedIds.has(previous.id)) {
           retainedIds.add(previous.id);
-          scheduleRows.push({
-            invoiceId: id,
-            label: previous.label,
-            code: previous.code,
-            amount: previous.amount,
-            dueDate: previous.dueDate,
-            status: "paid",
-            sortOrder: previous.sortOrder ?? scheduleRows.length,
-            paymentMethod: previous.paymentMethod,
-            appliedBankAccount: previous.appliedBankAccount,
-            createdAt: previous.createdAt ?? now,
-            createdBy: previous.createdBy ?? inv.createdBy ?? invoiceData.updatedBy ?? null,
-            paidAt: previous.paidAt,
-            paidBy: previous.paidBy,
-            updatedAt: now,
-            updatedBy: invoiceData.updatedBy ?? null,
-          });
         }
       }
 
