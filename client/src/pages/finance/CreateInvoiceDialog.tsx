@@ -1147,7 +1147,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                             )}
                           </td>
                           <td className="p-2">
-                            <Popover open={openPromoId === p.id} onOpenChange={v => {
+                            <Dialog open={openPromoId === p.id} onOpenChange={v => {
                               setOpenPromoId(v ? p.id : null);
                               if (v) {
                                 setPromotionSearch("");
@@ -1165,22 +1165,25 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                 setOpenProductPromoPicker(null);
                               }
                             }}>
-                              <PopoverTrigger asChild>
+                              <DialogTrigger asChild>
                                 <button className="w-full h-8 flex items-center justify-between px-2 rounded-md border bg-background hover:border-purple-400 transition-colors text-[11px]">
                                   <span className={promoAmt > 0 ? "text-green-600 font-semibold" : "text-muted-foreground"}>
                                     {promoAmt > 0 ? `-${fmtMoney(promoAmt)}` : "Chọn..."}
                                   </span>
                                   <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                                 </button>
-                              </PopoverTrigger>
+                              </DialogTrigger>
                              {hasAvailableVouchers && (
                                <span className="mt-0.5 block text-[9px] leading-tight text-red-500">
                                  Có Voucher chưa sử dụng
                                </span>
                              )}
-                               <PopoverContent className="w-[26rem] max-w-[calc(100vw-2rem)] p-3" align="start">
+                                <DialogContent
+                                  className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
+                                  overlayClassName="bg-black/30 backdrop-blur-[1px]"
+                                >
                                  <div className="flex items-center justify-between gap-2 mb-2">
-                                   <p className="text-xs font-semibold text-muted-foreground">Chọn khuyến mãi</p>
+                                    <DialogTitle className="text-xl font-semibold">Chọn khuyến mãi</DialogTitle>
                                    {canCreatePromotion && (
                                      <button
                                        type="button"
@@ -1244,8 +1247,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                          );
                                        })}
                                      </div>
-                                   </PopoverContent>
-                                 </Popover>
+                               </DialogContent>
+                             </Dialog>
 
                                  <div className="mt-3 space-y-2">
                                    {p.manualPromotionRows.map(row => (
@@ -1297,7 +1300,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                             </Popover>
                           </td>
                           <td className="p-2">
-                            <Popover open={openSurchargeId === p.id} onOpenChange={v => {
+                            <Dialog open={openSurchargeId === p.id} onOpenChange={v => {
                               setOpenSurchargeId(v ? p.id : null);
                               if (v) {
                                 setSurchargeSearch("");
@@ -1315,17 +1318,20 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                 setOpenProductSurchargePicker(null);
                               }
                             }}>
-                              <PopoverTrigger asChild>
+                              <DialogTrigger asChild>
                                 <button className="w-full h-8 flex items-center justify-between px-2 rounded-md border bg-background hover:border-purple-400 transition-colors text-[11px]">
                                   <span className={surchargeAmt > 0 ? "text-orange-600 font-semibold" : "text-muted-foreground"}>
                                     {surchargeAmt > 0 ? `+${fmtMoney(surchargeAmt)}` : "Chọn..."}
                                   </span>
                                   <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                                 </button>
-                              </PopoverTrigger>
-                                <PopoverContent className="w-[28rem] max-w-[calc(100vw-2rem)] p-3" align="start">
+                              </DialogTrigger>
+                                <DialogContent
+                                  className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
+                                  overlayClassName="bg-black/30 backdrop-blur-[1px]"
+                                >
                                  <div className="flex items-center justify-between gap-2 mb-2">
-                                   <p className="text-xs font-semibold text-muted-foreground">Chọn phụ thu</p>
+                                   <DialogTitle className="text-xl font-semibold">Chọn phụ thu</DialogTitle>
                                    {canCreatePromotion && (
                                      <button
                                        type="button"
@@ -1384,8 +1390,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                          );
                                        })}
                                      </div>
-                                   </PopoverContent>
-                                 </Popover>
+                               </DialogContent>
+                             </Dialog>
 
                                  <div className="mt-3 space-y-2">
                                    {p.manualSurchargeRows.map(row => (
