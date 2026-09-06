@@ -28,3 +28,4 @@
 - [Holiday bulk all-scope rule](holiday-bulk-all-scope.md) — “Tất cả” phải loại trừ mọi buổi trong kỳ nghỉ, không lọc ngày quá khứ hay trạng thái lớp/buổi.
 - [Student renewal shift fallback](student-renewal-shift-fallback.md) — gia hạn phải lấy ca theo lịch hiện có khi lớp cũ/import thiếu shift_template_ids.
 - [Drizzle schema push prompt](drizzle-schema-push-prompt.md) — schema push có thể bị chặn bởi prompt data-loss không liên quan; không truncate dữ liệu để áp dụng thay đổi cộng thêm.
+- [Invoice installment allocation](invoice-installment-allocation.md) — lịch thanh toán luôn đủ tổng tiền; sửa chỉ cân giữa đợt chưa trả, tăng số đợt bằng Tách đợt, giữ nguyên đợt đã trả.

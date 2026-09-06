@@ -54,6 +54,26 @@ type ManualAdjustment = {
   value: number;
 };
 
+type PaymentScheduleEntry = {
+  id: string;
+  label: string;
+  code: string;
+  amount: number;
+  due: Date | undefined;
+  status: string;
+  paymentMethod: string;
+  bank: string;
+  isAuto?: boolean;
+};
+
+const getNextPaymentNumber = (entries: PaymentScheduleEntry[], directPaidAmount: number) => {
+  const highestExisting = entries.reduce((highest, entry) => {
+    const match = entry.label.match(/(\d+)/);
+    return Math.max(highest, match ? Number(match[1]) : 0);
+  }, directPaidAmount > 0 ? 1 : 0);
+  return highestExisting + 1;
+};
+
 const calcBase = (p: Product) =>
   p.packageType === "khoá" ? p.unitPrice : p.unitPrice * p.quantity;
 
@@ -150,8 +170,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const [quickCreateTarget, setQuickCreateTarget] = useState<
     { scope: "product"; productId: string } | { scope: "invoice" } | null
   >(null);
-  const [paymentSchedule, setPaymentSchedule] = useState<{ id: string; label: string; code: string; amount: number; due: Date | undefined; status: string; paymentMethod: string; bank: string; isAuto?: boolean }[]>([]);
+  const [paymentSchedule, setPaymentSchedule] = useState<PaymentScheduleEntry[]>([]);
   const [openDuePicker, setOpenDuePicker] = useState<string | null>(null);
+  const [splitPaymentId, setSplitPaymentId] = useState<string | null>(null);
+  const [splitAmount, setSplitAmount] = useState<number>(0);
+  const [splitDueDate, setSplitDueDate] = useState<string>("");
   const [note, setNote] = useState("");
   const [dueDate, setDueDate] = useState<string>(() => new Date().toISOString().split("T")[0]);
   const [directPaidAmount, setDirectPaidAmount] = useState<number>(0);
@@ -198,6 +221,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         setInvoicePromotionRows([]);
         setInvoiceSurchargeRows([]);
         setPaymentSchedule([]);
+        setSplitPaymentId(null);
+        setSplitAmount(0);
+        setSplitDueDate("");
         setNote("");
         setDueDate(new Date().toISOString().split("T")[0]);
         setDirectPaidAmount(0);
@@ -312,6 +338,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     } else {
       setPaymentSchedule([]);
     }
+    setSplitPaymentId(null);
+    setSplitAmount(0);
+    setSplitDueDate("");
   }, [open, isEdit, editData, allCategoriesForEdit]);
 
   // Preselect the logged-in creator only for a new invoice. Existing invoices
@@ -587,32 +616,78 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   // Always include directPaidAmount in paid total; paid schedule entries add on top
   const paid = directPaidAmount + paymentSchedule.filter(p => p.status === "paid").reduce((s, p) => s + p.amount, 0);
   const paidPercent  = finalTotal > 0 ? Math.round((paid / finalTotal) * 100) : (subTotal > 0 ? 100 : 0);
+  const scheduleAllocated = paymentSchedule.reduce((s, p) => s + p.amount, 0);
 
-  // Auto-generate ĐỢT 2 as a real editable entry when directPaidAmount is a partial payment
+  // Once a payment schedule exists, always preserve full allocation. A single
+  // auto remainder entry absorbs changes to the invoice total or manual rows.
   useEffect(() => {
     if (!open) return;
     setPaymentSchedule(prev => {
-      // If there are manually-created (non-auto) entries, don't interfere
-      if (prev.some(p => !p.isAuto)) return prev;
-      const remaining = finalTotal - directPaidAmount;
-      if (directPaidAmount > 0 && remaining > 0) {
-        const existing = prev.find(p => p.isAuto);
-        return [{
-          id: existing?.id ?? `auto-${Date.now()}`,
-          label: "ĐỢT 2",
-          code: existing?.code ?? `PT-${Date.now()}`,
-          amount: remaining,
-          due: existing?.due ?? new Date(),
+      const difference = finalTotal - directPaidAmount - prev.reduce((sum, entry) => sum + entry.amount, 0);
+
+      // A direct partial payment starts the schedule automatically at ĐỢT 2.
+      if (prev.length === 0) {
+        if (directPaidAmount > 0 && difference > 0) {
+          return [{
+            id: `auto-${Date.now()}`,
+            label: "ĐỢT 2",
+            code: `PT-${Date.now()}`,
+            amount: difference,
+            due: new Date(),
+            status: "unpaid",
+            paymentMethod: "cash",
+            bank: "",
+            isAuto: true,
+          }];
+        }
+        return prev;
+      }
+
+      if (Math.abs(difference) < 0.01) return prev;
+
+      const autoIndex = prev.findIndex(entry => entry.isAuto && entry.status !== "paid");
+      if (difference > 0) {
+        if (autoIndex >= 0) {
+          return prev.map((entry, index) =>
+            index === autoIndex ? { ...entry, amount: entry.amount + difference } : entry
+          );
+        }
+        const nextNum = getNextPaymentNumber(prev, directPaidAmount);
+        return [...prev, {
+          id: `auto-${Date.now()}`,
+          label: `ĐỢT ${nextNum}`,
+          code: `PT-${Date.now()}`,
+          amount: difference,
+          due: new Date(),
           status: "unpaid",
-          paymentMethod: existing?.paymentMethod ?? "cash",
-          bank: existing?.bank ?? "",
+          paymentMethod: "cash",
+          bank: "",
           isAuto: true,
         }];
       }
-      // paid in full or no partial payment — remove any auto entry
-      return prev.filter(p => !p.isAuto);
+
+      // If the invoice total decreases, reduce only unpaid entries and prefer
+      // the auto remainder. Paid history remains immutable.
+      let excess = Math.abs(difference);
+      const next = prev.map(entry => ({ ...entry }));
+      const candidateIndexes = [
+        ...(autoIndex >= 0 ? [autoIndex] : []),
+        ...next
+          .map((entry, index) => ({ entry, index }))
+          .filter(({ entry, index }) => entry.status !== "paid" && index !== autoIndex)
+          .map(({ index }) => index)
+          .reverse(),
+      ];
+      for (const index of candidateIndexes) {
+        if (excess <= 0) break;
+        const reduction = Math.min(next[index].amount, excess);
+        next[index].amount -= reduction;
+        excess -= reduction;
+      }
+      if (excess > 0.01) return prev;
+      return next.filter(entry => !(entry.isAuto && entry.status !== "paid" && entry.amount <= 0));
     });
-  }, [directPaidAmount, finalTotal, open]);
+  }, [directPaidAmount, finalTotal, open, scheduleAllocated]);
 
   const addProduct = () => setProducts(prev => [...prev, { id: Date.now().toString(), packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: prev[0]?.categoryId ?? "" }]);
   const removeProduct = (id: string) => setProducts(prev => prev.filter(p => p.id !== id));
@@ -731,7 +806,6 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       setInvoiceSurchargeKeys(selectedKeys);
     }
   };
-  const scheduleAllocated = paymentSchedule.reduce((s, p) => s + p.amount, 0);
   // Remaining = total minus what's already paid directly AND what's allocated in schedule
   const scheduleRemaining = finalTotal - directPaidAmount - scheduleAllocated;
   const canAddSchedule = scheduleRemaining > 0;
@@ -742,60 +816,111 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       const allocated = directPaidAmount + prev.reduce((s, p) => s + p.amount, 0);
       const remaining = Math.max(0, finalTotal - allocated);
       // When directPaidAmount > 0, schedule starts at ĐỢT 2
-      const nextNum = directPaidAmount > 0 ? prev.length + 2 : prev.length + 1;
+      const nextNum = getNextPaymentNumber(prev, directPaidAmount);
       return [...prev, { id: Date.now().toString(), label: `ĐỢT ${nextNum}`, code: `PT-${Date.now()}`, amount: remaining, due: new Date(), status: "unpaid", paymentMethod: "cash", bank: "" }];
     });
   };
   const removePayment = (id: string) => setPaymentSchedule(prev => {
-    if (prev.find(p => p.id === id)?.status === "paid") return prev;
-    return prev.filter(p => p.id !== id);
+    const removed = prev.find(p => p.id === id);
+    if (!removed || removed.status === "paid") return prev;
+    const remaining = prev.filter(p => p.id !== id);
+    const otherUnpaid = remaining.filter(p => p.status !== "paid");
+    if (otherUnpaid.length === 0) return remaining;
+    const recipient = otherUnpaid.find(p => p.isAuto) ?? otherUnpaid[otherUnpaid.length - 1];
+    return remaining.map(p => p.id === recipient.id ? { ...p, amount: p.amount + removed.amount } : p);
   });
-  const updatePaymentAmount = (id: string, amount: number) => setPaymentSchedule(prev => {
-    if (prev.find(p => p.id === id)?.status === "paid") return prev;
-    // Clear isAuto when user manually edits the amount
-    const updated = prev.map(p => p.id === id ? { ...p, amount, isAuto: false } : p);
-    const editableSchedules = updated.filter(p => p.status !== "paid");
-    const lastEditableId = editableSchedules[editableSchedules.length - 1]?.id;
-    if (lastEditableId && id !== lastEditableId && editableSchedules.length > 1) {
-      const othersTotal = updated
-        .filter(p => p.id !== lastEditableId)
-        .reduce((s, p) => s + p.amount, 0);
-      const newLastAmount = Math.max(0, finalTotal - directPaidAmount - othersTotal);
-      return updated.map(p => p.id === lastEditableId ? { ...p, amount: newLastAmount } : p);
+  const hasLockedPayment = directPaidAmount > 0 || paymentSchedule.some(p => p.status === "paid");
+  const unpaidScheduleCount = paymentSchedule.filter(p => p.status !== "paid").length;
+  const canEditPaymentAmount = (entry: PaymentScheduleEntry) =>
+    entry.status !== "paid" && !(hasLockedPayment && unpaidScheduleCount === 1);
+
+  const updatePaymentAmount = (id: string, rawAmount: number) => setPaymentSchedule(prev => {
+    const current = prev.find(p => p.id === id);
+    if (!current || current.status === "paid") return prev;
+    const unpaid = prev.filter(p => p.status !== "paid");
+    const lockedPaymentExists = directPaidAmount > 0 || prev.some(p => p.status === "paid");
+    if (lockedPaymentExists && unpaid.length === 1) return prev;
+
+    const requestedAmount = Math.max(0, Number(rawAmount) || 0);
+    const otherUnpaid = unpaid.filter(p => p.id !== id);
+
+    // With one unpaid entry and no payment history, decreasing it creates the
+    // next automatic remainder entry via the reconciliation effect above.
+    if (otherUnpaid.length === 0) {
+      const maximum = Math.max(0, finalTotal - directPaidAmount);
+      return prev.map(p => p.id === id ? { ...p, amount: Math.min(requestedAmount, maximum) } : p);
     }
-    return updated;
-  });
-  const handleAmountBlur = (id: string, _amount: number) => {
-    setPaymentSchedule(prev => {
-      const editedIndex = prev.findIndex(p => p.id === id);
-      const editedEntry = prev[editedIndex];
-      if (!editedEntry || editedEntry.status === "paid") return prev;
-      const allEntriesTotal = prev.reduce((s, p) => s + p.amount, 0);
-      const remaining = finalTotal - directPaidAmount - allEntriesTotal;
-      if (remaining <= 0) return prev;
 
-      const nextUnpaid = prev.find((p, index) =>
-        index > editedIndex && p.status !== "paid"
-      ) ?? prev.find((p, index) => index !== editedIndex && p.status !== "paid");
-      if (nextUnpaid) {
-        return prev.map(p => p.id === nextUnpaid.id
-          ? { ...p, amount: p.amount + remaining }
-          : p);
+    const otherTotal = otherUnpaid.reduce((sum, entry) => sum + entry.amount, 0);
+    const nextAmount = Math.min(requestedAmount, current.amount + otherTotal);
+    const difference = nextAmount - current.amount;
+    if (Math.abs(difference) < 0.01) return prev;
+
+    const preferredOthers = [
+      ...otherUnpaid.filter(entry => entry.isAuto),
+      ...otherUnpaid.filter(entry => !entry.isAuto).reverse(),
+    ];
+    const amounts = new Map(prev.map(entry => [entry.id, entry.amount]));
+    amounts.set(id, nextAmount);
+
+    if (difference > 0) {
+      let amountToTake = difference;
+      for (const entry of preferredOthers) {
+        if (amountToTake <= 0) break;
+        const available = amounts.get(entry.id) ?? 0;
+        const taken = Math.min(available, amountToTake);
+        amounts.set(entry.id, available - taken);
+        amountToTake -= taken;
       }
+    } else {
+      const recipient = preferredOthers[0];
+      amounts.set(recipient.id, (amounts.get(recipient.id) ?? 0) + Math.abs(difference));
+    }
 
-      const nextNum = prev.length + 1;
-      return [...prev, {
-        id: Date.now().toString(),
-        label: `ĐỢT ${nextNum}`,
-        code: `PT-${Date.now()}`,
-        amount: remaining,
-        due: new Date(),
-        status: "unpaid",
-        paymentMethod: "cash",
-        bank: "",
-      }];
-    });
+    return prev.map(entry => ({ ...entry, amount: amounts.get(entry.id) ?? entry.amount }));
+  });
+
+  const openSplitPayment = (entry: PaymentScheduleEntry) => {
+    if (entry.status === "paid" || entry.amount <= 0) return;
+    setSplitPaymentId(entry.id);
+    setSplitAmount(Math.max(1, Math.floor(entry.amount / 2)));
+    setSplitDueDate(format(entry.due ?? new Date(), "yyyy-MM-dd"));
   };
+  const confirmSplitPayment = () => {
+    const source = paymentSchedule.find(entry => entry.id === splitPaymentId);
+    if (!source || source.status === "paid") return;
+    const amount = Math.max(0, Number(splitAmount) || 0);
+    if (amount <= 0 || amount >= source.amount) {
+      toast({
+        title: "Số tiền tách không hợp lệ",
+        description: `Số tiền tách phải lớn hơn 0 và nhỏ hơn ${fmtMoney(source.amount)}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    const timestamp = Date.now();
+    const nextNum = getNextPaymentNumber(paymentSchedule, directPaidAmount);
+    setPaymentSchedule(prev => [
+      ...prev.map(entry => entry.id === source.id
+        ? { ...entry, amount: entry.amount - amount, isAuto: false }
+        : entry),
+      {
+        id: `split-${timestamp}`,
+        label: `ĐỢT ${nextNum}`,
+        code: `PT-${timestamp}`,
+        amount,
+        due: splitDueDate ? new Date(`${splitDueDate}T00:00:00`) : source.due,
+        status: "unpaid",
+        paymentMethod: source.paymentMethod,
+        bank: source.bank,
+        isAuto: false,
+      },
+    ]);
+    setSplitPaymentId(null);
+    setSplitAmount(0);
+    setSplitDueDate("");
+  };
+  const splitPayment = paymentSchedule.find(entry => entry.id === splitPaymentId);
   const updatePaymentDue = (id: string, due: Date) => {
     setPaymentSchedule(prev => prev.map(p => p.id === id && p.status !== "paid" ? { ...p, due } : p));
     setOpenDuePicker(null);
@@ -827,6 +952,25 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     if (!locationId) { toast({ title: "Vui lòng chọn Cơ sở", variant: "destructive" }); return; }
     if (products.some(p => !p.categoryId)) { toast({ title: "Vui lòng chọn Danh mục cho tất cả sản phẩm", variant: "destructive" }); return; }
     if (!studentId && !subjectName.trim()) { toast({ title: "Vui lòng chọn hoặc nhập Tên", variant: "destructive" }); return; }
+    if (paymentSchedule.length > 0) {
+      const allocated = directPaidAmount + paymentSchedule.reduce((sum, entry) => sum + entry.amount, 0);
+      if (Math.abs(allocated - finalTotal) > 0.01) {
+        toast({
+          title: "Lịch thanh toán chưa khớp tổng tiền",
+          description: `Các đợt đang phân bổ ${fmtMoney(allocated)} trên tổng ${fmtMoney(finalTotal)}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      if (paymentSchedule.some(entry => entry.amount <= 0)) {
+        toast({
+          title: "Số tiền đợt thanh toán không hợp lệ",
+          description: "Mỗi đợt thanh toán phải có số tiền lớn hơn 0.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
 
     const firstCat = allCategories.find((c: any) => c.id === products[0]?.categoryId);
 
@@ -2140,7 +2284,22 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="text-[10px] text-muted-foreground">Mã: {p.code}</span>
+                        {p.status !== "paid" && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 px-2 text-[10px] font-medium text-purple-600 hover:bg-purple-50 hover:text-purple-700"
+                            onClick={() => openSplitPayment(p)}
+                            disabled={p.amount <= 1}
+                            title={p.amount <= 1 ? "Số tiền đợt quá nhỏ để tách" : `Tách ${p.label} thành hai đợt`}
+                            data-testid={`button-split-payment-${p.id}`}
+                          >
+                            Tách đợt
+                          </Button>
+                        )}
                         <button
+                          type="button"
                           onClick={() => removePayment(p.id)}
                           disabled={p.status === "paid"}
                           className={`text-muted-foreground transition-colors ml-1 ${p.status === "paid" ? "opacity-30 cursor-not-allowed" : "hover:text-red-500"}`}
@@ -2158,10 +2317,14 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                           type="number"
                           value={p.amount}
                           onChange={e => updatePaymentAmount(p.id, Number(e.target.value))}
-                          onBlur={e => handleAmountBlur(p.id, Number(e.target.value))}
                           onFocus={e => e.target.select()}
-                          readOnly={p.status === "paid"}
-                          className={`h-8 text-xs text-right font-semibold ${p.status === "paid" ? "bg-green-50 text-green-700 cursor-not-allowed" : ""}`}
+                          readOnly={!canEditPaymentAmount(p)}
+                          title={!canEditPaymentAmount(p)
+                            ? p.status === "paid"
+                              ? "Đợt đã thanh toán không thể sửa"
+                              : "Chỉ còn một đợt chưa thanh toán. Hãy dùng Tách đợt để thay đổi cách phân bổ."
+                            : "Số tiền chênh lệch sẽ tự phân bổ sang đợt chưa thanh toán khác"}
+                          className={`h-8 text-xs text-right font-semibold ${!canEditPaymentAmount(p) ? "bg-muted/40 cursor-not-allowed" : ""} ${p.status === "paid" ? "bg-green-50 text-green-700" : ""}`}
                           data-testid={`input-payment-amount-${p.id}`}
                         />
                       </div>
@@ -2245,6 +2408,86 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
           </Button>
         </div>
       </DialogContent>
+      </Dialog>
+      <Dialog
+        open={Boolean(splitPaymentId)}
+        onOpenChange={nextOpen => {
+          if (!nextOpen) {
+            setSplitPaymentId(null);
+            setSplitAmount(0);
+            setSplitDueDate("");
+          }
+        }}
+      >
+        <DialogContent
+          className="w-[min(92vw,28rem)] rounded-xl p-6"
+          overlayClassName="bg-black/30 backdrop-blur-[1px]"
+        >
+          <DialogHeader>
+            <DialogTitle>Tách {splitPayment?.label ?? "đợt thanh toán"}</DialogTitle>
+          </DialogHeader>
+          {splitPayment && (
+            <div className="space-y-4">
+              <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Số tiền hiện tại</span>
+                  <span className="font-semibold">{fmtMoney(splitPayment.amount)}</span>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Số tiền chuyển sang đợt mới</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={Math.max(1, splitPayment.amount - 1)}
+                  value={splitAmount || ""}
+                  onChange={event => setSplitAmount(Math.max(0, Number(event.target.value) || 0))}
+                  onFocus={event => event.target.select()}
+                  autoFocus
+                  data-testid="input-split-payment-amount"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {splitPayment.label} còn {fmtMoney(Math.max(0, splitPayment.amount - splitAmount))};
+                  đợt mới nhận {fmtMoney(splitAmount)}.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Hạn thanh toán đợt mới</label>
+                <Input
+                  type="date"
+                  value={splitDueDate}
+                  onChange={event => setSplitDueDate(event.target.value)}
+                  data-testid="input-split-payment-due-date"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Đợt mới sẽ giữ hình thức thanh toán và ngân hàng của {splitPayment.label}. Bạn có thể chỉnh lại sau khi tách.
+              </p>
+              <div className="flex justify-end gap-2 pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setSplitPaymentId(null);
+                    setSplitAmount(0);
+                    setSplitDueDate("");
+                  }}
+                >
+                  Hủy
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-purple-600 hover:bg-purple-700"
+                  onClick={confirmSplitPayment}
+                  disabled={splitAmount <= 0 || splitAmount >= splitPayment.amount}
+                  data-testid="button-confirm-split-payment"
+                >
+                  Tách đợt
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
       </Dialog>
       <FinancePromotionDialog
         open={quickCreateType !== null}
