@@ -2284,20 +2284,6 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="text-[10px] text-muted-foreground">Mã: {p.code}</span>
-                        {p.status !== "paid" && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 px-2 text-[10px] font-medium text-purple-600 hover:bg-purple-50 hover:text-purple-700"
-                            onClick={() => openSplitPayment(p)}
-                            disabled={p.amount <= 1}
-                            title={p.amount <= 1 ? "Số tiền đợt quá nhỏ để tách" : `Tách ${p.label} thành hai đợt`}
-                            data-testid={`button-split-payment-${p.id}`}
-                          >
-                            Tách đợt
-                          </Button>
-                        )}
                         <button
                           type="button"
                           onClick={() => removePayment(p.id)}
@@ -2393,6 +2379,22 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         </div>
                       )}
                     </div>
+                    {p.status !== "paid" && (
+                      <div className="flex justify-end border-t border-dashed pt-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-3 text-[11px] font-medium text-purple-600 border-purple-200 hover:bg-purple-50 hover:text-purple-700"
+                          onClick={() => openSplitPayment(p)}
+                          disabled={p.amount <= 1}
+                          title={p.amount <= 1 ? "Số tiền đợt quá nhỏ để tách" : `Tách ${p.label} thành hai đợt`}
+                          data-testid={`button-split-payment-${p.id}`}
+                        >
+                          Tách đợt
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
