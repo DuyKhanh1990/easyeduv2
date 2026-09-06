@@ -10,7 +10,7 @@ import {
   Eye, EyeOff, Printer, Save, RotateCcw, ChevronDown,
   Type, Table2, Variable, X, Search,
   ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Trash2, Merge, SplitSquareHorizontal,
-  Grid3x3, Square, Rows2,
+  Grid3x3, Square, Rows2, CircleAlert,
 } from "lucide-react";
 import { evaluate } from "mathjs";
 import DOMPurify from "dompurify";
@@ -303,11 +303,11 @@ const VARIABLES: VariableDef[] = [
   { group: "Thanh toán", label: "Người tạo", key: "nguoi_tao", description: "{{nguoi_tao}}" },
   { group: "Thanh toán", label: "Người thanh toán", key: "nguoi_thanh_toan", description: "{{nguoi_thanh_toan}}" },
 
-  // ── Hoá đơn gốc (cha) – khi in một đợt ──
-  { group: "Hoá đơn gốc", label: "Mã HĐ gốc", key: "ma_hd_goc", description: "{{ma_hd_goc}}" },
-  { group: "Hoá đơn gốc", label: "Tổng tiền HĐ gốc", key: "tong_hd_goc", description: "{{tong_hd_goc}}" },
-  { group: "Hoá đơn gốc", label: "Đã thu HĐ gốc", key: "da_thu_hd_goc", description: "{{da_thu_hd_goc}}" },
-  { group: "Hoá đơn gốc", label: "Còn lại HĐ gốc", key: "con_lai_hd_goc", description: "{{con_lai_hd_goc}}" },
+  // ── Hoá đơn cha – khi in một đợt ──
+  { group: "Hoá đơn Cha (nhiều đợt)", label: "Mã HĐ gốc", key: "ma_hd_goc", description: "{{ma_hd_goc}}" },
+  { group: "Hoá đơn Cha (nhiều đợt)", label: "Tổng tiền HĐ gốc", key: "tong_hd_goc", description: "{{tong_hd_goc}}" },
+  { group: "Hoá đơn Cha (nhiều đợt)", label: "Đã thu HĐ gốc", key: "da_thu_hd_goc", description: "{{da_thu_hd_goc}}" },
+  { group: "Hoá đơn Cha (nhiều đợt)", label: "Còn lại HĐ gốc", key: "con_lai_hd_goc", description: "{{con_lai_hd_goc}}" },
 
   // ── Bằng chữ ──
   { group: "Thanh toán", label: "Thành chữ (tiền đã TT)", key: "thanh_chu", description: "{{thanh_chu}}" },
@@ -328,6 +328,95 @@ const VARIABLES: VariableDef[] = [
   { group: "Ngân hàng", label: "Chủ tài khoản", key: "chu_tai_khoan", description: "{{chu_tai_khoan}}" },
   { group: "Ngân hàng", label: "Mã QR ngân hàng", key: "qr_ngan_hang", description: "{{qr_ngan_hang}}" },
 ];
+
+const VARIABLE_HELP: Record<string, { meaning: string; example: string }> = {
+  customer_name: { meaning: "Tên khách hàng, học viên hoặc đối tượng đứng tên hóa đơn.", example: "Nguyễn Văn A" },
+  phone: { meaning: "Số điện thoại của khách hàng hoặc phụ huynh.", example: "0901 234 567" },
+  address: { meaning: "Địa chỉ của khách hàng hoặc học viên.", example: "123 Đường ABC, Quận 1" },
+  invoice_code: { meaning: "Mã của hóa đơn hoặc phiếu thu đang được in.", example: "PT-029/PT-029-1" },
+  date: { meaning: "Ngày lập hóa đơn hoặc phiếu thu đang in.", example: "06/09/2026" },
+  lop: { meaning: "Tên lớp học gắn với hóa đơn.", example: "A1 - Toán nâng cao" },
+  noi_dung: { meaning: "Nội dung ghi chú đã lưu trên hóa đơn.", example: "Thu học phí tháng 9" },
+  khoan_thu: { meaning: "Tên khoản thu, ưu tiên tên gói hoặc sản phẩm đầu tiên của hóa đơn.", example: "Học phí — Đợt 1" },
+  tong_truoc_kmpt: { meaning: "Tổng giá trị trước khi áp dụng khuyến mãi và phụ thu.", example: "5.500.000 đ" },
+  km_theo_sp: { meaning: "Tổng khuyến mãi áp dụng riêng trên từng sản phẩm.", example: "300.000 đ" },
+  pt_theo_sp: { meaning: "Tổng phụ thu áp dụng riêng trên từng sản phẩm.", example: "100.000 đ" },
+  km_toan_don: { meaning: "Khuyến mãi áp dụng cho toàn bộ hóa đơn.", example: "200.000 đ" },
+  pt_toan_don: { meaning: "Phụ thu áp dụng cho toàn bộ hóa đơn.", example: "50.000 đ" },
+  tong_km: { meaning: "Tổng tất cả khuyến mãi theo sản phẩm và toàn hóa đơn.", example: "500.000 đ" },
+  tong_pt: { meaning: "Tổng tất cả phụ thu theo sản phẩm và toàn hóa đơn.", example: "150.000 đ" },
+  khau_tru: { meaning: "Khoản đặt cọc hoặc khấu trừ được tính vào hóa đơn.", example: "500.000 đ" },
+  tong_sau_km: { meaning: "Giá trị sau khi trừ khuyến mãi nhưng chưa cộng phụ thu.", example: "5.000.000 đ" },
+  tong_sau_kmpt: { meaning: "Giá trị sau khi trừ khuyến mãi và cộng phụ thu.", example: "5.150.000 đ" },
+  thanh_tien: { meaning: "Thành tiền cuối của hóa đơn hoặc đợt đang in.", example: "1.000.000 đ" },
+  total: { meaning: "Tổng tiền của riêng hóa đơn hoặc đợt đang được in, không phải toàn chuỗi nhiều đợt.", example: "Đợt 1 có giá trị 1.000.000 đ" },
+  da_thanh_toan: { meaning: "Số tiền đã thanh toán của riêng hóa đơn hoặc đợt đang in.", example: "1.000.000 đ" },
+  con_lai: { meaning: "Số tiền còn lại của riêng hóa đơn hoặc đợt đang in.", example: "0 đ" },
+  thu_ky_nay: { meaning: "Số tiền thực thu trong đợt đang được in.", example: "1.000.000 đ" },
+  phuong_thuc: { meaning: "Phương thức thanh toán của hóa đơn hoặc đợt đang in.", example: "Tiền mặt" },
+  nguoi_tao: { meaning: "Tên nhân sự đã tạo hóa đơn.", example: "Nguyễn Thị B" },
+  nguoi_thanh_toan: { meaning: "Tên nhân sự ghi nhận thanh toán cho hóa đơn hoặc đợt này.", example: "Trần Văn C" },
+  ma_hd_goc: { meaning: "Mã hóa đơn cha chứa toàn bộ các đợt thanh toán.", example: "PT-029" },
+  tong_hd_goc: { meaning: "Tổng tiền của toàn bộ hóa đơn cha, gồm tất cả các đợt.", example: "3.000.000 đ" },
+  da_thu_hd_goc: { meaning: "Tổng số tiền đã thu cộng dồn từ tất cả các đợt của hóa đơn cha.", example: "Đã thu 2 đợt: 2.000.000 đ" },
+  con_lai_hd_goc: { meaning: "Số tiền còn phải thu của toàn bộ hóa đơn cha sau các đợt đã thanh toán.", example: "1.000.000 đ" },
+  thanh_chu: { meaning: "Số tiền đã thanh toán của phiếu đang in được viết bằng chữ.", example: "Một triệu đồng" },
+  items: { meaning: "Chèn bảng động liệt kê sản phẩm, số lượng, khuyến mãi, phụ thu và thành tiền.", example: "Bảng các gói học phí trên hóa đơn" },
+  lich_su_thanh_toan: { meaning: "Chèn bảng tất cả đợt đã thanh toán và chưa thanh toán của hóa đơn.", example: "Đợt 1 đã thanh toán; Đợt 3 chưa thanh toán" },
+  logo: { meaning: "Logo của cơ sở chính.", example: "Ảnh logo EduManage" },
+  ten_co_so: { meaning: "Tên cơ sở phát hành hóa đơn.", example: "Cơ sở Minh Khai" },
+  dia_chi_co_so: { meaning: "Địa chỉ của cơ sở phát hành hóa đơn.", example: "250 Minh Khai, Hà Nội" },
+  sdt_co_so: { meaning: "Số điện thoại liên hệ của cơ sở.", example: "024 1234 5678" },
+  ten_ngan_hang: { meaning: "Tên ngân hàng nhận thanh toán của hóa đơn.", example: "MB Bank" },
+  so_tai_khoan: { meaning: "Số tài khoản ngân hàng nhận thanh toán.", example: "0123456789" },
+  chu_tai_khoan: { meaning: "Tên chủ tài khoản ngân hàng nhận thanh toán.", example: "CÔNG TY ABC" },
+  qr_ngan_hang: { meaning: "Chèn ảnh QR chuyển khoản của tài khoản ngân hàng.", example: "Mã VietQR để khách hàng quét thanh toán" },
+};
+
+function VariableSidebarItem({ variable, onInsert }: { variable: VariableDef; onInsert: (key: string) => void }) {
+  const help = VARIABLE_HELP[variable.key];
+  return (
+    <div className="flex items-start rounded border border-transparent hover:border-primary/20 hover:bg-primary/10 transition-colors group">
+      <button
+        type="button"
+        onClick={() => onInsert(variable.key)}
+        className="min-w-0 flex-1 text-left px-2 py-1.5 text-xs hover:text-primary"
+        data-testid={`var-btn-${variable.key}`}
+      >
+        <div className="font-medium">{variable.label}</div>
+        <div className="text-muted-foreground group-hover:text-primary/60 font-mono text-[10px]">{variable.description}</div>
+      </button>
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="mt-1.5 mr-1.5 shrink-0 rounded-full p-0.5 text-orange-500 hover:bg-orange-100 hover:text-orange-700 transition-colors"
+            aria-label={`Giải thích biến ${variable.label}`}
+            data-testid={`var-help-${variable.key}`}
+          >
+            <CircleAlert className="h-3.5 w-3.5" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent side="right" align="start" className="w-72 p-3">
+          <div className="space-y-2">
+            <div>
+              <p className="text-sm font-semibold text-foreground">{variable.label}</p>
+              <code className="text-[11px] text-primary">{variable.description}</code>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Ý nghĩa</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-foreground">{help?.meaning ?? "Dữ liệu được lấy tự động từ hóa đơn khi in."}</p>
+            </div>
+            <div className="rounded-md border border-orange-200 bg-orange-50 p-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-orange-700">Ví dụ</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-orange-950">{help?.example ?? "Giá trị thực tế của hóa đơn"}</p>
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
 
 /* ─────────────────── PAGE SIZE CONFIG ─────────────────── */
 const PAGE_SIZES: Record<PageSize, { width: string; minHeight: string; label: string; cssSize: string }> = {
@@ -1447,16 +1536,7 @@ export function InvoicePrintTemplate({
                   return filtered.length === 0
                     ? <div className="text-xs text-muted-foreground px-2 py-2">Không tìm thấy</div>
                     : filtered.map((v) => (
-                        <button
-                          key={v.key}
-                          onClick={() => insertVar(v.key)}
-                          className="text-left px-2 py-1.5 rounded text-xs hover:bg-primary/10 hover:text-primary transition-colors border border-transparent hover:border-primary/20 group"
-                          data-testid={`var-btn-${v.key}`}
-                          title={v.description}
-                        >
-                          <div className="font-medium">{v.label}</div>
-                          <div className="text-muted-foreground group-hover:text-primary/60 font-mono text-[10px]">{v.description}</div>
-                        </button>
+                        <VariableSidebarItem key={v.key} variable={v} onInsert={insertVar} />
                       ));
                 }
 
@@ -1472,16 +1552,7 @@ export function InvoicePrintTemplate({
                       {groupName}
                     </div>
                     {vars.map((v) => (
-                      <button
-                        key={v.key}
-                        onClick={() => insertVar(v.key)}
-                        className="text-left px-2 py-1.5 rounded text-xs hover:bg-primary/10 hover:text-primary transition-colors border border-transparent hover:border-primary/20 group"
-                        data-testid={`var-btn-${v.key}`}
-                        title={v.description}
-                      >
-                        <div className="font-medium">{v.label}</div>
-                        <div className="text-muted-foreground group-hover:text-primary/60 font-mono text-[10px]">{v.description}</div>
-                      </button>
+                      <VariableSidebarItem key={v.key} variable={v} onInsert={insertVar} />
                     ))}
                   </div>
                 ));
