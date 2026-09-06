@@ -210,9 +210,9 @@ function numberToVietnameseWords(n: number): string {
 const SAMPLE_HISTORY = [
   { label: "Đợt 1", paidDate: "01/04/2025", amount: 2000000, method: "Chuyển khoản", status: "paid" },
   { label: "Đợt 2 (Phiếu thu này)", paidDate: "05/05/2025", amount: 1000000, method: "Tiền mặt", status: "paid", current: true },
-  { label: "Đợt 3", paidDate: "Dự kiến 05/06/2025", amount: 0, method: "", status: "unpaid" },
-  { label: "Đợt 4", paidDate: "Dự kiến 05/07/2025", amount: 0, method: "", status: "unpaid" },
-  { label: "Đợt 5", paidDate: "Dự kiến 05/08/2025", amount: 0, method: "", status: "unpaid" },
+  { label: "Đợt 3", paidDate: "Dự kiến 05/06/2025", amount: 700000, method: "Tiền mặt", status: "unpaid" },
+  { label: "Đợt 4", paidDate: "Dự kiến 05/07/2025", amount: 600000, method: "Chuyển khoản", status: "unpaid" },
+  { label: "Đợt 5", paidDate: "Dự kiến 05/08/2025", amount: 700000, method: "Tiền mặt", status: "unpaid" },
 ];
 
 const SAMPLE_DATA = {
@@ -440,15 +440,16 @@ function renderItems(items: typeof SAMPLE_DATA.items): string {
 function renderHistory(history: typeof SAMPLE_HISTORY): string {
   const rows = history.map((s, i) => {
     const isPaid = s.status === "paid";
-    const amountText = isPaid && s.amount > 0 ? `${fmtMoney(s.amount)} đ` : "";
+    const amountText = s.amount > 0 ? `${fmtMoney(s.amount)} đ` : "";
     const isCurrent = (s as any).current === true;
+    const noteText = `${s.label} ${isPaid ? "đã thanh toán" : "chưa thanh toán"}`;
     const trStyle = isCurrent ? `style="font-weight:bold;background:#fafafa;"` : "";
     return `<tr ${trStyle}>
       <td style="border:1px solid #111;padding:5px;text-align:center">${i + 1}</td>
       <td style="border:1px solid #111;padding:5px;text-align:center">${s.paidDate}</td>
       <td style="border:1px solid #111;padding:5px;text-align:right">${amountText}</td>
       <td style="border:1px solid #111;padding:5px;text-align:center">${s.method}</td>
-      <td style="border:1px solid #111;padding:5px">${s.label}</td>
+      <td style="border:1px solid #111;padding:5px">${noteText}</td>
     </tr>`;
   }).join("");
   return `<table style="width:100%;border-collapse:collapse;font-size:10.5px;">

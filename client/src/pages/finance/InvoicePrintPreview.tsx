@@ -221,14 +221,16 @@ function renderHistoryHtml(schedule: NonNullable<InvoicePrintData["paymentSchedu
       : s.dueDate
         ? `Dự kiến ${fmtDate(s.dueDate)}`
         : "";
-    const amountText = isPaid ? `${fmtMoney(Number(s.amount) || 0)} đ` : "";
-    const methodText = isPaid ? paymentMethodLabel(s.paymentMethod) : "";
+    const amount = Number(s.amount) || 0;
+    const amountText = amount > 0 ? `${fmtMoney(amount)} đ` : "";
+    const methodText = paymentMethodLabel(s.paymentMethod);
+    const noteText = `${s.label ?? `Đợt ${i + 1}`} ${isPaid ? "đã thanh toán" : "chưa thanh toán"}`;
     return `<tr>
       <td style="border:1px solid #111;padding:5px;text-align:center">${i + 1}</td>
       <td style="border:1px solid #111;padding:5px;text-align:center">${dateText}</td>
       <td style="border:1px solid #111;padding:5px;text-align:right">${amountText}</td>
       <td style="border:1px solid #111;padding:5px;text-align:center">${methodText}</td>
-      <td style="border:1px solid #111;padding:5px">${s.label ?? ""}</td>
+      <td style="border:1px solid #111;padding:5px">${noteText}</td>
     </tr>`;
   }).join("");
   return `<table style="width:100%;border-collapse:collapse;font-size:10.5px;">
