@@ -2693,6 +2693,17 @@ export default function Invoices() {
             totalSurcharge: invAny.totalSurcharge ?? null,
             deduction: invAny.deduction ?? null,
           },
+           // Bản in theo đợt không fetch lại hóa đơn gốc; truyền lịch đầy đủ
+           // để biến {{lich_su_thanh_toan}} hiển thị bảng thay vì trạng thái rỗng.
+           paymentSchedule: (Array.isArray(invAny.paymentSchedule) ? invAny.paymentSchedule : []).map((schedule: ScheduleItem) => ({
+             label: schedule.label,
+             code: schedule.code ?? null,
+             amount: schedule.amount,
+             dueDate: schedule.dueDate,
+             status: schedule.status,
+             paidAt: schedule.paidAt ? new Date(schedule.paidAt).toISOString() : null,
+             paymentMethod: schedule.paymentMethod ?? null,
+           })),
           // Ngân hàng — kế thừa từ hoá đơn gốc nếu có
           locationBankAccounts: invAny.locationBankAccounts ?? null,
           appliedBankAccount: invAny.appliedBankAccount ?? null,

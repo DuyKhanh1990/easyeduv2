@@ -170,6 +170,17 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
         totalSurcharge: invAny.totalSurcharge ?? null,
         deduction: invAny.deduction ?? null,
       },
+      // Bản in theo đợt dùng skipFetch, vì vậy phải mang theo toàn bộ lịch
+      // thanh toán để {{lich_su_thanh_toan}} dựng đúng bảng các đợt.
+      paymentSchedule: schedules.map(schedule => ({
+        label: schedule.label,
+        code: schedule.code ?? null,
+        amount: schedule.amount,
+        dueDate: schedule.dueDate,
+        status: schedule.status,
+        paidAt: schedule.paidAt ? new Date(schedule.paidAt).toISOString() : null,
+        paymentMethod: schedule.paymentMethod ?? null,
+      })),
       // Ngân hàng — kế thừa từ hoá đơn gốc nếu có
       locationBankAccounts: invAny.locationBankAccounts ?? null,
       appliedBankAccount: invAny.appliedBankAccount ?? null,
