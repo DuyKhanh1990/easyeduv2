@@ -13,9 +13,18 @@ const aliasHost = process.env.S3_HOSTNAME || process.env.S3_ALIAS_HOST!;
 const protocol = process.env.S3_PROTOCOL || "https";
 const backupFolder = (process.env.S3_BACKUP_FOLDER || `${folder}/backups`)
   .replace(/^\/+|\/+$/g, "");
+const configuredCenterId = (process.env.CENTER_ID ?? "").trim();
+const centerId = configuredCenterId.replace(/[^a-zA-Z0-9._-]/g, "_");
+const portalUploadFolder = centerId ? `${folder}/${centerId}` : folder;
 
 const accessKeyId = (process.env.AWS_ACCESS_KEY_ID ?? "").trim();
 const secretAccessKey = (process.env.AWS_SECRET_ACCESS_KEY ?? "").trim();
+
+if (!centerId) {
+  console.warn(
+    "[S3] CENTER_ID is not configured; normal uploads will use the legacy shared folder."
+  );
+}
 
 if (!accessKeyId || !secretAccessKey) {
   console.error("[S3] WARNING: AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY is missing or empty!");
@@ -44,6 +53,14 @@ function hmac(key: Buffer | string, data: string): Buffer {
 
 function sha256hex(data: Buffer | string): string {
   return crypto.createHash("sha256").update(data).digest("hex");
+}
+
+function buildPortalUploadKey(filename: string, timestamp: number): string {
+  const strippedName = filename.startsWith(folder + "/")
+    ? filename.slice(folder.length + 1)
+    : filename;
+  const safeName = strippedName.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+  return `${portalUploadFolder}/${timestamp}_${safeName}`;
 }
 
 async function putObjectRaw(
@@ -148,11 +165,7 @@ export async function uploadFileToS3(
   mimetype: string
 ): Promise<string> {
   const timestamp = Date.now();
-  const strippedName = filename.startsWith(folder + "/")
-    ? filename.slice(folder.length + 1)
-    : filename;
-  const safeName = strippedName.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-  const key = `${folder}/${timestamp}_${safeName}`;
+  const key = buildPortalUploadKey(filename, timestamp);
   console.log("S3 KEY:", key);
 
   const body =
@@ -180,11 +193,7 @@ export async function uploadFileToS3FromDisk(
   mimetype: string
 ): Promise<string> {
   const timestamp = Date.now();
-  const strippedName = filename.startsWith(folder + "/")
-    ? filename.slice(folder.length + 1)
-    : filename;
-  const safeName = strippedName.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-  const key = `${folder}/${timestamp}_${safeName}`;
+  const key = buildPortalUploadKey(filename, timestamp);
   console.log("S3 KEY:", key);
 
   try {
