@@ -7,7 +7,7 @@ export type BidvEnvironment = "UAT" | "Production";
 
 const BIDV_BASE_URLS: Record<BidvEnvironment, string> = {
   UAT: "https://bidv.net:9303/bidvorg/service",
-  Production: "https://bidv.net:9303/bidvorg/service", // sẽ cập nhật khi có Production URL
+  Production: "https://openapi.bidv.com.vn/bidvorg/service",
 };
 
 const OAUTH_PATH = "/openapi/oauth2/token";
