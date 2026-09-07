@@ -27,6 +27,7 @@ import {
   deactivateRegistry,
   listRegistry,
 } from "./services/registry.service.js";
+import { acquireDatabaseMutationPermit } from "./mutation-permit.js";
 
 const app = express();
 const PORT = parseInt(process.env.GATEWAY_PORT || process.env.PORT || "3001", 10);
@@ -39,6 +40,22 @@ const GATEWAY_PUBLIC_URL =
 
 app.use(cors());
 app.use(express.json());
+app.use(async (_req, res, next) => {
+  try {
+    const releasePermit = await acquireDatabaseMutationPermit();
+    let released = false;
+    const releaseOnce = () => {
+      if (released) return;
+      released = true;
+      void releasePermit();
+    };
+    res.once("finish", releaseOnce);
+    res.once("close", releaseOnce);
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 // ─── Middleware bảo vệ admin routes ──────────────────────────────────────────
 

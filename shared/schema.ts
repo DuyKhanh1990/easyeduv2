@@ -3274,7 +3274,9 @@ export const databaseBackups = pgTable("database_backups", {
   storageKey:      text("storage_key"),
   fileSizeBytes:   numeric("file_size_bytes", { precision: 20, scale: 0 }),
   checksum:        varchar("checksum", { length: 128 }),
-  requestedBy:     uuid("requested_by").references(() => users.id, { onDelete: "set null" }),
+  // Keep operational backup history stable even when application user data is
+  // restored to an older snapshot.
+  requestedBy:     uuid("requested_by"),
   requestedAt:     timestamp("requested_at").defaultNow().notNull(),
   startedAt:       timestamp("started_at"),
   completedAt:     timestamp("completed_at"),
@@ -3294,3 +3296,26 @@ export const insertDatabaseBackupSchema = createInsertSchema(databaseBackups).om
 });
 export type DatabaseBackup = typeof databaseBackups.$inferSelect;
 export type InsertDatabaseBackup = z.infer<typeof insertDatabaseBackupSchema>;
+
+// Tracks production restore jobs separately from backup artifacts. Backup
+// metadata is intentionally excluded from pg_restore so these rows survive.
+export const databaseRestores = pgTable("database_restores", {
+  id:              uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  sourceBackupId:  uuid("source_backup_id").references(() => databaseBackups.id, { onDelete: "set null" }),
+  safetyBackupId:  uuid("safety_backup_id").references(() => databaseBackups.id, { onDelete: "set null" }),
+  status:          varchar("status", { length: 20 }).notNull().default("queued"),
+  progressPercent: integer("progress_percent").notNull().default(0),
+  progressMessage: text("progress_message"),
+  requestedBy:     uuid("requested_by"),
+  requestedAt:     timestamp("requested_at").defaultNow().notNull(),
+  startedAt:       timestamp("started_at"),
+  completedAt:     timestamp("completed_at"),
+  errorMessage:    text("error_message"),
+  createdAt:       timestamp("created_at").defaultNow().notNull(),
+  updatedAt:       timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  statusIdx: index("database_restores_status_idx").on(table.status),
+  requestedAtIdx: index("database_restores_requested_at_idx").on(table.requestedAt),
+}));
+
+export type DatabaseRestore = typeof databaseRestores.$inferSelect;

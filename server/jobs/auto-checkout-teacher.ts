@@ -12,10 +12,11 @@
 
 import { db } from "../storage/base";
 import { sql } from "drizzle-orm";
+import { withDatabaseMutationPermit } from "../services/database-mutation-permit.service";
 
 const INTERVAL_MS = 10 * 60 * 1000; // 10 phút
 
-async function runAutoCheckout(): Promise<void> {
+async function executeAutoCheckout(): Promise<void> {
   try {
     const result = await db.execute(sql`
       UPDATE teacher_attendance ta
@@ -38,6 +39,10 @@ async function runAutoCheckout(): Promise<void> {
   } catch (err: any) {
     console.error("[AutoCheckout] Lỗi khi chạy job:", err.message);
   }
+}
+
+async function runAutoCheckout(): Promise<void> {
+  await withDatabaseMutationPermit(executeAutoCheckout);
 }
 
 export function startAutoCheckoutJob(): void {

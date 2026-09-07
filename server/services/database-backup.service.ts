@@ -7,7 +7,7 @@ import { databaseBackups, type DatabaseBackup } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { uploadBackupFileToS3FromDisk } from "../lib/s3";
 
-const BACKUP_LOCK_KEY = "easyedu:database-backup";
+export const BACKUP_LOCK_KEY = "easyedu:database-backup";
 const DEFAULT_BACKUP_DIR = path.join(os.tmpdir(), "easyedu-database-backups");
 const MAX_ERROR_LENGTH = 2_000;
 
@@ -25,9 +25,9 @@ export class BackupConfigurationError extends Error {
   }
 }
 
-export type DatabaseBackupType = "manual" | "scheduled";
+export type DatabaseBackupType = "manual" | "scheduled" | "pre_restore";
 
-function getDatabaseUrl(): string {
+export function getDatabaseUrl(): string {
   const value = (process.env.APP_DATABASE_URL || process.env.DATABASE_URL || "").trim();
   if (!value) {
     throw new BackupConfigurationError(
@@ -55,7 +55,7 @@ function getCenterId(): string {
  * Passes the connection details to pg_dump through libpq environment variables
  * instead of putting the full URL (and its password) in the child arguments.
  */
-function createPgDumpEnvironment(databaseUrl: string): NodeJS.ProcessEnv {
+export function createPostgresEnvironment(databaseUrl: string): NodeJS.ProcessEnv {
   let parsed: URL;
   try {
     parsed = new URL(databaseUrl);
@@ -130,7 +130,7 @@ async function runPgDump(params: {
         outputPath,
       ],
       {
-        env: createPgDumpEnvironment(databaseUrl),
+        env: createPostgresEnvironment(databaseUrl),
         stdio: ["ignore", "ignore", "pipe"],
       },
     );

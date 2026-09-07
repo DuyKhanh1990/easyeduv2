@@ -4,6 +4,7 @@ import { databaseBackups } from "@shared/schema";
 import { deleteBackupFileFromS3 } from "../lib/s3";
 
 const DEFAULT_RETENTION_COUNT = 4;
+const PRE_RESTORE_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
 
 function getRetentionCount(): number {
   const configured = Number.parseInt(
@@ -35,8 +36,10 @@ export async function pruneOldDatabaseBackups(): Promise<{
   const completedBackups = await db
     .select({
       id: databaseBackups.id,
+      backupType: databaseBackups.backupType,
       storageKey: databaseBackups.storageKey,
       snapshotAt: databaseBackups.snapshotAt,
+      completedAt: databaseBackups.completedAt,
     })
     .from(databaseBackups)
     .where(
@@ -47,7 +50,19 @@ export async function pruneOldDatabaseBackups(): Promise<{
     )
     .orderBy(desc(databaseBackups.snapshotAt), desc(databaseBackups.createdAt));
 
-  const staleBackups = completedBackups.slice(retentionCount);
+  const regularBackups = completedBackups.filter(
+    (backup) => backup.backupType !== "pre_restore",
+  );
+  const expiredPreRestoreBackups = completedBackups.filter(
+    (backup) =>
+      backup.backupType === "pre_restore" &&
+      backup.completedAt !== null &&
+      backup.completedAt.getTime() <= Date.now() - PRE_RESTORE_RETENTION_MS,
+  );
+  const staleBackups = [
+    ...regularBackups.slice(retentionCount),
+    ...expiredPreRestoreBackups,
+  ];
   let deleted = 0;
   let failed = 0;
 
@@ -76,7 +91,13 @@ export async function pruneOldDatabaseBackups(): Promise<{
   }
 
   return {
-    kept: Math.min(completedBackups.length, retentionCount),
+    kept:
+      Math.min(regularBackups.length, retentionCount) +
+      completedBackups.filter(
+        (backup) =>
+          backup.backupType === "pre_restore" &&
+          !expiredPreRestoreBackups.some((expired) => expired.id === backup.id),
+      ).length,
     deleted,
     failed,
   };

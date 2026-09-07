@@ -2,6 +2,7 @@ import { db } from "../db";
 import { classSessions, classes, studentClasses, shiftTemplates, students, centerConfig } from "@shared/schema";
 import { eq, and, sql as rawSql } from "drizzle-orm";
 import { notificationService } from "../application/notification/services/NotificationService";
+import { withDatabaseMutationPermit } from "./database-mutation-permit.service";
 
 const WEEKDAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 
@@ -20,7 +21,7 @@ function formatDate(dateStr: string): string {
   return `${d}/${m}`;
 }
 
-async function runClassReminder(): Promise<void> {
+async function executeClassReminder(): Promise<void> {
   try {
     const vnNow = nowVietnam();
 
@@ -88,7 +89,7 @@ async function runClassReminder(): Promise<void> {
       const dateLabel = formatDate(session.sessionDate);
 
       for (const student of activeStudents) {
-        notificationService
+        await notificationService
           .send({
             type: "attendance_reminder",
             studentId: student.studentId,
@@ -110,6 +111,10 @@ async function runClassReminder(): Promise<void> {
   } catch (err) {
     console.error("[ClassReminder] Lỗi cron:", err);
   }
+}
+
+async function runClassReminder(): Promise<void> {
+  await withDatabaseMutationPermit(executeClassReminder);
 }
 
 export function startClassReminderCron(): void {

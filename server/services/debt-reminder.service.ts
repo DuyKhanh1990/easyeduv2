@@ -29,6 +29,7 @@ import {
 import { eq, and, sql } from "drizzle-orm";
 import { sendNotification } from "../lib/notification";
 import { notificationService } from "../application/notification/services/NotificationService";
+import { withDatabaseMutationPermit } from "./database-mutation-permit.service";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -118,7 +119,7 @@ export async function getDebtReminderConfig(): Promise<DebtReminderConfig> {
 // ─── "Once" persistent dedup (DB) ────────────────────────────────────────────
 // Bảng lưu lịch sử gửi 1 lần để không gửi lại nếu server restart
 
-export async function ensureOnceSentTable(): Promise<void> {
+async function createOnceSentTable(): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS debt_reminder_once_sent (
       center_id    TEXT        NOT NULL,
@@ -129,6 +130,10 @@ export async function ensureOnceSentTable(): Promise<void> {
       PRIMARY KEY (center_id, schedule_id, rule_type, window_start)
     )
   `);
+}
+
+export async function ensureOnceSentTable(): Promise<void> {
+  await withDatabaseMutationPermit(createOnceSentTable);
 }
 
 async function isOnceSent(
@@ -228,7 +233,7 @@ async function fireReminder(
 
   // 1️⃣ Chuông nội bộ + Expo Push (chỉ khi học viên có tài khoản)
   if (target.userId) {
-    sendNotification({
+    await sendNotification({
       userId:        target.userId,
       title:         headerTitle,
       content:       fullContent,
@@ -242,7 +247,7 @@ async function fireReminder(
   }
 
   // 2️⃣ Zalo OA / ZNS
-  notificationService
+  await notificationService
     .send({
       centerId,
       studentId: target.studentId,
@@ -263,7 +268,7 @@ async function fireReminder(
 
 // ─── Main cron ────────────────────────────────────────────────────────────────
 
-async function runDebtReminder(): Promise<void> {
+async function executeDebtReminder(): Promise<void> {
   try {
     const today = todayStr();
     const now    = nowHHMM();
@@ -386,6 +391,10 @@ async function runDebtReminder(): Promise<void> {
   } catch (err) {
     console.error("[DebtReminder] Lỗi cron:", err);
   }
+}
+
+async function runDebtReminder(): Promise<void> {
+  await withDatabaseMutationPermit(executeDebtReminder);
 }
 
 export function startDebtReminderCron(): void {

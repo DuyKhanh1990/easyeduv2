@@ -87,6 +87,12 @@ import { registerCommissionRoutes } from "./routes/commission.routes";
 import { registerReconciliationRoutes } from "./routes/reconciliation.routes";
 import { registerDatabaseBackupRoutes } from "./routes/database-backup.routes";
 import { startDatabaseBackupScheduler } from "./services/database-backup-scheduler.service";
+import {
+  isDatabaseRestoreInProgress,
+  recoverInterruptedDatabaseRestores,
+  startDatabaseRestoreFinalizationRecovery,
+} from "./services/database-restore.service";
+import { acquireDatabaseMutationPermit } from "./services/database-mutation-permit.service";
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
@@ -96,6 +102,61 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   // JWT middleware — chạy trước mọi route, set req.user nếu có Bearer token hợp lệ
   app.use(jwtAuthMiddleware);
+  await recoverInterruptedDatabaseRestores();
+  startDatabaseRestoreFinalizationRecovery();
+
+  // Freeze normal API traffic while a production restore is creating its
+  // safety snapshot and replacing database contents. Status polling remains
+  // available to Super Admin.
+  app.use("/api", async (req, res, next) => {
+    try {
+      const isMutation = !["GET", "HEAD", "OPTIONS"].includes(req.method);
+      if (isMutation) {
+        if (await isDatabaseRestoreInProgress()) {
+          return res.status(503).json({
+            message:
+              "Hệ thống đang bảo trì để khôi phục dữ liệu. Vui lòng thử lại sau.",
+          });
+        }
+
+        const releasePermit = await acquireDatabaseMutationPermit();
+        if (await isDatabaseRestoreInProgress(true)) {
+          await releasePermit();
+          return res.status(503).json({
+            message:
+              "Hệ thống đang bảo trì để khôi phục dữ liệu. Vui lòng thử lại sau.",
+          });
+        }
+
+        let released = false;
+        const releaseOnce = () => {
+          if (released) return;
+          released = true;
+          void releasePermit();
+        };
+        res.once("finish", releaseOnce);
+        res.once("close", releaseOnce);
+        return next();
+      }
+
+      if (!(await isDatabaseRestoreInProgress())) return next();
+
+      const isRestoreStatusRequest =
+        req.method === "GET" &&
+        (req.path.startsWith("/admin/database-backups") ||
+          req.path.startsWith("/admin/database-restores") ||
+          req.path === "/auth/me" ||
+          req.path === "/my-permissions");
+      if (isRestoreStatusRequest) return next();
+
+      return res.status(503).json({
+        message:
+          "Hệ thống đang bảo trì để khôi phục dữ liệu. Vui lòng thử lại sau.",
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
 
   // Auth routes
   app.post(api.auth.login.path, (req, res, next) => {

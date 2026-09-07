@@ -21,6 +21,7 @@ import {
 } from "@shared/schema";
 import { eq, and, sql as rawSql, inArray } from "drizzle-orm";
 import { sendNotification } from "../lib/notification";
+import { withDatabaseMutationPermit } from "./database-mutation-permit.service";
 
 const WEEKDAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 const VN_OFFSET_MS = 7 * 60 * 60 * 1000; // UTC+7
@@ -50,7 +51,7 @@ function startOfTodayVN_UTC(vnNow: Date): Date {
   return new Date(`${todayStr}T00:00:00+07:00`);
 }
 
-async function runClassBellReminder(): Promise<void> {
+async function executeClassBellReminder(): Promise<void> {
   try {
     const vnNow = nowVN();
 
@@ -202,6 +203,10 @@ async function runClassBellReminder(): Promise<void> {
   } catch (err) {
     console.error("[ClassBellReminder] Lỗi:", err);
   }
+}
+
+async function runClassBellReminder(): Promise<void> {
+  await withDatabaseMutationPermit(executeClassBellReminder);
 }
 
 export function startClassBellReminderCron(): void {

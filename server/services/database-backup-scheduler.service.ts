@@ -12,6 +12,7 @@ const DEFAULT_TIME_ZONE = "Asia/Bangkok";
 const RETRY_AFTER_LOCK_CONFLICT_MS = 10 * 60 * 1000;
 const BACKUP_COMPLETION_POLL_MS = 5 * 1000;
 const BACKUP_COMPLETION_TIMEOUT_MS = 6 * 60 * 60 * 1000;
+const RETENTION_SWEEP_MS = 60 * 60 * 1000;
 
 type LocalDateTimeParts = {
   year: number;
@@ -22,6 +23,7 @@ type LocalDateTimeParts = {
 };
 
 let scheduledTimer: NodeJS.Timeout | null = null;
+let retentionTimer: NodeJS.Timeout | null = null;
 
 function getTimeZone(): string {
   const configured = process.env.DATABASE_BACKUP_TIMEZONE?.trim();
@@ -291,5 +293,14 @@ export function startDatabaseBackupScheduler(): void {
   console.log(
     `[DatabaseBackup] Scheduler đã khởi động: mỗi ngày lúc ${label} (${timeZone}).`,
   );
+  void pruneOldDatabaseBackups().catch((error) => {
+    console.error("[DatabaseBackup] Retention startup sweep thất bại:", error);
+  });
+  retentionTimer = setInterval(() => {
+    void pruneOldDatabaseBackups().catch((error) => {
+      console.error("[DatabaseBackup] Retention định kỳ thất bại:", error);
+    });
+  }, RETENTION_SWEEP_MS);
+  retentionTimer.unref();
   scheduleNextRun(timeZone, hour, minute);
 }

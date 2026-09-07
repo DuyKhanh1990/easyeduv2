@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Redirect } from "wouter";
 import { format } from "date-fns";
@@ -15,6 +15,8 @@ import {
   LockKeyhole,
   Plus,
   RefreshCw,
+  RotateCcw,
+  ShieldAlert,
   ShieldCheck,
   XCircle,
 } from "lucide-react";
@@ -36,6 +38,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type BackupStatus = "queued" | "running" | "completed" | "failed";
 
@@ -56,6 +68,17 @@ type DatabaseBackup = {
 
 type BackupsResponse = {
   data: DatabaseBackup[];
+};
+
+type DatabaseRestore = {
+  id: string;
+  sourceBackupId: string;
+  safetyBackupId: string | null;
+  status: "queued" | "running" | "completed" | "failed" | string;
+  progressPercent: number;
+  progressMessage: string | null;
+  errorMessage: string | null;
+  completedAt: string | null;
 };
 
 function formatDateTime(value: string | null | undefined): string {
@@ -129,6 +152,12 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function backupTypeLabel(type: string): string {
+  if (type === "scheduled") return "Tự động";
+  if (type === "pre_restore") return "Dự phòng khôi phục";
+  return "Thủ công";
+}
+
 function StatCard({
   label,
   value,
@@ -164,6 +193,8 @@ export default function AdminPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const isSuperAdmin = permissions?.isSuperAdmin === true;
+  const [restoreTarget, setRestoreTarget] = useState<DatabaseBackup | null>(null);
+  const [activeRestoreId, setActiveRestoreId] = useState<string | null>(null);
 
   const backupsQuery = useQuery<BackupsResponse>({
     queryKey: ["/api/admin/database-backups?limit=50"],
@@ -198,6 +229,42 @@ export default function AdminPage() {
     },
   });
 
+  const restoreMutation = useMutation({
+    mutationFn: async (backupId: string) => {
+      const response = await apiRequest(
+        "POST",
+        `/api/admin/database-backups/${backupId}/restore`,
+      );
+      return (await response.json()) as DatabaseRestore;
+    },
+    onSuccess: (restore) => {
+      setActiveRestoreId(restore.id);
+      setRestoreTarget(null);
+      toast({
+        title: "Đã bắt đầu khôi phục",
+        description:
+          "Hệ thống đang tạo backup dự phòng trước khi khôi phục dữ liệu.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Không thể bắt đầu khôi phục",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const restoreQuery = useQuery<DatabaseRestore>({
+    queryKey: [`/api/admin/database-restores/${activeRestoreId}`],
+    enabled: Boolean(activeRestoreId),
+    staleTime: 0,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "completed" || status === "failed" ? false : 3000;
+    },
+  });
+
   const backups = backupsQuery.data?.data ?? [];
   const stats = useMemo(() => ({
     running: backups.filter((backup) => backup.status === "running" || backup.status === "queued").length,
@@ -205,6 +272,11 @@ export default function AdminPage() {
     failed: backups.filter((backup) => backup.status === "failed").length,
     latest: backups[0] ? formatDateTime(backups[0].snapshotAt) : "Chưa có",
   }), [backups]);
+  const activeRestore = restoreQuery.data;
+  const restoreBusy =
+    restoreMutation.isPending ||
+    activeRestore?.status === "queued" ||
+    activeRestore?.status === "running";
 
   const handleCreateBackup = () => {
     if (createBackupMutation.isPending) return;
@@ -245,7 +317,7 @@ export default function AdminPage() {
             </div>
             <Button
               onClick={handleCreateBackup}
-              disabled={createBackupMutation.isPending || stats.running > 0}
+              disabled={createBackupMutation.isPending || stats.running > 0 || restoreBusy}
               className="h-11 shrink-0 gap-2 bg-white text-slate-950 hover:bg-blue-50"
             >
               {createBackupMutation.isPending ? (
@@ -266,6 +338,39 @@ export default function AdminPage() {
             không tạo public URL và không dùng chung với luồng upload tài liệu thông thường.
           </AlertDescription>
         </Alert>
+
+        {activeRestore && (
+          <Alert
+            className={cn(
+              activeRestore.status === "failed"
+                ? "border-red-200 bg-red-50 text-red-950"
+                : activeRestore.status === "completed"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                  : "border-amber-200 bg-amber-50 text-amber-950",
+            )}
+          >
+            {activeRestore.status === "failed" ? (
+              <XCircle className="h-4 w-4" />
+            ) : activeRestore.status === "completed" ? (
+              <CheckCircle2 className="h-4 w-4" />
+            ) : (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            )}
+            <AlertTitle>
+              {activeRestore.status === "failed"
+                ? "Khôi phục thất bại"
+                : activeRestore.status === "completed"
+                  ? "Khôi phục hoàn tất"
+                  : "Đang khôi phục database"}
+            </AlertTitle>
+            <AlertDescription>
+              {activeRestore.errorMessage ||
+                activeRestore.progressMessage ||
+                "Đang xử lý..."}{" "}
+              ({activeRestore.progressPercent ?? 0}%)
+            </AlertDescription>
+          </Alert>
+        )}
 
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
@@ -356,6 +461,7 @@ export default function AdminPage() {
                     <TableHead className="whitespace-nowrap">Dung lượng</TableHead>
                     <TableHead className="whitespace-nowrap">Hoàn tất lúc</TableHead>
                     <TableHead className="whitespace-nowrap pr-5 md:pr-6">Chi tiết</TableHead>
+                     <TableHead className="whitespace-nowrap pr-5 md:pr-6">Thao tác</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -364,6 +470,7 @@ export default function AdminPage() {
                       <TableCell className="pl-5 md:pl-6">
                         <p className="whitespace-nowrap font-semibold text-foreground">{formatDateTime(backup.snapshotAt)}</p>
                         <p className="mt-1 font-mono text-[10px] text-muted-foreground">{backup.id.slice(0, 8)}…</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">{backupTypeLabel(backup.backupType)}</p>
                       </TableCell>
                       <TableCell>
                         <StatusBadge status={backup.status} />
@@ -413,6 +520,23 @@ export default function AdminPage() {
                           </div>
                         )}
                       </TableCell>
+                      <TableCell className="pr-5 md:pr-6">
+                        {backup.status === "completed" &&
+                        backup.storageKey ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5"
+                            disabled={restoreBusy || stats.running > 0}
+                            onClick={() => setRestoreTarget(backup)}
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                            Khôi phục
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -420,6 +544,55 @@ export default function AdminPage() {
             )}
           </CardContent>
         </Card>
+
+        <AlertDialog
+          open={Boolean(restoreTarget)}
+          onOpenChange={(open) => {
+            if (!open && !restoreMutation.isPending) setRestoreTarget(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-full bg-red-100 text-red-700">
+                <ShieldAlert className="h-5 w-5" />
+              </div>
+              <AlertDialogTitle>Khôi phục database từ backup này?</AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-3">
+                  <p>
+                    Database sẽ quay về trạng thái lúc{" "}
+                    <strong>{formatDateTime(restoreTarget?.snapshotAt)}</strong>.
+                    Dữ liệu phát sinh sau thời điểm này sẽ không còn trong database.
+                  </p>
+                  <p>
+                    Trước khi khôi phục, hệ thống bắt buộc tạo một backup dự phòng
+                    của dữ liệu hiện tại và giữ bản đó trong 3 ngày.
+                  </p>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={restoreMutation.isPending}>
+                Hủy
+              </AlertDialogCancel>
+              <AlertDialogAction
+                disabled={restoreMutation.isPending || !restoreTarget}
+                onClick={(event) => {
+                  event.preventDefault();
+                  if (restoreTarget) restoreMutation.mutate(restoreTarget.id);
+                }}
+                className="bg-red-600 text-white hover:bg-red-700"
+              >
+                {restoreMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-4 w-4" />
+                )}
+                Tạo dự phòng và khôi phục
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </DashboardLayout>
   );

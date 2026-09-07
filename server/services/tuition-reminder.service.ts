@@ -2,6 +2,7 @@ import { db } from "../db";
 import { invoicePaymentSchedule, invoices, students, centerConfig } from "@shared/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { notificationService } from "../application/notification/services/NotificationService";
+import { withDatabaseMutationPermit } from "./database-mutation-permit.service";
 
 const notifiedScheduleIds = new Set<string>();
 let lastResetDate = "";
@@ -29,7 +30,7 @@ function formatDeadline(dateStr: string): string {
   return `${d}/${m}`;
 }
 
-async function runTuitionReminder(): Promise<void> {
+async function executeTuitionReminder(): Promise<void> {
   try {
     const today = getTodayStr();
     if (today !== lastResetDate) {
@@ -85,6 +86,10 @@ async function runTuitionReminder(): Promise<void> {
   } catch (err) {
     console.error("[TuitionReminder] Lỗi cron:", err);
   }
+}
+
+async function runTuitionReminder(): Promise<void> {
+  await withDatabaseMutationPermit(executeTuitionReminder);
 }
 
 export function startTuitionReminderCron(): void {

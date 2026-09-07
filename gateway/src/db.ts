@@ -10,6 +10,6 @@ if (!connectionString) {
   process.exit(1);
 }
 
-const pool = new Pool({ connectionString });
+export const pool = new Pool({ connectionString });
 
 export const db = drizzle(pool, { schema });

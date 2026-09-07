@@ -1,5 +1,6 @@
-import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { Readable } from "stream";
+import { pipeline } from "node:stream/promises";
 import crypto from "crypto";
 import https from "https";
 import http from "http";
@@ -272,6 +273,35 @@ export async function deleteBackupFileFromS3(storageKey: string): Promise<void> 
   } catch (err) {
     console.error("[S3 Backup Delete Error]", err);
     throw new Error("Không thể xóa file backup cũ trên S3.");
+  }
+}
+
+/**
+ * Download a private database backup without exposing a signed public URL.
+ */
+export async function downloadBackupFileFromS3ToDisk(
+  storageKey: string,
+  outputPath: string,
+): Promise<void> {
+  const key = storageKey.trim();
+  if (!key.startsWith(`${backupFolder}/`)) {
+    throw new Error("Storage key không thuộc thư mục backup hợp lệ.");
+  }
+
+  try {
+    const response = await s3Client.send(
+      new GetObjectCommand({
+        Bucket: bucket,
+        Key: key,
+      }),
+    );
+    if (!response.Body) {
+      throw new Error("S3 không trả về nội dung file backup.");
+    }
+    await pipeline(response.Body as Readable, fs.createWriteStream(outputPath));
+  } catch (err) {
+    console.error("[S3 Backup Download Error]", err);
+    throw new Error("Không thể tải file backup từ S3.");
   }
 }
 

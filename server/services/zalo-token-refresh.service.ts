@@ -2,6 +2,7 @@ import { db } from "../db";
 import { zaloOaConfigs } from "@shared/schema";
 import { eq, and, isNotNull, isNull } from "drizzle-orm";
 import { encrypt, decrypt } from "../lib/encryption";
+import { withDatabaseMutationPermit } from "./database-mutation-permit.service";
 
 const REFRESH_THRESHOLD_MS = 30 * 60 * 1000; // refresh khi còn < 30 phút
 
@@ -104,7 +105,7 @@ async function refreshOneToken(config: typeof zaloOaConfigs.$inferSelect): Promi
   }).where(eq(zaloOaConfigs.id, config.id));
 }
 
-export async function runZaloTokenRefresh(): Promise<void> {
+async function executeZaloTokenRefresh(): Promise<void> {
   try {
     const all = await db.select().from(zaloOaConfigs).where(
       and(
@@ -125,6 +126,10 @@ export async function runZaloTokenRefresh(): Promise<void> {
   }
 }
 
+export async function runZaloTokenRefresh(): Promise<void> {
+  await withDatabaseMutationPermit(executeZaloTokenRefresh);
+}
+
 export function startZaloTokenRefreshCron(): void {
   runZaloTokenRefresh();
   setInterval(runZaloTokenRefresh, 60 * 60 * 1000); // mỗi 1 giờ
@@ -132,7 +137,7 @@ export function startZaloTokenRefreshCron(): void {
 }
 
 // Khi khởi động: tự động điền oaId cho các config đang thiếu
-export async function healNullOaIds(): Promise<void> {
+async function executeHealNullOaIds(): Promise<void> {
   try {
     const nullConfigs = await db.select().from(zaloOaConfigs).where(isNull(zaloOaConfigs.oaId));
     if (nullConfigs.length === 0) return;
@@ -160,4 +165,8 @@ export async function healNullOaIds(): Promise<void> {
   } catch (e) {
     console.error("[ZaloOA Heal] Lỗi khi heal null oaIds:", e);
   }
+}
+
+export async function healNullOaIds(): Promise<void> {
+  await withDatabaseMutationPermit(executeHealNullOaIds);
 }
