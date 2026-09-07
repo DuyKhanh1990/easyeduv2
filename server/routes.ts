@@ -85,6 +85,7 @@ import { registerSalarySheetRoutes } from "./routes/salary-sheets.routes";
 import { registerCustomerGuideRoutes } from "./routes/customer-guide.routes";
 import { registerCommissionRoutes } from "./routes/commission.routes";
 import { registerReconciliationRoutes } from "./routes/reconciliation.routes";
+import { registerDatabaseBackupRoutes } from "./routes/database-backup.routes";
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
@@ -353,6 +354,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerTaskLevelRoutes(app);
   registerTaskRoutes(app);
   registerNotificationRoutes(app);
+  registerDatabaseBackupRoutes(app);
   registerMobileRoutes(app);
   registerMobileTaskRoutes(app);
   registerMobileNewsFeedRoutes(app);
