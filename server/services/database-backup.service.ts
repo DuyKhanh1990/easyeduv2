@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 import { db, pool } from "../db";
 import { databaseBackups, type DatabaseBackup } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { uploadBackupFileToS3FromDisk } from "../lib/s3";
 
 const BACKUP_LOCK_KEY = "easyedu:database-backup";
 const DEFAULT_BACKUP_DIR = path.join(os.tmpdir(), "easyedu-database-backups");
@@ -36,6 +37,16 @@ function getDatabaseUrl(): string {
 
 function getBackupDirectory(): string {
   return path.resolve(process.env.BACKUP_DIR?.trim() || DEFAULT_BACKUP_DIR);
+}
+
+function getCenterId(): string {
+  const value = (process.env.CENTER_ID || "").trim();
+  if (!value) {
+    throw new BackupConfigurationError(
+      "Chưa cấu hình CENTER_ID cho deployment hiện tại.",
+    );
+  }
+  return value;
 }
 
 /**
@@ -143,14 +154,27 @@ async function runPgDump(params: {
       throw new Error("pg_dump không tạo được file backup hợp lệ.");
     }
 
+    await updateBackup(backup.id, {
+      progressPercent: 50,
+      progressMessage: "Đang tải file backup riêng tư lên S3.",
+    });
+    const storageKey = await uploadBackupFileToS3FromDisk(
+      outputPath,
+      fileStats.size,
+      getCenterId(),
+      backup.id,
+    );
+
     dumpSucceeded = true;
     await updateBackup(backup.id, {
       status: "completed",
       progressPercent: 100,
-      progressMessage: "Backup hoàn tất; file đang chờ đưa lên storage.",
+      progressMessage: "Backup hoàn tất và đã lưu trên storage.",
+      storageKey,
       fileSizeBytes: String(fileStats.size),
       completedAt: new Date(),
     });
+    await fs.rm(outputPath, { force: true });
   } catch (error) {
     try {
       await fs.rm(outputPath, { force: true });

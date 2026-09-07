@@ -11,6 +11,8 @@ const bucket = process.env.S3_BUCKET!;
 const folder = process.env.S3_FOLDER_PORTAL || "uploads";
 const aliasHost = process.env.S3_HOSTNAME || process.env.S3_ALIAS_HOST!;
 const protocol = process.env.S3_PROTOCOL || "https";
+const backupFolder = (process.env.S3_BACKUP_FOLDER || `${folder}/backups`)
+  .replace(/^\/+|\/+$/g, "");
 
 const accessKeyId = (process.env.AWS_ACCESS_KEY_ID ?? "").trim();
 const secretAccessKey = (process.env.AWS_SECRET_ACCESS_KEY ?? "").trim();
@@ -197,6 +199,49 @@ export async function uploadFileToS3FromDisk(
 }
 
 /**
+ * Upload a database backup as a private S3 object.
+ * Unlike normal portal uploads, this intentionally returns only the object key
+ * and never exposes a public URL.
+ */
+export async function uploadBackupFileToS3FromDisk(
+  filePath: string,
+  fileSize: number,
+  centerId: string,
+  backupId: string,
+): Promise<string> {
+  const requiredConfig = [
+    ["S3_ENDPOINT", endpoint],
+    ["S3_REGION", region],
+    ["S3_BUCKET", bucket],
+    ["AWS_ACCESS_KEY_ID", accessKeyId],
+    ["AWS_SECRET_ACCESS_KEY", secretAccessKey],
+  ] as const;
+  const missing = requiredConfig.filter(([, value]) => !value).map(([name]) => name);
+  if (missing.length > 0) {
+    throw new Error(`Thiếu cấu hình S3 backup: ${missing.join(", ")}`);
+  }
+
+  const safeCenterId = centerId.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const safeBackupId = backupId.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const key = `${backupFolder}/${safeCenterId}/${safeBackupId}.dump`;
+
+  try {
+    await putObjectRawStream(
+      key,
+      filePath,
+      fileSize,
+      "application/octet-stream",
+      "private",
+    );
+  } catch (err) {
+    console.error("[S3 Backup Upload Error]", err);
+    throw new Error("Không thể lưu file backup lên S3.");
+  }
+
+  return key;
+}
+
+/**
  * Tính SHA256 của file bằng cách đọc stream (không buffer vào RAM).
  */
 function computeFileSha256(filePath: string): Promise<string> {
@@ -216,7 +261,8 @@ async function putObjectRawStream(
   key: string,
   filePath: string,
   fileSize: number,
-  contentType: string
+  contentType: string,
+  acl: "public-read" | "private" = "public-read",
 ): Promise<void> {
   const payloadHash = await computeFileSha256(filePath);
 
@@ -233,7 +279,7 @@ async function putObjectRawStream(
     "host": host,
     "x-amz-date": amzDate,
     "x-amz-content-sha256": payloadHash,
-    "x-amz-acl": "public-read",
+    "x-amz-acl": acl,
     "content-type": contentType,
     "content-length": String(fileSize),
   };
