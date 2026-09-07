@@ -1,6 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "../db";
 import { databaseBackups } from "@shared/schema";
+import { pruneOldDatabaseBackups } from "./database-backup-retention.service";
 import {
   BackupAlreadyRunningError,
   startDatabaseBackup,
@@ -9,6 +10,8 @@ import {
 const DEFAULT_SCHEDULE_TIME = "00:30";
 const DEFAULT_TIME_ZONE = "Asia/Bangkok";
 const RETRY_AFTER_LOCK_CONFLICT_MS = 10 * 60 * 1000;
+const BACKUP_COMPLETION_POLL_MS = 5 * 1000;
+const BACKUP_COMPLETION_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 
 type LocalDateTimeParts = {
   year: number;
@@ -218,6 +221,7 @@ async function runScheduledBackup(params: {
     console.log(
       `[DatabaseBackup] Đã khởi chạy backup tự động ${backup.id} cho ngày ${todayKey}.`,
     );
+    void waitForBackupAndPrune(backup.id);
     scheduleNextRun(timeZone, hour, minute);
   } catch (error) {
     if (error instanceof BackupAlreadyRunningError) {
@@ -228,6 +232,54 @@ async function runScheduledBackup(params: {
     console.error("[DatabaseBackup] Backup tự động thất bại khi khởi chạy:", error);
     scheduleNextRun(timeZone, hour, minute);
   }
+}
+
+async function waitForBackupAndPrune(backupId: string): Promise<void> {
+  const deadline = Date.now() + BACKUP_COMPLETION_TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    try {
+      const [backup] = await db
+        .select({
+          status: databaseBackups.status,
+          progressMessage: databaseBackups.progressMessage,
+        })
+        .from(databaseBackups)
+        .where(eq(databaseBackups.id, backupId))
+        .limit(1);
+
+      if (!backup) {
+        console.warn(
+          `[DatabaseBackup] Không tìm thấy metadata cho backup tự động ${backupId}; bỏ qua retention.`,
+        );
+        return;
+      }
+
+      if (backup.status === "failed") {
+        console.warn(
+          `[DatabaseBackup] Backup tự động ${backupId} thất bại; không chạy retention.`,
+        );
+        return;
+      }
+
+      if (backup.status === "completed") {
+        await pruneOldDatabaseBackups();
+        return;
+      }
+    } catch (error) {
+      console.error(
+        `[DatabaseBackup] Lỗi theo dõi backup tự động ${backupId}:`,
+        error,
+      );
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, BACKUP_COMPLETION_POLL_MS));
+  }
+
+  console.warn(
+    `[DatabaseBackup] Backup tự động ${backupId} chạy quá thời gian chờ; retention sẽ chạy ở lần tự động kế tiếp.`,
+  );
 }
 
 export function startDatabaseBackupScheduler(): void {

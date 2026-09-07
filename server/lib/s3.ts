@@ -1,4 +1,4 @@
-import { S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { Readable } from "stream";
 import crypto from "crypto";
 import https from "https";
@@ -248,6 +248,31 @@ export async function uploadBackupFileToS3FromDisk(
   }
 
   return key;
+}
+
+/**
+ * Delete one database backup object. Restrict deletion to the backup prefix so
+ * retention cleanup cannot accidentally remove a normal portal upload.
+ */
+export async function deleteBackupFileFromS3(storageKey: string): Promise<void> {
+  const key = storageKey.trim();
+  if (!key) return;
+
+  if (!key.startsWith(`${backupFolder}/`)) {
+    throw new Error("Storage key không thuộc thư mục backup hợp lệ.");
+  }
+
+  try {
+    await s3Client.send(
+      new DeleteObjectCommand({
+        Bucket: bucket,
+        Key: key,
+      }),
+    );
+  } catch (err) {
+    console.error("[S3 Backup Delete Error]", err);
+    throw new Error("Không thể xóa file backup cũ trên S3.");
+  }
 }
 
 /**
