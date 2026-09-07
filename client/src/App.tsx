@@ -61,6 +61,7 @@ const ChatPage = lazy(() => import("@/pages/chat/ChatPage").then(m => ({ default
 const ZaloPage = lazy(() => import("@/pages/chat/ZaloOAChatPage").then(m => ({ default: m.ZaloOAChatPage })));
 const FacebookPage = lazy(() => import("@/pages/chat/FacebookChatPage").then(m => ({ default: m.FacebookChatPage })));
 const RegistrationFormPage = lazy(() => import("@/pages/registration/RegistrationFormPage").then(m => ({ default: m.RegistrationFormPage })));
+const AdminPage = lazy(() => import("@/pages/admin/AdminPage"));
 
 const PageLoader = () => (
   <div className="flex h-screen w-full items-center justify-center bg-background">
@@ -127,6 +128,7 @@ function Router() {
         <Route path="/don-tu" component={DonTuPage} />
         <Route path="/commission" component={Commission} />
         <Route path="/settings" component={Settings} />
+        <Route path="/admin" component={AdminPage} />
         <Route component={NotFound} />
       </Switch>
     </Suspense>
