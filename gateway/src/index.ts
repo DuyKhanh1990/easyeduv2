@@ -28,8 +28,10 @@ import {
   listRegistry,
 } from "./services/registry.service.js";
 import { acquireDatabaseMutationPermit } from "./mutation-permit.js";
+import { requireBidvProductionIp } from "./middleware/bidv-ip-allowlist.js";
 
 const app = express();
+app.set("trust proxy", 1);
 const PORT = parseInt(process.env.GATEWAY_PORT || process.env.PORT || "3001", 10);
 const ADMIN_SECRET = process.env.GATEWAY_ADMIN_SECRET || process.env.ZALO_GATEWAY_SHARED_SECRET || "";
 const INTERNAL_SECRET = process.env.GATEWAY_INTERNAL_SECRET || process.env.ZALO_GATEWAY_SHARED_SECRET || "";
@@ -239,7 +241,7 @@ app.delete("/admin/centers/:centerId", requireAdminSecret, async (req, res) => {
 // ─── BIDV Routes — đặt TRƯỚC /api catch-all để không bị intercept bởi JWT middleware ──
 // POST /api/bidv/getbill  → tra registry → proxy sang backend trung tâm
 // POST /api/bidv/paybill  → tra registry → proxy sang backend trung tâm
-app.use("/api/bidv", bidvRouter);
+app.use("/api/bidv", requireBidvProductionIp, bidvRouter);
 
 // ─── BIDV Admin Routes ────────────────────────────────────────────────────────
 

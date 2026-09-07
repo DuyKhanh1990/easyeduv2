@@ -24,12 +24,13 @@ import {
   handleGetBill,
   handlePayBill,
 } from "../services/bidv/bidv-request-handler.service";
+import { requireBidvProductionIp } from "../middleware/bidv-ip-allowlist";
 
 export function registerBidvGatewayRoutes(app: Express) {
 
   // ─── Webhook: POST /api/bidv/getbill ─────────────────────────────────────
   // Public — BIDV gọi vào, bypass auth đã khai báo trong routes.ts
-  app.post("/api/bidv/getbill", async (req, res) => {
+  app.post("/api/bidv/getbill", requireBidvProductionIp, async (req, res) => {
     const requestId = `gbw-${Date.now()}`;
     const start = Date.now();
     try {
@@ -83,7 +84,7 @@ export function registerBidvGatewayRoutes(app: Express) {
 
   // ─── Webhook: POST /api/bidv/paybill ─────────────────────────────────────
   // Public — BIDV gọi vào, bypass auth đã khai báo trong routes.ts
-  app.post("/api/bidv/paybill", async (req, res) => {
+  app.post("/api/bidv/paybill", requireBidvProductionIp, async (req, res) => {
     const requestId = `pbw-${Date.now()}`;
     const start = Date.now();
     try {
