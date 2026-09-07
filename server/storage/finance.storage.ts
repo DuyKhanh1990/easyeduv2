@@ -1766,13 +1766,23 @@ export async function splitInvoiceSchedule(scheduleId: string, splitAmount: numb
   });
 }
 
-export async function updateInvoiceSchedule(scheduleId: string, data: { amount?: number; dueDate?: string | null; updatedBy?: string | null }): Promise<any> {
+export async function updateInvoiceSchedule(scheduleId: string, data: {
+  amount?: number;
+  dueDate?: string | null;
+  createdAt?: Date;
+  paidAt?: Date | null;
+  updatedBy?: string | null;
+}): Promise<any> {
   const [schedule] = await db.select().from(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.id, scheduleId));
   if (!schedule) throw new Error("Không tìm thấy đợt thanh toán");
-  if (schedule.status === "paid") throw new Error("Không thể sửa đợt đã thanh toán");
+  if (schedule.status === "paid" && (data.amount !== undefined || data.dueDate !== undefined)) {
+    throw new Error("Không thể sửa số tiền hoặc hạn thanh toán của đợt đã thanh toán");
+  }
   const updateData: any = {};
   if (data.amount !== undefined) updateData.amount = data.amount.toFixed(2);
   if (data.dueDate !== undefined) updateData.dueDate = data.dueDate;
+  if (data.createdAt !== undefined) updateData.createdAt = data.createdAt;
+  if (data.paidAt !== undefined) updateData.paidAt = data.paidAt;
   updateData.updatedAt = new Date();
   if (data.updatedBy !== undefined) updateData.updatedBy = data.updatedBy;
   const [updated] = await db

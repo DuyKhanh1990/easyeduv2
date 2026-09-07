@@ -179,6 +179,8 @@ const updateInvoiceBodySchema = insertInvoiceSchema.partial().extend({
 const updateScheduleBodySchema = z.object({
   amount: z.union([z.number(), z.string().transform(v => Number(v))]).optional(),
   dueDate: z.string().nullable().optional(),
+  createdAt: z.coerce.date().optional(),
+  paidAt: z.coerce.date().nullable().optional(),
 });
 
 const splitScheduleBodySchema = z.object({
@@ -1391,16 +1393,71 @@ export function registerFinanceRoutes(app: Express): void {
 
   app.patch("/api/finance/invoice-schedules/:id", async (req, res) => {
     try {
+      const invPerms = await getInvoicePermissions(req);
+      if (!invPerms.canEdit) {
+        return res.status(403).json({ message: "Bạn không có quyền sửa hoá đơn." });
+      }
       const parsed = updateScheduleBodySchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ message: "Dữ liệu không hợp lệ", errors: parsed.error.errors });
       }
-      const { amount, dueDate } = parsed.data;
+      const [before] = await db
+        .select()
+        .from(invoicePaymentSchedule)
+        .where(eq(invoicePaymentSchedule.id, req.params.id))
+        .limit(1);
+      if (!before) {
+        return res.status(404).json({ message: "Không tìm thấy đợt thanh toán" });
+      }
+
+      const dateOnly = (value: unknown): string | null => {
+        if (!value) return null;
+        const date = value instanceof Date ? value : new Date(value as string);
+        return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+      };
+      const effectiveCreatedAt = dateOnly(parsed.data.createdAt ?? before.createdAt);
+      const effectivePaidAt = dateOnly(
+        parsed.data.paidAt !== undefined ? parsed.data.paidAt : before.paidAt,
+      );
+      if (effectiveCreatedAt && effectivePaidAt && effectivePaidAt < effectiveCreatedAt) {
+        return res.status(400).json({ message: "Ngày thanh toán không được trước ngày tạo." });
+      }
+
+      const { amount, dueDate, createdAt, paidAt } = parsed.data;
       const data: Record<string, unknown> = {};
       if (amount !== undefined) data.amount = Number(amount);
       if (dueDate !== undefined) data.dueDate = dueDate;
-      data.updatedBy = (req as any).user?.id ?? null;
+      if (createdAt !== undefined) data.createdAt = createdAt;
+      if (paidAt !== undefined) data.paidAt = paidAt;
+      const userId = (req as any).user?.id ?? null;
+      data.updatedBy = userId;
       const updated = await storage.updateInvoiceSchedule(req.params.id, data as any);
+
+      if (createdAt !== undefined || paidAt !== undefined) {
+        const parent = await storage.getInvoice(before.invoiceId);
+        const oldContent: Record<string, unknown> = { scheduleLabel: before.label };
+        const newContent: Record<string, unknown> = { scheduleLabel: before.label };
+        if (createdAt !== undefined) {
+          oldContent.createdAt = before.createdAt;
+          newContent.createdAt = updated.createdAt;
+        }
+        if (paidAt !== undefined) {
+          oldContent.paidAt = before.paidAt;
+          newContent.paidAt = updated.paidAt;
+        }
+        createInvoiceAuditLog({
+          invoiceId: before.invoiceId,
+          invoiceCode: parent?.code ?? null,
+          invoiceType: parent?.type ?? null,
+          subjectName: parent?.subjectName ?? null,
+          grandTotal: parent?.grandTotal ?? null,
+          action: "Sửa đợt thanh toán",
+          userId,
+          locationId: parent?.locationId ?? null,
+          oldContent,
+          newContent,
+        }).catch(() => {});
+      }
       res.json(updated);
     } catch (err: any) {
       res.status(400).json({ message: err.message });

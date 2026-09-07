@@ -365,7 +365,13 @@ export interface IStorage {
   getInvoice(id: string): Promise<any | undefined>;
   getInvoicePaymentSchedules(invoiceId: string): Promise<any[]>;
   splitInvoiceSchedule(scheduleId: string, splitAmount: number, userId?: string | null): Promise<{ updated: any; affected: any }>;
-  updateInvoiceSchedule(scheduleId: string, data: { amount?: number; dueDate?: string | null; updatedBy?: string | null }): Promise<any>;
+  updateInvoiceSchedule(scheduleId: string, data: {
+    amount?: number;
+    dueDate?: string | null;
+    createdAt?: Date;
+    paidAt?: Date | null;
+    updatedBy?: string | null;
+  }): Promise<any>;
   updateInvoiceScheduleStatus(scheduleId: string, status: string, userId?: string | null): Promise<any>;
   updateInvoiceStatus(invoiceId: string, status: string, userId?: string): Promise<any>;
   createInvoice(data: any): Promise<any>;
@@ -1191,7 +1197,13 @@ export class DatabaseStorage implements IStorage {
     return financeStorage.splitInvoiceSchedule(scheduleId, splitAmount, userId);
   }
 
-  async updateInvoiceSchedule(scheduleId: string, data: { amount?: number; dueDate?: string | null; updatedBy?: string | null }): Promise<any> {
+  async updateInvoiceSchedule(scheduleId: string, data: {
+    amount?: number;
+    dueDate?: string | null;
+    createdAt?: Date;
+    paidAt?: Date | null;
+    updatedBy?: string | null;
+  }): Promise<any> {
     return financeStorage.updateInvoiceSchedule(scheduleId, data);
   }
 

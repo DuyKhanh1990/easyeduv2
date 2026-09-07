@@ -126,6 +126,7 @@ const FIELD_LABELS: Record<string, string> = {
   dueDate:         "Hạn thanh toán",
   createdAt:       "Ngày tạo",
   paidAt:          "Ngày thanh toán",
+  scheduleLabel:   "Đợt thanh toán",
   note:            "Ghi chú",
   description:     "Mô tả",
   locationId:      "Cơ sở (ID)",

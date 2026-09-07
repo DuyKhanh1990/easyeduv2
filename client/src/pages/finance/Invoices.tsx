@@ -315,13 +315,25 @@ function EditableInvoiceDateCell({
   }, [value, open]);
 
   const mutation = useMutation({
-    mutationFn: () => apiRequest("PATCH", `/api/finance/invoices/${invoice.id}`, {
+    mutationFn: () => apiRequest(
+      "PATCH",
+      invoice.isScheduleRow && invoice.scheduleId
+        ? `/api/finance/invoice-schedules/${invoice.scheduleId}`
+        : `/api/finance/invoices/${invoice.id}`,
+      {
       [field]: draft || null,
-    }),
+      },
+    ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
       setOpen(false);
-      toast({ title: "Đã cập nhật ngày", description: field === "createdAt" ? "Ngày tạo hoá đơn đã được thay đổi." : "Ngày thanh toán đã được thay đổi." });
+      const target = invoice.isScheduleRow ? "đợt thanh toán" : "hoá đơn";
+      toast({
+        title: "Đã cập nhật ngày",
+        description: field === "createdAt"
+          ? `Ngày tạo ${target} đã được thay đổi.`
+          : `Ngày thanh toán ${target} đã được thay đổi.`,
+      });
     },
     onError: (error: any) => {
       toast({ title: "Không thể cập nhật ngày", description: error?.message ?? "Vui lòng thử lại.", variant: "destructive" });
@@ -647,15 +659,11 @@ function renderInvoiceCell(
     case "creator":
       return <td key="creator" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{inv.creatorName || "—"}</td>;
     case "createdAt":
-      return inv.isScheduleRow
-        ? <td key="createdAt" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{fmtDate(inv.createdAt)}</td>
-        : <EditableInvoiceDateCell invoice={inv} field="createdAt" canEdit={canEdit} isSelected={isSelected} isOdd={isOdd} />;
+      return <EditableInvoiceDateCell invoice={inv} field="createdAt" canEdit={canEdit} isSelected={isSelected} isOdd={isOdd} />;
     case "paidBy":
       return <td key="paidBy" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{inv.paidByName || "—"}</td>;
     case "paidAt":
-      return inv.isScheduleRow
-        ? <td key="paidAt" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{fmtDate(inv.paidAt)}</td>
-        : <EditableInvoiceDateCell invoice={inv} field="paidAt" canEdit={canEdit} isSelected={isSelected} isOdd={isOdd} />;
+      return <EditableInvoiceDateCell invoice={inv} field="paidAt" canEdit={canEdit} isSelected={isSelected} isOdd={isOdd} />;
     case "updater":
       return <td key="updater" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{inv.updaterName || "—"}</td>;
     case "updatedAt":
