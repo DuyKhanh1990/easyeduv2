@@ -3260,3 +3260,37 @@ export const invoiceCodeSequences = pgTable("invoice_code_sequences", {
   key:          text("key").primaryKey(),
   currentValue: integer("current_value").notNull().default(0),
 });
+
+// ─── Database Backups ────────────────────────────────────────────────────────
+// Metadata for backups of the current deployment's database.
+// The backup artifact itself is stored outside PostgreSQL.
+export const databaseBackups = pgTable("database_backups", {
+  id:              uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  backupType:      varchar("backup_type", { length: 20 }).notNull().default("manual"),
+  snapshotAt:      timestamp("snapshot_at").notNull(),
+  status:          varchar("status", { length: 20 }).notNull().default("queued"),
+  progressPercent: integer("progress_percent").notNull().default(0),
+  progressMessage: text("progress_message"),
+  storageKey:      text("storage_key"),
+  fileSizeBytes:   numeric("file_size_bytes", { precision: 20, scale: 0 }),
+  checksum:        varchar("checksum", { length: 128 }),
+  requestedBy:     uuid("requested_by").references(() => users.id, { onDelete: "set null" }),
+  requestedAt:     timestamp("requested_at").defaultNow().notNull(),
+  startedAt:       timestamp("started_at"),
+  completedAt:     timestamp("completed_at"),
+  errorMessage:    text("error_message"),
+  createdAt:       timestamp("created_at").defaultNow().notNull(),
+  updatedAt:       timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  snapshotAtIdx: index("database_backups_snapshot_at_idx").on(table.snapshotAt),
+  statusIdx: index("database_backups_status_idx").on(table.status),
+}));
+
+export const insertDatabaseBackupSchema = createInsertSchema(databaseBackups).omit({
+  id: true,
+  requestedAt: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type DatabaseBackup = typeof databaseBackups.$inferSelect;
+export type InsertDatabaseBackup = z.infer<typeof insertDatabaseBackupSchema>;
