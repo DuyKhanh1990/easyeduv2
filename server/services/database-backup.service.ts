@@ -25,6 +25,8 @@ export class BackupConfigurationError extends Error {
   }
 }
 
+export type DatabaseBackupType = "manual" | "scheduled";
+
 function getDatabaseUrl(): string {
   const value = (process.env.APP_DATABASE_URL || process.env.DATABASE_URL || "").trim();
   if (!value) {
@@ -219,7 +221,10 @@ async function runPgDump(params: {
  * The exported PostgreSQL snapshot is held open until pg_dump finishes, so the
  * dump represents one consistent, read-only point in time.
  */
-export async function startDatabaseBackup(requestedBy?: string | null): Promise<DatabaseBackup> {
+export async function startDatabaseBackup(
+  requestedBy?: string | null,
+  backupType: DatabaseBackupType = "manual",
+): Promise<DatabaseBackup> {
   const databaseUrl = getDatabaseUrl();
   const lockClient = await pool.connect();
 
@@ -251,7 +256,7 @@ export async function startDatabaseBackup(requestedBy?: string | null): Promise<
       const [backup] = await db
         .insert(databaseBackups)
         .values({
-          backupType: "manual",
+          backupType,
           snapshotAt: new Date(snapshot.snapshot_at),
           status: "running",
           progressPercent: 0,

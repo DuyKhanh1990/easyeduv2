@@ -86,6 +86,7 @@ import { registerCustomerGuideRoutes } from "./routes/customer-guide.routes";
 import { registerCommissionRoutes } from "./routes/commission.routes";
 import { registerReconciliationRoutes } from "./routes/reconciliation.routes";
 import { registerDatabaseBackupRoutes } from "./routes/database-backup.routes";
+import { startDatabaseBackupScheduler } from "./services/database-backup-scheduler.service";
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
@@ -407,6 +408,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   startClassBellReminderCron();
   startTuitionReminderCron();
   startDebtReminderCron();
+  startDatabaseBackupScheduler();
   healNullOaIds();
   // ONE-TIME: xóa conversation rác do bug auto-heal cũ (followerId = OA ID)
   const GHOST_CONV_ID = "fad9de58-a26a-4987-8a34-59168f81871e";
