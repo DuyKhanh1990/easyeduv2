@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useLocation, useParams } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
-import { useInvoices, useInvoiceSummary } from "@/hooks/use-invoices";
+import { getPreviousInvoicePeriodParams, useInvoices, useInvoiceSummary } from "@/hooks/use-invoices";
 import { useInvoiceFilters, hasActiveFilters, DEFAULT_FILTERS } from "@/hooks/use-invoice-filters";
 import { useInvoiceColumns, ALL_COLUMNS } from "@/hooks/use-invoice-columns";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -26,7 +26,7 @@ import {
 import {
   Search, SlidersHorizontal, CalendarIcon, Plus, ChevronUp, ChevronDown,
   Pencil, Trash2, Eye, CreditCard, Settings2, GripVertical, AlertCircle, QrCode, CheckCircle,
-  FileSignature, FileText, Download, Upload, FileSpreadsheet, Keyboard, Percent, BookOpen, Merge, TrendingUp, TrendingDown, Check, X,
+  FileSignature, FileText, Download, Upload, FileSpreadsheet, Keyboard, Percent, BookOpen, Merge, TrendingUp, TrendingDown, ArrowUp, ArrowDown, Check, X,
 } from "lucide-react";
 import {
   DropdownMenu as ActionMenu,
@@ -67,6 +67,30 @@ import type { SortKey } from "@/hooks/use-invoice-filters";
 
 type TabKey = "all" | "unpaid" | "paid" | "debt" | "history" | "print-template";
 type DebtCondition = "all" | "overdue" | "today" | "soon" | "upcoming" | "no-due-date";
+
+type SummaryComparison = {
+  direction: "up" | "down" | "flat";
+  percent: number | null;
+};
+
+function compareSummaryValue(current: number, previous: number | undefined): SummaryComparison | null {
+  if (previous === undefined) return null;
+  if (current === previous) return { direction: "flat", percent: 0 };
+  if (previous === 0) {
+    return { direction: current > 0 ? "up" : "down", percent: null };
+  }
+  const percent = ((current - previous) / Math.abs(previous)) * 100;
+  return {
+    direction: percent > 0 ? "up" : "down",
+    percent: Math.abs(percent),
+  };
+}
+
+function formatComparisonPercent(percent: number | null): string {
+  if (percent === null) return "Mới phát sinh";
+  const rounded = Math.round(percent * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}%`;
+}
 
 const TABS: { key: TabKey; label: string; statusFilter?: string; color: string }[] = [
   { key: "all",              label: "Tất cả",            color: "#64748b" },
@@ -1508,6 +1532,11 @@ export default function Invoices() {
 
   const { invoices, total, tabCounts, isLoading, deleteMutation: deleteInvoiceMutation, updateStatusMutation } = useInvoices(queryParams);
   const { summary: invoiceSummary, isLoading: isSummaryLoading } = useInvoiceSummary(queryParams);
+  const previousQueryParams = getPreviousInvoicePeriodParams(queryParams);
+  const { summary: previousSummary, isLoading: isPreviousSummaryLoading } = useInvoiceSummary(
+    previousQueryParams ?? {},
+    { enabled: !!previousQueryParams, staleTime: 30_000 },
+  );
   const displayInvoices = flattenInvoiceRows(invoices).filter((invoice) => {
     if (activeTab === "unpaid") {
       if (invoice.status === "paid") return false;
@@ -1626,11 +1655,19 @@ export default function Invoices() {
   const hasPaidAtFilter = !!(paidAtRange.from || paidAtRange.to);
   const hasAnyToolbarFilter = hasActiveFilters(filters) || hasPaidAtFilter;
   const summaryCards = [
-    { label: "Dự thu", value: invoiceSummary?.expectedIncome ?? 0, icon: TrendingUp, color: "text-blue-600", bg: "bg-blue-50", testId: "summary-expected-income" },
-    { label: "Thực thu", value: invoiceSummary?.actualIncome ?? 0, icon: CheckCircle, color: "text-emerald-600", bg: "bg-emerald-50", testId: "summary-actual-income" },
-    { label: "Dự chi", value: invoiceSummary?.expectedExpense ?? 0, icon: TrendingDown, color: "text-orange-600", bg: "bg-orange-50", testId: "summary-expected-expense" },
-    { label: "Thực chi", value: invoiceSummary?.actualExpense ?? 0, icon: CreditCard, color: "text-red-600", bg: "bg-red-50", testId: "summary-actual-expense" },
-    { label: "Lợi nhuận", value: (invoiceSummary?.actualIncome ?? 0) - (invoiceSummary?.actualExpense ?? 0), icon: TrendingUp, color: "text-violet-600", bg: "bg-violet-50", testId: "summary-profit" },
+    { label: "Dự thu", value: invoiceSummary?.expectedIncome ?? 0, previousValue: previousSummary?.expectedIncome, icon: TrendingUp, color: "text-blue-600", bg: "bg-blue-50", testId: "summary-expected-income" },
+    { label: "Thực thu", value: invoiceSummary?.actualIncome ?? 0, previousValue: previousSummary?.actualIncome, icon: CheckCircle, color: "text-emerald-600", bg: "bg-emerald-50", testId: "summary-actual-income" },
+    { label: "Dự chi", value: invoiceSummary?.expectedExpense ?? 0, previousValue: previousSummary?.expectedExpense, icon: TrendingDown, color: "text-orange-600", bg: "bg-orange-50", testId: "summary-expected-expense" },
+    { label: "Thực chi", value: invoiceSummary?.actualExpense ?? 0, previousValue: previousSummary?.actualExpense, icon: CreditCard, color: "text-red-600", bg: "bg-red-50", testId: "summary-actual-expense" },
+    {
+      label: "Lợi nhuận",
+      value: (invoiceSummary?.actualIncome ?? 0) - (invoiceSummary?.actualExpense ?? 0),
+      previousValue: (previousSummary?.actualIncome ?? 0) - (previousSummary?.actualExpense ?? 0),
+      icon: TrendingUp,
+      color: "text-violet-600",
+      bg: "bg-violet-50",
+      testId: "summary-profit",
+    },
   ];
 
   return (
@@ -1710,7 +1747,21 @@ export default function Invoices() {
 
           {/* Financial summary cards — independent from the selected status tab */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 pt-1" data-testid="invoice-summary-cards">
-            {summaryCards.map(({ label, value, icon: Icon, color, bg, testId }) => (
+            {summaryCards.map(({ label, value, previousValue, icon: Icon, color, bg, testId }) => {
+              const comparison = compareSummaryValue(value, previousValue);
+              const isComparisonLoading = isSummaryLoading || isPreviousSummaryLoading;
+              const comparisonColor = comparison?.direction === "up"
+                ? "text-emerald-600"
+                : comparison?.direction === "down"
+                  ? "text-rose-600"
+                  : "text-slate-400";
+              const ComparisonIcon = comparison?.direction === "up"
+                ? ArrowUp
+                : comparison?.direction === "down"
+                  ? ArrowDown
+                  : null;
+
+              return (
               <div key={label} className="rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 shadow-sm" data-testid={testId}>
                 <div className="flex items-center gap-2">
                   <div className={`flex h-6 w-6 items-center justify-center rounded-md ${bg}`}>
@@ -1721,8 +1772,25 @@ export default function Invoices() {
                 <div className={`mt-1.5 text-base font-bold ${color}`}>
                   {isSummaryLoading ? <span className="inline-block h-4 w-20 animate-pulse rounded bg-slate-100" /> : fmtMoney(value)}
                 </div>
+                <div
+                  className={`mt-1 flex min-h-4 items-center gap-1 text-[10px] font-medium ${comparisonColor}`}
+                  title="So với cùng khoảng thời gian của tháng trước"
+                >
+                  {isComparisonLoading ? (
+                    <span className="inline-block h-3 w-24 animate-pulse rounded bg-slate-100" />
+                  ) : previousQueryParams && comparison ? (
+                    <>
+                      {ComparisonIcon && <ComparisonIcon className="h-3 w-3" strokeWidth={2.5} />}
+                      <span>{formatComparisonPercent(comparison.percent)}</span>
+                      <span className="font-normal text-slate-400">so với kỳ trước</span>
+                    </>
+                  ) : (
+                    <span className="font-normal text-slate-400">Chưa có kỳ đối chiếu</span>
+                  )}
+                </div>
               </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Toolbar row */}
