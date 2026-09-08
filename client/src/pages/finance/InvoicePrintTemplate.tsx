@@ -278,7 +278,7 @@ const VARIABLES: VariableDef[] = [
   { group: "Khách hàng & Hoá đơn", label: "Mã hoá đơn", key: "invoice_code", description: "{{invoice_code}}" },
   { group: "Khách hàng & Hoá đơn", label: "Ngày lập", key: "date", description: "{{date}}" },
   { group: "Khách hàng & Hoá đơn", label: "Lớp", key: "lop", description: "{{lop}}" },
-  { group: "Khách hàng & Hoá đơn", label: "Ghi chú hóa đơn", key: "noi_dung", description: "{{noi_dung}}" },
+  { group: "Khách hàng & Hoá đơn", label: "Ghi chú hóa đơn", key: "ghi_chu", description: "{{ghi_chu}}" },
   { group: "Khách hàng & Hoá đơn", label: "Khoản thu", key: "khoan_thu", description: "{{khoan_thu}}" },
 
   // ── KM / PT / Khấu trừ / Thành tiền ──

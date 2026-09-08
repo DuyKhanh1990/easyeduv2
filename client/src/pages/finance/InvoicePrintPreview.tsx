@@ -489,6 +489,9 @@ function renderTemplate(
     da_thanh_toan: paid,
     con_lai: remaining,
     lop: invoice.className ?? "",
+    // Keep both keys: ghi_chu is the user-facing code, while noi_dung
+    // preserves compatibility with existing saved templates.
+    ghi_chu: invoice.note ?? "",
     noi_dung: invoice.note ?? "",
     khoan_thu: khoanThu,
     thu_ky_nay: paid,
