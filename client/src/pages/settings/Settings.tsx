@@ -4860,6 +4860,9 @@ function BidvPanel() {
     reader.readAsText(file);
   };
 
+  const hasPublicCert = Boolean(sysForm.publicCert || certFileName);
+  const hasBidvResponseCert = Boolean(sysForm.bidvResponseCert || bidvResponseCertFileName);
+
   const StatusBadge = ({ status, label, msg }: { status: "ok" | "error" | "skip"; label: string; msg?: string }) => (
     <div
       title={msg}
@@ -4975,7 +4978,10 @@ function BidvPanel() {
 
             {/* Public Cert */}
             <div>
-              <label className="block text-sm font-medium mb-1.5">Public Certificate <span className="text-destructive">*</span></label>
+              <label className="flex items-center gap-1.5 text-sm font-medium mb-1.5">
+                <span>Public Certificate <span className="text-destructive">*</span></span>
+                {hasPublicCert && <span className="text-[11px] font-normal text-green-600">✓ đã có</span>}
+              </label>
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <label className="cursor-pointer inline-flex items-center gap-1.5 text-xs border rounded-md px-3 py-1.5 bg-background hover:bg-muted transition-colors">
@@ -4984,21 +4990,35 @@ function BidvPanel() {
                     <input type="file" accept=".cer,.pem,.crt" className="hidden" onChange={handleCertUpload} data-testid="input-bidv-cert-file" />
                   </label>
                   {certFileName && <span className="text-xs text-green-600">✓ {certFileName}</span>}
+                  {hasPublicCert && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSysSecrets(p => ({ ...p, publicCert: !p.publicCert }))}
+                      className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                      title={showSysSecrets.publicCert ? "Ẩn Public Certificate" : "Xem Public Certificate"}
+                      aria-label={showSysSecrets.publicCert ? "Ẩn Public Certificate" : "Xem Public Certificate"}
+                    >
+                      {showSysSecrets.publicCert ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  )}
                 </div>
-                <textarea
-                  className="w-full h-24 text-xs font-mono border rounded-md p-2.5 bg-background resize-y focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground/50"
-                  value={sysForm.publicCert}
-                  onChange={e => setSysForm(p => ({ ...p, publicCert: e.target.value }))}
-                  placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
-                  data-testid="textarea-bidv-public-cert"
-                />
+                {(!hasPublicCert || showSysSecrets.publicCert) && (
+                  <textarea
+                    className="w-full h-24 text-xs font-mono border rounded-md p-2.5 bg-background resize-y focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground/50"
+                    value={sysForm.publicCert}
+                    onChange={e => setSysForm(p => ({ ...p, publicCert: e.target.value }))}
+                    placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
+                    data-testid="textarea-bidv-public-cert"
+                  />
+                )}
               </div>
             </div>
 
             {/* Private Key */}
             <div>
               <label className="block text-sm font-medium mb-1.5">
-                Certificate BIDV (xác minh response đối soát) <span className="text-destructive">*</span>
+                <span>Certificate BIDV (xác minh response đối soát) <span className="text-destructive">*</span></span>
+                {hasBidvResponseCert && <span className="text-[11px] font-normal text-green-600">✓ đã có</span>}
               </label>
               <p className="mb-2 text-xs text-muted-foreground">
                 Dùng certificate BIDV cấp để xác minh chữ ký X-JWS-Signature của file đối soát.
@@ -5012,14 +5032,27 @@ function BidvPanel() {
                     <input type="file" accept=".cer,.pem,.crt" className="hidden" onChange={handleBidvResponseCertUpload} data-testid="input-bidv-response-cert-file" />
                   </label>
                   {bidvResponseCertFileName && <span className="text-xs text-green-600">✓ {bidvResponseCertFileName}</span>}
+                  {hasBidvResponseCert && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSysSecrets(p => ({ ...p, bidvResponseCert: !p.bidvResponseCert }))}
+                      className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                      title={showSysSecrets.bidvResponseCert ? "Ẩn Certificate BIDV" : "Xem Certificate BIDV"}
+                      aria-label={showSysSecrets.bidvResponseCert ? "Ẩn Certificate BIDV" : "Xem Certificate BIDV"}
+                    >
+                      {showSysSecrets.bidvResponseCert ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  )}
                 </div>
-                <textarea
-                  className="w-full h-24 text-xs font-mono border rounded-md p-2.5 bg-background resize-y focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground/50"
-                  value={sysForm.bidvResponseCert}
-                  onChange={e => setSysForm(p => ({ ...p, bidvResponseCert: e.target.value }))}
-                  placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
-                  data-testid="textarea-bidv-response-cert"
-                />
+                {(!hasBidvResponseCert || showSysSecrets.bidvResponseCert) && (
+                  <textarea
+                    className="w-full h-24 text-xs font-mono border rounded-md p-2.5 bg-background resize-y focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground/50"
+                    value={sysForm.bidvResponseCert}
+                    onChange={e => setSysForm(p => ({ ...p, bidvResponseCert: e.target.value }))}
+                    placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
+                    data-testid="textarea-bidv-response-cert"
+                  />
+                )}
               </div>
             </div>
 
