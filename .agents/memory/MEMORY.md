@@ -30,3 +30,4 @@
 - [Drizzle schema push prompt](drizzle-schema-push-prompt.md) — schema push có thể bị chặn bởi prompt data-loss không liên quan; không truncate dữ liệu để áp dụng thay đổi cộng thêm.
 - [Invoice installment allocation](invoice-installment-allocation.md) — lịch thanh toán luôn đủ tổng tiền; sửa chỉ cân giữa đợt chưa trả, tăng số đợt bằng Tách đợt, giữ nguyên đợt đã trả.
 - [Production restore safety](production-restore-safety.md) — snapshot dự phòng phải drain mọi writer; marker finalizing commit cùng dữ liệu và chỉ completed sau cleanup.
+- [Production PostgreSQL client](production-postgres-client.md) — backup/restore cần PostgreSQL client ở runtime của cả Replit và Docker, không chỉ trong workspace dev.
