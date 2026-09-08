@@ -155,7 +155,7 @@ function SplitMoneyHalf({
 }
 
 function SplitMoneyRows({
-  top, bottom,
+  top, bottom, comparisonLoading,
 }: {
   top: { label: string; amount: number; previousAmount?: number; accent: SplitAccent; testIdAmount?: string; testIdPct?: string };
   bottom: { label: string; amount: number; previousAmount?: number; accent: SplitAccent; testIdAmount?: string; testIdPct?: string };
@@ -777,12 +777,19 @@ export function Dashboard() {
 
   const locationParam = locationId && locationId !== "all" ? `?locationId=${locationId}` : "";
   const dateRange = computeDateRange(dateFilter, customRange);
+  const previousDateRange = getPreviousDashboardDateRange(dateFilter, dateRange);
   const baseParams = [
     locationId && locationId !== "all" ? `locationId=${locationId}` : "",
     `dateFrom=${dateRange.dateFrom}`,
     `dateTo=${dateRange.dateTo}`,
   ].filter(Boolean).join("&");
   const dateParam = `?${baseParams}`;
+  const previousBaseParams = [
+    locationId && locationId !== "all" ? `locationId=${locationId}` : "",
+    `dateFrom=${previousDateRange.dateFrom}`,
+    `dateTo=${previousDateRange.dateTo}`,
+  ].filter(Boolean).join("&");
+  const previousDateParam = `?${previousBaseParams}`;
 
   // Gộp 8 summary API thành 1 request duy nhất để giảm DB round trips
   const { data: dashboardSummary, isLoading: loadingDashboard } = useQuery<{
@@ -890,6 +897,25 @@ export function Dashboard() {
     queryKey: ["/api/finance/invoices/summary", locationId, dateRange.dateFrom, dateRange.dateTo],
     enabled: isAuthed && activeTab === "tai-chinh",
     queryFn: () => fetch(`/api/finance/invoices/summary${dateParam}`, { credentials: "include" }).then(r => r.json()),
+  });
+
+  const { data: previousInvoiceSummary, isLoading: loadingPreviousInvoiceSummary } = useQuery<{
+    totalCount: number;
+    byStatus: { unpaid: number; partial: number; paid: number; debt: number; cancelled: number };
+    totalRevenue: number;
+    actualCollected: number;
+    debtAmount: number;
+    expectedIncome: number;
+    expectedExpense: number;
+    actualIncome: number;
+    actualExpense: number;
+    debtIncome: number;
+    debtExpense: number;
+  }>({
+    queryKey: ["/api/finance/invoices/summary/previous", locationId, previousDateRange.dateFrom, previousDateRange.dateTo],
+    enabled: isAuthed && activeTab === "tai-chinh",
+    queryFn: () => fetch(`/api/finance/invoices/summary${previousDateParam}`, { credentials: "include" }).then(r => r.json()),
+    staleTime: 30_000,
   });
 
   // Tài chính — Phân bổ thu/chi theo danh mục
@@ -1711,6 +1737,12 @@ export function Dashboard() {
                         <p className="text-3xl font-bold font-display text-foreground leading-tight" data-testid="text-invoice-total-count">
                           {invoiceSummary?.totalCount ?? 0}
                         </p>
+                        <PeriodComparison
+                          current={invoiceSummary?.totalCount ?? 0}
+                          previous={previousInvoiceSummary?.totalCount}
+                          loading={loadingPreviousInvoiceSummary}
+                          testId="comparison-invoice-total-count"
+                        />
                       </div>
                       <div className="space-y-1.5 pt-1">
                         <div className="flex items-center justify-between text-[12px]">
@@ -1774,6 +1806,7 @@ export function Dashboard() {
                       top={{
                         label: "Tổng thu dự kiến",
                         amount: invoiceSummary?.expectedIncome ?? 0,
+                        previousAmount: previousInvoiceSummary?.expectedIncome,
                         accent: "violet",
                         testIdAmount: "text-expected-income",
                         testIdPct: "text-expected-income-pct",
@@ -1781,10 +1814,12 @@ export function Dashboard() {
                       bottom={{
                         label: "Tổng chi dự kiến",
                         amount: invoiceSummary?.expectedExpense ?? 0,
+                        previousAmount: previousInvoiceSummary?.expectedExpense,
                         accent: "orange",
                         testIdAmount: "text-expected-expense",
                         testIdPct: "text-expected-expense-pct",
                       }}
+                      comparisonLoading={loadingPreviousInvoiceSummary}
                     />
                   )}
                 </CardContent>
@@ -1807,6 +1842,7 @@ export function Dashboard() {
                       top={{
                         label: "Thực thu",
                         amount: invoiceSummary?.actualIncome ?? 0,
+                        previousAmount: previousInvoiceSummary?.actualIncome,
                         accent: "emerald",
                         testIdAmount: "text-actual-income",
                         testIdPct: "text-actual-income-pct",
@@ -1814,10 +1850,12 @@ export function Dashboard() {
                       bottom={{
                         label: "Thực chi",
                         amount: invoiceSummary?.actualExpense ?? 0,
+                        previousAmount: previousInvoiceSummary?.actualExpense,
                         accent: "orange",
                         testIdAmount: "text-actual-expense",
                         testIdPct: "text-actual-expense-pct",
                       }}
+                      comparisonLoading={loadingPreviousInvoiceSummary}
                     />
                   )}
                 </CardContent>
@@ -1840,6 +1878,7 @@ export function Dashboard() {
                       top={{
                         label: "Thu nợ",
                         amount: invoiceSummary?.debtIncome ?? 0,
+                        previousAmount: previousInvoiceSummary?.debtIncome,
                         accent: "rose",
                         testIdAmount: "text-debt-income",
                         testIdPct: "text-debt-income-pct",
@@ -1847,10 +1886,12 @@ export function Dashboard() {
                       bottom={{
                         label: "Chi nợ",
                         amount: invoiceSummary?.debtExpense ?? 0,
+                        previousAmount: previousInvoiceSummary?.debtExpense,
                         accent: "orange",
                         testIdAmount: "text-debt-expense",
                         testIdPct: "text-debt-expense-pct",
                       }}
+                      comparisonLoading={loadingPreviousInvoiceSummary}
                     />
                   )}
                 </CardContent>
