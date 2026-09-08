@@ -700,6 +700,7 @@ export function ThuChiReport({ onBack }: Props) {
                   const pmLabel    = inv.paymentMethod === "cash" ? "Tiền mặt"
                                    : inv.paymentMethod === "transfer" ? "Chuyển khoản"
                                    : inv.paymentMethod ?? "—";
+                  const displayDescription = inv.note?.trim() || inv.description?.trim() || "";
 
                   return (
                     <tr
@@ -721,7 +722,7 @@ export function ThuChiReport({ onBack }: Props) {
                       <td className="px-3 py-2 font-medium border-r border-border/30">{inv.name ?? "—"}</td>
                       <td className="px-3 py-2 border-r border-border/30">{inv.category ?? "—"}</td>
                       <td className="px-3 py-2 text-muted-foreground border-r border-border/30">
-                        <span className="line-clamp-2">{inv.description ?? "—"}</span>
+                        <span className="line-clamp-2">{displayDescription || "—"}</span>
                       </td>
                       <td className="px-3 py-2 border-r border-border/30">{inv.creatorName ?? "—"}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-r border-border/30">{pmLabel}</td>
