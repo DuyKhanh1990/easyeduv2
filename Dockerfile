@@ -31,12 +31,14 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=5000
 
-# Install only production + skip optional native modules (bufferutil, etc.)
+# Install only production + skip optional native modules (bufferutil, etc.).
+# The backup/restore service invokes pg_dump, pg_restore and psql at runtime.
 COPY package*.json ./
 # Replit's internal npm proxy rewrites resolved URLs in package-lock.json to
 # package-firewall.replit.local — an address that only exists inside Replit.
 # Strip those so npm ci fetches from the public registry instead.
 RUN sed -i 's|http://package-firewall.replit.local/npm/|https://registry.npmjs.org/|g' package-lock.json && \
+    apk add --no-cache postgresql16-client && \
     npm ci --omit=dev --omit=optional --registry=https://registry.npmjs.org && \
     npm cache clean --force
 
