@@ -2703,6 +2703,7 @@ export default function Invoices() {
             totalSurcharge: invAny.totalSurcharge ?? null,
             deduction: invAny.deduction ?? null,
           },
+           sourceInvoiceId: inv.id,
            // Bản in theo đợt không fetch lại hóa đơn gốc; truyền lịch đầy đủ
            // để biến {{lich_su_thanh_toan}} hiển thị bảng thay vì trạng thái rỗng.
            paymentSchedule: (Array.isArray(invAny.paymentSchedule) ? invAny.paymentSchedule : []).map((schedule: ScheduleItem) => ({
@@ -2721,7 +2722,6 @@ export default function Invoices() {
         return (
           <InvoicePrintPreview
             invoice={scheduleAsInvoice}
-            skipFetch
             titleSuffix={`(${s.label})`}
             onClose={() => setPrintPreviewSchedule(null)}
           />

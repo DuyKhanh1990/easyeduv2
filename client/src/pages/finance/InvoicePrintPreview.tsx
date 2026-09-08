@@ -8,6 +8,7 @@ import type { InvoicePrintTemplateRow } from "@shared/schema";
 
 interface InvoicePrintData {
   id: string;
+  sourceInvoiceId?: string;
   code?: string | null;
   type: string;
   subjectName?: string | null;
@@ -39,6 +40,12 @@ interface InvoicePrintData {
   studentFullName?: string | null;
   studentPhone?: string | null;
   studentAddress?: string | null;
+  // Fallback aliases used by list rows and schedule print data.
+  name?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  class?: string | null;
+  class_name?: string | null;
   createdByName?: string | null;
   paidByName?: string | null;
   locationName?: string | null;
@@ -479,16 +486,16 @@ function renderTemplate(
   const tongSauKmpt = tongTruocKmpt - tongKm + tongPt; // after promotions and surcharges
 
   const data: Record<string, string | number> = {
-    customer_name: invoice.subjectName ?? invoice.studentFullName ?? "",
-    phone: invoice.studentPhone ?? "",
-    address: invoice.studentAddress ?? "",
+    customer_name: invoice.subjectName ?? invoice.studentFullName ?? invoice.name ?? "",
+    phone: invoice.studentPhone ?? invoice.phone ?? "",
+    address: invoice.studentAddress ?? invoice.address ?? "",
     invoice_code: invoice.code ?? "",
     date: fmtDate(invoice.createdAt),
     total,
     thanh_tien: total,
     da_thanh_toan: paid,
     con_lai: remaining,
-    lop: invoice.className ?? "",
+    lop: invoice.className ?? invoice.class ?? invoice.class_name ?? "",
     // Keep both keys: ghi_chu is the user-facing code, while noi_dung
     // preserves compatibility with existing saved templates.
     ghi_chu: invoice.note ?? "",
@@ -637,9 +644,10 @@ export function InvoicePrintPreview({ invoice, onClose, skipFetch, titleSuffix, 
   const printFrameRef = useRef<HTMLIFrameElement>(null);
 
   const { data: fullInvoice, isLoading: loadingInvoice } = useQuery<InvoicePrintData>({
-    queryKey: ["/api/finance/invoices", invoice.id, "print"],
+    queryKey: ["/api/finance/invoices", invoice.sourceInvoiceId ?? invoice.id, "print"],
     queryFn: async () => {
-      const res = await fetch(`/api/finance/invoices/${invoice.id}`, { credentials: "include" });
+      const sourceId = invoice.sourceInvoiceId ?? invoice.id;
+      const res = await fetch(`/api/finance/invoices/${sourceId}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch invoice");
       return res.json();
     },
@@ -718,7 +726,13 @@ export function InvoicePrintPreview({ invoice, onClose, skipFetch, titleSuffix, 
   }, [template?.orientation]);
 
   const isLoading = loadingTemplate || (!skipFetch && loadingInvoice);
-  const invoiceData = skipFetch ? invoice : (fullInvoice ?? invoice);
+  // For schedule printing, keep the schedule-specific amount/items while
+  // enriching it with student/class/location fields from the parent invoice.
+  const invoiceData = skipFetch
+    ? invoice
+    : fullInvoice
+      ? { ...fullInvoice, ...invoice }
+      : invoice;
   const hasNoDefault = !loadingTemplate && (templateError as any)?.message === "no_default";
   const hasFetchError = !loadingTemplate && !hasNoDefault && !!templateError;
 

@@ -136,6 +136,7 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
     const invAny = inv as any;
     return {
       id: s.id,
+      sourceInvoiceId: inv.id,
       code: `${inv.code ?? ""}/${s.code ?? s.label}`,
       type: inv.type,
       subjectName: inv.name ?? null,
@@ -444,7 +445,6 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
       {printTarget && (
         <InvoicePrintPreview
           invoice={buildScheduleAsInvoice(printTarget)}
-          skipFetch
           titleSuffix={`(${printTarget.label})`}
           onClose={() => setPrintTarget(null)}
         />
