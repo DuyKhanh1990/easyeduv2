@@ -38,6 +38,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -299,7 +300,25 @@ export default function AdminPage() {
 
   return (
     <DashboardLayout>
-      <div className="mx-auto w-full max-w-7xl space-y-6">
+      <div className="mx-auto w-full max-w-7xl">
+        <Tabs defaultValue="backup" className="space-y-6">
+          <div className="flex flex-col gap-4 border-b border-border/60 pb-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-muted-foreground">Khu vực quản trị</p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground md:text-3xl">Trang admin</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Quản lý các nghiệp vụ tổng hợp dành cho Super Admin.
+              </p>
+            </div>
+            <TabsList className="h-10 w-fit">
+              <TabsTrigger value="backup" className="gap-2">
+                <HardDrive className="h-4 w-4" />
+                Backup
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          <TabsContent value="backup" className="mt-0 space-y-6">
         <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 px-6 py-7 text-white shadow-lg md:px-8 md:py-9">
           <div className="absolute -right-16 -top-24 h-64 w-64 rounded-full bg-blue-500/15 blur-3xl" />
           <div className="absolute -bottom-32 right-24 h-64 w-64 rounded-full bg-cyan-400/10 blur-3xl" />
@@ -593,6 +612,8 @@ export default function AdminPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+          </TabsContent>
+        </Tabs>
       </div>
     </DashboardLayout>
   );

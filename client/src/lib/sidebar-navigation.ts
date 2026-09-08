@@ -68,7 +68,7 @@ export const navigation: NavEntry[] = [
   { name: "Chat", href: "/chat", icon: SiMessenger },
   { name: "Zalo OA", href: "/zalo", icon: SiZalo },
   { name: "Facebook", href: "/facebook", icon: SiFacebook },
-  { name: "Backup database", href: "/admin", icon: HardDrive },
+  { name: "Trang admin", href: "/admin", icon: HardDrive },
   {
     module: "MY SPACE",
     color: "text-violet-600 dark:text-violet-400",
