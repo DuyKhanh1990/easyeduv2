@@ -4862,6 +4862,15 @@ function BidvPanel() {
 
   const hasPublicCert = Boolean(sysForm.publicCert || certFileName);
   const hasBidvResponseCert = Boolean(sysForm.bidvResponseCert || bidvResponseCertFileName);
+  const hasPrivateKey = Boolean(sysForm.privateKey || keyFileName);
+
+  const togglePrivateKey = () => {
+    if (sysHas.privateKey) {
+      void revealSystemSecret("private_key");
+      return;
+    }
+    setShowSysSecrets(p => ({ ...p, privateKey: !p.privateKey }));
+  };
 
   const StatusBadge = ({ status, label, msg }: { status: "ok" | "error" | "skip"; label: string; msg?: string }) => (
     <div
@@ -4914,7 +4923,7 @@ function BidvPanel() {
             </div>
 
             {/* Provider ID + Client ID */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium mb-1.5">Provider ID</label>
                 <Input
@@ -4934,6 +4943,10 @@ function BidvPanel() {
                   data-testid="input-bidv-client-id"
                 />
               </div>
+            </div>
+
+            {/* Client credentials */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium mb-1.5">
                   Client Secret <span className="text-destructive">*</span>
@@ -4953,31 +4966,31 @@ function BidvPanel() {
                   </button>
                 </div>
               </div>
-            </div>
-
-            {/* Symmetric Key */}
-            <div>
-              <label className="block text-sm font-medium mb-1.5">
-                Symmetric Key (JWE) <span className="text-destructive">*</span>
-                {sysHas.symmetricKey && <span className="ml-2 text-[11px] font-normal text-muted-foreground">(đã lưu)</span>}
-              </label>
-              <div className="relative">
-                <Input
-                  type={showSysSecrets.symmetricKey ? "text" : "password"}
-                  value={sysForm.symmetricKey}
-                  onChange={e => setSysForm(p => ({ ...p, symmetricKey: e.target.value }))}
-                  placeholder={sysHas.symmetricKey ? "Nhập mới để thay đổi" : "Key mã hóa JWE do BIDV cấp"}
-                  className="pr-10"
-                  data-testid="input-bidv-symmetric-key"
-                />
-                <button type="button" onClick={() => setShowSysSecrets(p => ({ ...p, symmetricKey: !p.symmetricKey }))} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                  {showSysSecrets.symmetricKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">
+                  Symmetric Key (JWE) <span className="text-destructive">*</span>
+                  {sysHas.symmetricKey && <span className="ml-2 text-[11px] font-normal text-muted-foreground">(đã lưu)</span>}
+                </label>
+                <div className="relative">
+                  <Input
+                    type={showSysSecrets.symmetricKey ? "text" : "password"}
+                    value={sysForm.symmetricKey}
+                    onChange={e => setSysForm(p => ({ ...p, symmetricKey: e.target.value }))}
+                    placeholder={sysHas.symmetricKey ? "Nhập mới để thay đổi" : "Key mã hóa JWE do BIDV cấp"}
+                    className="pr-10"
+                    data-testid="input-bidv-symmetric-key"
+                  />
+                  <button type="button" onClick={() => setShowSysSecrets(p => ({ ...p, symmetricKey: !p.symmetricKey }))} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    {showSysSecrets.symmetricKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
             </div>
 
+            {/* Partner certificates + private key */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
             {/* Public Cert */}
-            <div>
+            <div className="order-1">
               <label className="flex items-center gap-1.5 text-sm font-medium mb-1.5">
                 <span>Public Certificate <span className="text-destructive">*</span></span>
                 {hasPublicCert && <span className="text-[11px] font-normal text-green-600">✓ đã có</span>}
@@ -5014,8 +5027,8 @@ function BidvPanel() {
               </div>
             </div>
 
-            {/* Private Key */}
-            <div>
+            {/* BIDV response certificate */}
+            <div className="order-3 md:col-span-2">
               <label className="block text-sm font-medium mb-1.5">
                 <span>Certificate BIDV (xác minh response đối soát) <span className="text-destructive">*</span></span>
                 {hasBidvResponseCert && <span className="text-[11px] font-normal text-green-600">✓ đã có</span>}
@@ -5057,10 +5070,10 @@ function BidvPanel() {
             </div>
 
             {/* Private Key */}
-            <div>
-              <label className="block text-sm font-medium mb-1.5">
-                Private Key <span className="text-destructive">*</span>
-                {sysHas.privateKey && !keyFileName && <span className="ml-2 text-[11px] font-normal text-green-600">✓ đã có</span>}
+            <div className="order-2">
+              <label className="flex items-center gap-1.5 text-sm font-medium mb-1.5">
+                <span>Private Key <span className="text-destructive">*</span></span>
+                {hasPrivateKey && <span className="text-[11px] font-normal text-green-600">✓ đã có</span>}
               </label>
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
@@ -5070,8 +5083,19 @@ function BidvPanel() {
                     <input type="file" accept=".key,.pem" className="hidden" onChange={handleKeyUpload} data-testid="input-bidv-key-file" />
                   </label>
                   {keyFileName && <span className="text-xs text-green-600">✓ {keyFileName}</span>}
+                  {hasPrivateKey && (
+                    <button
+                      type="button"
+                      onClick={togglePrivateKey}
+                      className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                      title={showSysSecrets.privateKey ? "Ẩn Private Key" : "Xem Private Key"}
+                      aria-label={showSysSecrets.privateKey ? "Ẩn Private Key" : "Xem Private Key"}
+                    >
+                      {showSysSecrets.privateKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  )}
                 </div>
-                {(sysForm.privateKey || !sysHas.privateKey) && (
+                {(!hasPrivateKey || showSysSecrets.privateKey) && (
                   <textarea
                     className="w-full h-20 text-xs font-mono border rounded-md p-2.5 bg-background resize-y focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground/50"
                     value={sysForm.privateKey}
@@ -5081,6 +5105,7 @@ function BidvPanel() {
                   />
                 )}
               </div>
+            </div>
             </div>
 
             {/* Optional / advanced */}
