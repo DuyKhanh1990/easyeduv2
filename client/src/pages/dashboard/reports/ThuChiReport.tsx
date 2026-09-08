@@ -357,7 +357,7 @@ export function ThuChiReport({ onBack }: Props) {
         fmtDate(inv.paidAt),
         inv.name ?? "",
         inv.category ?? "",
-        inv.description ?? "",
+        inv.note?.trim() || inv.description?.trim() || "",
         inv.creatorName ?? "",
         pmLabel(inv.paymentMethod),
           reference,
