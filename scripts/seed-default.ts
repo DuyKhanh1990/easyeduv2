@@ -314,6 +314,20 @@ async function main() {
     { key: "token_buffer", value: process.env.BIDV_DEFAULT_TOKEN_BUFFER || "300" },
   ];
 
+  const hasEncryptedDefaults = bidvDefaults.some(
+    (setting) => setting.encrypted && setting.value,
+  );
+  const hasEncryptionSecret = Boolean(
+    process.env.AI_ENCRYPT_SECRET ||
+    process.env.SYSTEM_ENCRYPTION_KEY ||
+    process.env.ENCRYPTION_KEY,
+  );
+  if (hasEncryptedDefaults && !hasEncryptionSecret) {
+    throw new Error(
+      "Thiếu AI_ENCRYPT_SECRET (hoặc khóa mã hóa tương thích); không seed BIDV secret bằng khóa fallback",
+    );
+  }
+
   for (const setting of bidvDefaults) {
     if (!setting.value) {
       console.log(`  [SKIP] bidv.${setting.key} chưa có giá trị mặc định`);
