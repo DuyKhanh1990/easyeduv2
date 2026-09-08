@@ -255,9 +255,12 @@ export function registerBidvAdminRoutes(app: Express) {
           if (errLower.includes("timeout") || errLower.includes("connect") || errLower.includes("fetch")) {
             result.messages.apiReachable = "Không kết nối được BIDV host";
           } else {
-            // Reached server but credential error
+            // The host responded. This does not prove credentials are valid;
+            // HTTP 405 usually means the endpoint or HTTP method is wrong.
             result.apiReachable = "ok";
-            result.messages.apiReachable = "API reachable (lỗi credentials)";
+            result.messages.apiReachable = errLower.includes("http 405")
+              ? "Đã tới BIDV nhưng endpoint hoặc HTTP method OAuth chưa đúng"
+              : "Đã tới BIDV nhưng OAuth chưa thành công";
           }
         }
       } else {

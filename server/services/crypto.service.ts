@@ -3,12 +3,23 @@ import crypto from "crypto";
 const ALGORITHM = "aes-256-gcm";
 const ENC_PREFIX = "enc:";
 
-function getKey(): Buffer {
-  const envKey = process.env.SYSTEM_ENCRYPTION_KEY;
-  if (!envKey) {
-    throw new Error("SYSTEM_ENCRYPTION_KEY is required");
+function getKeyCandidates(): Buffer[] {
+  // AI_ENCRYPT_SECRET is the current production key. Keep SYSTEM_ENCRYPTION_KEY
+  // as a fallback so existing encrypted rows remain readable during migration.
+  const secrets = [
+    process.env.AI_ENCRYPT_SECRET,
+    process.env.SYSTEM_ENCRYPTION_KEY,
+  ].filter((value): value is string => Boolean(value));
+
+  if (secrets.length === 0) {
+    throw new Error("AI_ENCRYPT_SECRET or SYSTEM_ENCRYPTION_KEY is required");
   }
-  return crypto.createHash("sha256").update(envKey).digest();
+
+  return secrets.map((secret) => crypto.createHash("sha256").update(secret).digest());
+}
+
+function getKey(): Buffer {
+  return getKeyCandidates()[0];
 }
 
 export function encrypt(plaintext: string): string {
@@ -23,7 +34,6 @@ export function encrypt(plaintext: string): string {
 
 export function decrypt(ciphertext: string): string {
   if (!ciphertext || !ciphertext.startsWith(ENC_PREFIX)) return ciphertext;
-  const key = getKey();
   const inner = ciphertext.slice(ENC_PREFIX.length);
   const parts = inner.split(":");
   if (parts.length !== 3) throw new Error("Invalid encrypted value format");
@@ -31,9 +41,19 @@ export function decrypt(ciphertext: string): string {
   const iv = Buffer.from(ivHex, "hex");
   const tag = Buffer.from(tagHex, "hex");
   const encrypted = Buffer.from(encHex, "hex");
-  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-  decipher.setAuthTag(tag);
-  return decipher.update(encrypted).toString("utf8") + decipher.final("utf8");
+
+  let lastError: unknown;
+  for (const key of getKeyCandidates()) {
+    try {
+      const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+      decipher.setAuthTag(tag);
+      return decipher.update(encrypted).toString("utf8") + decipher.final("utf8");
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Không thể giải mã giá trị đã lưu");
 }
 
 export function isEncrypted(value: string): boolean {
