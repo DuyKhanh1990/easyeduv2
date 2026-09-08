@@ -13,7 +13,14 @@ Never add `CREATE TABLE` or `ALTER TABLE ... ADD COLUMN` in:
 **Why:** `scripts/push-db-direct.ts` reads only `shared/schema.ts` to create a new DB.
 Inline DDL causes new environments to be missing tables/columns.
 
-**How to apply:** Any new table or column → add to `shared/schema.ts`, then run `npx tsx scripts/push-db-direct.ts` against the target DB.
+**How to apply:** Any new table or column → add to `shared/schema.ts`, then run `npx tsx scripts/push-db-direct.ts` against every target Production database before deploying an image that imports or uses the new tables. Verify the push completed before rollout.
+
+## Deployment gate
+**Rule:** A successful image build does not imply that every tenant database has the current schema. Apply and verify schema changes for each target database before rolling out the corresponding application image.
+
+**Why:** A missing table can make startup fail before Express begins listening, producing a misleading minified bundle stack trace that looks like an image, Node, or integration problem.
+
+**How to apply:** When a release adds tables or columns, run the schema push per center, check the command result and table existence, then deploy the image. If only some centers fail, compare schema state before changing runtime configuration.
 
 ## What IS allowed outside schema.ts
 - Seed data (INSERT / ON CONFLICT DO NOTHING)
