@@ -57,6 +57,56 @@ export interface InvoiceSummary {
   actualExpense: number;
 }
 
+function shiftDateByMonth(date: string, months: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const target = new Date(year, month - 1 + months, 1);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(day, lastDay));
+  return formatDate(target);
+}
+
+function formatDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Builds the immediately preceding month range while preserving the
+ * currently selected date span and all non-date filters.
+ */
+export function getPreviousInvoicePeriodParams(
+  params: InvoiceQueryParams,
+): InvoiceQueryParams | null {
+  const dateRanges = [
+    ["dateFrom", "dateTo"],
+    ["dueDateFrom", "dueDateTo"],
+    ["paidAtFrom", "paidAtTo"],
+  ] as const;
+
+  const activeRange = dateRanges.find(([from, to]) => params[from] || params[to]);
+  if (!activeRange) return null;
+
+  const [fromKey, toKey] = activeRange;
+  return {
+    ...params,
+    dateFrom: undefined,
+    dateTo: undefined,
+    dueDateFrom: undefined,
+    dueDateTo: undefined,
+    paidAtFrom: undefined,
+    paidAtTo: undefined,
+    [fromKey]: params[fromKey] ? shiftDateByMonth(params[fromKey]!, -1) : undefined,
+    [toKey]: params[toKey] ? shiftDateByMonth(params[toKey]!, -1) : undefined,
+    page: undefined,
+    limit: undefined,
+    sortKey: undefined,
+    sortDir: undefined,
+    tabFilter: undefined,
+  };
+}
+
 function buildSummaryQS(params: InvoiceQueryParams): string {
   const p = new URLSearchParams();
   if (params.search)    p.set("search", params.search);
@@ -79,7 +129,10 @@ function buildSummaryQS(params: InvoiceQueryParams): string {
 const BASE_KEY = "/api/finance/invoices";
 const SUMMARY_KEY = "/api/finance/invoices/summary";
 
-export function useInvoiceSummary(queryParams: InvoiceQueryParams = {}) {
+export function useInvoiceSummary(
+  queryParams: InvoiceQueryParams = {},
+  options: { enabled?: boolean; staleTime?: number } = {},
+) {
   const qs = buildSummaryQS(queryParams);
   const { data, isLoading } = useQuery<InvoiceSummary>({
     queryKey: [SUMMARY_KEY, qs],
@@ -91,7 +144,8 @@ export function useInvoiceSummary(queryParams: InvoiceQueryParams = {}) {
       if (!res.ok) throw new Error("Failed to fetch invoice summary");
       return res.json();
     },
-    staleTime: 0,
+    staleTime: options.staleTime ?? 0,
+    enabled: options.enabled ?? true,
   });
 
   return { summary: data, isLoading };
