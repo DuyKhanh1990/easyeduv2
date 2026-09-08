@@ -15,7 +15,7 @@ import { Redirect } from "wouter";
 import { useMyPermissions, canAccessItem } from "@/hooks/use-my-permissions";
 import { useSidebarVisibility } from "@/hooks/use-sidebar-visibility";
 import { navigation } from "@/lib/sidebar-navigation";
-import { Users, TrendingUp, UserPlus, CheckCircle2, BookOpenCheck, Network, Megaphone, Building2, UserSquare2, Receipt, Wallet, Banknote, AlertCircle, PieChart as PieChartIcon, FileText, CalendarDays, PhoneCall } from "lucide-react";
+import { Users, TrendingUp, UserPlus, CheckCircle2, BookOpenCheck, Network, Megaphone, Building2, UserSquare2, Receipt, Wallet, Banknote, AlertCircle, PieChart as PieChartIcon, FileText, CalendarDays, PhoneCall, ArrowUp, ArrowDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -55,10 +55,82 @@ const SPLIT_ACCENT_MAP: Record<SplitAccent, { text: string; barFrom: string; bar
   blue:    { text: "text-blue-600",    barFrom: "from-blue-400",    barTo: "to-blue-500" },
 };
 
-function SplitMoneyHalf({
-  label, amount, pct, accent, testIdAmount, testIdPct,
+type PeriodComparison = {
+  direction: "up" | "down" | "flat";
+  percent: number | null;
+};
+
+function comparePeriodValue(current: number, previous: number | undefined): PeriodComparison | null {
+  if (previous === undefined) return null;
+  if (current === previous) return { direction: "flat", percent: 0 };
+  if (previous === 0) {
+    return { direction: current > 0 ? "up" : "down", percent: null };
+  }
+  const percent = ((current - previous) / Math.abs(previous)) * 100;
+  return {
+    direction: percent > 0 ? "up" : "down",
+    percent: Math.abs(percent),
+  };
+}
+
+function formatPeriodPercent(percent: number | null): string {
+  if (percent === null) return "Mới phát sinh";
+  const rounded = Math.round(percent * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}%`;
+}
+
+function PeriodComparison({
+  current,
+  previous,
+  loading,
+  testId,
 }: {
-  label: string; amount: number; pct: number; accent: SplitAccent; testIdAmount?: string; testIdPct?: string;
+  current: number;
+  previous?: number;
+  loading?: boolean;
+  testId?: string;
+}) {
+  const comparison = comparePeriodValue(current, previous);
+  const color = comparison?.direction === "up"
+    ? "text-emerald-600"
+    : comparison?.direction === "down"
+      ? "text-rose-600"
+      : "text-slate-400";
+  const ComparisonIcon = comparison?.direction === "up"
+    ? ArrowUp
+    : comparison?.direction === "down"
+      ? ArrowDown
+      : null;
+
+  if (loading) {
+    return <span className="mt-1 inline-block h-3 w-24 animate-pulse rounded bg-muted" />;
+  }
+  if (!comparison) return null;
+
+  return (
+    <div
+      className={`mt-1 flex min-h-3 items-center gap-1 text-[10px] font-medium ${color}`}
+      title="So với cùng kỳ trước"
+      data-testid={testId}
+    >
+      {ComparisonIcon && <ComparisonIcon className="h-3 w-3" strokeWidth={2.5} />}
+      <span>{formatPeriodPercent(comparison.percent)}</span>
+      <span className="font-normal text-muted-foreground">so với kỳ trước</span>
+    </div>
+  );
+}
+
+function SplitMoneyHalf({
+  label, amount, previousAmount, pct, accent, testIdAmount, testIdPct, comparisonLoading,
+}: {
+  label: string;
+  amount: number;
+  previousAmount?: number;
+  pct: number;
+  accent: SplitAccent;
+  testIdAmount?: string;
+  testIdPct?: string;
+  comparisonLoading?: boolean;
 }) {
   const a = SPLIT_ACCENT_MAP[accent];
   return (
@@ -71,6 +143,7 @@ function SplitMoneyHalf({
         </p>
         <span className={`text-[11px] font-semibold tabular-nums ${a.text}`} data-testid={testIdPct}>{pct}%</span>
       </div>
+      <PeriodComparison current={amount} previous={previousAmount} loading={comparisonLoading} />
       <div className="h-1.5 rounded-full bg-muted overflow-hidden">
         <div
           className={`h-full rounded-full bg-gradient-to-r ${a.barFrom} ${a.barTo} transition-all duration-1000`}
@@ -84,17 +157,18 @@ function SplitMoneyHalf({
 function SplitMoneyRows({
   top, bottom,
 }: {
-  top: { label: string; amount: number; accent: SplitAccent; testIdAmount?: string; testIdPct?: string };
-  bottom: { label: string; amount: number; accent: SplitAccent; testIdAmount?: string; testIdPct?: string };
+  top: { label: string; amount: number; previousAmount?: number; accent: SplitAccent; testIdAmount?: string; testIdPct?: string };
+  bottom: { label: string; amount: number; previousAmount?: number; accent: SplitAccent; testIdAmount?: string; testIdPct?: string };
+  comparisonLoading?: boolean;
 }) {
   const total = top.amount + bottom.amount;
   const topPct    = total > 0 ? Math.round((top.amount    / total) * 100) : 0;
   const bottomPct = total > 0 ? Math.round((bottom.amount / total) * 100) : 0;
   return (
     <div className="space-y-3">
-      <SplitMoneyHalf {...top}    pct={topPct} />
+      <SplitMoneyHalf {...top}    pct={topPct} comparisonLoading={comparisonLoading} />
       <div className="border-t border-border/50" />
-      <SplitMoneyHalf {...bottom} pct={bottomPct} />
+      <SplitMoneyHalf {...bottom} pct={bottomPct} comparisonLoading={comparisonLoading} />
     </div>
   );
 }
@@ -232,6 +306,47 @@ function computeDateRange(key: DateFilterKey, customRange?: DateRange): { dateFr
       }
       return { dateFrom: fmt(new Date(now.getFullYear(), now.getMonth(), 1)), dateTo: todayStr };
   }
+}
+
+function shiftDateByMonths(date: string, months: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const shifted = new Date(year, month - 1 + months, 1);
+  const lastDay = new Date(shifted.getFullYear(), shifted.getMonth() + 1, 0).getDate();
+  shifted.setDate(Math.min(day, lastDay));
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${shifted.getFullYear()}-${pad(shifted.getMonth() + 1)}-${pad(shifted.getDate())}`;
+}
+
+function shiftDateByDays(date: string, days: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const shifted = new Date(year, month - 1, day);
+  shifted.setDate(shifted.getDate() + days);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${shifted.getFullYear()}-${pad(shifted.getMonth() + 1)}-${pad(shifted.getDate())}`;
+}
+
+function getPreviousDashboardDateRange(
+  key: DateFilterKey,
+  current: { dateFrom: string; dateTo: string },
+): { dateFrom: string; dateTo: string } {
+  if (key === "today") {
+    return { dateFrom: shiftDateByDays(current.dateFrom, -1), dateTo: shiftDateByDays(current.dateTo, -1) };
+  }
+  if (key === "week") {
+    return { dateFrom: shiftDateByDays(current.dateFrom, -7), dateTo: shiftDateByDays(current.dateTo, -7) };
+  }
+  if (key === "custom") {
+    const from = new Date(`${current.dateFrom}T00:00:00`);
+    const to = new Date(`${current.dateTo}T00:00:00`);
+    const duration = Math.max(1, Math.round((to.getTime() - from.getTime()) / 86400000) + 1);
+    const previousTo = shiftDateByDays(current.dateFrom, -1);
+    return { dateFrom: shiftDateByDays(previousTo, -(duration - 1)), dateTo: previousTo };
+  }
+  const months = key === "year" ? 12 : key === "6months" ? 6 : key === "3months" ? 3 : 1;
+  return {
+    dateFrom: shiftDateByMonths(current.dateFrom, -months),
+    dateTo: shiftDateByMonths(current.dateTo, -months),
+  };
 }
 
 function CustomTooltip({ active, payload, label }: any) {
