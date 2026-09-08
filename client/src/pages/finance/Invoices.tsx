@@ -604,11 +604,12 @@ function renderInvoiceCell(
       const grand     = parseNum(inv.grandTotal);
       return <td key="remaining" className="p-3 text-right whitespace-nowrap">{remaining > 0 ? <span className="font-medium text-red-600">{fmtMoney(remaining)}</span> : remaining === 0 && grand > 0 ? <span className="text-green-600 text-xs font-medium">Đã đủ</span> : <span className="text-muted-foreground text-xs">—</span>}</td>;
     }
-    case "description":
+    case "description": {
+      const displayDescription = inv.note?.trim() || inv.description?.trim() || "";
       return (
         <td key="description" className="p-3" style={{ minWidth: 280, maxWidth: 380 }}>
-          <span className="line-clamp-2 text-muted-foreground text-xs leading-relaxed" title={(inv.description ?? inv.note) ?? ""}>
-            {inv.description || inv.note || (inv.paymentNote ? "" : "—")}
+          <span className="line-clamp-2 text-muted-foreground text-xs leading-relaxed" title={displayDescription}>
+            {displayDescription || (inv.paymentNote ? "" : "—")}
           </span>
           {inv.paymentNote && (
             <span className="block mt-0.5 text-[11px] text-blue-500 italic truncate" title={inv.paymentNote}>
@@ -617,6 +618,7 @@ function renderInvoiceCell(
           )}
         </td>
       );
+    }
     case "status": {
       const status = STATUS_CONFIG[inv.status] ?? STATUS_CONFIG.unpaid;
       return (
