@@ -12,6 +12,15 @@
  * Chạy:
  *   TARGET_DB_URL="postgresql://user:pass@host:5432/dbname" npx tsx scripts/seed-default.ts
  *
+ * BIDV defaults (optional; existing target values are never overwritten):
+ *   BIDV_CLIENT_ID, BIDV_CLIENT_SECRET, BIDV_SYMMETRIC_KEY, BIDV_PROVIDER_ID
+ *   BIDV_PUBLIC_CERT or BIDV_PUBLIC_CERT_FILE
+ *   BIDV_PRIVATE_KEY or BIDV_PRIVATE_KEY_FILE
+ *   BIDV_RESPONSE_CERT or BIDV_RESPONSE_CERT_FILE
+ *   BIDV_DEFAULT_ENVIRONMENT, BIDV_DEFAULT_TIMEOUT,
+ *   BIDV_DEFAULT_RETRY_COUNT, BIDV_DEFAULT_TOKEN_BUFFER
+ *   Encrypted values use AI_ENCRYPT_SECRET.
+ *
  * Idempotent — chạy nhiều lần không bị trùng dữ liệu.
  */
 
@@ -20,6 +29,8 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, and } from "drizzle-orm";
 import * as schema from "../shared/schema";
 import { scryptSync, randomBytes } from "crypto";
+import { readFileSync } from "fs";
+import { encrypt } from "../server/services/crypto.service";
 
 const TARGET_URL =
   process.env.TARGET_DB_URL ||
@@ -40,6 +51,12 @@ function hashPassword(password: string): string {
   const salt = randomBytes(16).toString("hex");
   const buf = scryptSync(password, salt, 64) as Buffer;
   return `${buf.toString("hex")}.${salt}`;
+}
+
+function readDefaultValue(envKey: string, fileEnvKey?: string): string {
+  const filePath = fileEnvKey ? process.env[fileEnvKey]?.trim() : "";
+  if (filePath) return readFileSync(filePath, "utf8");
+  return process.env[envKey] ?? "";
 }
 
 async function upsertIf<T extends Record<string, any>>(
@@ -276,8 +293,53 @@ async function main() {
     console.log("  [SKIP] center_config đã tồn tại");
   }
 
-  // ── 7. center_registry ───────────────────────────────────────────────────────
-  console.log("\n── 7. center_registry table ──");
+  // ── 7. BIDV system defaults ────────────────────────────────────────────────
+  //
+  // Secret values are intentionally read from the environment or PEM files.
+  // They must never be committed to this script or printed to the console.
+  // Existing rows are preserved so a per-Production admin override is not lost.
+  console.log("\n── 7. BIDV system defaults ──");
+
+  const bidvDefaults: Array<{ key: string; value: string; encrypted?: boolean }> = [
+    { key: "environment", value: process.env.BIDV_DEFAULT_ENVIRONMENT || "Production" },
+    { key: "provider_id", value: process.env.BIDV_PROVIDER_ID || "" },
+    { key: "client_id", value: process.env.BIDV_CLIENT_ID || "" },
+    { key: "client_secret", value: readDefaultValue("BIDV_CLIENT_SECRET"), encrypted: true },
+    { key: "symmetric_key", value: readDefaultValue("BIDV_SYMMETRIC_KEY"), encrypted: true },
+    { key: "public_cert", value: readDefaultValue("BIDV_PUBLIC_CERT", "BIDV_PUBLIC_CERT_FILE") },
+    { key: "private_key", value: readDefaultValue("BIDV_PRIVATE_KEY", "BIDV_PRIVATE_KEY_FILE"), encrypted: true },
+    { key: "bidv_response_cert", value: readDefaultValue("BIDV_RESPONSE_CERT", "BIDV_RESPONSE_CERT_FILE") },
+    { key: "timeout", value: process.env.BIDV_DEFAULT_TIMEOUT || "30" },
+    { key: "retry_count", value: process.env.BIDV_DEFAULT_RETRY_COUNT || "3" },
+    { key: "token_buffer", value: process.env.BIDV_DEFAULT_TOKEN_BUFFER || "300" },
+  ];
+
+  for (const setting of bidvDefaults) {
+    if (!setting.value) {
+      console.log(`  [SKIP] bidv.${setting.key} chưa có giá trị mặc định`);
+      continue;
+    }
+
+    const existing = await db
+      .select({ key: schema.systemSettings.key })
+      .from(schema.systemSettings)
+      .where(eq(schema.systemSettings.key, `bidv.${setting.key}`))
+      .limit(1);
+
+    if (existing.length > 0) {
+      console.log(`  [SKIP] bidv.${setting.key} đã tồn tại`);
+      continue;
+    }
+
+    await db.insert(schema.systemSettings).values({
+      key: `bidv.${setting.key}`,
+      value: setting.encrypted ? encrypt(setting.value) : setting.value,
+    });
+    console.log(`  [OK]   bidv.${setting.key} đã tạo`);
+  }
+
+  // ── 8. center_registry ───────────────────────────────────────────────────────
+  console.log("\n── 8. center_registry table ──");
   await pool.query(`
     CREATE TABLE IF NOT EXISTS center_registry (
       center_id VARCHAR(100) PRIMARY KEY,
