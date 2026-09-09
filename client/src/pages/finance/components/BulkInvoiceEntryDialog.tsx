@@ -504,6 +504,7 @@ export function BulkInvoiceEntryDialog({
 
     const catName = categoryName(row.categoryId);
     const isHocPhi = catName === HOC_PHI;
+    const isKho = catName?.toLowerCase().includes("kho") ?? false;
     const installments = row.installments.slice(0, Math.max(1, row.installmentCount));
     const enteredTotal = installments.reduce((sum, item) => sum + toInt(item.amount), 0);
     if (row.installmentCount === 1 && installments[0]?.amount && toInt(installments[0].amount) !== total) {
@@ -555,7 +556,7 @@ export function BulkInvoiceEntryDialog({
       .filter(Boolean)
       .sort();
 
-    const itemName = (isHocPhi ? row.productLabel : row.product) || row.productLabel || row.product || catName || "Dịch vụ";
+    const itemName = row.productLabel || row.product || catName || "Dịch vụ";
 
     return {
       payload: {
@@ -594,6 +595,10 @@ export function BulkInvoiceEntryDialog({
             subtotal: String(total),
             sortOrder: 0,
             category: catName || null,
+            storeProductId: isKho ? row.storeProductId ?? null : null,
+            storeProductCode: isKho ? row.storeProductCode ?? null : null,
+            warehouseId: isKho ? row.warehouseId ?? null : null,
+            warehouseName: isKho ? row.warehouseName ?? null : null,
           },
         ],
         paymentSchedule,
