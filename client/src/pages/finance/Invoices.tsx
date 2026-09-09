@@ -2609,7 +2609,14 @@ export default function Invoices() {
                             <tbody>
                               {group.invoices.map(inv =>
                                 inv.hasSchedules
-                                  ? <DebtScheduleLoader key={inv.id} invoice={inv} />
+                                  ? (
+                                    <DebtScheduleLoader
+                                      key={inv.id}
+                                      invoice={inv}
+                                      dueDateFrom={dateRange.from ? format(dateRange.from, "yyyy-MM-dd") : undefined}
+                                      dueDateTo={dateRange.to ? format(dateRange.to, "yyyy-MM-dd") : undefined}
+                                    />
+                                  )
                                   : <DebtInvoiceRow key={inv.id} invoice={inv} />
                               )}
                             </tbody>

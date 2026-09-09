@@ -3,9 +3,24 @@ import { AlertCircle } from "lucide-react";
 import { DueDateBadge } from "./DueDateBadge";
 import { STATUS_CONFIG, parseNum, fmtMoney, fmtDate, DEBT_ROW_COLS, type InvoiceRow } from "@/types/invoice-types";
 
-export function DebtScheduleLoader({ invoice }: { invoice: InvoiceRow }) {
+export function DebtScheduleLoader({
+  invoice,
+  dueDateFrom,
+  dueDateTo,
+}: {
+  invoice: InvoiceRow;
+  dueDateFrom?: string;
+  dueDateTo?: string;
+}) {
   const { schedules, isLoading } = useInvoiceSchedules(invoice.id);
-  const unpaid = schedules.filter(s => s.status !== "paid");
+  const hasDueDateFilter = !!dueDateFrom || !!dueDateTo;
+  const unpaid = schedules.filter(s => {
+    if (s.status === "paid") return false;
+    if (!hasDueDateFilter) return true;
+    if (!s.dueDate) return false;
+    const dueDate = String(s.dueDate).slice(0, 10);
+    return (!dueDateFrom || dueDate >= dueDateFrom) && (!dueDateTo || dueDate <= dueDateTo);
+  });
 
   if (isLoading) {
     return (
