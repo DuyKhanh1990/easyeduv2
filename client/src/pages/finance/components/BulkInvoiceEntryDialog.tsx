@@ -168,19 +168,25 @@ export function BulkInvoiceEntryDialog({
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length > 0) {
           // Re-issue ids so React keys are unique even if the user duplicates after reload.
-           const restored = parsed.slice(0, MAX_ROWS).map((r: any) => ({
-            ...newRow(),
-            ...r,
-            id: Math.random().toString(36).slice(2),
-            // Backfill defaults for fields that may be missing from older drafts.
-            dueDate: r.dueDate ?? todayStr(),
-            productLabel: r.productLabel ?? r.product ?? "",
-            // Migrate older drafts that stored `total` instead of `amount`.
-            amount: r.amount ?? r.total ?? "",
-            promotionKeys: Array.isArray(r.promotionKeys) ? r.promotionKeys : [],
-            surchargeKeys: Array.isArray(r.surchargeKeys) ? r.surchargeKeys : [],
-            _error: undefined,
-          })) as RowData[];
+           const restored = parsed.slice(0, MAX_ROWS).map((r: any) => {
+             const base = newRow();
+             const dueDate = r.dueDate ?? r.installments?.[0]?.dueDate ?? todayStr();
+             const installments = Array.isArray(r.installments)
+               ? normalizeInstallments(r.installments, dueDate)
+               : legacyInstallments(r);
+             return {
+               ...base,
+               ...r,
+               id: Math.random().toString(36).slice(2),
+               productLabel: r.productLabel ?? r.product ?? "",
+               amount: r.amount ?? r.total ?? "",
+               promotionKeys: Array.isArray(r.promotionKeys) ? r.promotionKeys : [],
+               surchargeKeys: Array.isArray(r.surchargeKeys) ? r.surchargeKeys : [],
+               installmentCount: Math.max(1, Math.min(MAX_INSTALLMENTS, Number(r.installmentCount) || installments.length || 1)),
+               installments,
+               _error: undefined,
+             };
+           }) as RowData[];
           setRows(restored);
            setDraftCount(restored.length);
           setVisibleRowCount(Math.min(restored.length, INITIAL_RENDER_CHUNK));
@@ -297,12 +303,12 @@ export function BulkInvoiceEntryDialog({
             amount: asMoney(readCell(record, ["Số tiền", "Tổng tiền", "totalAmount", "amount"])),
             promotionKeys: [],
             surchargeKeys: [],
-            installment1: paid,
-            installment2: asMoney(readCell(record, ["Đợt 2", "installment2"])),
-            installment3: asMoney(readCell(record, ["Đợt 3", "installment3"])),
-            installment4: asMoney(readCell(record, ["Đợt 4", "installment4"])),
-            dueDate: asDate(readCell(record, ["Hạn thanh toán", "dueDate"])),
-            paymentDate: asDate(readCell(record, ["Ngày thanh toán", "paymentDate", "paidAt"])),
+             installmentCount: 1,
+             installments: [{
+               amount: paid,
+               dueDate: asDate(readCell(record, ["Hạn thanh toán", "dueDate"])) || todayStr(),
+               paymentDate: asDate(readCell(record, ["Ngày thanh toán", "paymentDate", "paidAt"])),
+             }],
             classId: asText(readCell(record, ["Mã lớp", "classId"])),
           };
         });
