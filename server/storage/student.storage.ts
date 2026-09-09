@@ -258,11 +258,17 @@ export async function getStudents(params: {
       (column) => sql`${normalizedSearchSql(column)} LIKE ${search}`,
     );
 
+    const compactSearch = normalizedSearch.replace(/[^\d]/g, "");
     const dateSearchConditions = [
       sql`to_char(${students.dateOfBirth}, 'YYYY-MM-DD') LIKE ${search}`,
       sql`to_char(${students.dateOfBirth}, 'DD/MM/YYYY') LIKE ${search}`,
       sql`to_char(${students.dateOfBirth}, 'DD-MM-YYYY') LIKE ${search}`,
-      sql`to_char(${students.dateOfBirth}, 'DDMMYYYY') LIKE ${search.replace(/[^\d]/g, "")}`,
+      ...(compactSearch.length >= 3
+        ? [
+            sql`to_char(${students.dateOfBirth}, 'DDMMYYYY') LIKE ${`%${compactSearch}%`}`,
+            sql`to_char(${students.dateOfBirth}, 'YYYYMMDD') LIKE ${`%${compactSearch}%`}`,
+          ]
+        : []),
     ];
 
     // Phone numbers are often stored with spaces, dots, or dashes. Compare
