@@ -12,7 +12,7 @@ import { HistoryPaginationFooter } from "@/components/common/HistoryPaginationFo
 
 /* ── Types ─────────────────────────────────────────────── */
 interface HistoryEvent {
-  ev_type: "created" | "paid" | "schedule_paid" | "Sửa hoá đơn" | "Xoá hoá đơn" | "Huỷ thanh toán hoá đơn";
+  ev_type: string;
   ev_time: string;
   invoice_id: string;
   invoice_code: string;
@@ -104,7 +104,29 @@ const EV_CONFIG: Record<HistoryEvent["ev_type"], EvCfg> = {
     border: "border-orange-200",
     textColor: "text-orange-700",
   },
+  "Sửa đợt thanh toán": {
+    label: "Sửa đợt thanh toán",
+    icon: <Pencil className="h-3 w-3" />,
+    bg: "bg-blue-50",
+    border: "border-blue-200",
+    textColor: "text-blue-700",
+  },
 };
+
+const DEFAULT_EV_CONFIG: EvCfg = {
+  label: "Cập nhật",
+  icon: <History className="h-3 w-3" />,
+  bg: "bg-slate-50",
+  border: "border-slate-200",
+  textColor: "text-slate-700",
+};
+
+function getEventConfig(eventType: string): EvCfg {
+  return EV_CONFIG[eventType as keyof typeof EV_CONFIG] ?? {
+    ...DEFAULT_EV_CONFIG,
+    label: eventType || DEFAULT_EV_CONFIG.label,
+  };
+}
 
 function payMethodLabel(m: string | null | undefined) {
   if (!m) return null;
@@ -171,7 +193,7 @@ function EventDetailDialog({
   onClose: () => void;
 }) {
   if (!event) return null;
-  const cfg = EV_CONFIG[event.ev_type];
+  const cfg = getEventConfig(event.ev_type);
 
   const oldObj: Record<string, any> = (() => {
     try { return event.old_content_json ? JSON.parse(event.old_content_json) : {}; }
@@ -183,7 +205,7 @@ function EventDetailDialog({
   })();
 
   // Build diff rows — only keys present in new or old, skip sibling IDs when name is available
-  const isAuditEvent = ["Sửa hoá đơn", "Huỷ thanh toán hoá đơn", "Xoá hoá đơn"].includes(event.ev_type);
+  const isAuditEvent = ["Sửa hoá đơn", "Sửa đợt thanh toán", "Huỷ thanh toán hoá đơn", "Xoá hoá đơn"].includes(event.ev_type);
 
   const allKeys = Array.from(new Set([...Object.keys(oldObj), ...Object.keys(newObj)]));
   const diffRows = allKeys
@@ -461,7 +483,7 @@ export function InvoiceHistoryTab({
                 {/* Events for this date */}
                 <div className="space-y-1.5">
                   {evs.map((ev, idx) => {
-                    const cfg = EV_CONFIG[ev.ev_type];
+                    const cfg = getEventConfig(ev.ev_type);
                     const amount = parseFloat(ev.amount) || 0;
                     const isIncome = ev.invoice_type === "Thu";
                     return (
