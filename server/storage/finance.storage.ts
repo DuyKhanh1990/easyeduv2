@@ -417,7 +417,7 @@ export async function getInvoices(filters: {
   page?: number;
   limit?: number;
   includeTabCounts?: boolean;
-} = {}): Promise<{ data: any[]; total: number; tabCounts: Record<string, number> }> {
+} = {}): Promise<{ data: any[]; total: number; parentTotal: number; tabCounts: Record<string, number> }> {
   const f = filters;
   const applyPagination = typeof f.page === "number" && typeof f.limit === "number" && f.limit > 0;
   const limit  = f.limit  ?? 20;
@@ -432,7 +432,7 @@ export async function getInvoices(filters: {
 
   if (f.locationId) {
     if (f.allowedLocationIds !== null && f.allowedLocationIds !== undefined && !f.allowedLocationIds.includes(f.locationId)) {
-      return { data: [], total: 0, tabCounts: { all: 0, unpaid: 0, partial: 0, paid: 0, debt: 0 } };
+      return { data: [], total: 0, parentTotal: 0, tabCounts: { all: 0, unpaid: 0, partial: 0, paid: 0, debt: 0 } };
     }
     conditions.push(eq(invoices.locationId, f.locationId));
   } else if (f.locationNames?.length) {
@@ -440,7 +440,7 @@ export async function getInvoices(filters: {
   } else if (!f.isSuperAdmin && f.allowedLocationIds !== null && f.allowedLocationIds !== undefined && f.allowedLocationIds.length > 0) {
     conditions.push(inArray(invoices.locationId, f.allowedLocationIds) as any);
   } else if (!f.isSuperAdmin && f.allowedLocationIds !== null && f.allowedLocationIds !== undefined && f.allowedLocationIds.length === 0) {
-    return { data: [], total: 0, tabCounts: { all: 0, unpaid: 0, partial: 0, paid: 0, debt: 0 } };
+      return { data: [], total: 0, parentTotal: 0, tabCounts: { all: 0, unpaid: 0, partial: 0, paid: 0, debt: 0 } };
   }
 
   if (f.paidAtFrom || f.paidAtTo) {
@@ -645,11 +645,57 @@ export async function getInvoices(filters: {
     )
   )`;
 
+  // The list is rendered child-first: invoices with multiple schedules become
+  // one visible row per schedule. Keep counts in the same unit as the UI
+  // instead of counting only parent invoice rows.
+  const scheduleCountExpr = sql`(
+    SELECT COUNT(*)
+    FROM invoice_payment_schedule AS count_schedule
+    WHERE count_schedule.invoice_id = ${invoices.id}
+  )`;
+  const paidScheduleCountExpr = sql`(
+    SELECT COUNT(*)
+    FROM invoice_payment_schedule AS paid_count_schedule
+    WHERE paid_count_schedule.invoice_id = ${invoices.id}
+      AND paid_count_schedule.status = 'paid'
+  )`;
+  const visibleRowCountExpr = sql`
+    CASE
+      WHEN ${scheduleCountExpr} > 1 THEN ${scheduleCountExpr}
+      ELSE 1
+    END
+  `;
+  const paidRowCountExpr = sql`
+    CASE
+      WHEN ${scheduleCountExpr} > 1 THEN ${paidScheduleCountExpr}
+      WHEN ${scheduleCountExpr} = 1 THEN ${paidScheduleCountExpr}
+      WHEN ${invoices.status} = 'paid' THEN 1
+      ELSE 0
+    END
+  `;
+  const unpaidRowCountExpr = sql`
+    CASE
+      WHEN ${scheduleCountExpr} > 1 THEN ${scheduleCountExpr} - ${paidScheduleCountExpr}
+      WHEN ${scheduleCountExpr} = 1 THEN
+        CASE WHEN ${paidScheduleCountExpr} = 0 THEN 1 ELSE 0 END
+      WHEN ${invoices.status} IN ('unpaid', 'partial') THEN 1
+      ELSE 0
+    END
+  `;
+  const effectivelyPaid = sql`(
+    (${scheduleCountExpr} > 0 AND ${paidScheduleCountExpr} = ${scheduleCountExpr})
+    OR (${scheduleCountExpr} = 0 AND ${invoices.status} = 'paid')
+  )`;
+  const effectivelyUnpaid = sql`(
+    (${scheduleCountExpr} > 0 AND ${paidScheduleCountExpr} < ${scheduleCountExpr})
+    OR (${scheduleCountExpr} = 0 AND ${invoices.status} IN ('unpaid', 'partial'))
+  )`;
+
   const tabConditions = [...conditions];
   if (f.tabFilter === "unpaid") {
-    tabConditions.push(inArray(invoices.status, ["unpaid", "partial"]));
+    tabConditions.push(effectivelyUnpaid as any);
   } else if (f.tabFilter === "paid") {
-    tabConditions.push(inArray(invoices.status, ["paid", "partial"]));
+    tabConditions.push(effectivelyPaid as any);
   }
   else if (f.tabFilter === "debt")    tabConditions.push(hasOutstandingDebt as any);
   const tabWhere = tabConditions.length > 0 ? and(...tabConditions) : undefined;
@@ -691,8 +737,19 @@ export async function getInvoices(filters: {
   }
 
   let total = 0;
+  let parentTotal = 0;
   if (applyPagination) {
-    const [{ cnt }] = await db.select({ cnt: sql<number>`COUNT(*)::int` })
+    const countExpr = f.tabFilter === "paid"
+      ? paidRowCountExpr
+      : f.tabFilter === "unpaid"
+        ? unpaidRowCountExpr
+        : f.tabFilter === "debt"
+          ? sql`1`
+          : visibleRowCountExpr;
+    const [{ cnt, displayCnt }] = await db.select({
+      cnt: sql<number>`COUNT(*)::int`,
+      displayCnt: sql<number>`COALESCE(SUM(${countExpr}), 0)::int`,
+    })
       .from(invoices)
       .leftJoin(students,     eq(invoices.studentId, students.id))
       .leftJoin(locations,    eq(invoices.locationId, locations.id))
@@ -701,7 +758,8 @@ export async function getInvoices(filters: {
       .leftJoin(paidByStaff,  eq(invoices.paidBy, paidByStaff.userId))
       .leftJoin(classes,      eq(invoices.classId, classes.id))
       .where(tabWhere);
-    total = cnt;
+    parentTotal = cnt;
+    total = displayCnt;
   }
 
   const selectFields = {
@@ -861,7 +919,14 @@ export async function getInvoices(filters: {
   }
 
   if (!applyPagination) total = invoiceRows.length;
-  return { data: invoiceRows, total, tabCounts };
+  if (!applyPagination) {
+    parentTotal = invoiceRows.length;
+    total = invoiceRows.reduce((sum, row) => {
+      const schedules = (row as any).paymentSchedule ?? [];
+      return sum + (schedules.length > 1 ? schedules.length : 1);
+    }, 0);
+  }
+  return { data: invoiceRows, total, parentTotal, tabCounts };
 }
 
 export async function getInvoiceFilterOptions(filters: {

@@ -1668,7 +1668,7 @@ export default function Invoices() {
     queryParams,
   } = useInvoiceFilters(activeTab);
 
-  const { invoices, total, tabCounts, isLoading, deleteMutation: deleteInvoiceMutation, updateStatusMutation } = useInvoices(queryParams);
+  const { invoices, total, parentTotal, tabCounts, isLoading, deleteMutation: deleteInvoiceMutation, updateStatusMutation } = useInvoices(queryParams);
   const { summary: invoiceSummary, isLoading: isSummaryLoading } = useInvoiceSummary(queryParams);
   const previousQueryParams = getPreviousInvoicePeriodParams(queryParams);
   const { summary: previousSummary, isLoading: isPreviousSummaryLoading } = useInvoiceSummary(
@@ -2543,7 +2543,7 @@ export default function Invoices() {
         {/* Pagination */}
         <div className="shrink-0 flex items-center justify-between text-sm text-muted-foreground pb-1 pt-1">
           <div className="flex items-center gap-2">
-            <span>{total} phiếu</span>
+            <span>{total} mục</span>
             <Select value={String(pageSize)} onValueChange={v => { setPageSize(Number(v)); }}>
               <SelectTrigger className="h-7 w-24 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -2554,9 +2554,9 @@ export default function Invoices() {
           <div className="flex items-center gap-1">
             <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page <= 1} onClick={() => setPage(1)}>«</Button>
             <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>‹</Button>
-            <span className="px-2 text-xs">Trang {page} / {Math.max(1, Math.ceil(total / pageSize))}</span>
-            <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage(p => p + 1)}>›</Button>
-            <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage(Math.ceil(total / pageSize))}>»</Button>
+            <span className="px-2 text-xs">Trang {page} / {Math.max(1, Math.ceil(parentTotal / pageSize))}</span>
+            <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page >= Math.ceil(parentTotal / pageSize)} onClick={() => setPage(p => p + 1)}>›</Button>
+            <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page >= Math.ceil(parentTotal / pageSize)} onClick={() => setPage(Math.ceil(parentTotal / pageSize))}>»</Button>
           </div>
         </div>
         </div>

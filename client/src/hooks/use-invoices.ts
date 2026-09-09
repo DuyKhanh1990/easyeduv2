@@ -155,7 +155,7 @@ export function useInvoices(queryParams: InvoiceQueryParams = {}) {
   const qs = buildQS(queryParams);
   const queryKey = [BASE_KEY, qs];
 
-  const { data, isLoading } = useQuery<{ data: any[]; total: number; tabCounts: Record<string, number> }>({
+  const { data, isLoading } = useQuery<{ data: any[]; total: number; parentTotal: number; tabCounts: Record<string, number> }>({
     queryKey,
     queryFn: async () => {
       const res = await fetch(`${BASE_KEY}?${qs}`, { credentials: "include", headers: getAuthHeaders() });
@@ -183,6 +183,7 @@ export function useInvoices(queryParams: InvoiceQueryParams = {}) {
   return {
     invoices:            data?.data       ?? [],
     total:               data?.total      ?? 0,
+    parentTotal:         data?.parentTotal ?? data?.total ?? 0,
     tabCounts:           data?.tabCounts  ?? { all: 0, unpaid: 0, partial: 0, paid: 0, debt: 0 },
     isLoading,
     deleteMutation,
