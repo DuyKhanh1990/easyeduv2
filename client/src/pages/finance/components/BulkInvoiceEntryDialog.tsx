@@ -501,6 +501,9 @@ export function BulkInvoiceEntryDialog({
     const isHocPhi = catName === HOC_PHI;
     const installments = row.installments.slice(0, Math.max(1, row.installmentCount));
     const enteredTotal = installments.reduce((sum, item) => sum + toInt(item.amount), 0);
+    if (row.installmentCount === 1 && installments[0]?.amount && toInt(installments[0].amount) !== total) {
+      return { payload: null, error: `Đợt 1/1 phải bằng tổng tiền hóa đơn (${fmtMoney(total)})` };
+    }
     if (enteredTotal > total) {
       return { payload: null, error: `Tổng tiền các đợt (${fmtMoney(enteredTotal)}) vượt quá tổng hóa đơn (${fmtMoney(total)})` };
     }
