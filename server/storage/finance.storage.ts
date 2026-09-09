@@ -1604,6 +1604,7 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
       }
       const retainedIds = new Set<string>();
       const now = new Date();
+      const defaultDueDate = getBusinessDateString(now);
 
       const scheduleRows = paymentSchedule.map((s: any, idx: number) => {
         // Some edit surfaces may send a temporary or stale schedule ID. The
@@ -1623,7 +1624,9 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
           // A paid installment is immutable. Never trust an edited form value
           // for its amount or payment metadata.
           amount: wasPaid ? previous.amount : (s.amount?.toString() ?? previous?.amount ?? "0"),
-          dueDate: wasPaid ? previous.dueDate : (s.dueDate ?? previous?.dueDate ?? null),
+          dueDate: wasPaid
+            ? previous.dueDate
+            : (s.dueDate || previous?.dueDate || defaultDueDate),
           status: nextStatus,
           sortOrder: previous?.sortOrder ?? idx,
           paymentMethod: wasPaid ? previous.paymentMethod : (s.paymentMethod ?? previous?.paymentMethod ?? null),
@@ -1936,7 +1939,7 @@ export async function appendSalaryPayment(invoiceId: string, amountPaid: number)
           status: "paid",
           paidAt: new Date(),
           sortOrder: currentUnpaidSortOrder,
-          dueDate: null,
+          dueDate: getBusinessDateString(),
         });
       }
     }
