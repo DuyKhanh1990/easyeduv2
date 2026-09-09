@@ -37,8 +37,10 @@ function defaultCurrentMonth(): { from: Date; to: Date } {
 const TAB_FILTERS = new Set(["unpaid", "paid", "debt"]);
 
 export function useInvoiceFilters(activeTab: string) {
+  const isDebtTab = activeTab === "debt";
   const [search, setSearchRaw]               = useState("");
-  const [dateRange, setDateRangeRaw]         = useState<{ from?: Date; to?: Date }>(defaultCurrentMonth);
+  const [createdDateRange, setCreatedDateRange] = useState<{ from?: Date; to?: Date }>(defaultCurrentMonth);
+  const [dueDateRange, setDueDateRange]         = useState<{ from?: Date; to?: Date }>(defaultCurrentMonth);
   const [calendarOpen, setCalendarOpen]      = useState(false);
   const [paidAtRange, setPaidAtRangeRaw]     = useState<{ from?: Date; to?: Date }>({});
   const [paidAtCalendarOpen, setPaidAtCalendarOpen] = useState(false);
@@ -52,12 +54,20 @@ export function useInvoiceFilters(activeTab: string) {
   const resetPage = useCallback(() => setPage(1), []);
 
   const setSearch = useCallback((v: string) => { setSearchRaw(v); resetPage(); }, [resetPage]);
-  const setDateRange = useCallback((v: { from?: Date; to?: Date }) => { setDateRangeRaw(v); resetPage(); }, [resetPage]);
+  const dateRange = isDebtTab ? dueDateRange : createdDateRange;
+  const setDateRange = useCallback((v: { from?: Date; to?: Date }) => {
+    if (isDebtTab) setDueDateRange(v);
+    else setCreatedDateRange(v);
+    resetPage();
+  }, [isDebtTab, resetPage]);
   const setPaidAtRange = useCallback((v: { from?: Date; to?: Date }) => {
     setPaidAtRangeRaw(v);
-    if (v.from || v.to) setDateRangeRaw({});
+    if (v.from || v.to) {
+      if (isDebtTab) setDueDateRange({});
+      else setCreatedDateRange({});
+    }
     resetPage();
-  }, [resetPage]);
+  }, [isDebtTab, resetPage]);
   const setFilters = useCallback((v: InvoiceFilters | ((prev: InvoiceFilters) => InvoiceFilters)) => {
     setFiltersRaw(v);
     resetPage();
@@ -74,7 +84,6 @@ export function useInvoiceFilters(activeTab: string) {
 
   const dateFrom = dateRange.from ? format(dateRange.from, "yyyy-MM-dd") : undefined;
   const dateTo   = dateRange.to   ? format(dateRange.to,   "yyyy-MM-dd") : undefined;
-  const isDebtTab = activeTab === "debt";
 
   const paidAtFrom = paidAtRange.from ? format(paidAtRange.from, "yyyy-MM-dd") : undefined;
   const paidAtTo   = paidAtRange.to   ? format(paidAtRange.to,   "yyyy-MM-dd") : undefined;
