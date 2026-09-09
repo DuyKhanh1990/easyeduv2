@@ -46,6 +46,11 @@ type RowData = {
   amount: string;
   promotionKeys: string[];
   surchargeKeys: string[];
+  storeProductId?: string | null;
+  storeProductCode?: string | null;
+  warehouseId?: string | null;
+  warehouseName?: string | null;
+  stockAvailable?: number;
   installmentCount: number;
   installments: InstallmentDraft[];
   classId: string;
@@ -1411,7 +1416,16 @@ const RowEditor = memo(function RowEditor({
       <Td>
         <Select
           value={row.categoryId}
-          onValueChange={v => updateRow(row.id, { categoryId: v, product: "", productLabel: "" })}
+              onValueChange={v => updateRow(row.id, {
+                categoryId: v,
+                product: "",
+                productLabel: "",
+                storeProductId: null,
+                storeProductCode: null,
+                warehouseId: null,
+                warehouseName: null,
+                stockAvailable: undefined,
+              })}
         >
           <SelectTrigger className="h-8 text-xs" data-testid={`select-category-${row.id}`}>
             <SelectValue placeholder="Chọn danh mục" />
@@ -1444,6 +1458,22 @@ const RowEditor = memo(function RowEditor({
                 updateRow(row.id, { product: id, productLabel: label });
               }
             }}
+          />
+        ) : catName?.toLowerCase().includes("kho") ? (
+          <StoreProductCombobox
+            branchId={row.branchId}
+            value={row.storeProductId ?? ""}
+            label={row.productLabel}
+            onSelect={(product) => updateRow(row.id, {
+              product: product.code ?? product.id,
+              productLabel: product.name,
+              amount: product.sale_price ? String(Math.round(Number(product.sale_price) || 0)) : row.amount,
+              storeProductId: product.id,
+              storeProductCode: product.code ?? null,
+              warehouseId: product.warehouse_id ?? null,
+              warehouseName: product.warehouse_name ?? null,
+              stockAvailable: Number(product.stock) || 0,
+            })}
           />
         ) : (
           <Input
