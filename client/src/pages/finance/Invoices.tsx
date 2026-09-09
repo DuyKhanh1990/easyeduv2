@@ -1468,19 +1468,22 @@ export default function Invoices() {
   });
 
   const bulkUpdateStatusMutation = useMutation({
-    mutationFn: async ({ ids, status }: { ids: string[]; status: string }) => {
+    mutationFn: async ({ invoiceIds, scheduleIds, status }: { invoiceIds: string[]; scheduleIds: string[]; status: string }) => {
       await Promise.all(
-        ids.map(id => apiRequest("PATCH", `/api/finance/invoices/${id}/status`, { status }))
+        invoiceIds.map(id => apiRequest("PATCH", `/api/finance/invoices/${id}/status`, { status })),
+        scheduleIds.map(id => apiRequest("PATCH", `/api/finance/invoice-schedules/${id}/status`, { status }))
       );
     },
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
       const label = vars.status === "paid" ? "Đã thanh toán" : "Chưa thanh toán";
+      const totalTargets = vars.invoiceIds.length + vars.scheduleIds.length;
       toast({
         title: `Cập nhật thành công`,
-        description: `Đã chuyển ${vars.ids.length} hoá đơn sang trạng thái "${label}".`,
+        description: `Đã chuyển ${totalTargets} mục sang trạng thái "${label}".`,
       });
       setSelectedIds(new Set());
+      setSelectedSchedules(new Map());
     },
     onError: (err: any) => {
       toast({
@@ -1539,18 +1542,21 @@ export default function Invoices() {
   });
 
   const bulkUpdateDueDateMutation = useMutation({
-    mutationFn: async ({ ids, dueDate }: { ids: string[]; dueDate: string }) => {
+    mutationFn: async ({ invoiceIds, scheduleIds, dueDate }: { invoiceIds: string[]; scheduleIds: string[]; dueDate: string }) => {
       await Promise.all(
-        ids.map(id => apiRequest("PATCH", `/api/finance/invoices/${id}`, { dueDate }))
+        invoiceIds.map(id => apiRequest("PATCH", `/api/finance/invoices/${id}`, { dueDate })),
+        scheduleIds.map(id => apiRequest("PATCH", `/api/finance/invoice-schedules/${id}`, { dueDate }))
       );
     },
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
+      const totalTargets = vars.invoiceIds.length + vars.scheduleIds.length;
       toast({
         title: "Cập nhật hạn thanh toán thành công",
-        description: `Đã cập nhật hạn thanh toán cho ${vars.ids.length} hoá đơn.`,
+        description: `Đã cập nhật hạn thanh toán cho ${totalTargets} mục.`,
       });
       setSelectedIds(new Set());
+      setSelectedSchedules(new Map());
       setBulkDueDate(undefined);
     },
     onError: (err: any) => {
@@ -1774,6 +1780,23 @@ export default function Invoices() {
   };
 
   const selectedScheduleIdSet = new Set(selectedSchedules.keys());
+  const selectedScheduleRows = displayInvoices.filter(invoice =>
+    invoice.isScheduleRow &&
+    !!invoice.scheduleId &&
+    selectedScheduleIdSet.has(invoice.scheduleId),
+  );
+  const selectedParentInvoiceIds = Array.from(new Set([
+    ...Array.from(selectedIds),
+    ...selectedScheduleRows
+      .map(invoice => invoice.parentInvoice?.id)
+      .filter((id): id is string => !!id),
+  ]));
+  const selectedBusinessTypes = [
+    ...invoices.filter(invoice => selectedIds.has(invoice.id)).map(invoice => invoice.type),
+    ...selectedScheduleRows.map(invoice => invoice.parentInvoice?.type ?? invoice.type),
+  ];
+  const selectedHasThu = selectedBusinessTypes.includes("Thu");
+  const selectedHasChi = selectedBusinessTypes.includes("Chi");
   const allSelected = displayInvoices.length > 0 && displayInvoices.every(i =>
     i.isScheduleRow
       ? !!i.scheduleId && selectedScheduleIdSet.has(i.scheduleId)
