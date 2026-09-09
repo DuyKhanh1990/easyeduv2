@@ -61,7 +61,7 @@ export function DebtScheduleLoader({
                 ? <span className="flex items-center gap-1">{fmtDate(s.dueDate)}{isOverdue && <AlertCircle className="h-3 w-3 text-orange-500" />}</span>
                 : <span className="text-muted-foreground">—</span>}
             </td>
-            <td className="px-4 py-2.5"><span className={`text-xs px-2 py-0.5 rounded ${STATUS_CONFIG.unpaid.className}`}>Chưa thanh toán</span></td>
+            <td className="px-4 py-2.5"><span className={`inline-flex items-center whitespace-nowrap text-[11px] px-1.5 py-0.5 rounded ${STATUS_CONFIG.unpaid.className}`}>Chưa thanh toán</span></td>
             <td className="px-4 py-2.5"><DueDateBadge dueDate={s.dueDate} /></td>
           </tr>
         );
