@@ -2978,7 +2978,8 @@ export default function Invoices() {
         isPending={bulkUpdateDueDateMutation.isPending}
         onConfirm={(date) => {
           bulkUpdateDueDateMutation.mutate({
-            ids: Array.from(selectedIds),
+            invoiceIds: Array.from(selectedIds),
+            scheduleIds: Array.from(selectedSchedules.keys()),
             dueDate: format(date, "yyyy-MM-dd"),
           });
           setBulkDueDateOpen(false);
