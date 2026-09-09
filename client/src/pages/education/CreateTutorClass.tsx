@@ -35,6 +35,7 @@ import { Check, ChevronLeft, Plus, X, User, Loader2, AlertTriangle } from "lucid
 import { cn } from "@/lib/utils";
 import { normalizeSearchText } from "@/lib/search-text";
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ShiftSelectWithCreate } from "@/components/ui/shift-select-with-create";
 import { insertClassSchema } from "@shared/schema";
 import { ConflictWarningDialog } from "@/components/education/ConflictWarningDialog";
@@ -643,16 +644,16 @@ export function CreateTutorClass() {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Khóa học <span className="text-destructive">*</span></FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                              <FormControl>
-                                <SelectTrigger><SelectValue placeholder="Chọn khóa học" /></SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {(courses as any[])?.map((c: any) => (
-                                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <FormControl>
+                              <SearchableSelect
+                                options={(courses || []).map((c: any) => ({ value: String(c.id), label: c.name }))}
+                                value={field.value || ""}
+                                onChange={field.onChange}
+                                placeholder="Chọn khóa học"
+                                searchPlaceholder="Tìm kiếm khóa học..."
+                                data-testid="select-tutor-course"
+                              />
+                            </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -734,16 +735,16 @@ export function CreateTutorClass() {
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>Chương trình</FormLabel>
-                              <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                <FormControl>
-                                  <SelectTrigger><SelectValue placeholder="Chọn chương trình" /></SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  {(programs as any[])?.map((p: any) => (
-                                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <FormControl>
+                                <SearchableSelect
+                                  options={(programs || []).map((p: any) => ({ value: String(p.id), label: p.name }))}
+                                  value={field.value || ""}
+                                  onChange={field.onChange}
+                                  placeholder="Chọn chương trình"
+                                  searchPlaceholder="Tìm kiếm chương trình..."
+                                  data-testid="select-tutor-program"
+                                />
+                              </FormControl>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -754,20 +755,19 @@ export function CreateTutorClass() {
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>Bảng điểm</FormLabel>
-                              <Select
-                                onValueChange={(val) => field.onChange(val === "none" ? "" : val)}
-                                value={field.value || "none"}
-                              >
-                                <FormControl>
-                                  <SelectTrigger><SelectValue placeholder="Chọn bảng điểm (tuỳ chọn)" /></SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  <SelectItem value="none">— Không chọn —</SelectItem>
-                                  {scoreSheets?.map((s: any) => (
-                                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <FormControl>
+                                <SearchableSelect
+                                  options={[
+                                    { value: "none", label: "— Không chọn —" },
+                                    ...(scoreSheets || []).map((s: any) => ({ value: String(s.id), label: s.name })),
+                                  ]}
+                                  value={field.value || "none"}
+                                  onChange={(val) => field.onChange(val === "none" ? "" : val)}
+                                  placeholder="Chọn bảng điểm (tuỳ chọn)"
+                                  searchPlaceholder="Tìm kiếm bảng điểm..."
+                                  data-testid="select-tutor-score-sheet"
+                                />
+                              </FormControl>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -778,20 +778,19 @@ export function CreateTutorClass() {
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>Bộ môn</FormLabel>
-                              <Select
-                                onValueChange={(val) => field.onChange(val === "none" ? "" : val)}
-                                value={field.value || "none"}
-                              >
-                                <FormControl>
-                                  <SelectTrigger><SelectValue placeholder="Chọn bộ môn (tuỳ chọn)" /></SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  <SelectItem value="none">— Không chọn —</SelectItem>
-                                  {subjects?.map((s: any) => (
-                                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <FormControl>
+                                <SearchableSelect
+                                  options={[
+                                    { value: "none", label: "— Không chọn —" },
+                                    ...(subjects || []).map((s: any) => ({ value: String(s.id), label: s.name })),
+                                  ]}
+                                  value={field.value || "none"}
+                                  onChange={(val) => field.onChange(val === "none" ? "" : val)}
+                                  placeholder="Chọn bộ môn (tuỳ chọn)"
+                                  searchPlaceholder="Tìm kiếm bộ môn..."
+                                  data-testid="select-tutor-subject"
+                                />
+                              </FormControl>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -981,23 +980,22 @@ export function CreateTutorClass() {
                                           const roomConflictCount = shift.room_id && roomName ? liveConflicts.filter(c => c.type === "room" && c.resourceName === roomName).length : 0;
                                           return (
                                             <>
-                                              <Select
-                                                value={shift.room_id}
-                                                onValueChange={(val) => {
+                                              <SearchableSelect
+                                                options={(filteredClassrooms || []).map((r: any) => ({
+                                                  value: String(r.id),
+                                                  label: r.name,
+                                                  sublabel: r.code,
+                                                }))}
+                                                value={shift.room_id || ""}
+                                                onChange={(val) => {
                                                   const newConfig = [...scheduleConfig];
                                                   newConfig[dayIdx].shifts[shiftIdx].room_id = val;
                                                   form.setValue("schedule_config", newConfig);
                                                 }}
-                                              >
-                                                <SelectTrigger className={cn("h-9", roomConflictCount > 0 && "border-orange-400 bg-orange-50")}>
-                                                  <SelectValue placeholder="Chọn phòng (không bắt buộc)" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                  {filteredClassrooms?.map((r: any) => (
-                                                    <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
-                                                  ))}
-                                                </SelectContent>
-                                              </Select>
+                                                placeholder="Chọn phòng (không bắt buộc)"
+                                                searchPlaceholder="Tìm kiếm phòng học..."
+                                                className={cn("h-9", roomConflictCount > 0 && "border-orange-400 bg-orange-50")}
+                                              />
                                               {roomConflictCount > 0 && (
                                                 <button
                                                   type="button"
@@ -1062,41 +1060,34 @@ export function CreateTutorClass() {
                       <div className="space-y-6">
                         <div className="flex items-center justify-between">
                           <Label className="text-base font-semibold">PHẦN 3: CHỌN GIÁO VIÊN</Label>
-                          <Select
-                            onValueChange={(val) => {
-                              if (!teachersConfig.some((t: any) => t.teacher_id === val)) {
-                                appendTeacher({ teacher_id: val, mode: "all", shift_keys: [] });
-                              }
-                            }}
-                          >
-                            <SelectTrigger className="w-[200px]">
-                              <SelectValue placeholder="Thêm giáo viên..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {[...(staff?.filter((s: any) => {
-                                if (!s.assignments) return true;
-                                return s.assignments.some((a: any) =>
-                                  a.department?.name && a.department.name.toLowerCase().includes("đào tạo")
-                                );
-                              }) || [])].sort((a: any, b: any) => {
+                          <SearchableSelect
+                            options={[...(staff?.filter((s: any) => {
+                              if (!s.assignments) return true;
+                              return s.assignments.some((a: any) =>
+                                a.department?.name && a.department.name.toLowerCase().includes("đào tạo")
+                              );
+                            }) || [])]
+                              .sort((a: any, b: any) => {
                                 const aActive = a.status !== "Không hoạt động";
                                 const bActive = b.status !== "Không hoạt động";
                                 if (aActive === bActive) return 0;
                                 return aActive ? -1 : 1;
-                              }).map((s: any) => {
-                                const isInactive = s.status === "Không hoạt động";
-                                return (
-                                  <SelectItem key={s.id} value={s.id} disabled={isInactive} className={isInactive ? "opacity-40" : ""}>
-                                    <span className="flex items-center gap-1.5">
-                                      <span>{s.fullName}</span>
-                                      {s.code && <span className="text-[11px] text-muted-foreground">({s.code})</span>}
-                                      {isInactive && <span className="text-amber-500 text-[10px] font-medium">⚠ Không hoạt động</span>}
-                                    </span>
-                                  </SelectItem>
-                                );
-                              })}
-                            </SelectContent>
-                          </Select>
+                              })
+                              .map((s: any) => ({
+                                value: String(s.id),
+                                label: `${s.fullName}${s.status === "Không hoạt động" ? " (Không hoạt động)" : ""}`,
+                                sublabel: s.code,
+                                disabled: s.status === "Không hoạt động",
+                              }))}
+                            onChange={(val) => {
+                              if (!teachersConfig.some((t: any) => t.teacher_id === val)) {
+                                appendTeacher({ teacher_id: val, mode: "all", shift_keys: [] });
+                              }
+                            }}
+                            placeholder="Thêm giáo viên..."
+                            searchPlaceholder="Tìm kiếm nhân sự..."
+                            className="w-[200px]"
+                          />
                         </div>
 
                         <div className="space-y-4">
