@@ -1010,10 +1010,8 @@ export function BulkInvoiceEntryDialog({
                 <Th className="w-36 text-right">Khuyến mãi</Th>
                 <Th className="w-36 text-right">Phụ thu</Th>
                 <Th className="w-40 text-right">Tổng tiền</Th>
-                <Th className="w-40 text-right">Đợt 1</Th>
-                <Th className="w-40 text-right">Đợt 2</Th>
-                <Th className="w-40 text-right">Đợt 3</Th>
-                <Th className="w-40 text-right">Đợt 4</Th>
+                 <Th className="w-32 text-center">Số đợt</Th>
+                 <Th className="w-40 text-right">Số tiền đợt</Th>
                 <Th className="w-40">Hạn thanh toán</Th>
                 <Th className="w-40">Ngày thanh toán</Th>
                 <Th className="w-44">
@@ -1037,6 +1035,8 @@ export function BulkInvoiceEntryDialog({
                   surchargeOptions={surchargeOptions}
                   updateRow={updateRow}
                   updateAmount={updateAmount}
+                   updateInstallment={updateInstallment}
+                   updateInstallmentCount={updateInstallmentCount}
                   togglePromotion={togglePromotion}
                   toggleSurcharge={toggleSurcharge}
                   deleteRow={deleteRow}
