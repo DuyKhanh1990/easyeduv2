@@ -485,10 +485,25 @@ export async function getInvoices(filters: {
       .select({ invoiceId: invoicePaymentSchedule.invoiceId })
       .from(invoicePaymentSchedule)
       .where(and(...scheduleDueConditions));
-    conditions.push(or(
-      and(...invoiceDueConditions),
-      inArray(invoices.id, scheduleDueInvoiceIds),
-    ) as any);
+    if (f.tabFilter === "debt") {
+      // On the debt tab, a scheduled invoice must be matched by its next
+      // unpaid installment due date. Its parent invoice due date may be an
+      // old date and must not make installments from another month appear.
+      const noPaymentSchedule = sql`NOT EXISTS (
+        SELECT 1
+        FROM invoice_payment_schedule AS debt_parent_schedule
+        WHERE debt_parent_schedule.invoice_id = ${invoices.id}
+      )`;
+      conditions.push(or(
+        and(noPaymentSchedule, ...invoiceDueConditions),
+        inArray(invoices.id, scheduleDueInvoiceIds),
+      ) as any);
+    } else {
+      conditions.push(or(
+        and(...invoiceDueConditions),
+        inArray(invoices.id, scheduleDueInvoiceIds),
+      ) as any);
+    }
   } else {
     const invoiceCreatedConditions: any[] = [];
     const scheduleCreatedConditions: any[] = [];
