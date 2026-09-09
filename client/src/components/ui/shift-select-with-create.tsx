@@ -1,13 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Loader2 } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -104,8 +97,6 @@ export function ShiftSelectWithCreate({
     if (!name.trim() || !startTime || !endTime || !locationId) return;
     createMutation.mutate({ name: name.trim(), startTime, endTime, locationId });
   };
-
-  const selectedShift = shifts.find((s) => s.id === value);
 
   const searchableOptions = [
     ...shifts.map((shift) => ({
