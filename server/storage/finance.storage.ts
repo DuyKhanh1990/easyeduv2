@@ -683,7 +683,8 @@ export async function getInvoices(filters: {
     END
   `;
   const effectivelyPaid = sql`(
-    (${scheduleCountExpr} > 0 AND ${paidScheduleCountExpr} = ${scheduleCountExpr})
+    (${scheduleCountExpr} > 1 AND ${paidScheduleCountExpr} > 0)
+    OR (${scheduleCountExpr} = 1 AND ${paidScheduleCountExpr} = 1)
     OR (${scheduleCountExpr} = 0 AND ${invoices.status} = 'paid')
   )`;
   const effectivelyUnpaid = sql`(
