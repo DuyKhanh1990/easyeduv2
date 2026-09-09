@@ -24,6 +24,13 @@ const MAX_ROWS = 300;
 const WARN_ROWS = 250;
 const AUTOSAVE_INTERVAL_MS = 30_000;
 const INITIAL_RENDER_CHUNK = 50;
+const MAX_INSTALLMENTS = 12;
+
+type InstallmentDraft = {
+  amount: string;
+  dueDate: string;
+  paymentDate: string;
+};
 
 type RowData = {
   id: string;
@@ -39,12 +46,8 @@ type RowData = {
   amount: string;
   promotionKeys: string[];
   surchargeKeys: string[];
-  installment1: string;
-  installment2: string;
-  installment3: string;
-  installment4: string;
-  dueDate: string;
-  paymentDate: string;
+  installmentCount: number;
+  installments: InstallmentDraft[];
   classId: string;
   _error?: string;
 };
@@ -70,14 +73,34 @@ const newRow = (): RowData => ({
   amount: "",
   promotionKeys: [],
   surchargeKeys: [],
-  installment1: "",
-  installment2: "",
-  installment3: "",
-  installment4: "",
-  dueDate: todayStr(),
-  paymentDate: "",
+  installmentCount: 1,
+  installments: [{ amount: "", dueDate: todayStr(), paymentDate: "" }],
   classId: "",
 });
+
+const normalizeInstallments = (value: unknown, fallbackDueDate = todayStr()): InstallmentDraft[] => {
+  if (!Array.isArray(value) || value.length === 0) {
+    return [{ amount: "", dueDate: fallbackDueDate, paymentDate: "" }];
+  }
+  return value.slice(0, MAX_INSTALLMENTS).map((item: any) => ({
+    amount: digits(String(item?.amount ?? "")),
+    dueDate: String(item?.dueDate ?? fallbackDueDate),
+    paymentDate: String(item?.paymentDate ?? ""),
+  }));
+};
+
+const legacyInstallments = (raw: any): InstallmentDraft[] => {
+  const dueDate = String(raw?.dueDate ?? todayStr());
+  const paymentDate = String(raw?.paymentDate ?? "");
+  const legacyValues = ["installment1", "installment2", "installment3", "installment4"]
+    .map(key => String(raw?.[key] ?? ""))
+    .filter(value => value !== "");
+  return (legacyValues.length > 0 ? legacyValues : [""]).map((amount, index) => ({
+    amount: digits(amount),
+    dueDate,
+    paymentDate: index === 0 ? paymentDate : "",
+  }));
+};
 
 // Calculate adjustment amount (promotion or surcharge) from selected option keys.
 const calcAdjustment = (base: number, keys: string[], options: any[]) =>
