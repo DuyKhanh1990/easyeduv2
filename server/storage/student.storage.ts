@@ -232,9 +232,57 @@ export async function getStudents(params: {
   const normalizedSearch = normalizeSearchText(searchTerm);
   if (normalizedSearch) {
     const search = `%${normalizedSearch}%`;
-    const normalizedName = normalizedSearchSql(students.fullName);
-    const normalizedCode = normalizedSearchSql(students.code);
-    whereClause = sql`${whereClause} AND (${normalizedName} LIKE ${search} OR ${normalizedCode} LIKE ${search})`;
+    const textSearchColumns = [
+      students.fullName,
+      students.code,
+      students.phone,
+      students.email,
+      students.parentName,
+      students.parentPhone,
+      students.parentName2,
+      students.parentPhone2,
+      students.parentName3,
+      students.parentPhone3,
+      students.address,
+      students.source,
+      students.rejectReason,
+      students.socialLink,
+      students.academicLevel,
+      students.note,
+      students.type,
+      students.relationship,
+      students.accountStatus,
+      students.status,
+    ];
+    const textSearchConditions = textSearchColumns.map(
+      (column) => sql`${normalizedSearchSql(column)} LIKE ${search}`,
+    );
+
+    const dateSearchConditions = [
+      sql`to_char(${students.dateOfBirth}, 'YYYY-MM-DD') LIKE ${search}`,
+      sql`to_char(${students.dateOfBirth}, 'DD/MM/YYYY') LIKE ${search}`,
+      sql`to_char(${students.dateOfBirth}, 'DD-MM-YYYY') LIKE ${search}`,
+      sql`to_char(${students.dateOfBirth}, 'DDMMYYYY') LIKE ${search.replace(/[^\d]/g, "")}`,
+    ];
+
+    // Phone numbers are often stored with spaces, dots, or dashes. Compare
+    // their digit-only forms so both "0912 345 678" and "0912345678" work.
+    const searchDigits = String(searchTerm ?? "").replace(/\D/g, "");
+    const phoneSearchConditions = searchDigits.length >= 3
+      ? [
+          students.phone,
+          students.parentPhone,
+          students.parentPhone2,
+          students.parentPhone3,
+        ].map((column) => sql`regexp_replace(coalesce(${column}, ''), '[^0-9]', '', 'g') LIKE ${`%${searchDigits}%`}`)
+      : [];
+
+    const allSearchConditions = [
+      ...textSearchConditions,
+      ...dateSearchConditions,
+      ...phoneSearchConditions,
+    ];
+    whereClause = sql`${whereClause} AND (${sql.join(allSearchConditions, sql` OR `)})`;
   }
 
   const studentIdRows = await db
