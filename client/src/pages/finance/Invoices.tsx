@@ -327,6 +327,7 @@ function EditableInvoiceDateCell({
   const value = invoice[field];
   const [open, setOpen] = useState(false);
   const [dateConflictOpen, setDateConflictOpen] = useState(false);
+  const [pendingConflictDate, setPendingConflictDate] = useState("");
   const [draft, setDraft] = useState("");
   const { toast } = useToast();
   const background = isSelected ? "bg-violet-50" : isOdd ? "bg-slate-50" : "bg-white";
@@ -352,6 +353,7 @@ function EditableInvoiceDateCell({
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
       setOpen(false);
       setDateConflictOpen(false);
+      setPendingConflictDate("");
       const target = invoice.isScheduleRow ? "đợt thanh toán" : "hoá đơn";
       toast({
         title: "Đã cập nhật ngày",
@@ -374,13 +376,16 @@ function EditableInvoiceDateCell({
   const label = field === "createdAt" ? "Ngày tạo" : "Ngày thanh toán";
   const saveDate = () => {
     if (hasDateConflict) {
+      setPendingConflictDate(draft);
       setDateConflictOpen(true);
       return;
     }
     mutation.mutate(field === "createdAt" ? { createdAt: draft } : { paidAt: draft });
   };
   const confirmDateConflict = () => {
-    mutation.mutate({ createdAt: draft, paidAt: draft });
+    if (pendingConflictDate) {
+      mutation.mutate({ createdAt: pendingConflictDate, paidAt: pendingConflictDate });
+    }
   };
 
   if (!canEdit) {
@@ -429,18 +434,26 @@ function EditableInvoiceDateCell({
           </div>
         </PopoverContent>
       </Popover>
-       <Dialog open={dateConflictOpen} onOpenChange={(next) => { if (!mutation.isPending) setDateConflictOpen(next); }}>
+       <Dialog
+         open={dateConflictOpen}
+         onOpenChange={(next) => {
+           if (!mutation.isPending) {
+             setDateConflictOpen(next);
+             if (!next) setPendingConflictDate("");
+           }
+         }}
+       >
          <DialogContent className="sm:max-w-md">
            <DialogHeader>
              <DialogTitle>Ngày thanh toán trước ngày tạo</DialogTitle>
            </DialogHeader>
            <div className="space-y-3 text-sm text-muted-foreground">
              <p>
-               Ngày thanh toán <strong className="text-foreground">{fmtDate(draft)}</strong> đang trước ngày tạo{" "}
+               Ngày thanh toán <strong className="text-foreground">{fmtDate(pendingConflictDate)}</strong> đang trước ngày tạo{" "}
                <strong className="text-foreground">{fmtDate(createdDate)}</strong>.
              </p>
              <p>
-               Bạn có muốn tự động chuyển ngày tạo về cùng ngày <strong className="text-foreground">{fmtDate(draft)}</strong> không?
+               Bạn có muốn tự động chuyển ngày tạo về cùng ngày <strong className="text-foreground">{fmtDate(pendingConflictDate)}</strong> không?
              </p>
            </div>
            <div className="flex justify-end gap-2 pt-2">
@@ -883,13 +896,14 @@ function BulkInvoiceDateDialog({
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  onConfirm: (date: Date) => void;
+  onConfirm: (date: Date, adjustCreatedAt: boolean) => void;
   field: "createdAt" | "paidAt";
   selectedDate: Date | undefined;
   onDateChange: (d: Date | undefined) => void;
   selectedInvoices: InvoiceRow[];
   isPending: boolean;
 }) {
+  const [confirmingConflict, setConfirmingConflict] = useState(false);
   const label = field === "createdAt" ? "ngày tạo" : "ngày thanh toán";
   const selectedDateText = selectedDate ? format(selectedDate, "yyyy-MM-dd") : "";
   const conflictingInvoices = selectedDate
@@ -920,7 +934,10 @@ function BulkInvoiceDateDialog({
           <Calendar
             mode="single"
             selected={selectedDate}
-            onSelect={onDateChange}
+            onSelect={(date) => {
+              setConfirmingConflict(false);
+              onDateChange(date);
+            }}
             locale={vi}
             className="rounded-md border"
           />
@@ -929,23 +946,49 @@ function BulkInvoiceDateDialog({
               Ngày đã chọn: {format(selectedDate, "dd/MM/yyyy")}
             </p>
           )}
-          {conflictingInvoices.length > 0 && (
+          {field === "paidAt" && conflictingInvoices.length > 0 && !confirmingConflict && (
+            <div className="w-full rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+              Có {conflictingInvoices.length} hoá đơn có ngày tạo sau ngày thanh toán đã chọn.
+              Khi xác nhận, ngày tạo của các hoá đơn này sẽ được đưa về cùng ngày thanh toán.
+            </div>
+          )}
+          {field === "createdAt" && conflictingInvoices.length > 0 && (
             <div className="w-full rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
               Không thể áp dụng cho {conflictingInvoices.length} hoá đơn vì ngày thanh toán
               không được trước ngày tạo. Vui lòng chọn ngày khác.
             </div>
           )}
+          {confirmingConflict && (
+            <div className="w-full rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">
+              Bạn có muốn cập nhật ngày tạo của {conflictingInvoices.length} hoá đơn bị xung đột
+              về cùng ngày {selectedDate ? format(selectedDate, "dd/MM/yyyy") : ""} không?
+            </div>
+          )}
         </div>
         <div className="flex justify-end gap-2 pt-1">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
-            Hủy
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (confirmingConflict) setConfirmingConflict(false);
+              else onOpenChange(false);
+            }}
+            disabled={isPending}
+          >
+            {confirmingConflict ? "Quay lại" : "Hủy"}
           </Button>
           <Button
             className="bg-purple-600 hover:bg-purple-700"
-            disabled={!selectedDate || conflictingInvoices.length > 0 || isPending}
-            onClick={() => selectedDate && onConfirm(selectedDate)}
+            disabled={!selectedDate || (field === "createdAt" && conflictingInvoices.length > 0) || isPending}
+            onClick={() => {
+              if (!selectedDate) return;
+              if (field === "paidAt" && conflictingInvoices.length > 0 && !confirmingConflict) {
+                setConfirmingConflict(true);
+                return;
+              }
+              onConfirm(selectedDate, confirmingConflict);
+            }}
           >
-            {isPending ? "Đang cập nhật..." : "Xác nhận"}
+            {isPending ? "Đang cập nhật..." : confirmingConflict ? "Đồng ý" : "Xác nhận"}
           </Button>
         </div>
       </DialogContent>
@@ -1504,13 +1547,20 @@ export default function Invoices() {
       ids,
       field,
       date,
+      adjustCreatedAtIds = [],
     }: {
       ids: string[];
       field: "createdAt" | "paidAt";
       date: string;
+      adjustCreatedAtIds?: string[];
     }) => {
       await Promise.all(
-        ids.map(id => apiRequest("PATCH", `/api/finance/invoices/${id}`, { [field]: date }))
+        ids.map(id => {
+          const payload = field === "paidAt" && adjustCreatedAtIds.includes(id)
+            ? { createdAt: date, paidAt: date }
+            : { [field]: date };
+          return apiRequest("PATCH", `/api/finance/invoices/${id}`, payload);
+        })
       );
     },
     onSuccess: (_data, vars) => {
@@ -1518,7 +1568,9 @@ export default function Invoices() {
       const label = vars.field === "createdAt" ? "ngày tạo" : "ngày thanh toán";
       toast({
         title: `Cập nhật ${label} thành công`,
-        description: `Đã cập nhật ${label} cho ${vars.ids.length} hoá đơn.`,
+        description: vars.adjustCreatedAtIds?.length
+          ? `Đã cập nhật ngày thanh toán cho ${vars.ids.length} hoá đơn; đồng thời điều chỉnh ngày tạo cho ${vars.adjustCreatedAtIds.length} hoá đơn.`
+          : `Đã cập nhật ${label} cho ${vars.ids.length} hoá đơn.`,
       });
       setSelectedIds(new Set());
       setBulkInvoiceDate(undefined);
@@ -2863,12 +2915,20 @@ export default function Invoices() {
         onDateChange={setBulkInvoiceDate}
         selectedInvoices={invoices.filter(invoice => selectedIds.has(invoice.id))}
         isPending={bulkUpdateInvoiceDateMutation.isPending}
-        onConfirm={(date) => {
+        onConfirm={(date, adjustCreatedAt) => {
           if (!bulkInvoiceDateField) return;
+          const dateText = format(date, "yyyy-MM-dd");
+          const selectedInvoices = invoices.filter(invoice => selectedIds.has(invoice.id));
+          const adjustCreatedAtIds = adjustCreatedAt && bulkInvoiceDateField === "paidAt"
+            ? selectedInvoices
+                .filter(invoice => invoice.createdAt && dateText < format(new Date(invoice.createdAt), "yyyy-MM-dd"))
+                .map(invoice => invoice.id)
+            : [];
           bulkUpdateInvoiceDateMutation.mutate({
             ids: Array.from(selectedIds),
             field: bulkInvoiceDateField,
-            date: format(date, "yyyy-MM-dd"),
+            date: dateText,
+            adjustCreatedAtIds,
           });
         }}
       />
