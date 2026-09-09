@@ -15,6 +15,17 @@ import type {
   InvoicePrintTemplateRow, InsertInvoicePrintTemplate,
 } from "@shared/schema";
 
+function getBusinessDateString(date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 // ==========================================
 // FINANCE - TRANSACTION CATEGORIES
 // ==========================================
@@ -1394,6 +1405,8 @@ export async function getNextInvoiceCode(type: string, locationId?: string | nul
 
 export async function createInvoice(data: any): Promise<any> {
   const { items = [], paymentSchedule = [], ...invoiceData } = data;
+  const defaultDueDate = getBusinessDateString();
+  invoiceData.dueDate = invoiceData.dueDate || defaultDueDate;
   if (!invoiceData.code) {
     invoiceData.code = await getNextInvoiceCode(invoiceData.type === "Chi" ? "expense" : "income", invoiceData.locationId);
   }
@@ -1450,7 +1463,7 @@ export async function createInvoice(data: any): Promise<any> {
             label: s.label,
             code: `${invoiceCode}-${idx + 1}`,
             amount: s.amount?.toString() ?? "0",
-            dueDate: s.dueDate ?? null,
+            dueDate: s.dueDate || defaultDueDate,
             status: s.status ?? "unpaid",
             paidAt: s.status === "paid" ? (s.paidAt ?? new Date()) : null,
             paidBy: s.status === "paid" ? (s.paidBy ?? invoiceData.createdBy ?? null) : null,
