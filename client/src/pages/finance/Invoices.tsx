@@ -1469,10 +1469,10 @@ export default function Invoices() {
 
   const bulkUpdateStatusMutation = useMutation({
     mutationFn: async ({ invoiceIds, scheduleIds, status }: { invoiceIds: string[]; scheduleIds: string[]; status: string }) => {
-      await Promise.all(
-        invoiceIds.map(id => apiRequest("PATCH", `/api/finance/invoices/${id}/status`, { status })),
-        scheduleIds.map(id => apiRequest("PATCH", `/api/finance/invoice-schedules/${id}/status`, { status }))
-      );
+      await Promise.all([
+        ...invoiceIds.map(id => apiRequest("PATCH", `/api/finance/invoices/${id}/status`, { status })),
+        ...scheduleIds.map(id => apiRequest("PATCH", `/api/finance/invoice-schedules/${id}/status`, { status })),
+      ]);
     },
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
@@ -1545,10 +1545,10 @@ export default function Invoices() {
 
   const bulkUpdateDueDateMutation = useMutation({
     mutationFn: async ({ invoiceIds, scheduleIds, dueDate }: { invoiceIds: string[]; scheduleIds: string[]; dueDate: string }) => {
-      await Promise.all(
-        invoiceIds.map(id => apiRequest("PATCH", `/api/finance/invoices/${id}`, { dueDate })),
-        scheduleIds.map(id => apiRequest("PATCH", `/api/finance/invoice-schedules/${id}`, { dueDate }))
-      );
+      await Promise.all([
+        ...invoiceIds.map(id => apiRequest("PATCH", `/api/finance/invoices/${id}`, { dueDate })),
+        ...scheduleIds.map(id => apiRequest("PATCH", `/api/finance/invoice-schedules/${id}`, { dueDate })),
+      ]);
     },
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
@@ -1586,20 +1586,20 @@ export default function Invoices() {
       adjustCreatedAtIds?: string[];
       adjustCreatedAtScheduleIds?: string[];
     }) => {
-      await Promise.all(
-        invoiceIds.map(id => {
+      await Promise.all([
+        ...invoiceIds.map(id => {
           const payload = field === "paidAt" && adjustCreatedAtIds.includes(id)
             ? { createdAt: date, paidAt: date }
             : { [field]: date };
           return apiRequest("PATCH", `/api/finance/invoices/${id}`, payload);
         }),
-        scheduleIds.map(id => {
+        ...scheduleIds.map(id => {
           const payload = field === "paidAt" && adjustCreatedAtScheduleIds.includes(id)
             ? { createdAt: date, paidAt: date }
             : { [field]: date };
           return apiRequest("PATCH", `/api/finance/invoice-schedules/${id}`, payload);
         }),
-      );
+      ]);
     },
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
