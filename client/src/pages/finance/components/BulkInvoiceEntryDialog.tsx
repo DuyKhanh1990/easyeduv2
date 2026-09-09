@@ -1582,7 +1582,7 @@ const RowEditor = memo(function RowEditor({
           {fmtMoney(computedTotal)}
         </div>
       </Td>
-      <Td>
+      <Td className="!align-top">
         <Select
           value={String(row.installmentCount)}
           onValueChange={value => updateInstallmentCount(row.id, Number(value))}
@@ -1597,7 +1597,7 @@ const RowEditor = memo(function RowEditor({
           </SelectContent>
         </Select>
       </Td>
-      <Td>
+      <Td className="!align-top">
         <Input
           inputMode="numeric"
           className="h-8 text-xs text-right"
@@ -1608,7 +1608,7 @@ const RowEditor = memo(function RowEditor({
         />
         <div className="text-[10px] text-muted-foreground text-right">Đợt 1/{row.installmentCount}</div>
       </Td>
-      <Td>
+      <Td className="!align-top">
         <Input
           type="date"
           className="h-8 text-xs"
@@ -1617,7 +1617,7 @@ const RowEditor = memo(function RowEditor({
           data-testid={`input-duedate-${row.id}-1`}
         />
       </Td>
-      <Td>
+      <Td className="!align-top">
         <Input
           type="date"
           className="h-8 text-xs"
