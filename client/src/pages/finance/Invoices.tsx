@@ -891,7 +891,7 @@ function BulkInvoiceDateDialog({
   field,
   selectedDate,
   onDateChange,
-  selectedInvoices,
+  selectedItems,
   isPending,
 }: {
   open: boolean;
@@ -900,7 +900,7 @@ function BulkInvoiceDateDialog({
   field: "createdAt" | "paidAt";
   selectedDate: Date | undefined;
   onDateChange: (d: Date | undefined) => void;
-  selectedInvoices: InvoiceRow[];
+  selectedItems: BulkInvoiceDateTarget[];
   isPending: boolean;
 }) {
   const [confirmingConflict, setConfirmingConflict] = useState(false);
@@ -909,13 +909,13 @@ function BulkInvoiceDateDialog({
   }, [open, field]);
   const label = field === "createdAt" ? "ngày tạo" : "ngày thanh toán";
   const selectedDateText = selectedDate ? format(selectedDate, "yyyy-MM-dd") : "";
-  const conflictingInvoices = selectedDate
-    ? selectedInvoices.filter((invoice) => {
-        if (field === "createdAt" && invoice.paidAt) {
-          return selectedDateText > format(new Date(invoice.paidAt), "yyyy-MM-dd");
+  const conflictingItems = selectedDate
+    ? selectedItems.filter((item) => {
+        if (field === "createdAt" && item.paidAt) {
+          return selectedDateText > dateOnly(item.paidAt);
         }
-        if (field === "paidAt" && invoice.createdAt) {
-          return selectedDateText < format(new Date(invoice.createdAt), "yyyy-MM-dd");
+        if (field === "paidAt" && item.createdAt) {
+          return selectedDateText < dateOnly(item.createdAt);
         }
         return false;
       })
@@ -932,7 +932,7 @@ function BulkInvoiceDateDialog({
         </DialogHeader>
         <div className="py-2 flex flex-col items-center gap-3">
           <p className="text-sm text-muted-foreground w-full">
-            Chọn {label} áp dụng cho {selectedInvoices.length} hoá đơn đã chọn.
+             Chọn {label} áp dụng cho {selectedItems.length} mục đã chọn.
           </p>
           <Calendar
             mode="single"
@@ -949,21 +949,21 @@ function BulkInvoiceDateDialog({
               Ngày đã chọn: {format(selectedDate, "dd/MM/yyyy")}
             </p>
           )}
-          {field === "paidAt" && conflictingInvoices.length > 0 && !confirmingConflict && (
+          {field === "paidAt" && conflictingItems.length > 0 && !confirmingConflict && (
             <div className="w-full rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-              Có {conflictingInvoices.length} hoá đơn có ngày tạo sau ngày thanh toán đã chọn.
-              Khi xác nhận, ngày tạo của các hoá đơn này sẽ được đưa về cùng ngày thanh toán.
+              Có {conflictingItems.length} mục có ngày tạo sau ngày thanh toán đã chọn.
+              Khi xác nhận, ngày tạo của các mục này sẽ được đưa về cùng ngày thanh toán.
             </div>
           )}
-          {field === "createdAt" && conflictingInvoices.length > 0 && (
+          {field === "createdAt" && conflictingItems.length > 0 && (
             <div className="w-full rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
-              Không thể áp dụng cho {conflictingInvoices.length} hoá đơn vì ngày thanh toán
+              Không thể áp dụng cho {conflictingItems.length} mục vì ngày thanh toán
               không được trước ngày tạo. Vui lòng chọn ngày khác.
             </div>
           )}
           {confirmingConflict && (
             <div className="w-full rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">
-              Bạn có muốn cập nhật ngày tạo của {conflictingInvoices.length} hoá đơn bị xung đột
+              Bạn có muốn cập nhật ngày tạo của {conflictingItems.length} mục bị xung đột
               về cùng ngày {selectedDate ? format(selectedDate, "dd/MM/yyyy") : ""} không?
             </div>
           )}
@@ -981,10 +981,10 @@ function BulkInvoiceDateDialog({
           </Button>
           <Button
             className="bg-purple-600 hover:bg-purple-700"
-            disabled={!selectedDate || (field === "createdAt" && conflictingInvoices.length > 0) || isPending}
+            disabled={!selectedDate || (field === "createdAt" && conflictingItems.length > 0) || isPending}
             onClick={() => {
               if (!selectedDate) return;
-              if (field === "paidAt" && conflictingInvoices.length > 0 && !confirmingConflict) {
+              if (field === "paidAt" && conflictingItems.length > 0 && !confirmingConflict) {
                 setConfirmingConflict(true);
                 return;
               }
