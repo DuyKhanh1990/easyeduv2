@@ -1734,6 +1734,49 @@ export function registerFinanceRoutes(app: Express): void {
             updatedBy: userId ?? null,
           } as any).where(eq(invoicePaymentSchedule.id, schedId));
 
+           // Keep the parent invoice as a denormalized summary of its
+           // installments. Bulk collection must follow the same child-first
+           // rules as the single-schedule status endpoint.
+           if (scheduleBefore.invoiceId) {
+             const parentSchedules = await db
+               .select({
+                 status: invoicePaymentSchedule.status,
+                 amount: invoicePaymentSchedule.amount,
+               })
+               .from(invoicePaymentSchedule)
+               .where(eq(invoicePaymentSchedule.invoiceId, scheduleBefore.invoiceId));
+             const [parentInvoice] = await db
+               .select({ grandTotal: invoices.grandTotal })
+               .from(invoices)
+               .where(eq(invoices.id, scheduleBefore.invoiceId))
+               .limit(1);
+             if (parentInvoice && parentSchedules.length > 0) {
+               const grandTotal = parseFloat(parentInvoice.grandTotal ?? "0");
+               const paidAmount = parentSchedules
+                 .filter(schedule => schedule.status === "paid")
+                 .reduce((sum, schedule) => sum + parseFloat(schedule.amount ?? "0"), 0);
+               const remainingAmount = Math.max(0, grandTotal - paidAmount);
+               const allPaid = parentSchedules.every(schedule => schedule.status === "paid");
+               const summaryStatus = paidAmount >= grandTotal && grandTotal > 0
+                 ? "paid"
+                 : paidAmount > 0
+                   ? "partial"
+                   : "unpaid";
+
+               await db
+                 .update(invoices)
+                 .set({
+                   status: summaryStatus,
+                   paidAmount: paidAmount.toFixed(2),
+                   remainingAmount: remainingAmount.toFixed(2),
+                   paidBy: allPaid ? userId ?? null : null,
+                   paidAt: allPaid ? paidAt : null,
+                   updatedAt: new Date(),
+                 })
+                 .where(eq(invoices.id, scheduleBefore.invoiceId));
+             }
+           }
+
           // Assign settle code
           let schedLocId: string | null = null;
           if (scheduleBefore.invoiceId) {
