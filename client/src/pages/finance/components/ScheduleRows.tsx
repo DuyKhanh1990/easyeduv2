@@ -48,7 +48,7 @@ export function ScheduleRows({
   onSplit: (s: ScheduleItem) => void;
   invoice?: ParentInvoice;
   selectedScheduleIds?: Set<string>;
-  onToggleSchedule?: (s: ScheduleItem) => void;
+  onToggleSchedule?: (s: ScheduleItem, checked: boolean) => void;
   canSelect?: boolean;
   onViewPrint?: (s: ScheduleItem) => void;
   payerNames?: string[];
@@ -188,7 +188,7 @@ export function ScheduleRows({
               {canSelect && (
                 <Checkbox
                   checked={isSelected}
-                  onCheckedChange={() => onToggleSchedule?.(s)}
+                  onCheckedChange={checked => onToggleSchedule?.(s, checked === true)}
                   data-testid={`checkbox-schedule-${s.id}`}
                 />
               )}

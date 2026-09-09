@@ -1273,7 +1273,6 @@ export default function Invoices() {
     queryKey: ["/api/einvoice/config"],
   });
   const isUsbSigning = (einvoiceCfg?.signingType ?? "usb") === "usb";
-  const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const [bulkPrintOpen, setBulkPrintOpen] = useState(false);
   const [bulkPrintTemplateId, setBulkPrintTemplateId] = useState<string>("");
   const [bulkPrintInvoice, setBulkPrintInvoice] = useState<InvoiceRow | null>(null);
@@ -1289,10 +1288,6 @@ export default function Invoices() {
   const [bulkCollectPrintData, setBulkCollectPrintData] = useState<BulkCollectPrintData | null>(null);
   const [bulkCommissionOpen, setBulkCommissionOpen] = useState(false);
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
-
-  useEffect(() => {
-    setIsActionMenuOpen(selectedIds.size > 0);
-  }, [selectedIds]);
 
   const { toast } = useToast();
 
@@ -1628,8 +1623,9 @@ export default function Invoices() {
       ? !!i.scheduleId && selectedScheduleIdSet.has(i.scheduleId)
       : selectedIds.has(i.id),
   );
-  const toggleAll = () => {
-    if (allSelected) {
+  const toggleAll = (checked?: boolean) => {
+    const shouldSelect = checked ?? !allSelected;
+    if (!shouldSelect) {
       setSelectedIds(new Set());
       setSelectedSchedules(new Map());
       return;
@@ -1641,16 +1637,17 @@ export default function Invoices() {
     setSelectedIds(new Set(parentIds));
     setSelectedSchedules(new Map(scheduleEntries.map(s => [s.id, s])));
   };
-  const toggleOne   = (id: string) => setSelectedIds(prev => {
+  const toggleOne = (id: string, checked: boolean) => setSelectedIds(prev => {
     const next = new Set(prev);
-    next.has(id) ? next.delete(id) : next.add(id);
+    if (checked) next.add(id);
+    else next.delete(id);
     return next;
   });
 
-  const toggleSchedule = (s: ScheduleItem) => setSelectedSchedules(prev => {
+  const toggleSchedule = (s: ScheduleItem, checked: boolean) => setSelectedSchedules(prev => {
     const next = new Map(prev);
-    if (next.has(s.id)) next.delete(s.id);
-    else next.set(s.id, s);
+    if (checked) next.set(s.id, s);
+    else next.delete(s.id);
     return next;
   });
 
@@ -1964,7 +1961,7 @@ export default function Invoices() {
               </Button>
             )}
 
-            <ActionMenu open={isActionMenuOpen} onOpenChange={setIsActionMenuOpen} modal={false}>
+            <ActionMenu modal={false}>
               <ActionMenuTrigger asChild>
                 <Button
                   variant="outline"
@@ -1999,7 +1996,6 @@ export default function Invoices() {
                         setBulkPrintInvoice(firstInv);
                         setBulkPrintTemplateId("");
                         setBulkPrintOpen(true);
-                        setIsActionMenuOpen(false);
                       }}
                     >
                       <FileText className="w-4 h-4 text-cyan-600" /><span>Mẫu in hoá đơn</span>
@@ -2009,7 +2005,6 @@ export default function Invoices() {
                       disabled={bulkUpdateStatusMutation.isPending}
                       onClick={() => {
                         bulkUpdateStatusMutation.mutate({ ids: Array.from(selectedIds), status: "unpaid" });
-                        setIsActionMenuOpen(false);
                       }}
                     >
                       <CreditCard className="w-4 h-4 text-yellow-600" /><span>Chưa thanh toán</span>
@@ -2019,7 +2014,6 @@ export default function Invoices() {
                       disabled={bulkUpdateStatusMutation.isPending}
                       onClick={() => {
                         bulkUpdateStatusMutation.mutate({ ids: Array.from(selectedIds), status: "paid" });
-                        setIsActionMenuOpen(false);
                       }}
                     >
                       <CheckCircle className="w-4 h-4 text-green-600" /><span>Đã thanh toán</span>
@@ -2029,7 +2023,6 @@ export default function Invoices() {
                       disabled={bulkAssignCommissionMutation.isPending}
                       onClick={() => {
                         setBulkCommissionOpen(true);
-                        setIsActionMenuOpen(false);
                       }}
                     >
                       <Percent className="w-4 h-4 text-orange-500" /><span>Gán hoa hồng</span>
@@ -2040,7 +2033,6 @@ export default function Invoices() {
                       onClick={() => {
                         setBulkAssignClassId("");
                         setBulkAssignClassOpen(true);
-                        setIsActionMenuOpen(false);
                       }}
                     >
                       <BookOpen className="w-4 h-4 text-blue-500" /><span>Gán lớp</span>
@@ -2051,7 +2043,6 @@ export default function Invoices() {
                       onClick={() => {
                         setBulkDueDate(undefined);
                         setBulkDueDateOpen(true);
-                        setIsActionMenuOpen(false);
                       }}
                     >
                       <CalendarIcon className="w-4 h-4 text-purple-600" /><span>Cập nhật Hạn thanh toán</span>
@@ -2062,7 +2053,6 @@ export default function Invoices() {
                       onClick={() => {
                         setBulkInvoiceDate(undefined);
                         setBulkInvoiceDateField("createdAt");
-                        setIsActionMenuOpen(false);
                       }}
                     >
                       <CalendarIcon className="w-4 h-4 text-blue-600" /><span>Cập nhật Ngày tạo</span>
@@ -2073,7 +2063,6 @@ export default function Invoices() {
                       onClick={() => {
                         setBulkInvoiceDate(undefined);
                         setBulkInvoiceDateField("paidAt");
-                        setIsActionMenuOpen(false);
                       }}
                     >
                       <CalendarIcon className="w-4 h-4 text-green-600" /><span>Cập nhật Ngày thanh toán</span>
@@ -2090,7 +2079,6 @@ export default function Invoices() {
                               className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
                               onClick={() => {
                                 setBulkCollectOpen(true);
-                                setIsActionMenuOpen(false);
                               }}
                             >
                               <Merge className="w-4 h-4 text-purple-600" /><span>Thu gộp</span>
@@ -2101,7 +2089,6 @@ export default function Invoices() {
                               className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
                               onClick={() => {
                                 setBulkCollectOpen(true);
-                                setIsActionMenuOpen(false);
                               }}
                             >
                               <Merge className="w-4 h-4 text-orange-500" /><span>Chi gộp</span>
@@ -2116,7 +2103,6 @@ export default function Invoices() {
                       disabled={bulkDeleteMutation.isPending}
                       onClick={() => {
                         setBulkDeleteOpen(true);
-                        setIsActionMenuOpen(false);
                       }}
                     >
                       <Trash2 className="w-4 h-4" /><span>Xoá hoá đơn</span>
@@ -2150,7 +2136,7 @@ export default function Invoices() {
           <table className="w-full min-w-[1120px] text-xs border-separate border-spacing-0">
             <thead>
               <tr className="border-b border-border">
-                <th className="p-3 w-10 sticky top-0 left-0 z-40 bg-muted">{invPerm.canDelete && <Checkbox checked={allSelected} onCheckedChange={toggleAll} data-testid="checkbox-all" />}</th>
+                <th className="p-3 w-10 sticky top-0 left-0 z-40 bg-muted">{invPerm.canDelete && <Checkbox checked={allSelected} onCheckedChange={checked => toggleAll(checked === true)} data-testid="checkbox-all" />}</th>
                 {visibleColumns.map(col => (
                   <th key={col.key} className={`px-3 py-2.5 sticky top-0 z-30 bg-muted text-[10px] font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-muted/70 hover:text-foreground transition-colors ${col.align === "right" ? "text-right" : "text-left"} ${col.key === "name" ? "left-10 z-40 min-w-[160px] border-r border-border" : ""}`} onClick={() => col.sortKey && handleSort(col.sortKey)}>
                     <span className={`flex items-center gap-0.5 ${col.align === "right" ? "justify-end" : ""}`}>
@@ -2197,9 +2183,9 @@ export default function Invoices() {
                       {invPerm.canDelete && (
                         <Checkbox
                           checked={isSelected}
-                          onCheckedChange={() => {
-                            if (isScheduleRow && schedule) toggleSchedule(schedule);
-                            else toggleOne(inv.id);
+                          onCheckedChange={checked => {
+                            if (isScheduleRow && schedule) toggleSchedule(schedule, checked === true);
+                            else toggleOne(inv.id, checked === true);
                           }}
                           data-testid={`checkbox-${rowKey}`}
                         />
