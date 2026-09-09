@@ -1613,6 +1613,7 @@ export default function Invoices() {
           : `Đã cập nhật ${label} cho ${totalTargets} mục.`,
       });
       setSelectedIds(new Set());
+      setSelectedSchedules(new Map());
       setBulkInvoiceDate(undefined);
       setBulkInvoiceDateField(null);
     },
