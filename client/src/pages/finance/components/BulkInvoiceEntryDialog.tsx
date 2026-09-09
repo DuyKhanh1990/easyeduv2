@@ -358,40 +358,42 @@ export function BulkInvoiceEntryDialog({
     setRows(prev => prev.map(r => (r.id === id ? { ...r, ...patch, _error: undefined } : r)));
   }, []);
 
-  // Free-form amount entry: each field is independent.
-  // - A value (including 0) on an installment means that installment exists.
-  //   A positive value = that much has been paid; 0 = scheduled but unpaid.
-  // - An empty installment is ignored (no such installment).
-  // Refs hold the latest option arrays so memoized row callbacks always see
-  // current promotion/surcharge data without breaking RowEditor memoization.
-  const promotionOptionsRef = useRef(promotionOptions);
-  const surchargeOptionsRef = useRef(surchargeOptions);
-  useEffect(() => { promotionOptionsRef.current = promotionOptions; }, [promotionOptions]);
-  useEffect(() => { surchargeOptionsRef.current = surchargeOptions; }, [surchargeOptions]);
+  const updateInstallmentCount = useCallback((id: string, count: number) => {
+    const nextCount = Math.max(1, Math.min(MAX_INSTALLMENTS, count));
+    setRows(prev => prev.map(r => {
+      if (r.id !== id || r.installmentCount === nextCount) return r;
+      if (nextCount < r.installments.length) {
+        const removed = r.installments.slice(nextCount);
+        if (removed.some(item => item.amount || item.paymentDate)) {
+          const confirmed = window.confirm("Các đợt bị xoá đang có dữ liệu. Bạn có chắc muốn giảm số đợt không?");
+          if (!confirmed) return r;
+        }
+      }
+      const installments = Array.from({ length: nextCount }, (_, index) =>
+        r.installments[index] ?? { amount: "", dueDate: todayStr(), paymentDate: "" }
+      );
+      return { ...r, installmentCount: nextCount, installments, _error: undefined };
+    }));
+  }, []);
 
-  // When the row is in single-installment mode (đợt 2-4 all empty), keep
-  // installment1 in sync with the computed Tổng tiền so the user sees a
-  // sensible default and the original invoice (no schedule) reflects it.
-  const syncInstallment1 = (r: RowData): RowData => {
-    if (r.installment2 || r.installment3 || r.installment4) return r;
-    const base = toInt(r.amount);
-    const promo = calcAdjustment(base, r.promotionKeys, promotionOptionsRef.current);
-    const surch = calcAdjustment(base, r.surchargeKeys, surchargeOptionsRef.current);
-    const total = Math.max(0, base - promo + surch);
-    return { ...r, installment1: total > 0 ? String(total) : "" };
-  };
-
-  const updateAmount = useCallback((
+  const updateInstallment = useCallback((
     id: string,
-    field: "amount" | "installment1" | "installment2" | "installment3" | "installment4",
-    raw: string,
+    index: number,
+    patch: Partial<InstallmentDraft>,
   ) => {
     setRows(prev => prev.map(r => {
       if (r.id !== id) return r;
-      const next = { ...r, [field]: digits(raw), _error: undefined };
-      // Auto-sync đợt 1 when the base amount changes in single-installment mode.
-      return field === "amount" ? syncInstallment1(next) : next;
+      const installments = r.installments.map((item, itemIndex) =>
+        itemIndex === index
+          ? { ...item, ...patch, ...(patch.amount !== undefined ? { amount: digits(patch.amount) } : {}) }
+          : item
+      );
+      return { ...r, installments, _error: undefined };
     }));
+  }, []);
+
+  const updateAmount = useCallback((id: string, raw: string) => {
+    setRows(prev => prev.map(r => r.id === id ? { ...r, amount: digits(raw), _error: undefined } : r));
   }, []);
 
   const togglePromotion = useCallback((id: string, key: string) => {
@@ -403,7 +405,7 @@ export function BulkInvoiceEntryDialog({
         promotionKeys: has ? r.promotionKeys.filter(k => k !== key) : [...r.promotionKeys, key],
         _error: undefined,
       };
-      return syncInstallment1(next);
+      return next;
     }));
   }, []);
 
@@ -416,7 +418,7 @@ export function BulkInvoiceEntryDialog({
         surchargeKeys: has ? r.surchargeKeys.filter(k => k !== key) : [...r.surchargeKeys, key],
         _error: undefined,
       };
-      return syncInstallment1(next);
+      return next;
     }));
   }, []);
 
