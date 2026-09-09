@@ -1564,33 +1564,45 @@ export default function Invoices() {
 
   const bulkUpdateInvoiceDateMutation = useMutation({
     mutationFn: async ({
-      ids,
+      invoiceIds,
+      scheduleIds,
       field,
       date,
       adjustCreatedAtIds = [],
+      adjustCreatedAtScheduleIds = [],
     }: {
-      ids: string[];
+      invoiceIds: string[];
+      scheduleIds: string[];
       field: "createdAt" | "paidAt";
       date: string;
       adjustCreatedAtIds?: string[];
+      adjustCreatedAtScheduleIds?: string[];
     }) => {
       await Promise.all(
-        ids.map(id => {
+        invoiceIds.map(id => {
           const payload = field === "paidAt" && adjustCreatedAtIds.includes(id)
             ? { createdAt: date, paidAt: date }
             : { [field]: date };
           return apiRequest("PATCH", `/api/finance/invoices/${id}`, payload);
-        })
+        }),
+        scheduleIds.map(id => {
+          const payload = field === "paidAt" && adjustCreatedAtScheduleIds.includes(id)
+            ? { createdAt: date, paidAt: date }
+            : { [field]: date };
+          return apiRequest("PATCH", `/api/finance/invoice-schedules/${id}`, payload);
+        }),
       );
     },
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
       const label = vars.field === "createdAt" ? "ngày tạo" : "ngày thanh toán";
+      const totalTargets = vars.invoiceIds.length + vars.scheduleIds.length;
+      const adjustedTargets = (vars.adjustCreatedAtIds?.length ?? 0) + (vars.adjustCreatedAtScheduleIds?.length ?? 0);
       toast({
         title: `Cập nhật ${label} thành công`,
-        description: vars.adjustCreatedAtIds?.length
-          ? `Đã cập nhật ngày thanh toán cho ${vars.ids.length} hoá đơn; đồng thời điều chỉnh ngày tạo cho ${vars.adjustCreatedAtIds.length} hoá đơn.`
-          : `Đã cập nhật ${label} cho ${vars.ids.length} hoá đơn.`,
+        description: adjustedTargets
+          ? `Đã cập nhật ngày thanh toán cho ${totalTargets} mục; đồng thời điều chỉnh ngày tạo cho ${adjustedTargets} mục.`
+          : `Đã cập nhật ${label} cho ${totalTargets} mục.`,
       });
       setSelectedIds(new Set());
       setBulkInvoiceDate(undefined);
@@ -1720,6 +1732,28 @@ export default function Invoices() {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
     },
   });
+  const selectedDateItems: BulkInvoiceDateTarget[] = [
+    ...invoices
+      .filter(invoice => selectedIds.has(invoice.id))
+      .map(invoice => ({
+        id: invoice.id,
+        kind: "invoice" as const,
+        createdAt: invoice.createdAt,
+        paidAt: invoice.paidAt,
+      })),
+    ...displayInvoices
+      .filter(invoice =>
+        invoice.isScheduleRow &&
+        !!invoice.scheduleId &&
+        selectedScheduleIdSet.has(invoice.scheduleId),
+      )
+      .map(invoice => ({
+        id: invoice.scheduleId!,
+        kind: "schedule" as const,
+        createdAt: invoice.createdAt,
+        paidAt: invoice.paidAt,
+      })),
+  ];
 
   const {
     columnOrder,
@@ -2933,22 +2967,30 @@ export default function Invoices() {
         field={bulkInvoiceDateField ?? "createdAt"}
         selectedDate={bulkInvoiceDate}
         onDateChange={setBulkInvoiceDate}
-        selectedInvoices={invoices.filter(invoice => selectedIds.has(invoice.id))}
+        selectedItems={selectedDateItems}
         isPending={bulkUpdateInvoiceDateMutation.isPending}
         onConfirm={(date, adjustCreatedAt) => {
           if (!bulkInvoiceDateField) return;
           const dateText = format(date, "yyyy-MM-dd");
-          const selectedInvoices = invoices.filter(invoice => selectedIds.has(invoice.id));
+          const invoiceItems = selectedDateItems.filter(item => item.kind === "invoice");
+          const scheduleItems = selectedDateItems.filter(item => item.kind === "schedule");
           const adjustCreatedAtIds = adjustCreatedAt && bulkInvoiceDateField === "paidAt"
-            ? selectedInvoices
-                .filter(invoice => invoice.createdAt && dateText < format(new Date(invoice.createdAt), "yyyy-MM-dd"))
-                .map(invoice => invoice.id)
+            ? invoiceItems
+                .filter(item => item.createdAt && dateText < dateOnly(item.createdAt))
+                .map(item => item.id)
+            : [];
+          const adjustCreatedAtScheduleIds = adjustCreatedAt && bulkInvoiceDateField === "paidAt"
+            ? scheduleItems
+                .filter(item => item.createdAt && dateText < dateOnly(item.createdAt))
+                .map(item => item.id)
             : [];
           bulkUpdateInvoiceDateMutation.mutate({
-            ids: Array.from(selectedIds),
+            invoiceIds: invoiceItems.map(item => item.id),
+            scheduleIds: scheduleItems.map(item => item.id),
             field: bulkInvoiceDateField,
             date: dateText,
             adjustCreatedAtIds,
+            adjustCreatedAtScheduleIds,
           });
         }}
       />
