@@ -33,3 +33,4 @@
 - [Debt view installment truth](debt-view-installment-truth.md) — trang công nợ phải tính theo các đợt chưa thanh toán, không chỉ invoices.remaining_amount hoặc hạn hóa đơn gốc.
 - [Production restore safety](production-restore-safety.md) — snapshot dự phòng phải drain mọi writer; marker finalizing commit cùng dữ liệu và chỉ completed sau cleanup.
 - [Production PostgreSQL client](production-postgres-client.md) — backup/restore cần PostgreSQL client ở runtime của cả Replit và Docker, không chỉ trong workspace dev.
+- [Bulk finance child-first behavior](bulk-child-first-finance.md) — bulk phải tách invoice/schedule targets và luôn đồng bộ summary của invoice cha sau thao tác trên đợt.
