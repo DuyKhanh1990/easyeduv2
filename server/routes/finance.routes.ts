@@ -160,7 +160,14 @@ const invoiceItemBodySchema = insertInvoiceItemSchema.omit({ invoiceId: true }).
   unitId: z.string().uuid().optional().nullable(),
   unitName: z.string().optional().nullable(),
 });
-const invoiceScheduleBodySchema = insertInvoicePaymentScheduleSchema.omit({ invoiceId: true }).partial({ invoiceId: true });
+const invoiceScheduleBodySchema = insertInvoicePaymentScheduleSchema
+  .omit({ invoiceId: true })
+  .partial({ invoiceId: true })
+  .extend({
+    // Date inputs in the web UI submit YYYY-MM-DD strings; normalize them
+    // before validating/inserting the schedule row.
+    paidAt: z.coerce.date().nullable().optional(),
+  });
 
 const createInvoiceBodySchema = insertInvoiceSchema.extend({
   createdAt: z.coerce.date().optional(),
