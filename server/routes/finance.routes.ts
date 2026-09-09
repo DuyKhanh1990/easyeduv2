@@ -166,6 +166,7 @@ const invoiceScheduleBodySchema = insertInvoicePaymentScheduleSchema
   .extend({
     // Date inputs in the web UI submit YYYY-MM-DD strings; normalize them
     // before validating/inserting the schedule row.
+    createdAt: z.coerce.date().optional(),
     paidAt: z.coerce.date().nullable().optional(),
   });
 

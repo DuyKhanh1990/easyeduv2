@@ -530,6 +530,7 @@ export function BulkInvoiceEntryDialog({
           amount: String(amountByIndex[index]),
           dueDate: item.dueDate || null,
           status: item.paymentDate ? "paid" : "unpaid",
+          createdAt: item.paymentDate || undefined,
           paidAt: item.paymentDate || undefined,
           paymentMethod: row.paymentMethod,
           sortOrder: index,
@@ -544,6 +545,10 @@ export function BulkInvoiceEntryDialog({
       paidAmount >= total ? "paid"
       : paidAmount > 0 ? "partial"
       : "unpaid";
+    const paymentDates = installments
+      .map(item => item.paymentDate)
+      .filter(Boolean)
+      .sort();
 
     const itemName = (isHocPhi ? row.productLabel : row.product) || row.productLabel || row.product || catName || "Dịch vụ";
 
@@ -558,8 +563,9 @@ export function BulkInvoiceEntryDialog({
         description: row.description || null,
         paymentMethod: row.paymentMethod,
          dueDate: installments[0]?.dueDate || null,
+         createdAt: paymentDates[0] || undefined,
          paidAt: status === "paid"
-           ? (installments.map(item => item.paymentDate).filter(Boolean).sort().at(-1) || undefined)
+           ? (paymentDates.at(-1) || undefined)
            : undefined,
         totalAmount: String(base),
         totalPromotion: String(promoAmt),
