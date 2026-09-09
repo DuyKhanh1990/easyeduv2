@@ -1745,7 +1745,7 @@ export default function Invoices() {
       .filter(invoice =>
         invoice.isScheduleRow &&
         !!invoice.scheduleId &&
-        selectedScheduleIdSet.has(invoice.scheduleId),
+        selectedSchedules.has(invoice.scheduleId),
       )
       .map(invoice => ({
         id: invoice.scheduleId!,
