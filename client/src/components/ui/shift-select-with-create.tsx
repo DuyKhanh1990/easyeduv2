@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 interface ShiftSelectWithCreateProps {
   value: string;
@@ -106,36 +107,29 @@ export function ShiftSelectWithCreate({
 
   const selectedShift = shifts.find((s) => s.id === value);
 
+  const searchableOptions = [
+    ...shifts.map((shift) => ({
+      value: String(shift.id),
+      label: shift.name,
+      sublabel: `${shift.startTime}-${shift.endTime}`,
+    })),
+    {
+      value: CREATE_NEW_VALUE,
+      label: "Thêm ca mới...",
+    },
+  ];
+
   return (
     <>
-      <Select
+      <SearchableSelect
+        options={searchableOptions}
         value={value || ""}
-        onValueChange={handleSelectChange}
+        onChange={handleSelectChange}
+        placeholder={placeholder}
+        searchPlaceholder="Tìm kiếm ca học..."
         disabled={disabled}
-      >
-        <SelectTrigger className={cn(triggerClassName)}>
-          <SelectValue placeholder={placeholder}>
-            {selectedShift
-              ? `${selectedShift.name} (${selectedShift.startTime}-${selectedShift.endTime})`
-              : placeholder}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          {shifts.map((s) => (
-            <SelectItem key={s.id} value={s.id}>
-              {s.name} ({s.startTime}-{s.endTime})
-            </SelectItem>
-          ))}
-          <div className="border-t mt-1 pt-1">
-            <SelectItem value={CREATE_NEW_VALUE} className="text-primary font-medium">
-              <span className="flex items-center gap-1.5">
-                <Plus className="h-3.5 w-3.5" />
-                Thêm ca mới...
-              </span>
-            </SelectItem>
-          </div>
-        </SelectContent>
-      </Select>
+        className={cn(triggerClassName)}
+      />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-[380px]" onClick={(e) => e.stopPropagation()}>
