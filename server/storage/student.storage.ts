@@ -270,6 +270,23 @@ export async function getStudents(params: {
           ]
         : []),
     ];
+    const datePartMatch = normalizedSearch.match(/^(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{4}))?$/);
+    if (datePartMatch) {
+      const day = Number(datePartMatch[1]);
+      const month = Number(datePartMatch[2]);
+      const year = datePartMatch[3] ? Number(datePartMatch[3]) : null;
+      if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+        const yearCondition = year === null
+          ? sql``
+          : sql` AND EXTRACT(YEAR FROM ${students.dateOfBirth}) = ${year}`;
+        dateSearchConditions.push(sql`
+          ${students.dateOfBirth} IS NOT NULL
+          AND EXTRACT(DAY FROM ${students.dateOfBirth}) = ${day}
+          AND EXTRACT(MONTH FROM ${students.dateOfBirth}) = ${month}
+          ${yearCondition}
+        `);
+      }
+    }
 
     // Phone numbers are often stored with spaces, dots, or dashes. Compare
     // their digit-only forms so both "0912 345 678" and "0912345678" work.
