@@ -1291,8 +1291,10 @@ export default function Invoices() {
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
 
   useEffect(() => {
-    if (selectedIds.size === 0) setIsActionMenuOpen(false);
-  }, [selectedIds.size]);
+    if (selectedIds.size + selectedSchedules.size === 0) {
+      setIsActionMenuOpen(false);
+    }
+  }, [selectedIds.size, selectedSchedules.size]);
 
   const reopenActionMenuAfterCheckboxClick = () => {
     window.setTimeout(() => setIsActionMenuOpen(true), 0);
@@ -1979,10 +1981,10 @@ export default function Invoices() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className={`h-9 gap-1.5 rounded-lg shadow-sm font-medium transition-all ${selectedIds.size > 0 ? "border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100 hover:border-violet-400" : "border-slate-200 bg-white text-slate-400 hover:bg-slate-50 hover:border-slate-300"}`}
+                  className={`h-9 gap-1.5 rounded-lg shadow-sm font-medium transition-all ${totalSelectedCount > 0 ? "border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100 hover:border-violet-400" : "border-slate-200 bg-white text-slate-400 hover:bg-slate-50 hover:border-slate-300"}`}
                   data-testid="button-bulk-action"
                 >
-                  Hành động {selectedIds.size > 0 ? `(${selectedIds.size})` : ""}
+                  Hành động {totalSelectedCount > 0 ? `(${totalSelectedCount})` : ""}
                   <ChevronDown className="h-4 w-4" />
                 </Button>
               </ActionMenuTrigger>
@@ -2202,7 +2204,10 @@ export default function Invoices() {
                           checked={isSelected}
                           onCheckedChange={checked => {
                             const nextChecked = checked === true;
-                            if (isScheduleRow && schedule) toggleSchedule(schedule, nextChecked);
+                            if (isScheduleRow && schedule) {
+                              toggleSchedule(schedule, nextChecked);
+                              if (nextChecked) reopenActionMenuAfterCheckboxClick();
+                            }
                             else {
                               toggleOne(inv.id, nextChecked);
                               if (nextChecked) reopenActionMenuAfterCheckboxClick();
