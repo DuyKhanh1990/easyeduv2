@@ -1507,6 +1507,7 @@ export default function Invoices() {
         description: `Đã gán lớp cho ${vars.ids.length} hoá đơn.`,
       });
       setSelectedIds(new Set());
+      setSelectedSchedules(new Map());
       setBulkAssignClassId("");
     },
     onError: (err: any) => {
@@ -1530,6 +1531,7 @@ export default function Invoices() {
         description: `Đã gán hoa hồng cho ${vars.ids.length} hoá đơn.`,
       });
       setSelectedIds(new Set());
+      setSelectedSchedules(new Map());
       setBulkCommissionOpen(false);
     },
     onError: (err: any) => {
@@ -2289,7 +2291,7 @@ export default function Invoices() {
                     <div className="my-1 border-t" />
                     <ActionMenuItem
                       className="flex items-center gap-3 py-2 cursor-pointer rounded-lg text-destructive focus:text-destructive focus:bg-destructive/10"
-                      disabled={bulkDeleteMutation.isPending}
+                      disabled={bulkDeleteMutation.isPending || selectedIds.size === 0}
                       onClick={() => {
                         setBulkDeleteOpen(true);
                       }}
