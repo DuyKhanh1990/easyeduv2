@@ -1320,11 +1320,9 @@ type RowEditorProps = {
   promotionOptions: any[];
   surchargeOptions: any[];
   updateRow: (id: string, patch: Partial<RowData>) => void;
-  updateAmount: (
-    id: string,
-    field: "amount" | "installment1" | "installment2" | "installment3" | "installment4",
-    raw: string,
-  ) => void;
+  updateAmount: (id: string, raw: string) => void;
+  updateInstallment: (id: string, index: number, patch: Partial<InstallmentDraft>) => void;
+  updateInstallmentCount: (id: string, count: number) => void;
   togglePromotion: (id: string, key: string) => void;
   toggleSurcharge: (id: string, key: string) => void;
   deleteRow: (id: string) => void;
@@ -1335,7 +1333,7 @@ type RowEditorProps = {
 
 const RowEditor = memo(function RowEditor({
   row, idx, locations, categories, classes, promotionOptions, surchargeOptions,
-  updateRow, updateAmount, togglePromotion, toggleSurcharge,
+  updateRow, updateAmount, updateInstallment, updateInstallmentCount, togglePromotion, toggleSurcharge,
   deleteRow, duplicateRow, addRow, atCap,
 }: RowEditorProps) {
   const catName = categories.find((c: any) => c.id === row.categoryId)?.name as string | undefined;
@@ -1345,7 +1343,22 @@ const RowEditor = memo(function RowEditor({
   const promoAmt = calcAdjustment(baseAmount, row.promotionKeys, promotionOptions);
   const surchargeAmt = calcAdjustment(baseAmount, row.surchargeKeys, surchargeOptions);
   const computedTotal = Math.max(0, baseAmount - promoAmt + surchargeAmt);
+  const installmentSuggestion = (index: number): number | null => {
+    const items = row.installments.slice(0, row.installmentCount);
+    const entered = items.reduce((sum, item) => sum + toInt(item.amount), 0);
+    const emptyIndexes = items
+      .map((item, itemIndex) => (!item.amount ? itemIndex : -1))
+      .filter(itemIndex => itemIndex >= 0);
+    if (!emptyIndexes.includes(index)) return null;
+    if (!emptyIndexes.some(itemIndex => itemIndex !== index) && entered === 0) return null;
+    const remaining = Math.max(0, computedTotal - entered);
+    const share = emptyIndexes.length > 0 ? Math.floor(remaining / emptyIndexes.length) : 0;
+    const remainder = emptyIndexes.length > 0 ? remaining - share * emptyIndexes.length : 0;
+    const emptyIndex = emptyIndexes.indexOf(index);
+    return share + (emptyIndex === emptyIndexes.length - 1 ? remainder : 0);
+  };
   return (
+    <>
     <tr
       className={"border-b group " + (errored ? "bg-red-50/40 dark:bg-red-950/20 ring-1 ring-inset ring-red-300 dark:ring-red-800" : "")}
       data-testid={`row-bulk-${row.id}`}
@@ -1568,33 +1581,48 @@ const RowEditor = memo(function RowEditor({
           {fmtMoney(computedTotal)}
         </div>
       </Td>
-      {(["installment1", "installment2", "installment3", "installment4"] as const).map(k => (
-        <Td key={k}>
-          <Input
-            inputMode="numeric"
-            className="h-8 text-xs text-right"
-            value={formatNumber(row[k])}
-            onChange={e => updateAmount(row.id, k, e.target.value)}
-            data-testid={`input-${k}-${row.id}`}
-          />
-        </Td>
-      ))}
+      <Td>
+        <Select
+          value={String(row.installmentCount)}
+          onValueChange={value => updateInstallmentCount(row.id, Number(value))}
+        >
+          <SelectTrigger className="h-8 text-xs" data-testid={`select-installment-count-${row.id}`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {Array.from({ length: MAX_INSTALLMENTS }, (_, index) => index + 1).map(count => (
+              <SelectItem key={count} value={String(count)}>{count} đợt</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Td>
+      <Td>
+        <Input
+          inputMode="numeric"
+          className="h-8 text-xs text-right"
+          value={formatNumber(row.installments[0]?.amount ?? "")}
+          placeholder={installmentSuggestion(0) !== null ? formatNumber(String(installmentSuggestion(0))) : ""}
+          onChange={e => updateInstallment(row.id, 0, { amount: e.target.value })}
+          data-testid={`input-installment-1-${row.id}`}
+        />
+        <div className="text-[10px] text-muted-foreground text-right">Đợt 1/{row.installmentCount}</div>
+      </Td>
       <Td>
         <Input
           type="date"
           className="h-8 text-xs"
-          value={row.dueDate}
-          onChange={e => updateRow(row.id, { dueDate: e.target.value })}
-          data-testid={`input-duedate-${row.id}`}
+          value={row.installments[0]?.dueDate ?? ""}
+          onChange={e => updateInstallment(row.id, 0, { dueDate: e.target.value })}
+          data-testid={`input-duedate-${row.id}-1`}
         />
       </Td>
       <Td>
         <Input
           type="date"
           className="h-8 text-xs"
-          value={row.paymentDate}
-          onChange={e => updateRow(row.id, { paymentDate: e.target.value })}
-          data-testid={`input-payment-date-${row.id}`}
+          value={row.installments[0]?.paymentDate ?? ""}
+          onChange={e => updateInstallment(row.id, 0, { paymentDate: e.target.value })}
+          data-testid={`input-payment-date-${row.id}-1`}
         />
       </Td>
       <Td>
@@ -1640,6 +1668,54 @@ const RowEditor = memo(function RowEditor({
         </div>
       </Td>
     </tr>
+    {row.installments.slice(1, row.installmentCount).map((installment, installmentIndex) => {
+      const index = installmentIndex + 1;
+      const suggestion = installmentSuggestion(index);
+      return (
+        <tr
+          key={`${row.id}-installment-${index}`}
+          className={"border-b bg-muted/10 " + (errored ? "bg-red-50/40 dark:bg-red-950/20" : "")}
+          data-testid={`row-bulk-${row.id}-installment-${index + 1}`}
+        >
+          <td colSpan={12} className="p-1.5 border-b align-middle">
+            <span className="sr-only">Dòng đợt {index + 1} của hóa đơn {idx + 1}</span>
+          </td>
+          <Td />
+          <Td>
+            <Input
+              inputMode="numeric"
+              className="h-8 text-xs text-right"
+              value={formatNumber(installment.amount)}
+              placeholder={suggestion !== null ? formatNumber(String(suggestion)) : ""}
+              onChange={e => updateInstallment(row.id, index, { amount: e.target.value })}
+              data-testid={`input-installment-${index + 1}-${row.id}`}
+            />
+            <div className="text-[10px] text-muted-foreground text-right">Đợt {index + 1}/{row.installmentCount}</div>
+          </Td>
+          <Td>
+            <Input
+              type="date"
+              className="h-8 text-xs"
+              value={installment.dueDate}
+              onChange={e => updateInstallment(row.id, index, { dueDate: e.target.value })}
+              data-testid={`input-duedate-${row.id}-${index + 1}`}
+            />
+          </Td>
+          <Td>
+            <Input
+              type="date"
+              className="h-8 text-xs"
+              value={installment.paymentDate}
+              onChange={e => updateInstallment(row.id, index, { paymentDate: e.target.value })}
+              data-testid={`input-payment-date-${row.id}-${index + 1}`}
+            />
+          </Td>
+          <Td />
+          <Td />
+        </tr>
+      );
+    })}
+    </>
   );
 });
 
