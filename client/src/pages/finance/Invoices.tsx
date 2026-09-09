@@ -904,6 +904,9 @@ function BulkInvoiceDateDialog({
   isPending: boolean;
 }) {
   const [confirmingConflict, setConfirmingConflict] = useState(false);
+  useEffect(() => {
+    if (!open) setConfirmingConflict(false);
+  }, [open, field]);
   const label = field === "createdAt" ? "ngày tạo" : "ngày thanh toán";
   const selectedDateText = selectedDate ? format(selectedDate, "yyyy-MM-dd") : "";
   const conflictingInvoices = selectedDate
