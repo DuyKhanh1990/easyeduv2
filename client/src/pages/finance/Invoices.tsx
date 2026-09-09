@@ -1288,6 +1288,11 @@ export default function Invoices() {
   const [bulkCollectPrintData, setBulkCollectPrintData] = useState<BulkCollectPrintData | null>(null);
   const [bulkCommissionOpen, setBulkCommissionOpen] = useState(false);
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setIsActionMenuOpen(selectedIds.size > 0);
+  }, [selectedIds.size]);
 
   const { toast } = useToast();
 
@@ -1961,7 +1966,11 @@ export default function Invoices() {
               </Button>
             )}
 
-            <ActionMenu modal={false}>
+            <ActionMenu
+              open={isActionMenuOpen}
+              onOpenChange={setIsActionMenuOpen}
+              modal={false}
+            >
               <ActionMenuTrigger asChild>
                 <Button
                   variant="outline"
