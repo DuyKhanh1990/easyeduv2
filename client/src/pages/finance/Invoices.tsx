@@ -326,6 +326,7 @@ function EditableInvoiceDateCell({
 }) {
   const value = invoice[field];
   const [open, setOpen] = useState(false);
+  const [dateConflictOpen, setDateConflictOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const { toast } = useToast();
   const background = isSelected ? "bg-violet-50" : isOdd ? "bg-slate-50" : "bg-white";
@@ -338,23 +339,25 @@ function EditableInvoiceDateCell({
     if (!open) setDraft(toInputDate(value));
   }, [value, open]);
 
+  type DatePatch = { createdAt?: string; paidAt?: string };
   const mutation = useMutation({
-    mutationFn: () => apiRequest(
+    mutationFn: (payload: DatePatch) => apiRequest(
       "PATCH",
       invoice.isScheduleRow && invoice.scheduleId
         ? `/api/finance/invoice-schedules/${invoice.scheduleId}`
         : `/api/finance/invoices/${invoice.id}`,
-      {
-      [field]: draft || null,
-      },
+      payload,
     ),
-    onSuccess: () => {
+    onSuccess: (_data, payload) => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
       setOpen(false);
+      setDateConflictOpen(false);
       const target = invoice.isScheduleRow ? "đợt thanh toán" : "hoá đơn";
       toast({
         title: "Đã cập nhật ngày",
-        description: field === "createdAt"
+        description: payload.createdAt && payload.paidAt
+          ? `Ngày tạo và ngày thanh toán của ${target} đã được đưa về ${fmtDate(payload.paidAt)}.`
+          : field === "createdAt"
           ? `Ngày tạo ${target} đã được thay đổi.`
           : `Ngày thanh toán ${target} đã được thay đổi.`,
       });
@@ -366,8 +369,19 @@ function EditableInvoiceDateCell({
 
   const createdDate = field === "paidAt" ? toInputDate(invoice.createdAt) : "";
   const paidDate = field === "createdAt" ? toInputDate(invoice.paidAt) : "";
-  const isInvalid = !draft || (field === "paidAt" && !!createdDate && draft < createdDate) || (field === "createdAt" && !!paidDate && draft > paidDate);
+  const hasDateConflict = field === "paidAt" && !!createdDate && !!draft && draft < createdDate;
+  const isInvalid = !draft || (field === "createdAt" && !!paidDate && draft > paidDate);
   const label = field === "createdAt" ? "Ngày tạo" : "Ngày thanh toán";
+  const saveDate = () => {
+    if (hasDateConflict) {
+      setDateConflictOpen(true);
+      return;
+    }
+    mutation.mutate(field === "createdAt" ? { createdAt: draft } : { paidAt: draft });
+  };
+  const confirmDateConflict = () => {
+    mutation.mutate({ createdAt: draft, paidAt: draft });
+  };
 
   if (!canEdit) {
     return (
@@ -395,25 +409,50 @@ function EditableInvoiceDateCell({
           <Input
             type="date"
             value={draft}
-            min={field === "paidAt" ? createdDate : undefined}
             max={field === "createdAt" ? paidDate : undefined}
             onChange={(event) => setDraft(event.target.value)}
             autoFocus
             data-testid={`input-edit-${field}-${invoice.id}`}
           />
           {field === "paidAt" && (
-            <p className="mt-1.5 text-[11px] text-muted-foreground">Không sớm hơn ngày tạo: {createdDate ? fmtDate(createdDate) : "—"}</p>
+             <p className="mt-1.5 text-[11px] text-muted-foreground">
+               Nếu sớm hơn ngày tạo, hệ thống sẽ hỏi có đưa ngày tạo về cùng ngày hay không.
+             </p>
           )}
           <div className="mt-3 flex justify-end gap-2">
             <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)} disabled={mutation.isPending}>
               <X className="mr-1 h-3.5 w-3.5" /> Hủy
             </Button>
-            <Button type="button" size="sm" onClick={() => mutation.mutate()} disabled={isInvalid || mutation.isPending}>
+             <Button type="button" size="sm" onClick={saveDate} disabled={isInvalid || mutation.isPending}>
               <Check className="mr-1 h-3.5 w-3.5" /> Lưu
             </Button>
           </div>
         </PopoverContent>
       </Popover>
+       <Dialog open={dateConflictOpen} onOpenChange={(next) => { if (!mutation.isPending) setDateConflictOpen(next); }}>
+         <DialogContent className="sm:max-w-md">
+           <DialogHeader>
+             <DialogTitle>Ngày thanh toán trước ngày tạo</DialogTitle>
+           </DialogHeader>
+           <div className="space-y-3 text-sm text-muted-foreground">
+             <p>
+               Ngày thanh toán <strong className="text-foreground">{fmtDate(draft)}</strong> đang trước ngày tạo{" "}
+               <strong className="text-foreground">{fmtDate(createdDate)}</strong>.
+             </p>
+             <p>
+               Bạn có muốn tự động chuyển ngày tạo về cùng ngày <strong className="text-foreground">{fmtDate(draft)}</strong> không?
+             </p>
+           </div>
+           <div className="flex justify-end gap-2 pt-2">
+             <Button type="button" variant="outline" onClick={() => setDateConflictOpen(false)} disabled={mutation.isPending}>
+               Hủy
+             </Button>
+             <Button type="button" onClick={confirmDateConflict} disabled={mutation.isPending}>
+               {mutation.isPending ? "Đang lưu..." : "Đồng ý"}
+             </Button>
+           </div>
+         </DialogContent>
+       </Dialog>
     </td>
   );
 }
