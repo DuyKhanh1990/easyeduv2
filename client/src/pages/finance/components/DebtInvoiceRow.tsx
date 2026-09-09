@@ -4,7 +4,6 @@ import { STATUS_CONFIG, parseNum, fmtMoney, fmtDate, type InvoiceRow } from "@/t
 
 export function DebtInvoiceRow({ invoice }: { invoice: InvoiceRow }) {
   const grand = parseNum(invoice.grandTotal);
-  const paid = parseNum(invoice.paidAmount);
   const remaining = parseNum(invoice.remainingAmount);
   const statusCfg = STATUS_CONFIG[invoice.status] ?? STATUS_CONFIG.unpaid;
   const today = new Date();
@@ -18,7 +17,6 @@ export function DebtInvoiceRow({ invoice }: { invoice: InvoiceRow }) {
       <td className="px-4 py-2.5 text-xs font-medium text-primary">{invoice.code || "—"}</td>
       <td className="px-4 py-2.5 text-xs text-muted-foreground">{invoice.category || "—"}</td>
       <td className="px-4 py-2.5 text-right text-xs">{fmtMoney(grand)}</td>
-      <td className="px-4 py-2.5 text-right text-xs text-green-600">{paid > 0 ? fmtMoney(paid) : <span className="text-muted-foreground">0 đ</span>}</td>
       <td className="px-4 py-2.5 text-right text-xs font-semibold text-red-600">{fmtMoney(remaining)}</td>
       <td className="px-4 py-2.5 text-xs">
         {invoice.dueDate

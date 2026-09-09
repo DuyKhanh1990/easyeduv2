@@ -54,7 +54,6 @@ export function DebtScheduleLoader({
             </td>
             <td className="px-4 py-2.5 text-xs text-muted-foreground">{invoice.category || "—"}</td>
             <td className="px-4 py-2.5 text-right text-xs">{fmtMoney(amount)}</td>
-            <td className="px-4 py-2.5 text-right text-xs text-muted-foreground">0 đ</td>
             <td className="px-4 py-2.5 text-right text-xs font-semibold text-red-600">{fmtMoney(amount)}</td>
             <td className="px-4 py-2.5 text-xs">
               {s.dueDate

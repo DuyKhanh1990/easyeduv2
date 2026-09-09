@@ -2585,21 +2585,19 @@ export default function Invoices() {
                           </div>
                           <table className="w-full table-fixed text-sm">
                             <colgroup>
+                              <col className="w-[18%]" />
+                              <col className="w-[15%]" />
                               <col className="w-[14%]" />
                               <col className="w-[14%]" />
                               <col className="w-[13%]" />
-                              <col className="w-[13%]" />
-                              <col className="w-[13%]" />
+                              <col className="w-[14%]" />
                               <col className="w-[12%]" />
-                              <col className="w-[11%]" />
-                              <col className="w-[10%]" />
                             </colgroup>
                             <thead>
                               <tr className="bg-slate-50/70 border-b border-slate-100">
                                 <th className="px-4 py-2 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Mã GD</th>
                                 <th className="px-4 py-2 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Danh mục</th>
                                 <th className="px-4 py-2 text-right text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Tổng tiền</th>
-                                <th className="px-4 py-2 text-right text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Đã thanh toán</th>
                                 <th className="px-4 py-2 text-right text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Còn nợ</th>
                                 <th className="px-4 py-2 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Hạn TT</th>
                                 <th className="px-4 py-2 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Trạng thái</th>

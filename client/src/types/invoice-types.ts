@@ -98,7 +98,7 @@ export const INVOICE_STATUS_OPTIONS = [
   { value: "cancelled", label: "Đã huỷ",            className: "bg-gray-100 text-gray-500" },
 ];
 
-export const DEBT_ROW_COLS = 8;
+export const DEBT_ROW_COLS = 7;
 
 export const parseNum = (v: string | null | undefined): number =>
   parseFloat(v ?? "0") || 0;
