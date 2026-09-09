@@ -495,16 +495,21 @@ export function BulkInvoiceEntryDialog({
   // Build the invoice payload for one row, returning null if invalid.
   const buildPayload = (row: RowData): { payload: any; error?: string } => {
     if (!row.branchId) return { payload: null, error: "Thiếu cơ sở" };
-    if (!row.studentId && !row.studentLabel) return { payload: null, error: "Thiếu tên đối tượng" };
+    const catName = categoryName(row.categoryId);
+    const isHocPhi = catName === HOC_PHI;
+    const isKho = catName?.toLowerCase().includes("kho") ?? false;
+    if (!row.studentId && !row.studentLabel && !isKho) {
+      return { payload: null, error: "Thiếu tên đối tượng" };
+    }
+    if (isKho && !row.storeProductId) {
+      return { payload: null, error: "Vui lòng chọn sản phẩm kho" };
+    }
     const base = toInt(row.amount);
     if (base <= 0) return { payload: null, error: "Số tiền phải > 0" };
     const promoAmt = calcAdjustment(base, row.promotionKeys, promotionOptions);
     const surchargeAmt = calcAdjustment(base, row.surchargeKeys, surchargeOptions);
     const total = Math.max(0, base - promoAmt + surchargeAmt);
 
-    const catName = categoryName(row.categoryId);
-    const isHocPhi = catName === HOC_PHI;
-    const isKho = catName?.toLowerCase().includes("kho") ?? false;
     const installments = row.installments.slice(0, Math.max(1, row.installmentCount));
     const enteredTotal = installments.reduce((sum, item) => sum + toInt(item.amount), 0);
     if (row.installmentCount === 1 && installments[0]?.amount && toInt(installments[0].amount) !== total) {
@@ -762,9 +767,12 @@ export function BulkInvoiceEntryDialog({
 
     if (preErrors.size > 0) {
       setRows(prev => prev.map(r => preErrors.has(r.id) ? { ...r, _error: preErrors.get(r.id) } : r));
+      const firstError = Array.from(preErrors.values())[0];
       toast({
         title: `Có ${preErrors.size} dòng chưa hợp lệ`,
-        description: "Vui lòng sửa các dòng được tô viền đỏ rồi lưu lại.",
+        description: firstError
+          ? `${firstError}. Vui lòng sửa các dòng được tô viền đỏ rồi lưu lại.`
+          : "Vui lòng sửa các dòng được tô viền đỏ rồi lưu lại.",
         variant: "destructive",
       });
       return;
