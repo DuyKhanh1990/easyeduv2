@@ -600,6 +600,7 @@ export async function getInvoices(filters: {
           FROM invoice_payment_schedule AS debt_schedule
           WHERE debt_schedule.invoice_id = ${invoices.id}
         )
+        AND ${invoices.status} != 'paid'
         AND ${invoices.remainingAmount}::numeric > 0
       )
       OR (
