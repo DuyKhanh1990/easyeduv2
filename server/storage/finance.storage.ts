@@ -719,11 +719,11 @@ export async function getInvoices(filters: {
   let tabCounts: Record<string, number> = { all: 0, unpaid: 0, partial: 0, paid: 0, debt: 0 };
   if (f.includeTabCounts) {
     const [tc] = await db.select({
-      all:     sql<number>`COUNT(*)::int`,
-       unpaid:  sql<number>`COUNT(*) FILTER (WHERE ${invoices.status} IN ('unpaid', 'partial'))::int`,
+      all: sql<number>`COALESCE(SUM(${visibleRowCountExpr}), 0)::int`,
+      unpaid: sql<number>`COALESCE(SUM(${unpaidRowCountExpr}), 0)::int`,
       partial: sql<number>`COUNT(*) FILTER (WHERE ${invoices.status} = 'partial')::int`,
-       paid:    sql<number>`COUNT(*) FILTER (WHERE ${invoices.status} IN ('paid', 'partial'))::int`,
-       debt:    sql<number>`COUNT(*) FILTER (WHERE ${hasOutstandingDebt})::int`,
+      paid: sql<number>`COALESCE(SUM(${paidRowCountExpr}), 0)::int`,
+      debt: sql<number>`COUNT(*) FILTER (WHERE ${hasOutstandingDebt})::int`,
     })
     .from(invoices)
     .leftJoin(students,     eq(invoices.studentId, students.id))
