@@ -462,8 +462,7 @@ export function BulkInvoiceEntryDialog({
     !toInt(r.amount) &&
     r.promotionKeys.length === 0 &&
     r.surchargeKeys.length === 0 &&
-    !r.installment1 && !r.installment2 && !r.installment3 && !r.installment4 &&
-    !r.paymentDate &&
+    !r.installments.some(item => item.amount || item.paymentDate) &&
     !r.classId;
 
   // Save current rows as drafts in localStorage.
@@ -500,51 +499,42 @@ export function BulkInvoiceEntryDialog({
 
     const catName = categoryName(row.categoryId);
     const isHocPhi = catName === HOC_PHI;
-    const historicalPaymentDate = row.paymentDate || undefined;
-
-    // Build payment schedule from installments (empty = excluded).
-    const order = ["installment1", "installment2", "installment3", "installment4"] as const;
-    const present = order
-      .map((k, i) => ({ key: k, idx: i, val: row[k] }))
-      .filter(x => x.val !== "");
-
-    let paymentSchedule: any[] = [];
-    let paidAmount = 0;
-
-    if (present.length === 1) {
-      // Single-installment mode: do NOT split. The single value represents
-      // the paid amount on the original invoice; no payment schedule rows.
-      paidAmount = toInt(present[0].val);
-    } else if (present.length >= 2) {
-      const paid = present.filter(x => toInt(x.val) > 0);
-      const unpaid = present.filter(x => toInt(x.val) === 0);
-      const sumPaid = paid.reduce((s, x) => s + toInt(x.val), 0);
-      const remaining = Math.max(0, total - sumPaid);
-      const baseUnpaid = unpaid.length > 0 ? Math.floor(remaining / unpaid.length) : 0;
-      const remainder = unpaid.length > 0 ? remaining - baseUnpaid * unpaid.length : 0;
-
-      paidAmount = sumPaid;
-      paymentSchedule = present.map((x, i) => {
-        const isPaidEntry = toInt(x.val) > 0;
-        let amount: number;
-        if (isPaidEntry) {
-          amount = toInt(x.val);
-        } else {
-          const unpaidIdx = unpaid.findIndex(u => u.idx === x.idx);
-          // Last unpaid absorbs any rounding remainder.
-          amount = baseUnpaid + (unpaidIdx === unpaid.length - 1 ? remainder : 0);
-        }
-        return {
-          label: `ĐỢT ${i + 1}`,
-          amount: String(amount),
-          dueDate: row.dueDate || null,
-          status: isPaidEntry ? "paid" : "unpaid",
-          paidAt: isPaidEntry ? historicalPaymentDate : undefined,
-          paymentMethod: row.paymentMethod,
-          sortOrder: i,
-        };
-      });
+    const installments = row.installments.slice(0, Math.max(1, row.installmentCount));
+    const enteredTotal = installments.reduce((sum, item) => sum + toInt(item.amount), 0);
+    if (enteredTotal > total) {
+      return { payload: null, error: `Tổng tiền các đợt (${fmtMoney(enteredTotal)}) vượt quá tổng hóa đơn (${fmtMoney(total)})` };
     }
+
+    const emptyIndexes = installments
+      .map((item, index) => (!item.amount ? index : -1))
+      .filter(index => index >= 0);
+    const remainingToAllocate = Math.max(0, total - enteredTotal);
+    const baseSuggested = emptyIndexes.length > 0
+      ? Math.floor(remainingToAllocate / emptyIndexes.length)
+      : 0;
+    const suggestionRemainder = emptyIndexes.length > 0
+      ? remainingToAllocate - baseSuggested * emptyIndexes.length
+      : 0;
+    const amountByIndex = installments.map((item, index) => {
+      if (item.amount) return toInt(item.amount);
+      const emptyIndex = emptyIndexes.indexOf(index);
+      return baseSuggested + (emptyIndex === emptyIndexes.length - 1 ? suggestionRemainder : 0);
+    });
+
+    const paymentSchedule = row.installmentCount > 1
+      ? installments.map((item, index) => ({
+          label: `ĐỢT ${index + 1}`,
+          amount: String(amountByIndex[index]),
+          dueDate: item.dueDate || null,
+          status: item.paymentDate ? "paid" : "unpaid",
+          paidAt: item.paymentDate || undefined,
+          paymentMethod: row.paymentMethod,
+          sortOrder: index,
+        }))
+      : [];
+    const paidAmount = row.installmentCount > 1
+      ? installments.reduce((sum, item, index) => sum + (item.paymentDate ? amountByIndex[index] : 0), 0)
+      : (installments[0]?.paymentDate ? total : 0);
 
     const remainingAmount = total - paidAmount;
     const status: "paid" | "unpaid" | "partial" =
@@ -564,9 +554,10 @@ export function BulkInvoiceEntryDialog({
         category: catName || null,
         description: row.description || null,
         paymentMethod: row.paymentMethod,
-        dueDate: row.dueDate || null,
-          createdAt: historicalPaymentDate,
-          paidAt: status === "paid" ? historicalPaymentDate : undefined,
+         dueDate: installments[0]?.dueDate || null,
+         paidAt: status === "paid"
+           ? (installments.map(item => item.paymentDate).filter(Boolean).sort().at(-1) || undefined)
+           : undefined,
         totalAmount: String(base),
         totalPromotion: String(promoAmt),
         totalSurcharge: String(surchargeAmt),
