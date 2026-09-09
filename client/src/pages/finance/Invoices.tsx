@@ -1291,8 +1291,12 @@ export default function Invoices() {
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
 
   useEffect(() => {
-    setIsActionMenuOpen(selectedIds.size > 0);
+    if (selectedIds.size === 0) setIsActionMenuOpen(false);
   }, [selectedIds.size]);
+
+  const reopenActionMenuAfterCheckboxClick = () => {
+    window.setTimeout(() => setIsActionMenuOpen(true), 0);
+  };
 
   const { toast } = useToast();
 
@@ -2145,7 +2149,11 @@ export default function Invoices() {
           <table className="w-full min-w-[1120px] text-xs border-separate border-spacing-0">
             <thead>
               <tr className="border-b border-border">
-                <th className="p-3 w-10 sticky top-0 left-0 z-40 bg-muted">{invPerm.canDelete && <Checkbox checked={allSelected} onCheckedChange={checked => toggleAll(checked === true)} data-testid="checkbox-all" />}</th>
+                <th className="p-3 w-10 sticky top-0 left-0 z-40 bg-muted">{invPerm.canDelete && <Checkbox checked={allSelected} onCheckedChange={checked => {
+                  const nextChecked = checked === true;
+                  toggleAll(nextChecked);
+                  if (nextChecked) reopenActionMenuAfterCheckboxClick();
+                }} data-testid="checkbox-all" />}</th>
                 {visibleColumns.map(col => (
                   <th key={col.key} className={`px-3 py-2.5 sticky top-0 z-30 bg-muted text-[10px] font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-muted/70 hover:text-foreground transition-colors ${col.align === "right" ? "text-right" : "text-left"} ${col.key === "name" ? "left-10 z-40 min-w-[160px] border-r border-border" : ""}`} onClick={() => col.sortKey && handleSort(col.sortKey)}>
                     <span className={`flex items-center gap-0.5 ${col.align === "right" ? "justify-end" : ""}`}>
@@ -2193,8 +2201,12 @@ export default function Invoices() {
                         <Checkbox
                           checked={isSelected}
                           onCheckedChange={checked => {
-                            if (isScheduleRow && schedule) toggleSchedule(schedule, checked === true);
-                            else toggleOne(inv.id, checked === true);
+                            const nextChecked = checked === true;
+                            if (isScheduleRow && schedule) toggleSchedule(schedule, nextChecked);
+                            else {
+                              toggleOne(inv.id, nextChecked);
+                              if (nextChecked) reopenActionMenuAfterCheckboxClick();
+                            }
                           }}
                           data-testid={`checkbox-${rowKey}`}
                         />
