@@ -1426,18 +1426,10 @@ const RowEditor = memo(function RowEditor({
               if (amount && amount > 0) {
                 const baseNum = Math.round(amount);
                 const amountStr = String(baseNum);
-                // Auto-fill đợt 1 with the computed Tổng tiền (base ± current promo/surcharge).
-                const promo = calcAdjustment(baseNum, row.promotionKeys, promotionOptions);
-                const surch = calcAdjustment(baseNum, row.surchargeKeys, surchargeOptions);
-                const totalStr = String(Math.max(0, baseNum - promo + surch));
                 updateRow(row.id, {
                   product: id,
                   productLabel: label,
                   amount: amountStr,
-                  installment1: totalStr,
-                  installment2: "",
-                  installment3: "",
-                  installment4: "",
                 });
               } else {
                 updateRow(row.id, { product: id, productLabel: label });
