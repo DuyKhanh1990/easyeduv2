@@ -24,7 +24,11 @@ export function DebtScheduleLoader({ invoice }: { invoice: InvoiceRow }) {
     <>
       {unpaid.map(s => {
         const amount = parseNum(s.amount);
-        const isOverdue = s.dueDate && new Date(s.dueDate) < new Date();
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const due = s.dueDate ? new Date(s.dueDate) : null;
+        due?.setHours(0, 0, 0, 0);
+        const isOverdue = !!due && due < today;
         return (
           <tr key={s.id} className="border-b last:border-0 hover:bg-blue-50/30 transition-colors">
             <td className="px-4 py-2.5 text-xs font-medium text-primary">

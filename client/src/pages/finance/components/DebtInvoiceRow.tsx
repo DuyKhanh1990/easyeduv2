@@ -7,7 +7,11 @@ export function DebtInvoiceRow({ invoice }: { invoice: InvoiceRow }) {
   const paid = parseNum(invoice.paidAmount);
   const remaining = parseNum(invoice.remainingAmount);
   const statusCfg = STATUS_CONFIG[invoice.status] ?? STATUS_CONFIG.unpaid;
-  const isOverdue = invoice.dueDate && new Date(invoice.dueDate) < new Date() && remaining > 0;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = invoice.dueDate ? new Date(invoice.dueDate) : null;
+  due?.setHours(0, 0, 0, 0);
+  const isOverdue = !!due && due < today && remaining > 0;
 
   return (
     <tr className="border-b last:border-0 hover:bg-muted/20 transition-colors">

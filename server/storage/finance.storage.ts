@@ -583,13 +583,43 @@ export async function getInvoices(filters: {
 
   const baseWhere = conditions.length > 0 ? and(...conditions) : undefined;
 
+  // A scheduled invoice is outstanding when the unpaid schedules still leave
+  // money due. Do not rely only on invoices.remaining_amount here: older data
+  // can have a stale denormalized value after schedule payments.
+  const hasOutstandingDebt = sql`(
+    ${invoices.status} != 'cancelled'
+    AND (
+      (
+        NOT EXISTS (
+          SELECT 1
+          FROM invoice_payment_schedule AS debt_schedule
+          WHERE debt_schedule.invoice_id = ${invoices.id}
+        )
+        AND ${invoices.remainingAmount}::numeric > 0
+      )
+      OR (
+        EXISTS (
+          SELECT 1
+          FROM invoice_payment_schedule AS debt_schedule
+          WHERE debt_schedule.invoice_id = ${invoices.id}
+        )
+        AND ${invoices.grandTotal}::numeric - COALESCE((
+          SELECT SUM(paid_schedule.amount::numeric)
+          FROM invoice_payment_schedule AS paid_schedule
+          WHERE paid_schedule.invoice_id = ${invoices.id}
+            AND paid_schedule.status = 'paid'
+        ), 0) > 0
+      )
+    )
+  )`;
+
   const tabConditions = [...conditions];
   if (f.tabFilter === "unpaid") {
     tabConditions.push(inArray(invoices.status, ["unpaid", "partial"]));
   } else if (f.tabFilter === "paid") {
     tabConditions.push(inArray(invoices.status, ["paid", "partial"]));
   }
-  else if (f.tabFilter === "debt")    tabConditions.push(sql`${invoices.remainingAmount}::numeric > 0` as any);
+  else if (f.tabFilter === "debt")    tabConditions.push(hasOutstandingDebt as any);
   const tabWhere = tabConditions.length > 0 ? and(...tabConditions) : undefined;
 
   const dirFn = f.sortDir === "asc" ? asc : desc;
@@ -615,7 +645,7 @@ export async function getInvoices(filters: {
        unpaid:  sql<number>`COUNT(*) FILTER (WHERE ${invoices.status} IN ('unpaid', 'partial'))::int`,
       partial: sql<number>`COUNT(*) FILTER (WHERE ${invoices.status} = 'partial')::int`,
        paid:    sql<number>`COUNT(*) FILTER (WHERE ${invoices.status} IN ('paid', 'partial'))::int`,
-      debt:    sql<number>`COUNT(*) FILTER (WHERE ${invoices.remainingAmount}::numeric > 0 AND ${invoices.status} != 'cancelled')::int`,
+       debt:    sql<number>`COUNT(*) FILTER (WHERE ${hasOutstandingDebt})::int`,
     })
     .from(invoices)
     .leftJoin(students,     eq(invoices.studentId, students.id))

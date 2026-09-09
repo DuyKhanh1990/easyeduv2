@@ -2373,12 +2373,19 @@ export default function Invoices() {
           (() => {
             const today = new Date();
             today.setHours(0, 0, 0, 0);
+            const getDebtDueDate = (invoice: InvoiceRow) =>
+              invoice.scheduleNextDueDate || invoice.dueDate;
+            const getDaysUntilDue = (invoice: InvoiceRow) => {
+              const dueDate = getDebtDueDate(invoice);
+              if (!dueDate) return null;
+              const due = new Date(dueDate);
+              due.setHours(0, 0, 0, 0);
+              return Math.round((due.getTime() - today.getTime()) / 86400000);
+            };
             const filteredDebtInvoices = invoices.filter(invoice => {
               if (debtCondition === "all") return true;
-              if (!invoice.dueDate) return debtCondition === "no-due-date";
-              const due = new Date(invoice.dueDate);
-              due.setHours(0, 0, 0, 0);
-              const days = Math.round((due.getTime() - today.getTime()) / 86400000);
+              const days = getDaysUntilDue(invoice);
+              if (days === null) return debtCondition === "no-due-date";
               if (debtCondition === "overdue") return days < 0;
               if (debtCondition === "today") return days === 0;
               if (debtCondition === "soon") return days >= 1 && days <= 7;
@@ -2387,32 +2394,14 @@ export default function Invoices() {
             });
             const totalDebtAll = filteredDebtInvoices.reduce((s, i) => s + parseNum(i.remainingAmount), 0);
             const debtConditionCards: { key: DebtCondition | "total"; label: string; value: string | number; activeClass: string; textClass: string }[] = [
-              { key: "overdue", label: "Quá hạn", value: invoices.filter(invoice => {
-                if (!invoice.dueDate) return false;
-                const due = new Date(invoice.dueDate);
-                due.setHours(0, 0, 0, 0);
-                return Math.round((due.getTime() - today.getTime()) / 86400000) < 0;
-              }).length, activeClass: "border-red-300 bg-red-50", textClass: "text-red-600" },
-              { key: "today", label: "Đến hạn hôm nay", value: invoices.filter(invoice => {
-                if (!invoice.dueDate) return false;
-                const due = new Date(invoice.dueDate);
-                due.setHours(0, 0, 0, 0);
-                return Math.round((due.getTime() - today.getTime()) / 86400000) === 0;
-              }).length, activeClass: "border-orange-300 bg-orange-50", textClass: "text-orange-600" },
+              { key: "overdue", label: "Quá hạn", value: invoices.filter(invoice => (getDaysUntilDue(invoice) ?? 0) < 0).length, activeClass: "border-red-300 bg-red-50", textClass: "text-red-600" },
+              { key: "today", label: "Đến hạn hôm nay", value: invoices.filter(invoice => getDaysUntilDue(invoice) === 0).length, activeClass: "border-orange-300 bg-orange-50", textClass: "text-orange-600" },
               { key: "soon", label: "Sắp đến hạn", value: invoices.filter(invoice => {
-                if (!invoice.dueDate) return false;
-                const due = new Date(invoice.dueDate);
-                due.setHours(0, 0, 0, 0);
-                const days = Math.round((due.getTime() - today.getTime()) / 86400000);
-                return days >= 1 && days <= 7;
+                const days = getDaysUntilDue(invoice);
+                return days !== null && days >= 1 && days <= 7;
               }).length, activeClass: "border-amber-300 bg-amber-50", textClass: "text-amber-600" },
-              { key: "upcoming", label: "Chưa đến hạn", value: invoices.filter(invoice => {
-                if (!invoice.dueDate) return false;
-                const due = new Date(invoice.dueDate);
-                due.setHours(0, 0, 0, 0);
-                return Math.round((due.getTime() - today.getTime()) / 86400000) > 7;
-              }).length, activeClass: "border-blue-300 bg-blue-50", textClass: "text-blue-600" },
-              { key: "no-due-date", label: "Không có hạn", value: invoices.filter(invoice => !invoice.dueDate).length, activeClass: "border-slate-300 bg-slate-100", textClass: "text-slate-600" },
+              { key: "upcoming", label: "Chưa đến hạn", value: invoices.filter(invoice => (getDaysUntilDue(invoice) ?? 0) > 7).length, activeClass: "border-blue-300 bg-blue-50", textClass: "text-blue-600" },
+              { key: "no-due-date", label: "Không có hạn", value: invoices.filter(invoice => getDaysUntilDue(invoice) === null).length, activeClass: "border-slate-300 bg-slate-100", textClass: "text-slate-600" },
               { key: "total", label: "Tổng công nợ", value: fmtMoney(totalDebtAll), activeClass: "border-rose-300 bg-rose-50", textClass: "text-rose-600" },
             ];
             const groups = (() => {
@@ -2562,9 +2551,6 @@ export default function Invoices() {
                   <>
                     {groups.map(group => {
                       const totalDebt = group.invoices.reduce((s, i) => s + parseNum(i.remainingAmount), 0);
-                      const dueDates = group.invoices.filter(i => i.dueDate).map(i => new Date(i.dueDate!));
-                      const earliestDue = dueDates.length > 0 ? new Date(Math.min(...dueDates.map(d => d.getTime()))) : null;
-                      const daysUntilDue = earliestDue ? Math.ceil((earliestDue.getTime() - Date.now()) / 86400000) : null;
                       const initial = (group.name ?? "?").charAt(0).toUpperCase();
                       const avatarColors = ["from-rose-500 to-pink-600", "from-violet-500 to-purple-600", "from-sky-500 to-blue-600", "from-teal-500 to-emerald-600", "from-amber-500 to-orange-500"];
                       const avatarGrad = avatarColors[(group.name ?? "").split("").reduce((a, c) => a + c.charCodeAt(0), 0) % avatarColors.length];
@@ -2576,23 +2562,6 @@ export default function Invoices() {
                                 {initial}
                               </div>
                               <span className="font-bold text-sm text-slate-700">{group.name}</span>
-                              {daysUntilDue !== null && (
-                                <span className={`inline-flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full border font-semibold ${
-                                  daysUntilDue < 0
-                                    ? "bg-red-50 text-red-600 border-red-200"
-                                    : daysUntilDue === 0
-                                    ? "bg-orange-50 text-orange-600 border-orange-200"
-                                    : daysUntilDue <= 3
-                                    ? "bg-amber-50 text-amber-600 border-amber-200"
-                                    : "bg-yellow-50 text-yellow-600 border-yellow-200"
-                                }`}>
-                                  {daysUntilDue < 0
-                                    ? <><AlertCircle className="h-3 w-3" /> quá hạn {Math.abs(daysUntilDue)} ngày</>
-                                    : daysUntilDue === 0
-                                    ? <><AlertCircle className="h-3 w-3" /> hạn hôm nay</>
-                                    : <>còn {daysUntilDue} ngày</>}
-                                </span>
-                              )}
                             </div>
                             <div className="text-right">
                               <p className="text-[10px] text-slate-400 uppercase tracking-wide font-semibold">Tổng công nợ</p>
