@@ -1909,3 +1909,102 @@ function FeePackageCombobox({
     </Popover>
   );
 }
+
+function StoreProductCombobox({
+  branchId, value, label, onSelect,
+}: {
+  branchId: string;
+  value: string;
+  label: string;
+  onSelect: (product: any) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const { data: products = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/store/issue-inventory/search", "bulk", branchId, search],
+    queryFn: () => {
+      const params = new URLSearchParams({ locationId: branchId });
+      if (search.trim()) params.set("q", search.trim());
+      return apiRequest("GET", `/api/store/issue-inventory/search?${params}`).then(r => r.json());
+    },
+    enabled: open && Boolean(branchId),
+    staleTime: 0,
+  });
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={nextOpen => {
+        setOpen(nextOpen);
+        if (!nextOpen) setSearch("");
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          className="h-8 w-full justify-between text-xs font-normal"
+          data-testid="combobox-store-product"
+        >
+          <span className={label ? "truncate" : "truncate text-muted-foreground"}>
+            {label || "Chọn sản phẩm kho..."}
+          </span>
+          <ChevronsUpDown className="h-3 w-3 opacity-50 flex-shrink-0" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="p-2 w-80" align="start">
+        {!branchId ? (
+          <p className="text-xs text-center text-muted-foreground py-4">Vui lòng chọn Cơ sở trước</p>
+        ) : (
+          <Command shouldFilter={false}>
+            <CommandInput
+              placeholder="Tìm sản phẩm kho..."
+              value={search}
+              onValueChange={setSearch}
+              className="h-9"
+            />
+            <CommandList>
+              {isLoading ? (
+                <CommandEmpty>Đang tải sản phẩm...</CommandEmpty>
+              ) : products.length === 0 ? (
+                <CommandEmpty>Không tìm thấy sản phẩm kho.</CommandEmpty>
+              ) : (
+                <CommandGroup>
+                  {products.map((product: any) => {
+                    const price = Number(product.sale_price) || 0;
+                    const productValue = product.id ?? product.code;
+                    return (
+                      <CommandItem
+                        key={`${product.id}-${product.warehouse_id}`}
+                        value={String(productValue)}
+                        onSelect={() => {
+                          onSelect(product);
+                          setOpen(false);
+                          setSearch("");
+                        }}
+                      >
+                        <Check className={`h-3 w-3 mr-2 flex-shrink-0 ${value === product.id ? "opacity-100" : "opacity-0"}`} />
+                        <div className="flex flex-col min-w-0 flex-1">
+                          <span className="truncate text-xs">
+                            {product.name} {product.code ? `(${product.code})` : ""}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground flex justify-between gap-2">
+                            <span className="truncate">{product.warehouse_name || "Kho"}</span>
+                            <span className="shrink-0">
+                              Tồn: {product.stock ?? 0} · {fmtMoney(price)}
+                            </span>
+                          </span>
+                        </div>
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+              )}
+            </CommandList>
+          </Command>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
