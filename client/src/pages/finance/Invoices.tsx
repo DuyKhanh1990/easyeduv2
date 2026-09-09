@@ -884,6 +884,23 @@ function BulkDueDateDialog({
   );
 }
 
+type BulkInvoiceDateTarget = {
+  id: string;
+  kind: "invoice" | "schedule";
+  createdAt: string | Date | null | undefined;
+  paidAt: string | Date | null | undefined;
+};
+
+function dateOnly(value: string | Date | null | undefined): string {
+  if (!value) return "";
+  if (typeof value === "string") {
+    const match = value.match(/^\d{4}-\d{2}-\d{2}/);
+    if (match) return match[0];
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "" : format(parsed, "yyyy-MM-dd");
+}
+
 function BulkInvoiceDateDialog({
   open,
   onOpenChange,
