@@ -827,7 +827,7 @@ export function registerFinanceRoutes(app: Express): void {
       updatedBy: userId,
       ...(paidOnCreate ? {
         paidBy: userId ?? null,
-        paidAt: new Date(),
+        paidAt: payload.paidAt ?? new Date(),
       } : {}),
     });
     if (data.studentId && data.classId && data.category === "Học phí") {
