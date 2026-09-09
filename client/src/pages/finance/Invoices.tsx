@@ -1571,7 +1571,10 @@ export default function Invoices() {
     if (queryParams.paidAtFrom || queryParams.paidAtTo) {
       if (!rowDateMatches(invoice.paidAt, queryParams.paidAtFrom, queryParams.paidAtTo)) return false;
     } else if (queryParams.dueDateFrom || queryParams.dueDateTo) {
-      if (!rowDateMatches(invoice.dueDate, queryParams.dueDateFrom, queryParams.dueDateTo)) return false;
+      const effectiveDueDate = activeTab === "debt"
+        ? (invoice.scheduleNextDueDate || invoice.dueDate)
+        : invoice.dueDate;
+      if (!rowDateMatches(effectiveDueDate, queryParams.dueDateFrom, queryParams.dueDateTo)) return false;
     } else if (queryParams.dateFrom || queryParams.dateTo) {
       if (!rowDateMatches(invoice.createdAt, queryParams.dateFrom, queryParams.dateTo)) return false;
     }

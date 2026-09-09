@@ -465,6 +465,11 @@ export async function getInvoices(filters: {
       invoiceDueConditions.push(lte(invoices.dueDate, f.dueDateTo));
       scheduleDueConditions.push(lte(invoicePaymentSchedule.dueDate, f.dueDateTo));
     }
+    // On the debt page the effective due date is the next unpaid installment,
+    // so paid installments must not make an invoice match the date filter.
+    if (f.tabFilter === "debt") {
+      scheduleDueConditions.push(sql`${invoicePaymentSchedule.status} != 'paid'`);
+    }
     const scheduleDueInvoiceIds = db
       .select({ invoiceId: invoicePaymentSchedule.invoiceId })
       .from(invoicePaymentSchedule)
