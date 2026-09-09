@@ -118,7 +118,7 @@ export async function cleanupExpiredReservations() {
   await db.execute(sql`DELETE FROM store_inventory_reservations WHERE expires_at < NOW()`);
 }
 
-async function getReservationConfig(): Promise<{ sessionMinutes: number; draftMinutes: number }> {
+export async function getReservationConfig(): Promise<{ sessionMinutes: number; draftMinutes: number }> {
   try {
     const rows = await db.execute(sql`SELECT session_minutes, draft_minutes FROM store_reservation_config LIMIT 1`);
     const row = rows.rows[0] as any;

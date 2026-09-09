@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { eq } from "drizzle-orm";
-import { logStockTransaction } from "./store-inventory.routes";
+import { getReservationConfig, logStockTransaction } from "./store-inventory.routes";
 import { createStoreIssueReceiptAuditLog } from "../storage/store-issue-receipt-audit-log.storage";
 import {
   invoices,
@@ -163,6 +163,8 @@ async function validateAndDecreaseInventory(
   const errors: string[] = [];
   const sid = sessionId && sessionId.trim() ? sessionId.trim() : "__none__";
   const rid = receiptId && receiptId.trim() ? receiptId.trim() : null;
+  const { draftMinutes } = await getReservationConfig();
+  const draftCutoff = new Date(Date.now() - draftMinutes * 60 * 1000).toISOString();
   for (const item of items) {
     if (!item.productId) continue;
     const invRow = await db.execute(sql`
@@ -187,6 +189,7 @@ async function validateAndDecreaseInventory(
           WHERE ii.product_id = ${item.productId}
             AND ir.warehouse_id = ${warehouseId}
             AND ir.status = 'draft'
+            AND ir.updated_at > ${draftCutoff}
             ${rid ? sql`AND ir.id != ${rid}::uuid` : sql``}
         ), 0)
       ) AS available
@@ -1425,6 +1428,9 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
     const draftExcludeFilter = rid ? sql`AND ir.id != ${rid}::uuid` : sql``;
 
     try {
+      const { draftMinutes } = await getReservationConfig();
+      const draftCutoff = new Date(Date.now() - draftMinutes * 60 * 1000).toISOString();
+
       if (locationId && locationId.trim()) {
         // Search all warehouses for a given location — used by invoice Kho picker
         const lid = locationId.trim();
@@ -1460,6 +1466,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
                   WHERE ii.product_id = sp.id
                     AND ir.warehouse_id = sw.id
                     AND ir.status = 'draft'
+                    AND ir.updated_at > ${draftCutoff}
                     ${draftExcludeFilter}
                 ), 0)
               ) AS stock
@@ -1508,6 +1515,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
                 WHERE ii.product_id = sp.id
                   AND ir.warehouse_id = ${wid}
                   AND ir.status = 'draft'
+                  AND ir.updated_at > ${draftCutoff}
                   ${draftExcludeFilter}
               ), 0)
             ) AS stock
