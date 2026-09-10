@@ -107,7 +107,10 @@ export function useUpdateStudent() {
         body: JSON.stringify(updates),
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to update student");
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.message || "Failed to update student");
+      }
       return api.students.update.responses[200].parse(await res.json());
     },
     onSuccess: (data) => {
