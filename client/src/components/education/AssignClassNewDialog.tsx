@@ -88,6 +88,7 @@ export function AssignClassNewDialog({
   const [openPromoIdx, setOpenPromoIdx] = useState<number | null>(null);
   const [openSurchargeIdx, setOpenSurchargeIdx] = useState<number | null>(null);
   const [isAutoInvoiceWarningOpen, setIsAutoInvoiceWarningOpen] = useState(false);
+  const [isMissingPackageWarningOpen, setIsMissingPackageWarningOpen] = useState(false);
 
   const { data: promotionOptions = [] } = useQuery<any[]>({
     queryKey: ["/api/finance/promotions?type=promotion"],
@@ -473,20 +474,7 @@ export function AssignClassNewDialog({
 
   const handleScheduleConfirm = () => {
     if (hasMissingAutoInvoicePackage) {
-      const missingNames = missingAutoInvoicePackageConfigs
-        .map((config) => config.fullName)
-        .filter(Boolean);
-      const nameSummary = missingNames.length <= 3
-        ? missingNames.join(", ")
-        : `${missingNames.slice(0, 3).join(", ")} và ${missingNames.length - 3} học viên khác`;
-
-      toast({
-        title: "Thiếu gói học phí",
-        description: nameSummary
-          ? `Vui lòng chọn gói học phí cho: ${nameSummary} trước khi bật hóa đơn tự động.`
-          : "Vui lòng chọn gói học phí cho tất cả học viên trước khi bật hóa đơn tự động.",
-        variant: "destructive",
-      });
+      setIsMissingPackageWarningOpen(true);
       return;
     }
 
@@ -1138,7 +1126,6 @@ export function AssignClassNewDialog({
               <Button
                 disabled={
                   scheduleMutation.isPending ||
-                  hasMissingAutoInvoicePackage ||
                   studentConfigs.some(c =>
                     c.shiftType === "specific" && c.selectedShifts.length === 0
                   )
@@ -1151,6 +1138,31 @@ export function AssignClassNewDialog({
           </>
         )}
       </DialogContent>
+
+      <Dialog open={isMissingPackageWarningOpen} onOpenChange={setIsMissingPackageWarningOpen}>
+        <DialogContent className="z-[150] max-w-md">
+          <DialogHeader>
+            <DialogTitle>Thiếu gói học phí</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>
+              Bạn đang bật hóa đơn tự động. Vui lòng chọn gói học phí trước khi tiếp tục.
+            </p>
+            {missingAutoInvoicePackageConfigs.length > 0 && (
+              <ul className="list-disc space-y-1 pl-5 text-destructive">
+                {missingAutoInvoicePackageConfigs.map((config) => (
+                  <li key={config.studentId}>{config.fullName || "Học viên chưa có tên"}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setIsMissingPackageWarningOpen(false)}>
+              Đã hiểu
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isAutoInvoiceWarningOpen} onOpenChange={setIsAutoInvoiceWarningOpen}>
         <DialogContent className="z-[150] max-w-md">
