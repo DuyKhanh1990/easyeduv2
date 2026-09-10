@@ -40,7 +40,8 @@ emso-build-image:
     - docker image prune -af
     - docker builder prune -af
     - docker logout "$DOCKER_REGISTRY"
-    - echo "Build xong rồi !"image: docker:27-cli
+    - echo "Build xong rồi !"
+    image: docker:27-cli
 
 stages: [build_images]
 
