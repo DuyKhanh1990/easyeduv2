@@ -494,13 +494,13 @@ export function StoreReceiptDialog({ initialData, onClose, onSave, isSaving }: P
                       </tr>
                     ) : form.items.map(item => (
                       <tr key={item._key} className="border-t border-border hover:bg-muted/20">
-                        <td className="px-3 py-1.5">
+                         <td className="px-3 py-1.5 align-top">
                           <div>
                             <p className="text-xs font-medium truncate" title={item.productName}>{item.productName}</p>
                             <p className="font-mono text-[10px] text-primary italic">{item.productCode}</p>
                           </div>
                         </td>
-                        <td className="px-2 py-1.5">
+                         <td className="px-2 py-1.5 align-top">
                           <Input
                             type="number"
                             min={1}
@@ -526,7 +526,7 @@ export function StoreReceiptDialog({ initialData, onClose, onSave, isSaving }: P
                             </p>
                           )}
                         </td>
-                        <td className="px-2 py-1.5">
+                         <td className="px-2 py-1.5 align-top">
                           <Select value={item.categoryId || "none"} onValueChange={v => updateItem(item._key, "categoryId", v === "none" ? "" : v)}>
                             <SelectTrigger className="h-7 text-xs w-full"><SelectValue placeholder="—" /></SelectTrigger>
                             <SelectContent>
@@ -535,7 +535,7 @@ export function StoreReceiptDialog({ initialData, onClose, onSave, isSaving }: P
                             </SelectContent>
                           </Select>
                         </td>
-                        <td className="px-2 py-1.5">
+                         <td className="px-2 py-1.5 align-top">
                           <Select value={item.colorId || "none"} onValueChange={v => updateItem(item._key, "colorId", v === "none" ? "" : v)}>
                             <SelectTrigger className="h-7 text-xs w-full"><SelectValue placeholder="—" /></SelectTrigger>
                             <SelectContent>
@@ -544,7 +544,7 @@ export function StoreReceiptDialog({ initialData, onClose, onSave, isSaving }: P
                             </SelectContent>
                           </Select>
                         </td>
-                        <td className="px-2 py-1.5">
+                         <td className="px-2 py-1.5 align-top">
                           <Select value={item.sizeId || "none"} onValueChange={v => updateItem(item._key, "sizeId", v === "none" ? "" : v)}>
                             <SelectTrigger className="h-7 text-xs w-full"><SelectValue placeholder="—" /></SelectTrigger>
                             <SelectContent>
@@ -553,7 +553,7 @@ export function StoreReceiptDialog({ initialData, onClose, onSave, isSaving }: P
                             </SelectContent>
                           </Select>
                         </td>
-                        <td className="px-2 py-1.5">
+                         <td className="px-2 py-1.5 align-top">
                           <Select value={item.unitId || "none"} onValueChange={v => updateItem(item._key, "unitId", v === "none" ? "" : v)}>
                             <SelectTrigger className="h-7 text-xs w-full"><SelectValue placeholder="—" /></SelectTrigger>
                             <SelectContent>
@@ -562,17 +562,17 @@ export function StoreReceiptDialog({ initialData, onClose, onSave, isSaving }: P
                             </SelectContent>
                           </Select>
                         </td>
-                        <td className="px-2 py-1.5">
+                         <td className="px-2 py-1.5 align-top">
                           <Input type="number" min={0} value={item.costPrice} onChange={e => updateItem(item._key, "costPrice", parseFloat(e.target.value) || 0)} className="h-7 text-xs px-2 text-right w-full" />
                         </td>
-                        <td className="px-2 py-1.5">
+                         <td className="px-2 py-1.5 align-top">
                           <Input type="number" min={0} value={item.salePrice} onChange={e => updateItem(item._key, "salePrice", parseFloat(e.target.value) || 0)} className="h-7 text-xs px-2 text-right w-full" />
                         </td>
-                        <td className="px-2 py-1.5">
+                         <td className="px-2 py-1.5 align-top">
                           <Input type="number" min={0} value={item.starPrice} onChange={e => updateItem(item._key, "starPrice", parseInt(e.target.value) || 0)} className="h-7 text-xs px-2 text-right w-full" />
                         </td>
                         {!isEdit && (
-                          <td className="px-2 py-1.5 text-center">
+                           <td className="px-2 py-1.5 text-center align-top">
                             <button onClick={() => removeItem(item._key)} className="p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-500 transition-colors">
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
