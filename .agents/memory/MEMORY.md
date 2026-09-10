@@ -35,3 +35,4 @@
 - [Production PostgreSQL client](production-postgres-client.md) — backup/restore cần PostgreSQL client ở runtime của cả Replit và Docker, không chỉ trong workspace dev.
 - [Bulk finance child-first behavior](bulk-child-first-finance.md) — bulk phải tách invoice/schedule targets và luôn đồng bộ summary của invoice cha sau thao tác trên đợt.
 - [Inventory availability expiry](inventory-availability-expiry.md) — mọi màn hình và bước lưu phải bỏ reservation/phiếu xuất nháp đã hết hạn theo cùng cấu hình thời gian.
+- [Student discussion edit audit](student-discussion-edit-audit.md) — giữ tác giả gốc và lưu riêng người sửa/thời điểm sửa để hiển thị lịch sử minh bạch.
