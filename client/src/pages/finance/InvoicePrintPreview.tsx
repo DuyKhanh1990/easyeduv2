@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Printer, AlertTriangle } from "lucide-react";
 import type { InvoicePrintTemplateRow } from "@shared/schema";
+import { useAuth } from "@/hooks/use-auth";
+import { useStaff } from "@/hooks/use-staff";
 
 interface InvoicePrintData {
   id: string;
@@ -436,6 +438,7 @@ function renderTemplate(
   promotionOptions: PromoOption[] = [],
   surchargeOptions: PromoOption[] = [],
   logoUrl?: string,
+  collectorName = "",
 ): string {
   const total = Number(invoice.grandTotal) || 0;
   const paid = Number(invoice.paidAmount) || 0;
@@ -512,6 +515,7 @@ function renderTemplate(
           : ""
       )
       ?? "",
+    nguoi_thu_tien: collectorName,
     // KM / PT / Khấu trừ
     tong_truoc_kmpt: tongTruocKmpt,
     km_theo_sp: kmTheoSp,
@@ -642,6 +646,13 @@ interface Props {
 export function InvoicePrintPreview({ invoice, onClose, skipFetch, titleSuffix, templateId }: Props) {
   const invoiceType = invoice.type;
   const printFrameRef = useRef<HTMLIFrameElement>(null);
+  const { data: currentUser } = useAuth();
+  const { data: staffList = [] } = useStaff(undefined, true, true);
+  const currentCollectorName =
+    (staffList as Array<{ userId?: string | null; fullName?: string | null }>)
+      .find((staff) => staff.userId === currentUser?.id)?.fullName
+    ?? currentUser?.username
+    ?? "";
 
   const { data: fullInvoice, isLoading: loadingInvoice } = useQuery<InvoicePrintData>({
     queryKey: ["/api/finance/invoices", invoice.sourceInvoiceId ?? invoice.id, "print"],
@@ -737,7 +748,7 @@ export function InvoicePrintPreview({ invoice, onClose, skipFetch, titleSuffix, 
   const hasFetchError = !loadingTemplate && !hasNoDefault && !!templateError;
 
   const renderedHtml = template && !isLoading
-    ? renderTemplate(template.html, invoiceData, promotionOptions, surchargeOptions, mainLogoUrl)
+    ? renderTemplate(template.html, invoiceData, promotionOptions, surchargeOptions, mainLogoUrl, currentCollectorName)
     : null;
 
   const pageCfg = PAGE_SIZES[template?.pageSize ?? "A4"] ?? PAGE_SIZES.A4;

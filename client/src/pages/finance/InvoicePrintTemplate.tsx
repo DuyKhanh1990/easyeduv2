@@ -233,6 +233,7 @@ const SAMPLE_DATA = {
   phuong_thuc: "Tiền mặt",
   nguoi_tao: "Nguyễn Văn A",
   nguoi_thanh_toan: "Nguyễn Thị Thu",
+  nguoi_thu_tien: "Nguyễn Văn B",
   // KM / PT / Khấu trừ (sample)
   tong_truoc_kmpt: 5300000,
   km_theo_sp: 50000,
@@ -303,6 +304,7 @@ const VARIABLES: VariableDef[] = [
   { group: "Thanh toán", label: "Phương thức TT", key: "phuong_thuc", description: "{{phuong_thuc}}" },
   { group: "Thanh toán", label: "Người tạo", key: "nguoi_tao", description: "{{nguoi_tao}}" },
   { group: "Thanh toán", label: "Người thanh toán", key: "nguoi_thanh_toan", description: "{{nguoi_thanh_toan}}" },
+  { group: "Thanh toán", label: "Người thu tiền", key: "nguoi_thu_tien", description: "{{nguoi_thu_tien}}" },
 
   // ── Hoá đơn cha – khi in một đợt ──
   { group: "Hoá đơn Cha (nhiều đợt)", label: "Mã HĐ gốc", key: "ma_hd_goc", description: "{{ma_hd_goc}}" },
@@ -358,6 +360,7 @@ const VARIABLE_HELP: Record<string, { meaning: string; example: string }> = {
   phuong_thuc: { meaning: "Phương thức thanh toán của hóa đơn hoặc đợt đang in.", example: "Tiền mặt" },
   nguoi_tao: { meaning: "Tên nhân sự đã tạo hóa đơn.", example: "Nguyễn Thị B" },
   nguoi_thanh_toan: { meaning: "Tên nhân sự ghi nhận thanh toán cho hóa đơn hoặc đợt này.", example: "Trần Văn C" },
+  nguoi_thu_tien: { meaning: "Tên user đang đăng nhập và bấm in phiếu tại thời điểm in. Không thay đổi người thanh toán đã lưu trên hóa đơn.", example: "Lê Văn D" },
   ma_hd_goc: { meaning: "Mã hóa đơn cha chứa toàn bộ các đợt thanh toán.", example: "PT-029" },
   tong_hd_goc: { meaning: "Tổng tiền của toàn bộ hóa đơn cha, gồm tất cả các đợt.", example: "3.000.000 đ" },
   da_thu_hd_goc: { meaning: "Tổng số tiền đã thu cộng dồn từ tất cả các đợt của hóa đơn cha.", example: "Đã thu 2 đợt: 2.000.000 đ" },
