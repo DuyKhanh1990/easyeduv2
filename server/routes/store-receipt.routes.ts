@@ -487,7 +487,26 @@ export async function registerStoreReceiptRoutes(app: Express) {
       const [receipt] = await db.select().from(storeReceipts).where(eq(storeReceipts.id, req.params.id));
       if (!receipt) return res.status(404).json({ message: "Không tìm thấy phiếu" });
       const items = await db.select().from(storeReceiptItems).where(eq(storeReceiptItems.receiptId, req.params.id));
-      res.json({ ...receipt, items });
+      const stockRows = await db.execute(sql`
+        SELECT
+          i.id,
+          COALESCE(inv.quantity, 0)::int AS available_stock
+        FROM store_receipt_items i
+        LEFT JOIN store_inventory inv
+          ON inv.product_id = i.product_id
+          AND inv.warehouse_id = ${receipt.warehouseId}
+        WHERE i.receipt_id = ${req.params.id}
+      `);
+      const stockByItemId = new Map(
+        (stockRows.rows as any[]).map(row => [String(row.id), Number(row.available_stock) || 0]),
+      );
+      res.json({
+        ...receipt,
+        items: items.map(item => ({
+          ...item,
+          availableStock: stockByItemId.get(item.id) ?? 0,
+        })),
+      });
     } catch (err) {
       console.error("[Receipt] GET detail error:", err);
       res.status(500).json({ message: "Lỗi khi lấy chi tiết phiếu" });

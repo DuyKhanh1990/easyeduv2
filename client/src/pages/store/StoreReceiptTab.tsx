@@ -283,6 +283,7 @@ export function StoreReceiptTab() {
           productCode: item.productCode,
           productName: item.productName,
           quantity: item.quantity,
+          availableStock: item.availableStock ?? null,
           categoryId: item.categoryId ?? "",
           colorId: item.colorId ?? "",
           sizeId: item.sizeId ?? "",

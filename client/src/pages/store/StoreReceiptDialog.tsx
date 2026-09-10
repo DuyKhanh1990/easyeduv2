@@ -25,6 +25,7 @@ export type ReceiptItem = {
   productCode: string;
   productName: string;
   quantity: number;
+  availableStock?: number | null;
   categoryId: string;
   colorId: string;
   sizeId: string;
@@ -239,6 +240,8 @@ export function StoreReceiptDialog({ initialData, onClose, onSave, isSaving }: P
   }
 
   function addProduct(p: ProductSearchResult) {
+    const availableStock = Math.max(0, Number(p.stock) || 0);
+    if (availableStock <= 0) return;
     const key = `${p.id}_${Date.now()}`;
     setForm(f => ({
       ...f,
@@ -248,6 +251,7 @@ export function StoreReceiptDialog({ initialData, onClose, onSave, isSaving }: P
         productCode: p.code,
         productName: p.name,
         quantity: 1,
+        availableStock,
         categoryId: p.category_id ?? "",
         colorId: "",
         sizeId: "",
@@ -411,11 +415,20 @@ export function StoreReceiptDialog({ initialData, onClose, onSave, isSaving }: P
                       <div className="max-h-64 overflow-y-auto">
                         {productResults.length === 0 ? (
                           <p className="text-center text-xs text-muted-foreground py-6">Không có sản phẩm</p>
-                        ) : productResults.map(p => (
+                        ) : productResults.map(p => {
+                          const availableStock = Math.max(0, Number(p.stock) || 0);
+                          const unavailable = availableStock <= 0;
+                          return (
                           <button
                             key={p.id}
-                            onMouseDown={e => { e.preventDefault(); addProduct(p); }}
-                            className="w-full px-3 py-2.5 text-left hover:bg-muted/60 transition-colors border-b border-border/50 last:border-0"
+                            type="button"
+                            disabled={unavailable}
+                            onMouseDown={e => { e.preventDefault(); if (!unavailable) addProduct(p); }}
+                            className={`w-full px-3 py-2.5 text-left transition-colors border-b border-border/50 last:border-0 ${
+                              unavailable
+                                ? "cursor-not-allowed opacity-45 bg-muted/20"
+                                : "hover:bg-muted/60"
+                            }`}
                           >
                             <div className="flex items-center justify-between gap-3">
                               <div className="min-w-0">
@@ -423,12 +436,15 @@ export function StoreReceiptDialog({ initialData, onClose, onSave, isSaving }: P
                                 <p className="text-xs font-medium text-foreground truncate">{p.name}</p>
                               </div>
                               <div className="text-right shrink-0">
-                                <p className="text-[10px] text-muted-foreground">Tồn: {p.stock}</p>
+                                <p className={`text-[10px] ${unavailable ? "text-destructive" : "text-muted-foreground"}`}>
+                                  Tồn: {availableStock}{unavailable ? " · Hết tồn" : ""}
+                                </p>
                                 <p className="text-xs font-medium text-emerald-600">{parseFloat(p.sale_price ?? "0").toLocaleString("vi-VN")} đ</p>
                               </div>
                             </div>
                           </button>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -480,7 +496,30 @@ export function StoreReceiptDialog({ initialData, onClose, onSave, isSaving }: P
                           </div>
                         </td>
                         <td className="px-2 py-1.5">
-                          <Input type="number" min={1} value={item.quantity} onChange={e => updateItem(item._key, "quantity", parseInt(e.target.value) || 1)} className="h-7 text-xs px-2 text-center w-full" />
+                          <Input
+                            type="number"
+                            min={1}
+                            max={item.availableStock && item.availableStock > 0 ? item.availableStock : undefined}
+                            value={item.quantity}
+                            onChange={e => {
+                              const nextQuantity = Math.max(1, parseInt(e.target.value) || 1);
+                              const maxQuantity = item.availableStock && item.availableStock > 0
+                                ? item.availableStock
+                                : null;
+                              updateItem(
+                                item._key,
+                                "quantity",
+                                maxQuantity ? Math.min(nextQuantity, maxQuantity) : nextQuantity,
+                              );
+                            }}
+                            className="h-7 text-xs px-2 text-center w-full"
+                            title={item.availableStock && item.availableStock > 0 ? `Tồn khả dụng: ${item.availableStock}` : undefined}
+                          />
+                          {item.availableStock && item.availableStock > 0 && (
+                            <p className="mt-0.5 text-[9px] text-muted-foreground text-center">
+                              Tối đa {item.availableStock}
+                            </p>
+                          )}
                         </td>
                         <td className="px-2 py-1.5">
                           <Select value={item.categoryId || "none"} onValueChange={v => updateItem(item._key, "categoryId", v === "none" ? "" : v)}>
