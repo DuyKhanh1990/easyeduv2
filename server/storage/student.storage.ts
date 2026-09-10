@@ -1506,19 +1506,63 @@ export async function deleteCrmCustomField(id: string): Promise<void> {
 export async function getStudentComments(studentId: string): Promise<(StudentComment & { user: User })[]> {
   const comments = await db.select()
     .from(studentComments)
-    .leftJoin(users, eq(studentComments.userId, users.id))
     .where(eq(studentComments.studentId, studentId))
     .orderBy(asc(studentComments.createdAt));
 
-  return comments.map(row => ({
-    ...row.student_comments!,
-    user: row.users!
-  }));
+  const userIds = Array.from(new Set(comments.flatMap(({ userId, updatedBy }) => [userId, updatedBy].filter(Boolean) as string[])));
+  const [commentUsers, commentStaff] = userIds.length > 0
+    ? await Promise.all([
+        db.select().from(users).where(inArray(users.id, userIds)),
+        db.select({ userId: staff.userId, fullName: staff.fullName }).from(staff).where(inArray(staff.userId, userIds)),
+      ])
+    : [[], []];
+  const usersById = new Map(commentUsers.map(user => [user.id, user]));
+  const staffNamesByUserId = new Map(commentStaff.map(({ userId, fullName }) => [userId, fullName]));
+
+  return comments.map(comment => {
+    const author = usersById.get(comment.userId);
+    const editor = comment.updatedBy ? usersById.get(comment.updatedBy) : undefined;
+    return {
+      ...comment,
+      user: {
+        ...author,
+        fullName: staffNamesByUserId.get(comment.userId) || author?.username || "Unknown",
+      } as User & { fullName?: string },
+      updatedByUser: editor
+        ? {
+            ...editor,
+            fullName: staffNamesByUserId.get(editor.id) || editor.username,
+          }
+        : null,
+    };
+  }) as (StudentComment & { user: User })[];
 }
 
 export async function createStudentComment(comment: InsertStudentComment): Promise<StudentComment> {
   const [newComment] = await db.insert(studentComments).values(comment).returning();
   return newComment;
+}
+
+export async function updateStudentComment(
+  id: string,
+  studentId: string,
+  content: string,
+  updatedBy: string,
+): Promise<StudentComment> {
+  const [updatedComment] = await db
+    .update(studentComments)
+    .set({
+      content,
+      updatedAt: new Date(),
+      updatedBy,
+    })
+    .where(and(eq(studentComments.id, id), eq(studentComments.studentId, studentId)))
+    .returning();
+
+  if (!updatedComment) {
+    throw new Error("Comment not found");
+  }
+  return updatedComment;
 }
 
 export async function getStudentClassesSummary(

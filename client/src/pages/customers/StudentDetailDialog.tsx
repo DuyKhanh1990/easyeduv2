@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Facebook } from "lucide-react";
+import { Facebook, Pencil, Check } from "lucide-react";
 
 import { X, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, STATIC_STALE_TIME, getAuthHeaders } from "@/lib/queryClient";
 import { StudentFeePackagesTab } from "@/components/customers/StudentFeePackagesTab";
@@ -48,10 +49,17 @@ interface Comment {
   content: string;
   createdAt: string;
   updatedAt: string;
+  updatedBy?: string | null;
   user?: {
     id: string;
     username: string;
+    fullName?: string | null;
   };
+  updatedByUser?: {
+    id: string;
+    username: string;
+    fullName?: string | null;
+  } | null;
 }
 
 interface CommentWithUser extends Comment {
@@ -68,6 +76,8 @@ export function StudentDetailDialog({
 }: StudentDetailDialogProps) {
   const { t } = useLanguage();
   const [inputValue, setInputValue] = useState("");
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState("");
   const [selectedClassIndex, setSelectedClassIndex] = useState(0);
   const [activeTab, setActiveTab] = useState("overview");
   const [scoreReviewSubTab, setScoreReviewSubTab] = useState<"score" | "review">("score");
@@ -215,10 +225,45 @@ export function StudentDetailDialog({
     },
   });
 
+  const updateCommentMutation = useMutation({
+    mutationFn: async ({ commentId, content }: { commentId: string; content: string }) => {
+      const res = await fetch(`/api/students/${student.id}/comments/${commentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ content }),
+      });
+      if (!res.ok) throw new Error("Failed to update comment");
+      return res.json();
+    },
+    onSuccess: () => {
+      setEditingCommentId(null);
+      setEditingValue("");
+      queryClient.invalidateQueries({ queryKey: [`/api/students/${student?.id}/comments`] });
+    },
+  });
+
   const handleSend = () => {
-    if (inputValue.trim()) {
+    if (inputValue.trim() && !createCommentMutation.isPending) {
       createCommentMutation.mutate(inputValue);
     }
+  };
+
+  const startEditingComment = (comment: Comment) => {
+    setEditingCommentId(comment.id);
+    setEditingValue(comment.content);
+  };
+
+  const cancelEditingComment = () => {
+    setEditingCommentId(null);
+    setEditingValue("");
+  };
+
+  const saveEditingComment = () => {
+    if (!editingCommentId || !editingValue.trim() || updateCommentMutation.isPending) return;
+    updateCommentMutation.mutate({
+      commentId: editingCommentId,
+      content: editingValue.trim(),
+    });
   };
 
   const formatDateTime = (dateStr: string) => {
@@ -252,7 +297,7 @@ export function StudentDetailDialog({
   // Process comments to include author info
   const processedComments: CommentWithUser[] = commentsData.map((comment: Comment) => ({
     ...comment,
-    authorName: comment.user?.username || "Unknown",
+    authorName: comment.user?.fullName || comment.user?.username || "Unknown",
     authorCode: "ADMIN",
   }));
 
@@ -502,6 +547,8 @@ export function StudentDetailDialog({
                   ) : (
                     processedComments.map((comment) => {
                       const initials = (comment.authorName || "?").slice(0, 1).toUpperCase();
+                      const isEditing = editingCommentId === comment.id;
+                      const editorName = comment.updatedByUser?.fullName || comment.updatedByUser?.username;
                       return (
                         <div key={comment.id} className="flex items-start gap-3">
                           <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center shrink-0 text-indigo-700 font-bold text-sm">
@@ -512,9 +559,61 @@ export function StudentDetailDialog({
                               <span className="text-xs font-semibold text-gray-700">{comment.authorName}</span>
                               <span className="text-[10px] text-gray-400 font-mono">({comment.authorCode})</span>
                               <span className="text-[10px] text-gray-400 ml-auto">{formatDateTime(comment.createdAt)}</span>
+                              {!isEditing && (
+                                <button
+                                  type="button"
+                                  onClick={() => startEditingComment(comment)}
+                                  className="text-gray-400 hover:text-indigo-600 transition-colors"
+                                  aria-label="Chỉnh sửa thảo luận"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </div>
                             <div className="bg-white border border-gray-100 rounded-xl rounded-tl-none px-3.5 py-2.5 shadow-sm">
-                              <p className="text-sm text-gray-800 break-words leading-relaxed">{comment.content}</p>
+                              {isEditing ? (
+                                <div className="space-y-2">
+                                  <Textarea
+                                    value={editingValue}
+                                    onChange={(event) => setEditingValue(event.target.value)}
+                                    disabled={updateCommentMutation.isPending}
+                                    rows={3}
+                                    className="text-sm resize-none border-gray-200 focus-visible:ring-indigo-500"
+                                    autoFocus
+                                  />
+                                  <div className="flex justify-end gap-2">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={cancelEditingComment}
+                                      disabled={updateCommentMutation.isPending}
+                                      className="h-7 px-2.5 text-xs"
+                                    >
+                                      Hủy
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      onClick={saveEditingComment}
+                                      disabled={!editingValue.trim() || updateCommentMutation.isPending}
+                                      className="h-7 px-2.5 text-xs bg-indigo-600 hover:bg-indigo-700"
+                                    >
+                                      <Check className="w-3.5 h-3.5 mr-1" />
+                                      Lưu
+                                    </Button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <p className="text-sm text-gray-800 break-words leading-relaxed whitespace-pre-wrap">{comment.content}</p>
+                                  {comment.updatedBy && editorName && (
+                                    <p className="mt-1.5 text-[10px] text-gray-400">
+                                      {editorName} đã chỉnh sửa {formatDateTime(comment.updatedAt)}
+                                    </p>
+                                  )}
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -523,15 +622,14 @@ export function StudentDetailDialog({
                   )}
                 </div>
                 <div className="border-t bg-white px-5 py-3.5 flex-shrink-0 shadow-sm">
-                  <div className="flex gap-2 items-center">
-                    <Input
-                      type="text"
+                  <div className="flex gap-2 items-end">
+                    <Textarea
                       placeholder={t("studentDetail.discussion.placeholder")}
                       value={inputValue}
                       onChange={(e) => setInputValue(e.target.value)}
-                      onKeyPress={(e) => { if (e.key === "Enter") handleSend(); }}
-                      disabled={createCommentMutation.isPending}
-                      className="flex-1 rounded-full border-gray-200 bg-gray-50 focus:bg-white text-sm"
+                      disabled={createCommentMutation.isPending || updateCommentMutation.isPending}
+                      rows={2}
+                      className="flex-1 min-h-[42px] resize-none rounded-2xl border-gray-200 bg-gray-50 focus:bg-white text-sm"
                     />
                     <Button
                       onClick={handleSend}

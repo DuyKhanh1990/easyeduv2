@@ -480,6 +480,11 @@ export const api = {
   studentComments: {
     list: { path: "/api/students/:id/comments", method: "GET" },
     create: { path: "/api/students/:id/comments", method: "POST" },
+    update: {
+      path: "/api/students/:studentId/comments/:commentId",
+      method: "PATCH",
+      input: z.object({ content: z.string().min(1) }),
+    },
   },
   studentClasses: {
     list: { path: "/api/students/:id/classes", method: "GET" },

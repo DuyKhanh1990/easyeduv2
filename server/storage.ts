@@ -291,6 +291,7 @@ export interface IStorage {
   
   getStudentComments(studentId: string): Promise<(StudentComment & { user: User })[]>;
   createStudentComment(comment: InsertStudentComment): Promise<StudentComment>;
+  updateStudentComment(id: string, studentId: string, content: string, updatedBy: string): Promise<StudentComment>;
   
   getStudentClasses(studentId: string): Promise<any[]>;
   getStudentClassSessions(params: { studentId: string; classId: string; page: number; limit: number }): Promise<{ sessions: any[]; total: number; page: number; limit: number; totalPages: number }>;
@@ -1061,6 +1062,10 @@ export class DatabaseStorage implements IStorage {
 
   async createStudentComment(comment: InsertStudentComment): Promise<StudentComment> {
     return studentStorage.createStudentComment(comment);
+  }
+
+  async updateStudentComment(id: string, studentId: string, content: string, updatedBy: string): Promise<StudentComment> {
+    return studentStorage.updateStudentComment(id, studentId, content, updatedBy);
   }
 
   async getStudentClasses(studentId: string): Promise<any[]> {

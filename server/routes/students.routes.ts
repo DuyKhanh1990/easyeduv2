@@ -1183,6 +1183,26 @@ export function registerStudentsRoutes(app: Express): void {
     }
   });
 
+  app.patch(api.studentComments.update.path, async (req, res) => {
+    try {
+      const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
+      if (!content) {
+        return res.status(400).json({ message: "Nội dung thảo luận không được để trống" });
+      }
+
+      const comment = await storage.updateStudentComment(
+        req.params.commentId,
+        req.params.studentId,
+        content,
+        (req.user as any).id,
+      );
+      res.json(comment);
+    } catch (err) {
+      const message = (err as any).message;
+      res.status(message === "Comment not found" ? 404 : 400).json({ message });
+    }
+  });
+
   // Student Classes Summary (lightweight, paginated — for overview tab)
   app.get("/api/students/:id/classes/summary", async (req, res) => {
     try {
