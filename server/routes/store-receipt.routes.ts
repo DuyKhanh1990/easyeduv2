@@ -1075,7 +1075,10 @@ export async function registerStoreReceiptRoutes(app: Express) {
             OR LOWER(p.name) LIKE ${'%' + search.toLowerCase() + '%'}
             OR LOWER(p.code) LIKE ${'%' + search.toLowerCase() + '%'}
           )
-        ORDER BY p.name
+         ORDER BY
+           CASE WHEN COALESCE(inv.quantity, 0) > 0 THEN 0 ELSE 1 END,
+           COALESCE(inv.quantity, 0) DESC,
+           p.name
         LIMIT 50
       `);
       res.json(rows.rows);

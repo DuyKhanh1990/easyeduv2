@@ -198,6 +198,11 @@ export function StoreReceiptDialog({ initialData, onClose, onSave, isSaving }: P
     staleTime: 5000,
   });
 
+  const sortedProductResults = [...productResults].sort((a, b) => {
+    const stockDifference = (Number(b.stock) || 0) - (Number(a.stock) || 0);
+    return stockDifference || a.name.localeCompare(b.name, "vi");
+  });
+
   const warehouses = allWarehouses.filter(w => !form.locationId || w.locationId === form.locationId);
 
   useEffect(() => {
@@ -415,7 +420,7 @@ export function StoreReceiptDialog({ initialData, onClose, onSave, isSaving }: P
                       <div className="max-h-64 overflow-y-auto">
                         {productResults.length === 0 ? (
                           <p className="text-center text-xs text-muted-foreground py-6">Không có sản phẩm</p>
-                        ) : productResults.map(p => {
+                        ) : sortedProductResults.map(p => {
                           const availableStock = Math.max(0, Number(p.stock) || 0);
                           const unavailable = availableStock <= 0;
                           return (
