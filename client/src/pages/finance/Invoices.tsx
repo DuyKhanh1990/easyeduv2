@@ -2117,7 +2117,7 @@ export default function Invoices() {
             <Button
               variant="outline"
               size="sm"
-              className="h-9 gap-1.5 rounded-lg border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm font-medium hover:bg-emerald-100 hover:border-emerald-300 transition-all"
+              className="h-9 gap-1.5 rounded-lg border-slate-200 bg-white text-slate-600 shadow-sm font-medium hover:bg-slate-50 hover:border-slate-300 transition-all"
               onClick={() => {
                 const tabLabel = TABS.find(tab => tab.key === activeTab)?.label ?? "Tất cả";
                 downloadInvoiceListExcel(displayInvoices, tabLabel, page);
@@ -2126,7 +2126,7 @@ export default function Invoices() {
               data-testid="button-download-invoices-excel"
             >
               <FileSpreadsheet className="h-4 w-4" />
-              Tải Excel
+              Tải xuống
             </Button>
 
             {totalSelectedCount > 0 && (() => {
