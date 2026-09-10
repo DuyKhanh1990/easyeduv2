@@ -3,13 +3,22 @@ import { ChevronDown, ChevronUp, RefreshCw, X } from "lucide-react";
 
 const CLIENT_VERSION = import.meta.env.VITE_APP_VERSION || "dev";
 const VERSION_CHECK_INTERVAL_MS = 60_000;
+const PENDING_UPDATE_STORAGE_KEY = "easyedu.pending-app-update";
 
 type VersionResponse = {
   version?: string;
 };
 
 export function AppUpdateBanner() {
-  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(() => {
+    if (CLIENT_VERSION === "dev" || typeof window === "undefined") return false;
+
+    try {
+      return window.sessionStorage.getItem(PENDING_UPDATE_STORAGE_KEY) === CLIENT_VERSION;
+    } catch {
+      return false;
+    }
+  });
   const [minimized, setMinimized] = useState(false);
 
   const checkForUpdate = useCallback(async () => {
@@ -25,6 +34,17 @@ export function AppUpdateBanner() {
       const data = (await response.json()) as VersionResponse;
       if (data.version && data.version !== CLIENT_VERSION) {
         setUpdateAvailable(true);
+        try {
+          window.sessionStorage.setItem(PENDING_UPDATE_STORAGE_KEY, CLIENT_VERSION);
+        } catch {
+          // Storage may be unavailable; the in-memory state still keeps the banner visible.
+        }
+      } else if (data.version === CLIENT_VERSION) {
+        try {
+          window.sessionStorage.removeItem(PENDING_UPDATE_STORAGE_KEY);
+        } catch {
+          // Ignore storage cleanup failures.
+        }
       }
     } catch {
       // A temporary network failure should not interrupt the user's work.
@@ -55,6 +75,10 @@ export function AppUpdateBanner() {
 
   const reloadWithLatestVersion = () => {
     window.location.reload();
+  };
+
+  const minimizeBanner = () => {
+    setMinimized(true);
   };
 
   return (
@@ -104,7 +128,7 @@ export function AppUpdateBanner() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setMinimized(true)}
+                  onClick={minimizeBanner}
                   className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100"
                 >
                   <ChevronDown className="h-3.5 w-3.5" />
@@ -114,7 +138,7 @@ export function AppUpdateBanner() {
             </div>
             <button
               type="button"
-              onClick={() => setMinimized(true)}
+              onClick={minimizeBanner}
               className="shrink-0 rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
               aria-label="Thu nhỏ thông báo cập nhật"
               title="Thu nhỏ"
