@@ -23,7 +23,10 @@ import { useSidebarVisibility } from "@/hooks/use-sidebar-visibility";
 import { useMyPermissions, canAccessItem } from "@/hooks/use-my-permissions";
 import { useTinodeContext } from "@/hooks/use-tinode";
 
-const APP_VERSION = import.meta.env.VITE_APP_VERSION || "0.1.93";
+const APP_VERSION =
+  import.meta.env.VITE_DISPLAY_VERSION ||
+  import.meta.env.VITE_APP_VERSION ||
+  "0.1.93";
 
 function LanguageToggle() {
   const { lang, setLang } = useLanguage();

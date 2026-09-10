@@ -17,7 +17,9 @@ COPY . .
 
 # Embed the image version in the frontend bundle.
 ARG APP_VERSION=dev
+ARG APP_DISPLAY_VERSION=dev
 ENV VITE_APP_VERSION=$APP_VERSION
+ENV VITE_DISPLAY_VERSION=$APP_DISPLAY_VERSION
 
 # Build: Vite (frontend) + esbuild (backend → dist/index.cjs)
 RUN npm run build
