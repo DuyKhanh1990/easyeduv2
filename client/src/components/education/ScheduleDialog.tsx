@@ -145,6 +145,7 @@ export function ScheduleDialog({
   const [openPromoIdx, setOpenPromoIdx] = useState<number | null>(null);
   const [openSurchargeIdx, setOpenSurchargeIdx] = useState<number | null>(null);
   const [isAutoInvoiceWarningOpen, setIsAutoInvoiceWarningOpen] = useState(false);
+  const [isMissingPackageWarningOpen, setIsMissingPackageWarningOpen] = useState(false);
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -497,6 +498,10 @@ export function ScheduleDialog({
 
   // The sessions to use for preview / shift selection
   const effectiveSessions = hasNoSessions ? generatedSessions : (classSessions || []);
+  const missingAutoInvoicePackageConfigs = studentConfigs.filter(
+    (config) => config.autoInvoice && !config.packageId,
+  );
+  const hasMissingAutoInvoicePackage = missingAutoInvoicePackageConfigs.length > 0;
 
   const getPackage = (packageId: string) =>
     feePackages.find((p: any) => p.id === packageId);
@@ -686,6 +691,11 @@ export function ScheduleDialog({
   };
 
   const handleConfirm = () => {
+    if (hasMissingAutoInvoicePackage) {
+      setIsMissingPackageWarningOpen(true);
+      return;
+    }
+
     if (studentConfigs.some(config => config.autoInvoice)) {
       setIsAutoInvoiceWarningOpen(true);
       return;
@@ -1120,19 +1130,27 @@ export function ScheduleDialog({
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Select
-                        value={config.packageId}
-                        onValueChange={(v) => updateStudentConfig(idx, { packageId: v })}
-                      >
-                        <SelectTrigger className="h-8 w-full min-w-[220px] rounded-none border-0 border-b border-slate-300 bg-transparent px-1 text-xs shadow-none hover:border-primary focus:ring-0 [&>span]:line-clamp-none [&>span]:whitespace-nowrap">
-                          <SelectValue placeholder="Chọn gói" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {feePackages.map((pkg: any) => (
-                            <SelectItem key={pkg.id} value={pkg.id}>{pkg.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div>
+                        <Select
+                          value={config.packageId}
+                          onValueChange={(v) => updateStudentConfig(idx, { packageId: v })}
+                        >
+                          <SelectTrigger className="h-8 w-full min-w-[220px] rounded-none border-0 border-b border-slate-300 bg-transparent px-1 text-xs shadow-none hover:border-primary focus:ring-0 [&>span]:line-clamp-none [&>span]:whitespace-nowrap">
+                            <SelectValue placeholder="Chọn gói" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {feePackages.map((pkg: any) => (
+                              <SelectItem key={pkg.id} value={pkg.id}>{pkg.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {config.autoInvoice && !config.packageId && (
+                          <p className="mt-1 flex items-center gap-1 text-[10px] text-destructive">
+                            <AlertCircle className="h-3 w-3" />
+                            Cần chọn gói để lập hóa đơn
+                          </p>
+                        )}
+                      </div>
                     </TableCell>
 
                     {/* Khuyến mãi multi-select */}
@@ -1366,6 +1384,31 @@ export function ScheduleDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <Dialog open={isMissingPackageWarningOpen} onOpenChange={setIsMissingPackageWarningOpen}>
+        <DialogContent className="z-[150] max-w-md">
+          <DialogHeader>
+            <DialogTitle>Thiếu gói học phí</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>
+              Bạn đang bật hóa đơn tự động. Vui lòng chọn gói học phí trước khi tiếp tục.
+            </p>
+            {missingAutoInvoicePackageConfigs.length > 0 && (
+              <ul className="list-disc space-y-1 pl-5 text-destructive">
+                {missingAutoInvoicePackageConfigs.map((config) => (
+                  <li key={config.studentId}>{config.fullName || "Học viên chưa có tên"}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setIsMissingPackageWarningOpen(false)}>
+              Đã hiểu
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isAutoInvoiceWarningOpen} onOpenChange={setIsAutoInvoiceWarningOpen}>
         <DialogContent className="z-[150] max-w-md">
