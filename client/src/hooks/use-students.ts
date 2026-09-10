@@ -83,7 +83,10 @@ export function useCreateStudent() {
         body: JSON.stringify(data),
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to create student");
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.message || "Failed to create student");
+      }
       return api.students.create.responses[201].parse(await res.json());
     },
     onSuccess: () => {

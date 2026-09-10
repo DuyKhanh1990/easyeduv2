@@ -572,10 +572,13 @@ export function CustomersList() {
 
   const handleCreate = (data: z.infer<typeof api.students.create.input>) => {
     createStudent.mutate(data, {
-      onSuccess: () => {
+      onSuccess: (createdStudent: any) => {
         queryClient.invalidateQueries({ queryKey: ["/api/customers/activity-logs"] });
         setIsAddOpen(false);
-        toast({ title: t("common.success"), description: t("customers.toastCreated") });
+        const description = createdStudent?.codeAdjustedFrom
+          ? `Mã ${createdStudent.codeAdjustedFrom} vừa được sử dụng. Hệ thống đã cấp mã ${createdStudent.code} và tài khoản theo mã mới.`
+          : t("customers.toastCreated");
+        toast({ title: t("common.success"), description });
       },
     });
   };
