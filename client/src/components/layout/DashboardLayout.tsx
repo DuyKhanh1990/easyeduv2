@@ -6,7 +6,6 @@ import { Redirect, useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { useTaskReminder } from "@/hooks/use-task-reminder";
 import { TaskReminderToastContainer } from "@/components/notifications/TaskReminderToast";
-import { AppUpdateBanner } from "@/components/notifications/AppUpdateBanner";
 import { PageGuideButton } from "@/components/guides/PageGuideDialog";
 import { OmicallDialer } from "@/components/call/OmicallDialer";
 import { Button } from "@/components/ui/button";
@@ -207,7 +206,6 @@ export function DashboardLayout({ children, fullscreen }: { children: ReactNode;
       </div>
       <OmicallDialer />
       <TaskReminderToastContainer toasts={toasts} dismiss={dismiss} />
-      <AppUpdateBanner />
     </div>
   );
 }

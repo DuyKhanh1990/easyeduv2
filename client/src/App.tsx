@@ -3,6 +3,7 @@ import { Switch, Route, Redirect, Router as WouterRouter } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
+import { AppUpdateBanner } from "@/components/notifications/AppUpdateBanner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { TinodeProvider } from "@/hooks/use-tinode";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -153,6 +154,7 @@ function App() {
                   <Router />
                 </WouterRouter>
               </ErrorBoundary>
+              <AppUpdateBanner />
               <Toaster />
             </TinodeProvider>
           </TooltipProvider>
