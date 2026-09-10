@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { format } from "date-fns";
 import { VoucherHint } from "@/components/finance/VoucherHint";
-import { Calendar, Info, ChevronDown, Wallet, AlertTriangle, CalendarDays, Plus, UserPlus, Search } from "lucide-react";
+import { Calendar, Info, ChevronDown, Wallet, AlertCircle, AlertTriangle, CalendarDays, Plus, UserPlus, Search } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
