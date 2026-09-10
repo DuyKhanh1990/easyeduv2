@@ -88,6 +88,7 @@ const SENSITIVE_PATHS = [
   "/api/auth/login",
   "/api/mobile/auth/login",
   "/api/call-center/omicall/sdk-credentials",
+  "/api/chat/credentials",
 ];
 const LOG_BODY_MAX = process.env.NODE_ENV === "production" ? 300 : Infinity;
 
