@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
@@ -1348,14 +1349,18 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">Lớp</label>
-                <Select value={classId} onValueChange={setClassId}>
-                  <SelectTrigger className="h-9" data-testid="select-class"><SelectValue placeholder="Chọn lớp" /></SelectTrigger>
-                  <SelectContent>
-                    {classes.map((cls: any) => (
-                      <SelectItem key={cls.id} value={cls.id}>[{cls.classCode}] {cls.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={classId}
+                  onChange={setClassId}
+                  placeholder="Chọn lớp"
+                  searchPlaceholder="Tìm theo mã hoặc tên lớp..."
+                  options={classes.map((cls: any) => ({
+                    value: cls.id,
+                    label: `[${cls.classCode}] ${cls.name}`,
+                  }))}
+                  className="h-9"
+                  data-testid="select-class"
+                />
               </div>
             </div>
 
@@ -1458,51 +1463,57 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       return (
                         <tr key={p.id} className={`border-b last:border-0 ${idx % 2 === 1 ? "bg-muted/20" : ""}`}>
                           <td className="p-2">
-                            <Select
+                            <SearchableSelect
                               value={p.categoryId}
-                              onValueChange={v => {
+                              onChange={v => {
                                 setProducts(prev => prev.map(x => x.id === p.id ? {
                                   ...x, categoryId: v, packageId: null, packageType: null, name: "",
                                   storeProductId: null, storeProductCode: null, warehouseId: null, warehouseName: null, stockAvailable: undefined,
                                 } : x));
                                 setDeduction(0);
                               }}
-                            >
-                              <SelectTrigger className="h-8 text-[11px]" data-testid={`select-item-category-${p.id}`}>
-                                <SelectValue placeholder="Chọn..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {categories.length === 0
-                                  ? <SelectItem value="_none" disabled>Chưa có danh mục</SelectItem>
-                                  : categories.map((cat: any) => (
-                                      <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-                                    ))
-                                }
-                              </SelectContent>
-                            </Select>
+                              placeholder="Chọn..."
+                              searchPlaceholder="Tìm danh mục..."
+                              options={categories.map((cat: any) => ({
+                                value: cat.id,
+                                label: cat.name,
+                              }))}
+                              className="h-8 text-[11px]"
+                              contentClassName="min-w-[220px]"
+                              data-testid={`select-item-category-${p.id}`}
+                            />
                           </td>
                           <td className="p-2">
                             {(() => {
                               const catName = allCategories.find((c: any) => c.id === p.categoryId)?.name ?? "";
                               const isProductKho = catName.toLowerCase().includes("kho");
                               if (isProductHocPhi) {
+                                const currentPackageIsMissing = Boolean(
+                                  p.packageId &&
+                                  p.name &&
+                                  !feePackages.find((fp: any) => fp.id === p.packageId),
+                                );
+                                const packageOptions = [
+                                  ...(currentPackageIsMissing
+                                    ? [{ value: p.packageId as string, label: p.name }]
+                                    : []),
+                                  ...feePackages.map((fp: any) => ({
+                                    value: fp.id,
+                                    label: fp.name,
+                                    sublabel: fp.courseName || undefined,
+                                  })),
+                                ];
                                 return (
-                                  <Select value={p.packageId ?? feePackages.find((fp: any) => fp.name === p.name)?.id ?? ""} onValueChange={v => handleSelectFeePackage(p.id, v)}>
-                                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Chọn gói học phí..." /></SelectTrigger>
-                                    <SelectContent>
-                                      {p.packageId && p.name && !feePackages.find((fp: any) => fp.id === p.packageId) && (
-                                        <SelectItem key={p.packageId} value={p.packageId}>{p.name}</SelectItem>
-                                      )}
-                                      {feePackages.length === 0
-                                        ? <SelectItem value="_none" disabled>Chưa có gói học phí</SelectItem>
-                                        : feePackages.map((fp: any) => (
-                                            <SelectItem key={fp.id} value={fp.id}>
-                                              {fp.name} {fp.courseName ? `(${fp.courseName})` : ""}
-                                            </SelectItem>
-                                          ))
-                                      }
-                                    </SelectContent>
-                                  </Select>
+                                  <SearchableSelect
+                                    value={p.packageId ?? feePackages.find((fp: any) => fp.name === p.name)?.id ?? ""}
+                                    onChange={v => handleSelectFeePackage(p.id, v)}
+                                    placeholder="Chọn gói học phí..."
+                                    searchPlaceholder="Tìm tên hoặc khóa học..."
+                                    options={packageOptions}
+                                    className="h-8 text-xs"
+                                    contentClassName="min-w-[280px]"
+                                    data-testid={`select-fee-package-${p.id}`}
+                                  />
                                 );
                               }
                               if (isProductKho) {
