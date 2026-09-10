@@ -444,6 +444,10 @@ export function AssignClassNewDialog({
 
   const newStudentCount = studentIds.length - existingStudents.length;
   const hasConflict = existingStudents.length > 0;
+  const missingAutoInvoicePackageConfigs = studentConfigs.filter(
+    (config) => config.autoInvoice && !config.packageId,
+  );
+  const hasMissingAutoInvoicePackage = missingAutoInvoicePackageConfigs.length > 0;
 
   const handleClose = (open: boolean) => {
     if (!open) {
@@ -468,6 +472,24 @@ export function AssignClassNewDialog({
   };
 
   const handleScheduleConfirm = () => {
+    if (hasMissingAutoInvoicePackage) {
+      const missingNames = missingAutoInvoicePackageConfigs
+        .map((config) => config.fullName)
+        .filter(Boolean);
+      const nameSummary = missingNames.length <= 3
+        ? missingNames.join(", ")
+        : `${missingNames.slice(0, 3).join(", ")} và ${missingNames.length - 3} học viên khác`;
+
+      toast({
+        title: "Thiếu gói học phí",
+        description: nameSummary
+          ? `Vui lòng chọn gói học phí cho: ${nameSummary} trước khi bật hóa đơn tự động.`
+          : "Vui lòng chọn gói học phí cho tất cả học viên trước khi bật hóa đơn tự động.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (studentConfigs.some(config => config.autoInvoice)) {
       setIsAutoInvoiceWarningOpen(true);
       return;
@@ -865,19 +887,27 @@ export function AssignClassNewDialog({
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Select
-                              value={config.packageId}
-                              onValueChange={(v) => updateStudentConfig(idx, { packageId: v })}
-                            >
+                             <div>
+                               <Select
+                                 value={config.packageId}
+                                 onValueChange={(v) => updateStudentConfig(idx, { packageId: v })}
+                               >
                                 <SelectTrigger className="h-8 w-full rounded-none border-0 border-b border-slate-300 bg-transparent px-1 text-xs shadow-none hover:border-primary focus:ring-0">
-                                <SelectValue placeholder="Chọn gói" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {classInfo?.course?.feePackages?.map((p: any) => (
-                                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                                   <SelectValue placeholder="Chọn gói" />
+                                 </SelectTrigger>
+                                 <SelectContent>
+                                   {classInfo?.course?.feePackages?.map((p: any) => (
+                                     <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                                   ))}
+                                 </SelectContent>
+                               </Select>
+                               {config.autoInvoice && !config.packageId && (
+                                 <p className="mt-1 flex items-center gap-1 text-[10px] text-destructive">
+                                   <AlertCircle className="h-3 w-3" />
+                                   Cần chọn gói để lập hóa đơn
+                                 </p>
+                               )}
+                             </div>
                           </TableCell>
 
                           <TableCell>
@@ -1106,9 +1136,13 @@ export function AssignClassNewDialog({
                 Quay lại
               </Button>
               <Button
-                disabled={scheduleMutation.isPending || studentConfigs.some(c =>
-                  (c.shiftType === "specific" && c.selectedShifts.length === 0)
-                )}
+                disabled={
+                  scheduleMutation.isPending ||
+                  hasMissingAutoInvoicePackage ||
+                  studentConfigs.some(c =>
+                    c.shiftType === "specific" && c.selectedShifts.length === 0
+                  )
+                }
                 onClick={handleScheduleConfirm}
               >
                 {scheduleMutation.isPending ? "Đang xử lý..." : "Xác nhận xếp lịch"}
