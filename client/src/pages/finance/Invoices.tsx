@@ -64,6 +64,7 @@ import { InvoiceHistoryTab } from "./components/InvoiceHistoryTab";
 import { HistoryDialog } from "@/components/common/HistoryDialog";
 import { useLocations } from "@/hooks/use-locations";
 import type { SortKey } from "@/hooks/use-invoice-filters";
+import { downloadXlsx } from "@/lib/excel-utils";
 
 type TabKey = "all" | "unpaid" | "paid" | "debt" | "history" | "print-template";
 type DebtCondition = "all" | "overdue" | "today" | "soon" | "upcoming" | "no-due-date";
@@ -511,6 +512,74 @@ function flattenInvoiceRows(invoices: InvoiceRow[]): InvoiceRow[] {
         scheduleSortOrder: installmentNumber,
       };
     });
+  });
+}
+
+function downloadInvoiceListExcel(rows: InvoiceRow[], tabLabel: string, page: number) {
+  const columns = [
+    { header: "Học viên", width: 28 },
+    { header: "Mã học viên", width: 16 },
+    { header: "Mã hóa đơn", width: 18 },
+    { header: "Đợt thanh toán", width: 20 },
+    { header: "Cơ sở", width: 20 },
+    { header: "Loại", width: 12 },
+    { header: "Danh mục", width: 24 },
+    { header: "Lớp", width: 24 },
+    { header: "Số tiền", width: 16 },
+    { header: "Khuyến mãi", width: 16 },
+    { header: "Phụ thu", width: 16 },
+    { header: "Đặt cọc", width: 16 },
+    { header: "Tổng tiền", width: 16 },
+    { header: "Đã thu", width: 16 },
+    { header: "Còn lại", width: 16 },
+    { header: "Trạng thái", width: 22 },
+    { header: "Hạn thanh toán", width: 18 },
+    { header: "Hình thức thanh toán", width: 22 },
+    { header: "Người tạo", width: 22 },
+    { header: "Ngày tạo", width: 18 },
+    { header: "Người thanh toán", width: 22 },
+    { header: "Ngày thanh toán", width: 18 },
+    { header: "Mô tả", width: 36 },
+  ];
+
+  const paymentMethodLabels: Record<string, string> = {
+    cash: "Tiền mặt",
+    transfer: "Chuyển khoản",
+  };
+
+  const exportRows = rows.map((invoice) => [
+    invoice.name ?? "",
+    invoice.studentCode ?? "",
+    invoice.code ?? "",
+    invoice.scheduleLabel ?? "",
+    invoice.branch ?? "",
+    invoice.type ?? "",
+    invoice.category ?? "",
+    invoice.className ?? "",
+    parseNum(invoice.totalAmount),
+    parseNum(invoice.totalPromotion),
+    parseNum(invoice.totalSurcharge),
+    parseNum(invoice.deduction),
+    parseNum(invoice.grandTotal),
+    parseNum(invoice.paidAmount),
+    parseNum(invoice.remainingAmount),
+    STATUS_CONFIG[invoice.status]?.label ?? invoice.status,
+    invoice.dueDate ? fmtDate(invoice.dueDate) : "",
+    invoice.paymentMethod ? (paymentMethodLabels[invoice.paymentMethod] ?? invoice.paymentMethod) : "",
+    invoice.creatorName ?? "",
+    fmtDate(invoice.createdAt),
+    invoice.paidByName ?? "",
+    invoice.paidAt ? fmtDate(invoice.paidAt) : "",
+    invoice.note?.trim() || invoice.description?.trim() || invoice.paymentNote?.trim() || "",
+  ]);
+
+  downloadXlsx({
+    filename: `danh_sach_hoa_don_trang_${page}_${format(new Date(), "yyyyMMdd_HHmm")}`,
+    sheetName: "Hóa đơn",
+    title: "Danh sách hóa đơn",
+    subtitle: `Tab: ${tabLabel} · Trang ${page} · ${rows.length} dòng · Xuất theo bộ lọc hiện tại`,
+    columns,
+    rows: exportRows,
   });
 }
 
@@ -2044,6 +2113,21 @@ export default function Invoices() {
             />
 
             <div className="flex-1" />
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 gap-1.5 rounded-lg border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm font-medium hover:bg-emerald-100 hover:border-emerald-300 transition-all"
+              onClick={() => {
+                const tabLabel = TABS.find(tab => tab.key === activeTab)?.label ?? "Tất cả";
+                downloadInvoiceListExcel(displayInvoices, tabLabel, page);
+              }}
+              disabled={isLoading || displayInvoices.length === 0}
+              data-testid="button-download-invoices-excel"
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              Tải Excel
+            </Button>
 
             {totalSelectedCount > 0 && (() => {
               const selectedInvs = invoices.filter(i => selectedIds.has(i.id));
