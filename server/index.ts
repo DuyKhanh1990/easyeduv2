@@ -69,6 +69,10 @@ app.use("/api", (_req, res, next) => {
   next();
 });
 
+app.get("/api/app-version", (_req, res) => {
+  res.json({ version: process.env.APP_VERSION || "dev" });
+});
+
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",

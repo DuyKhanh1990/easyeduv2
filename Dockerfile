@@ -28,8 +28,10 @@ FROM node:20-alpine AS runner
 
 WORKDIR /app
 
+ARG APP_VERSION=dev
 ENV NODE_ENV=production
 ENV PORT=5000
+ENV APP_VERSION=$APP_VERSION
 
 # Install only production + skip optional native modules (bufferutil, etc.).
 # The backup/restore service invokes pg_dump, pg_restore and psql at runtime.
