@@ -15,6 +15,9 @@ export function serveStatic(app: Express) {
   app.use(express.static(distPath, {
     maxAge: "1y",
     immutable: true,
+    // index.html is the entry point that points to the latest hashed bundles.
+    // It must reach the no-cache fallback below instead of being cached for a year.
+    index: false,
   }));
 
   // index.html KHÔNG có hash trong tên → phải no-cache
