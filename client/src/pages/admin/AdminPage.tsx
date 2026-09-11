@@ -202,6 +202,7 @@ export default function AdminPage() {
   const [adminHubSnapshotUrl, setAdminHubSnapshotUrl] = useState("");
   const [adminHubConnectionCode, setAdminHubConnectionCode] = useState("");
   const [adminHubConnectionStatus, setAdminHubConnectionStatus] = useState<"idle" | "connected" | "failed">("idle");
+  const [adminHubClaimStatus, setAdminHubClaimStatus] = useState<"connected" | "already_connected" | null>(null);
 
   const adminHubConnectionQuery = useQuery<{
     connected: boolean;
@@ -300,16 +301,24 @@ export default function AdminPage() {
     },
     onSuccess: (data) => {
       setAdminHubConnectionStatus("connected");
+      setAdminHubClaimStatus(data.adminHubStatus === "already_connected" ? "already_connected" : "connected");
       setAdminHubApiUrl(data.connection?.apiUrl ?? adminHubApiUrl);
       setAdminHubSnapshotUrl(data.connection?.snapshotUrl ?? adminHubSnapshotUrl);
       queryClient.invalidateQueries({ queryKey: ["/api/admin-hub/connection"] });
       toast({
-        title: "Kết nối Admin Hub thành công",
-        description: "Đã lưu kết nối ở server. Bạn có thể đồng bộ số liệu tổng hợp ngay.",
+        title:
+          data.adminHubStatus === "already_connected"
+            ? "Đã khôi phục kết nối Admin Hub"
+            : "Kết nối Admin Hub thành công",
+        description:
+          data.adminHubStatus === "already_connected"
+            ? "Mã này đã được kết nối trước đó. Kết nối cũ đã được dùng lại, không cần tạo mã mới."
+            : "Đã lưu kết nối ở server. Bạn có thể đồng bộ số liệu tổng hợp ngay.",
       });
     },
     onError: (error: Error) => {
       setAdminHubConnectionStatus("failed");
+      setAdminHubClaimStatus(null);
       toast({
         title: "Không thể kết nối Admin Hub",
         description: error.message,
@@ -745,7 +754,8 @@ export default function AdminPage() {
                   Thông tin kết nối
                 </CardTitle>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Nhập mã kết nối được tạo từ Admin Hub. Mã chỉ dùng một lần và có thời hạn ngắn.
+                  Nhập mã kết nối được tạo từ Admin Hub. Nếu mã đã kết nối trước đó nhưng còn hợp lệ,
+                  hệ thống sẽ khôi phục lại kết nối cũ.
                 </p>
               </CardHeader>
               <CardContent className="space-y-5 px-5 py-6 md:px-6">
@@ -761,6 +771,7 @@ export default function AdminPage() {
                     onChange={(event) => {
                       setAdminHubApiUrl(event.target.value);
                       setAdminHubConnectionStatus("idle");
+                      setAdminHubClaimStatus(null);
                     }}
                   />
                   <p className="text-xs text-muted-foreground">
@@ -780,6 +791,7 @@ export default function AdminPage() {
                     onChange={(event) => {
                       setAdminHubSnapshotUrl(event.target.value);
                       setAdminHubConnectionStatus("idle");
+                      setAdminHubClaimStatus(null);
                     }}
                   />
                   <p className="text-xs text-muted-foreground">
@@ -824,7 +836,11 @@ export default function AdminPage() {
                       ) : (
                         <Link2 className="h-4 w-4" />
                       )}
-                      {adminHubConnectMutation.isPending ? "Đang kết nối..." : "Kết nối với Admin Hub"}
+                      {adminHubConnectMutation.isPending
+                        ? "Đang kết nối..."
+                        : adminHubClaimStatus === "already_connected"
+                          ? "Đã khôi phục kết nối"
+                          : "Kết nối với Admin Hub"}
                     </Button>
                     <Button
                       type="button"
