@@ -199,8 +199,26 @@ export default function AdminPage() {
   const [restoreTarget, setRestoreTarget] = useState<DatabaseBackup | null>(null);
   const [activeRestoreId, setActiveRestoreId] = useState<string | null>(null);
   const [adminHubApiUrl, setAdminHubApiUrl] = useState("");
+  const [adminHubSnapshotUrl, setAdminHubSnapshotUrl] = useState("");
   const [adminHubConnectionCode, setAdminHubConnectionCode] = useState("");
   const [adminHubConnectionStatus, setAdminHubConnectionStatus] = useState<"idle" | "connected" | "failed">("idle");
+
+  const adminHubConnectionQuery = useQuery<{
+    connected: boolean;
+    connection: {
+      apiUrl: string;
+      snapshotUrl: string;
+      connectionId: string;
+      centerCode: string | null;
+      lastSyncAt: string | null;
+      lastSyncStatus: "never" | "success" | "failed";
+      lastSyncError: string | null;
+    } | null;
+  }>({
+    queryKey: ["/api/admin-hub/connection"],
+    enabled: isSuperAdmin,
+    staleTime: 30_000,
+  });
 
   const backupsQuery = useQuery<BackupsResponse>({
     queryKey: ["/api/admin/database-backups?limit=50"],
@@ -273,50 +291,21 @@ export default function AdminPage() {
 
   const adminHubConnectMutation = useMutation({
     mutationFn: async ({ apiUrl, code }: { apiUrl: string; code: string }) => {
-      let parsedUrl: URL;
-      try {
-        parsedUrl = new URL(apiUrl.trim());
-      } catch {
-        throw new Error("URL API Admin Hub không hợp lệ.");
-      }
-
-      if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-        throw new Error("URL API phải bắt đầu bằng http:// hoặc https://.");
-      }
-
-      const response = await fetch(parsedUrl.toString(), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ code: code.trim() }),
+      const response = await apiRequest("POST", "/api/admin-hub/connection/claim", {
+        apiUrl: apiUrl.trim(),
+        snapshotUrl: adminHubSnapshotUrl.trim(),
+        code: code.trim(),
       });
-      const responseText = await response.text();
-      let responseBody: { message?: string; error?: string; success?: boolean } | null = null;
-
-      try {
-        responseBody = responseText ? JSON.parse(responseText) : null;
-      } catch {
-        // Keep the raw response available in the fallback error below.
-      }
-
-      if (!response.ok || responseBody?.success === false) {
-        throw new Error(
-          responseBody?.message ||
-          responseBody?.error ||
-          responseText ||
-          `Admin Hub trả về HTTP ${response.status}.`,
-        );
-      }
-
-      return responseBody;
+      return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       setAdminHubConnectionStatus("connected");
+      setAdminHubApiUrl(data.connection?.apiUrl ?? adminHubApiUrl);
+      setAdminHubSnapshotUrl(data.connection?.snapshotUrl ?? adminHubSnapshotUrl);
+      queryClient.invalidateQueries({ queryKey: ["/api/admin-hub/connection"] });
       toast({
         title: "Kết nối Admin Hub thành công",
-        description: "API đã phản hồi thành công cho mã kết nối test.",
+        description: "Đã lưu kết nối ở server. Bạn có thể đồng bộ số liệu tổng hợp ngay.",
       });
     },
     onError: (error: Error) => {
@@ -328,6 +317,34 @@ export default function AdminPage() {
       });
     },
   });
+
+  const adminHubSyncMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/admin-hub/connection/sync");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin-hub/connection"] });
+      toast({
+        title: "Đồng bộ Admin Hub thành công",
+        description: "Đã gửi số liệu tổng hợp, không bao gồm dữ liệu cá nhân.",
+      });
+    },
+    onError: (error: Error) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin-hub/connection"] });
+      toast({
+        title: "Đồng bộ Admin Hub thất bại",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const savedAdminHubConnection = adminHubConnectionQuery.data?.connection;
+  const isAdminHubConnected =
+    adminHubConnectionStatus === "connected" ||
+    adminHubConnectionQuery.data?.connected === true;
+  const adminHubStatus = savedAdminHubConnection?.lastSyncStatus;
 
   const backups = backupsQuery.data?.data ?? [];
   const stats = useMemo(() => ({
@@ -699,14 +716,14 @@ export default function AdminPage() {
                 <Badge
                   className={cn(
                     "w-fit border-white/20 text-indigo-100 hover:bg-white/10",
-                    adminHubConnectionStatus === "connected"
+                    isAdminHubConnected
                       ? "bg-emerald-500/20"
                       : adminHubConnectionStatus === "failed"
                         ? "bg-red-500/20"
                         : "bg-white/10",
                   )}
                 >
-                  {adminHubConnectionStatus === "connected"
+                  {isAdminHubConnected
                     ? "Đã kết nối"
                     : adminHubConnectionStatus === "failed"
                       ? "Kết nối thất bại"
@@ -741,7 +758,26 @@ export default function AdminPage() {
                     }}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Có thể thay đổi URL này mỗi khi bạn đổi môi trường Replit. API cần cho phép request POST từ domain preview.
+                    EasyEdu gửi request qua server, nên endpoint không cần cho phép CORS từ trình duyệt.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="admin-hub-snapshot-url" className="text-sm font-medium text-foreground">
+                    URL API nhận dữ liệu tổng hợp
+                  </label>
+                  <Input
+                    id="admin-hub-snapshot-url"
+                    type="url"
+                    placeholder="https://admin-hub.example.com/api/v1/usage/snapshot"
+                    value={adminHubSnapshotUrl}
+                    onChange={(event) => {
+                      setAdminHubSnapshotUrl(event.target.value);
+                      setAdminHubConnectionStatus("idle");
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Có thể để trống để hệ thống tự suy ra từ URL claim bằng đường dẫn <code>/api/v1/usage/snapshot</code>.
                   </p>
                 </div>
 
@@ -761,36 +797,76 @@ export default function AdminPage() {
                       }}
                     />
                   </div>
-                  <Button
-                    type="button"
-                    className="h-11 gap-2"
-                    disabled={
-                      adminHubConnectMutation.isPending ||
-                      !adminHubApiUrl.trim() ||
-                      !adminHubConnectionCode.trim()
-                    }
-                    onClick={() =>
-                      adminHubConnectMutation.mutate({
-                        apiUrl: adminHubApiUrl,
-                        code: adminHubConnectionCode,
-                      })
-                    }
-                  >
-                    {adminHubConnectMutation.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Link2 className="h-4 w-4" />
-                    )}
-                    {adminHubConnectMutation.isPending ? "Đang kết nối..." : "Kết nối với Admin Hub"}
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      className="h-11 gap-2"
+                      disabled={
+                        adminHubConnectMutation.isPending ||
+                        !adminHubApiUrl.trim() ||
+                        !adminHubConnectionCode.trim()
+                      }
+                      onClick={() =>
+                        adminHubConnectMutation.mutate({
+                          apiUrl: adminHubApiUrl,
+                          code: adminHubConnectionCode,
+                        })
+                      }
+                    >
+                      {adminHubConnectMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Link2 className="h-4 w-4" />
+                      )}
+                      {adminHubConnectMutation.isPending ? "Đang kết nối..." : "Kết nối với Admin Hub"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="h-11 gap-2"
+                      disabled={!isAdminHubConnected || adminHubSyncMutation.isPending}
+                      onClick={() => adminHubSyncMutation.mutate()}
+                    >
+                      {adminHubSyncMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4" />
+                      )}
+                      {adminHubSyncMutation.isPending ? "Đang đồng bộ..." : "Đồng bộ ngay"}
+                    </Button>
+                  </div>
                 </div>
+                {savedAdminHubConnection && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span>
+                        Kết nối: <strong>{savedAdminHubConnection.centerCode || savedAdminHubConnection.connectionId}</strong>
+                      </span>
+                      <Badge variant="outline">
+                        {adminHubStatus === "success"
+                          ? "Đồng bộ thành công"
+                          : adminHubStatus === "failed"
+                            ? "Đồng bộ lỗi"
+                            : "Chưa đồng bộ"}
+                      </Badge>
+                    </div>
+                    {savedAdminHubConnection.lastSyncAt && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Lần gần nhất: {formatDateTime(savedAdminHubConnection.lastSyncAt)}
+                      </p>
+                    )}
+                    {savedAdminHubConnection.lastSyncStatus === "failed" && savedAdminHubConnection.lastSyncError && (
+                      <p className="mt-1 text-xs text-red-600">{savedAdminHubConnection.lastSyncError}</p>
+                    )}
+                  </div>
+                )}
                 <Alert className="border-indigo-200 bg-indigo-50/70 text-indigo-950">
                   <Info className="h-4 w-4" />
                   <AlertTitle>Chế độ test trên Replit</AlertTitle>
                   <AlertDescription className="text-indigo-900/80">
-                    EasyEdu sẽ gửi mã bằng request POST với payload{" "}
-                    <code className="rounded bg-indigo-100 px-1 py-0.5 text-xs">{"{ code }"}</code>
-                    {" "}đến URL bạn nhập. Kết quả test chỉ giữ trong phiên hiện tại và chưa lưu thông tin kết nối production.
+                    EasyEdu sẽ xác thực mã ở server, lưu kết nối riêng và chỉ gửi số liệu tổng hợp:
+                    học viên, phụ huynh, nhân sự, lớp học và dung lượng. Không gửi tên, số điện thoại,
+                    email, mã học viên hoặc danh sách chi tiết.
                   </AlertDescription>
                 </Alert>
               </CardContent>
