@@ -30,7 +30,7 @@ export type AdminHubMetrics = {
 };
 
 export type AdminHubSnapshot = {
-  schemaVersion: 1;
+  schemaVersion: "1.0";
   source: "easyedu";
   generatedAt: string;
   metrics: AdminHubMetrics;
@@ -283,7 +283,7 @@ export async function buildAdminHubSnapshot(): Promise<AdminHubSnapshot> {
       .reduce((sum, row) => sum + Number(row.count), 0);
 
   return {
-    schemaVersion: 1,
+    schemaVersion: "1.0",
     source: "easyedu",
     generatedAt: new Date().toISOString(),
     metrics: {
@@ -306,17 +306,17 @@ export async function syncAdminHubSnapshot() {
     .then((rows) => rows[0]);
 
   if (!connection) throw new Error("Chưa có kết nối Admin Hub hoạt động.");
+  if (!connection.centerCode) {
+    throw new Error("Kết nối Admin Hub chưa có centerCode để gửi snapshot.");
+  }
 
   const snapshot = await buildAdminHubSnapshot();
   const payload = {
     schemaVersion: snapshot.schemaVersion,
-    source: snapshot.source,
     generatedAt: snapshot.generatedAt,
     connectionId: connection.connectionId,
-    centerCode: connection.centerCode,
     tenant: {
-      connectionId: connection.connectionId,
-      code: connection.centerCode,
+      centerCode: connection.centerCode,
     },
     usage: {
       studentsCount: snapshot.metrics.students.total,
@@ -328,10 +328,8 @@ export async function syncAdminHubSnapshot() {
       activeClassesCount: snapshot.metrics.classes.active,
       storageUsedBytes: snapshot.metrics.storage.usedBytes,
       storageLimitBytes: snapshot.metrics.storage.limitBytes,
-      s3UsedBytes: snapshot.metrics.storage.s3UsedBytes,
-      databaseUsedBytes: snapshot.metrics.storage.databaseUsedBytes,
     },
-    metrics: snapshot.metrics,
+    source: snapshot.source,
   };
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
