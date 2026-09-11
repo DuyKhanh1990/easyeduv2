@@ -316,9 +316,21 @@ export async function syncAdminHubSnapshot() {
     centerCode: connection.centerCode,
     tenant: {
       connectionId: connection.connectionId,
-      centerCode: connection.centerCode,
+      code: connection.centerCode,
     },
-    usage: snapshot.metrics,
+    usage: {
+      studentsCount: snapshot.metrics.students.total,
+      activeStudentsCount: snapshot.metrics.students.active,
+      parentsCount: snapshot.metrics.parents.total,
+      activeParentsCount: snapshot.metrics.parents.active,
+      activeStaffCount: snapshot.metrics.staff.active,
+      staffLimit: snapshot.metrics.staff.limit,
+      activeClassesCount: snapshot.metrics.classes.active,
+      storageUsedBytes: snapshot.metrics.storage.usedBytes,
+      storageLimitBytes: snapshot.metrics.storage.limitBytes,
+      s3UsedBytes: snapshot.metrics.storage.s3UsedBytes,
+      databaseUsedBytes: snapshot.metrics.storage.databaseUsedBytes,
+    },
     metrics: snapshot.metrics,
   };
   const headers: Record<string, string> = {
