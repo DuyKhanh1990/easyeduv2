@@ -1369,6 +1369,29 @@ export const systemSettings = pgTable("system_settings", {
 });
 
 // ==========================================
+// ADMIN HUB CONNECTIONS
+// ==========================================
+// Tách riêng khỏi các cấu hình nghiệp vụ. Chỉ lưu thông tin kết nối và trạng
+// thái đồng bộ; không lưu payload chi tiết hay dữ liệu cá nhân.
+export const adminHubConnections = pgTable("admin_hub_connections", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  apiUrl: text("api_url").notNull(),
+  snapshotUrl: text("snapshot_url").notNull(),
+  connectionId: varchar("connection_id", { length: 255 }).notNull(),
+  centerCode: varchar("center_code", { length: 255 }),
+  authTokenEncrypted: text("auth_token_encrypted"),
+  isActive: boolean("is_active").notNull().default(true),
+  lastSyncAt: timestamp("last_sync_at"),
+  lastSyncStatus: varchar("last_sync_status", { length: 20 }).notNull().default("never"),
+  lastSyncError: text("last_sync_error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  activeIdx: index("admin_hub_connections_active_idx").on(table.isActive),
+  connectionIdIdx: index("admin_hub_connections_connection_id_idx").on(table.connectionId),
+}));
+
+// ==========================================
 // BIDV LOCATION CONFIGS
 // ==========================================
 export const bidvLocationConfigs = pgTable("bidv_location_configs", {
