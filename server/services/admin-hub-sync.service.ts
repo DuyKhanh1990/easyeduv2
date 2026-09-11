@@ -314,6 +314,11 @@ export async function syncAdminHubSnapshot() {
     generatedAt: snapshot.generatedAt,
     connectionId: connection.connectionId,
     centerCode: connection.centerCode,
+    tenant: {
+      connectionId: connection.connectionId,
+      centerCode: connection.centerCode,
+    },
+    usage: snapshot.metrics,
     metrics: snapshot.metrics,
   };
   const headers: Record<string, string> = {
