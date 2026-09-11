@@ -84,6 +84,11 @@ type DatabaseRestore = {
   completedAt: string | null;
 };
 
+const DEFAULT_ADMIN_HUB_CLAIM_URL =
+  "https://easy-edu-v-2-admin-12--ngocanh12334557.replit.app/api/v1/connections/claim";
+const DEFAULT_ADMIN_HUB_SNAPSHOT_URL =
+  "https://easy-edu-v-2-admin-12--ngocanh12334557.replit.app/api/v1/usage/snapshot";
+
 function formatDateTime(value: string | null | undefined): string {
   if (!value) return "—";
   const date = new Date(value);
@@ -198,8 +203,8 @@ export default function AdminPage() {
   const isSuperAdmin = permissions?.isSuperAdmin === true;
   const [restoreTarget, setRestoreTarget] = useState<DatabaseBackup | null>(null);
   const [activeRestoreId, setActiveRestoreId] = useState<string | null>(null);
-  const [adminHubApiUrl, setAdminHubApiUrl] = useState("");
-  const [adminHubSnapshotUrl, setAdminHubSnapshotUrl] = useState("");
+  const [adminHubApiUrl, setAdminHubApiUrl] = useState(DEFAULT_ADMIN_HUB_CLAIM_URL);
+  const [adminHubSnapshotUrl, setAdminHubSnapshotUrl] = useState(DEFAULT_ADMIN_HUB_SNAPSHOT_URL);
   const [adminHubConnectionCode, setAdminHubConnectionCode] = useState("");
   const [adminHubConnectionStatus, setAdminHubConnectionStatus] = useState<"idle" | "connected" | "failed">("idle");
   const [adminHubClaimStatus, setAdminHubClaimStatus] = useState<"connected" | "already_connected" | null>(null);
@@ -766,7 +771,7 @@ export default function AdminPage() {
                   <Input
                     id="admin-hub-api-url"
                     type="url"
-                    placeholder="https://admin-hub.example.com/api/connection/verify"
+                    placeholder={DEFAULT_ADMIN_HUB_CLAIM_URL}
                     value={adminHubApiUrl}
                     onChange={(event) => {
                       setAdminHubApiUrl(event.target.value);
@@ -786,7 +791,7 @@ export default function AdminPage() {
                   <Input
                     id="admin-hub-snapshot-url"
                     type="url"
-                    placeholder="https://admin-hub.example.com/api/v1/usage/snapshot"
+                    placeholder={DEFAULT_ADMIN_HUB_SNAPSHOT_URL}
                     value={adminHubSnapshotUrl}
                     onChange={(event) => {
                       setAdminHubSnapshotUrl(event.target.value);
