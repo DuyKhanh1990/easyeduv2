@@ -11,6 +11,7 @@ import {
   Database,
   HardDrive,
   Info,
+  Link2,
   Loader2,
   LockKeyhole,
   Plus,
@@ -26,6 +27,7 @@ import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -314,6 +316,10 @@ export default function AdminPage() {
               <TabsTrigger value="backup" className="gap-2">
                 <HardDrive className="h-4 w-4" />
                 Backup
+              </TabsTrigger>
+              <TabsTrigger value="admin-hub" className="gap-2">
+                <Link2 className="h-4 w-4" />
+                Kết nối Admin Hub
               </TabsTrigger>
             </TabsList>
           </div>
@@ -612,6 +618,66 @@ export default function AdminPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+          </TabsContent>
+
+          <TabsContent value="admin-hub" className="mt-0 space-y-6">
+            <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-950 via-slate-900 to-violet-950 px-6 py-7 text-white shadow-lg md:px-8 md:py-9">
+              <div className="absolute -right-16 -top-24 h-64 w-64 rounded-full bg-violet-500/20 blur-3xl" />
+              <div className="absolute -bottom-32 right-24 h-64 w-64 rounded-full bg-indigo-400/10 blur-3xl" />
+              <div className="relative flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+                <div className="max-w-2xl">
+                  <div className="mb-3 flex items-center gap-2 text-indigo-200">
+                    <Link2 className="h-4 w-4" />
+                    <span className="text-xs font-bold uppercase tracking-[0.16em]">Tích hợp hệ thống</span>
+                  </div>
+                  <h2 className="text-3xl font-bold tracking-tight md:text-4xl">Kết nối Admin Hub</h2>
+                  <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300 md:text-base">
+                    Liên kết website của trung tâm với Admin Hub bằng mã kết nối được cấp riêng cho tenant này.
+                  </p>
+                </div>
+                <Badge className="w-fit border-white/20 bg-white/10 text-indigo-100 hover:bg-white/10">
+                  Chưa kết nối
+                </Badge>
+              </div>
+            </section>
+
+            <Card className="border-white/80 shadow-sm">
+              <CardHeader className="border-b border-border/60 bg-white/70 px-5 py-5 md:px-6">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Link2 className="h-5 w-5 text-primary" />
+                  Thông tin kết nối
+                </CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Nhập mã kết nối được tạo từ Admin Hub. Mã chỉ dùng một lần và có thời hạn ngắn.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-5 px-5 py-6 md:px-6">
+                <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                  <div className="space-y-2">
+                    <label htmlFor="admin-hub-connection-code" className="text-sm font-medium text-foreground">
+                      Mã kết nối
+                    </label>
+                    <Input
+                      id="admin-hub-connection-code"
+                      placeholder="EASYEDU-ABC-7F92"
+                      className="h-11 uppercase tracking-[0.12em]"
+                      disabled
+                    />
+                  </div>
+                  <Button type="button" className="h-11 gap-2" disabled>
+                    <Link2 className="h-4 w-4" />
+                    Kết nối với Admin Hub
+                  </Button>
+                </div>
+                <Alert className="border-indigo-200 bg-indigo-50/70 text-indigo-950">
+                  <Info className="h-4 w-4" />
+                  <AlertTitle>Đang chuẩn bị kết nối</AlertTitle>
+                  <AlertDescription className="text-indigo-900/80">
+                    Giao diện đã sẵn sàng. Cần cấu hình API giao tiếp với Admin Hub ở phía server trước khi bật thao tác kết nối.
+                  </AlertDescription>
+                </Alert>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
