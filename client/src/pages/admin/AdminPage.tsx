@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Redirect } from "wouter";
 import { format } from "date-fns";
@@ -345,6 +345,12 @@ export default function AdminPage() {
     adminHubConnectionStatus === "connected" ||
     adminHubConnectionQuery.data?.connected === true;
   const adminHubStatus = savedAdminHubConnection?.lastSyncStatus;
+
+  useEffect(() => {
+    if (!savedAdminHubConnection) return;
+    setAdminHubApiUrl(savedAdminHubConnection.apiUrl);
+    setAdminHubSnapshotUrl(savedAdminHubConnection.snapshotUrl);
+  }, [savedAdminHubConnection]);
 
   const backups = backupsQuery.data?.data ?? [];
   const stats = useMemo(() => ({
