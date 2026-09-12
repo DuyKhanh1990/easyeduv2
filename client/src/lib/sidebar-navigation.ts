@@ -114,7 +114,8 @@ export const navigation: NavEntry[] = [
           { value: "sources", name: "Nguồn khách hàng" },
           { value: "schools", name: "Trường học" },
           { value: "additional-info", name: "Thông tin bổ sung" },
-          { value: "required-info", name: "Thông tin bắt buộc" }
+          { value: "required-info", name: "Thông tin bắt buộc" },
+          { value: "registration-form", name: "Form đăng ký" }
         ]
       },
       { name: "Lịch sử thông báo", href: "/notification-logs", icon: Bell },
@@ -225,7 +226,8 @@ export const navigation: NavEntry[] = [
           { value: "shifts", name: "Ca học" },
           { value: "attendance-fee", name: "Trừ tiền học phí" },
           { value: "score-sheets", name: "Bảng điểm mẫu" },
-          { value: "online-learning", name: "Học online" }
+          { value: "online-learning", name: "Học online" },
+          { value: "attendance-limit", name: "Giới hạn điểm danh" }
         ]
       }
     ]
@@ -246,7 +248,8 @@ export const navigation: NavEntry[] = [
         subTabs: [
           { value: "promotions", name: "Khuyến mãi / Phụ thu" },
            { value: "categories", name: "Danh mục Thu Chi" },
-           { value: "voucher", name: "Voucher" }
+           { value: "voucher", name: "Voucher" },
+           { value: "debt-reminder", name: "Nhắc công nợ" }
         ]
       }
     ]
