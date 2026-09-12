@@ -30,6 +30,7 @@ declare module "http" {
 
 const ALLOWED_ORIGINS = [
   process.env.CENTER_PUBLIC_URL,
+  "https://appeasyeduv-2-pwa-mainzip.replit.app",
   // Replit dev proxy — allow any *.replit.dev / *.pike.replit.dev origin
 ].filter(Boolean) as string[];
 
