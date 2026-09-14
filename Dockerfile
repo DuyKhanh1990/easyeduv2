@@ -8,8 +8,9 @@ RUN apk add --no-cache python3 make g++
 
 # Install all dependencies (including devDependencies for build)
 COPY package*.json ./
-# Same fix as runner stage: strip Replit-internal resolved URLs before npm ci
-RUN sed -i 's|http://package-firewall.replit.local/npm/|https://registry.npmjs.org/|g' package-lock.json && \
+# Same fix as runner stage: strip Replit-internal resolved URLs before npm ci.
+# Replit has emitted both .local and .internal hosts in package-lock.json.
+RUN sed -i -E 's#http://package-firewall\.replit\.(local|internal)/npm/#https://registry.npmjs.org/#g' package-lock.json && \
     npm ci --registry=https://registry.npmjs.org
 
 # Copy source code
@@ -39,9 +40,9 @@ ENV APP_VERSION=$APP_VERSION
 # The backup/restore service invokes pg_dump, pg_restore and psql at runtime.
 COPY package*.json ./
 # Replit's internal npm proxy rewrites resolved URLs in package-lock.json to
-# package-firewall.replit.local — an address that only exists inside Replit.
-# Strip those so npm ci fetches from the public registry instead.
-RUN sed -i 's|http://package-firewall.replit.local/npm/|https://registry.npmjs.org/|g' package-lock.json && \
+# package-firewall.replit.local or package-firewall.replit.internal — addresses
+# that only exist inside Replit. Strip both forms so Harbor can run npm ci.
+RUN sed -i -E 's#http://package-firewall\.replit\.(local|internal)/npm/#https://registry.npmjs.org/#g' package-lock.json && \
     apk add --no-cache postgresql16-client && \
     npm ci --omit=dev --omit=optional --registry=https://registry.npmjs.org && \
     npm cache clean --force
