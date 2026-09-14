@@ -17,8 +17,8 @@ When a date/shift edit changes the chronological position, users choose one of t
 
 **How to apply:** Do not prompt when the resulting index is unchanged. In schedule-only mode, rotate date, shift, room, teacher, and learning format across fixed session IDs/indexes; never recreate or reassign linked data.
 
-Cycle updates are always schedule-only from the selected lesson through the final lesson. Every lesson keeps its identity, status, and linked data; only its timetable fields change.
+Cycle updates do not reposition lessons. From the selected lesson through the final lesson, assign the newly calculated timetable sequentially to the existing lesson positions. Every lesson keeps its identity, number, status, and linked data.
 
 **Why:** Recreating lessons can silently break attendance, finance, gradebook, and personalized-content links. A bounded middle range needs separate restoration rules that the current product does not expose.
 
-**How to apply:** Require a continuous suffix ending at the final lesson. Validate the complete new schedule before updating, and reject any result that would place it before the unchanged prefix.
+**How to apply:** Require a continuous suffix ending at the final lesson. Never reindex, reorder, or rotate linked data; only replace timetable fields at each existing position. Reject a result that overlaps or precedes the unchanged prefix.
