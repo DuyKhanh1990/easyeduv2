@@ -3,8 +3,8 @@ name: Class session ordering
 description: Canonical ordering and identity rules for class sessions when dates can be edited.
 ---
 
-`class_sessions.id` identifies the record, while `sessionIndex` identifies its business lesson number. `sessionDate` must never determine lesson numbering or array order because staff can move a lesson to another date.
+`class_sessions.id` identifies the record. `sessionIndex` is the current chronological lesson number and must be resequenced by `sessionDate`, shift start time, previous index, then ID whenever a session is saved.
 
-**Why:** Sorting by date made one lesson appear as another number, causing dialogs and range operations to refer to different records even though the API request succeeded.
+**Why:** Users expect a moved 9/9 lesson to appear before 10/9 and become the corresponding earlier lesson number. Keeping the old index made the schedule visibly and operationally out of order.
 
-**How to apply:** Return and render class sessions by `sessionIndex ASC`; display `session.sessionIndex`; send session IDs for record selection and range endpoints; only resequence during explicit insert/delete/exclusion operations.
+**How to apply:** Resequence class and student session orders in one transaction while preserving IDs, attendance, content, and remapping cycle-history boundaries. Return/render by `sessionIndex`; use IDs for selection.

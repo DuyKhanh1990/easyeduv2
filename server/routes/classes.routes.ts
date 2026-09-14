@@ -3509,7 +3509,8 @@ export function registerClassesRoutes(app: Express): void {
             const newTeacherIds: string[] = Array.isArray(req.body.teacherIds) ? req.body.teacherIds : [];
 
             // Compute labels
-            const sessionIdx = existingSession.sessionIndex ?? 1;
+            const oldSessionIdx = existingSession.sessionIndex ?? 1;
+            const newSessionIdx = result.sessionIndex ?? oldSessionIdx;
             const oldDate = existingSession.sessionDate ?? "";
             const oldWd = SCHEDULE_WEEKDAY_LABELS[existingSession.weekday ?? 0] ?? "";
             const oldDateLabel = formatScheduleDate(oldDate);
@@ -3530,7 +3531,9 @@ export function registerClassesRoutes(app: Express): void {
             if (th1UserIds.length > 0) {
               await sendNotificationToMany(th1UserIds, {
                 title: "Thông báo cập nhật lịch học",
-                content: `Buổi ${sessionIdx}, ${oldWd} ${oldDateLabel} của lớp ${className} (${classCode}), đã được cập nhật sang ${newWd} ${newDateLabel}`,
+                content: oldSessionIdx === newSessionIdx
+                  ? `Buổi ${newSessionIdx}, ${oldWd} ${oldDateLabel} của lớp ${className} (${classCode}), đã được cập nhật sang ${newWd} ${newDateLabel}`
+                  : `Buổi ${oldSessionIdx}, ${oldWd} ${oldDateLabel} của lớp ${className} (${classCode}), đã được chuyển thành Buổi ${newSessionIdx}, ${newWd} ${newDateLabel}`,
                 category: "schedule",
                 referenceId: classId,
                 referenceType: "class",
@@ -3552,7 +3555,7 @@ export function registerClassesRoutes(app: Express): void {
             if (th2UserIds.length > 0) {
               await sendNotificationToMany(th2UserIds, {
                 title: "Thông báo xếp lịch dạy",
-                content: `Bạn vừa được xếp lịch dạy lớp ${className} (${classCode}), Buổi ${sessionIdx} : ${newWd} ${newDateLabel}`,
+                content: `Bạn vừa được xếp lịch dạy lớp ${className} (${classCode}), Buổi ${newSessionIdx}: ${newWd} ${newDateLabel}`,
                 category: "schedule",
                 referenceId: classId,
                 referenceType: "class",
@@ -3587,7 +3590,9 @@ export function registerClassesRoutes(app: Express): void {
               if (affectedStudentUserIds.length > 0) {
                 await sendNotificationToMany(affectedStudentUserIds, {
                   title: "Thông báo cập nhật lịch học",
-                  content: `Buổi ${sessionIdx}, ${oldWd} ${oldDateLabel} của lớp ${className} (${classCode}), đã được cập nhật sang ${newWd} ${newDateLabel}`,
+                  content: oldSessionIdx === newSessionIdx
+                    ? `Buổi ${newSessionIdx}, ${oldWd} ${oldDateLabel} của lớp ${className} (${classCode}), đã được cập nhật sang ${newWd} ${newDateLabel}`
+                    : `Buổi ${oldSessionIdx}, ${oldWd} ${oldDateLabel} của lớp ${className} (${classCode}), đã được chuyển thành Buổi ${newSessionIdx}, ${newWd} ${newDateLabel}`,
                   category: "schedule",
                   referenceId: classId,
                   referenceType: "class",
@@ -3713,9 +3718,10 @@ export function registerClassesRoutes(app: Express): void {
               { label: "Giáo viên", oldValue: oldTeacherFmt, newValue: newTeacherFmt, changed: oldTeacherFmt !== newTeacherFmt },
             ];
 
-            const sessionIdx = existingSession.sessionIndex ?? null;
-            const oldPayload = JSON.stringify({ sessionIndex: sessionIdx, fields: fields.map(f => ({ label: f.label, value: f.oldValue, changed: false })) });
-            const newPayload = JSON.stringify({ sessionIndex: sessionIdx, fields: fields.map(f => ({ label: f.label, value: f.newValue, changed: f.changed })) });
+            const oldSessionIdx = existingSession.sessionIndex ?? null;
+            const newSessionIdx = result.sessionIndex ?? oldSessionIdx;
+            const oldPayload = JSON.stringify({ sessionIndex: oldSessionIdx, fields: fields.map(f => ({ label: f.label, value: f.oldValue, changed: false })) });
+            const newPayload = JSON.stringify({ sessionIndex: newSessionIdx, fields: fields.map(f => ({ label: f.label, value: f.newValue, changed: f.changed })) });
 
             createActivityLog({
               userId,

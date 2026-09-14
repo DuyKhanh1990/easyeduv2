@@ -2435,46 +2435,207 @@ export async function excludeClassSessions(params: { classId: string; fromSessio
 // ---------------------------------------------------------------------------
 export async function updateClassSession(id: string, updates: any): Promise<ClassSession> {
   const { sessionDate, shiftTemplateId, roomId, teacherIds, changeReason, changedBy } = updates;
+  const affectedStudentClassIds: string[] = [];
 
-  const [existing] = await db.select().from(classSessions).where(eq(classSessions.id, id));
-  if (!existing) throw new Error("Không tìm thấy buổi học");
+  const updated = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(classSessions).where(eq(classSessions.id, id));
+    if (!existing) throw new Error("Không tìm thấy buổi học");
 
-  const conflict = await db.select().from(classSessions).where(and(
-    eq(classSessions.classId, existing.classId),
-    eq(classSessions.sessionDate, sessionDate),
-    eq(classSessions.shiftTemplateId, shiftTemplateId),
-    sql`${classSessions.id} != ${id}`,
-  ));
+    const conflict = await tx.select().from(classSessions).where(and(
+      eq(classSessions.classId, existing.classId),
+      eq(classSessions.sessionDate, sessionDate),
+      eq(classSessions.shiftTemplateId, shiftTemplateId),
+      sql`${classSessions.id} != ${id}`,
+    ));
 
-  if (conflict.length > 0) {
-    throw new Error("Trùng lịch học (ngày và ca) với buổi khác trong cùng lớp");
-  }
+    if (conflict.length > 0) {
+      throw new Error("Trùng lịch học (ngày và ca) với buổi khác trong cùng lớp");
+    }
 
-  const [updated] = await db.update(classSessions)
-    .set({
-      sessionDate,
-      weekday: new Date(`${sessionDate}T00:00:00`).getDay(),
-      shiftTemplateId,
-      roomId: roomId ?? existing.roomId,
-      teacherIds: Array.isArray(teacherIds) ? (teacherIds.length > 0 ? teacherIds : null) : null,
-      changeReason,
-      changedBy,
-      changedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(classSessions.id, id))
-    .returning();
+    // Always enforce chronological numbering on save. This also repairs
+    // classes whose dates were moved before resequencing was introduced.
+    const shouldResequence = true;
 
-  if (existing.sessionDate !== sessionDate) {
-    const affectedStudentClasses = await db.selectDistinct({ studentClassId: studentSessions.studentClassId })
-      .from(studentSessions)
-      .where(eq(studentSessions.classSessionId, id));
+    const oldClassRows = shouldResequence
+      ? await tx.select({ id: classSessions.id, sessionIndex: classSessions.sessionIndex })
+          .from(classSessions)
+          .where(eq(classSessions.classId, existing.classId))
+      : [];
+    const [classMeta] = shouldResequence
+      ? await tx.select({ cycleHistory: classes.cycleHistory })
+          .from(classes)
+          .where(eq(classes.id, existing.classId))
+      : [null];
+    const oldStudentRows = shouldResequence
+      ? await tx.select({
+          id: studentSessions.id,
+          studentClassId: studentSessions.studentClassId,
+          sessionOrder: studentSessions.sessionOrder,
+        })
+          .from(studentSessions)
+          .where(eq(studentSessions.classId, existing.classId))
+      : [];
+    const studentClassRows = shouldResequence
+      ? await tx.select({ id: studentClasses.id, cycleHistory: studentClasses.cycleHistory })
+          .from(studentClasses)
+          .where(eq(studentClasses.classId, existing.classId))
+      : [];
 
-    for (const sc of affectedStudentClasses) {
-      if (sc.studentClassId) {
-        await recalculateStudentClass(sc.studentClassId);
+    await tx.update(classSessions)
+      .set({
+        sessionDate,
+        weekday: new Date(`${sessionDate}T00:00:00`).getDay(),
+        shiftTemplateId,
+        roomId: roomId ?? existing.roomId,
+        teacherIds: Array.isArray(teacherIds) ? (teacherIds.length > 0 ? teacherIds : null) : null,
+        changeReason,
+        changedBy,
+        changedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(classSessions.id, id));
+
+    if (shouldResequence) {
+      const orderedSessions = await tx
+        .select({
+          id: classSessions.id,
+          oldIndex: classSessions.sessionIndex,
+          startTime: shiftTemplates.startTime,
+        })
+        .from(classSessions)
+        .leftJoin(shiftTemplates, eq(classSessions.shiftTemplateId, shiftTemplates.id))
+        .where(eq(classSessions.classId, existing.classId))
+        .orderBy(
+          asc(classSessions.sessionDate),
+          sql`${shiftTemplates.startTime} ASC NULLS LAST`,
+          sql`${classSessions.sessionIndex} ASC NULLS LAST`,
+          asc(classSessions.id),
+        );
+
+      // Temporary negative values keep this safe when a unique
+      // (class_id, session_index) constraint is added later.
+      await tx.update(classSessions)
+        .set({
+          sessionIndex: sql`-${classSessions.sessionIndex} - 1000000`,
+          updatedAt: new Date(),
+        })
+        .where(eq(classSessions.classId, existing.classId));
+
+      for (let index = 0; index < orderedSessions.length; index++) {
+        await tx.update(classSessions)
+          .set({ sessionIndex: index + 1, updatedAt: new Date() })
+          .where(eq(classSessions.id, orderedSessions[index].id));
+      }
+
+      // Keep each student's lesson order aligned with the class chronology.
+      await tx.execute(sql`
+        WITH ranked AS (
+          SELECT
+            ss.id,
+            ROW_NUMBER() OVER (
+              PARTITION BY ss.student_class_id
+              ORDER BY cs.session_index ASC, ss.created_at ASC, ss.id ASC
+            ) AS new_order
+          FROM student_sessions ss
+          INNER JOIN class_sessions cs ON cs.id = ss.class_session_id
+          WHERE ss.class_id = ${existing.classId}
+            AND ss.student_class_id IS NOT NULL
+        )
+        UPDATE student_sessions ss
+        SET session_order = ranked.new_order,
+            updated_at = NOW()
+        FROM ranked
+        WHERE ss.id = ranked.id
+      `);
+
+      const newClassRows = await tx
+        .select({ id: classSessions.id, sessionIndex: classSessions.sessionIndex })
+        .from(classSessions)
+        .where(eq(classSessions.classId, existing.classId));
+      const oldClassIdByIndex = new Map(
+        oldClassRows
+          .filter(row => row.sessionIndex != null)
+          .map(row => [row.sessionIndex!, row.id]),
+      );
+      const newClassIndexById = new Map(
+        newClassRows
+          .filter(row => row.sessionIndex != null)
+          .map(row => [row.id, row.sessionIndex!]),
+      );
+      const classHistory = classMeta?.cycleHistory as Array<{ fromSessionIndex: number; weekdays: number[] }> | null;
+      if (Array.isArray(classHistory) && classHistory.length > 0) {
+        const remapped = classHistory
+          .map(entry => {
+            const boundaryId = oldClassIdByIndex.get(entry.fromSessionIndex);
+            return {
+              ...entry,
+              fromSessionIndex: (boundaryId && newClassIndexById.get(boundaryId)) ?? entry.fromSessionIndex,
+            };
+          })
+          .sort((a, b) => a.fromSessionIndex - b.fromSessionIndex)
+          .filter((entry, index, all) => index === 0 || entry.fromSessionIndex !== all[index - 1].fromSessionIndex);
+        await tx.update(classes)
+          .set({ cycleHistory: remapped, updatedAt: new Date() })
+          .where(eq(classes.id, existing.classId));
+      }
+
+      const newStudentRows = await tx
+        .select({
+          id: studentSessions.id,
+          studentClassId: studentSessions.studentClassId,
+          sessionOrder: studentSessions.sessionOrder,
+        })
+        .from(studentSessions)
+        .where(eq(studentSessions.classId, existing.classId));
+      const newStudentOrderById = new Map(
+        newStudentRows
+          .filter(row => row.sessionOrder != null)
+          .map(row => [row.id, row.sessionOrder!]),
+      );
+      const oldStudentIdByClassAndOrder = new Map(
+        oldStudentRows
+          .filter(row => row.studentClassId && row.sessionOrder != null)
+          .map(row => [`${row.studentClassId}:${row.sessionOrder}`, row.id]),
+      );
+
+      for (const studentClass of studentClassRows) {
+        const history = studentClass.cycleHistory as Array<{ fromSessionOrder: number; weekdays: number[] | null }> | null;
+        if (!Array.isArray(history) || history.length === 0) continue;
+        const remapped = history
+          .map(entry => {
+            const boundaryId = oldStudentIdByClassAndOrder.get(`${studentClass.id}:${entry.fromSessionOrder}`);
+            return {
+              ...entry,
+              fromSessionOrder: (boundaryId && newStudentOrderById.get(boundaryId)) ?? entry.fromSessionOrder,
+            };
+          })
+          .sort((a, b) => a.fromSessionOrder - b.fromSessionOrder)
+          .filter((entry, index, all) => index === 0 || entry.fromSessionOrder !== all[index - 1].fromSessionOrder);
+        await tx.update(studentClasses)
+          .set({ cycleHistory: remapped, updatedAt: new Date() })
+          .where(eq(studentClasses.id, studentClass.id));
       }
     }
+
+    if (existing.sessionDate !== sessionDate) {
+      const affected = await tx
+        .selectDistinct({ studentClassId: studentSessions.studentClassId })
+        .from(studentSessions)
+        .where(eq(studentSessions.classSessionId, id));
+      affectedStudentClassIds.push(
+        ...affected.map(row => row.studentClassId).filter((value): value is string => !!value),
+      );
+    }
+
+    const [finalSession] = await tx
+      .select()
+      .from(classSessions)
+      .where(eq(classSessions.id, id));
+    return finalSession;
+  });
+
+  for (const studentClassId of affectedStudentClassIds) {
+    await recalculateStudentClass(studentClassId);
   }
 
   return updated;
