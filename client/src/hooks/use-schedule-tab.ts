@@ -104,9 +104,9 @@ export function useScheduleTab({
           }) || classSessions[0];
       }
       setSelectedClassSessionId(targetSession.id);
-      const index = classSessions.indexOf(targetSession);
-      if (index !== -1) {
-        setSessionPage(Math.floor(index / SESSIONS_PER_PAGE));
+      const sessionIndex = targetSession.sessionIndex;
+      if (typeof sessionIndex === "number" && sessionIndex > 0) {
+        setSessionPage(Math.floor((sessionIndex - 1) / SESSIONS_PER_PAGE));
       }
     }
   }, [classSessions, selectedClassSessionId]);

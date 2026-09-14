@@ -32,13 +32,13 @@ export function VerticalSessionList({
         style={{ maxHeight: "calc(100vh - 240px)" }}
       >
         <div className="grid grid-cols-6 gap-x-1 gap-y-3">
-          {classSessions.map((session, index) => {
+          {classSessions.map((session) => {
             const isSelected = selectedClassSessionId === session.id;
             const date = new Date(session.sessionDate);
             const isPast = date < now && !isSameDay(date, now);
             const isToday = isSameDay(date, now);
             const isCancelled = session.status === "cancelled";
-            const sessionNum = index + 1;
+            const sessionNum = session.sessionIndex ?? "?";
             const dayLabel = DAY_FULL_LABELS[date.getDay()];
             const dateStr = `${date.getDate()}/${date.getMonth() + 1}`;
             const timeStr = session.shiftTemplate?.startTime?.slice(0, 5) || "";

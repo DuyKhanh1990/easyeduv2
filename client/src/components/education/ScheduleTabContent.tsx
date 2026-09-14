@@ -209,7 +209,10 @@ export function ScheduleTabContent({
       // Dialog just became open — set default session range
       setFromSessionId(selectedClassSessionId || "");
       const sessions = classSessions || [];
-      const lastSession = sessions.length > 0 ? sessions[sessions.length - 1] : null;
+      const lastSession = sessions.reduce<any | null>((latest, current) =>
+        !latest || (current.sessionIndex ?? -1) > (latest.sessionIndex ?? -1) ? current : latest,
+        null,
+      );
       setToSessionId(lastSession?.id || selectedClassSessionId || "");
     }
     prevOpenRef.current = isChangeTuitionPackageDialogOpen;
@@ -453,9 +456,7 @@ export function ScheduleTabContent({
         isOpen={isExcludeSessionsOpen}
         onOpenChange={setIsExcludeSessionsOpen}
         classId={classId}
-        currentSessionIndex={
-          (classSessions?.findIndex((s: any) => s.id === selectedClassSessionId) ?? -1) + 1
-        }
+        currentSessionId={selectedClassSessionId}
         classSessions={classSessions || []}
       />
       <DeleteScheduleDialog
@@ -463,9 +464,7 @@ export function ScheduleTabContent({
         onOpenChange={setIsDeleteScheduleOpen}
         classId={classId}
         sessionId={selectedClassSessionId || ""}
-        sessionIndex={
-          (classSessions?.findIndex((s: any) => s.id === selectedClassSessionId) ?? -1) + 1
-        }
+        sessionIndex={classSessions?.find((s: any) => s.id === selectedClassSessionId)?.sessionIndex ?? 0}
       />
       {studentToRemove && (
         <RemoveStudentFromSessionDialog

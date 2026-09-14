@@ -64,7 +64,7 @@ function exportAllSessionsToExcel(
   classSessions: any[],
   studentSessions: any[]
 ) {
-  const rows = classSessions.map((session: any, index: number) => {
+  const rows = classSessions.map((session: any) => {
     const sessionStudents = studentSessions.filter((s) => s.classSessionId === session.id);
     const present     = sessionStudents.filter((s) => s.attendanceStatus === "present").length;
     const absent      = sessionStudents.filter((s) => s.attendanceStatus === "absent").length;
@@ -78,7 +78,7 @@ function exportAllSessionsToExcel(
     const teachers    = (session.teachers || []).map((t: any) => t.fullName).join(", ");
 
     return {
-      "Buổi":             `Buổi ${index + 1}`,
+      "Buổi":             `Buổi ${session.sessionIndex ?? "?"}`,
       "Ngày":             format(new Date(session.sessionDate), "dd/MM/yyyy"),
       "Giờ":              session.shiftTemplate?.startTime || "",
       "Có học":           present,
@@ -219,9 +219,9 @@ function AttendanceOverviewModal({
 
   // ── Derived data ──────────────────────────────────────────────────────────
   const sortedSessions = [...classSessions].sort((a, b) => {
-    const dA = new Date(a.sessionDate).getTime();
-    const dB = new Date(b.sessionDate).getTime();
-    return dA !== dB ? dA - dB : a.id.localeCompare(b.id);
+    const indexA = a.sessionIndex ?? Number.MAX_SAFE_INTEGER;
+    const indexB = b.sessionIndex ?? Number.MAX_SAFE_INTEGER;
+    return indexA !== indexB ? indexA - indexB : a.id.localeCompare(b.id);
   });
 
   const uniqueStudentsMap = new Map<string, { id: string; name: string; code: string }>();
@@ -355,13 +355,13 @@ function AttendanceOverviewModal({
                 >
                   Lịch học
                 </td>
-                {sortedSessions.map((_, idx) => (
+                {sortedSessions.map((session) => (
                   <td
-                    key={idx}
+                    key={session.id}
                     className={`${borderCell} border-t px-1 py-2 text-center font-medium text-gray-700`}
                     style={{ backgroundColor: headerBg1 }}
                   >
-                    {idx + 1}
+                    {session.sessionIndex ?? "?"}
                   </td>
                 ))}
                 <td
@@ -646,7 +646,6 @@ export function AttendanceTabContent({
                   </thead>
                   <tbody>
                     {(pagedSessions ?? []).map((session: any) => {
-                      const index = classSessions!.indexOf(session);
                       const sessionStudents =
                         studentSessions?.filter((s) => s.classSessionId === session.id) || [];
                       const stats = {
@@ -664,7 +663,7 @@ export function AttendanceTabContent({
 
                       return (
                         <tr key={session.id} className="border-b border-border/40 last:border-0 hover:bg-muted/30">
-                          <td className="sticky left-0 z-10 bg-background px-3 py-3 font-medium whitespace-nowrap border-r border-border/40" style={{ minWidth: 80 }}>Buổi {index + 1}</td>
+                          <td className="sticky left-0 z-10 bg-background px-3 py-3 font-medium whitespace-nowrap border-r border-border/40" style={{ minWidth: 80 }}>Buổi {session.sessionIndex ?? "?"}</td>
                           <td className="sticky left-[80px] z-10 bg-background px-3 py-3 whitespace-nowrap border-r border-border/40" style={{ minWidth: 110 }}>
                             {format(new Date(session.sessionDate), "dd/MM/yyyy")}
                           </td>

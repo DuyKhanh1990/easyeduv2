@@ -1110,7 +1110,12 @@ export async function getClassSessions(classId: string): Promise<any[]> {
     with: {
       shiftTemplate: { columns: { id: true, name: true, startTime: true, endTime: true } },
     },
-    orderBy: (table, { asc }) => [asc(table.sessionDate), asc(table.id)],
+    // sessionIndex is the canonical lesson order. Dates are editable and may
+    // intentionally be moved before/after neighboring sessions.
+    orderBy: (table, { asc }) => [
+      sql`${table.sessionIndex} ASC NULLS LAST`,
+      asc(table.id),
+    ],
   });
 
   const allTeacherIds = Array.from(new Set(results.flatMap(s => s.teacherIds || [])));

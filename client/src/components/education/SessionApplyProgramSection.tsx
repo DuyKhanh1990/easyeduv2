@@ -89,6 +89,14 @@ export function SessionApplyProgramSection({
     queryKey: ["/api/score-sheets"],
   });
 
+  // A session's business number is sessionIndex, not its position in the
+  // response array. Keep all range selectors on the same canonical order.
+  const orderedClassSessions = [...(classSessions || [])].sort((a, b) => {
+    const indexA = a.sessionIndex ?? Number.MAX_SAFE_INTEGER;
+    const indexB = b.sessionIndex ?? Number.MAX_SAFE_INTEGER;
+    return indexA !== indexB ? indexA - indexB : a.id.localeCompare(b.id);
+  });
+
   const applyScoreSheetMutation = useMutation({
     mutationFn: async (data: { scoreSheetId: string; fromSessionIndex: number; toSessionIndex: number }) => {
       return apiRequest("POST", `/api/classes/${classId}/apply-score-sheet`, data);
@@ -177,7 +185,7 @@ export function SessionApplyProgramSection({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {(classSessions || []).map((s: any) => (
+                    {orderedClassSessions.map((s: any) => (
                       <SelectItem key={s.id} value={String(s.sessionIndex)}>Buổi {s.sessionIndex}</SelectItem>
                     ))}
                   </SelectContent>
@@ -190,7 +198,7 @@ export function SessionApplyProgramSection({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {(classSessions || []).filter((s: any) => s.sessionIndex >= applyProgramFromIdx).map((s: any) => (
+                    {orderedClassSessions.filter((s: any) => s.sessionIndex >= applyProgramFromIdx).map((s: any) => (
                       <SelectItem key={s.id} value={String(s.sessionIndex)}>Buổi {s.sessionIndex}</SelectItem>
                     ))}
                   </SelectContent>
@@ -243,7 +251,7 @@ export function SessionApplyProgramSection({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {(classSessions || []).map((s: any) => (
+                    {orderedClassSessions.map((s: any) => (
                       <SelectItem key={s.id} value={String(s.sessionIndex)}>Buổi {s.sessionIndex}</SelectItem>
                     ))}
                   </SelectContent>
@@ -256,7 +264,7 @@ export function SessionApplyProgramSection({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {(classSessions || []).filter((s: any) => s.sessionIndex >= applyCriteriaFromIdx).map((s: any) => (
+                    {orderedClassSessions.filter((s: any) => s.sessionIndex >= applyCriteriaFromIdx).map((s: any) => (
                       <SelectItem key={s.id} value={String(s.sessionIndex)}>Buổi {s.sessionIndex}</SelectItem>
                     ))}
                   </SelectContent>
@@ -308,7 +316,7 @@ export function SessionApplyProgramSection({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {(classSessions || []).map((s: any) => (
+                    {orderedClassSessions.map((s: any) => (
                       <SelectItem key={s.id} value={String(s.sessionIndex)}>Buổi {s.sessionIndex}</SelectItem>
                     ))}
                   </SelectContent>
@@ -321,7 +329,7 @@ export function SessionApplyProgramSection({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {(classSessions || []).filter((s: any) => s.sessionIndex >= applyScoreSheetFromIdx).map((s: any) => (
+                    {orderedClassSessions.filter((s: any) => s.sessionIndex >= applyScoreSheetFromIdx).map((s: any) => (
                       <SelectItem key={s.id} value={String(s.sessionIndex)}>Buổi {s.sessionIndex}</SelectItem>
                     ))}
                   </SelectContent>

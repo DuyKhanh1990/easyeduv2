@@ -2453,6 +2453,7 @@ export async function updateClassSession(id: string, updates: any): Promise<Clas
   const [updated] = await db.update(classSessions)
     .set({
       sessionDate,
+      weekday: new Date(`${sessionDate}T00:00:00`).getDay(),
       shiftTemplateId,
       roomId: roomId ?? existing.roomId,
       teacherIds: Array.isArray(teacherIds) ? (teacherIds.length > 0 ? teacherIds : null) : null,

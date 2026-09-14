@@ -239,7 +239,7 @@ export function SessionDetailPanel({
   }
 
   const totalSessions = classSessions?.length || 0;
-  const sessionIndex = (classSessions?.indexOf(session) ?? -1) + 1;
+  const sessionIndex = session?.sessionIndex ?? "?";
   const isOnline = classData?.learningFormat === "online";
   const teacherName =
     (session?.teachers?.length > 0

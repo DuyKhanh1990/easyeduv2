@@ -60,7 +60,10 @@ export function ChangeTeacherDialog({
       }
 
       if (classSessions?.length > 0) {
-        setToSessionId(classSessions[classSessions.length - 1].id);
+        const lastSession = classSessions.reduce((latest, current) =>
+          (current.sessionIndex ?? -1) > (latest.sessionIndex ?? -1) ? current : latest
+        );
+        setToSessionId(lastSession.id);
       }
 
       const sessionTeacherIds = (selectedSession?.teachers ?? []).map((t: any) => t.id);
@@ -198,9 +201,9 @@ export function ChangeTeacherDialog({
                   <SelectValue placeholder="Chọn buổi" />
                 </SelectTrigger>
                 <SelectContent>
-                  {classSessions?.map((s, idx) => (
+                  {classSessions?.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
-                      Buổi {String(idx + 1).padStart(2, "0")} -{" "}
+                      Buổi {String(s.sessionIndex ?? "?").padStart(2, "0")} -{" "}
                       {format(new Date(s.sessionDate), "dd/MM/yyyy")}
                     </SelectItem>
                   ))}
@@ -214,9 +217,9 @@ export function ChangeTeacherDialog({
                   <SelectValue placeholder="Chọn buổi" />
                 </SelectTrigger>
                 <SelectContent>
-                  {classSessions?.map((s, idx) => (
+                  {classSessions?.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
-                      Buổi {String(idx + 1).padStart(2, "0")} -{" "}
+                      Buổi {String(s.sessionIndex ?? "?").padStart(2, "0")} -{" "}
                       {format(new Date(s.sessionDate), "dd/MM/yyyy")}
                     </SelectItem>
                   ))}

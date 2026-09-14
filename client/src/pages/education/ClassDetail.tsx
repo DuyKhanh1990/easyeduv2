@@ -118,9 +118,9 @@ export function ClassDetail() {
     staleTime: 0,
     select: (data) =>
       [...data].sort((a, b) => {
-        const dateA = new Date(a.sessionDate).getTime();
-        const dateB = new Date(b.sessionDate).getTime();
-        if (dateA !== dateB) return dateA - dateB;
+        const indexA = a.sessionIndex ?? Number.MAX_SAFE_INTEGER;
+        const indexB = b.sessionIndex ?? Number.MAX_SAFE_INTEGER;
+        if (indexA !== indexB) return indexA - indexB;
         return a.id.localeCompare(b.id);
       }),
   });

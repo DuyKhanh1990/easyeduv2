@@ -83,7 +83,7 @@ export function SessionListPanel({
                 const date = new Date(session.sessionDate);
                 const isPast = date < new Date() && !isSameDay(date, new Date());
                 const isToday = isSameDay(date, new Date());
-                const index = classSessions.indexOf(session) + 1;
+                const sessionNumber = session.sessionIndex ?? "?";
                 const isCancelled = session.status === "cancelled";
 
                 let statusColor: string;
@@ -120,7 +120,7 @@ export function SessionListPanel({
                       <span className="absolute inset-0 rounded-xl ring-2 ring-sky-400 ring-offset-1 animate-pulse pointer-events-none" />
                     )}
                     <div className="flex items-start justify-between gap-0.5">
-                      <span className="text-[17px] font-extrabold leading-none">{index}</span>
+                      <span className="text-[17px] font-extrabold leading-none">{sessionNumber}</span>
                       <div className="flex flex-col items-end">
                         <span className="text-[9px] font-bold leading-tight">{dayLabel}</span>
                         <span className="text-[9px] leading-tight opacity-75">

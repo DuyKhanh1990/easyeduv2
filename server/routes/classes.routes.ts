@@ -2893,9 +2893,13 @@ export function registerClassesRoutes(app: Express): void {
       const resolvedRanges: { fromSessionId: string; toSessionId: string; fromIndex: number; toIndex: number }[] = [];
       for (const range of inputRanges) {
         const [fromSession] = await db.select({ sessionIndex: classSessions.sessionIndex })
-          .from(classSessions).where(eq(classSessions.id, range.fromSessionId)).limit(1);
+          .from(classSessions)
+          .where(and(eq(classSessions.id, range.fromSessionId), eq(classSessions.classId, classId)))
+          .limit(1);
         const [toSession] = await db.select({ sessionIndex: classSessions.sessionIndex })
-          .from(classSessions).where(eq(classSessions.id, range.toSessionId)).limit(1);
+          .from(classSessions)
+          .where(and(eq(classSessions.id, range.toSessionId), eq(classSessions.classId, classId)))
+          .limit(1);
         if (!fromSession || !toSession) return res.status(404).json({ message: "Session not found" });
         resolvedRanges.push({
           fromSessionId: range.fromSessionId,

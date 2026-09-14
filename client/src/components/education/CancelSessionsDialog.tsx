@@ -48,7 +48,10 @@ export function CancelSessionsDialog({
       }
 
       if (classSessions?.length > 0) {
-        setToSessionId(classSessions[classSessions.length - 1].id);
+        const lastSession = classSessions.reduce((latest, current) =>
+          (current.sessionIndex ?? -1) > (latest.sessionIndex ?? -1) ? current : latest
+        );
+        setToSessionId(lastSession.id);
       }
       setReason("");
     }

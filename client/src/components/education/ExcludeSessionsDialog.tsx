@@ -31,20 +31,20 @@ interface ExcludeSessionsDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   classId: string;
-  currentSessionIndex?: number;
+  currentSessionId?: string | null;
   classSessions: any[];
 }
 
 type Range = { fromSessionId: string; toSessionId: string };
 
-function getSessionIdx(sessions: any[], id: string) {
-  return sessions.findIndex(s => s.id === id);
+function getSessionIndex(sessions: any[], id: string) {
+  return sessions.find(s => s.id === id)?.sessionIndex ?? null;
 }
 
 function resolveRange(sessions: any[], r: Range) {
-  const fi = getSessionIdx(sessions, r.fromSessionId);
-  const ti = getSessionIdx(sessions, r.toSessionId);
-  if (fi < 0 || ti < 0) return null;
+  const fi = getSessionIndex(sessions, r.fromSessionId);
+  const ti = getSessionIndex(sessions, r.toSessionId);
+  if (fi == null || ti == null) return null;
   return { from: Math.min(fi, ti), to: Math.max(fi, ti) };
 }
 
@@ -69,7 +69,7 @@ export function ExcludeSessionsDialog({
   isOpen,
   onOpenChange,
   classId,
-  currentSessionIndex = 0,
+  currentSessionId = null,
   classSessions
 }: ExcludeSessionsDialogProps) {
   const [ranges, setRanges] = useState<Range[]>([{ fromSessionId: "", toSessionId: "" }]);
@@ -84,13 +84,13 @@ export function ExcludeSessionsDialog({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (isOpen && classSessions.length > 0 && currentSessionIndex > 0) {
-      const defaultSession = classSessions[Math.min(currentSessionIndex - 1, classSessions.length - 1)];
+    if (isOpen && currentSessionId) {
+      const defaultSession = classSessions.find(s => s.id === currentSessionId);
       if (defaultSession) {
         setRanges([{ fromSessionId: defaultSession.id, toSessionId: defaultSession.id }]);
       }
     }
-  }, [isOpen, currentSessionIndex, classSessions]);
+  }, [isOpen, currentSessionId, classSessions]);
 
   // Debounced live conflict check — watches validRanges changes
   const validRanges = ranges.filter(r => r.fromSessionId && r.toSessionId);
@@ -265,9 +265,9 @@ export function ExcludeSessionsDialog({
                               <SelectValue placeholder="Chọn buổi" />
                             </SelectTrigger>
                             <SelectContent>
-                              {classSessions.map((s, si) => (
+                              {classSessions.map((s) => (
                                 <SelectItem key={s.id} value={s.id} className="text-xs">
-                                  Buổi {String(si + 1).padStart(2, '0')}: {format(new Date(s.sessionDate), "EEE d/M/yy HH:mm", { locale: vi })}
+                                  Buổi {String(s.sessionIndex ?? "?").padStart(2, '0')}: {format(new Date(s.sessionDate), "EEE d/M/yy HH:mm", { locale: vi })}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -284,9 +284,9 @@ export function ExcludeSessionsDialog({
                               <SelectValue placeholder="Chọn buổi" />
                             </SelectTrigger>
                             <SelectContent>
-                              {classSessions.map((s, si) => (
+                              {classSessions.map((s) => (
                                 <SelectItem key={s.id} value={s.id} className="text-xs">
-                                  Buổi {String(si + 1).padStart(2, '0')}: {format(new Date(s.sessionDate), "EEE d/M/yy HH:mm", { locale: vi })}
+                                  Buổi {String(s.sessionIndex ?? "?").padStart(2, '0')}: {format(new Date(s.sessionDate), "EEE d/M/yy HH:mm", { locale: vi })}
                                 </SelectItem>
                               ))}
                             </SelectContent>

@@ -37,3 +37,4 @@
 - [Inventory availability expiry](inventory-availability-expiry.md) — mọi màn hình và bước lưu phải bỏ reservation/phiếu xuất nháp đã hết hạn theo cùng cấu hình thời gian.
 - [Student discussion edit audit](student-discussion-edit-audit.md) — giữ tác giả gốc và lưu riêng người sửa/thời điểm sửa để hiển thị lịch sử minh bạch.
 - [Admin Hub connection testing](admin-hub-connection-testing.md) — cross-domain claim cần endpoint public và mã được sinh trong cùng môi trường/database.
+- [Class session ordering](class-session-ordering.md) — sessionIndex là thứ tự nghiệp vụ bất biến; sessionDate chỉ là thuộc tính có thể chỉnh sửa.
