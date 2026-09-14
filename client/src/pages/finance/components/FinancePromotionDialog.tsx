@@ -36,6 +36,8 @@ export type FinancePromotionDialogProps = {
   initial?: Partial<FinancePromotion>;
   title: string;
   isSaving?: boolean;
+  contentClassName?: string;
+  overlayClassName?: string;
 };
 
 function getInitialForm(initial?: Partial<FinancePromotion>): PromotionForm {
@@ -51,7 +53,7 @@ function getInitialForm(initial?: Partial<FinancePromotion>): PromotionForm {
 }
 
 export function FinancePromotionDialog({
-  open, onClose, onSave, initial, title, isSaving = false,
+  open, onClose, onSave, initial, title, isSaving = false, contentClassName, overlayClassName,
 }: FinancePromotionDialogProps) {
   const [form, setForm] = useState<PromotionForm>(() => getInitialForm(initial));
 
@@ -74,7 +76,7 @@ export function FinancePromotionDialog({
 
   return (
     <Dialog open={open} onOpenChange={value => { if (!value && !isSaving) onClose(); }}>
-      <DialogContent className="max-w-md">
+      <DialogContent className={`max-w-md ${contentClassName || ""}`} overlayClassName={overlayClassName}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>

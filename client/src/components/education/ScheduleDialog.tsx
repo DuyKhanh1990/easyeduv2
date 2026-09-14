@@ -1512,6 +1512,8 @@ export function ScheduleDialog({
         onSave={handleCreateAdjustment}
         title={quickCreateType === "promotion" ? "Thêm mới khuyến mãi" : "Thêm mới phụ thu"}
         isSaving={quickCreateSaving}
+        contentClassName="z-[190]"
+        overlayClassName="z-[180]"
       />
 
       <Dialog open={isMissingPackageWarningOpen} onOpenChange={setIsMissingPackageWarningOpen}>
