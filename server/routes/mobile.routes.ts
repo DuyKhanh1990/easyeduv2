@@ -52,6 +52,7 @@ import { eq, and, gte, lte, sql, inArray, desc, or, isNull } from "drizzle-orm";
 import { enforceAttendanceTimeLimit, getStaffRoleIds } from "../lib/attendance-limit";
 import { updateStudentAttendance, bulkUpdateAttendance } from "../storage/attendance.storage";
 import { sendAttendanceNotification } from "../lib/attendance-notification";
+import { webPushService } from "../services/web-push.service";
 
 const JWT_EXPIRES_IN = "30d";
 
@@ -6242,6 +6243,111 @@ export function registerMobileRoutes(app: Express) {
     } catch (err: any) {
       console.error("[Mobile] push-token delete error:", err);
       return res.status(500).json({ message: err.message || "Lỗi khi huỷ push token" });
+    }
+  });
+
+  // ── GET /api/mobile/push/config ────────────────────────────────────────────
+  // Trả public VAPID key cho PWA sau khi user đã đăng nhập.
+  // Private key không bao giờ được trả về client.
+  app.get("/api/mobile/push/config", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized." });
+
+      const publicKey = webPushService.getPublicKey();
+      return res.json({
+        enabled: Boolean(publicKey),
+        publicKey,
+      });
+    } catch (err: any) {
+      console.error("[Mobile] web push config error:", err);
+      return res.status(500).json({ message: err.message || "Lỗi khi tải cấu hình Web Push" });
+    }
+  });
+
+  // ── POST /api/mobile/push/subscription ─────────────────────────────────────
+  // Lưu subscription của một browser/device.
+  // userId và centerId luôn lấy từ JWT + center_config, không nhận từ client.
+  app.post("/api/mobile/push/subscription", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized." });
+      if (!webPushService.isEnabled()) {
+        return res.status(503).json({ message: "Web Push chưa được cấu hình." });
+      }
+
+      const parsed = z.object({
+        endpoint: z.string().url().max(2048),
+        expirationTime: z.number().nullable().optional(),
+        keys: z.object({
+          p256dh: z.string().min(1).max(512),
+          auth: z.string().min(1).max(512),
+        }),
+      }).safeParse(req.body);
+
+      if (!parsed.success) {
+        return res.status(400).json({
+          message: parsed.error.errors[0]?.message || "Subscription không hợp lệ.",
+        });
+      }
+
+      const [center] = await db
+        .select({ id: centerConfig.id })
+        .from(centerConfig)
+        .limit(1);
+      if (!center) {
+        return res.status(503).json({ message: "Chưa cấu hình trung tâm." });
+      }
+
+      await webPushService.saveSubscription({
+        userId: user.id,
+        centerId: center.id,
+        endpoint: parsed.data.endpoint,
+        p256dh: parsed.data.keys.p256dh,
+        auth: parsed.data.keys.auth,
+      });
+
+      return res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Mobile] web push subscription error:", err);
+      return res.status(500).json({ message: err.message || "Lỗi khi lưu Web Push subscription" });
+    }
+  });
+
+  // ── DELETE /api/mobile/push/subscription ───────────────────────────────────
+  // Xóa subscription hiện tại khi browser logout/unsubscribe.
+  // Không có endpoint thì xóa toàn bộ subscription của user ở center hiện tại.
+  app.delete("/api/mobile/push/subscription", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized." });
+
+      const endpointValue = req.body?.endpoint ?? req.query?.endpoint;
+      const endpoint = endpointValue
+        ? z.string().url().max(2048).safeParse(endpointValue)
+        : { success: true as const, data: undefined };
+      if (!endpoint.success) {
+        return res.status(400).json({ message: "endpoint không hợp lệ." });
+      }
+
+      const [center] = await db
+        .select({ id: centerConfig.id })
+        .from(centerConfig)
+        .limit(1);
+      if (!center) {
+        return res.status(503).json({ message: "Chưa cấu hình trung tâm." });
+      }
+
+      await webPushService.deleteSubscription({
+        userId: user.id,
+        centerId: center.id,
+        endpoint: endpoint.data,
+      });
+
+      return res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Mobile] web push subscription delete error:", err);
+      return res.status(500).json({ message: err.message || "Lỗi khi xóa Web Push subscription" });
     }
   });
 

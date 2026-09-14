@@ -3044,6 +3044,26 @@ export const pushTokens = pgTable("push_tokens", {
 export type PushToken = typeof pushTokens.$inferSelect;
 export type InsertPushToken = typeof pushTokens.$inferInsert;
 
+// ── Web Push Subscriptions (Browser Push Notification) ────────────────────────
+// Endpoint được scope theo center để cùng một browser có thể đăng ký ở nhiều
+// backend trung tâm mà không làm subscription của tenant này ghi đè tenant kia.
+export const webPushSubscriptions = pgTable("web_push_subscriptions", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  centerId: uuid("center_id").notNull().references(() => centerConfig.id, { onDelete: "cascade" }),
+  endpoint: text("endpoint").notNull(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("web_push_subscriptions_center_endpoint_uidx").on(t.centerId, t.endpoint),
+  index("web_push_subscriptions_user_center_idx").on(t.userId, t.centerId),
+]);
+
+export type WebPushSubscription = typeof webPushSubscriptions.$inferSelect;
+export type InsertWebPushSubscription = typeof webPushSubscriptions.$inferInsert;
+
 // ==========================================
 // AI CONVERSATIONS (OpenAI chat threads)
 // ==========================================

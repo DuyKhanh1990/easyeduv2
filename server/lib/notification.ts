@@ -3,6 +3,7 @@ import { db } from "../storage/base";
 import { notifications } from "@shared/schema";
 import { emitToUser } from "./ws-hub";
 import { pushService } from "../services/push.service";
+import { webPushService } from "../services/web-push.service";
 
 export interface NotificationDeeplink {
   /** Tên màn hình mobile cần mở, ví dụ "Calendar", "Invoices", "StaffTasks", "Chat" */
@@ -113,7 +114,7 @@ export async function sendNotification(opts: SendNotificationOptions) {
   // Fire-and-forget push — chỉ gửi nếu sendPush !== false
   // Lỗi push không bao giờ ảnh hưởng caller hoặc transaction chính
   if (opts.sendPush !== false) {
-    void pushService.send(opts.userId, {
+    const pushPayload = {
       title: opts.title,
       body: opts.content,
       data: {
@@ -126,7 +127,9 @@ export async function sendNotification(opts: SendNotificationOptions) {
         // Dạng mới — mobile đọc trước nếu có, bỏ qua field legacy phía trên.
         ...(opts.deeplink ? { screen: opts.deeplink.screen, params: opts.deeplink.params ?? {} } : {}),
       },
-    });
+    };
+    void pushService.send(opts.userId, pushPayload);
+    void webPushService.send(opts.userId, pushPayload);
   }
   return saved;
 }
@@ -152,7 +155,7 @@ export async function sendNotificationToMany(userIds: string[], opts: Omit<SendN
 
   // 4. Bulk push — 1 SELECT tokens + 1 Expo batch call thay vì N lần send()
   if (opts.sendPush !== false) {
-    void pushService.sendToMany(userIds, {
+    const pushPayload = {
       title: opts.title,
       body: opts.content,
       data: {
@@ -164,7 +167,9 @@ export async function sendNotificationToMany(userIds: string[], opts: Omit<SendN
           ? { screen: opts.deeplink.screen, params: opts.deeplink.params ?? {} }
           : {}),
       },
-    });
+    };
+    void pushService.sendToMany(userIds, pushPayload);
+    void webPushService.sendToMany(userIds, pushPayload);
   }
 
   return saved;
