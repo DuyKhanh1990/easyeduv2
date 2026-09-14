@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
 import { format } from "date-fns";
-import { VoucherHint } from "@/components/finance/VoucherHint";
 import { Calendar, Info, ChevronDown, Wallet, AlertCircle, AlertTriangle, CalendarDays, Plus, UserPlus, Search } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -37,6 +36,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { Label } from "@/components/ui/label";
+import { FinancePromotionDialog, type FinancePromotionType } from "@/pages/finance/components/FinancePromotionDialog";
 
 interface ScheduleDialogProps {
   isOpen: boolean;
@@ -55,6 +55,7 @@ interface ScheduleDialogProps {
 
 const fmtMoney = (n: number) => Math.round(n).toLocaleString("vi-VN");
 const WEEKDAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+type AdjustmentKind = "promotion" | "surcharge";
 
 /** Generate preview sessions client-side from a schedule config (used when class has no sessions yet) */
 function generateSessionsFromConfig(
@@ -141,9 +142,15 @@ export function ScheduleDialog({
     }
   );
 
-  // Multi-select popover open state per student
-  const [openPromoIdx, setOpenPromoIdx] = useState<number | null>(null);
-  const [openSurchargeIdx, setOpenSurchargeIdx] = useState<number | null>(null);
+  // Adjustment picker state. The picker is a dialog rather than an inline
+  // popover so the schedule screen uses the same selection pattern as invoices.
+  const [adjustmentPicker, setAdjustmentPicker] = useState<{
+    studentIndex: number;
+    kind: AdjustmentKind;
+  } | null>(null);
+  const [adjustmentSearch, setAdjustmentSearch] = useState("");
+  const [quickCreateType, setQuickCreateType] = useState<FinancePromotionType | null>(null);
+  const [quickCreateSaving, setQuickCreateSaving] = useState(false);
   const [isAutoInvoiceWarningOpen, setIsAutoInvoiceWarningOpen] = useState(false);
   const [isMissingPackageWarningOpen, setIsMissingPackageWarningOpen] = useState(false);
 
@@ -577,6 +584,57 @@ export function ScheduleDialog({
       ? config.surchargeKeys.filter((k: string) => k !== id)
       : [...config.surchargeKeys, id];
     updateStudentConfig(idx, { surchargeKeys: next });
+  };
+
+  const openAdjustmentPicker = (studentIndex: number, kind: AdjustmentKind) => {
+    setAdjustmentSearch("");
+    setAdjustmentPicker({ studentIndex, kind });
+  };
+
+  const closeAdjustmentPicker = () => {
+    setAdjustmentSearch("");
+    setAdjustmentPicker(null);
+  };
+
+  const handleCreateAdjustment = async (data: {
+    code: string;
+    name: string;
+    valueAmount: string | null;
+    valueType: "percent" | "vnd";
+    quantity: number | null;
+    fromDate: string | null;
+    toDate: string | null;
+  }) => {
+    if (!quickCreateType) return;
+    const type = quickCreateType;
+    setQuickCreateSaving(true);
+    try {
+      const response = await apiRequest("POST", "/api/finance/promotions", { ...data, type });
+      const created = await response.json();
+      queryClient.invalidateQueries({ queryKey: [`/api/finance/promotions?type=${type}`] });
+
+      if (created?.id && adjustmentPicker?.kind === type) {
+        if (type === "promotion") {
+          togglePromoKey(adjustmentPicker.studentIndex, created.id);
+        } else {
+          toggleSurchargeKey(adjustmentPicker.studentIndex, created.id);
+        }
+      }
+
+      setQuickCreateType(null);
+      toast({
+        title: `Đã thêm ${type === "promotion" ? "khuyến mãi" : "phụ thu"}`,
+        description: created?.name ? `"${created.name}" đã được chọn cho học viên.` : undefined,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Không thể thêm mới",
+        description: error?.message || "Vui lòng thử lại.",
+        variant: "destructive",
+      });
+    } finally {
+      setQuickCreateSaving(false);
+    }
   };
 
   const availableShifts = effectiveSessions?.reduce((acc: any[], s: any) => {
@@ -1155,98 +1213,38 @@ export function ScheduleDialog({
 
                     {/* Khuyến mãi multi-select */}
                     <TableCell>
-                      <Popover
-                        open={openPromoIdx === idx}
-                        onOpenChange={(v) => setOpenPromoIdx(v ? idx : null)}
-                      >
-                        <PopoverTrigger asChild>
-                           <button className="flex h-8 w-full items-center justify-between rounded-none border-0 border-b border-slate-300 bg-transparent px-1 text-[11px] whitespace-nowrap transition-colors hover:border-primary hover:bg-slate-100/70">
-                            <span className={`whitespace-nowrap ${promoAmt > 0 ? "text-green-600 font-semibold" : "text-muted-foreground"}`}>
-                              {promoAmt > 0 ? `-${fmtMoney(promoAmt)} đ` : "Chọn..."}
-                            </span>
-                            <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                          </button>
-                        </PopoverTrigger>
-                        <VoucherHint
-                          studentId={config.studentId}
-                          asOfDate={format(config.startDate, "yyyy-MM-dd")}
-                        />
-                        <PopoverContent className="w-56 p-2" align="start">
-                          <p className="text-xs font-semibold mb-2 text-muted-foreground">Chọn khuyến mãi</p>
-                          {promotionOptions.length === 0 ? (
-                            <p className="text-xs text-muted-foreground italic py-2 text-center">Chưa có khuyến mãi nào</p>
-                          ) : (
-                            <div className="space-y-1.5">
-                              {promotionOptions.filter((p: any) => p.isActive).map((promo: any) => {
-                                const amt = calcPromoAmount(promo, baseFee);
-                                const label = promo.valueType === "percent"
-                                  ? `${parseFloat(promo.valueAmount)}%`
-                                  : `${fmtMoney(parseFloat(promo.valueAmount))} đ`;
-                                return (
-                                  <label key={promo.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
-                                    <Checkbox
-                                      checked={config.promotionKeys.includes(promo.id)}
-                                      onCheckedChange={() => togglePromoKey(idx, promo.id)}
-                                    />
-                                    <div className="flex-1 min-w-0">
-                                      <p className="text-xs font-medium">{promo.name}</p>
-                                      <p className="text-xs text-muted-foreground">
-                                        {baseFee > 0 && promo.valueType === "percent"
-                                          ? `-${fmtMoney(amt)} đ (${label})`
-                                          : `-${label}`}
-                                      </p>
-                                    </div>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </PopoverContent>
-                      </Popover>
+                       <button
+                         type="button"
+                         className="flex h-8 w-full items-center justify-between rounded-none border-0 border-b border-slate-300 bg-transparent px-1 text-[11px] whitespace-nowrap transition-colors hover:border-primary hover:bg-slate-100/70"
+                         onClick={() => openAdjustmentPicker(idx, "promotion")}
+                       >
+                         <span className={`whitespace-nowrap ${promoAmt > 0 ? "text-green-600 font-semibold" : "text-muted-foreground"}`}>
+                           {promoAmt > 0
+                             ? `-${fmtMoney(promoAmt)} đ`
+                             : config.promotionKeys.length > 0
+                               ? `${config.promotionKeys.length} lựa chọn`
+                               : "Chọn..."}
+                         </span>
+                         <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                       </button>
                     </TableCell>
 
                     {/* Phụ thu multi-select */}
                     <TableCell>
-                      <Popover
-                        open={openSurchargeIdx === idx}
-                        onOpenChange={(v) => setOpenSurchargeIdx(v ? idx : null)}
-                      >
-                        <PopoverTrigger asChild>
-                           <button className="flex h-8 w-full items-center justify-between rounded-none border-0 border-b border-slate-300 bg-transparent px-1 text-[11px] whitespace-nowrap transition-colors hover:border-primary hover:bg-slate-100/70">
-                            <span className={`whitespace-nowrap ${surchargeAmt > 0 ? "text-orange-600 font-semibold" : "text-muted-foreground"}`}>
-                              {surchargeAmt > 0 ? `+${fmtMoney(surchargeAmt)} đ` : "Chọn..."}
-                            </span>
-                            <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-56 p-2" align="start">
-                          <p className="text-xs font-semibold mb-2 text-muted-foreground">Chọn phụ thu</p>
-                          {surchargeOptions.length === 0 ? (
-                            <p className="text-xs text-muted-foreground italic py-2 text-center">Chưa có phụ thu nào</p>
-                          ) : (
-                            <div className="space-y-1.5">
-                              {surchargeOptions.filter((s: any) => s.isActive).map((surcharge: any) => {
-                                const amt = calcSurchargeAmount(surcharge, baseFee);
-                                const label = surcharge.valueType === "percent"
-                                  ? `${parseFloat(surcharge.valueAmount)}%`
-                                  : `${fmtMoney(amt)} đ`;
-                                return (
-                                  <label key={surcharge.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
-                                    <Checkbox
-                                      checked={config.surchargeKeys.includes(surcharge.id)}
-                                      onCheckedChange={() => toggleSurchargeKey(idx, surcharge.id)}
-                                    />
-                                    <div className="flex-1 min-w-0">
-                                      <p className="text-xs font-medium">{surcharge.name}</p>
-                                      <p className="text-xs text-muted-foreground">+{label}</p>
-                                    </div>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </PopoverContent>
-                      </Popover>
+                       <button
+                         type="button"
+                         className="flex h-8 w-full items-center justify-between rounded-none border-0 border-b border-slate-300 bg-transparent px-1 text-[11px] whitespace-nowrap transition-colors hover:border-primary hover:bg-slate-100/70"
+                         onClick={() => openAdjustmentPicker(idx, "surcharge")}
+                       >
+                         <span className={`whitespace-nowrap ${surchargeAmt > 0 ? "text-orange-600 font-semibold" : "text-muted-foreground"}`}>
+                           {surchargeAmt > 0
+                             ? `+${fmtMoney(surchargeAmt)} đ`
+                             : config.surchargeKeys.length > 0
+                               ? `${config.surchargeKeys.length} lựa chọn`
+                               : "Chọn..."}
+                         </span>
+                         <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                       </button>
                     </TableCell>
 
                     <TableCell className="align-middle text-center">
@@ -1384,6 +1382,137 @@ export function ScheduleDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <Dialog
+        open={!!adjustmentPicker}
+        onOpenChange={(open) => {
+          if (!open) closeAdjustmentPicker();
+        }}
+      >
+        <DialogContent className="z-[170] max-w-lg">
+          {adjustmentPicker && (() => {
+            const { studentIndex, kind } = adjustmentPicker;
+            const config = studentConfigs[studentIndex];
+            const isPromotion = kind === "promotion";
+            const options = (isPromotion ? promotionOptions : surchargeOptions)
+              .filter((option: any) => option.isActive !== false);
+            const selectedKeys = isPromotion ? config?.promotionKeys || [] : config?.surchargeKeys || [];
+            const preview = config ? getPreviewSessions(config) : [];
+            const baseAmount = config ? calcInvoicePreview(config, preview.length).base : 0;
+            const total = config
+              ? isPromotion
+                ? getTotalPromoAmount(config, baseAmount)
+                : getTotalSurchargeAmount(config, baseAmount)
+              : 0;
+            const search = adjustmentSearch.trim().toLowerCase();
+            const filteredOptions = options.filter((option: any) =>
+              !search || `${option.name || ""} ${option.code || ""}`.toLowerCase().includes(search)
+            );
+
+            return (
+              <>
+                <DialogHeader>
+                  <div className="flex items-center justify-between gap-3 pr-6">
+                    <DialogTitle>Chọn {isPromotion ? "khuyến mãi" : "phụ thu"}</DialogTitle>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-8 shrink-0 px-2 text-xs font-medium text-purple-600 hover:bg-purple-50 hover:text-purple-700"
+                      onClick={() => setQuickCreateType(kind)}
+                    >
+                      <Plus className="mr-1 h-3.5 w-3.5" />
+                      Thêm mới
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {config?.fullName || "Học viên"} · Chọn một hoặc nhiều {isPromotion ? "khuyến mãi" : "phụ thu"} áp dụng cho hóa đơn tự động.
+                  </p>
+                </DialogHeader>
+
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={adjustmentSearch}
+                    onChange={(event) => setAdjustmentSearch(event.target.value)}
+                    placeholder={`Tìm theo tên hoặc mã ${isPromotion ? "khuyến mãi" : "phụ thu"}...`}
+                    className="h-9 pl-8 text-xs"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="max-h-72 overflow-y-auto rounded-md border">
+                  {options.length === 0 ? (
+                    <p className="py-8 text-center text-xs text-muted-foreground">
+                      Chưa có {isPromotion ? "khuyến mãi" : "phụ thu"} nào
+                    </p>
+                  ) : filteredOptions.length === 0 ? (
+                    <p className="py-8 text-center text-xs text-muted-foreground">
+                      Không tìm thấy lựa chọn phù hợp
+                    </p>
+                  ) : (
+                    <div className="divide-y">
+                      {filteredOptions.map((option: any) => {
+                        const value = parseFloat(option.valueAmount || "0") || 0;
+                        const amount = option.valueType === "percent"
+                          ? Math.round(baseAmount * value / 100)
+                          : value;
+                        return (
+                          <label
+                            key={option.id}
+                            className="flex cursor-pointer items-start gap-3 px-3 py-2.5 transition-colors hover:bg-muted/50"
+                          >
+                            <Checkbox
+                              className="mt-0.5"
+                              checked={selectedKeys.includes(option.id)}
+                              onCheckedChange={() => {
+                                if (isPromotion) togglePromoKey(studentIndex, option.id);
+                                else toggleSurchargeKey(studentIndex, option.id);
+                              }}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-xs font-medium">{option.name}</p>
+                              <p className={isPromotion ? "text-xs text-green-600" : "text-xs text-orange-600"}>
+                                {isPromotion ? "-" : "+"}
+                                {option.valueType === "percent"
+                                  ? `${fmtMoney(amount)} đ (${value}%)`
+                                  : `${fmtMoney(amount)} đ`}
+                              </p>
+                            </div>
+                            {selectedKeys.includes(option.id) && (
+                              <span className="text-[10px] font-medium text-primary">Đã chọn</span>
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between border-t pt-3 text-xs font-semibold">
+                  <span>Tổng {isPromotion ? "khuyến mãi" : "phụ thu"}</span>
+                  <span className={isPromotion ? "text-green-600" : "text-orange-600"}>
+                    {isPromotion ? "-" : "+"}{fmtMoney(total)} đ
+                  </span>
+                </div>
+
+                <DialogFooter>
+                  <Button type="button" onClick={closeAdjustmentPicker}>Hoàn tất</Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      <FinancePromotionDialog
+        open={!!quickCreateType}
+        onClose={() => {
+          if (!quickCreateSaving) setQuickCreateType(null);
+        }}
+        onSave={handleCreateAdjustment}
+        title={quickCreateType === "promotion" ? "Thêm mới khuyến mãi" : "Thêm mới phụ thu"}
+        isSaving={quickCreateSaving}
+      />
 
       <Dialog open={isMissingPackageWarningOpen} onOpenChange={setIsMissingPackageWarningOpen}>
         <DialogContent className="z-[150] max-w-md">
