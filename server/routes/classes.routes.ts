@@ -3493,6 +3493,7 @@ export function registerClassesRoutes(app: Express): void {
         ...req.body,
         changedBy: (req.user as any).id
       });
+      const effectiveSessionId = result?.id ?? sessionId;
 
       // Send notifications after successful update
       if (existingSession) {
@@ -3542,7 +3543,7 @@ export function registerClassesRoutes(app: Express): void {
                   screen: "Calendar",
                   params: {
                     classId,
-                    sessionId,
+                    sessionId: effectiveSessionId,
                     ...((req.body.sessionDate ?? existingSession.sessionDate) ? { date: (req.body.sessionDate ?? existingSession.sessionDate) } : {}),
                   },
                 },
@@ -3564,7 +3565,7 @@ export function registerClassesRoutes(app: Express): void {
                   screen: "Calendar",
                   params: {
                     classId,
-                    sessionId,
+                    sessionId: effectiveSessionId,
                     ...((req.body.sessionDate ?? existingSession.sessionDate) ? { date: (req.body.sessionDate ?? existingSession.sessionDate) } : {}),
                   },
                 },
@@ -3580,7 +3581,7 @@ export function registerClassesRoutes(app: Express): void {
                 .innerJoin(students, eq(studentSessions.studentId, students.id))
                 .where(
                   and(
-                    eq(studentSessions.classSessionId, sessionId),
+                    eq(studentSessions.classSessionId, effectiveSessionId),
                     ne(studentSessions.status, "cancelled"),
                   )
                 );
@@ -3601,7 +3602,7 @@ export function registerClassesRoutes(app: Express): void {
                     screen: "Calendar",
                     params: {
                       classId,
-                      sessionId,
+                      sessionId: effectiveSessionId,
                       ...((req.body.sessionDate ?? existingSession.sessionDate) ? { date: (req.body.sessionDate ?? existingSession.sessionDate) } : {}),
                     },
                   },
@@ -3644,7 +3645,7 @@ export function registerClassesRoutes(app: Express): void {
             teacherIds: classSessions.teacherIds,
           })
           .from(classSessions)
-          .where(eq(classSessions.id, sessionId))
+          .where(eq(classSessions.id, effectiveSessionId))
           .limit(1);
         if (updatedSess) {
           updateSessionConflicts = await checkScheduleConflicts([updatedSess], existingSession?.classId);
@@ -3973,6 +3974,7 @@ export function registerClassesRoutes(app: Express): void {
       const { checkScheduleConflicts } = await import("../services/conflict-check.service");
       const [existing] = await db.select({
         classId: classSessions.classId,
+        sessionIndex: classSessions.sessionIndex,
         sessionDate: classSessions.sessionDate,
         shiftTemplateId: classSessions.shiftTemplateId,
         roomId: classSessions.roomId,
@@ -3986,7 +3988,39 @@ export function registerClassesRoutes(app: Express): void {
         teacherIds: req.body.teacherIds ?? existing.teacherIds,
       };
       const conflicts = await checkScheduleConflicts([preview], existing.classId);
-      res.json({ conflicts });
+      const rows = await db
+        .select({
+          id: classSessions.id,
+          sessionIndex: classSessions.sessionIndex,
+          sessionDate: classSessions.sessionDate,
+          shiftTemplateId: classSessions.shiftTemplateId,
+          startTime: shiftTemplates.startTime,
+        })
+        .from(classSessions)
+        .leftJoin(shiftTemplates, eq(classSessions.shiftTemplateId, shiftTemplates.id))
+        .where(eq(classSessions.classId, existing.classId));
+      const [previewShift] = await db
+        .select({ startTime: shiftTemplates.startTime })
+        .from(shiftTemplates)
+        .where(eq(shiftTemplates.id, preview.shiftTemplateId))
+        .limit(1);
+      const ordered = rows.map(row => ({
+        ...row,
+        sessionDate: row.id === req.params.id ? preview.sessionDate : row.sessionDate,
+        startTime: row.id === req.params.id ? previewShift?.startTime : row.startTime,
+      })).sort((a, b) =>
+        a.sessionDate.localeCompare(b.sessionDate) ||
+        (a.startTime ?? "99:99").localeCompare(b.startTime ?? "99:99") ||
+        (a.sessionIndex ?? 0) - (b.sessionIndex ?? 0) ||
+        a.id.localeCompare(b.id)
+      );
+      const newSessionIndex = ordered.findIndex(row => row.id === req.params.id) + 1;
+      res.json({
+        conflicts,
+        oldSessionIndex: existing.sessionIndex,
+        newSessionIndex,
+        indexWillChange: existing.sessionIndex != null && existing.sessionIndex !== newSessionIndex,
+      });
     } catch {
       res.json({ conflicts: [] });
     }

@@ -50,6 +50,9 @@ export function UpdateSessionDialog({
   const [roomId, setRoomId] = useState<string>("");
   const [teacherIds, setTeacherIds] = useState<string[]>([]);
   const [changeReason, setChangeReason] = useState<string>("");
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [confirmIndexChange, setConfirmIndexChange] = useState(false);
+  const [pendingUpdate, setPendingUpdate] = useState<any>(null);
 
   // Live conflict check state
   const [liveConflicts, setLiveConflicts] = useState<ConflictItem[]>([]);
@@ -65,6 +68,9 @@ export function UpdateSessionDialog({
       setTeacherIds(Array.isArray(session.teacherIds) ? session.teacherIds : []);
       setChangeReason(session.changeReason || "");
       setLiveConflicts([]);
+      setPreviewIndex(session.sessionIndex ?? null);
+      setConfirmIndexChange(false);
+      setPendingUpdate(null);
     }
   }, [isOpen, session]);
 
@@ -87,6 +93,7 @@ export function UpdateSessionDialog({
         if (res.ok) {
           const data = await res.json();
           setLiveConflicts(data.conflicts || []);
+           setPreviewIndex(data.newSessionIndex ?? session?.sessionIndex ?? null);
         }
       } catch {
         setLiveConflicts([]);
@@ -115,6 +122,15 @@ export function UpdateSessionDialog({
   const activeTeachers = (staffList || []).map((s: any) => ({ ...s, _isActive: s.status === "Hoạt động" }));
   const roomConflicts = liveConflicts.filter(c => c.type === "room");
   const teacherConflicts = liveConflicts.filter(c => c.type === "teacher");
+  const submitUpdate = () => {
+    const data = { sessionDate, shiftTemplateId, roomId: roomId || null, teacherIds, changeReason };
+    if (previewIndex != null && session?.sessionIndex != null && previewIndex !== session.sessionIndex) {
+      setPendingUpdate(data);
+      setConfirmIndexChange(true);
+      return;
+    }
+    onConfirm({ ...data, indexChangeMode: "move_all" });
+  };
 
   return (
     <>
@@ -226,9 +242,46 @@ export function UpdateSessionDialog({
             </Button>
             <Button
               disabled={!sessionDate || !shiftTemplateId || !changeReason.trim() || isPending}
-              onClick={() => onConfirm({ sessionDate, shiftTemplateId, roomId: roomId || null, teacherIds, changeReason })}
+              onClick={submitUpdate}
             >
               {isPending ? "Đang lưu..." : "Cập nhật"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmIndexChange} onOpenChange={setConfirmIndexChange}>
+        <DialogContent className="sm:max-w-[540px]">
+          <DialogHeader>
+            <DialogTitle>Thay đổi vị trí buổi học</DialogTitle>
+            <DialogDescription>
+              Buổi {session?.sessionIndex} sẽ chuyển thành buổi {previewIndex}. Hãy chọn cách xử lý dữ liệu đã gắn với các buổi.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <div className="rounded-md border p-3">
+              <p className="font-medium">Di chuyển toàn bộ thông tin theo buổi</p>
+              <p className="mt-1 text-muted-foreground">Học viên, điểm danh, nội dung, BTVN và chương trình của buổi {session?.sessionIndex} sẽ đi theo sang vị trí {previewIndex}.</p>
+            </div>
+            <div className="rounded-md border p-3">
+              <p className="font-medium">Chỉ di chuyển lịch</p>
+              <p className="mt-1 text-muted-foreground">Chỉ ngày, ca, phòng và giáo viên được dịch chuyển. Toàn bộ dữ liệu khác giữ nguyên theo từng số buổi.</p>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setConfirmIndexChange(false)}>Quay lại</Button>
+            <Button
+              variant="secondary"
+              disabled={isPending}
+              onClick={() => onConfirm({ ...pendingUpdate, indexChangeMode: "preserve_slots" })}
+            >
+              Chỉ di chuyển lịch
+            </Button>
+            <Button
+              disabled={isPending}
+              onClick={() => onConfirm({ ...pendingUpdate, indexChangeMode: "move_all" })}
+            >
+              Di chuyển toàn bộ
             </Button>
           </DialogFooter>
         </DialogContent>

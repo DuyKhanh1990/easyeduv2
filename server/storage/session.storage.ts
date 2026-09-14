@@ -2434,7 +2434,10 @@ export async function excludeClassSessions(params: { classId: string; fromSessio
 // updateClassSession
 // ---------------------------------------------------------------------------
 export async function updateClassSession(id: string, updates: any): Promise<ClassSession> {
-  const { sessionDate, shiftTemplateId, roomId, teacherIds, changeReason, changedBy } = updates;
+  const {
+    sessionDate, shiftTemplateId, roomId, teacherIds, changeReason, changedBy,
+    indexChangeMode = "move_all",
+  } = updates;
   const affectedStudentClassIds: string[] = [];
 
   const updated = await db.transaction(async (tx) => {
@@ -2480,6 +2483,69 @@ export async function updateClassSession(id: string, updates: any): Promise<Clas
           .from(studentClasses)
           .where(eq(studentClasses.classId, existing.classId))
       : [];
+
+    if (indexChangeMode === "preserve_slots") {
+      const fixedSlots = await tx
+        .select()
+        .from(classSessions)
+        .where(eq(classSessions.classId, existing.classId))
+        .orderBy(sql`${classSessions.sessionIndex} ASC NULLS LAST`, asc(classSessions.id));
+      const shifts = await tx
+        .select({ id: shiftTemplates.id, startTime: shiftTemplates.startTime })
+        .from(shiftTemplates);
+      const shiftTime = new Map(shifts.map(shift => [shift.id, shift.startTime ?? "99:99"]));
+      const proposedTeachers = Array.isArray(teacherIds)
+        ? (teacherIds.length > 0 ? teacherIds : null)
+        : existing.teacherIds;
+      const schedules = fixedSlots.map(slot => ({
+        sourceId: slot.id,
+        sessionDate: slot.id === id ? sessionDate : slot.sessionDate,
+        weekday: slot.id === id ? new Date(`${sessionDate}T00:00:00`).getDay() : slot.weekday,
+        shiftTemplateId: slot.id === id ? shiftTemplateId : slot.shiftTemplateId,
+        roomId: slot.id === id ? (roomId ?? slot.roomId) : slot.roomId,
+        teacherIds: slot.id === id ? proposedTeachers : slot.teacherIds,
+        learningFormat: slot.learningFormat,
+      })).sort((a, b) =>
+        a.sessionDate.localeCompare(b.sessionDate) ||
+        shiftTime.get(a.shiftTemplateId)!.localeCompare(shiftTime.get(b.shiftTemplateId)!) ||
+        (fixedSlots.find(s => s.id === a.sourceId)?.sessionIndex ?? 0) -
+          (fixedSlots.find(s => s.id === b.sourceId)?.sessionIndex ?? 0) ||
+        a.sourceId.localeCompare(b.sourceId)
+      );
+
+      const effectivePosition = schedules.findIndex(schedule => schedule.sourceId === id);
+      const originalPosition = fixedSlots.findIndex(slot => slot.id === id);
+      if (effectivePosition !== originalPosition) {
+        for (let position = 0; position < fixedSlots.length; position++) {
+          const schedule = schedules[position];
+          const isChangedSchedule = schedule.sourceId === id;
+          await tx.update(classSessions)
+            .set({
+              sessionDate: schedule.sessionDate,
+              weekday: schedule.weekday,
+              shiftTemplateId: schedule.shiftTemplateId,
+              roomId: schedule.roomId,
+              teacherIds: schedule.teacherIds,
+              learningFormat: schedule.learningFormat,
+              ...(isChangedSchedule ? {
+                changeReason,
+                changedBy,
+                changedAt: new Date(),
+              } : {}),
+              updatedAt: new Date(),
+            })
+            .where(eq(classSessions.id, fixedSlots[position].id));
+        }
+
+        const effectiveId = fixedSlots[effectivePosition].id;
+        affectedStudentClassIds.push(...studentClassRows.map(row => row.id));
+        const [effectiveSession] = await tx
+          .select()
+          .from(classSessions)
+          .where(eq(classSessions.id, effectiveId));
+        return effectiveSession;
+      }
+    }
 
     await tx.update(classSessions)
       .set({
@@ -2572,7 +2638,7 @@ export async function updateClassSession(id: string, updates: any): Promise<Clas
               fromSessionIndex: (boundaryId && newClassIndexById.get(boundaryId)) ?? entry.fromSessionIndex,
             };
           })
-          .sort((a, b) => a.fromSessionIndex - b.fromSessionIndex)
+          .sort((a, b) => Number(a.fromSessionIndex) - Number(b.fromSessionIndex))
           .filter((entry, index, all) => index === 0 || entry.fromSessionIndex !== all[index - 1].fromSessionIndex);
         await tx.update(classes)
           .set({ cycleHistory: remapped, updatedAt: new Date() })
@@ -2609,7 +2675,7 @@ export async function updateClassSession(id: string, updates: any): Promise<Clas
               fromSessionOrder: (boundaryId && newStudentOrderById.get(boundaryId)) ?? entry.fromSessionOrder,
             };
           })
-          .sort((a, b) => a.fromSessionOrder - b.fromSessionOrder)
+          .sort((a, b) => Number(a.fromSessionOrder) - Number(b.fromSessionOrder))
           .filter((entry, index, all) => index === 0 || entry.fromSessionOrder !== all[index - 1].fromSessionOrder);
         await tx.update(studentClasses)
           .set({ cycleHistory: remapped, updatedAt: new Date() })
