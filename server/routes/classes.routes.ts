@@ -2515,6 +2515,7 @@ export function registerClassesRoutes(app: Express): void {
 
       const [toSession] = toSessionId
         ? await db.select({
+            id: classSessions.id,
             sessionIndex: classSessions.sessionIndex,
             sessionDate: classSessions.sessionDate,
             weekday: classSessions.weekday,
@@ -2523,6 +2524,7 @@ export function registerClassesRoutes(app: Express): void {
             eq(classSessions.classId, classId),
           )).limit(1)
         : await db.select({
+            id: classSessions.id,
             sessionIndex: classSessions.sessionIndex,
             sessionDate: classSessions.sessionDate,
             weekday: classSessions.weekday,
@@ -2596,7 +2598,7 @@ export function registerClassesRoutes(app: Express): void {
       await storage.updateClassCycle(classId, {
         fromSessionId,
         startDate,
-        toSessionId,
+        toSessionId: toSession?.id,
         weekdays,
         weekdayConfigs,
         reason,
@@ -2681,17 +2683,13 @@ export function registerClassesRoutes(app: Express): void {
               }
             }
 
-            // Tìm ngày đầu tiên của chu kỳ MỚI (sessions đã được tái tạo sau updateClassCycle)
+            // Tìm ngày đầu tiên của chu kỳ mới sau khi cập nhật lịch tại chỗ.
             let newCycleFirstDate: string | undefined = fromSession.sessionDate ?? undefined;
-            if (fromSession.sessionDate) {
+            if (fromSessionId) {
               const [firstNewRow] = await db
                 .select({ sessionDate: classSessions.sessionDate })
                 .from(classSessions)
-                .where(and(
-                  eq(classSessions.classId, classId),
-                  gte(classSessions.sessionDate, fromSession.sessionDate),
-                ))
-                .orderBy(asc(classSessions.sessionDate))
+                .where(and(eq(classSessions.id, fromSessionId), eq(classSessions.classId, classId)))
                 .limit(1);
               if (firstNewRow?.sessionDate) newCycleFirstDate = firstNewRow.sessionDate;
             }

@@ -224,6 +224,7 @@ export interface IStorage {
   updateClassSession(id: string, updates: any): Promise<ClassSession>;
   updateClassCycle(classId: string, data: {
     fromSessionId: string;
+    toSessionId: string;
     startDate: string;
     weekdays: number[];
     weekdayConfigs: Record<number, { shiftTemplateId: string; teacherIds: string[] }>;
@@ -657,6 +658,7 @@ export class DatabaseStorage implements IStorage {
 
   async updateClassCycle(classId: string, data: {
     fromSessionId: string;
+    toSessionId: string;
     startDate: string;
     weekdays: number[];
     weekdayConfigs: Record<number, { shiftTemplateId: string; teacherIds: string[] }>;

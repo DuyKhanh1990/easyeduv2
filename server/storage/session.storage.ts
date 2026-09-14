@@ -2712,140 +2712,99 @@ export async function updateClassSession(id: string, updates: any): Promise<Clas
 // ---------------------------------------------------------------------------
 export async function updateClassCycle(classId: string, data: {
   fromSessionId: string;
+  toSessionId: string;
   startDate: string;
   weekdays: number[];
   weekdayConfigs: Record<number, { shiftTemplateId: string; teacherIds: string[]; roomId?: string }>;
   reason: string;
   userId: string;
 }): Promise<void> {
-  const { fromSessionId, startDate, weekdays, weekdayConfigs, reason, userId } = data;
-
-  const [fromSession] = await db.select().from(classSessions).where(and(
-    eq(classSessions.id, fromSessionId),
-    eq(classSessions.classId, classId),
-  ));
-  const [toSession] = await db.select().from(classSessions)
-    .where(eq(classSessions.classId, classId))
-    .orderBy(desc(classSessions.sessionIndex))
-    .limit(1);
-
-  if (!fromSession || !toSession) throw new Error("Không tìm thấy buổi học");
+  const { fromSessionId, toSessionId, startDate, weekdays, weekdayConfigs, reason, userId } = data;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
     throw new Error("Ngày bắt đầu không hợp lệ");
   }
-
-  const fromIndex = fromSession.sessionIndex || 0;
-  const toIndex = toSession.sessionIndex || 0;
-
-  if (fromIndex > toIndex) throw new Error("Buổi bắt đầu phải nhỏ hơn hoặc bằng buổi kết thúc");
-
-  const [classRecord] = await db.select({ evaluationCriteriaIds: classes.evaluationCriteriaIds }).from(classes).where(eq(classes.id, classId));
+  const parsedStartDate = new Date(`${startDate}T00:00:00`);
+  const normalizedStartDate = Number.isNaN(parsedStartDate.getTime())
+    ? ""
+    : `${parsedStartDate.getFullYear()}-${String(parsedStartDate.getMonth() + 1).padStart(2, "0")}-${String(parsedStartDate.getDate()).padStart(2, "0")}`;
+  if (normalizedStartDate !== startDate) {
+    throw new Error("Ngày bắt đầu không hợp lệ");
+  }
+  if (
+    !Array.isArray(weekdays) ||
+    weekdays.length === 0 ||
+    weekdays.some(day => !Number.isInteger(day) || day < 0 || day > 6) ||
+    new Set(weekdays).size !== weekdays.length
+  ) {
+    throw new Error("Chu kỳ phải có ít nhất một thứ hợp lệ và không được trùng");
+  }
 
   await db.transaction(async (tx) => {
+    const [[fromSession], [toSession], [lastClassSession]] = await Promise.all([
+      tx.select().from(classSessions).where(and(
+        eq(classSessions.id, fromSessionId),
+        eq(classSessions.classId, classId),
+      )).limit(1).for("update"),
+      tx.select().from(classSessions).where(and(
+        eq(classSessions.id, toSessionId),
+        eq(classSessions.classId, classId),
+      )).limit(1).for("update"),
+      tx.select({ id: classSessions.id, sessionIndex: classSessions.sessionIndex })
+        .from(classSessions)
+        .where(eq(classSessions.classId, classId))
+        .orderBy(desc(classSessions.sessionIndex))
+        .limit(1)
+        .for("update"),
+    ]);
+    if (!fromSession || !toSession || !lastClassSession) throw new Error("Không tìm thấy buổi học");
+
+    const fromIndex = fromSession.sessionIndex || 0;
+    const toIndex = toSession.sessionIndex || 0;
+    if (fromIndex > toIndex) {
+      throw new Error("Buổi bắt đầu phải nhỏ hơn hoặc bằng buổi kết thúc");
+    }
+    if (toSession.id !== lastClassSession.id || toIndex !== lastClassSession.sessionIndex) {
+      throw new Error("Cập nhật chu kỳ phải áp dụng liên tục đến buổi cuối cùng của lớp");
+    }
+
     const sessionsInRange = await tx.select().from(classSessions).where(and(
       eq(classSessions.classId, classId),
       between(classSessions.sessionIndex, fromIndex, toIndex),
-    ));
+    )).for("update");
 
-    // Validate completed sessions (in-memory, no extra query needed)
-    for (const s of sessionsInRange) {
-      if (s.status === "completed") {
-        throw new Error(`Buổi ${s.sessionIndex} đã hoàn thành, không thể cập nhật chu kỳ`);
-      }
-    }
-
-    // Validate attendance: 1 batch query thay vì N queries riêng lẻ
     const rangeSessionIds = sessionsInRange.map(s => s.id);
-    if (rangeSessionIds.length > 0) {
-      const attendedSessions = await tx
-        .select({ classSessionId: studentSessions.classSessionId })
-        .from(studentSessions)
-        .where(and(
-          inArray(studentSessions.classSessionId, rangeSessionIds),
-          sql`${studentSessions.status} != 'scheduled'`,
-        ))
-        .limit(1);
-      if (attendedSessions.length > 0) {
-        const attendedId = attendedSessions[0].classSessionId;
-        const s = sessionsInRange.find(s => s.id === attendedId);
-        throw new Error(`Buổi ${s?.sessionIndex ?? "?"} đã có dữ liệu điểm danh, không thể cập nhật chu kỳ`);
+    const expectedSessionCount = toIndex - fromIndex + 1;
+    if (sessionsInRange.length !== expectedSessionCount) {
+      throw new Error("Dữ liệu số buổi không liên tục; không thể cập nhật chu kỳ an toàn");
+    }
+    const sessionByIndex = new Map<number, typeof sessionsInRange[number]>();
+    for (const session of sessionsInRange) {
+      if (session.sessionIndex == null || sessionByIndex.has(session.sessionIndex)) {
+        throw new Error("Dữ liệu số buổi bị trùng hoặc thiếu; không thể cập nhật chu kỳ an toàn");
       }
+      sessionByIndex.set(session.sessionIndex, session);
     }
 
-    const sessionIds = sessionsInRange.map(s => s.id);
-
-    // Before deleting, capture which students were enrolled in each session (by sessionIndex)
-    // Also preserve fee-related fields and session content so they survive the cycle update
-    type SavedStudentSession = {
-      studentId: string;
-      studentClassId: string | null;
-      packageId: string | null;
-      packageType: string | null;
-      sessionPrice: string | null;
-      isPaid: boolean | null;
-      note: string | null;
-      sessionOrder: number | null;
-    };
-    const studentsBySessionIndex: Record<number, SavedStudentSession[]> = {};
-    const contentIdsBySessionIndex: Record<number, string[]> = {};
-    if (sessionIds.length > 0) {
-      const existingStudentSessions = await tx.select({
-        classSessionId: studentSessions.classSessionId,
-        studentId: studentSessions.studentId,
-        studentClassId: studentSessions.studentClassId,
-        packageId: studentSessions.packageId,
-        packageType: studentSessions.packageType,
-        sessionPrice: studentSessions.sessionPrice,
-        isPaid: studentSessions.isPaid,
-        note: studentSessions.note,
-        sessionOrder: studentSessions.sessionOrder,
-      }).from(studentSessions).where(inArray(studentSessions.classSessionId, sessionIds));
-
-      for (const ss of existingStudentSessions) {
-        const session = sessionsInRange.find(s => s.id === ss.classSessionId);
-        if (session && session.sessionIndex != null) {
-          if (!studentsBySessionIndex[session.sessionIndex]) {
-            studentsBySessionIndex[session.sessionIndex] = [];
-          }
-          studentsBySessionIndex[session.sessionIndex].push({
-            studentId: ss.studentId,
-            studentClassId: ss.studentClassId ?? null,
-            packageId: ss.packageId ?? null,
-            packageType: ss.packageType ?? null,
-            sessionPrice: ss.sessionPrice ?? null,
-            isPaid: ss.isPaid ?? null,
-            note: ss.note ?? null,
-            sessionOrder: ss.sessionOrder ?? null,
-          });
-        }
-      }
-
-      // Keep the existing session_content IDs and move them to the replacement
-      // class session with the same sessionIndex. This also preserves
-      // student_session_contents (submissions, scores, comments, etc.) because
-      // those rows reference sessionContents.id rather than classSessions.id.
-      const existingSessionContents = await tx
-        .select({
-          id: sessionContents.id,
-          classSessionId: sessionContents.classSessionId,
-        })
-        .from(sessionContents)
-        .where(inArray(sessionContents.classSessionId, sessionIds));
-
-      for (const content of existingSessionContents) {
-        const session = sessionsInRange.find((s) => s.id === content.classSessionId);
-        if (session && session.sessionIndex != null) {
-          if (!contentIdsBySessionIndex[session.sessionIndex]) {
-            contentIdsBySessionIndex[session.sessionIndex] = [];
-          }
-          contentIdsBySessionIndex[session.sessionIndex].push(content.id);
-        }
-      }
-
-      await tx.delete(studentSessions).where(inArray(studentSessions.classSessionId, sessionIds));
-    }
-
-    // Build all session records in JS first, then bulk insert once
+    // Capture affected students only for cycle-history and aggregate recalculation.
+    // Their student_session rows remain untouched.
+    const affectedStudentRows = rangeSessionIds.length > 0
+      ? await tx
+          .select({
+            studentId: studentSessions.studentId,
+            studentClassId: studentSessions.studentClassId,
+            sessionOrder: studentSessions.sessionOrder,
+            sessionIndex: classSessions.sessionIndex,
+          })
+          .from(studentSessions)
+          .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
+          .where(inArray(studentSessions.classSessionId, rangeSessionIds))
+      : [];
+    const allAffectedScIds = Array.from(new Set(
+      affectedStudentRows
+        .map(row => row.studentClassId)
+        .filter((value): value is string => !!value),
+    ));
+    // Build the new schedule in exact sessionIndex order.
     const firstDate = new Date(`${startDate}T00:00:00`);
     if (Number.isNaN(firstDate.getTime())) {
       throw new Error("Ngày bắt đầu không hợp lệ");
@@ -2863,20 +2822,13 @@ export async function updateClassCycle(classId: string, data: {
       return `${year}-${month}-${day}`;
     };
     let currentDate = firstDate;
-    const sessionsToInsert: Array<{
-      classId: string;
+    const scheduleUpdates: Array<{
       sessionIndex: number;
       sessionDate: string;
       weekday: number;
       shiftTemplateId: string;
       teacherIds: string[] | null;
       roomId: string;
-      status: "scheduled";
-      changeReason: string;
-      changedAt: Date;
-      changedBy: string;
-      updatedAt: Date;
-      evaluationCriteriaIds: string[] | null;
     }> = [];
 
     for (let i = fromIndex; i <= toIndex; i++) {
@@ -2892,125 +2844,99 @@ export async function updateClassCycle(classId: string, data: {
       if (!config?.shiftTemplateId) {
         throw new Error(`Chưa cấu hình ca học cho ${wd === 0 ? "CN" : `T${wd + 1}`}`);
       }
+      const existingSession = sessionByIndex.get(i);
+      if (!existingSession) {
+        throw new Error(`Không tìm thấy buổi ${i} để cập nhật`);
+      }
 
-      sessionsToInsert.push({
-        classId,
+      scheduleUpdates.push({
         sessionIndex: i,
         sessionDate: formatDateOnly(currentDate),
         weekday: wd,
         shiftTemplateId: config.shiftTemplateId,
         teacherIds: config.teacherIds && config.teacherIds.length > 0 ? config.teacherIds : null,
-        roomId: config.roomId || fromSession.roomId,
-        status: "scheduled",
-        changeReason: reason,
-        changedAt: new Date(),
-        changedBy: userId,
-        updatedAt: new Date(),
-        evaluationCriteriaIds: classRecord?.evaluationCriteriaIds || null,
+        roomId: config.roomId || existingSession.roomId,
       });
-
-      currentDate.setDate(currentDate.getDate() + 1);
     }
 
-    // Bulk insert tất cả sessions trong 1 query
-    const newSessions = sessionsToInsert.length > 0
-      ? await tx.insert(classSessions).values(sessionsToInsert).returning()
-      : [];
-
-    // Move content records before deleting the old class sessions. Reusing the
-    // original content IDs keeps all personalized content records intact.
-    const newSessionIdByIndex = new Map(
-      newSessions
-        .filter((session) => session.sessionIndex != null)
-        .map((session) => [session.sessionIndex as number, session.id]),
-    );
-    for (const [sessionIndex, contentIds] of Object.entries(contentIdsBySessionIndex)) {
-      const newSessionId = newSessionIdByIndex.get(Number(sessionIndex));
-      if (newSessionId && contentIds.length > 0) {
-        await tx
-          .update(sessionContents)
-          .set({ classSessionId: newSessionId })
-          .where(inArray(sessionContents.id, contentIds));
+    if (scheduleUpdates.length !== expectedSessionCount) {
+      throw new Error("Số lịch mới không khớp số buổi hiện có");
+    }
+    if (fromIndex > 1) {
+      const [previousSession] = await tx
+        .select({
+          sessionDate: classSessions.sessionDate,
+          shiftTemplateId: classSessions.shiftTemplateId,
+        })
+        .from(classSessions)
+        .where(and(
+          eq(classSessions.classId, classId),
+          eq(classSessions.sessionIndex, fromIndex - 1),
+        ))
+        .limit(1)
+        .for("update");
+      const firstSchedule = scheduleUpdates[0];
+      if (!previousSession || !firstSchedule) {
+        throw new Error("Không tìm thấy buổi liền trước để kiểm tra thứ tự");
+      }
+      const shiftIds = [previousSession.shiftTemplateId, firstSchedule.shiftTemplateId].filter(
+        (value): value is string => !!value,
+      );
+      const shiftRows = shiftIds.length > 0
+        ? await tx
+            .select({ id: shiftTemplates.id, startTime: shiftTemplates.startTime })
+            .from(shiftTemplates)
+            .where(inArray(shiftTemplates.id, shiftIds))
+        : [];
+      const startTimeByShiftId = new Map(shiftRows.map(row => [row.id, row.startTime]));
+      const previousSortKey = `${previousSession.sessionDate}T${startTimeByShiftId.get(previousSession.shiftTemplateId ?? "") ?? "00:00"}`;
+      const firstSortKey = `${firstSchedule.sessionDate}T${startTimeByShiftId.get(firstSchedule.shiftTemplateId) ?? "00:00"}`;
+      if (firstSortKey <= previousSortKey) {
+        throw new Error(`Lịch mới của buổi ${fromIndex} phải sau buổi ${fromIndex - 1}`);
       }
     }
 
-    // Any remaining references to the old class sessions are now safe to
-    // remove; moved session contents will not be cascade-deleted.
-    if (sessionIds.length > 0) {
-      await tx.delete(classSessions).where(inArray(classSessions.id, sessionIds));
-    }
-
-    // Re-assign students: gom toàn bộ records → bulk insert 1 lần
-    // Preserve all fee-related fields from the original student sessions
-    const affectedStudentIds = new Set<string>();
-    const allStudentSessionsToInsert: Array<{
-      studentId: string;
-      studentClassId: string | null;
-      classId: string;
-      classSessionId: string;
-      status: "scheduled";
-      packageId: string | null;
-      packageType: string | null;
-      sessionPrice: string | null;
-      isPaid: boolean | null;
-      note: string | null;
-      sessionOrder: number | null;
-    }> = [];
-
-    for (const newSession of newSessions) {
-      const studentsForThisSession = studentsBySessionIndex[newSession.sessionIndex!] ?? [];
-      for (const saved of studentsForThisSession) {
-        allStudentSessionsToInsert.push({
-          studentId: saved.studentId,
-          studentClassId: saved.studentClassId,
-          classId,
-          classSessionId: newSession.id,
-          status: "scheduled",
-          packageId: saved.packageId,
-          packageType: saved.packageType,
-          sessionPrice: saved.sessionPrice,
-          isPaid: saved.isPaid,
-          note: saved.note,
-          sessionOrder: saved.sessionOrder,
-        });
-        affectedStudentIds.add(saved.studentId);
+    const changedAt = new Date();
+    for (const schedule of scheduleUpdates) {
+      const existingSession = sessionByIndex.get(schedule.sessionIndex)!;
+      const [updatedSession] = await tx
+        .update(classSessions)
+        .set({
+          sessionDate: schedule.sessionDate,
+          weekday: schedule.weekday,
+          shiftTemplateId: schedule.shiftTemplateId,
+          teacherIds: schedule.teacherIds,
+          roomId: schedule.roomId,
+          changeReason: reason,
+          changedAt,
+          changedBy: userId,
+          updatedAt: changedAt,
+        })
+        .where(and(
+          eq(classSessions.id, existingSession.id),
+          eq(classSessions.classId, classId),
+          eq(classSessions.sessionIndex, schedule.sessionIndex),
+        ))
+        .returning({ id: classSessions.id });
+      if (!updatedSession) {
+        throw new Error(`Không thể cập nhật chính xác buổi ${schedule.sessionIndex}`);
       }
     }
 
-    if (allStudentSessionsToInsert.length > 0) {
-      await tx.insert(studentSessions).values(allStudentSessionsToInsert);
-    }
-
-    // === Update cycle_history for custom-cycle students ===
-    // Sessions were re-assigned by index above (session N old → session N new).
-    // For students with a custom cycle (scheduledWeekdays set), we must record the new
-    // effective weekdays in cycle_history so that getStudentSessionsByClassSession can
-    // return the correct cycle for every session based on its position.
-    const allAffectedScIds: string[] = [];
-    for (const sessions of Object.values(studentsBySessionIndex)) {
-      for (const ss of sessions) {
-        if (ss.studentClassId && !allAffectedScIds.includes(ss.studentClassId)) {
-          allAffectedScIds.push(ss.studentClassId);
-        }
-      }
-    }
-
+    // === Update cycle_history for students with custom-cycle segments ===
     if (allAffectedScIds.length > 0) {
       const customCycleScs = await tx.select({
         id: studentClasses.id,
         scheduledWeekdays: studentClasses.scheduledWeekdays,
         cycleHistory: sql<any>`cycle_history`,
       }).from(studentClasses)
-        .where(and(
-          inArray(studentClasses.id, allAffectedScIds),
-          sql`${studentClasses.scheduledWeekdays} IS NOT NULL AND array_length(${studentClasses.scheduledWeekdays}, 1) > 0`,
-        ));
+        .where(inArray(studentClasses.id, allAffectedScIds));
 
-      // FIX: Batch fetch weekdays cho tất cả custom cycle students trong 1 query (thay vì N SELECT)
       const allCustomWeekdayRows = customCycleScs.length > 0
         ? await tx.select({
             studentClassId: studentSessions.studentClassId,
             weekday: classSessions.weekday,
+            sessionOrder: studentSessions.sessionOrder,
           })
           .from(studentSessions)
           .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
@@ -3020,61 +2946,78 @@ export async function updateClassCycle(classId: string, data: {
           ))
         : [];
 
-      const weekdaysByScId: Record<string, number[]> = {};
+      const rowsByScId: Record<string, Array<{ weekday: number; sessionOrder: number }>> = {};
       for (const row of allCustomWeekdayRows) {
-        if (!row.studentClassId || row.weekday == null) continue;
-        (weekdaysByScId[row.studentClassId] ??= []).push(row.weekday);
+        if (!row.studentClassId || row.weekday == null || row.sessionOrder == null) continue;
+        (rowsByScId[row.studentClassId] ??= []).push({
+          weekday: row.weekday,
+          sessionOrder: row.sessionOrder,
+        });
       }
 
       for (const sc of customCycleScs) {
-        const rawWeekdays = weekdaysByScId[sc.id];
-        if (!rawWeekdays || rawWeekdays.length === 0) continue;
+        const rows = (rowsByScId[sc.id] ?? []).sort((a, b) => a.sessionOrder - b.sessionOrder);
+        if (rows.length === 0) continue;
 
-        const newUniqueWeekdays = [...new Set(rawWeekdays)].sort((a, b) => a - b);
+        const prevHistory: Array<{ fromSessionOrder: number; weekdays: number[] | null }> =
+          Array.isArray(sc.cycleHistory)
+            ? [...sc.cycleHistory].sort((a, b) => a.fromSessionOrder - b.fromSessionOrder)
+            : [];
+        const hasCustomCycle = (sc.scheduledWeekdays?.length ?? 0) > 0 || prevHistory.length > 0;
+        if (!hasCustomCycle) continue;
 
-        if (fromIndex <= 1) {
-          // Updating from the very first session: just overwrite scheduledWeekdays directly
-          await tx.update(studentClasses)
-            .set({ scheduledWeekdays: newUniqueWeekdays, updatedAt: new Date() })
-            .where(eq(studentClasses.id, sc.id));
-        } else {
-          // Updating from a middle session: keep scheduledWeekdays unchanged (reflects sessions 1..fromIndex-1)
-          // but record the new cycle in cycle_history so sessions fromIndex+ use the correct weekdays.
-          // Find the student's sessionOrder at the FIRST session index in the range where this student
-          // is actually enrolled. The student may have a custom cycle (e.g. T3 only in a T3,T5 class),
-          // so fromIndex might be a T5 session the student never attended — we must scan the full range.
-          let firstUpdatedSessionOrder: number | null = null;
-          for (let i = fromIndex; i <= toIndex; i++) {
-            const found = studentsBySessionIndex[i]?.find(s => s.studentClassId === sc.id);
-            if (found?.sessionOrder != null) {
-              firstUpdatedSessionOrder = found.sessionOrder;
-              break;
-            }
-          }
+        const firstUpdatedSessionOrder = rows[0].sessionOrder;
+        const applicableAtStart = [...prevHistory]
+          .reverse()
+          .find(entry => entry.fromSessionOrder <= firstUpdatedSessionOrder);
+        const effectiveAtStart = applicableAtStart
+          ? applicableAtStart.weekdays
+          : (sc.scheduledWeekdays?.length ? sc.scheduledWeekdays : null);
 
-          if (firstUpdatedSessionOrder != null) {
-            const prevHistory: Array<{ fromSessionOrder: number; weekdays: number[] | null }> =
-              (sc.cycleHistory as any) ?? [];
-
-            // Ensure there's a base entry at sessionOrder 1 recording the original cycle
-            let baseHistory = prevHistory;
-            const hasEarlierEntry = prevHistory.some(h => h.fromSessionOrder < firstUpdatedSessionOrder);
-            if (!hasEarlierEntry && firstUpdatedSessionOrder > 1) {
-              const initialWeekdays = sc.scheduledWeekdays && sc.scheduledWeekdays.length > 0
-                ? sc.scheduledWeekdays
-                : null;
-              baseHistory = [{ fromSessionOrder: 1, weekdays: initialWeekdays }, ...prevHistory];
-            }
-
-            // Add/overwrite entry at firstUpdatedSessionOrder with new weekdays
-            const newHistory = [
-              ...baseHistory.filter(h => h.fromSessionOrder < firstUpdatedSessionOrder),
-              { fromSessionOrder: firstUpdatedSessionOrder, weekdays: newUniqueWeekdays },
-            ];
-
-            await tx.execute(sql`UPDATE student_classes SET cycle_history = ${JSON.stringify(newHistory)}::jsonb WHERE id = ${sc.id}`);
-          }
+        const retainedHistory = prevHistory.filter(entry => entry.fromSessionOrder < firstUpdatedSessionOrder);
+        if (
+          retainedHistory.length === 0 &&
+          firstUpdatedSessionOrder > 1
+        ) {
+          retainedHistory.push({
+            fromSessionOrder: 1,
+            weekdays: sc.scheduledWeekdays?.length ? sc.scheduledWeekdays : null,
+          });
         }
+
+        const suffixBoundaries = [
+          { fromSessionOrder: firstUpdatedSessionOrder, weekdays: effectiveAtStart },
+          ...prevHistory.filter(entry => entry.fromSessionOrder > firstUpdatedSessionOrder),
+        ].sort((a, b) => a.fromSessionOrder - b.fromSessionOrder);
+
+        const rebuiltSuffix = suffixBoundaries.map((boundary, index) => {
+          const nextBoundary = suffixBoundaries[index + 1]?.fromSessionOrder ?? Number.POSITIVE_INFINITY;
+          if (!boundary.weekdays || boundary.weekdays.length === 0) {
+            return { fromSessionOrder: boundary.fromSessionOrder, weekdays: null };
+          }
+          const segmentWeekdays = [...new Set(
+            rows
+              .filter(row => row.sessionOrder >= boundary.fromSessionOrder && row.sessionOrder < nextBoundary)
+              .map(row => row.weekday),
+          )].sort((a, b) => a - b);
+          return {
+            fromSessionOrder: boundary.fromSessionOrder,
+            weekdays: segmentWeekdays.length > 0 ? segmentWeekdays : boundary.weekdays,
+          };
+        });
+
+        const newHistory = [...retainedHistory, ...rebuiltSuffix]
+          .sort((a, b) => a.fromSessionOrder - b.fromSessionOrder)
+          .filter((entry, index, entries) =>
+            index === 0 || entry.fromSessionOrder !== entries[index - 1].fromSessionOrder
+          );
+        await tx.update(studentClasses)
+          .set({
+            cycleHistory: newHistory,
+            scheduledWeekdays: newHistory.at(-1)?.weekdays ?? [],
+            updatedAt: new Date(),
+          })
+          .where(eq(studentClasses.id, sc.id));
       }
     }
     // === End update cycle_history ===
@@ -3119,48 +3062,7 @@ export async function updateClassCycle(classId: string, data: {
     }
     // === End update class-level cycle_history ===
 
-    // FIX: Update studentClasses totals cho tất cả affected students → 2 queries thay vì 2N
-    const affectedStudentIdsList = [...affectedStudentIds];
-    if (affectedStudentIdsList.length > 0) {
-      // 1 GROUP BY query thay vì N SELECT riêng lẻ
-      const studentStats = await tx.select({
-        studentId: studentSessions.studentId,
-        startDate: sql<string>`MIN(${classSessions.sessionDate})`,
-        endDate:   sql<string>`MAX(${classSessions.sessionDate})`,
-        total:     sql<number>`COUNT(*)::int`,
-      })
-      .from(studentSessions)
-      .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
-      .where(inArray(studentSessions.studentId, affectedStudentIdsList))
-      .groupBy(studentSessions.studentId);
-
-      const statsMap: Record<string, typeof studentStats[number]> = {};
-      for (const s of studentStats) {
-        if (s.studentId) statsMap[s.studentId] = s;
-      }
-
-      // 1 VALUES-list bulk UPDATE thay vì N UPDATE riêng lẻ
-      // studentIds/classId là UUIDs (safe). Dates và counts từ DB (safe).
-      const rows = affectedStudentIdsList
-        .filter(id => !!statsMap[id])
-        .map(id => {
-          const s = statsMap[id];
-          return `('${id}'::uuid, '${s.startDate}'::date, '${s.endDate}'::date, ${s.total})`;
-        });
-
-      if (rows.length > 0) {
-        await tx.execute(sql.raw(
-          `UPDATE student_classes AS sc
-           SET total_sessions  = v.total::int,
-               start_date      = v.start_date,
-               end_date        = v.end_date,
-               updated_at      = NOW()
-           FROM (VALUES ${rows.join(',')}) AS v(student_id, start_date, end_date, total)
-           WHERE sc.class_id   = '${classId}'::uuid
-             AND sc.student_id = v.student_id`
-        ));
-      }
-    }
+    await batchRecalculateStudentClasses(allAffectedScIds, classId, tx);
   });
 }
 

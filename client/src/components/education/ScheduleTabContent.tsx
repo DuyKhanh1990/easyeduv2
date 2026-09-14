@@ -541,7 +541,7 @@ export function ScheduleTabContent({
         onConfirm={(data) =>
           runWithConflictCheck(
             `/api/classes/${classId}/preview-cycle-conflicts`,
-              { fromSessionId: data.fromSessionId, startDate: data.startDate, weekdays: data.weekdays, weekdayConfigs: data.weekdayConfigs },
+              { fromSessionId: data.fromSessionId, toSessionId: data.toSessionId, startDate: data.startDate, weekdays: data.weekdays, weekdayConfigs: data.weekdayConfigs },
             () => updateCycleMutation.mutate(data),
           )
         }

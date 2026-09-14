@@ -82,6 +82,9 @@ export function UpdateCycleDialog({
   const [isLiveChecking, setIsLiveChecking] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toSessionId = [...(classSessions || [])]
+    .sort((a: any, b: any) => (a.sessionIndex ?? 0) - (b.sessionIndex ?? 0))
+    .at(-1)?.id ?? "";
 
   const { data: staffList } = useQuery<any[]>({
     queryKey: ["/api/staff?minimal=true"],
@@ -194,7 +197,7 @@ export function UpdateCycleDialog({
           method: "POST",
           headers: { "Content-Type": "application/json", ...getAuthHeaders() },
           credentials: "include",
-          body: JSON.stringify({ fromSessionId, startDate, weekdays: selectedWeekdays, weekdayConfigs }),
+          body: JSON.stringify({ fromSessionId, toSessionId, startDate, weekdays: selectedWeekdays, weekdayConfigs }),
         });
         if (res.ok) {
           const data = await res.json();
@@ -207,7 +210,7 @@ export function UpdateCycleDialog({
       }
     }, 800);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [isOpen, classId, classData?.id, fromSessionId, startDate, selectedWeekdays, weekdayConfigs]);
+  }, [isOpen, classId, classData?.id, fromSessionId, toSessionId, startDate, selectedWeekdays, weekdayConfigs]);
 
   const allTeachers = (staffList || []).map((s: any) => ({ ...s, _isActive: s.status === "Hoạt động" }));
   const activeTeachers = allTeachers;
@@ -258,7 +261,7 @@ export function UpdateCycleDialog({
       setShowErrors(true);
       return;
     }
-    onConfirm({ fromSessionId, startDate, weekdays: selectedWeekdays, weekdayConfigs, reason });
+    onConfirm({ fromSessionId, toSessionId, startDate, weekdays: selectedWeekdays, weekdayConfigs, reason });
   };
 
   const roomConflicts = liveConflicts.filter(c => c.type === "room");
@@ -272,7 +275,7 @@ export function UpdateCycleDialog({
           <DialogHeader>
             <DialogTitle>Cập nhật chu kỳ</DialogTitle>
             <DialogDescription>
-              Sinh lại các buổi theo cấu hình mới. Học viên có lịch riêng sẽ tự động được ánh xạ theo index buổi sang ngày mới tương ứng.
+              Dịch chuyển ngày, ca, phòng và giáo viên theo chu kỳ mới; mọi dữ liệu của từng số buổi được giữ nguyên.
             </DialogDescription>
           </DialogHeader>
 
@@ -373,10 +376,10 @@ export function UpdateCycleDialog({
                       <div className="space-y-1">
                         <p className="font-semibold">Lưu ý quan trọng:</p>
                         <ul className="list-disc ml-4 space-y-1">
-                          <li>Hệ thống sẽ xoá các buổi cũ trong khoảng đã chọn và sinh lại lịch mới.</li>
+                          <li>Hệ thống giữ nguyên ID và toàn bộ dữ liệu của từng buổi, chỉ cập nhật thông tin lịch theo đúng thứ tự.</li>
                             <li>Nếu ngày đã chọn không thuộc chu kỳ, buổi đầu tiên sẽ được dời tới ngày gần nhất tiếp theo thuộc chu kỳ; các buổi sau được sinh theo các thứ trong tuần đến buổi cuối cùng.</li>
-                           <li>Chỉ thực hiện được nếu các buổi trong khoảng đều ở trạng thái 'scheduled' và chưa có điểm danh.</li>
-                          <li>Số lượng buổi (session index) giữ nguyên. Học viên lịch riêng tự động ánh xạ sang ngày mới.</li>
+                           <li>Điểm danh, nội dung, BTVN, chương trình và tài chính vẫn gắn với đúng số buổi hiện tại.</li>
+                          <li>Số lượng buổi và session index được giữ nguyên.</li>
                         </ul>
                       </div>
                     </div>
