@@ -39,3 +39,4 @@
 - [Admin Hub connection testing](admin-hub-connection-testing.md) — cross-domain claim cần endpoint public và mã được sinh trong cùng môi trường/database.
 - [Class session ordering](class-session-ordering.md) — thứ tự buổi phải theo ngày/giờ; lưu buổi sẽ đánh lại sessionIndex nhưng giữ nguyên ID và dữ liệu gắn với ID.
 - [Web Push tenant scope](web-push-tenant-scope.md) — dùng chung VAPID keys, nhưng subscription luôn scope theo centerConfig.id + userId và phải push schema từng database.
+- [Harbor npm lockfile URLs](harbor-npm-lockfile-urls.md) — Docker build ngoài Replit phải đổi cả package-firewall.replit.local và .internal về npmjs.org trước npm ci.
