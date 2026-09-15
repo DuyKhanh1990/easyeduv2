@@ -665,6 +665,18 @@ export async function getInvoices(filters: {
     WHERE paid_count_schedule.invoice_id = ${invoices.id}
       AND paid_count_schedule.status IN ('paid', 'confirmed')
   )`;
+  const paidOnlyScheduleCountExpr = sql`(
+    SELECT COUNT(*)
+    FROM invoice_payment_schedule AS paid_only_schedule
+    WHERE paid_only_schedule.invoice_id = ${invoices.id}
+      AND paid_only_schedule.status = 'paid'
+  )`;
+  const confirmedScheduleCountExpr = sql`(
+    SELECT COUNT(*)
+    FROM invoice_payment_schedule AS confirmed_schedule
+    WHERE confirmed_schedule.invoice_id = ${invoices.id}
+      AND confirmed_schedule.status = 'confirmed'
+  )`;
   const visibleRowCountExpr = sql`
     CASE
       WHEN ${scheduleCountExpr} > 1 THEN ${scheduleCountExpr}
@@ -673,14 +685,14 @@ export async function getInvoices(filters: {
   `;
   const paidRowCountExpr = sql`
     CASE
-      WHEN ${scheduleCountExpr} > 1 THEN CASE WHEN ${invoices.status} = 'confirmed' THEN 0 ELSE ${paidScheduleCountExpr} END
-      WHEN ${scheduleCountExpr} = 1 THEN CASE WHEN ${invoices.status} = 'confirmed' THEN 0 ELSE ${paidScheduleCountExpr} END
+      WHEN ${scheduleCountExpr} > 0 THEN ${paidOnlyScheduleCountExpr}
       WHEN ${invoices.status} = 'paid' THEN 1
       ELSE 0
     END
   `;
   const confirmedRowCountExpr = sql`
     CASE
+      WHEN ${scheduleCountExpr} > 0 THEN ${confirmedScheduleCountExpr}
       WHEN ${invoices.status} = 'confirmed' THEN 1
       ELSE 0
     END
@@ -695,8 +707,7 @@ export async function getInvoices(filters: {
     END
   `;
   const effectivelyPaid = sql`(
-    (${invoices.status} != 'confirmed' AND ${scheduleCountExpr} > 1 AND ${paidScheduleCountExpr} > 0)
-    OR (${invoices.status} != 'confirmed' AND ${scheduleCountExpr} = 1 AND ${paidScheduleCountExpr} = 1)
+    (${scheduleCountExpr} > 0 AND ${paidOnlyScheduleCountExpr} > 0)
     OR (${scheduleCountExpr} = 0 AND ${invoices.status} = 'paid')
   )`;
   const effectivelyUnpaid = sql`(
@@ -710,7 +721,10 @@ export async function getInvoices(filters: {
   } else if (f.tabFilter === "paid") {
     tabConditions.push(effectivelyPaid as any);
   } else if (f.tabFilter === "confirmed") {
-    tabConditions.push(sql`${invoices.status} = 'confirmed'` as any);
+    tabConditions.push(sql`(
+      (${scheduleCountExpr} > 0 AND ${confirmedScheduleCountExpr} > 0)
+      OR (${scheduleCountExpr} = 0 AND ${invoices.status} = 'confirmed')
+    )` as any);
   }
   else if (f.tabFilter === "debt")    tabConditions.push(hasOutstandingDebt as any);
   const tabWhere = tabConditions.length > 0 ? and(...tabConditions) : undefined;
@@ -1796,10 +1810,7 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
         .filter((schedule) => isPaidScheduleStatus(schedule.status))
         .reduce((sum, schedule) => sum + parseFloat(schedule.amount ?? "0"), 0);
       const remainingAmount = Math.max(0, grandTotal - paidAmount);
-      const hasConfirmedSchedule = savedSchedule.some((schedule) => schedule.status === "confirmed");
-      const scheduleStatus = hasConfirmedSchedule
-        ? "confirmed"
-        : paidAmount >= grandTotal && grandTotal > 0
+      const scheduleStatus = paidAmount >= grandTotal && grandTotal > 0
         ? "paid"
         : paidAmount > 0
           ? "partial"
@@ -1991,10 +2002,7 @@ export async function updateInvoiceScheduleStatus(scheduleId: string, status: st
       .filter(schedule => isPaidScheduleStatus(schedule.status))
         .reduce((sum, schedule) => sum + parseFloat(schedule.amount ?? "0"), 0);
       const remainingAmount = Math.max(0, grandTotal - paidAmount);
-      const hasConfirmed = schedules.some(schedule => schedule.status === "confirmed");
-      const summaryStatus = hasConfirmed
-        ? "confirmed"
-        : paidAmount >= grandTotal && grandTotal > 0
+      const summaryStatus = paidAmount >= grandTotal && grandTotal > 0
         ? "paid"
         : paidAmount > 0
         ? "partial"
