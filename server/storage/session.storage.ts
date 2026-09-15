@@ -1041,20 +1041,29 @@ export async function extendStudentSessions(data: {
 
   // Send the same created-invoice notification as manual invoice creation,
   // only after the transaction has committed successfully.
-  for (const invoice of createdInvoiceNotifications) {
-    sendInvoiceCreatedNotification(
-      invoice.invoiceCode,
-      invoice.grandTotal,
-      invoice.studentId,
-      data.userId,
-      invoice.invoiceId,
-      null,
-      invoice.note,
-      invoice.status,
-    ).catch((err) => {
-      console.error("[InvoiceNotify] AUTO creation error:", err);
-    });
-  }
+  const notificationResults = await Promise.allSettled(
+    createdInvoiceNotifications.map((invoice) =>
+      sendInvoiceCreatedNotification(
+        invoice.invoiceCode,
+        invoice.grandTotal,
+        invoice.studentId,
+        data.userId,
+        invoice.invoiceId,
+        null,
+        invoice.note,
+        invoice.status,
+      ),
+    ),
+  );
+  notificationResults.forEach((result, index) => {
+    if (result.status === "rejected") {
+      console.error(
+        "[InvoiceNotify] AUTO creation error:",
+        createdInvoiceNotifications[index]?.invoiceCode,
+        result.reason,
+      );
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
