@@ -67,11 +67,44 @@
 | Cập nhật lịch học (buổi đơn) | `Calendar` | `{ date, sessionId, classId }` — `date` = ngày **mới** |
 | Cập nhật chu kỳ học | `Calendar` | `{ date, classId }` — `date` = ngày đầu chu kỳ **mới** |
 | Loại trừ lịch học | `Calendar` | `{ date, classId }` — `date` = buổi tiếp theo **sau** khoảng loại trừ |
-| Giao nội dung / BTVN | `Assignments` | `{ date, classId }` — `date` = ngày buổi học giao nội dung |
+| Chỉ giao BTVN | `Assignments` | `{ date, classId }` — `date` = ngày buổi học giao BTVN |
+| Giao bài học hoặc bài học + BTVN | `Calendar` | `{ date, sessionId, classId }` — mở đúng buổi học để thấy toàn bộ nội dung |
 | Bảng điểm được publish | `ScoreSheet` | `{ classId }` |
 | Hoá đơn học phí tạo mới | `Invoices` | `{ invoiceId }` |
 | Xác nhận / Nhắc thanh toán | `Invoices` | `{ invoiceId }` |
 | Tin nhắn chat mới | `Chat` | `{ topicId, referenceType }` |
+
+### 3.4 Quy tắc riêng cho thông báo giao nội dung
+
+Server đã tính sẵn `deeplink` khi tạo thông báo:
+
+- Chỉ có nội dung loại BTVN (`Bài tập về nhà`, `homework`, hoặc `BTVN`):
+  ```json
+  {
+    "screen": "Assignments",
+    "params": {
+      "date": "2026-09-15",
+      "classId": "uuid-lớp"
+    }
+  }
+  ```
+- Có bài học, hoặc có cả bài học và BTVN:
+  ```json
+  {
+    "screen": "Calendar",
+    "params": {
+      "date": "2026-09-15",
+      "sessionId": "uuid-buổi-học",
+      "classId": "uuid-lớp"
+    }
+  }
+  ```
+
+App không được suy luận lại `screen` từ tiêu đề. Hãy đọc `item.deeplink.screen`
+và `item.deeplink.params` rồi navigate theo giá trị server trả về.
+
+Khi `screen = "Assignments"` và `classId` không tìm thấy dòng nào, không hiển thị màn hình
+trống. Giữ bộ lọc ngày và tải lại danh sách không áp dụng `classId`.
 
 ---
 
