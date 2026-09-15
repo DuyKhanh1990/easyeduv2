@@ -486,10 +486,12 @@ export async function updateStaff(id: string, updates: any, allowedLocationIds: 
     omicallPasswords,
     ...staffUpdates
   } = updates;
+  const normalizedUsername = typeof username === "string" ? username.trim().toLowerCase() : "";
+  const normalizedPassword = typeof password === "string" ? password.trim() : "";
 
-  if (username) {
+  if (normalizedUsername) {
     const [existingUser] = await db.select({ id: users.id }).from(users)
-      .where(eq(users.username, username));
+      .where(sql`LOWER(${users.username}) = ${normalizedUsername}`);
     const [currentStaff] = await db.select({ userId: staff.userId }).from(staff).where(eq(staff.id, id));
     if (existingUser && currentStaff && existingUser.id !== currentStaff.userId) {
       throw new Error(`Tài khoản "${username}" đã tồn tại trong hệ thống`);
@@ -512,10 +514,11 @@ export async function updateStaff(id: string, updates: any, allowedLocationIds: 
     const [existingStaff] = await tx.select({ id: staff.id, userId: staff.userId }).from(staff).where(whereClause).for("update");
     if (!existingStaff) throw new Error("Staff not found or access denied");
 
-    if (username || password) {
+    if (normalizedUsername || normalizedPassword) {
       const userUpdates: any = {};
-      if (username) userUpdates.username = username;
-      if (password) userUpdates.passwordHash = hashPassword(password);
+      if (normalizedUsername) userUpdates.username = normalizedUsername;
+      if (normalizedPassword) userUpdates.passwordHash = hashPassword(normalizedPassword);
+      userUpdates.updatedAt = new Date();
       await tx.update(users).set(userUpdates).where(eq(users.id, existingStaff.userId));
     }
 

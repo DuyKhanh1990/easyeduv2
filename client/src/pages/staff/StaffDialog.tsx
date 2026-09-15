@@ -39,7 +39,11 @@ const formSchema = z.object({
   fullName: z.string().min(1, "Tên là bắt buộc"),
   code: z.string().min(1, "Mã là bắt buộc"),
   username: z.string().min(1, "Tài khoản là bắt buộc"),
-  password: z.string().min(6, "Mật khẩu tối thiểu 6 ký tự").optional(),
+  // When editing, an empty value means "keep the current password".
+  password: z.union([
+    z.string().min(6, "Mật khẩu tối thiểu 6 ký tự"),
+    z.literal(""),
+  ]).optional(),
   phone: z.string().optional().nullable(),
   email: z.string().email("Email không hợp lệ").optional().nullable().or(z.literal("")),
   address: z.string().optional().nullable(),
@@ -110,7 +114,7 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
         ),
         code: staff?.code || "",
         username: staff?.username || "",
-        password: "123456",
+        password: staff ? "" : "123456",
         phone: staff?.phone || "",
         email: staff?.email || "",
         address: staff?.address || "",
