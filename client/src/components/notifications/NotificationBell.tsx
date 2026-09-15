@@ -415,7 +415,9 @@ export function NotificationBell() {
   const isStudent = !!myPerms?.isStudent;
 
   const { data: allNotifications = [], isLoading } = useNotifications();
-  const notifications = allNotifications;
+  // Chat notifications remain persisted for audit/history and Web Push, but
+  // stay out of the bell so important schedule/finance alerts remain visible.
+  const notifications = allNotifications.filter((n) => n.category !== "chat");
   const unreadCount = useUnreadCount();
   const markAsRead = useMarkAsRead();
   const markAllAsRead = useMarkAllAsRead();

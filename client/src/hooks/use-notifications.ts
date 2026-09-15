@@ -20,7 +20,9 @@ export function useNotifications() {
 
 export function useUnreadCount() {
   const { data } = useNotifications();
-  return data?.filter((n) => !n.isRead).length ?? 0;
+  // Chat notifications are kept in the database and delivered through
+  // chat/Web Push, but do not occupy the web notification bell.
+  return data?.filter((n) => !n.isRead && n.category !== "chat").length ?? 0;
 }
 
 export function useMarkAsRead() {
