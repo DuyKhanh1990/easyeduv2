@@ -9,6 +9,7 @@ import { sessionContents, activityLogs, publicHolidays } from "@shared/schema";
 import { studentWalletTransactions } from "@shared/schema";
 import { distributeInvoiceFeeToSessions } from "./invoice-session-allocation.storage";
 import { getNextLocationCode } from "./finance.storage";
+import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 
 import type { Class } from "./base";
 
@@ -1166,7 +1167,15 @@ export async function scheduleClassStudents(classId: string, configs: any[], use
 
   const allSessions = await getClassSessions(classId);
 
-  const autoCreatedInvoices: Array<{ id: string; studentId: string; classId: string }> = [];
+  const autoCreatedInvoices: Array<{
+    id: string;
+    studentId: string;
+    classId: string;
+    code: string | null;
+    grandTotal: string | number | null;
+    note: string | null;
+    status: string | null;
+  }> = [];
 
   await db.transaction(async (tx) => {
     for (const config of configs) {
@@ -1529,6 +1538,10 @@ export async function scheduleClassStudents(classId: string, configs: any[], use
               id: newInvoice.id,
               studentId: sid,
               classId,
+              code: newInvoice.code ?? null,
+              grandTotal: newInvoice.grandTotal ?? grandTotal.toString(),
+              note: newInvoice.description ?? null,
+              status: newInvoice.status ?? "unpaid",
             });
           }
         }
@@ -1539,6 +1552,34 @@ export async function scheduleClassStudents(classId: string, configs: any[], use
   for (const inv of autoCreatedInvoices) {
     await distributeInvoiceFeeToSessions(inv.id, inv.studentId, inv.classId);
   }
+
+  // The schedule flow creates invoices inside this transaction, so use the
+  // same post-commit notification path as manual invoices. This covers the
+  // "Xếp lịch" screens (including bulk assignment) without sending a push
+  // before the invoice is committed.
+  const notificationResults = await Promise.allSettled(
+    autoCreatedInvoices.map((invoice) =>
+      sendInvoiceCreatedNotification(
+        invoice.code,
+        invoice.grandTotal,
+        invoice.studentId,
+        userId,
+        invoice.id,
+        null,
+        invoice.note,
+        invoice.status,
+      ),
+    ),
+  );
+  notificationResults.forEach((result, index) => {
+    if (result.status === "rejected") {
+      console.error(
+        "[InvoiceNotify] AUTO schedule creation error:",
+        autoCreatedInvoices[index]?.code,
+        result.reason,
+      );
+    }
+  });
 }
 
 // ==========================================
