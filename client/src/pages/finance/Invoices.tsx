@@ -2303,6 +2303,19 @@ export default function Invoices() {
                     </ActionMenuItem>
                     <ActionMenuItem
                       className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
+                      disabled={bulkUpdateStatusMutation.isPending}
+                      onClick={() => {
+                        bulkUpdateStatusMutation.mutate({
+                          invoiceIds: Array.from(selectedIds),
+                          scheduleIds: Array.from(selectedSchedules.keys()),
+                          status: "confirmed",
+                        });
+                      }}
+                    >
+                      <CheckCircle className="w-4 h-4 text-teal-600" /><span>Đã xác nhận</span>
+                    </ActionMenuItem>
+                    <ActionMenuItem
+                      className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
                       disabled={bulkAssignCommissionMutation.isPending}
                       onClick={() => {
                         setBulkCommissionOpen(true);
