@@ -9,6 +9,7 @@ import {
   shiftTemplates,
   staff,
   studentLeaveRequests,
+  studentLocations,
   studentSessions,
   students,
 } from "@shared/schema";
@@ -40,6 +41,13 @@ const updateInputSchema = z.object({
   status: STATUS_SCHEMA.optional(),
   attendanceApprovalMode: ATTENDANCE_APPROVAL_MODE_SCHEMA.optional().nullable(),
   rejectionReason: z.string().trim().max(5000).optional().nullable(),
+});
+
+const selfRequestInputSchema = z.object({
+  studentId: z.string().uuid().optional(),
+  startDate: z.string().min(1),
+  endDate: z.string().min(1),
+  description: z.string().trim().max(5000).optional().nullable(),
 });
 
 type ScheduleRow = {
@@ -145,7 +153,172 @@ function validateDateRange(startDate: string, endDate: string): string | null {
   return null;
 }
 
+async function getSelfLeaveContext(req: any) {
+  const userId = req.user?.id;
+  if (!userId) return null;
+  const [accountStudent] = await db
+    .select({
+      id: students.id,
+      code: students.code,
+      fullName: students.fullName,
+      type: students.type,
+    })
+    .from(students)
+    .where(eq(students.userId, userId))
+    .limit(1);
+  if (!accountStudent) return null;
+
+  if (accountStudent.type === "Phụ huynh") {
+    const linkedStudents = await db
+      .select({
+        id: students.id,
+        code: students.code,
+        fullName: students.fullName,
+        type: students.type,
+      })
+      .from(students)
+      .where(sql`${students.parentIds} @> ARRAY[${accountStudent.id}]::uuid[]`)
+      .orderBy(asc(students.fullName));
+    return { viewerType: "parent" as const, students: linkedStudents };
+  }
+
+  return { viewerType: "student" as const, students: [accountStudent] };
+}
+
+async function getStudentAssignedLocations(studentId: string) {
+  return db
+    .select({
+      id: locations.id,
+      name: locations.name,
+    })
+    .from(studentLocations)
+    .innerJoin(locations, eq(studentLocations.locationId, locations.id))
+    .where(eq(studentLocations.studentId, studentId))
+    .orderBy(asc(locations.name));
+}
+
 export function registerStudentLeaveRequestRoutes(app: Express) {
+  app.get("/api/student-leave-requests/self/context", async (req, res) => {
+    try {
+      const context = await getSelfLeaveContext(req);
+      if (!context) return res.status(403).json({ message: "Tài khoản này không phải tài khoản học viên/phụ huynh." });
+
+      const studentsWithLocations = await Promise.all(context.students.map(async (student) => ({
+        id: student.id,
+        code: student.code,
+        fullName: student.fullName,
+        locations: await getStudentAssignedLocations(student.id),
+      })));
+      res.json({
+        viewerType: context.viewerType,
+        students: studentsWithLocations,
+      });
+    } catch (error) {
+      console.error("[StudentLeaveRequests] self context error:", error);
+      res.status(500).json({ message: "Không thể tải thông tin học viên." });
+    }
+  });
+
+  app.get("/api/student-leave-requests/self/schedules", async (req, res) => {
+    try {
+      const context = await getSelfLeaveContext(req);
+      if (!context) return res.status(403).json({ message: "Tài khoản này không phải tài khoản học viên/phụ huynh." });
+      const requestedStudentId = String(req.query.studentId ?? "");
+      const student = context.students.find((item) =>
+        context.viewerType === "student" || item.id === requestedStudentId
+      );
+      if (!student) return res.status(403).json({ message: "Học viên không thuộc tài khoản này." });
+
+      const startDate = String(req.query.startDate ?? "");
+      const endDate = String(req.query.endDate ?? "");
+      const dateError = validateDateRange(startDate, endDate);
+      if (dateError) return res.status(400).json({ message: dateError });
+
+      const assignedLocations = await getStudentAssignedLocations(student.id);
+      const locationMap = new Map(assignedLocations.map((location) => [location.id, location.name]));
+      const scheduleGroups = await Promise.all(
+        assignedLocations.map(async (location) => {
+          const schedules = await findSchedules({
+            studentIds: [student.id],
+            locationId: location.id,
+            startDate,
+            endDate,
+          });
+          return schedules.map((schedule) => ({
+            ...formatSchedule(schedule),
+            locationId: location.id,
+            locationName: locationMap.get(location.id) ?? location.name,
+          }));
+        }),
+      );
+
+      res.json(scheduleGroups.flat());
+    } catch (error) {
+      console.error("[StudentLeaveRequests] self schedule list error:", error);
+      res.status(500).json({ message: "Không thể tải lịch học." });
+    }
+  });
+
+  app.post("/api/student-leave-requests/self", async (req, res) => {
+    try {
+      const input = selfRequestInputSchema.parse(req.body);
+      const context = await getSelfLeaveContext(req);
+      if (!context) return res.status(403).json({ message: "Tài khoản này không phải tài khoản học viên/phụ huynh." });
+      const student = context.students.find((item) =>
+        context.viewerType === "student" || item.id === input.studentId
+      );
+      if (!student) return res.status(403).json({ message: "Học viên không thuộc tài khoản này." });
+      const dateError = validateDateRange(input.startDate, input.endDate);
+      if (dateError) return res.status(400).json({ message: dateError });
+
+      const assignedLocations = await getStudentAssignedLocations(student.id);
+      if (assignedLocations.length === 0) {
+        return res.status(400).json({ message: "Học viên chưa được gán cơ sở. Vui lòng liên hệ trung tâm." });
+      }
+
+      const scheduleGroups = await Promise.all(
+        assignedLocations.map(async (location) => ({
+          location,
+          schedules: await findSchedules({
+            studentIds: [student.id],
+            locationId: location.id,
+            startDate: input.startDate,
+            endDate: input.endDate,
+          }),
+        })),
+      );
+
+      const created = await db.transaction(async (tx) => {
+        const result = [];
+        for (const { location, schedules } of scheduleGroups) {
+          const [row] = await tx.insert(studentLeaveRequests).values({
+            studentId: student.id,
+            locationId: location.id,
+            scheduleIds: schedules.map((schedule) => schedule.studentSessionId),
+            scheduleSnapshot: schedules.map(formatSchedule),
+            startDate: input.startDate,
+            endDate: input.endDate,
+            description: input.description?.trim() || null,
+            status: "pending",
+            attendanceApprovalMode: null,
+            rejectionReason: null,
+            createdBy: req.user?.id ?? null,
+          }).returning();
+          result.push(row);
+        }
+        return result;
+      });
+
+      res.status(201).json(created);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Vui lòng nhập đầy đủ thời gian xin nghỉ." });
+      }
+      console.error("[StudentLeaveRequests] self create error:", error);
+      res.status(500).json({ message: "Không thể tạo đơn xin nghỉ." });
+    }
+  });
+
   app.get("/api/student-leave-requests/schedules", async (req, res) => {
     try {
       const studentIds = parseIds(req.query.studentIds);

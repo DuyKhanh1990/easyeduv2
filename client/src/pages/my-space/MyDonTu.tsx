@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   CalendarDays,
@@ -7,6 +7,8 @@ import {
   Clock3,
   FileText,
   Gift,
+  Loader2,
+  Plus,
   Timer,
   Umbrella,
   Wallet,
@@ -15,6 +17,12 @@ import {
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { PageGuideButton } from "@/components/guides/PageGuideDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 type MainTab = "don-tu" | "thuong-phat" | "tam-ung";
@@ -65,6 +73,33 @@ type MyDonTuData = {
   leaveRequests: LeaveRequest[];
   rewards: Reward[];
   advances: Advance[];
+};
+
+type StudentLeaveLocation = {
+  id: string;
+  name: string;
+};
+
+type StudentLeaveStudent = {
+  id: string;
+  code: string;
+  fullName: string;
+  locations: StudentLeaveLocation[];
+};
+
+type StudentLeaveContext = {
+  viewerType: "student" | "parent";
+  students: StudentLeaveStudent[];
+};
+
+type StudentLeaveSchedule = {
+  id: string;
+  className: string;
+  classCode: string;
+  date: string;
+  time: string;
+  teachers?: string;
+  locationName?: string;
 };
 
 const LEAVE_TYPES: Record<string, { label: string; icon: typeof Umbrella; color: string }> = {
