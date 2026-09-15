@@ -57,6 +57,7 @@ const formSchema = z.object({
 });
 
 type FormValues = z.infer<typeof formSchema>;
+const STORED_PASSWORD_MASK = "••••••••";
 
 interface StaffDialogProps {
   open: boolean;
@@ -96,6 +97,7 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
   useEffect(() => {
     if (open) {
       setShowPassword(false);
+      const isEditing = Boolean(staff);
       setVisibleOmicallPasswords({});
       form.reset({
         fullName: staff?.fullName || "",
@@ -114,7 +116,7 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
         ),
         code: staff?.code || "",
         username: staff?.username || "",
-        password: staff ? "" : "123456",
+        password: isEditing ? STORED_PASSWORD_MASK : "123456",
         phone: staff?.phone || "",
         email: staff?.email || "",
         address: staff?.address || "",
@@ -177,6 +179,9 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
       // Chuyển đổi chuỗi rỗng thành null cho trường ngày sinh
       const payload = {
         ...values,
+        // The mask represents an existing password and must never be sent to
+        // the server as a replacement password.
+        password: staff && values.password === STORED_PASSWORD_MASK ? "" : values.password,
         dateOfBirth: values.dateOfBirth === "" ? null : values.dateOfBirth,
         locationIds: values.locationIds || [],
         departmentIds: values.departmentIds || [],
@@ -348,10 +353,15 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
                       <div className="relative">
                         <Input
                           {...field}
+                          value={field.value ?? ""}
                           type={showPassword ? "text" : "password"}
-                          placeholder={staff
-                            ? "Đã lưu — nhập mật khẩu mới nếu muốn đổi"
-                            : "Mật khẩu mặc định: 123456"}
+                          onFocus={() => {
+                            if (staff && field.value === STORED_PASSWORD_MASK) {
+                              field.onChange("");
+                              setShowPassword(false);
+                            }
+                          }}
+                          placeholder={staff ? "Nhập mật khẩu mới nếu muốn đổi" : "Mật khẩu mặc định: 123456"}
                           className={cn(INP, "pr-10")}
                         />
                         <button
