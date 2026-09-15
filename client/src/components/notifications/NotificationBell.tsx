@@ -415,7 +415,7 @@ export function NotificationBell() {
   const isStudent = !!myPerms?.isStudent;
 
   const { data: allNotifications = [], isLoading } = useNotifications();
-  const notifications = allNotifications.filter((n) => n.category !== "chat");
+  const notifications = allNotifications;
   const unreadCount = useUnreadCount();
   const markAsRead = useMarkAsRead();
   const markAllAsRead = useMarkAllAsRead();

@@ -26,6 +26,7 @@ import {
 } from "@shared/schema";
 import { eq, isNotNull } from "drizzle-orm";
 import { pushService } from "./push.service";
+import { webPushService } from "./web-push.service";
 import { tinodeAdmin } from "../lib/tinode-admin";
 import { sendNotification } from "../lib/notification";
 
@@ -236,10 +237,9 @@ async function handleDataPacket(data: TinodeDataPacket): Promise<void> {
     const pushBody  = isDm ? bodyPreview : `${senderName}: ${bodyPreview}`;
     const referenceType = kind === "dm" ? "dm_chat" : "group_chat";
 
-    // Ghi vào chuông thông báo trong app (bảng notifications) + gửi Expo Push
-    // cho từng thành viên. Dùng sendNotification (sendPush:false) để tránh gửi
-    // push 2 lần — push vẫn được gửi riêng bên dưới với nội dung/data dành
-    // riêng cho chat (khác định dạng data so với sendNotification mặc định).
+    // Ghi vào chuông thông báo trong app (bảng notifications). Dùng
+    // sendNotification (sendPush:false) vì mobile và web dùng payload push
+    // riêng cho chat.
     //
     // QUAN TRỌNG: notifications.reference_id là UUID — phải dùng referenceUuid
     // (chat_groups.id hoặc classes.id), KHÔNG dùng Tinode topic string.
@@ -275,6 +275,21 @@ async function handleDataPacket(data: TinodeDataPacket): Promise<void> {
         }),
       ),
     );
+
+    // Gửi Web Push cho các trình duyệt/PWA đã đăng ký.
+    // referenceId phải là topic Tinode để service worker mở đúng cuộc chat.
+    await webPushService.sendToMany(recipients, {
+      title: pushTitle,
+      body: pushBody,
+      data: {
+        type: "chat",
+        referenceId: topic,
+        referenceType,
+        screen: "Chat",
+        params: { topicId: topic, referenceType },
+      },
+      url: `/chat?topicId=${encodeURIComponent(topic)}`,
+    });
 
     if (process.env.NODE_ENV !== "production") console.log(
       `[TinodePush] topic=${topic} kind=${kind} sender=${senderUserId ?? from} title="${pushTitle}" body="${pushBody.slice(0, 60)}" recipients=${recipients.length}`,

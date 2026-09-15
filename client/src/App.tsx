@@ -9,6 +9,7 @@ import { TinodeProvider } from "@/hooks/use-tinode";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useFavicon } from "@/hooks/use-favicon";
 import { LanguageProvider } from "@/hooks/use-language";
+import { useWebPush } from "@/hooks/use-web-push";
 
 const NotFound = lazy(() => import("@/pages/not-found"));
 
@@ -141,12 +142,18 @@ function FaviconUpdater() {
   return null;
 }
 
+function WebPushRegistration() {
+  useWebPush();
+  return null;
+}
+
 function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <LanguageProvider>
           <FaviconUpdater />
+          <WebPushRegistration />
           <TooltipProvider>
             <TinodeProvider>
               <ErrorBoundary>
