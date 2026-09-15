@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChevronDown } from "lucide-react";
+import { STATUS_CONFIG } from "@/types/invoice-types";
 
 interface UpdateStatusMutation {
   mutate: (
@@ -22,7 +23,9 @@ export function ScheduleStatusDropdown({
 }) {
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
-  const isPaid = currentStatus === "paid";
+  const isPaid = currentStatus === "paid" || currentStatus === "confirmed";
+  const currentLabel = STATUS_CONFIG[currentStatus]?.label ?? STATUS_CONFIG.unpaid.label;
+  const statusOptions = ["unpaid", "paid", "confirmed"] as const;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -31,13 +34,13 @@ export function ScheduleStatusDropdown({
           className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded font-medium cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap ${isPaid ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}
           data-testid={`schedule-status-${scheduleId}`}
         >
-          {isPaid ? "Đã thanh toán" : "Chưa thanh toán"}
+          {currentLabel}
           <ChevronDown className="h-3 w-3" />
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-44 p-1" align="start">
         <div className="space-y-0.5">
-          {(["unpaid", "paid"] as const).map(status => (
+          {statusOptions.map(status => (
             <button
               key={status}
               onClick={() =>
@@ -53,8 +56,8 @@ export function ScheduleStatusDropdown({
               className={`w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted transition-colors flex items-center gap-2 ${currentStatus === status ? "font-semibold" : ""}`}
               data-testid={`schedule-status-${status}-${scheduleId}`}
             >
-              <span className={`w-2 h-2 rounded-full ${status === "paid" ? "bg-green-500" : "bg-yellow-500"}`} />
-              {status === "paid" ? "Đã thanh toán" : "Chưa thanh toán"}
+              <span className={`w-2 h-2 rounded-full ${status === "paid" || status === "confirmed" ? "bg-green-500" : "bg-yellow-500"}`} />
+              {STATUS_CONFIG[status].label}
             </button>
           ))}
         </div>

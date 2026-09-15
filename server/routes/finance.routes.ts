@@ -558,9 +558,9 @@ export function registerFinanceRoutes(app: Express): void {
           i.remaining_amount::numeric                                                                      AS remaining_raw,
           i.grand_total::numeric                                                                           AS grand_total,
           COUNT(ps.id)::int                                                                                AS sched_total,
-          SUM(CASE WHEN ps.status = 'paid' THEN 1 ELSE 0 END)::int                                       AS sched_paid_count,
-          COALESCE(SUM(CASE WHEN ps.status = 'paid' THEN ps.amount::numeric ELSE 0 END), 0)              AS sched_paid_sum,
-          MIN(CASE WHEN ps.status != 'paid' THEN ps.due_date END)                                         AS sched_next_due
+          SUM(CASE WHEN ps.status IN ('paid', 'confirmed') THEN 1 ELSE 0 END)::int                       AS sched_paid_count,
+          COALESCE(SUM(CASE WHEN ps.status IN ('paid', 'confirmed') THEN ps.amount::numeric ELSE 0 END), 0) AS sched_paid_sum,
+          MIN(CASE WHEN ps.status NOT IN ('paid', 'confirmed') THEN ps.due_date END)                     AS sched_next_due
         FROM invoices i
         LEFT JOIN invoice_payment_schedule ps ON ps.invoice_id = i.id
         WHERE i.type = 'Thu'
@@ -1479,7 +1479,7 @@ export function registerFinanceRoutes(app: Express): void {
   app.patch("/api/finance/invoice-schedules/:id/status", async (req, res) => {
     try {
       const { status } = req.body;
-      if (!status || !["unpaid", "paid"].includes(status)) {
+       if (!status || !["unpaid", "paid", "confirmed"].includes(status)) {
         return res.status(400).json({ message: "Trạng thái không hợp lệ" });
       }
       const userId = (req as any).user?.id;
@@ -1495,8 +1495,8 @@ export function registerFinanceRoutes(app: Express): void {
 
       // Create wallet entry for Học phí if applicable
       if (scheduleBefore && scheduleBefore.invoiceId) {
-        const prevPaid = scheduleBefore.status === "paid";
-        const nowPaid = status === "paid";
+        const prevPaid = isPaidInvoiceStatus(scheduleBefore.status);
+        const nowPaid = isPaidInvoiceStatus(status);
         if (prevPaid !== nowPaid) {
           const invoice = await storage.getInvoice(scheduleBefore.invoiceId);
           if (invoice && invoice.studentId && invoice.type === "Thu") {
@@ -1514,7 +1514,7 @@ export function registerFinanceRoutes(app: Express): void {
                 .where(eq(invoicePaymentSchedule.invoiceId, scheduleBefore.invoiceId))
                 .orderBy(asc(invoicePaymentSchedule.sortOrder));
               const otherPaidSchedules = allSchedules.filter(
-                (s) => s.id !== req.params.id && s.status === "paid"
+                (s) => s.id !== req.params.id && isPaidInvoiceStatus(s.status)
               );
               const alreadyPaidFromOthers = otherPaidSchedules.reduce(
                 (sum, s) => sum + (parseFloat(s.amount ?? "0") || 0),
@@ -1557,8 +1557,8 @@ export function registerFinanceRoutes(app: Express): void {
 
       // Assign/clear settle code on schedule installment paid status change
       if (scheduleBefore) {
-        const prevPaid = scheduleBefore.status === "paid";
-        const nowPaid = status === "paid";
+        const prevPaid = isPaidInvoiceStatus(scheduleBefore.status);
+        const nowPaid = isPaidInvoiceStatus(status);
         if (!prevPaid && nowPaid) {
           let parentLocId: string | null = null;
           if (scheduleBefore.invoiceId) {
@@ -1598,17 +1598,22 @@ export function registerFinanceRoutes(app: Express): void {
             .from(invoicePaymentSchedule)
             .where(eq(invoicePaymentSchedule.invoiceId, scheduleBefore.invoiceId));
 
-          const allPaid = allSchedules.length > 0 && allSchedules.every(s =>
-            s.id === req.params.id ? status === "paid" : s.status === "paid"
+           const allPaid = allSchedules.length > 0 && allSchedules.every(s =>
+             s.id === req.params.id ? isPaidInvoiceStatus(status) : isPaidInvoiceStatus(s.status)
           );
 
           if (allPaid && userId) {
+             const [parentBefore] = await db
+               .select({ paidBy: invoices.paidBy, paidAt: invoices.paidAt })
+               .from(invoices)
+               .where(eq(invoices.id, scheduleBefore.invoiceId))
+               .limit(1);
             await db.update(invoices)
-              .set({ paidBy: userId, paidAt: new Date() })
+               .set({ paidBy: parentBefore?.paidBy ?? userId, paidAt: parentBefore?.paidAt ?? new Date(), updatedBy: userId, updatedAt: new Date() })
               .where(eq(invoices.id, scheduleBefore.invoiceId));
           } else if (!allPaid) {
             await db.update(invoices)
-              .set({ paidBy: null, paidAt: null })
+               .set({ paidBy: null, paidAt: null, updatedBy: userId, updatedAt: new Date() })
               .where(eq(invoices.id, scheduleBefore.invoiceId));
           }
         }
@@ -1640,7 +1645,7 @@ export function registerFinanceRoutes(app: Express): void {
         try {
           const before = await storage.getInvoice(id);
           if (!before) { results.push({ id, ok: false, error: "Không tìm thấy hoá đơn" }); continue; }
-          if (before.status === "paid") { results.push({ id, ok: true, code: before.code ?? undefined }); continue; }
+          if (isPaidInvoiceStatus(before.status)) { results.push({ id, ok: true, code: before.code ?? undefined }); continue; }
 
           const grandTotal = parseFloat(before.grandTotal ?? "0");
           const paidAt = paymentDate ? new Date(paymentDate) : new Date();
@@ -1660,7 +1665,7 @@ export function registerFinanceRoutes(app: Express): void {
           // Mark all payment schedules as paid
           const schedules = await db.select().from(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.invoiceId, id));
           for (const s of schedules) {
-            if (s.status !== "paid") {
+            if (!isPaidInvoiceStatus(s.status)) {
               await db.update(invoicePaymentSchedule).set({
                 status: "paid",
                 paidAt,
@@ -1730,7 +1735,7 @@ export function registerFinanceRoutes(app: Express): void {
             results.push({ id: schedId, ok: false, error: "Không tìm thấy đợt thanh toán" });
             continue;
           }
-          if (scheduleBefore.status === "paid") {
+          if (isPaidInvoiceStatus(scheduleBefore.status)) {
             results.push({ id: schedId, ok: true, code: scheduleBefore.code ?? undefined });
             continue;
           }
@@ -1765,10 +1770,10 @@ export function registerFinanceRoutes(app: Express): void {
              if (parentInvoice && parentSchedules.length > 0) {
                const grandTotal = parseFloat(parentInvoice.grandTotal ?? "0");
                const paidAmount = parentSchedules
-                 .filter(schedule => schedule.status === "paid")
+                 .filter(schedule => isPaidInvoiceStatus(schedule.status))
                  .reduce((sum, schedule) => sum + parseFloat(schedule.amount ?? "0"), 0);
                const remainingAmount = Math.max(0, grandTotal - paidAmount);
-               const allPaid = parentSchedules.every(schedule => schedule.status === "paid");
+               const allPaid = parentSchedules.every(schedule => isPaidInvoiceStatus(schedule.status));
                const summaryStatus = paidAmount >= grandTotal && grandTotal > 0
                  ? "paid"
                  : paidAmount > 0
@@ -1817,7 +1822,7 @@ export function registerFinanceRoutes(app: Express): void {
                   .where(eq(invoicePaymentSchedule.invoiceId, scheduleBefore.invoiceId))
                   .orderBy(asc(invoicePaymentSchedule.sortOrder));
                 const otherPaidSchedules = allSchedules.filter(
-                  (s) => s.id !== schedId && s.status === "paid"
+                  (s) => s.id !== schedId && isPaidInvoiceStatus(s.status)
                 );
                 const alreadyPaidFromOthers = otherPaidSchedules.reduce(
                   (sum, s) => sum + (parseFloat(s.amount ?? "0") || 0),

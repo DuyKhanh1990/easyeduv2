@@ -479,7 +479,7 @@ function flattenInvoiceRows(invoices: InvoiceRow[]): InvoiceRow[] {
 
     return schedules.map((schedule, index) => {
       const amount = schedule.amount ?? "0";
-      const isPaid = schedule.status === "paid";
+      const isPaid = isInvoicePaidLike(schedule.status);
       const installmentNumber = index + 1;
       return {
         ...invoice,
@@ -2139,7 +2139,7 @@ export default function Invoices() {
               const partialCount  = selectedInvs.filter(i => i.status === "partial").length;
               const publishedCount = selectedInvs.filter(i => i.einvoiceStatus === "published").length;
               const schedArr = Array.from(selectedSchedules.values());
-              const unpaidSchedCount = schedArr.filter(s => s.status !== "paid").length;
+              const unpaidSchedCount = schedArr.filter(s => !isInvoicePaidLike(s.status)).length;
               const publishedSchedCount = schedArr.filter(s => s.einvoiceStatus === "published").length;
               const reasons: string[] = [];
               if (unpaidCount > 0)    reasons.push(`${unpaidCount} hoá đơn ở trạng thái Chưa thanh toán`);
@@ -2993,7 +2993,7 @@ export default function Invoices() {
       {printPreviewSchedule && (() => {
         const { schedule: s, invoice: inv } = printPreviewSchedule;
         const amount = parseFloat(s.amount ?? "0");
-        const isPaid = s.status === "paid";
+        const isPaid = isInvoicePaidLike(s.status);
         const invAny = inv as any;
         const scheduleAsInvoice: any = {
           id: s.id,

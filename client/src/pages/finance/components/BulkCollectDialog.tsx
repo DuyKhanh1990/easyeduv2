@@ -102,14 +102,14 @@ export function BulkCollectDialog({
   const alreadyPaidCount = useMemo(
     () =>
       initialInvoices.filter(inv => isInvoicePaidLike(inv.status)).length +
-      allSchedules.filter(s => s.status === "paid").length,
+      allSchedules.filter(s => isInvoicePaidLike(s.status)).length,
     [initialInvoices, allSchedules]
   );
 
   const notPaidCount = useMemo(
     () =>
       initialInvoices.filter(inv => !isInvoicePaidLike(inv.status)).length +
-      allSchedules.filter(s => s.status !== "paid").length,
+      allSchedules.filter(s => !isInvoicePaidLike(s.status)).length,
     [initialInvoices, allSchedules]
   );
 
@@ -134,7 +134,7 @@ export function BulkCollectDialog({
   const collectMutation = useMutation({
     mutationFn: async () => {
       const unpaidInvoices = checkedInvoices.filter(inv => !isInvoicePaidLike(inv.status));
-      const unpaidSchedules = checkedSchedules.filter(s => s.status !== "paid");
+      const unpaidSchedules = checkedSchedules.filter(s => !isInvoicePaidLike(s.status));
       const ids = unpaidInvoices.map(inv => inv.id);
       const scheduleIds = unpaidSchedules.map(s => s.id);
       if (ids.length === 0 && scheduleIds.length === 0)
@@ -206,7 +206,7 @@ export function BulkCollectDialog({
   const isPending = collectMutation.isPending;
 
   const uncheckedInvoicesToPay = checkedInvoices.filter(inv => !isInvoicePaidLike(inv.status));
-  const uncheckedSchedulesToPay = checkedSchedules.filter(s => s.status !== "paid");
+  const uncheckedSchedulesToPay = checkedSchedules.filter(s => !isInvoicePaidLike(s.status));
   const uncheckedToPay = uncheckedInvoicesToPay.length + uncheckedSchedulesToPay.length;
 
   return (
@@ -302,7 +302,7 @@ export function BulkCollectDialog({
                   })}
                   {filteredSchedules.map(s => {
                     const isChecked = checkedScheduleIds.has(s.id);
-                    const isPaid = s.status === "paid";
+                    const isPaid = isInvoicePaidLike(s.status);
                     const cfg = STATUS_CONFIG[s.status] ?? STATUS_CONFIG["unpaid"];
                     return (
                       <tr
@@ -399,7 +399,7 @@ export function BulkCollectDialog({
                             type="button"
                             onClick={() => toggleSchedule(s.id)}
                             className="shrink-0 text-muted-foreground hover:text-destructive"
-                            disabled={s.status === "paid"}
+                            disabled={isInvoicePaidLike(s.status)}
                           >
                             <X className="h-3 w-3" />
                           </button>

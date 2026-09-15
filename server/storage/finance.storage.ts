@@ -29,6 +29,9 @@ function getBusinessDateString(date = new Date()): string {
 const isPaidInvoiceStatus = (status: string | null | undefined): boolean =>
   status === "paid" || status === "confirmed";
 
+const isPaidScheduleStatus = (status: string | null | undefined): boolean =>
+  status === "paid" || status === "confirmed";
+
 // ==========================================
 // FINANCE - TRANSACTION CATEGORIES
 // ==========================================
@@ -642,7 +645,7 @@ export async function getInvoices(filters: {
           SELECT SUM(paid_schedule.amount::numeric)
           FROM invoice_payment_schedule AS paid_schedule
           WHERE paid_schedule.invoice_id = ${invoices.id}
-            AND paid_schedule.status = 'paid'
+            AND paid_schedule.status IN ('paid', 'confirmed')
         ), 0) > 0
       )
     )
@@ -660,7 +663,7 @@ export async function getInvoices(filters: {
     SELECT COUNT(*)
     FROM invoice_payment_schedule AS paid_count_schedule
     WHERE paid_count_schedule.invoice_id = ${invoices.id}
-      AND paid_count_schedule.status = 'paid'
+      AND paid_count_schedule.status IN ('paid', 'confirmed')
   )`;
   const visibleRowCountExpr = sql`
     CASE
@@ -842,18 +845,19 @@ export async function getInvoices(filters: {
       .select({
         invoiceId: invoicePaymentSchedule.invoiceId,
         total: sql<number>`COUNT(*)::int`,
-        paidCount: sql<number>`SUM(CASE WHEN ${invoicePaymentSchedule.status} = 'paid' THEN 1 ELSE 0 END)::int`,
-        paidSum: sql<string>`COALESCE(SUM(CASE WHEN ${invoicePaymentSchedule.status} = 'paid' THEN ${invoicePaymentSchedule.amount}::numeric ELSE 0 END), 0)::text`,
-        nextDueDate: sql<string | null>`MIN(CASE WHEN ${invoicePaymentSchedule.status} != 'paid' THEN ${invoicePaymentSchedule.dueDate} END)`,
-        lastPaidDate: sql<string | null>`MAX(CASE WHEN ${invoicePaymentSchedule.status} = 'paid' THEN ${invoicePaymentSchedule.dueDate} END)`,
+        paidCount: sql<number>`SUM(CASE WHEN ${invoicePaymentSchedule.status} IN ('paid', 'confirmed') THEN 1 ELSE 0 END)::int`,
+        confirmedCount: sql<number>`SUM(CASE WHEN ${invoicePaymentSchedule.status} = 'confirmed' THEN 1 ELSE 0 END)::int`,
+        paidSum: sql<string>`COALESCE(SUM(CASE WHEN ${invoicePaymentSchedule.status} IN ('paid', 'confirmed') THEN ${invoicePaymentSchedule.amount}::numeric ELSE 0 END), 0)::text`,
+        nextDueDate: sql<string | null>`MIN(CASE WHEN ${invoicePaymentSchedule.status} NOT IN ('paid', 'confirmed') THEN ${invoicePaymentSchedule.dueDate} END)`,
+        lastPaidDate: sql<string | null>`MAX(CASE WHEN ${invoicePaymentSchedule.status} IN ('paid', 'confirmed') THEN ${invoicePaymentSchedule.dueDate} END)`,
       })
       .from(invoicePaymentSchedule)
       .where(inArray(invoicePaymentSchedule.invoiceId, invoiceIds))
       .groupBy(invoicePaymentSchedule.invoiceId);
 
-    const statsMap: Record<string, { total: number; paidCount: number; paidSum: number; nextDueDate: string | null; lastPaidDate: string | null }> = {};
+    const statsMap: Record<string, { total: number; paidCount: number; confirmedCount: number; paidSum: number; nextDueDate: string | null; lastPaidDate: string | null }> = {};
     for (const s of scheduleStats2) {
-      statsMap[s.invoiceId] = { total: Number(s.total), paidCount: Number(s.paidCount), paidSum: parseFloat(s.paidSum ?? "0"), nextDueDate: s.nextDueDate ?? null, lastPaidDate: s.lastPaidDate ?? null };
+      statsMap[s.invoiceId] = { total: Number(s.total), paidCount: Number(s.paidCount), confirmedCount: Number(s.confirmedCount), paidSum: parseFloat(s.paidSum ?? "0"), nextDueDate: s.nextDueDate ?? null, lastPaidDate: s.lastPaidDate ?? null };
     }
 
     for (const row of invoiceRows) {
@@ -868,7 +872,7 @@ export async function getInvoices(filters: {
         row.paidAmount = stats.paidSum.toFixed(2);
         row.remainingAmount = Math.max(0, grand - stats.paidSum).toFixed(2);
         if (stats.paidCount === stats.total) {
-          row.status = "paid";
+          row.status = stats.confirmedCount === stats.total ? "confirmed" : "paid";
         } else if (stats.paidCount > 0) {
           row.status = "partial";
         } else {
@@ -1101,7 +1105,7 @@ export async function getThuChiReportEntries(filters: {
       for (const schedule of schedules) {
         // A missing installment paidAt cannot be assigned to a reporting
         // period without inventing a payment date.
-        if (schedule.status !== "paid" || !isInSelectedPeriod(schedule.paidAt)) continue;
+        if (!isPaidScheduleStatus(schedule.status) || !isInSelectedPeriod(schedule.paidAt)) continue;
         const paymentMethod = schedule.paymentMethod ?? invoice.paymentMethod;
         if (!matchesPaymentMethod(paymentMethod)) continue;
 
@@ -1128,7 +1132,7 @@ export async function getThuChiReportEntries(filters: {
     const singleSchedule = schedules[0];
     const paymentAt = singleSchedule?.paidAt ?? invoice.paidAt;
     const isPaid = singleSchedule
-      ? singleSchedule.status === "paid" || isPaidInvoiceStatus(invoice.status)
+      ? isPaidScheduleStatus(singleSchedule.status) || isPaidInvoiceStatus(invoice.status)
       : invoice.paidAt != null || isPaidInvoiceStatus(invoice.status);
     if (!isPaid || !isInSelectedPeriod(paymentAt)) continue;
 
@@ -1561,8 +1565,8 @@ export async function createInvoice(data: any): Promise<any> {
             dueDate: s.dueDate || defaultDueDate,
             status: s.status ?? "unpaid",
              createdAt: s.createdAt || undefined,
-            paidAt: s.status === "paid" ? (s.paidAt ?? new Date()) : null,
-            paidBy: s.status === "paid" ? (s.paidBy ?? invoiceData.createdBy ?? null) : null,
+            paidAt: isPaidScheduleStatus(s.status) ? (s.paidAt ?? new Date()) : null,
+            paidBy: isPaidScheduleStatus(s.status) ? (s.paidBy ?? invoiceData.createdBy ?? null) : null,
             sortOrder: idx,
             paymentMethod: s.paymentMethod ?? null,
             appliedBankAccount: s.appliedBankAccount ?? null,
@@ -1722,8 +1726,8 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
         const previous = (s.id ? existingById.get(s.id) : undefined)
           ?? (s.code ? existingByCode.get(s.code) : undefined);
         if (previous) retainedIds.add(previous.id);
-        const wasPaid = previous?.status === "paid";
-        const nextStatus = wasPaid ? "paid" : (s.status ?? previous?.status ?? "unpaid");
+        const wasPaid = isPaidScheduleStatus(previous?.status);
+        const nextStatus = wasPaid ? (previous?.status ?? "paid") : (s.status ?? previous?.status ?? "unpaid");
 
         return {
           id: previous?.id,
@@ -1760,13 +1764,13 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
       // A paid row must survive even if an older client omitted it from the
       // submitted schedule. Unpaid rows may still be removed intentionally.
       for (const previous of existingSchedules) {
-        if (previous.status === "paid" && !retainedIds.has(previous.id)) {
+        if (isPaidScheduleStatus(previous.status) && !retainedIds.has(previous.id)) {
           retainedIds.add(previous.id);
         }
       }
 
       for (const previous of existingSchedules) {
-        if (previous.status !== "paid" && !retainedIds.has(previous.id)) {
+        if (!isPaidScheduleStatus(previous.status) && !retainedIds.has(previous.id)) {
           await tx.delete(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.id, previous.id));
         }
       }
@@ -1789,7 +1793,7 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
     if (savedSchedule.length > 0) {
       const grandTotal = parseFloat((toUpdate.grandTotal ?? inv.grandTotal) ?? "0");
       const paidAmount = savedSchedule
-        .filter((schedule) => schedule.status === "paid")
+        .filter((schedule) => isPaidScheduleStatus(schedule.status))
         .reduce((sum, schedule) => sum + parseFloat(schedule.amount ?? "0"), 0);
       const remainingAmount = Math.max(0, grandTotal - paidAmount);
       const scheduleStatus = paidAmount >= grandTotal && grandTotal > 0
@@ -1837,7 +1841,7 @@ export async function splitInvoiceSchedule(scheduleId: string, splitAmount: numb
   return db.transaction(async (tx) => {
     const [schedule] = await tx.select().from(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.id, scheduleId));
     if (!schedule) throw new Error("Không tìm thấy đợt thanh toán");
-    if (schedule.status === "paid") throw new Error("Không thể tách đợt đã thanh toán");
+    if (isPaidScheduleStatus(schedule.status)) throw new Error("Không thể tách đợt đã thanh toán");
 
     const originalAmount = parseFloat(schedule.amount ?? "0");
     if (splitAmount <= 0 || splitAmount >= originalAmount) {
@@ -1865,7 +1869,7 @@ export async function splitInvoiceSchedule(scheduleId: string, splitAmount: numb
     // unpaid installment; if there is none after the current one, reuse the
     // first unpaid installment elsewhere in the schedule.
     const unpaidSchedules = allSchedules
-      .filter(s => s.id !== scheduleId && s.status !== "paid")
+      .filter(s => s.id !== scheduleId && !isPaidScheduleStatus(s.status))
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
     const nextSchedule =
       unpaidSchedules.find(s => (s.sortOrder ?? 0) > currentSortOrder) ??
@@ -1923,7 +1927,7 @@ export async function updateInvoiceSchedule(scheduleId: string, data: {
 }): Promise<any> {
   const [schedule] = await db.select().from(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.id, scheduleId));
   if (!schedule) throw new Error("Không tìm thấy đợt thanh toán");
-  if (schedule.status === "paid" && (data.amount !== undefined || data.dueDate !== undefined)) {
+  if (isPaidScheduleStatus(schedule.status) && (data.amount !== undefined || data.dueDate !== undefined)) {
     throw new Error("Không thể sửa số tiền hoặc hạn thanh toán của đợt đã thanh toán");
   }
   const updateData: any = {};
@@ -1943,13 +1947,20 @@ export async function updateInvoiceSchedule(scheduleId: string, data: {
 
 export async function updateInvoiceScheduleStatus(scheduleId: string, status: string, userId?: string | null): Promise<any> {
   return db.transaction(async (tx) => {
-    const paidAt = status === "paid" ? new Date() : null;
+    const [before] = await tx
+      .select({ status: invoicePaymentSchedule.status, paidAt: invoicePaymentSchedule.paidAt, paidBy: invoicePaymentSchedule.paidBy })
+      .from(invoicePaymentSchedule)
+      .where(eq(invoicePaymentSchedule.id, scheduleId))
+      .limit(1);
+    const wasPaid = isPaidScheduleStatus(before?.status);
+    const nowPaid = isPaidScheduleStatus(status);
+    const paidAt = nowPaid ? (wasPaid ? (before?.paidAt ?? new Date()) : new Date()) : null;
     const [updated] = await tx
       .update(invoicePaymentSchedule)
       .set({
         status,
         paidAt,
-        paidBy: status === "paid" ? (userId ?? null) : null,
+        paidBy: nowPaid ? (wasPaid ? (before?.paidBy ?? userId ?? null) : (userId ?? null)) : null,
         updatedAt: new Date(),
         updatedBy: userId ?? null,
       })
@@ -1966,7 +1977,7 @@ export async function updateInvoiceScheduleStatus(scheduleId: string, status: st
       .from(invoicePaymentSchedule)
       .where(eq(invoicePaymentSchedule.invoiceId, updated.invoiceId));
     const [invoice] = await tx
-      .select({ grandTotal: invoices.grandTotal })
+      .select({ grandTotal: invoices.grandTotal, status: invoices.status })
       .from(invoices)
       .where(eq(invoices.id, updated.invoiceId))
       .limit(1);
@@ -1974,11 +1985,12 @@ export async function updateInvoiceScheduleStatus(scheduleId: string, status: st
     if (invoice && schedules.length > 0) {
       const grandTotal = parseFloat(invoice.grandTotal ?? "0");
       const paidAmount = schedules
-        .filter(schedule => schedule.status === "paid")
+      .filter(schedule => isPaidScheduleStatus(schedule.status))
         .reduce((sum, schedule) => sum + parseFloat(schedule.amount ?? "0"), 0);
       const remainingAmount = Math.max(0, grandTotal - paidAmount);
+      const allConfirmed = schedules.length > 0 && schedules.every(schedule => schedule.status === "confirmed");
       const summaryStatus = paidAmount >= grandTotal && grandTotal > 0
-        ? "paid"
+        ? (allConfirmed ? "confirmed" : "paid")
         : paidAmount > 0
         ? "partial"
         : "unpaid";
@@ -1990,6 +2002,7 @@ export async function updateInvoiceScheduleStatus(scheduleId: string, status: st
           remainingAmount: remainingAmount.toFixed(2),
           status: summaryStatus,
           updatedAt: new Date(),
+          updatedBy: userId ?? null,
         })
         .where(eq(invoices.id, updated.invoiceId));
     }
@@ -2010,7 +2023,7 @@ export async function appendSalaryPayment(invoiceId: string, amountPaid: number)
       .orderBy(asc(invoicePaymentSchedule.sortOrder));
 
     const grandTotal = parseFloat(inv.grandTotal ?? "0");
-    const paidSchedules = schedules.filter((s) => s.status === "paid");
+    const paidSchedules = schedules.filter((s) => isPaidScheduleStatus(s.status));
     const unpaidSchedule = schedules.find((s) => s.status === "unpaid");
     const totalPaidBefore = paidSchedules.reduce((sum, s) => sum + parseFloat(s.amount ?? "0"), 0);
     const newTotalPaid = totalPaidBefore + amountPaid;
@@ -2136,7 +2149,7 @@ export async function deleteInvoiceSchedule(id: string): Promise<void> {
   await db.transaction(async (tx) => {
     const [schedule] = await tx.select().from(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.id, id));
     if (!schedule) throw new Error("Không tìm thấy đợt thanh toán");
-    if (schedule.status === "paid") throw new Error("Không thể xoá đợt đã thanh toán");
+    if (isPaidScheduleStatus(schedule.status)) throw new Error("Không thể xoá đợt đã thanh toán");
 
     const all = await tx
       .select()
