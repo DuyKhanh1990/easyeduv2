@@ -72,6 +72,7 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoadingPassword, setIsLoadingPassword] = useState(false);
   const [visibleOmicallPasswords, setVisibleOmicallPasswords] = useState<Record<string, boolean>>({});
 
   const form = useForm<FormValues>({
@@ -97,6 +98,7 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
   useEffect(() => {
     if (open) {
       setShowPassword(false);
+      setIsLoadingPassword(false);
       const isEditing = Boolean(staff);
       setVisibleOmicallPasswords({});
       form.reset({
@@ -210,6 +212,28 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
       setIsSubmitting(false);
     }
   }
+
+  const handlePasswordVisibility = async (field: { value?: string; onChange: (value: string) => void }) => {
+    if (staff && field.value === STORED_PASSWORD_MASK) {
+      setIsLoadingPassword(true);
+      try {
+        const response = await apiRequest("GET", `/api/staff/${staff.id}/password`);
+        const result = await response.json();
+        field.onChange(result.password || "");
+        setShowPassword(true);
+      } catch (error: any) {
+        toast({
+          title: "Không thể hiển thị mật khẩu",
+          description: error?.message || "Nhân sự này chưa có mật khẩu được lưu để hiển thị.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoadingPassword(false);
+      }
+      return;
+    }
+    setShowPassword((visible) => !visible);
+  };
 
   const FL = "text-[11px] font-semibold text-slate-500 uppercase tracking-wide";
   const INP = "h-10 rounded-xl border-slate-200 bg-white text-sm shadow-sm transition-colors focus:border-sky-400 focus:ring-2 focus:ring-sky-100";
@@ -366,7 +390,8 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
                         />
                         <button
                           type="button"
-                          onClick={() => setShowPassword((visible) => !visible)}
+                          onClick={() => handlePasswordVisibility(field)}
+                          disabled={isLoadingPassword}
                           className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
                           aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
                           aria-pressed={showPassword}

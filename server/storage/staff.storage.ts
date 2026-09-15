@@ -5,7 +5,7 @@ import {
   shiftTemplates, teacherAvailability, invoices, courses, students,
 } from "./base";
 import { hashPassword } from "../auth";
-import { encrypt } from "../lib/encryption";
+import { decrypt, encrypt } from "../lib/encryption";
 import type {
   Location,
   Staff,
@@ -343,6 +343,40 @@ export async function getStaff(
   }));
 }
 
+export async function getStaffPassword(
+  id: string,
+  allowedLocationIds: string[],
+  isSuperAdmin: boolean,
+): Promise<string | null> {
+  let whereClause = eq(staff.id, id);
+  if (!isSuperAdmin) {
+    whereClause = and(
+      whereClause,
+      sql`EXISTS (
+        SELECT 1 FROM ${staffAssignments}
+        WHERE ${staffAssignments.staffId} = ${staff.id}
+          AND ${staffAssignments.locationId} IN ${allowedLocationIds}
+      )`,
+    ) as any;
+  }
+
+  const [row] = await db
+    .select({ passwordEncrypted: users.passwordEncrypted })
+    .from(staff)
+    .innerJoin(users, eq(users.id, staff.userId))
+    .where(whereClause)
+    .limit(1);
+
+  if (!row?.passwordEncrypted) return null;
+  try {
+    return decrypt(row.passwordEncrypted);
+  } catch {
+    // A key rotation or an imported database can make old ciphertext
+    // unreadable. Never return ciphertext to the browser.
+    return null;
+  }
+}
+
 export async function createStaff(insertData: any): Promise<Staff> {
   const {
     username,
@@ -355,6 +389,7 @@ export async function createStaff(insertData: any): Promise<Staff> {
     ...staffData
   } = insertData;
   const normalizedUsername = typeof username === "string" ? username.trim().toLowerCase() : username;
+  const effectivePassword = typeof password === "string" && password.trim() ? password.trim() : "123456";
 
   if (staffData.code) {
     const [existingCode] = await db.select({ id: staff.id }).from(staff).where(eq(staff.code, staffData.code));
@@ -396,7 +431,8 @@ export async function createStaff(insertData: any): Promise<Staff> {
         [user] = await tx
           .update(users)
           .set({
-            passwordHash: hashPassword(password || "123456"),
+            passwordHash: hashPassword(effectivePassword),
+            passwordEncrypted: encrypt(effectivePassword),
             isActive: true,
             updatedAt: new Date(),
           })
@@ -405,7 +441,8 @@ export async function createStaff(insertData: any): Promise<Staff> {
       } else {
         [user] = await tx.insert(users).values({
           username: normalizedUsername,
-          passwordHash: hashPassword(password || "123456"),
+          passwordHash: hashPassword(effectivePassword),
+          passwordEncrypted: encrypt(effectivePassword),
           isActive: true,
         }).returning();
       }
@@ -517,7 +554,10 @@ export async function updateStaff(id: string, updates: any, allowedLocationIds: 
     if (normalizedUsername || normalizedPassword) {
       const userUpdates: any = {};
       if (normalizedUsername) userUpdates.username = normalizedUsername;
-      if (normalizedPassword) userUpdates.passwordHash = hashPassword(normalizedPassword);
+      if (normalizedPassword) {
+        userUpdates.passwordHash = hashPassword(normalizedPassword);
+        userUpdates.passwordEncrypted = encrypt(normalizedPassword);
+      }
       userUpdates.updatedAt = new Date();
       await tx.update(users).set(userUpdates).where(eq(users.id, existingStaff.userId));
     }

@@ -419,6 +419,7 @@ export const users = pgTable("users", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   username: varchar("username", { length: 255 }).notNull().unique(),
   passwordHash: text("password_hash").notNull(),
+  passwordEncrypted: text("password_encrypted"),
   isActive: boolean("is_active").default(true),
   tinodeUserId: varchar("tinode_user_id", { length: 100 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),

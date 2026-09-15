@@ -66,6 +66,7 @@ export interface IStorage {
   deleteRole(id: string): Promise<void>;
   
   getStaff(allowedLocationIds: string[], isSuperAdmin: boolean, locationId?: string, minimal?: boolean, includeUserId?: string): Promise<Staff[]>;
+  getStaffPassword(id: string, allowedLocationIds: string[], isSuperAdmin: boolean): Promise<string | null>;
   createStaff(staff: any): Promise<Staff>;
   
   getStudents(params: { 
@@ -762,6 +763,10 @@ export class DatabaseStorage implements IStorage {
 
   async getStaff(allowedLocationIds: string[], isSuperAdmin: boolean, locationId?: string, minimal?: boolean, includeUserId?: string): Promise<any[]> {
     return staffStorage.getStaff(allowedLocationIds, isSuperAdmin, locationId, minimal, includeUserId);
+  }
+
+  async getStaffPassword(id: string, allowedLocationIds: string[], isSuperAdmin: boolean): Promise<string | null> {
+    return staffStorage.getStaffPassword(id, allowedLocationIds, isSuperAdmin);
   }
 
   async createStaff(insertData: any): Promise<Staff> {

@@ -40,3 +40,4 @@
 - [Class session ordering](class-session-ordering.md) — thứ tự buổi phải theo ngày/giờ; lưu buổi sẽ đánh lại sessionIndex nhưng giữ nguyên ID và dữ liệu gắn với ID.
 - [Web Push tenant scope](web-push-tenant-scope.md) — dùng chung VAPID keys, nhưng subscription luôn scope theo centerConfig.id + userId và phải push schema từng database.
 - [Harbor npm lockfile URLs](harbor-npm-lockfile-urls.md) — Docker build ngoài Replit phải đổi cả package-firewall.replit.local và .internal về npmjs.org trước npm ci.
+- [Staff password display](staff-password-display.md) — giữ hash đăng nhập và ciphertext riêng để dialog staff có thể hiển thị mật khẩu khi được phép.

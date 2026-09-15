@@ -516,6 +516,23 @@ export function registerConfigRoutes(app: Express): void {
     res.json(staff);
   });
 
+  app.get("/api/staff/:id/password", async (req, res) => {
+    try {
+      const password = await storage.getStaffPassword(
+        req.params.id,
+        req.allowedLocationIds,
+        req.isSuperAdmin,
+      );
+      if (password === null) {
+        return res.status(404).json({ message: "Chưa có mật khẩu có thể hiển thị cho nhân sự này" });
+      }
+      res.json({ password });
+    } catch (err: any) {
+      console.error("Get staff password error:", err);
+      res.status(403).json({ message: err.message || "Không thể lấy mật khẩu nhân sự" });
+    }
+  });
+
   app.post(api.staff.create.path, async (req, res) => {
     try {
       const body = { ...req.body, dateOfBirth: sanitizeDateField(req.body.dateOfBirth) };

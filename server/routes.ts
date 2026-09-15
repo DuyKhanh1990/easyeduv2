@@ -176,7 +176,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       req.login(user, (loginErr) => {
         if (loginErr) return next(loginErr);
         const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "30d" });
-        const { passwordHash: _ph, ...safeUser } = user as any;
+        const { passwordHash: _ph, passwordEncrypted: _pe, ...safeUser } = user as any;
         res.status(200).json({ user: safeUser, token });
       });
     })(req, res, next);
@@ -191,7 +191,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get(api.auth.me.path, (req, res) => {
     if (!req.isAuthenticated() && !req.user) return res.sendStatus(401);
-    const { passwordHash, ...safeUser } = req.user as any;
+    const { passwordHash, passwordEncrypted, ...safeUser } = req.user as any;
     res.status(200).json(safeUser);
   });
 
