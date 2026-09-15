@@ -1773,9 +1773,11 @@ export function registerFinanceRoutes(app: Express): void {
                  .filter(schedule => isPaidInvoiceStatus(schedule.status))
                  .reduce((sum, schedule) => sum + parseFloat(schedule.amount ?? "0"), 0);
                const remainingAmount = Math.max(0, grandTotal - paidAmount);
-               const allPaid = parentSchedules.every(schedule => isPaidInvoiceStatus(schedule.status));
-               const summaryStatus = paidAmount >= grandTotal && grandTotal > 0
-                 ? "paid"
+                const hasConfirmed = parentSchedules.some(schedule => schedule.status === "confirmed");
+                const summaryStatus = hasConfirmed
+                  ? "confirmed"
+                  : paidAmount >= grandTotal && grandTotal > 0
+                  ? "paid"
                  : paidAmount > 0
                    ? "partial"
                    : "unpaid";

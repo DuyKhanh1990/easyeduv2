@@ -1746,14 +1746,15 @@ export default function Invoices() {
     { enabled: !!previousQueryParams, staleTime: 30_000 },
   );
   const displayInvoices = flattenInvoiceRows(invoices).filter((invoice) => {
+    const tabStatus = invoice.isScheduleRow ? (invoice.parentInvoice?.status ?? invoice.status) : invoice.status;
     if (activeTab === "unpaid") {
-      if (isInvoicePaidLike(invoice.status)) return false;
+      if (isInvoicePaidLike(tabStatus)) return false;
     }
     if (activeTab === "paid") {
-      if (invoice.status !== "paid") return false;
+      if (tabStatus !== "paid") return false;
     }
     if (activeTab === "confirmed") {
-      if (invoice.status !== "confirmed") return false;
+      if (tabStatus !== "confirmed") return false;
     }
 
     if (filters.payers.length > 0 && !filters.payers.includes(invoice.paidByName ?? "")) {

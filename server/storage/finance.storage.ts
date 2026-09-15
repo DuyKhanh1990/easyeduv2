@@ -872,7 +872,7 @@ export async function getInvoices(filters: {
         row.paidAmount = stats.paidSum.toFixed(2);
         row.remainingAmount = Math.max(0, grand - stats.paidSum).toFixed(2);
         if (stats.paidCount === stats.total) {
-          row.status = stats.confirmedCount === stats.total ? "confirmed" : "paid";
+          row.status = row.status === "confirmed" || stats.confirmedCount === stats.total ? "confirmed" : "paid";
         } else if (stats.paidCount > 0) {
           row.status = "partial";
         } else {
@@ -1796,7 +1796,10 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
         .filter((schedule) => isPaidScheduleStatus(schedule.status))
         .reduce((sum, schedule) => sum + parseFloat(schedule.amount ?? "0"), 0);
       const remainingAmount = Math.max(0, grandTotal - paidAmount);
-      const scheduleStatus = paidAmount >= grandTotal && grandTotal > 0
+      const hasConfirmedSchedule = savedSchedule.some((schedule) => schedule.status === "confirmed");
+      const scheduleStatus = hasConfirmedSchedule
+        ? "confirmed"
+        : paidAmount >= grandTotal && grandTotal > 0
         ? "paid"
         : paidAmount > 0
           ? "partial"
@@ -1988,9 +1991,11 @@ export async function updateInvoiceScheduleStatus(scheduleId: string, status: st
       .filter(schedule => isPaidScheduleStatus(schedule.status))
         .reduce((sum, schedule) => sum + parseFloat(schedule.amount ?? "0"), 0);
       const remainingAmount = Math.max(0, grandTotal - paidAmount);
-      const allConfirmed = schedules.length > 0 && schedules.every(schedule => schedule.status === "confirmed");
-      const summaryStatus = paidAmount >= grandTotal && grandTotal > 0
-        ? (allConfirmed ? "confirmed" : "paid")
+      const hasConfirmed = schedules.some(schedule => schedule.status === "confirmed");
+      const summaryStatus = hasConfirmed
+        ? "confirmed"
+        : paidAmount >= grandTotal && grandTotal > 0
+        ? "paid"
         : paidAmount > 0
         ? "partial"
         : "unpaid";
