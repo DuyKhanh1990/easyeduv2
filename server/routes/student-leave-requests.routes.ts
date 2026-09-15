@@ -14,6 +14,7 @@ import {
   students,
 } from "@shared/schema";
 import { storage } from "../storage";
+import { sendNotificationToMany } from "../lib/notification";
 
 const LEAVE_STATUSES = ["pending", "approved", "rejected"] as const;
 const STATUS_SCHEMA = z.enum(LEAVE_STATUSES);
@@ -54,6 +55,7 @@ const selfRequestInputSchema = z.object({
 type ScheduleRow = {
   studentSessionId: string;
   classSessionId: string;
+  classId: string;
   studentId: string;
   className: string;
   classCode: string;
@@ -111,6 +113,7 @@ async function findSchedules({
     .select({
       studentSessionId: studentSessions.id,
       classSessionId: classSessions.id,
+      classId: classes.id,
       studentId: studentSessions.studentId,
       className: classes.name,
       classCode: classes.classCode,
@@ -196,6 +199,65 @@ async function getStudentAssignedLocations(studentId: string) {
     .innerJoin(locations, eq(studentLocations.locationId, locations.id))
     .where(eq(studentLocations.studentId, studentId))
     .orderBy(asc(locations.name));
+}
+
+async function notifyStaffAboutStudentLeave({
+  requestId,
+  studentName,
+  locationName,
+  schedules,
+}: {
+  requestId: string;
+  studentName: string;
+  locationName: string;
+  schedules: ScheduleRow[];
+}) {
+  if (schedules.length === 0) return;
+
+  const classIds = [...new Set(schedules.map((schedule) => schedule.classId))];
+  const classRows = await db
+    .select({
+      id: classes.id,
+      managerIds: classes.managerIds,
+    })
+    .from(classes)
+    .where(inArray(classes.id, classIds));
+
+  const staffIds = [...new Set([
+    ...schedules.flatMap((schedule) => schedule.teacherIds ?? []),
+    ...classRows.flatMap((classRow) => classRow.managerIds ?? []),
+  ])];
+  if (staffIds.length === 0) return;
+
+  const staffRows = await db
+    .select({ id: staff.id, userId: staff.userId })
+    .from(staff)
+    .where(inArray(staff.id, staffIds));
+  const recipientIds = [...new Set(
+    staffRows.map((staffRow) => staffRow.userId).filter((userId): userId is string => Boolean(userId)),
+  )];
+  if (recipientIds.length === 0) return;
+
+  const classLabels = [...new Set(
+    schedules.map((schedule) => `${schedule.className}${schedule.classCode ? ` (${schedule.classCode})` : ""}`),
+  )];
+  const dateLabels = [...new Set(schedules.map((schedule) => schedule.sessionDate))];
+  const dateText = dateLabels.length === 1
+    ? `ngày ${dateLabels[0]}`
+    : `${dateLabels.length} ngày khác nhau`;
+
+  await sendNotificationToMany(recipientIds, {
+    title: "Có đơn xin nghỉ học mới",
+    content: `${studentName} đã gửi đơn xin nghỉ ${schedules.length} buổi tại ${locationName}, ${dateText}. Lớp: ${classLabels.join(", ")}. Vui lòng kiểm tra và xử lý.`,
+    category: "student_leave",
+    referenceId: requestId,
+    referenceType: "student_leave_request",
+    referenceDate: schedules[0]?.sessionDate,
+    deeplink: {
+      screen: "StaffLeaveRequests",
+      params: { requestId },
+    },
+  });
 }
 
 export function registerStudentLeaveRequestRoutes(app: Express) {
@@ -302,18 +364,21 @@ export function registerStudentLeaveRequestRoutes(app: Express) {
       const groupsToCreate = allSchedules.length === 0
         ? scheduleGroups
         : scheduleGroups.filter(({ schedules }) => schedules.some((schedule) => selectedScheduleIdSet.has(schedule.studentSessionId)));
+      const notificationGroups = groupsToCreate.map(({ location, schedules }) => ({
+        location,
+        schedules: allSchedules.length === 0
+          ? schedules
+          : schedules.filter((schedule) => selectedScheduleIdSet.has(schedule.studentSessionId)),
+      }));
 
       const created = await db.transaction(async (tx) => {
         const result = [];
-        for (const { location, schedules } of groupsToCreate) {
-          const selectedLocationSchedules = allSchedules.length === 0
-            ? schedules
-            : schedules.filter((schedule) => selectedScheduleIdSet.has(schedule.studentSessionId));
+        for (const { location, schedules } of notificationGroups) {
           const [row] = await tx.insert(studentLeaveRequests).values({
             studentId: student.id,
             locationId: location.id,
-            scheduleIds: selectedLocationSchedules.map((schedule) => schedule.studentSessionId),
-            scheduleSnapshot: selectedLocationSchedules.map(formatSchedule),
+            scheduleIds: schedules.map((schedule) => schedule.studentSessionId),
+            scheduleSnapshot: schedules.map(formatSchedule),
             startDate: input.startDate,
             endDate: input.endDate,
             description: input.description?.trim() || null,
@@ -326,6 +391,18 @@ export function registerStudentLeaveRequestRoutes(app: Express) {
         }
         return result;
       });
+
+      const notificationResults = await Promise.allSettled(
+        created.map((request, index) => notifyStaffAboutStudentLeave({
+          requestId: request.id,
+          studentName: student.fullName,
+          locationName: notificationGroups[index]?.location.name ?? "",
+          schedules: notificationGroups[index]?.schedules ?? [],
+        })),
+      );
+      notificationResults
+        .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+        .forEach((result) => console.error("[StudentLeaveRequests] notification error:", result.reason));
 
       res.status(201).json(created);
     } catch (error) {

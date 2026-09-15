@@ -57,6 +57,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   review: "bg-blue-500",
   content: "bg-orange-500",
   schedule: "bg-yellow-500",
+  student_leave: "bg-sky-500",
   general: "bg-primary",
 };
 
@@ -137,6 +138,9 @@ function routeFromDeeplink(
 
     case "StaffTasks":
       return "/tasks";
+
+    case "StaffLeaveRequests":
+      return "/learning-overview?tab=xin-nghi";
 
     case "Chat":
       return params.topicId ? `/chat?topicId=${params.topicId}` : "/chat";
