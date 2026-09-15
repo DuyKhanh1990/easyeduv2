@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp, RefreshCw, X } from "lucide-react";
 const CLIENT_VERSION = import.meta.env.VITE_APP_VERSION || "dev";
 const VERSION_CHECK_INTERVAL_MS = 60_000;
 const PENDING_UPDATE_STORAGE_KEY = "easyedu.pending-app-update";
+const LAST_SERVER_VERSION_STORAGE_KEY = "easyedu.last-server-version";
 
 type VersionResponse = {
   version?: string;
@@ -22,8 +23,6 @@ export function AppUpdateBanner() {
   const [minimized, setMinimized] = useState(false);
 
   const checkForUpdate = useCallback(async () => {
-    if (CLIENT_VERSION === "dev") return;
-
     try {
       const response = await fetch(`/api/app-version?check=${Date.now()}`, {
         cache: "no-store",
@@ -32,7 +31,18 @@ export function AppUpdateBanner() {
       if (!response.ok) return;
 
       const data = (await response.json()) as VersionResponse;
-      if (data.version && data.version !== CLIENT_VERSION) {
+      if (!data.version) return;
+
+      if (CLIENT_VERSION === "dev") {
+        const previousServerVersion = window.sessionStorage.getItem(LAST_SERVER_VERSION_STORAGE_KEY);
+        window.sessionStorage.setItem(LAST_SERVER_VERSION_STORAGE_KEY, data.version);
+        if (previousServerVersion && previousServerVersion !== data.version) {
+          setUpdateAvailable(true);
+        }
+        return;
+      }
+
+      if (data.version !== CLIENT_VERSION) {
         setUpdateAvailable(true);
         try {
           window.sessionStorage.setItem(PENDING_UPDATE_STORAGE_KEY, CLIENT_VERSION);
@@ -52,8 +62,6 @@ export function AppUpdateBanner() {
   }, []);
 
   useEffect(() => {
-    if (CLIENT_VERSION === "dev") return;
-
     void checkForUpdate();
     const intervalId = window.setInterval(checkForUpdate, VERSION_CHECK_INTERVAL_MS);
     const handleFocus = () => { void checkForUpdate(); };
