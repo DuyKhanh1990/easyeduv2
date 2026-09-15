@@ -43,13 +43,17 @@ export function GradeBookViewDialog({
   const [scores, setScores] = useState<Record<string, Record<string, string>>>({});
   const [comments, setComments] = useState<Record<string, string>>({});
   const [excludedStudentIds, setExcludedStudentIds] = useState<Set<string>>(new Set());
+  const [gradeBookStudentIds, setGradeBookStudentIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [commentViewOpen, setCommentViewOpen] = useState(false);
   const [commentViewName, setCommentViewName] = useState("");
   const [commentViewText, setCommentViewText] = useState("");
 
-  const { data: allScoreSheets } = useQuery<any[]>({ queryKey: ["/api/score-sheets"] });
-  const { data: activeStudents } = useQuery<any[]>({
+  const { data: allScoreSheets, isLoading: scoreSheetsLoading } = useQuery<any[]>({
+    queryKey: ["/api/score-sheets"],
+  });
+  const { data: activeStudents, isLoading: activeStudentsLoading } = useQuery<any[]>({
     queryKey: [`/api/classes/${classId}/active-students`],
     enabled: !!classId,
   });
@@ -71,28 +75,46 @@ export function GradeBookViewDialog({
 
   const allStudents = (activeStudents || []).filter((s: any) => {
     const actualStudentId = s.studentId || s.student?.id || s.id;
-    return !excludedStudentIds.has(actualStudentId);
+    const hasGradeBookData =
+      gradeBookStudentIds.size === 0 || gradeBookStudentIds.has(actualStudentId);
+    return hasGradeBookData && !excludedStudentIds.has(actualStudentId);
   });
 
   useEffect(() => {
     if (!open) return;
+    if (activeStudentsLoading || !activeStudents) return;
+
+    let cancelled = false;
     setScores({});
     setComments({});
     setExcludedStudentIds(new Set());
+    setGradeBookStudentIds(new Set());
+    setLoadError(false);
     setLoading(true);
 
     fetch(`/api/classes/${classId}/grade-books/${book.id}`, { credentials: "include" })
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error("Không thể tải dữ liệu bảng điểm");
+        return r.json();
+      })
       .then((data) => {
+        if (cancelled) return;
         const existingScores: any[] = data.scores || [];
         const existingComments: Record<string, string> = data.studentComments || {};
         setExcludedStudentIds(new Set(data.excludedStudentIds || []));
 
         const studentIdToEnrollmentId: Record<string, string> = {};
-        (activeStudents || []).forEach((s: any) => {
+        activeStudents.forEach((s: any) => {
           const actualStudentId = s.studentId || s.student?.id;
           if (actualStudentId) studentIdToEnrollmentId[actualStudentId] = s.id;
         });
+
+        const idsWithData = new Set<string>();
+        existingScores.forEach((sc: any) => {
+          if (sc.studentId) idsWithData.add(sc.studentId);
+        });
+        Object.keys(existingComments).forEach((studentId) => idsWithData.add(studentId));
+        setGradeBookStudentIds(idsWithData);
 
         const initialScores: Record<string, Record<string, string>> = {};
         existingScores.forEach((sc: any) => {
@@ -109,9 +131,19 @@ export function GradeBookViewDialog({
         });
         setComments(enrollmentComments);
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [open, book.id]);
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, book.id, classId, activeStudents, activeStudentsLoading]);
+
+  const isDataLoading = loading || activeStudentsLoading || !activeStudents || scoreSheetsLoading;
 
   const handleViewComment = (studentId: string, name: string) => {
     setCommentViewName(name);
@@ -172,9 +204,15 @@ export function GradeBookViewDialog({
 
             {/* Score table */}
             <div className="flex-1 overflow-auto">
-              {loading ? (
+              {isDataLoading ? (
                 <div className="flex items-center justify-center h-full">
                   <p className="text-sm text-muted-foreground">Đang tải dữ liệu...</p>
+                </div>
+              ) : loadError ? (
+                <div className="flex flex-col items-center justify-center h-full text-center p-8">
+                  <ClipboardList className="h-10 w-10 text-muted-foreground opacity-20 mb-3" />
+                  <p className="text-sm text-destructive">Không thể tải dữ liệu bảng điểm</p>
+                  <p className="text-xs text-muted-foreground mt-1">Vui lòng đóng và thử lại.</p>
                 </div>
               ) : categories.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center p-8">
