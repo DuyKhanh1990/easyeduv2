@@ -107,11 +107,15 @@ async function sendInvoiceCreatedNotification(
 
 const STATUS_LABEL: Record<string, string> = {
   paid: "Đã thanh toán",
+  confirmed: "Đã xác nhận",
   unpaid: "Chưa thanh toán",
   partial: "Thanh toán một phần",
   debt: "Công nợ",
   cancelled: "Đã huỷ",
 };
+
+const isPaidInvoiceStatus = (status: string | null | undefined): boolean =>
+  status === "paid" || status === "confirmed";
 
 function walletActionFor(
   category: string | null | undefined,
@@ -818,7 +822,7 @@ export function registerFinanceRoutes(app: Express): void {
       }
     }
 
-    const paidOnCreate = payload.status === "paid" && !(payload.paymentSchedule?.length ?? 0);
+    const paidOnCreate = isPaidInvoiceStatus(payload.status) && !(payload.paymentSchedule?.length ?? 0);
     const data = await storage.createInvoice({
       ...payload,
       studentId: validatedStudentId,
@@ -839,7 +843,7 @@ export function registerFinanceRoutes(app: Express): void {
         console.warn("[BIDV] ensureVirtualAccount failed (non-critical):", err?.message),
       );
     }
-    if (data.studentId && data.status === "paid" && data.type === "Thu") {
+    if (data.studentId && isPaidInvoiceStatus(data.status) && data.type === "Thu") {
       const grandTotal = parseFloat(data.grandTotal ?? "0");
       const creationItems = payload.items ?? [];
       const hocPhiAmount = computeHocPhiWalletAmount(grandTotal, creationItems);
@@ -851,7 +855,7 @@ export function registerFinanceRoutes(app: Express): void {
       if (hocPhiAmount > 0) {
         await createWalletEntry({
           studentId: data.studentId, invoiceId: data.id, type: "credit", amount: hocPhiAmount, category: "Học phí",
-          action: walletActionFor("Học phí", "credit", data.code, "paid"),
+           action: walletActionFor("Học phí", "credit", data.code, data.status),
           classId: data.classId, className, invoiceCode: data.code,
           invoiceDescription: data.note || data.description, createdBy: userId, createdByName: creatorName,
         });
@@ -859,7 +863,7 @@ export function registerFinanceRoutes(app: Express): void {
       if (depositAmount > 0) {
         await createWalletEntry({
           studentId: data.studentId, invoiceId: data.id, type: "credit", amount: depositAmount, category: "Đặt cọc",
-          action: walletActionFor("Đặt cọc", "credit", data.code, "paid"),
+           action: walletActionFor("Đặt cọc", "credit", data.code, data.status),
           classId: data.classId, className, invoiceCode: data.code,
           invoiceDescription: data.note || data.description, createdBy: userId, createdByName: creatorName,
         });
@@ -890,7 +894,7 @@ export function registerFinanceRoutes(app: Express): void {
         });
       }
     }
-    if (data.status === "paid" && !(payload.paymentSchedule?.length ?? 0)) {
+    if (isPaidInvoiceStatus(data.status) && !(payload.paymentSchedule?.length ?? 0)) {
       const kode = await generateNextSettleCode(data.locationId);
       await db.update(invoices).set({ settleCode: kode }).where(eq(invoices.id, data.id));
       (data as any).settleCode = kode;
@@ -1054,10 +1058,10 @@ export function registerFinanceRoutes(app: Express): void {
       if (validatedStudentId !== undefined) patchData.studentId = validatedStudentId;
       if (resolvedSubjectName !== undefined) patchData.subjectName = resolvedSubjectName;
 
-      if (patchData.status === "paid" && before?.status !== "paid") {
+      if (isPaidInvoiceStatus(patchData.status) && !isPaidInvoiceStatus(before?.status)) {
         if (userId) patchData.paidBy = userId;
         patchData.paidAt = new Date();
-      } else if (patchData.status && patchData.status !== "paid" && before?.status === "paid") {
+      } else if (patchData.status && !isPaidInvoiceStatus(patchData.status) && isPaidInvoiceStatus(before?.status)) {
         patchData.paidBy = null;
         patchData.paidAt = null;
       }
@@ -1068,8 +1072,8 @@ export function registerFinanceRoutes(app: Express): void {
       }
       // Handle wallet credit/debit when invoice status transitions to/from "paid"
       if (data.studentId && data.type === "Thu") {
-        const prevPaid = before?.status === "paid";
-        const nowPaid = data.status === "paid";
+        const prevPaid = isPaidInvoiceStatus(before?.status);
+        const nowPaid = isPaidInvoiceStatus(data.status);
         const hasSchedules = (data.paymentSchedule ?? []).length > 0;
 
         if (prevPaid !== nowPaid && !hasSchedules) {
@@ -1211,8 +1215,8 @@ export function registerFinanceRoutes(app: Express): void {
       }
       // Assign/clear settle code based on paid status transition (no schedules)
       {
-        const prevPaid = before?.status === "paid";
-        const nowPaid = data.status === "paid";
+        const prevPaid = isPaidInvoiceStatus(before?.status);
+        const nowPaid = isPaidInvoiceStatus(data.status);
         const hasSchedules = (data.paymentSchedule ?? []).length > 0;
         if (!hasSchedules && !prevPaid && nowPaid) {
           const kode = await generateNextSettleCode(data.locationId);
@@ -1233,7 +1237,7 @@ export function registerFinanceRoutes(app: Express): void {
         const prevAmountPaid = parseFloat(String(before?.paidAmount ?? "0")) || 0;
         const newAmountPaid = parseFloat(String(data.paidAmount ?? "0")) || 0;
         const hasSchedulesNow = (data.paymentSchedule ?? []).length > 0;
-        const isNoScheduleFullPaid = !hasSchedulesNow && data.status === "paid" && before?.status !== "paid";
+        const isNoScheduleFullPaid = !hasSchedulesNow && isPaidInvoiceStatus(data.status) && !isPaidInvoiceStatus(before?.status);
         if (!isNoScheduleFullPaid && newAmountPaid > prevAmountPaid && newAmountPaid > 0) {
           const paymentDelta = newAmountPaid - prevAmountPaid;
           const recipientIds = await resolveInvoiceRecipientUserIds(data);
@@ -1249,9 +1253,9 @@ export function registerFinanceRoutes(app: Express): void {
       // ── Audit log ───────────────────────────────────────────────────────────
       // Skip logging when this PATCH is purely the "mark paid" transition — that
       // event is already captured in the history timeline via invoices.paid_at.
-      const isStatusToPaid = parsed.data.status === "paid" && before?.status !== "paid";
+      const isStatusToPaid = isPaidInvoiceStatus(parsed.data.status) && !isPaidInvoiceStatus(before?.status);
       if (!isStatusToPaid) {
-        const isUnpayTransition = parsed.data.status && parsed.data.status !== "paid" && before?.status === "paid";
+        const isUnpayTransition = parsed.data.status && !isPaidInvoiceStatus(parsed.data.status) && isPaidInvoiceStatus(before?.status);
         const auditAction = isUnpayTransition ? "Huỷ thanh toán hoá đơn" : "Sửa hoá đơn";
         // Build field-level diff — only store fields that actually changed
         const AUDIT_COMPARE_FIELDS = [
@@ -1322,8 +1326,8 @@ export function registerFinanceRoutes(app: Express): void {
       const inv = await storage.getInvoice(req.params.id);
       if (!inv) return res.status(404).json({ message: "Không tìm thấy hoá đơn" });
 
-      if (inv.status === "paid" || inv.status === "partial") {
-        const statusLabel = inv.status === "paid" ? "Đã thanh toán" : "Thanh toán một phần";
+      if (isPaidInvoiceStatus(inv.status) || inv.status === "partial") {
+        const statusLabel = isPaidInvoiceStatus(inv.status) ? (STATUS_LABEL[inv.status] ?? "Đã thanh toán") : "Thanh toán một phần";
         return res.status(409).json({
           message: `Hoá đơn ${inv.code} đang ở trạng thái ${statusLabel}. Vui lòng chuyển về Chưa thanh toán trước khi xoá.`,
           invoiceStatus: inv.status,
@@ -1868,7 +1872,7 @@ export function registerFinanceRoutes(app: Express): void {
   app.patch("/api/finance/invoices/:id/status", async (req, res) => {
     try {
       const { status } = req.body;
-      if (!status || !["unpaid", "partial", "paid", "debt", "cancelled"].includes(status)) {
+      if (!status || !["unpaid", "partial", "paid", "confirmed", "debt", "cancelled"].includes(status)) {
         return res.status(400).json({ message: "Trạng thái không hợp lệ" });
       }
       const userId = (req as any).user?.id;
@@ -1876,8 +1880,8 @@ export function registerFinanceRoutes(app: Express): void {
       const updated = await storage.updateInvoiceStatus(req.params.id, status, userId);
 
       if (before && before.studentId && before.type === "Thu") {
-        const prevPaid = before.status === "paid";
-        const nowPaid = status === "paid";
+        const prevPaid = isPaidInvoiceStatus(before.status);
+        const nowPaid = isPaidInvoiceStatus(status);
         const hasSchedules = (before.paymentSchedule ?? []).length > 0;
         if (prevPaid !== nowPaid) {
           const grandTotal = parseFloat(before.grandTotal ?? "0");
@@ -1918,8 +1922,8 @@ export function registerFinanceRoutes(app: Express): void {
 
       // Assign/clear settle code on invoice paid status transition (no schedules)
       if (before) {
-        const prevPaid = before.status === "paid";
-        const nowPaid = status === "paid";
+        const prevPaid = isPaidInvoiceStatus(before.status);
+        const nowPaid = isPaidInvoiceStatus(status);
         const hasSchedules = (before.paymentSchedule ?? []).length > 0;
         if (!hasSchedules && !prevPaid && nowPaid) {
           const kode = await generateNextSettleCode(before.locationId);

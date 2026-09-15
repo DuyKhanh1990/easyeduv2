@@ -14,7 +14,7 @@ import { Search, Merge, X } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { type InvoiceRow, type ScheduleItem, STATUS_CONFIG, parseNum, fmtMoney } from "@/types/invoice-types";
+import { type InvoiceRow, type ScheduleItem, STATUS_CONFIG, isInvoicePaidLike, parseNum, fmtMoney } from "@/types/invoice-types";
 import { format } from "date-fns";
 import type { BulkCollectPrintData } from "./BulkCollectPrintPreview";
 
@@ -101,14 +101,14 @@ export function BulkCollectDialog({
 
   const alreadyPaidCount = useMemo(
     () =>
-      initialInvoices.filter(inv => inv.status === "paid").length +
+      initialInvoices.filter(inv => isInvoicePaidLike(inv.status)).length +
       allSchedules.filter(s => s.status === "paid").length,
     [initialInvoices, allSchedules]
   );
 
   const notPaidCount = useMemo(
     () =>
-      initialInvoices.filter(inv => inv.status !== "paid").length +
+      initialInvoices.filter(inv => !isInvoicePaidLike(inv.status)).length +
       allSchedules.filter(s => s.status !== "paid").length,
     [initialInvoices, allSchedules]
   );
@@ -133,7 +133,7 @@ export function BulkCollectDialog({
 
   const collectMutation = useMutation({
     mutationFn: async () => {
-      const unpaidInvoices = checkedInvoices.filter(inv => inv.status !== "paid");
+      const unpaidInvoices = checkedInvoices.filter(inv => !isInvoicePaidLike(inv.status));
       const unpaidSchedules = checkedSchedules.filter(s => s.status !== "paid");
       const ids = unpaidInvoices.map(inv => inv.id);
       const scheduleIds = unpaidSchedules.map(s => s.id);
@@ -205,7 +205,7 @@ export function BulkCollectDialog({
 
   const isPending = collectMutation.isPending;
 
-  const uncheckedInvoicesToPay = checkedInvoices.filter(inv => inv.status !== "paid");
+  const uncheckedInvoicesToPay = checkedInvoices.filter(inv => !isInvoicePaidLike(inv.status));
   const uncheckedSchedulesToPay = checkedSchedules.filter(s => s.status !== "paid");
   const uncheckedToPay = uncheckedInvoicesToPay.length + uncheckedSchedulesToPay.length;
 
@@ -269,7 +269,7 @@ export function BulkCollectDialog({
                 <tbody>
                   {filtered.map(inv => {
                     const isChecked = checkedIds.has(inv.id);
-                    const isPaid = inv.status === "paid";
+                    const isPaid = isInvoicePaidLike(inv.status);
                     const cfg = STATUS_CONFIG[inv.status] ?? STATUS_CONFIG["unpaid"];
                     return (
                       <tr
@@ -376,7 +376,7 @@ export function BulkCollectDialog({
                             type="button"
                             onClick={() => toggleOne(inv.id)}
                             className="shrink-0 text-muted-foreground hover:text-destructive"
-                            disabled={inv.status === "paid"}
+                            disabled={isInvoicePaidLike(inv.status)}
                           >
                             <X className="h-3 w-3" />
                           </button>

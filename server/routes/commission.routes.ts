@@ -57,7 +57,7 @@ const commissionPayloadSchema = insertCommissionConfigSchema.extend({
   name: z.string().trim().min(1, "Tên hoa hồng là bắt buộc"),
   locationIds: z.array(z.string().uuid()).min(1, "Vui lòng chọn ít nhất một cơ sở"),
   invoiceTypes: z.array(z.string()).min(1, "Vui lòng chọn ít nhất một loại hóa đơn"),
-  invoiceStatuses: z.array(z.enum(["unpaid", "paid"])).min(1, "Vui lòng chọn ít nhất một trạng thái hóa đơn"),
+  invoiceStatuses: z.array(z.enum(["unpaid", "paid", "confirmed"])).min(1, "Vui lòng chọn ít nhất một trạng thái hóa đơn"),
   effectiveFrom: z.string().min(1, "Thời gian áp dụng là bắt buộc"),
   effectiveTo: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
@@ -106,8 +106,8 @@ export function registerCommissionRoutes(app: Express): void {
         const parsed = new Date(value as string | Date);
         return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
       };
-      const invoiceBusinessDate = (invoice: any): string | null => (
-        invoice.status === "paid" ? toDateOnly(invoice.paidAt) : toDateOnly(invoice.createdAt)
+       const invoiceBusinessDate = (invoice: any): string | null => (
+         invoice.status === "paid" || invoice.status === "confirmed" ? toDateOnly(invoice.paidAt) : toDateOnly(invoice.createdAt)
       );
       const isInRange = (value: string, from?: string | null, to?: string | null) => (
         (!from || value >= from) && (!to || value <= to)
@@ -138,14 +138,16 @@ export function registerCommissionRoutes(app: Express): void {
       const grouped = new Map<string, CommissionBoardRow>();
 
       for (const config of configs) {
-        const configStatuses = (config.invoiceStatuses ?? []).filter(status => status === "unpaid" || status === "paid");
+         const configStatuses = (config.invoiceStatuses ?? []).filter(status => status === "unpaid" || status === "paid" || status === "confirmed");
         if (!configStatuses.length) continue;
         const configRoles = (config.roleConfigs ?? {}) as Record<string, { mode: "percent" | "amount"; value: number; applicationMode: string }>;
         const candidates = result.data
           .map(invoice => ({ invoice, businessDate: invoiceBusinessDate(invoice) }))
           .filter(({ invoice, businessDate }) => (
             !!businessDate &&
-            configStatuses.includes(invoice.status) &&
+             (configStatuses.includes(invoice.status) || (
+               invoice.status === "confirmed" && configStatuses.includes("paid")
+             )) &&
             (config.locationIds ?? []).includes(invoice.locationId) &&
             (config.invoiceTypes ?? []).includes(invoice.category) &&
             isInRange(businessDate!, config.effectiveFrom, config.effectiveTo)

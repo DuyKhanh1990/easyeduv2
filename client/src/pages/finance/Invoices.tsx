@@ -44,7 +44,7 @@ import { BulkCollectDialog, type BulkCollectPrintData } from "./components/BulkC
 import { BulkCollectPrintPreview } from "./components/BulkCollectPrintPreview";
 import {
   type InvoiceRow, type ScheduleItem, STATUS_CONFIG, EINVOICE_STATUS_CONFIG,
-  parseNum, fmtMoney, fmtDate,
+  parseNum, fmtMoney, fmtDate, isInvoicePaidLike,
 } from "@/types/invoice-types";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -641,7 +641,7 @@ function renderInvoiceCell(
       const paid      = parseNum(inv.paidAmount);
       const grand     = parseNum(inv.grandTotal);
       const remaining = parseNum(inv.remainingAmount);
-      const fullyPaid = inv.status === "paid" || (grand > 0 && remaining === 0);
+      const fullyPaid = isInvoicePaidLike(inv.status) || (grand > 0 && remaining === 0);
       const pct       = fullyPaid ? 100 : grand > 0 ? Math.min(100, Math.round((paid / grand) * 100)) : 0;
       const isPaid    = fullyPaid;
       return (
@@ -706,7 +706,7 @@ function renderInvoiceCell(
         // Single-installment invoice (not split)
         const remaining = parseNum(inv.remainingAmount);
         const grand     = parseNum(inv.grandTotal);
-        allDone  = inv.status === "paid" || (grand > 0 && remaining === 0);
+        allDone  = isInvoicePaidLike(inv.status) || (grand > 0 && remaining === 0);
         paidSch  = allDone ? 1 : 0;
         nextDue  = inv.dueDate ?? null;
         lastPaid = allDone ? (inv.dueDate ?? null) : null;
@@ -783,7 +783,7 @@ function renderInvoiceCell(
       );
     }
     case "einvoice": {
-      if (inv.status !== "paid") {
+      if (!isInvoicePaidLike(inv.status)) {
         return <td key="einvoice" className="p-3 whitespace-nowrap text-muted-foreground text-xs">—</td>;
       }
       const key = inv.einvoiceStatus ?? "none";
@@ -1308,7 +1308,7 @@ function DeleteInvoiceDialog({ target, onClose, deleteMutation }: {
     queryFn: () => apiRequest("GET", `/api/finance/invoices/${target.id}/linked-store-receipts`).then(r => r.json()),
   });
 
-  const isPaidOrPartial = target.status === "paid" || target.status === "partial";
+  const isPaidOrPartial = isInvoicePaidLike(target.status) || target.status === "partial";
   const activeReceipts = linkedReceipts.filter(r => r.status !== "cancelled");
 
   return (
@@ -1327,7 +1327,7 @@ function DeleteInvoiceDialog({ target, onClose, deleteMutation }: {
           {isPaidOrPartial && (
             <div className="rounded-lg bg-orange-50 border border-orange-200 p-3 text-xs text-orange-800">
               <p className="font-semibold mb-1">Không thể xoá</p>
-              <p>Hoá đơn đang ở trạng thái <strong>{target.status === "paid" ? "Đã thanh toán" : "Thanh toán một phần"}</strong>. Vui lòng chuyển về <strong>Chưa thanh toán</strong> trước khi xoá.</p>
+              <p>Hoá đơn đang ở trạng thái <strong>{isInvoicePaidLike(target.status) ? STATUS_CONFIG[target.status]?.label : "Thanh toán một phần"}</strong>. Vui lòng chuyển về <strong>Chưa thanh toán</strong> trước khi xoá.</p>
             </div>
           )}
           {!isPaidOrPartial && activeReceipts.length > 0 && (
@@ -1545,7 +1545,7 @@ export default function Invoices() {
     },
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
-      const label = vars.status === "paid" ? "Đã thanh toán" : "Chưa thanh toán";
+      const label = STATUS_CONFIG[vars.status]?.label ?? "Chưa thanh toán";
       const totalTargets = vars.invoiceIds.length + vars.scheduleIds.length;
       toast({
         title: `Cập nhật thành công`,
@@ -1746,10 +1746,10 @@ export default function Invoices() {
   );
   const displayInvoices = flattenInvoiceRows(invoices).filter((invoice) => {
     if (activeTab === "unpaid") {
-      if (invoice.status === "paid") return false;
+      if (isInvoicePaidLike(invoice.status)) return false;
     }
     if (activeTab === "paid") {
-      if (invoice.status !== "paid") return false;
+      if (!isInvoicePaidLike(invoice.status)) return false;
     }
 
     if (filters.payers.length > 0 && !filters.payers.includes(invoice.paidByName ?? "")) {
@@ -3115,8 +3115,8 @@ export default function Invoices() {
       {/* Bulk delete dialog */}
       {bulkDeleteOpen && (() => {
         const selectedInvoices = invoices.filter(inv => selectedIds.has(inv.id));
-        const ineligible = selectedInvoices.filter(inv => inv.status === "paid" || inv.status === "partial");
-        const eligible = selectedInvoices.filter(inv => inv.status !== "paid" && inv.status !== "partial");
+        const ineligible = selectedInvoices.filter(inv => isInvoicePaidLike(inv.status) || inv.status === "partial");
+        const eligible = selectedInvoices.filter(inv => !isInvoicePaidLike(inv.status) && inv.status !== "partial");
         const eligibleWithSchedules = eligible.filter(inv => inv.hasSchedules && (inv.scheduleCount ?? 0) > 1);
         return (
           <Dialog open onOpenChange={(v) => { if (!bulkDeleteMutation.isPending) setBulkDeleteOpen(v); }}>

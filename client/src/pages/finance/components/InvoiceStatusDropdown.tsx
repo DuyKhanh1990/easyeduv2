@@ -5,7 +5,7 @@ import { ChevronDown } from "lucide-react";
 import { INVOICE_STATUS_OPTIONS as ALL_STATUS_OPTIONS } from "@/types/invoice-types";
 
 const INVOICE_STATUS_OPTIONS = ALL_STATUS_OPTIONS.filter(
-  o => o.value === "unpaid" || o.value === "paid"
+  o => o.value === "unpaid" || o.value === "paid" || o.value === "confirmed"
 );
 
 interface UpdateStatusMutation {
@@ -58,7 +58,7 @@ export function InvoiceStatusDropdown({
               className={`w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted transition-colors flex items-center gap-2 ${opt.value === currentStatus ? "font-semibold" : ""}`}
               data-testid={`status-option-${opt.value}-${invoiceId}`}
             >
-              <span className={`w-2 h-2 rounded-full ${opt.value === "paid" ? "bg-green-500" : opt.value === "unpaid" ? "bg-yellow-500" : opt.value === "partial" ? "bg-orange-500" : opt.value === "debt" ? "bg-red-500" : "bg-gray-400"}`} />
+              <span className={`w-2 h-2 rounded-full ${opt.value === "paid" || opt.value === "confirmed" ? "bg-green-500" : opt.value === "unpaid" ? "bg-yellow-500" : opt.value === "partial" ? "bg-orange-500" : opt.value === "debt" ? "bg-red-500" : "bg-gray-400"}`} />
               {opt.label}
             </button>
           ))}

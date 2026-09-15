@@ -26,6 +26,9 @@ function getBusinessDateString(date = new Date()): string {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
+const isPaidInvoiceStatus = (status: string | null | undefined): boolean =>
+  status === "paid" || status === "confirmed";
+
 // ==========================================
 // FINANCE - TRANSACTION CATEGORIES
 // ==========================================
@@ -626,7 +629,7 @@ export async function getInvoices(filters: {
           FROM invoice_payment_schedule AS debt_schedule
           WHERE debt_schedule.invoice_id = ${invoices.id}
         )
-        AND ${invoices.status} != 'paid'
+        AND ${invoices.status} NOT IN ('paid', 'confirmed')
         AND ${invoices.remainingAmount}::numeric > 0
       )
       OR (
@@ -669,7 +672,7 @@ export async function getInvoices(filters: {
     CASE
       WHEN ${scheduleCountExpr} > 1 THEN ${paidScheduleCountExpr}
       WHEN ${scheduleCountExpr} = 1 THEN ${paidScheduleCountExpr}
-      WHEN ${invoices.status} = 'paid' THEN 1
+      WHEN ${invoices.status} IN ('paid', 'confirmed') THEN 1
       ELSE 0
     END
   `;
@@ -685,7 +688,7 @@ export async function getInvoices(filters: {
   const effectivelyPaid = sql`(
     (${scheduleCountExpr} > 1 AND ${paidScheduleCountExpr} > 0)
     OR (${scheduleCountExpr} = 1 AND ${paidScheduleCountExpr} = 1)
-    OR (${scheduleCountExpr} = 0 AND ${invoices.status} = 'paid')
+    OR (${scheduleCountExpr} = 0 AND ${invoices.status} IN ('paid', 'confirmed'))
   )`;
   const effectivelyUnpaid = sql`(
     (${scheduleCountExpr} > 0 AND ${paidScheduleCountExpr} < ${scheduleCountExpr})
@@ -1114,8 +1117,8 @@ export async function getThuChiReportEntries(filters: {
     const singleSchedule = schedules[0];
     const paymentAt = singleSchedule?.paidAt ?? invoice.paidAt;
     const isPaid = singleSchedule
-      ? singleSchedule.status === "paid" || invoice.status === "paid"
-      : invoice.paidAt != null || invoice.status === "paid";
+      ? singleSchedule.status === "paid" || isPaidInvoiceStatus(invoice.status)
+      : invoice.paidAt != null || isPaidInvoiceStatus(invoice.status);
     if (!isPaid || !isInSelectedPeriod(paymentAt)) continue;
 
     const paymentMethod = singleSchedule?.paymentMethod ?? invoice.paymentMethod;
@@ -1177,7 +1180,7 @@ export async function getInvoicesSummary(filters: {
   isSuperAdmin?: boolean;
 } = {}): Promise<{
   totalCount: number;
-  byStatus: { unpaid: number; partial: number; paid: number; debt: number; cancelled: number };
+  byStatus: { unpaid: number; partial: number; paid: number; confirmed: number; debt: number; cancelled: number };
   totalRevenue: number;
   actualCollected: number;
   debtAmount: number;
@@ -1195,7 +1198,7 @@ export async function getInvoicesSummary(filters: {
     getInvoices({ ...filters, type: "Chi" }),
   ]);
 
-  const byStatus = { unpaid: 0, partial: 0, paid: 0, debt: 0, cancelled: 0 };
+  const byStatus = { unpaid: 0, partial: 0, paid: 0, confirmed: 0, debt: 0, cancelled: 0 };
   let expectedIncome = 0;
   let expectedExpense = 0;
   let actualIncome = 0;
@@ -1310,7 +1313,7 @@ export async function getCustomerDebtSummary(filters: { locationId?: string; dat
   let totalDebtAmount = 0;
 
   for (const inv of all) {
-    if (inv.status === "cancelled" || inv.status === "paid") continue;
+    if (inv.status === "cancelled" || isPaidInvoiceStatus(inv.status)) continue;
     const remaining = parseFloat(inv.remainingAmount ?? "0");
     if (remaining <= 0) continue;
     const dueRaw = (inv as any).scheduleNextDueDate || inv.dueDate;
@@ -1493,7 +1496,7 @@ export async function createInvoice(data: any): Promise<any> {
   }
   const invoiceCode = invoiceData.code;
   return await db.transaction(async (tx) => {
-    const isPaidOnCreate = invoiceData.status === "paid";
+    const isPaidOnCreate = isPaidInvoiceStatus(invoiceData.status);
     const [inv] = await tx.insert(invoices).values({
       ...invoiceData,
       totalAmount: invoiceData.totalAmount?.toString() ?? "0",
@@ -2067,7 +2070,7 @@ export async function updateInvoiceStatus(invoiceId: string, status: string, use
   const grandTotal = parseFloat(inv.grandTotal ?? "0");
   const extraFields: Record<string, any> = {};
 
-  if (status === "paid") {
+  if (isPaidInvoiceStatus(status)) {
     extraFields.paidAmount = grandTotal.toFixed(2);
     extraFields.remainingAmount = "0";
     if (userId) extraFields.paidBy = userId;

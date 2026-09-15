@@ -118,7 +118,7 @@ export const invoices = pgTable("invoices", {
   paymentMethod: varchar("payment_method", { length: 20 }),         // cash | transfer
   appliedBankAccount: jsonb("applied_bank_account"),                // { bankName, bankAccount, accountHolder }
   // Trạng thái
-  status: varchar("status", { length: 50 }).notNull().default("unpaid"), // unpaid | partial | paid | debt | cancelled
+  status: varchar("status", { length: 50 }).notNull().default("unpaid"), // unpaid | partial | paid | confirmed | debt | cancelled
   // KM / Phụ thu áp dụng cho TOÀN hoá đơn (ngoài phần đã gắn theo từng item)
   invoicePromotionKeys: text("invoice_promotion_keys").array().default(sql`'{}'::text[]`),
   invoiceSurchargeKeys: text("invoice_surcharge_keys").array().default(sql`'{}'::text[]`),

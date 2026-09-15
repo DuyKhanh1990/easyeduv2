@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Copy, CheckCircle2, Building2, CreditCard, User, QrCode, Landmark } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { type InvoiceRow, STATUS_CONFIG, parseNum, fmtMoney, fmtDate } from "@/types/invoice-types";
+import { type InvoiceRow, STATUS_CONFIG, isInvoicePaidLike, parseNum, fmtMoney, fmtDate } from "@/types/invoice-types";
 
 interface InvoiceQRDialogProps {
   invoice: InvoiceRow | null;
@@ -236,7 +236,7 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
                 <span className="text-muted-foreground">Trạng thái:</span>
                 {status && (
                   <Badge className={`text-xs font-medium ${status.className}`} data-testid="badge-qr-status">
-                    {invoice.status === "unpaid" ? "⏳ " : invoice.status === "paid" ? "✅ " : ""}
+                    {invoice.status === "unpaid" ? "⏳ " : isInvoicePaidLike(invoice.status) ? "✅ " : ""}
                     {status.label}
                   </Badge>
                 )}
@@ -317,7 +317,7 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
                 <span className="text-muted-foreground">Trạng thái:</span>
                 {status && (
                   <Badge className={`text-xs font-medium ${status.className}`}>
-                    {invoice.status === "unpaid" ? "⏳ " : invoice.status === "paid" ? "✅ " : ""}
+                    {invoice.status === "unpaid" ? "⏳ " : isInvoicePaidLike(invoice.status) ? "✅ " : ""}
                     {status.label}
                   </Badge>
                 )}
