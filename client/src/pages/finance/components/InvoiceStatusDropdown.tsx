@@ -2,11 +2,15 @@ import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChevronDown } from "lucide-react";
-import { INVOICE_STATUS_OPTIONS as ALL_STATUS_OPTIONS } from "@/types/invoice-types";
+import { STATUS_CONFIG } from "@/types/invoice-types";
 
-const INVOICE_STATUS_OPTIONS = ALL_STATUS_OPTIONS.filter(
-  o => o.value === "unpaid" || o.value === "paid" || o.value === "confirmed"
-);
+// The invoice status menu always contains the three user-selectable invoice
+// states, regardless of the current list tab.
+const INVOICE_STATUS_OPTIONS = (["unpaid", "paid", "confirmed"] as const).map(value => ({
+  value,
+  label: STATUS_CONFIG[value].label,
+  className: STATUS_CONFIG[value].className,
+}));
 
 interface UpdateStatusMutation {
   mutate: (
