@@ -201,15 +201,21 @@ async function getStudentAssignedLocations(studentId: string) {
     .orderBy(asc(locations.name));
 }
 
+function formatNotificationDate(value: string) {
+  const [year, month, day] = value.slice(0, 10).split("-");
+  if (!year || !month || !day) return value;
+  return `${Number(day)}/${Number(month)}/${year}`;
+}
+
 async function notifyStaffAboutStudentLeave({
   requestId,
   studentName,
-  locationName,
+  description,
   schedules,
 }: {
   requestId: string;
   studentName: string;
-  locationName: string;
+  description?: string | null;
   schedules: ScheduleRow[];
 }) {
   if (schedules.length === 0) return;
@@ -239,16 +245,17 @@ async function notifyStaffAboutStudentLeave({
   if (recipientIds.length === 0) return;
 
   const classLabels = [...new Set(
-    schedules.map((schedule) => `${schedule.className}${schedule.classCode ? ` (${schedule.classCode})` : ""}`),
+    schedules.map((schedule) => schedule.className),
   )];
-  const dateLabels = [...new Set(schedules.map((schedule) => schedule.sessionDate))];
+  const dateLabels = [...new Set(schedules.map((schedule) => schedule.sessionDate))].sort();
   const dateText = dateLabels.length === 1
-    ? `ngày ${dateLabels[0]}`
-    : `${dateLabels.length} ngày khác nhau`;
+    ? `ngày ${formatNotificationDate(dateLabels[0])}`
+    : `từ ngày ${formatNotificationDate(dateLabels[0])} - đến ngày ${formatNotificationDate(dateLabels[dateLabels.length - 1])}`;
+  const reasonText = description?.trim() || "Không có lý do";
 
   await sendNotificationToMany(recipientIds, {
-    title: "Có đơn xin nghỉ học mới",
-    content: `${studentName} đã gửi đơn xin nghỉ ${schedules.length} buổi tại ${locationName}, ${dateText}. Lớp: ${classLabels.join(", ")}. Vui lòng kiểm tra và xử lý.`,
+    title: "Đơn xin nghỉ học.",
+    content: `Học viên ${studentName}, xin nghỉ ${dateText} lớp: ${classLabels.join(", ")}, Lý do: ${reasonText}`,
     category: "student_leave",
     referenceId: requestId,
     referenceType: "student_leave_request",
@@ -396,7 +403,7 @@ export function registerStudentLeaveRequestRoutes(app: Express) {
         created.map((request, index) => notifyStaffAboutStudentLeave({
           requestId: request.id,
           studentName: student.fullName,
-          locationName: notificationGroups[index]?.location.name ?? "",
+          description: input.description,
           schedules: notificationGroups[index]?.schedules ?? [],
         })),
       );
