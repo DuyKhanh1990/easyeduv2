@@ -1645,6 +1645,14 @@ export function registerFinanceRoutes(app: Express): void {
         try {
           const before = await storage.getInvoice(id);
           if (!before) { results.push({ id, ok: false, error: "Không tìm thấy hoá đơn" }); continue; }
+          if ((before.paymentSchedule?.length ?? 0) > 0) {
+            results.push({
+              id,
+              ok: false,
+              error: "Hoá đơn có các đợt thanh toán; hãy thao tác trên từng đợt con",
+            });
+            continue;
+          }
           if (isPaidInvoiceStatus(before.status)) { results.push({ id, ok: true, code: before.code ?? undefined }); continue; }
 
           const grandTotal = parseFloat(before.grandTotal ?? "0");
@@ -1881,6 +1889,11 @@ export function registerFinanceRoutes(app: Express): void {
       }
       const userId = (req as any).user?.id;
       const before = await storage.getInvoice(req.params.id);
+      if ((before?.paymentSchedule?.length ?? 0) > 0) {
+        return res.status(400).json({
+          message: "Hoá đơn có các đợt thanh toán; hãy thao tác trên từng đợt con.",
+        });
+      }
       const updated = await storage.updateInvoiceStatus(req.params.id, status, userId);
 
       if (before && before.status !== status) {
