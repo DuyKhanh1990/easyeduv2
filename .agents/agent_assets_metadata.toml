@@ -6,15 +6,32 @@ id = "8Ze_1MCrVjM-rKxlF_TVB"
 uri = "file://docs/mobile-api-score-sheet.md"
 type = "text"
 title = "Mobile API — Bảng điểm học viên"
+logical_id = "c370e23d-104e-4c65-8f71-e94bd79afff8"
 
 [[outputs]]
 id = "6wnhwVgon-H0l7I09jLVB"
 uri = "file://docs/mobile-api.md"
 type = "text"
 title = "Mobile API — Section 4 bổ sung đầy đủ (BTVN + Kiểm tra)"
+logical_id = "8be0ad84-7b78-46f8-a773-2198cada88f2"
 
 [[outputs]]
 id = "DiYyl5CpXv_P9oHxgNAci"
 uri = "file://docs/mobile-api-notifications.md"
 type = "text"
 title = "Mobile API — Thông báo chuông (Hoàn chỉnh)"
+logical_id = "f31922a6-7625-457e-815e-4030d9eaebaa"
+
+[[outputs]]
+id = "cAl2823hxodoCklV-JDOf"
+uri = "file://docs/staff-leave-pwa-api.md"
+type = "text"
+title = "Staff Leave Request API — Web PWA"
+description = "Tài liệu đầy đủ cho luồng xin nghỉ nhân sự: xác thực, tạo đơn, danh sách, duyệt/từ chối, notification và deeplink."
+logical_id = "d0a9b3c5-ab3b-498d-a676-592b7455e299"
+content_hash = "sha256:8b5df66c8a17006d89792b713d0ffa1bb9ab77414547c3d955a8147db639d4ee"
+size = 17582
+mtime_ms = 1789468283942
+storage_uri = "gcs://replit-rams-assets-sisko/rams/assets/repl:69862f0a-5b07-4700-aeaf-3fff688f1fc0/d0a9b3c5-ab3b-498d-a676-592b7455e299/300e277d-6165-4ee6-8e16-f36340852381"
+storage_version_token = "1789468300858443"
+content_type = "text/markdown"
