@@ -5762,6 +5762,12 @@ export function registerMobileRoutes(app: Express) {
           referenceType: n.referenceType ?? null,
           isRead: n.isRead,
           createdAt: n.createdAt ? new Date(n.createdAt).toISOString() : null,
+           deeplink: (n as any).deeplink?.screen
+             ? {
+               screen: (n as any).deeplink.screen,
+               params: (n as any).deeplink.params ?? {},
+             }
+             : { screen: null, params: {} },
           student: child
             ? { id: child.id, fullName: child.fullName, code: child.code }
             : null,
