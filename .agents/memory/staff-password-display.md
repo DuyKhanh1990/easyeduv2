@@ -7,4 +7,4 @@ Staff login passwords use the normal one-way hash for authentication, but the st
 
 **Why:** The owner explicitly requires viewing the saved staff password from the edit dialog, accepting the security tradeoff of reversible encryption.
 
-**How to apply:** Encrypt on staff creation/password change, decrypt only through an authorized staff-password endpoint, and preserve location/super-admin access checks. Existing accounts created before ciphertext storage cannot have their old password recovered; set a new password once to populate it.
+**How to apply:** Encrypt on staff creation/password change and automatically backfill after a successful staff login, decrypt only through an authorized staff-password endpoint, and preserve location/super-admin access checks. Existing accounts are not reset; accounts that have never logged in after rollout cannot reveal an unrecoverable old hash until their next normal login.
