@@ -568,7 +568,10 @@ export default function MyDonTu() {
                     <select
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                       value={activeLeaveStudentId}
-                      onChange={(event) => setSelectedLeaveStudentId(event.target.value)}
+                      onChange={(event) => {
+                        setSelectedLeaveStudentId(event.target.value);
+                        setSelectedLeaveScheduleIds(new Set());
+                      }}
                       disabled={createStudentLeaveMutation.isPending}
                     >
                       {leaveContextStudents.map((student) => (
@@ -660,7 +663,7 @@ export default function MyDonTu() {
                             disabled={createStudentLeaveMutation.isPending}
                             className="mt-0.5"
                           />
-                          <span className="min-w-0">
+                          <div className="min-w-0">
                           <div className="font-medium">
                             {schedule.className}
                             {schedule.classCode && <span className="ml-1 text-xs font-normal text-muted-foreground">({schedule.classCode})</span>}
@@ -671,7 +674,7 @@ export default function MyDonTu() {
                             {schedule.locationName && ` · ${schedule.locationName}`}
                             {schedule.teachers && ` · ${schedule.teachers}`}
                           </div>
-                          </span>
+                          </div>
                         </label>
                       ))
                     ) : (

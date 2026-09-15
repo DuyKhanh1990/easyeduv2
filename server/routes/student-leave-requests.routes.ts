@@ -45,6 +45,7 @@ const updateInputSchema = z.object({
 
 const selfRequestInputSchema = z.object({
   studentId: z.string().uuid().optional(),
+  scheduleIds: z.array(z.string().uuid()).default([]),
   startDate: z.string().min(1),
   endDate: z.string().min(1),
   description: z.string().trim().max(5000).optional().nullable(),
@@ -287,15 +288,32 @@ export function registerStudentLeaveRequestRoutes(app: Express) {
           }),
         })),
       );
+      const allSchedules = scheduleGroups.flatMap(({ schedules }) => schedules);
+      if (allSchedules.length > 0 && input.scheduleIds.length === 0) {
+        return res.status(400).json({ message: "Vui lòng chọn ít nhất một lịch học muốn xin nghỉ." });
+      }
+
+      const scheduleById = new Map(allSchedules.map((schedule) => [schedule.studentSessionId, schedule]));
+      const selectedSchedules = input.scheduleIds.map((scheduleId) => scheduleById.get(scheduleId));
+      if (selectedSchedules.some((schedule) => !schedule)) {
+        return res.status(400).json({ message: "Lịch học được chọn không thuộc học viên hoặc khoảng thời gian xin nghỉ." });
+      }
+      const selectedScheduleIdSet = new Set(input.scheduleIds);
+      const groupsToCreate = allSchedules.length === 0
+        ? scheduleGroups
+        : scheduleGroups.filter(({ schedules }) => schedules.some((schedule) => selectedScheduleIdSet.has(schedule.studentSessionId)));
 
       const created = await db.transaction(async (tx) => {
         const result = [];
-        for (const { location, schedules } of scheduleGroups) {
+        for (const { location, schedules } of groupsToCreate) {
+          const selectedLocationSchedules = allSchedules.length === 0
+            ? schedules
+            : schedules.filter((schedule) => selectedScheduleIdSet.has(schedule.studentSessionId));
           const [row] = await tx.insert(studentLeaveRequests).values({
             studentId: student.id,
             locationId: location.id,
-            scheduleIds: schedules.map((schedule) => schedule.studentSessionId),
-            scheduleSnapshot: schedules.map(formatSchedule),
+            scheduleIds: selectedLocationSchedules.map((schedule) => schedule.studentSessionId),
+            scheduleSnapshot: selectedLocationSchedules.map(formatSchedule),
             startDate: input.startDate,
             endDate: input.endDate,
             description: input.description?.trim() || null,

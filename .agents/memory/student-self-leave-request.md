@@ -7,4 +7,4 @@ Self-service leave requests must derive the student from the authenticated accou
 
 **Why:** The personal-space flow is separate from staff leave management, and the leave-request record stores one location per row while a student may be assigned to multiple locations.
 
-**How to apply:** A student can submit only for their own record. A parent can submit only for linked students. When multiple assigned locations apply, create one pending request per assigned location and attach the matching schedules automatically.
+**How to apply:** A student can submit only for their own record. A parent can submit only for linked students. The UI lists schedules in the requested date range with checkboxes; only selected schedules are persisted. When selected schedules span multiple assigned locations, create one pending request per affected location.
