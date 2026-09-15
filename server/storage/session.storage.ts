@@ -18,6 +18,7 @@ import type {
 
 import { getClass } from "./class.storage";
 import { getNextLocationCode } from "./finance.storage";
+import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 
 // ---------------------------------------------------------------------------
 // recalculateStudentClass
@@ -595,6 +596,14 @@ export async function extendStudentSessions(data: {
     return inv ? inv.autoInvoice : data.autoInvoice;
   });
   const invoiceCodeMap: Record<string, string> = {};
+  const createdInvoiceNotifications: Array<{
+    invoiceCode: string | null;
+    grandTotal: string;
+    studentId: string;
+    invoiceId: string;
+    note: string | null;
+    status: string | null;
+  }> = [];
   if (studentsNeedingInvoice.length > 0) {
     for (const sid of studentsNeedingInvoice) {
       invoiceCodeMap[sid] = await getNextLocationCode(cls.locationId, "PT");
@@ -1010,6 +1019,14 @@ export async function extendStudentSessions(data: {
             subtotal: grandTotal.toFixed(2),
             sortOrder: 0,
           });
+          createdInvoiceNotifications.push({
+            invoiceCode: newInvoice.code ?? null,
+            grandTotal: newInvoice.grandTotal ?? grandTotal.toFixed(2),
+            studentId,
+            invoiceId: newInvoice.id,
+            note: newInvoice.description ?? null,
+            status: newInvoice.status ?? null,
+          });
         }
       }
     }
@@ -1021,6 +1038,23 @@ export async function extendStudentSessions(data: {
       await batchRecalculateStudentClasses(processedScIds, data.classId, tx);
     }
   });
+
+  // Send the same created-invoice notification as manual invoice creation,
+  // only after the transaction has committed successfully.
+  for (const invoice of createdInvoiceNotifications) {
+    sendInvoiceCreatedNotification(
+      invoice.invoiceCode,
+      invoice.grandTotal,
+      invoice.studentId,
+      data.userId,
+      invoice.invoiceId,
+      null,
+      invoice.note,
+      invoice.status,
+    ).catch((err) => {
+      console.error("[InvoiceNotify] AUTO creation error:", err);
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------

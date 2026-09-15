@@ -14,12 +14,10 @@ import {
   insertFinanceVoucherSchema,
 } from "@shared/schema";
 import { db, pool } from "../db";
-import { staff, classes, invoices, invoicePaymentSchedule, students, classSessions, centerConfig } from "@shared/schema";
+import { staff, classes, invoices, invoicePaymentSchedule, students, classSessions } from "@shared/schema";
 import { eq, asc, sql, and, isNotNull, gte, lte, inArray } from "drizzle-orm";
-import { sendNotificationToMany } from "../lib/notification";
 import { ensureVirtualAccount } from "../services/bidv/bidv-virtual-account.service";
-import { notificationService } from "../application/notification/services/NotificationService";
-import { resolveInvoiceRecipientUserIds, sendInvoicePaidNotification } from "../lib/invoice-notification";
+import { resolveInvoiceRecipientUserIds, sendInvoiceCreatedNotification, sendInvoicePaidNotification } from "../lib/invoice-notification";
 
 async function generateNextSettleCode(locationId?: string | null): Promise<string> {
   return getNextLocationCode(locationId, "KT");
@@ -35,71 +33,6 @@ async function resolveClassName(classId: string | undefined | null): Promise<str
   if (!classId) return null;
   const [row] = await db.select({ name: classes.name }).from(classes).where(eq(classes.id, classId)).limit(1);
   return row?.name ?? null;
-}
-
-async function sendInvoiceCreatedNotification(
-  invoiceCode: string | null | undefined,
-  grandTotal: string | null | undefined,
-  studentId: string | null | undefined,
-  creatorUserId: string | null | undefined,
-  invoiceId: string,
-  extraRecipientUserId?: string | null,
-  note?: string | null,
-  invoiceStatus?: string | null,
-): Promise<void> {
-  const recipientUserIds = new Set<string>();
-
-  if (extraRecipientUserId) {
-    // Staff-targeted invoice: notify only the staff member the invoice concerns,
-    // not the creator/admin.
-    recipientUserIds.add(extraRecipientUserId);
-  } else {
-    if (studentId) {
-      const [studentRow] = await db.select({ userId: students.userId })
-        .from(students).where(eq(students.id, studentId)).limit(1);
-      if (studentRow?.userId) recipientUserIds.add(studentRow.userId);
-    }
-    if (creatorUserId) recipientUserIds.add(creatorUserId);
-  }
-
-  const amount = parseFloat(grandTotal ?? "0");
-  const formattedAmount = amount.toLocaleString("vi-VN") + " đ";
-  const code = invoiceCode ?? "—";
-
-  if (recipientUserIds.size) {
-    await sendNotificationToMany([...recipientUserIds], {
-      title: "Thông báo hoá đơn mới",
-      content: `Hoá đơn ${code} đã được tạo, số tiền: ${formattedAmount}`,
-      category: "finance",
-      referenceType: "invoice",
-      referenceId: invoiceId,
-      deeplink: {
-        screen: "Invoices",
-        params: { invoiceId },
-      },
-    });
-  }
-
-  if (studentId) {
-    try {
-      const [center] = await db.select({ id: centerConfig.id }).from(centerConfig).limit(1);
-      const centerId = center?.id ?? "00000000-0000-0000-0000-000000000000";
-      const statusLabel = STATUS_LABEL[invoiceStatus ?? ""] ?? invoiceStatus ?? "Chưa thanh toán";
-      await notificationService.send({
-        type: "invoice_created",
-        studentId,
-        centerId,
-        data: {
-          invoiceCode: code,
-          amount: formattedAmount,
-          status: statusLabel,
-          note: note ?? "",
-        },
-      });
-    } catch (err) {
-      console.error("[InvoiceNotify] notificationService.send invoice_created error:", err);
-    }
-  }
 }
 
 // resolveInvoiceRecipientUserIds và sendInvoicePaidNotification đã được chuyển sang

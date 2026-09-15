@@ -32,6 +32,81 @@ export async function resolveInvoiceRecipientUserIds(
   return [...recipientUserIds];
 }
 
+export async function sendInvoiceCreatedNotification(
+  invoiceCode: string | null | undefined,
+  grandTotal: string | number | null | undefined,
+  studentId: string | null | undefined,
+  creatorUserId: string | null | undefined,
+  invoiceId: string,
+  extraRecipientUserId?: string | null,
+  note?: string | null,
+  invoiceStatus?: string | null,
+): Promise<void> {
+  const recipientUserIds = new Set<string>();
+
+  if (extraRecipientUserId) {
+    // Staff-targeted invoice: notify only the staff member concerned.
+    recipientUserIds.add(extraRecipientUserId);
+  } else {
+    if (studentId) {
+      const [studentRow] = await db
+        .select({ userId: students.userId })
+        .from(students)
+        .where(eq(students.id, studentId))
+        .limit(1);
+      if (studentRow?.userId) recipientUserIds.add(studentRow.userId);
+    }
+    if (creatorUserId) recipientUserIds.add(creatorUserId);
+  }
+
+  const amount = parseFloat(String(grandTotal ?? "0"));
+  const formattedAmount = amount.toLocaleString("vi-VN") + " đ";
+  const code = invoiceCode ?? "—";
+
+  if (recipientUserIds.size) {
+    await sendNotificationToMany([...recipientUserIds], {
+      title: "Thông báo hoá đơn mới",
+      content: `Hoá đơn ${code} đã được tạo, số tiền: ${formattedAmount}`,
+      category: "finance",
+      referenceType: "invoice",
+      referenceId: invoiceId,
+      deeplink: {
+        screen: "Invoices",
+        params: { invoiceId },
+      },
+    });
+  }
+
+  if (studentId) {
+    try {
+      const [center] = await db.select({ id: centerConfig.id }).from(centerConfig).limit(1);
+      const centerId = center?.id ?? "00000000-0000-0000-0000-000000000000";
+      const statusLabel = ({
+        paid: "Đã thanh toán",
+        confirmed: "Đã xác nhận",
+        unpaid: "Chưa thanh toán",
+        partial: "Thanh toán một phần",
+        debt: "Công nợ",
+        cancelled: "Đã huỷ",
+      } as Record<string, string>)[invoiceStatus ?? ""] ?? invoiceStatus ?? "Chưa thanh toán";
+
+      await notificationService.send({
+        type: "invoice_created",
+        studentId,
+        centerId,
+        data: {
+          invoiceCode: code,
+          amount: formattedAmount,
+          status: statusLabel,
+          note: note ?? "",
+        },
+      });
+    } catch (err) {
+      console.error("[InvoiceNotify] notificationService.send invoice_created error:", err);
+    }
+  }
+}
+
 export async function sendInvoicePaidNotification(
   invoiceCode: string | null | undefined,
   amount: string | number | null | undefined,
