@@ -27,3 +27,15 @@ was intentionally left on its existing inference — its screen names don't matc
 ones stored by `deeplink`, so don't assume the same stored screen string works everywhere).
 `/chat` web route needed a new `?topicId=` query param handler added to open a specific Tinode
 topic on load — previously chat notifications had nowhere to land.
+
+For session-content notifications, choose the destination from the content set at creation time:
+homework-only opens `Assignments`; any lesson or mixed lesson/homework set opens `Calendar` with
+`date`, `classId`, and `sessionId`. The assignments endpoint may receive `classId`, but should
+fall back to the date result when that class has no matching rows.
+
+**Why:** a mixed notification represents the contents of a specific lesson session, while a
+homework-only notification is an actionable task. Treating every content notification as an
+assignment loses the lesson context and causes web/mobile surfaces to disagree.
+
+**How to apply:** keep the stored screen intent unchanged across clients, pass `sessionId` when
+opening Calendar, and never turn a stale class ID into an empty assignments screen.

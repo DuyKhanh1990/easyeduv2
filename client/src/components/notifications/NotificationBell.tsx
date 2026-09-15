@@ -116,18 +116,20 @@ function routeFromDeeplink(
         : "/my-space/invoices";
 
     case "Assignments": {
-      // Điều hướng đến đúng buổi trên calendar (date + classId từ lúc tạo noti).
-      // Fallback về /my-space/assignments nếu không có date.
-      if (params.date) {
-        const base = `/my-space/calendar?date=${params.date}`;
-        return params.classId ? `${base}&classId=${params.classId}` : base;
-      }
-      return "/my-space/assignments";
+      const query = new URLSearchParams();
+      if (params.date) query.set("date", params.date);
+      if (params.classId) query.set("classId", params.classId);
+      const suffix = query.toString();
+      return `/my-space/assignments${suffix ? `?${suffix}` : ""}`;
     }
 
     case "Calendar": {
-      const base = params.date ? `/my-space/calendar?date=${params.date}` : "/my-space/calendar";
-      return params.classId && params.date ? `${base}&classId=${params.classId}` : base;
+      const query = new URLSearchParams();
+      if (params.date) query.set("date", params.date);
+      if (params.sessionId) query.set("sessionId", params.sessionId);
+      if (params.classId) query.set("classId", params.classId);
+      const suffix = query.toString();
+      return `/my-space/calendar${suffix ? `?${suffix}` : ""}`;
     }
 
     case "Payroll":

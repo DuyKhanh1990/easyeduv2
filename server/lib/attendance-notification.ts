@@ -219,6 +219,10 @@ const CONTENT_TYPE_SHORT: Record<string, string> = {
   "Bài kiểm tra": "Bài kiểm tra",
 };
 
+function isHomeworkContentType(contentType: string): boolean {
+  return ["bài tập về nhà", "homework", "btvn"].includes(contentType.trim().toLowerCase());
+}
+
 export async function sendContentNotification(
   classSessionId: string,
   contents: { contentType: string; title: string }[],
@@ -305,6 +309,10 @@ export async function sendContentNotification(
           : `Buổi ${sessionOrder}`;
 
         if (student?.userId) {
+          // A notification containing a lesson belongs to the session context.
+          // Only a homework-only notification should open the actionable
+          // assignments list directly.
+          const onlyHomework = contents.every((content) => isHomeworkContentType(content.contentType));
           const header = [
             `Giáo viên ${actorLabel} vừa Giao nội dung`,
             `Lớp ${className}`,
@@ -321,9 +329,10 @@ export async function sendContentNotification(
             referenceId: csRow.classId ?? undefined,
             referenceType: "class",
             deeplink: {
-              screen: "Assignments",
+              screen: onlyHomework ? "Assignments" : "Calendar",
               params: {
                 ...(csRow.sessionDate ? { date: csRow.sessionDate } : {}),
+                ...(classSessionId ? { sessionId: classSessionId } : {}),
                 ...(csRow.classId ? { classId: csRow.classId } : {}),
               },
             },

@@ -11,6 +11,7 @@ function toMonthStr(year: number, month: number) {
 export function StudentAssignments() {
   const search = useSearch();
   const urlDateParam = new URLSearchParams(search).get("date");
+  const urlClassIdParam = new URLSearchParams(search).get("classId") ?? undefined;
   const initDate = (() => {
     if (urlDateParam) { const d = new Date(urlDateParam + "T00:00:00"); if (!isNaN(d.getTime())) return d; }
     return new Date();
@@ -37,8 +38,8 @@ export function StudentAssignments() {
 
   const monthStr = toMonthStr(year, month);
   const params = dateFrom && dateTo
-    ? { dateFrom, dateTo }
-    : { month: monthStr };
+    ? { dateFrom, dateTo, classId: urlClassIdParam }
+    : { month: monthStr, classId: urlClassIdParam };
 
   const { data, isLoading } = useStudentAssignments(params);
 

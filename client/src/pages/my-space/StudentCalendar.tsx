@@ -584,9 +584,12 @@ function StudentCalendarView({ viewMode }: { viewMode: "calendar" | "month" }) {
             <div className="space-y-3">
               {(() => {
                 const classIdParam = new URLSearchParams(search).get("classId");
+                  const sessionIdParam = new URLSearchParams(search).get("sessionId");
                 return sessionsForDate.map((session, idx) => {
                   const highlighted = !!parseDateParam(search) && (
-                    classIdParam ? session.classId === classIdParam : idx === 0
+                    sessionIdParam
+                      ? session.classSessionId === sessionIdParam
+                      : classIdParam ? session.classId === classIdParam : idx === 0
                   );
                   return (
                     <SessionCard

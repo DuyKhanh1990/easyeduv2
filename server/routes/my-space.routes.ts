@@ -1217,11 +1217,12 @@ export function registerMySpaceRoutes(app: Express): void {
         dateTo: qDateTo,
         status: qStatus,    // "all" | "submitted" | "pending"
         itemType: qItemType, // "all" | "BTVN" | "exam"
+        classId: qClassId,
         page: qPage,
         pageSize: qPageSize,
       } = req.query as {
         month?: string; dateFrom?: string; dateTo?: string;
-        status?: string; itemType?: string; page?: string; pageSize?: string;
+        status?: string; itemType?: string; classId?: string; page?: string; pageSize?: string;
       };
       let dateFrom: string;
       let dateTo: string;
@@ -1260,6 +1261,7 @@ export function registerMySpaceRoutes(app: Express): void {
           sessionIndex: classSessions.sessionIndex,
           startTime: shiftTemplates.startTime,
           endTime: shiftTemplates.endTime,
+          classId: classes.id,
           className: classes.name,
           classCode: classes.classCode,
           homeworkId: sessionContents.id,
@@ -1304,6 +1306,7 @@ export function registerMySpaceRoutes(app: Express): void {
         const linked = studentNameMap.get(r.studentId ?? "");
         return {
           classSessionId: r.classSessionId,
+          classId: r.classId,
           className: r.className,
           classCode: r.classCode,
           sessionDate: r.sessionDate,
@@ -1470,6 +1473,14 @@ export function registerMySpaceRoutes(app: Express): void {
 
       if (qItemType === "BTVN") allRows = allRows.filter((r) => r.itemType === "BTVN");
       else if (qItemType === "exam") allRows = allRows.filter((r) => r.itemType === "Bài kiểm tra");
+
+      // A deeplink may carry a classId from the notification. If the class
+      // relationship changed or the ID came from an older record, do not turn
+      // a valid date result into an empty screen.
+      if (qClassId) {
+        const classRows = allRows.filter((r) => r.classId === qClassId);
+        if (classRows.length > 0) allRows = classRows;
+      }
 
       // Server-side pagination
       const total = allRows.length;
