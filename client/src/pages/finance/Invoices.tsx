@@ -97,7 +97,7 @@ const TABS: { key: TabKey; label: string; statusFilter?: string; color: string }
   { key: "all",              label: "Tất cả",            color: "#64748b" },
   { key: "unpaid",           label: "Chưa thanh toán",   statusFilter: "unpaid",  color: "#ca8a04" },
   { key: "paid",             label: "Đã thanh toán",     statusFilter: "paid",    color: "#16a34a" },
-  { key: "confirmed",        label: "Đã xác nhận",       statusFilter: "confirmed", color: "#059669" },
+  { key: "confirmed",        label: "Đã xác nhận",       statusFilter: "confirmed", color: "#1d4ed8" },
   { key: "debt",             label: "Công nợ",           statusFilter: "debt",    color: "#dc2626" },
   { key: "history",          label: "Lịch sử",                                    color: "#7c3aed" },
   { key: "print-template",   label: "Mẫu in hoá đơn",                             color: "#0891b2" },
@@ -2312,7 +2312,7 @@ export default function Invoices() {
                         });
                       }}
                     >
-                      <CheckCircle className="w-4 h-4 text-teal-600" /><span>Đã xác nhận</span>
+                      <CheckCircle className="w-4 h-4 text-blue-700" /><span>Đã xác nhận</span>
                     </ActionMenuItem>
                     <ActionMenuItem
                       className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"

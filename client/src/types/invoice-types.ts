@@ -84,7 +84,7 @@ export interface ScheduleItem {
 
 export const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   paid:      { label: "Đã thanh toán",     className: "bg-green-100 text-green-700" },
-  confirmed: { label: "Đã xác nhận",       className: "bg-teal-100 text-teal-700" },
+  confirmed: { label: "Đã xác nhận",       className: "bg-blue-700 text-white" },
   unpaid:    { label: "Chưa thanh toán",   className: "bg-yellow-100 text-yellow-700" },
   debt:      { label: "Công nợ",           className: "bg-red-100 text-red-700" },
   partial:   { label: "Thanh toán 1 phần", className: "bg-orange-100 text-orange-700" },
@@ -98,7 +98,7 @@ export const INVOICE_STATUS_OPTIONS = [
   { value: "unpaid",    label: "Chưa thanh toán",   className: "bg-yellow-100 text-yellow-700" },
   { value: "partial",   label: "Thanh toán 1 phần", className: "bg-orange-100 text-orange-700" },
   { value: "paid",      label: "Đã thanh toán",     className: "bg-green-100 text-green-700" },
-  { value: "confirmed", label: "Đã xác nhận",       className: "bg-teal-100 text-teal-700" },
+  { value: "confirmed", label: "Đã xác nhận",       className: "bg-blue-700 text-white" },
   { value: "debt",      label: "Công nợ",           className: "bg-red-100 text-red-700" },
   { value: "cancelled", label: "Đã huỷ",            className: "bg-gray-100 text-gray-500" },
 ];
