@@ -7,4 +7,4 @@ description: Business rules for the invoice status confirmed
 
 **Why:** Finance users need to distinguish an invoice that has been confirmed from one explicitly marked paid without changing the financial meaning or duplicating the payment event.
 
-**How to apply:** Keep payment installment statuses as `unpaid`/`paid`; apply the paid-equivalent check only to the parent invoice status. Preserve `paidAt`, `paidBy`, amounts, and settle code across `paid` ↔ `confirmed`; any new invoice workflow that checks paid state must include `confirmed`.
+**How to apply:** Keep payment installment statuses as `unpaid`/`paid`; apply the paid-equivalent check only to the parent invoice status. Preserve `paidAt`, `paidBy`, amounts, and settle code across `paid` ↔ `confirmed`; status changes must also update invoice `updatedBy`/`updatedAt` and create a visible audit-history entry. Any new invoice workflow that checks paid state must include `confirmed`.

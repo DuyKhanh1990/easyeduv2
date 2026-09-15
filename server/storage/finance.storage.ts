@@ -2094,7 +2094,12 @@ export async function updateInvoiceStatus(invoiceId: string, status: string, use
 
   const [updated] = await db
     .update(invoices)
-    .set({ status, ...extraFields, updatedAt: new Date() })
+    .set({
+      status,
+      ...extraFields,
+      updatedAt: new Date(),
+      updatedBy: userId ?? inv.updatedBy ?? null,
+    })
     .where(eq(invoices.id, invoiceId))
     .returning();
   return updated;

@@ -90,6 +90,13 @@ const EV_CONFIG: Record<HistoryEvent["ev_type"], EvCfg> = {
     border: "border-amber-200",
     textColor: "text-amber-700",
   },
+  "Đổi trạng thái hoá đơn": {
+    label: "Đổi trạng thái hoá đơn",
+    icon: <CheckCircle2 className="h-3 w-3" />,
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
+    textColor: "text-emerald-700",
+  },
   "Xoá hoá đơn": {
     label: "Xoá hoá đơn",
     icon: <Trash2 className="h-3 w-3" />,
@@ -161,6 +168,7 @@ const STATUS_LABELS: Record<string, string> = {
   unpaid:  "Chưa thanh toán",
   partial: "Thanh toán một phần",
   paid:    "Đã thanh toán",
+  confirmed: "Đã xác nhận",
 };
 
 const MONEY_FIELDS = new Set(["grandTotal", "paidAmount", "remainingAmount"]);
@@ -205,7 +213,7 @@ function EventDetailDialog({
   })();
 
   // Build diff rows — only keys present in new or old, skip sibling IDs when name is available
-  const isAuditEvent = ["Sửa hoá đơn", "Sửa đợt thanh toán", "Huỷ thanh toán hoá đơn", "Xoá hoá đơn"].includes(event.ev_type);
+  const isAuditEvent = ["Sửa hoá đơn", "Đổi trạng thái hoá đơn", "Sửa đợt thanh toán", "Huỷ thanh toán hoá đơn", "Xoá hoá đơn"].includes(event.ev_type);
 
   const allKeys = Array.from(new Set([...Object.keys(oldObj), ...Object.keys(newObj)]));
   const diffRows = allKeys

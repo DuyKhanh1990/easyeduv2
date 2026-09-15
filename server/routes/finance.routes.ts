@@ -1879,6 +1879,21 @@ export function registerFinanceRoutes(app: Express): void {
       const before = await storage.getInvoice(req.params.id);
       const updated = await storage.updateInvoiceStatus(req.params.id, status, userId);
 
+      if (before && before.status !== status) {
+        createInvoiceAuditLog({
+          invoiceId: updated.id,
+          invoiceCode: updated.code ?? before.code ?? null,
+          invoiceType: updated.type ?? before.type ?? null,
+          subjectName: updated.subjectName ?? before.subjectName ?? null,
+          grandTotal: updated.grandTotal ?? before.grandTotal ?? null,
+          action: "Đổi trạng thái hoá đơn",
+          userId: userId ?? null,
+          locationId: updated.locationId ?? before.locationId ?? null,
+          oldContent: { status: before.status },
+          newContent: { status: updated.status },
+        }).catch(() => {});
+      }
+
       if (before && before.studentId && before.type === "Thu") {
         const prevPaid = isPaidInvoiceStatus(before.status);
         const nowPaid = isPaidInvoiceStatus(status);
