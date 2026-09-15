@@ -10,6 +10,10 @@ import {
   invoicePaymentSchedule,
 } from "@shared/schema";
 import { z } from "zod";
+import {
+  resolveInvoiceRecipientUserIds,
+  sendInvoiceCreatedNotification,
+} from "../lib/invoice-notification";
 
 async function ensureIssueReceiptTables() {
   await db.execute(sql`
@@ -248,7 +252,13 @@ async function createIssueInvoice(params: {
   items: { quantity: number; productName: string; salePrice: number }[];
   createdBy: string | null | undefined;
   createdByName: string | null | undefined;
-}) {
+}): Promise<{
+  id: string;
+  code: string | null;
+  grandTotal: string | number | null;
+  description: string | null;
+  status: string | null;
+}> {
   const subjectName = params.recipientName?.trim() || "Người nhận hàng";
   const num = parseInt(params.receiptCode.replace("PXK-", "")) || 0;
   const numStr = num ? String(num).padStart(2, "0") : "01";
@@ -343,6 +353,53 @@ async function createIssueInvoice(params: {
         paymentMethod: "cash",
       },
     ] as any[]);
+  }
+
+  return {
+    id: inv.id,
+    code: inv.code ?? null,
+    grandTotal: inv.grandTotal ?? String(grandTotal),
+    description: inv.description ?? description,
+    status: inv.status ?? invStatus,
+  };
+}
+
+async function notifyIssueInvoiceCreated(
+  invoice: {
+    id: string;
+    code: string | null;
+    grandTotal: string | number | null;
+    description: string | null;
+    status: string | null;
+  },
+  recipientId: string | null | undefined,
+  recipientName: string | null | undefined,
+  creatorUserId: string | null | undefined,
+): Promise<void> {
+  try {
+    // Student recipients use studentId. Staff recipients are represented by
+    // "[CODE] Name" in subjectName, so resolve their user separately and use
+    // the staff-only notification policy from the shared helper.
+    const recipientUserIds = await resolveInvoiceRecipientUserIds({
+      studentId: recipientId ?? null,
+      subjectName: recipientName ?? null,
+    });
+    const extraRecipientUserId = recipientId ? null : (recipientUserIds[0] ?? null);
+
+    await sendInvoiceCreatedNotification(
+      invoice.code,
+      invoice.grandTotal,
+      recipientId ?? null,
+      creatorUserId,
+      invoice.id,
+      extraRecipientUserId,
+      invoice.description,
+      invoice.status,
+    );
+  } catch (err) {
+    // The stock issue and invoice are already committed; notification failure
+    // must not turn a successful export into a false error response.
+    console.error("[InvoiceNotify] STORE issue invoice creation error:", invoice.code, err);
   }
 }
 
@@ -901,7 +958,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
       }
 
       if (receiptData.hasInvoice && receiptData.status === "completed") {
-        await createIssueInvoice({
+        const issueInvoice = await createIssueInvoice({
           receiptId: r.id,
           receiptCode: r.code,
           recipientName: receiptData.recipientName,
@@ -917,6 +974,12 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
           createdBy: user.id,
           createdByName: user.fullName || user.username,
         });
+        await notifyIssueInvoiceCreated(
+          issueInvoice,
+          receiptData.recipientId,
+          receiptData.recipientName,
+          user.id,
+        );
 
         await db.execute(sql`
           UPDATE store_issue_receipts SET has_invoice = TRUE WHERE id = ${r.id}
@@ -1233,7 +1296,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
       if (existing.has_invoice || receiptData.hasInvoice) {
         await db.execute(sql`DELETE FROM invoices WHERE store_issue_receipt_id = ${req.params.id}`);
         if (receiptData.hasInvoice && receiptData.status === "completed") {
-          await createIssueInvoice({
+          const issueInvoice = await createIssueInvoice({
             receiptId: req.params.id,
             receiptCode: receiptData.code,
             recipientName: receiptData.recipientName,
@@ -1249,6 +1312,12 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
             createdBy: user.id,
             createdByName: user.fullName || user.username,
           });
+          await notifyIssueInvoiceCreated(
+            issueInvoice,
+            receiptData.recipientId,
+            receiptData.recipientName,
+            user.id,
+          );
           await db.execute(sql`
             UPDATE store_issue_receipts SET has_invoice = TRUE WHERE id = ${req.params.id}
           `);
