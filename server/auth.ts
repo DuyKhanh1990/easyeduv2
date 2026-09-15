@@ -4,11 +4,12 @@ import { Express, Request, Response, NextFunction } from "express";
 import session from "express-session";
 import { scryptSync, randomBytes, timingSafeEqual } from "crypto";
 import { storage } from "./storage";
-import { User as SelectUser, staff, students } from "@shared/schema";
+import { User as SelectUser, staff, students, users } from "@shared/schema";
 import connectPgSimple from "connect-pg-simple";
 import { db, pool } from "./db";
 import jwt from "jsonwebtoken";
 import { eq } from "drizzle-orm";
+import { encrypt } from "./lib/encryption";
 
 export const JWT_SECRET =
   process.env.JWT_SECRET || "mobile_jwt_secret_key_change_in_production";
@@ -115,6 +116,19 @@ export function setupAuth(app: Express) {
         if (!user.isActive) {
           return done(null, false, { message: "account_inactive" });
         }
+
+        // Backfill the reversible ciphertext after a successful login. The
+        // existing password hash remains the source of truth for auth, so
+        // rolling this out never forces existing users to change passwords.
+        // This also makes the staff eye button work after the user's next
+        // normal login without requiring an admin reset.
+        if (staffProfile && !user.passwordEncrypted) {
+          await db
+            .update(users)
+            .set({ passwordEncrypted: encrypt(password), updatedAt: new Date() })
+            .where(eq(users.id, user.id));
+        }
+
         return done(null, user);
       } catch (err) {
         return done(err);
