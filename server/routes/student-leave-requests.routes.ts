@@ -267,6 +267,78 @@ async function notifyStaffAboutStudentLeave({
   });
 }
 
+async function notifyStudentAndParentsAboutLeaveStatus({
+  requestId,
+  studentId,
+  startDate,
+  endDate,
+  scheduleSnapshot,
+  status,
+  rejectionReason,
+}: {
+  requestId: string;
+  studentId: string;
+  startDate: string;
+  endDate: string;
+  scheduleSnapshot: unknown;
+  status: "approved" | "rejected";
+  rejectionReason?: string | null;
+}) {
+  const [student] = await db
+    .select({ userId: students.userId, fullName: students.fullName })
+    .from(students)
+    .where(eq(students.id, studentId))
+    .limit(1);
+  if (!student) return;
+
+  const parentRows = await db
+    .select({ userId: students.userId })
+    .from(students)
+    .where(sql`${students.parentIds} @> ARRAY[${studentId}]::uuid[]`);
+  const recipientIds = [...new Set(
+    [student.userId, ...parentRows.map((parent) => parent.userId)]
+      .filter((userId): userId is string => Boolean(userId)),
+  )];
+  if (recipientIds.length === 0) return;
+
+  const snapshots = Array.isArray(scheduleSnapshot)
+    ? scheduleSnapshot as Array<{ className?: unknown; date?: unknown }>
+    : [];
+  const classLabels = [...new Set(
+    snapshots
+      .map((snapshot) => typeof snapshot.className === "string" ? snapshot.className : "")
+      .filter(Boolean),
+  )];
+  const dateLabels = [...new Set(
+    snapshots
+      .map((snapshot) => typeof snapshot.date === "string" ? snapshot.date.slice(0, 10) : "")
+      .filter(Boolean),
+  )].sort();
+  const firstDate = dateLabels[0] || startDate;
+  const lastDate = dateLabels[dateLabels.length - 1] || endDate;
+  const dateText = firstDate === lastDate
+    ? `ngày ${formatNotificationDate(firstDate)}`
+    : `từ ngày ${formatNotificationDate(firstDate)} - đến ngày ${formatNotificationDate(lastDate)}`;
+  const classText = classLabels.length > 0 ? classLabels.join(", ") : "—";
+  const statusText = status === "approved" ? "Đã duyệt" : "Từ chối";
+  const rejectionText = status === "rejected" && rejectionReason?.trim()
+    ? `, Lý do: ${rejectionReason.trim()}`
+    : "";
+
+  await sendNotificationToMany(recipientIds, {
+    title: "Đơn xin nghỉ học.",
+    content: `Đơn xin nghỉ, Học viên ${student.fullName}, ${dateText} Lớp: ${classText}, Trạng thái: ${statusText}${rejectionText}`,
+    category: "student_leave",
+    referenceId: requestId,
+    referenceType: "student_leave_request",
+    referenceDate: firstDate,
+    deeplink: {
+      screen: "StudentLeaveRequests",
+      params: { requestId },
+    },
+  });
+}
+
 export function registerStudentLeaveRequestRoutes(app: Express) {
   app.get("/api/student-leave-requests/self/context", async (req, res) => {
     try {
@@ -577,6 +649,9 @@ export function registerStudentLeaveRequestRoutes(app: Express) {
       const nextLocationId = input.locationId ?? existing.locationId;
       const scheduleIds = input.scheduleIds ?? existing.scheduleIds ?? [];
       const nextStatus = input.status ?? existing.status;
+      const shouldNotifyStatusChange =
+        existing.status !== nextStatus &&
+        (nextStatus === "approved" || nextStatus === "rejected");
       if (
         nextStatus === "rejected" &&
         input.status === "rejected" &&
@@ -647,6 +722,23 @@ export function registerStudentLeaveRequestRoutes(app: Express) {
         })
         .where(eq(studentLeaveRequests.id, req.params.id))
         .returning();
+
+      if (shouldNotifyStatusChange) {
+        try {
+          await notifyStudentAndParentsAboutLeaveStatus({
+            requestId: row.id,
+            studentId: existing.studentId,
+            startDate,
+            endDate,
+            scheduleSnapshot,
+            status: nextStatus as "approved" | "rejected",
+            rejectionReason,
+          });
+        } catch (notificationError) {
+          console.error("[StudentLeaveRequests] status notification error:", notificationError);
+        }
+      }
+
       res.json(row);
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ message: "Dữ liệu đơn xin nghỉ không hợp lệ", issues: error.issues });

@@ -142,6 +142,9 @@ function routeFromDeeplink(
     case "StaffLeaveRequests":
       return "/learning-overview?tab=xin-nghi";
 
+    case "StudentLeaveRequests":
+      return "/my-space/don-tu";
+
     case "Chat":
       return params.topicId ? `/chat?topicId=${params.topicId}` : "/chat";
 
