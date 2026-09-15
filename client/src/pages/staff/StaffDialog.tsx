@@ -349,6 +349,9 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
                         <Input
                           {...field}
                           type={showPassword ? "text" : "password"}
+                          placeholder={staff
+                            ? "Đã lưu — nhập mật khẩu mới nếu muốn đổi"
+                            : "Mật khẩu mặc định: 123456"}
                           className={cn(INP, "pr-10")}
                         />
                         <button
