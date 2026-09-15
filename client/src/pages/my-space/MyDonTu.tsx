@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -167,6 +168,7 @@ export default function MyDonTu() {
   const [leaveStartDate, setLeaveStartDate] = useState("");
   const [leaveEndDate, setLeaveEndDate] = useState("");
   const [leaveDescription, setLeaveDescription] = useState("");
+  const [selectedLeaveScheduleIds, setSelectedLeaveScheduleIds] = useState<Set<string>>(new Set());
 
   const { data, isLoading, isError } = useQuery<MyDonTuData>({
     queryKey: ["/api/my-space/don-tu"],
@@ -222,6 +224,7 @@ export default function MyDonTu() {
   const createStudentLeaveMutation = useMutation({
     mutationFn: async () => apiRequest("POST", "/api/student-leave-requests/self", {
       ...(viewerType === "parent" ? { studentId: activeLeaveStudentId } : {}),
+      scheduleIds: Array.from(selectedLeaveScheduleIds),
       startDate: leaveStartDate,
       endDate: leaveEndDate,
       description: leaveDescription.trim() || null,
@@ -241,6 +244,7 @@ export default function MyDonTu() {
     setLeaveStartDate("");
     setLeaveEndDate("");
     setLeaveDescription("");
+    setSelectedLeaveScheduleIds(new Set());
     setStudentLeaveDialogOpen(true);
   }
 
@@ -251,6 +255,16 @@ export default function MyDonTu() {
     setLeaveStartDate("");
     setLeaveEndDate("");
     setLeaveDescription("");
+    setSelectedLeaveScheduleIds(new Set());
+  }
+
+  function toggleLeaveSchedule(scheduleId: string, checked: boolean) {
+    setSelectedLeaveScheduleIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(scheduleId);
+      else next.delete(scheduleId);
+      return next;
+    });
   }
 
   function submitStudentLeaveRequest() {
@@ -260,6 +274,10 @@ export default function MyDonTu() {
     }
     if (leaveStartDate > leaveEndDate) {
       toast({ title: "Ngày bắt đầu không được sau ngày kết thúc", variant: "destructive" });
+      return;
+    }
+    if ((studentLeaveSchedulesQuery.data?.length ?? 0) > 0 && selectedLeaveScheduleIds.size === 0) {
+      toast({ title: "Vui lòng chọn ít nhất một lịch học muốn xin nghỉ", variant: "destructive" });
       return;
     }
     createStudentLeaveMutation.mutate();
@@ -594,7 +612,10 @@ export default function MyDonTu() {
                       <Input
                         type="date"
                         value={leaveStartDate}
-                        onChange={(event) => setLeaveStartDate(event.target.value)}
+                        onChange={(event) => {
+                          setLeaveStartDate(event.target.value);
+                          setSelectedLeaveScheduleIds(new Set());
+                        }}
                         disabled={createStudentLeaveMutation.isPending}
                         data-testid="input-student-leave-start-date"
                       />
@@ -604,7 +625,10 @@ export default function MyDonTu() {
                       <Input
                         type="date"
                         value={leaveEndDate}
-                        onChange={(event) => setLeaveEndDate(event.target.value)}
+                        onChange={(event) => {
+                          setLeaveEndDate(event.target.value);
+                          setSelectedLeaveScheduleIds(new Set());
+                        }}
                         disabled={createStudentLeaveMutation.isPending}
                         data-testid="input-student-leave-end-date"
                       />
@@ -615,12 +639,28 @@ export default function MyDonTu() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <label className="text-sm font-medium">Lịch học thực tế</label>
-                    {studentLeaveSchedulesQuery.isFetching && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      {selectedLeaveScheduleIds.size > 0 && <span>Đã chọn {selectedLeaveScheduleIds.size} buổi</span>}
+                      {studentLeaveSchedulesQuery.isFetching && <Loader2 className="h-4 w-4 animate-spin" />}
+                    </div>
                   </div>
                   <div className="max-h-52 overflow-y-auto rounded-lg border">
                     {studentLeaveSchedulesQuery.data?.length ? (
                       studentLeaveSchedulesQuery.data.map((schedule) => (
-                        <div key={schedule.id} className="border-b px-3 py-2.5 text-sm last:border-b-0">
+                        <label
+                          key={schedule.id}
+                          className={cn(
+                            "flex cursor-pointer items-start gap-3 border-b px-3 py-2.5 text-sm last:border-b-0 hover:bg-muted/30",
+                            selectedLeaveScheduleIds.has(schedule.id) && "bg-emerald-50/60",
+                          )}
+                        >
+                          <Checkbox
+                            checked={selectedLeaveScheduleIds.has(schedule.id)}
+                            onCheckedChange={(checked) => toggleLeaveSchedule(schedule.id, checked === true)}
+                            disabled={createStudentLeaveMutation.isPending}
+                            className="mt-0.5"
+                          />
+                          <span className="min-w-0">
                           <div className="font-medium">
                             {schedule.className}
                             {schedule.classCode && <span className="ml-1 text-xs font-normal text-muted-foreground">({schedule.classCode})</span>}
@@ -631,7 +671,8 @@ export default function MyDonTu() {
                             {schedule.locationName && ` · ${schedule.locationName}`}
                             {schedule.teachers && ` · ${schedule.teachers}`}
                           </div>
-                        </div>
+                          </span>
+                        </label>
                       ))
                     ) : (
                       <div className="px-4 py-6 text-center text-sm text-muted-foreground">
@@ -642,7 +683,7 @@ export default function MyDonTu() {
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Hệ thống sẽ tự gắn toàn bộ buổi học của học viên trong khoảng thời gian đã chọn.
+                    Chọn những buổi học mà học viên muốn xin nghỉ trong khoảng thời gian đã chọn.
                   </p>
                 </div>
 
@@ -674,6 +715,8 @@ export default function MyDonTu() {
                 || !activeLeaveStudent?.locations.length
                 || !leaveStartDate
                 || !leaveEndDate
+                || studentLeaveSchedulesQuery.isFetching
+                || ((studentLeaveSchedulesQuery.data?.length ?? 0) > 0 && selectedLeaveScheduleIds.size === 0)
               }
               data-testid="button-save-student-leave-request"
             >
