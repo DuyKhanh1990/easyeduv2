@@ -246,7 +246,6 @@ export function StoreReceiptDialog({ initialData, onClose, onSave, isSaving }: P
 
   function addProduct(p: ProductSearchResult) {
     const availableStock = Math.max(0, Number(p.stock) || 0);
-    if (availableStock <= 0) return;
     const key = `${p.id}_${Date.now()}`;
     setForm(f => ({
       ...f,
@@ -427,13 +426,8 @@ export function StoreReceiptDialog({ initialData, onClose, onSave, isSaving }: P
                           <button
                             key={p.id}
                             type="button"
-                            disabled={unavailable}
-                            onMouseDown={e => { e.preventDefault(); if (!unavailable) addProduct(p); }}
-                            className={`w-full px-3 py-2.5 text-left transition-colors border-b border-border/50 last:border-0 ${
-                              unavailable
-                                ? "cursor-not-allowed opacity-45 bg-muted/20"
-                                : "hover:bg-muted/60"
-                            }`}
+                            onMouseDown={e => { e.preventDefault(); addProduct(p); }}
+                            className="w-full px-3 py-2.5 text-left transition-colors border-b border-border/50 last:border-0 hover:bg-muted/60"
                           >
                             <div className="flex items-center justify-between gap-3">
                               <div className="min-w-0">
@@ -504,25 +498,17 @@ export function StoreReceiptDialog({ initialData, onClose, onSave, isSaving }: P
                           <Input
                             type="number"
                             min={1}
-                            max={item.availableStock && item.availableStock > 0 ? item.availableStock : undefined}
                             value={item.quantity}
                             onChange={e => {
                               const nextQuantity = Math.max(1, parseInt(e.target.value) || 1);
-                              const maxQuantity = item.availableStock && item.availableStock > 0
-                                ? item.availableStock
-                                : null;
-                              updateItem(
-                                item._key,
-                                "quantity",
-                                maxQuantity ? Math.min(nextQuantity, maxQuantity) : nextQuantity,
-                              );
+                               updateItem(item._key, "quantity", nextQuantity);
                             }}
                             className="h-7 text-xs px-2 text-center w-full"
-                            title={item.availableStock && item.availableStock > 0 ? `Tồn khả dụng: ${item.availableStock}` : undefined}
+                             title={`Tồn hiện tại: ${item.availableStock ?? 0}`}
                           />
-                          {item.availableStock && item.availableStock > 0 && (
+                           {item.availableStock !== null && item.availableStock !== undefined && (
                             <p className="mt-0.5 text-[9px] text-muted-foreground text-center">
-                              Tối đa {item.availableStock}
+                               Tồn hiện tại {item.availableStock}
                             </p>
                           )}
                         </td>
