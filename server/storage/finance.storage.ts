@@ -1180,7 +1180,7 @@ export async function getInvoicesSummary(filters: {
   isSuperAdmin?: boolean;
 } = {}): Promise<{
   totalCount: number;
-  byStatus: { unpaid: number; partial: number; paid: number; confirmed: number; debt: number; cancelled: number };
+  byStatus: { unpaid: number; partial: number; paid: number; debt: number; cancelled: number };
   totalRevenue: number;
   actualCollected: number;
   debtAmount: number;
@@ -1198,7 +1198,7 @@ export async function getInvoicesSummary(filters: {
     getInvoices({ ...filters, type: "Chi" }),
   ]);
 
-  const byStatus = { unpaid: 0, partial: 0, paid: 0, confirmed: 0, debt: 0, cancelled: 0 };
+  const byStatus = { unpaid: 0, partial: 0, paid: 0, debt: 0, cancelled: 0 };
   let expectedIncome = 0;
   let expectedExpense = 0;
   let actualIncome = 0;
@@ -1210,7 +1210,7 @@ export async function getInvoicesSummary(filters: {
   // nếu có. Vì vậy paidAmount chỉ phản ánh phần đã thu/chi của đúng các hóa đơn
   // trong tập lọc hiện tại, bao gồm cả trường hợp thanh toán một phần.
   for (const inv of incomeInvoices) {
-    const s = (inv.status ?? "unpaid") as keyof typeof byStatus;
+    const s = (isPaidInvoiceStatus(inv.status) ? "paid" : (inv.status ?? "unpaid")) as keyof typeof byStatus;
     if (s in byStatus) byStatus[s]++;
     if (inv.status === "cancelled") continue;
     expectedIncome += parseFloat(inv.grandTotal ?? "0");
@@ -2073,8 +2073,13 @@ export async function updateInvoiceStatus(invoiceId: string, status: string, use
   if (isPaidInvoiceStatus(status)) {
     extraFields.paidAmount = grandTotal.toFixed(2);
     extraFields.remainingAmount = "0";
-    if (userId) extraFields.paidBy = userId;
-    extraFields.paidAt = new Date();
+    // paid <-> confirmed is only a status rename. Preserve the original
+    // payment metadata so reports and audit semantics do not move or count
+    // the same payment a second time.
+    if (!isPaidInvoiceStatus(inv.status)) {
+      if (userId) extraFields.paidBy = userId;
+      extraFields.paidAt = new Date();
+    }
   } else if (status === "unpaid") {
     extraFields.paidAmount = "0";
     extraFields.remainingAmount = grandTotal.toFixed(2);
