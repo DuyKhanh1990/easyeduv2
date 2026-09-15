@@ -103,6 +103,15 @@ type StudentLeaveSchedule = {
   locationName?: string;
 };
 
+type StaffLeaveForm = {
+  type: "nghi_phep" | "nghi_co_luong" | "tang_ca";
+  fromDate: string;
+  toDate: string;
+  overtimeFrom: string;
+  overtimeTo: string;
+  reason: string;
+};
+
 const LEAVE_TYPES: Record<string, { label: string; icon: typeof Umbrella; color: string }> = {
   nghi_phep: { label: "Nghỉ phép", icon: Umbrella, color: "bg-violet-100 text-violet-700 border-violet-200" },
   nghi_co_luong: { label: "Nghỉ phép năm", icon: CalendarDays, color: "bg-blue-100 text-blue-700 border-blue-200" },
@@ -124,6 +133,26 @@ function formatDate(value?: string | null) {
 
 function formatMoney(value: number) {
   return `${new Intl.NumberFormat("vi-VN").format(Number(value || 0))} ₫`;
+}
+
+function todayDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function calculateStaffLeaveHours(fromDate: string, toDate: string) {
+  if (!fromDate || !toDate) return "0";
+  const from = new Date(`${fromDate}T00:00:00`);
+  const to = new Date(`${toDate}T00:00:00`);
+  const days = Math.max(0, Math.round((to.getTime() - from.getTime()) / 86400000)) + 1;
+  return String(days * 8);
+}
+
+function calculateOvertimeHours(fromTime: string, toTime: string) {
+  if (!fromTime || !toTime) return 0;
+  const [fromHour, fromMinute] = fromTime.split(":").map(Number);
+  const [toHour, toMinute] = toTime.split(":").map(Number);
+  const minutes = (toHour * 60 + toMinute) - (fromHour * 60 + fromMinute);
+  return minutes > 0 ? Number((minutes / 60).toFixed(2)) : 0;
 }
 
 function getLeaveType(type: string) {
@@ -169,6 +198,15 @@ export default function MyDonTu() {
   const [leaveEndDate, setLeaveEndDate] = useState("");
   const [leaveDescription, setLeaveDescription] = useState("");
   const [selectedLeaveScheduleIds, setSelectedLeaveScheduleIds] = useState<Set<string>>(new Set());
+  const [staffLeaveDialogOpen, setStaffLeaveDialogOpen] = useState(false);
+  const [staffLeaveForm, setStaffLeaveForm] = useState<StaffLeaveForm>({
+    type: "nghi_phep",
+    fromDate: todayDate(),
+    toDate: todayDate(),
+    overtimeFrom: "17:00",
+    overtimeTo: "19:00",
+    reason: "",
+  });
 
   const { data, isLoading, isError } = useQuery<MyDonTuData>({
     queryKey: ["/api/my-space/don-tu"],
@@ -238,6 +276,64 @@ export default function MyDonTu() {
       toast({ title: "Không thể gửi đơn xin nghỉ", description: error.message, variant: "destructive" });
     },
   });
+
+  const createStaffLeaveMutation = useMutation({
+    mutationFn: async () => apiRequest("POST", "/api/leave-requests/self", {
+      type: staffLeaveForm.type,
+      fromDate: staffLeaveForm.fromDate,
+      toDate: staffLeaveForm.type === "tang_ca" ? staffLeaveForm.fromDate : staffLeaveForm.toDate,
+      hours: staffLeaveForm.type === "tang_ca"
+        ? String(calculateOvertimeHours(staffLeaveForm.overtimeFrom, staffLeaveForm.overtimeTo))
+        : calculateStaffLeaveHours(staffLeaveForm.fromDate, staffLeaveForm.toDate),
+      overtimeFrom: staffLeaveForm.type === "tang_ca" ? staffLeaveForm.overtimeFrom : null,
+      overtimeTo: staffLeaveForm.type === "tang_ca" ? staffLeaveForm.overtimeTo : null,
+      reason: staffLeaveForm.reason.trim() || null,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/my-space/don-tu"] });
+      toast({ title: "Đã tạo đơn nghỉ phép" });
+      setStaffLeaveDialogOpen(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Không thể tạo đơn nghỉ phép", description: error.message, variant: "destructive" });
+    },
+  });
+
+  function openStaffLeaveDialog() {
+    const date = todayDate();
+    setStaffLeaveForm({
+      type: "nghi_phep",
+      fromDate: date,
+      toDate: date,
+      overtimeFrom: "17:00",
+      overtimeTo: "19:00",
+      reason: "",
+    });
+    setStaffLeaveDialogOpen(true);
+  }
+
+  function closeStaffLeaveDialog() {
+    if (!createStaffLeaveMutation.isPending) setStaffLeaveDialogOpen(false);
+  }
+
+  function submitStaffLeaveRequest() {
+    if (!staffLeaveForm.fromDate || !staffLeaveForm.toDate) {
+      toast({ title: "Vui lòng nhập thời gian xin nghỉ", variant: "destructive" });
+      return;
+    }
+    if (staffLeaveForm.fromDate > staffLeaveForm.toDate) {
+      toast({ title: "Ngày bắt đầu không được sau ngày kết thúc", variant: "destructive" });
+      return;
+    }
+    if (
+      staffLeaveForm.type === "tang_ca"
+      && calculateOvertimeHours(staffLeaveForm.overtimeFrom, staffLeaveForm.overtimeTo) <= 0
+    ) {
+      toast({ title: "Thời gian tăng ca không hợp lệ", variant: "destructive" });
+      return;
+    }
+    createStaffLeaveMutation.mutate();
+  }
 
   function openStudentLeaveDialog() {
     setSelectedLeaveStudentId("");
@@ -323,7 +419,17 @@ export default function MyDonTu() {
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              {isStudentArea && (
+              {data?.viewerType === "staff" ? (
+                <Button
+                  size="sm"
+                  onClick={openStaffLeaveDialog}
+                  className="h-8 gap-1 bg-white text-slate-700 hover:bg-slate-100"
+                  data-testid="button-open-staff-leave-request"
+                >
+                  <Plus className="h-4 w-4" />
+                  Thêm mới
+                </Button>
+              ) : isStudentArea && (
                 <Button
                   size="sm"
                   onClick={openStudentLeaveDialog}
@@ -725,6 +831,110 @@ export default function MyDonTu() {
             >
               {createStudentLeaveMutation.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
               Gửi đơn
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={staffLeaveDialogOpen} onOpenChange={(open) => open ? setStaffLeaveDialogOpen(true) : closeStaffLeaveDialog()}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Thêm đơn mới</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="rounded-lg border bg-muted/20 px-3 py-2.5">
+              <p className="text-xs text-muted-foreground">Nhân sự</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">
+                {data?.profile?.fullName || "Đang tải..."}
+                {data?.profile?.code && <span className="ml-1 font-normal text-muted-foreground">({data.profile.code})</span>}
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Loại đơn</label>
+              <Select
+                value={staffLeaveForm.type}
+                onValueChange={(value) => setStaffLeaveForm((current) => ({
+                  ...current,
+                  type: value as StaffLeaveForm["type"],
+                }))}
+                disabled={createStaffLeaveMutation.isPending}
+              >
+                <SelectTrigger className="h-10 w-full">
+                  <SelectValue placeholder="Chọn loại đơn" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="nghi_phep">Nghỉ phép</SelectItem>
+                  <SelectItem value="nghi_co_luong">Nghỉ phép năm</SelectItem>
+                  <SelectItem value="tang_ca">Tăng ca</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Từ ngày</label>
+                <Input
+                  type="date"
+                  value={staffLeaveForm.fromDate}
+                  onChange={(event) => setStaffLeaveForm((current) => ({ ...current, fromDate: event.target.value }))}
+                  disabled={createStaffLeaveMutation.isPending}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Đến ngày</label>
+                <Input
+                  type="date"
+                  value={staffLeaveForm.toDate}
+                  onChange={(event) => setStaffLeaveForm((current) => ({ ...current, toDate: event.target.value }))}
+                  disabled={createStaffLeaveMutation.isPending || staffLeaveForm.type === "tang_ca"}
+                />
+              </div>
+            </div>
+
+            {staffLeaveForm.type === "tang_ca" && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Từ giờ</label>
+                  <Input
+                    type="time"
+                    value={staffLeaveForm.overtimeFrom}
+                    onChange={(event) => setStaffLeaveForm((current) => ({ ...current, overtimeFrom: event.target.value }))}
+                    disabled={createStaffLeaveMutation.isPending}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Đến giờ</label>
+                  <Input
+                    type="time"
+                    value={staffLeaveForm.overtimeTo}
+                    onChange={(event) => setStaffLeaveForm((current) => ({ ...current, overtimeTo: event.target.value }))}
+                    disabled={createStaffLeaveMutation.isPending}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Lý do</label>
+              <Textarea
+                rows={4}
+                placeholder="Nhập lý do..."
+                value={staffLeaveForm.reason}
+                onChange={(event) => setStaffLeaveForm((current) => ({ ...current, reason: event.target.value }))}
+                disabled={createStaffLeaveMutation.isPending}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeStaffLeaveDialog} disabled={createStaffLeaveMutation.isPending}>
+              Hủy
+            </Button>
+            <Button onClick={submitStaffLeaveRequest} disabled={createStaffLeaveMutation.isPending}>
+              {createStaffLeaveMutation.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              Tạo đơn
             </Button>
           </DialogFooter>
         </DialogContent>

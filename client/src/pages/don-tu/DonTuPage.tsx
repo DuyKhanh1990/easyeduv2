@@ -240,6 +240,10 @@ export function DonTuPage() {
 
   function handleRejectConfirm() {
     if (!rejectTarget) return;
+    if (!rejectNote.trim()) {
+      toast({ title: "Vui lòng nhập lý do từ chối", variant: "destructive" });
+      return;
+    }
     statusMutation.mutate({ id: rejectTarget.id, status: "rejected", adminNote: rejectNote });
     setRejectOpen(false);
   }

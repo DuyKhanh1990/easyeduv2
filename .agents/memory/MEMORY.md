@@ -43,3 +43,4 @@
 - [Harbor npm lockfile URLs](harbor-npm-lockfile-urls.md) — Docker build ngoài Replit phải đổi cả package-firewall.replit.local và .internal về npmjs.org trước npm ci.
 - [Staff password display](staff-password-display.md) — giữ hash đăng nhập và ciphertext riêng để dialog staff có thể hiển thị mật khẩu khi được phép.
 - [Student self-service leave](student-self-leave-request.md) — luồng học viên/phụ huynh tự gửi đơn phải tự suy ra học viên/cơ sở và tách bản ghi theo từng cơ sở.
+- [Staff leave notification routing](staff-leave-notification-routing.md) — đơn nghỉ phép nhân sự gửi theo quyền `/don-tu` cùng cơ sở; trạng thái chỉ trả về người tạo.

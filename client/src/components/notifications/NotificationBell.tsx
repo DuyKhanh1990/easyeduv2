@@ -142,6 +142,9 @@ function routeFromDeeplink(
     case "StaffLeaveRequests":
       return "/learning-overview?tab=xin-nghi";
 
+    case "StaffMyLeaveRequests":
+      return "/my-space/don-tu";
+
     case "StudentLeaveRequests":
       return "/my-space/don-tu";
 
@@ -267,6 +270,21 @@ function renderNotificationContent(content: string) {
         <span>{content.slice(0, paidIdx)}</span>
         <span style={{ color: "#16a34a", fontWeight: 700 }}>{paidPhrase}</span>
         <span>{content.slice(paidIdx + paidPhrase.length)}</span>
+      </>
+    );
+  }
+
+  const leaveStatusMatch = content.match(/(Trạng thái:\s*)(Đã duyệt|Từ chối)(?=,|$)/);
+  if (leaveStatusMatch && leaveStatusMatch.index !== undefined) {
+    const statusLabel = leaveStatusMatch[2];
+    const statusColor = statusLabel === "Đã duyệt" ? "#16a34a" : "#f97316";
+    const statusStart = leaveStatusMatch.index + leaveStatusMatch[1].length;
+    const statusEnd = statusStart + statusLabel.length;
+    return (
+      <>
+        <span>{content.slice(0, statusStart)}</span>
+        <span style={{ color: statusColor, fontWeight: 700 }}>{statusLabel}</span>
+        <span>{content.slice(statusEnd)}</span>
       </>
     );
   }
