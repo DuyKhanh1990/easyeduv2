@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { and, asc, count, desc, eq, gte, ilike, inArray, lte, ne, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, lte, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db";
 import {

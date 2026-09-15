@@ -155,11 +155,18 @@ function EmptyState({ message }: { message: string }) {
 }
 
 export default function MyDonTu() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [mainTab, setMainTab] = useState<MainTab>("don-tu");
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [studentFilter, setStudentFilter] = useState("all");
   const [rewardFilter, setRewardFilter] = useState<"all" | "reward" | "penalty">("all");
+  const [studentLeaveDialogOpen, setStudentLeaveDialogOpen] = useState(false);
+  const [selectedLeaveStudentId, setSelectedLeaveStudentId] = useState("");
+  const [leaveStartDate, setLeaveStartDate] = useState("");
+  const [leaveEndDate, setLeaveEndDate] = useState("");
+  const [leaveDescription, setLeaveDescription] = useState("");
 
   const { data, isLoading, isError } = useQuery<MyDonTuData>({
     queryKey: ["/api/my-space/don-tu"],
@@ -173,6 +180,90 @@ export default function MyDonTu() {
   const viewerType = data?.viewerType ?? "staff";
   const isStaff = viewerType === "staff";
   const linkedStudents = data?.linkedStudents ?? [];
+  const isStudentArea = viewerType === "student" || viewerType === "parent";
+
+  const studentLeaveContextQuery = useQuery<StudentLeaveContext>({
+    queryKey: ["/api/student-leave-requests/self/context"],
+    queryFn: async () => {
+      const response = await fetch("/api/student-leave-requests/self/context", { credentials: "include" });
+      if (!response.ok) throw new Error("Không thể tải thông tin học viên");
+      return response.json();
+    },
+    enabled: studentLeaveDialogOpen && isStudentArea,
+  });
+
+  const leaveContextStudents = studentLeaveContextQuery.data?.students ?? [];
+  const activeLeaveStudentId = viewerType === "student"
+    ? leaveContextStudents[0]?.id ?? data?.profile?.id ?? ""
+    : selectedLeaveStudentId || leaveContextStudents[0]?.id || "";
+  const activeLeaveStudent = leaveContextStudents.find((student) => student.id === activeLeaveStudentId);
+
+  useEffect(() => {
+    if (studentLeaveDialogOpen && viewerType === "parent" && !selectedLeaveStudentId && leaveContextStudents[0]) {
+      setSelectedLeaveStudentId(leaveContextStudents[0].id);
+    }
+  }, [studentLeaveDialogOpen, viewerType, selectedLeaveStudentId, leaveContextStudents]);
+
+  const studentLeaveSchedulesQuery = useQuery<StudentLeaveSchedule[]>({
+    queryKey: ["/api/student-leave-requests/self/schedules", activeLeaveStudentId, leaveStartDate, leaveEndDate],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        studentId: activeLeaveStudentId,
+        startDate: leaveStartDate,
+        endDate: leaveEndDate,
+      });
+      const response = await fetch(`/api/student-leave-requests/self/schedules?${params.toString()}`, { credentials: "include" });
+      if (!response.ok) throw new Error("Không thể tải lịch học");
+      return response.json();
+    },
+    enabled: studentLeaveDialogOpen && isStudentArea && Boolean(activeLeaveStudentId && leaveStartDate && leaveEndDate && leaveStartDate <= leaveEndDate),
+  });
+
+  const createStudentLeaveMutation = useMutation({
+    mutationFn: async () => apiRequest("POST", "/api/student-leave-requests/self", {
+      ...(viewerType === "parent" ? { studentId: activeLeaveStudentId } : {}),
+      startDate: leaveStartDate,
+      endDate: leaveEndDate,
+      description: leaveDescription.trim() || null,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/my-space/don-tu"] });
+      toast({ title: "Đã gửi đơn xin nghỉ" });
+      closeStudentLeaveDialog();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Không thể gửi đơn xin nghỉ", description: error.message, variant: "destructive" });
+    },
+  });
+
+  function openStudentLeaveDialog() {
+    setSelectedLeaveStudentId("");
+    setLeaveStartDate("");
+    setLeaveEndDate("");
+    setLeaveDescription("");
+    setStudentLeaveDialogOpen(true);
+  }
+
+  function closeStudentLeaveDialog() {
+    if (createStudentLeaveMutation.isPending) return;
+    setStudentLeaveDialogOpen(false);
+    setSelectedLeaveStudentId("");
+    setLeaveStartDate("");
+    setLeaveEndDate("");
+    setLeaveDescription("");
+  }
+
+  function submitStudentLeaveRequest() {
+    if (!activeLeaveStudentId || !leaveStartDate || !leaveEndDate) {
+      toast({ title: "Vui lòng nhập thời gian xin nghỉ", variant: "destructive" });
+      return;
+    }
+    if (leaveStartDate > leaveEndDate) {
+      toast({ title: "Ngày bắt đầu không được sau ngày kết thúc", variant: "destructive" });
+      return;
+    }
+    createStudentLeaveMutation.mutate();
+  }
 
   const filteredLeaveRequests = useMemo(() => {
     return (data?.leaveRequests ?? []).filter((request) => (
@@ -213,7 +304,20 @@ export default function MyDonTu() {
                   : viewerType === "parent" ? "Đơn từ của các học viên đã liên kết" : "Đơn từ của học viên"}
               </p>
             </div>
-            <PageGuideButton pageTitle="Đơn từ của tôi" className="shrink-0" />
+            <div className="flex shrink-0 items-center gap-2">
+              {isStudentArea && (
+                <Button
+                  size="sm"
+                  onClick={openStudentLeaveDialog}
+                  className="h-8 gap-1 bg-white text-slate-700 hover:bg-slate-100"
+                  data-testid="button-open-student-leave-request"
+                >
+                  <Plus className="h-4 w-4" />
+                  Thêm mới
+                </Button>
+              )}
+              <PageGuideButton pageTitle="Đơn từ của tôi" />
+            </div>
           </div>
           <div className="mt-4 flex items-end gap-1 overflow-x-auto">
             {tabs.map(({ id, label, icon: Icon }) => (
@@ -421,6 +525,164 @@ export default function MyDonTu() {
           </div>
         )}
       </div>
+
+      <Dialog open={studentLeaveDialogOpen} onOpenChange={(open) => open ? setStudentLeaveDialogOpen(true) : closeStudentLeaveDialog()}>
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Thêm đơn xin nghỉ</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {studentLeaveContextQuery.isLoading ? (
+              <div className="flex items-center justify-center gap-2 rounded-lg border bg-muted/20 px-4 py-8 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Đang nhận diện thông tin học viên...
+              </div>
+            ) : studentLeaveContextQuery.isError ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                Không thể tải thông tin học viên và cơ sở được gán.
+              </div>
+            ) : (
+              <>
+                {viewerType === "parent" && leaveContextStudents.length > 1 && (
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Học viên</label>
+                    <select
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      value={activeLeaveStudentId}
+                      onChange={(event) => setSelectedLeaveStudentId(event.target.value)}
+                      disabled={createStudentLeaveMutation.isPending}
+                    >
+                      {leaveContextStudents.map((student) => (
+                        <option key={student.id} value={student.id}>
+                          {student.fullName} ({student.code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Học viên</p>
+                    <p className="mt-1 text-sm font-medium">
+                      {activeLeaveStudent?.fullName || data?.profile?.fullName || "—"}
+                      {(activeLeaveStudent?.code || data?.profile?.code) && (
+                        <span className="ml-1 text-xs font-normal text-muted-foreground">
+                          ({activeLeaveStudent?.code || data?.profile?.code})
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Cơ sở được gán</p>
+                    <p className="mt-1 text-sm font-medium">
+                      {activeLeaveStudent?.locations.length
+                        ? activeLeaveStudent.locations.map((location) => location.name).join(", ")
+                        : "Chưa được gán cơ sở"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Thời gian xin nghỉ <span className="text-red-500">*</span>
+                  </label>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">Bắt đầu</label>
+                      <Input
+                        type="date"
+                        value={leaveStartDate}
+                        onChange={(event) => setLeaveStartDate(event.target.value)}
+                        disabled={createStudentLeaveMutation.isPending}
+                        data-testid="input-student-leave-start-date"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">Kết thúc</label>
+                      <Input
+                        type="date"
+                        value={leaveEndDate}
+                        onChange={(event) => setLeaveEndDate(event.target.value)}
+                        disabled={createStudentLeaveMutation.isPending}
+                        data-testid="input-student-leave-end-date"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-sm font-medium">Lịch học thực tế</label>
+                    {studentLeaveSchedulesQuery.isFetching && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                  </div>
+                  <div className="max-h-52 overflow-y-auto rounded-lg border">
+                    {studentLeaveSchedulesQuery.data?.length ? (
+                      studentLeaveSchedulesQuery.data.map((schedule) => (
+                        <div key={schedule.id} className="border-b px-3 py-2.5 text-sm last:border-b-0">
+                          <div className="font-medium">
+                            {schedule.className}
+                            {schedule.classCode && <span className="ml-1 text-xs font-normal text-muted-foreground">({schedule.classCode})</span>}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {formatDate(schedule.date)}
+                            {schedule.time && ` · ${schedule.time}`}
+                            {schedule.locationName && ` · ${schedule.locationName}`}
+                            {schedule.teachers && ` · ${schedule.teachers}`}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                        {leaveStartDate && leaveEndDate
+                          ? "Không có lịch học trong khoảng thời gian này."
+                          : "Chọn thời gian để hệ thống tải lịch học thực tế."}
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Hệ thống sẽ tự gắn toàn bộ buổi học của học viên trong khoảng thời gian đã chọn.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Mô tả</label>
+                  <Textarea
+                    rows={3}
+                    placeholder="Nhập lý do xin nghỉ..."
+                    value={leaveDescription}
+                    onChange={(event) => setLeaveDescription(event.target.value)}
+                    disabled={createStudentLeaveMutation.isPending}
+                    data-testid="textarea-student-leave-description"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeStudentLeaveDialog} disabled={createStudentLeaveMutation.isPending}>
+              Hủy
+            </Button>
+            <Button
+              onClick={submitStudentLeaveRequest}
+              disabled={
+                createStudentLeaveMutation.isPending
+                || studentLeaveContextQuery.isLoading
+                || !activeLeaveStudentId
+                || !activeLeaveStudent?.locations.length
+                || !leaveStartDate
+                || !leaveEndDate
+              }
+              data-testid="button-save-student-leave-request"
+            >
+              {createStudentLeaveMutation.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              Gửi đơn
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

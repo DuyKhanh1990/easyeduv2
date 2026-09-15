@@ -42,3 +42,4 @@
 - [Web Push tenant scope](web-push-tenant-scope.md) — dùng chung VAPID keys, nhưng subscription luôn scope theo centerConfig.id + userId và phải push schema từng database.
 - [Harbor npm lockfile URLs](harbor-npm-lockfile-urls.md) — Docker build ngoài Replit phải đổi cả package-firewall.replit.local và .internal về npmjs.org trước npm ci.
 - [Staff password display](staff-password-display.md) — giữ hash đăng nhập và ciphertext riêng để dialog staff có thể hiển thị mật khẩu khi được phép.
+- [Student self-service leave](student-self-leave-request.md) — luồng học viên/phụ huynh tự gửi đơn phải tự suy ra học viên/cơ sở và tách bản ghi theo từng cơ sở.
