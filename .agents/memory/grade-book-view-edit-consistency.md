@@ -8,3 +8,9 @@ The grade-book view and edit dialogs must use the same student set: active class
 **Why:** The view dialog previously loaded grade details before active enrollments were available and rendered every active student. That caused intermittent blank scores due to incorrect enrollment mapping and showed students absent from the edit dialog.
 
 **How to apply:** When loading grade-book details, wait for active-students data, map actual student IDs to enrollment IDs only after it arrives, and guard against stale requests when the dialog/book changes.
+
+Comment editors in grade-book dialogs must constrain both the dialog and editor height (`max-height` plus an internal vertical scroll), while keeping the header and action buttons fixed.
+
+**Why:** Long rich-text feedback otherwise expands beyond the viewport and hides the remaining content and save controls.
+
+**How to apply:** Use a flex column dialog with a shrinkable `overflow-y-auto` content area and pass `maxHeight` to `RichEditor`.

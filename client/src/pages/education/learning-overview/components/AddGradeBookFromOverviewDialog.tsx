@@ -790,22 +790,23 @@ export function AddGradeBookFromOverviewDialog({ open, onClose }: Props) {
 
       {/* Comment dialog */}
       <Dialog open={commentDialogOpen} onOpenChange={setCommentDialogOpen}>
-        <DialogContent className="max-w-[672px]">
-          <DialogHeader>
+        <DialogContent className="max-w-[672px] max-h-[90vh] flex flex-col">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Nhận xét học viên</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 py-2">
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-3 py-2 pr-1">
             <p className="text-sm font-medium">{commentStudentName}</p>
             <RichEditor
               placeholder="Nhập nhận xét cho học viên..."
               minHeight="240px"
+              maxHeight="50vh"
               value={studentComments[commentStudentId] || ""}
               onChange={(val) =>
                 setStudentComments((prev) => ({ ...prev, [commentStudentId]: val }))
               }
             />
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0">
             <Button variant="outline" onClick={() => setCommentDialogOpen(false)}>
               Huỷ
             </Button>
