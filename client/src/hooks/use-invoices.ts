@@ -184,7 +184,7 @@ export function useInvoices(queryParams: InvoiceQueryParams = {}) {
     invoices:            data?.data       ?? [],
     total:               data?.total      ?? 0,
     parentTotal:         data?.parentTotal ?? data?.total ?? 0,
-    tabCounts:           data?.tabCounts  ?? { all: 0, unpaid: 0, partial: 0, paid: 0, debt: 0 },
+    tabCounts:           data?.tabCounts  ?? { all: 0, unpaid: 0, partial: 0, paid: 0, confirmed: 0, debt: 0 },
     isLoading,
     deleteMutation,
     updateStatusMutation,

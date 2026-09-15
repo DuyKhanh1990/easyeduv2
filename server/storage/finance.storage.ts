@@ -435,7 +435,7 @@ export async function getInvoices(filters: {
 
   if (f.locationId) {
     if (f.allowedLocationIds !== null && f.allowedLocationIds !== undefined && !f.allowedLocationIds.includes(f.locationId)) {
-      return { data: [], total: 0, parentTotal: 0, tabCounts: { all: 0, unpaid: 0, partial: 0, paid: 0, debt: 0 } };
+      return { data: [], total: 0, parentTotal: 0, tabCounts: { all: 0, unpaid: 0, partial: 0, paid: 0, confirmed: 0, debt: 0 } };
     }
     conditions.push(eq(invoices.locationId, f.locationId));
   } else if (f.locationNames?.length) {
@@ -443,7 +443,7 @@ export async function getInvoices(filters: {
   } else if (!f.isSuperAdmin && f.allowedLocationIds !== null && f.allowedLocationIds !== undefined && f.allowedLocationIds.length > 0) {
     conditions.push(inArray(invoices.locationId, f.allowedLocationIds) as any);
   } else if (!f.isSuperAdmin && f.allowedLocationIds !== null && f.allowedLocationIds !== undefined && f.allowedLocationIds.length === 0) {
-      return { data: [], total: 0, parentTotal: 0, tabCounts: { all: 0, unpaid: 0, partial: 0, paid: 0, debt: 0 } };
+      return { data: [], total: 0, parentTotal: 0, tabCounts: { all: 0, unpaid: 0, partial: 0, paid: 0, confirmed: 0, debt: 0 } };
   }
 
   if (f.paidAtFrom || f.paidAtTo) {
@@ -670,9 +670,15 @@ export async function getInvoices(filters: {
   `;
   const paidRowCountExpr = sql`
     CASE
-      WHEN ${scheduleCountExpr} > 1 THEN ${paidScheduleCountExpr}
-      WHEN ${scheduleCountExpr} = 1 THEN ${paidScheduleCountExpr}
-      WHEN ${invoices.status} IN ('paid', 'confirmed') THEN 1
+      WHEN ${scheduleCountExpr} > 1 THEN CASE WHEN ${invoices.status} = 'confirmed' THEN 0 ELSE ${paidScheduleCountExpr} END
+      WHEN ${scheduleCountExpr} = 1 THEN CASE WHEN ${invoices.status} = 'confirmed' THEN 0 ELSE ${paidScheduleCountExpr} END
+      WHEN ${invoices.status} = 'paid' THEN 1
+      ELSE 0
+    END
+  `;
+  const confirmedRowCountExpr = sql`
+    CASE
+      WHEN ${invoices.status} = 'confirmed' THEN 1
       ELSE 0
     END
   `;
@@ -686,9 +692,9 @@ export async function getInvoices(filters: {
     END
   `;
   const effectivelyPaid = sql`(
-    (${scheduleCountExpr} > 1 AND ${paidScheduleCountExpr} > 0)
-    OR (${scheduleCountExpr} = 1 AND ${paidScheduleCountExpr} = 1)
-    OR (${scheduleCountExpr} = 0 AND ${invoices.status} IN ('paid', 'confirmed'))
+    (${invoices.status} != 'confirmed' AND ${scheduleCountExpr} > 1 AND ${paidScheduleCountExpr} > 0)
+    OR (${invoices.status} != 'confirmed' AND ${scheduleCountExpr} = 1 AND ${paidScheduleCountExpr} = 1)
+    OR (${scheduleCountExpr} = 0 AND ${invoices.status} = 'paid')
   )`;
   const effectivelyUnpaid = sql`(
     (${scheduleCountExpr} > 0 AND ${paidScheduleCountExpr} < ${scheduleCountExpr})
@@ -700,6 +706,8 @@ export async function getInvoices(filters: {
     tabConditions.push(effectivelyUnpaid as any);
   } else if (f.tabFilter === "paid") {
     tabConditions.push(effectivelyPaid as any);
+  } else if (f.tabFilter === "confirmed") {
+    tabConditions.push(sql`${invoices.status} = 'confirmed'` as any);
   }
   else if (f.tabFilter === "debt")    tabConditions.push(hasOutstandingDebt as any);
   const tabWhere = tabConditions.length > 0 ? and(...tabConditions) : undefined;
@@ -720,13 +728,14 @@ export async function getInvoices(filters: {
     default:            orderBy = desc(invoices.createdAt); break;
   }
 
-  let tabCounts: Record<string, number> = { all: 0, unpaid: 0, partial: 0, paid: 0, debt: 0 };
+  let tabCounts: Record<string, number> = { all: 0, unpaid: 0, partial: 0, paid: 0, confirmed: 0, debt: 0 };
   if (f.includeTabCounts) {
     const [tc] = await db.select({
       all: sql<number>`COALESCE(SUM(${visibleRowCountExpr}), 0)::int`,
       unpaid: sql<number>`COALESCE(SUM(${unpaidRowCountExpr}), 0)::int`,
       partial: sql<number>`COUNT(*) FILTER (WHERE ${invoices.status} = 'partial')::int`,
       paid: sql<number>`COALESCE(SUM(${paidRowCountExpr}), 0)::int`,
+      confirmed: sql<number>`COALESCE(SUM(${confirmedRowCountExpr}), 0)::int`,
       debt: sql<number>`COUNT(*) FILTER (WHERE ${hasOutstandingDebt})::int`,
     })
     .from(invoices)
@@ -737,7 +746,7 @@ export async function getInvoices(filters: {
     .leftJoin(paidByStaff,  eq(invoices.paidBy, paidByStaff.userId))
     .leftJoin(classes,      eq(invoices.classId, classes.id))
     .where(baseWhere);
-    tabCounts = { all: tc.all, unpaid: tc.unpaid, partial: tc.partial, paid: tc.paid, debt: tc.debt };
+    tabCounts = { all: tc.all, unpaid: tc.unpaid, partial: tc.partial, paid: tc.paid, confirmed: tc.confirmed, debt: tc.debt };
   }
 
   let total = 0;
@@ -745,6 +754,8 @@ export async function getInvoices(filters: {
   if (applyPagination) {
     const countExpr = f.tabFilter === "paid"
       ? paidRowCountExpr
+      : f.tabFilter === "confirmed"
+        ? confirmedRowCountExpr
       : f.tabFilter === "unpaid"
         ? unpaidRowCountExpr
         : f.tabFilter === "debt"

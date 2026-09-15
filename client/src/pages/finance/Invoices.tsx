@@ -66,7 +66,7 @@ import { useLocations } from "@/hooks/use-locations";
 import type { SortKey } from "@/hooks/use-invoice-filters";
 import { downloadXlsx } from "@/lib/excel-utils";
 
-type TabKey = "all" | "unpaid" | "paid" | "debt" | "history" | "print-template";
+type TabKey = "all" | "unpaid" | "paid" | "confirmed" | "debt" | "history" | "print-template";
 type DebtCondition = "all" | "overdue" | "today" | "soon" | "upcoming" | "no-due-date";
 
 type SummaryComparison = {
@@ -97,6 +97,7 @@ const TABS: { key: TabKey; label: string; statusFilter?: string; color: string }
   { key: "all",              label: "Tất cả",            color: "#64748b" },
   { key: "unpaid",           label: "Chưa thanh toán",   statusFilter: "unpaid",  color: "#ca8a04" },
   { key: "paid",             label: "Đã thanh toán",     statusFilter: "paid",    color: "#16a34a" },
+  { key: "confirmed",        label: "Đã xác nhận",       statusFilter: "confirmed", color: "#059669" },
   { key: "debt",             label: "Công nợ",           statusFilter: "debt",    color: "#dc2626" },
   { key: "history",          label: "Lịch sử",                                    color: "#7c3aed" },
   { key: "print-template",   label: "Mẫu in hoá đơn",                             color: "#0891b2" },
@@ -1749,7 +1750,10 @@ export default function Invoices() {
       if (isInvoicePaidLike(invoice.status)) return false;
     }
     if (activeTab === "paid") {
-      if (!isInvoicePaidLike(invoice.status)) return false;
+      if (invoice.status !== "paid") return false;
+    }
+    if (activeTab === "confirmed") {
+      if (invoice.status !== "confirmed") return false;
     }
 
     if (filters.payers.length > 0 && !filters.payers.includes(invoice.paidByName ?? "")) {
