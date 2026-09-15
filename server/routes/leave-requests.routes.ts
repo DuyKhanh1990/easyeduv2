@@ -82,7 +82,7 @@ async function notifyStaffLeaveCreated(request: {
     referenceType: "staff_leave_request",
     referenceDate: request.fromDate,
     deeplink: {
-      screen: "StaffLeaveRequests",
+      screen: "StaffLeaveRequestManagement",
       params: { requestId: request.id },
     },
   });

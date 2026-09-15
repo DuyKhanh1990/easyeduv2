@@ -7,4 +7,4 @@ description: Quy tắc gửi notification cho đơn nghỉ phép của nhân s�
 
 **Why:** Người tạo cần nhận trạng thái riêng, còn người duyệt phải nhận đúng phạm vi cơ sở thay vì toàn bộ nhân sự.
 
-**How to apply:** Giữ `referenceType` là `staff_leave_request`; notification gửi đến người duyệt dùng deeplink `StaffLeaveRequests`, còn notification trạng thái gửi về người tạo dùng deeplink `StaffMyLeaveRequests`.
+**How to apply:** Giữ `referenceType` là `staff_leave_request`; notification gửi đến người duyệt dùng deeplink `StaffLeaveRequestManagement`, còn notification trạng thái gửi về người tạo dùng deeplink `StaffMyLeaveRequests`. Đơn nghỉ học viên/phụ huynh mới dùng `StaffLeaveRequests`.

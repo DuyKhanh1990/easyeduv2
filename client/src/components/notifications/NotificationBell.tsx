@@ -142,6 +142,9 @@ function routeFromDeeplink(
     case "StaffLeaveRequests":
       return "/learning-overview?tab=xin-nghi";
 
+    case "StaffLeaveRequestManagement":
+      return "/don-tu";
+
     case "StaffMyLeaveRequests":
       return "/my-space/don-tu";
 
@@ -162,6 +165,14 @@ function getNotificationRoute(notification: Notification, isStudent: boolean): s
     | null
     | undefined;
   if (storedDeeplink?.screen) {
+    // Older staff leave notifications used StaffLeaveRequests, which is
+    // reserved for student/parent leave requests handled in learning overview.
+    if (
+      storedDeeplink.screen === "StaffLeaveRequests"
+      && notification.referenceType === "staff_leave_request"
+    ) {
+      return "/don-tu";
+    }
     const route = routeFromDeeplink(storedDeeplink, isStudent);
     if (route) return route;
   }
