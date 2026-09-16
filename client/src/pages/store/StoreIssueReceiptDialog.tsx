@@ -200,9 +200,8 @@ function IssueAdjustmentDialog({
                       </button>
                     </PopoverTrigger>
                     <PopoverContent
-                      className="pointer-events-auto z-[100] w-[26rem] max-w-[calc(100vw-2rem)] p-3"
+                      className="w-[26rem] max-w-[calc(100vw-2rem)] p-3"
                       align="start"
-                      onPointerDownOutside={event => event.preventDefault()}
                     >
                       <div className="relative mb-2">
                         <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -228,16 +227,10 @@ function IssueAdjustmentDialog({
                             <button
                               key={option.id}
                               type="button"
-                              className="pointer-events-auto flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-muted/60"
-                              onPointerDown={event => {
-                                event.stopPropagation();
-                              }}
-                              onClick={event => {
-                                event.preventDefault();
-                                event.stopPropagation();
+                              className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-muted/60"
+                              onClick={() => {
                                 onSelectOption(row.id, option.id);
                                 setOpenPickerId(null);
-                                setSearch("");
                               }}
                             >
                               <span className="min-w-0 flex-1">
