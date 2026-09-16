@@ -47,3 +47,4 @@
 - [Grade-book view/edit consistency](grade-book-view-edit-consistency.md) — dialog xem phải chờ active students, map enrollment sau khi đủ dữ liệu và lọc cùng tập học viên có dữ liệu như dialog sửa.
 - [Role-based account code generation](role-code-generation.md) — one code per user; automatic multi-assignment codes use the first selected role and location.
 - [Invoice schedule descriptions](invoice-schedule-description.md) — tuition invoice notes must derive weekday/shift times from each student's selected sessions, not the whole class schedule.
+- [Bulk student session scope](bulk-student-session-scope.md) — bulk session removal must carry each student's studentClassId; one shared class-row ID silently omits other students.

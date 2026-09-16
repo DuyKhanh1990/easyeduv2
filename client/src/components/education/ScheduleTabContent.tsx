@@ -475,6 +475,7 @@ export function ScheduleTabContent({
           }}
           studentIds={studentToRemove.studentIds}
           studentClassId={studentToRemove.studentClassId}
+           studentClassIds={studentToRemove.studentClassIds}
           fromSessionOrder={studentToRemove.fromSessionOrder}
           toSessionOrder={studentToRemove.toSessionOrder}
           classId={classId}

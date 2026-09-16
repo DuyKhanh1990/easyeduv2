@@ -20,6 +20,7 @@ interface RemoveStudentFromSessionDialogProps {
   onOpenChange: (open: boolean) => void;
   studentIds: string[];
   studentClassId: string;
+  studentClassIds?: Record<string, string>;
   fromSessionOrder: number;
   toSessionOrder: number;
   classId: string;
@@ -32,6 +33,7 @@ export function RemoveStudentFromSessionDialog({
   onOpenChange,
   studentIds,
   studentClassId,
+  studentClassIds,
   fromSessionOrder: initialFromSessionOrder,
   toSessionOrder: initialToSessionOrder,
   classId,
@@ -87,6 +89,7 @@ export function RemoveStudentFromSessionDialog({
       const res = await apiRequest("POST", "/api/students/remove-from-sessions", {
         studentIds: validStudentIds,
         studentClassId,
+        studentClassIds,
         fromSessionOrder,
         toSessionOrder,
         deleteMode: fromSessionOrder === toSessionOrder ? "single" : "range",
@@ -129,6 +132,7 @@ export function RemoveStudentFromSessionDialog({
       await apiRequest("POST", "/api/students/remove-from-sessions-confirm", {
         studentIds: validStudentIds,
         studentClassId,
+        studentClassIds,
         fromSessionOrder,
         toSessionOrder,
         deleteMode: fromSessionOrder === toSessionOrder ? "single" : "range",
@@ -166,6 +170,7 @@ export function RemoveStudentFromSessionDialog({
       const res = await apiRequest("POST", "/api/students/remove-from-sessions", {
         studentIds: validStudentIds,
         studentClassId,
+        studentClassIds,
         fromSessionOrder,
         toSessionOrder,
         deleteMode: fromSessionOrder === toSessionOrder ? "single" : "range",

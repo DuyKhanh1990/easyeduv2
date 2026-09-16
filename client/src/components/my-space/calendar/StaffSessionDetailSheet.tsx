@@ -214,6 +214,11 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
     selectedStudentIds.includes(ss.studentId)
   );
   const removeStudentClassId = selectedStudentSessions[0]?.studentClassId ?? "";
+  const removeStudentClassIds = Object.fromEntries(
+    selectedStudentSessions
+      .filter((ss: any) => ss.studentId && ss.studentClassId)
+      .map((ss: any) => [ss.studentId, ss.studentClassId]),
+  );
 
   return (
     <>
@@ -599,6 +604,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
           }}
           studentIds={selectedStudentSessions.map((ss: any) => ss.studentId)}
           studentClassId={removeStudentClassId}
+          studentClassIds={removeStudentClassIds}
           fromSessionOrder={session.sessionIndex ?? 1}
           toSessionOrder={session.sessionIndex ?? 1}
           classId={classId}

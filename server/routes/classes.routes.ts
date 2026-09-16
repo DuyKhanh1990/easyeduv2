@@ -5002,7 +5002,19 @@ export function registerClassesRoutes(app: Express): void {
 
   app.post(api.students.removeFromSessionsConfirm.path, async (req, res) => {
     try {
-      const { studentIds, studentClassId, fromSessionOrder, toSessionOrder, deleteOnlyUnattended, orphanAction } = req.body;
+      const {
+        studentIds,
+        studentClassId: requestedStudentClassId,
+        studentClassIds,
+        fromSessionOrder,
+        toSessionOrder,
+        deleteOnlyUnattended,
+        orphanAction,
+      } = req.body;
+      const resolvedStudentClassIds: Record<string, string> =
+        studentClassIds && typeof studentClassIds === "object" ? studentClassIds : {};
+      const studentClassId =
+        requestedStudentClassId || resolvedStudentClassIds[studentIds?.[0]];
 
       // --- Pre-fetch before removal for notification ---
       let notificationClosure: (() => Promise<void>) | null = null;
@@ -5128,16 +5140,21 @@ export function registerClassesRoutes(app: Express): void {
             .from(classes).where(eq(classes.id, sc2.classId)).limit(1);
           const stRows = await db.select({ id: students.id, fullName: students.fullName, code: students.code })
             .from(students).where(inArray(students.id, studentIds));
-          const sessionScope = req.body.deleteAllSessions
-            ? and(
-                eq(studentSessions.studentClassId, studentClassId),
-                inArray(studentSessions.studentId, studentIds),
-              )
-            : and(
-                eq(studentSessions.studentClassId, studentClassId),
-                inArray(studentSessions.studentId, studentIds),
-                between(studentSessions.sessionOrder, fromSessionOrder, toSessionOrder),
-              );
+           const studentSessionPairs = studentIds.map((studentId: string) =>
+             and(
+               eq(studentSessions.studentClassId, resolvedStudentClassIds[studentId] ?? studentClassId),
+               eq(studentSessions.studentId, studentId),
+             ),
+           );
+           const studentSessionStudentScope = studentSessionPairs.length === 1
+             ? studentSessionPairs[0]
+             : or(...studentSessionPairs);
+           const sessionScope = req.body.deleteAllSessions
+             ? and(studentSessionStudentScope)
+             : and(
+                 studentSessionStudentScope,
+                 between(studentSessions.sessionOrder, fromSessionOrder, toSessionOrder),
+               );
           const removedSessionRows = await db.select({
             studentId: studentSessions.studentId,
             sessionIndex: classSessions.sessionIndex,

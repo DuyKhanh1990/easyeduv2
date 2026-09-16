@@ -723,9 +723,15 @@ export function SessionDetailPanel({
                             (s) => s.studentId === selectedStudentIds[0]
                           );
                           if (firstStudent?.studentClassId) {
+                            const studentClassIds = Object.fromEntries(
+                              (currentSessionStudents ?? [])
+                                .filter((s) => selectedStudentIds.includes(s.studentId) && s.studentClassId)
+                                .map((s) => [s.studentId, s.studentClassId]),
+                            );
                             setStudentToRemove({
                               studentIds: selectedStudentIds,
                               studentClassId: firstStudent.studentClassId,
+                              studentClassIds,
                               fromSessionOrder: currentSession.sessionIndex || 1,
                               toSessionOrder: currentSession.sessionIndex || 1,
                             });

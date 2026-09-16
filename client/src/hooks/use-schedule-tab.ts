@@ -58,6 +58,7 @@ export function useScheduleTab({
   const [studentToRemove, setStudentToRemove] = useState<{
     studentIds: string[];
     studentClassId: string;
+    studentClassIds?: Record<string, string>;
     fromSessionOrder: number;
     toSessionOrder: number;
   } | null>(null);

@@ -2,7 +2,7 @@ import { between } from "drizzle-orm";
 
 import {
   db,
-  eq, sql, and, inArray, asc, desc, gte,
+  eq, sql, and, or, inArray, asc, desc, gte,
   classSessions, studentClasses, studentSessions,
   classes, classSessionExclusions, sessionContents, students,
   invoices, invoiceItems, shiftTemplates, courseFeePackages,
@@ -3249,9 +3249,38 @@ export async function changeTeacher(params: {
 // ---------------------------------------------------------------------------
 // removeStudentFromSessions
 // ---------------------------------------------------------------------------
+function studentSessionScope(
+  studentIds: string[],
+  studentClassIds: Record<string, string> | undefined,
+  fallbackStudentClassId: string,
+) {
+  const pairs = studentIds.map((studentId) =>
+    and(
+      eq(studentSessions.studentId, studentId),
+      eq(studentSessions.studentClassId, studentClassIds?.[studentId] ?? fallbackStudentClassId),
+    ),
+  );
+  return pairs.length === 1 ? pairs[0] : or(...pairs);
+}
+
+function studentClassScope(
+  studentIds: string[],
+  studentClassIds: Record<string, string> | undefined,
+  fallbackStudentClassId: string,
+) {
+  const pairs = studentIds.map((studentId) =>
+    and(
+      eq(studentClasses.studentId, studentId),
+      eq(studentClasses.id, studentClassIds?.[studentId] ?? fallbackStudentClassId),
+    ),
+  );
+  return pairs.length === 1 ? pairs[0] : or(...pairs);
+}
+
 export async function removeStudentFromSessions(data: {
   studentIds: string[];
   studentClassId: string;
+  studentClassIds?: Record<string, string>;
   fromSessionOrder: number;
   toSessionOrder: number;
   deleteOnlyUnattended?: boolean;
@@ -3262,12 +3291,10 @@ export async function removeStudentFromSessions(data: {
 }> {
   const sessionScope = data.deleteAllSessions
     ? and(
-        eq(studentSessions.studentClassId, data.studentClassId),
-        inArray(studentSessions.studentId, data.studentIds),
+        studentSessionScope(data.studentIds, data.studentClassIds, data.studentClassId),
       )
     : and(
-        eq(studentSessions.studentClassId, data.studentClassId),
-        inArray(studentSessions.studentId, data.studentIds),
+        studentSessionScope(data.studentIds, data.studentClassIds, data.studentClassId),
         between(studentSessions.sessionOrder, data.fromSessionOrder, data.toSessionOrder),
       );
   const sessionsToDelete = await db.select()
@@ -3282,8 +3309,7 @@ export async function removeStudentFromSessions(data: {
     ? (await db.selectDistinct({ studentId: studentSessions.studentId })
         .from(studentSessions)
         .where(and(
-          eq(studentSessions.studentClassId, data.studentClassId),
-          inArray(studentSessions.studentId, data.studentIds),
+          studentSessionScope(data.studentIds, data.studentClassIds, data.studentClassId),
           sql`${studentSessions.id} NOT IN (${sql.join(effectiveSessionsToDelete.map((s) => sql`${s.id}::uuid`), sql`, `)})`,
         )))
         .map((row) => row.studentId)
@@ -3299,8 +3325,7 @@ export async function removeStudentFromSessions(data: {
         .from(studentClasses)
         .innerJoin(students, eq(students.id, studentClasses.studentId))
         .where(and(
-          eq(studentClasses.id, data.studentClassId),
-          inArray(students.id, orphanedStudentIds),
+          studentClassScope(orphanedStudentIds, data.studentClassIds, data.studentClassId),
         ))
     : [];
 
@@ -3313,6 +3338,7 @@ export async function removeStudentFromSessions(data: {
 export async function removeStudentFromSessionsConfirm(data: {
   studentIds: string[];
   studentClassId: string;
+  studentClassIds?: Record<string, string>;
   fromSessionOrder: number;
   toSessionOrder: number;
   deleteOnlyUnattended: boolean;
@@ -3322,12 +3348,10 @@ export async function removeStudentFromSessionsConfirm(data: {
   await db.transaction(async (tx) => {
     let deleteConditions = data.deleteAllSessions
       ? and(
-          eq(studentSessions.studentClassId, data.studentClassId),
-          inArray(studentSessions.studentId, data.studentIds),
+          studentSessionScope(data.studentIds, data.studentClassIds, data.studentClassId),
         )
       : and(
-          eq(studentSessions.studentClassId, data.studentClassId),
-          inArray(studentSessions.studentId, data.studentIds),
+          studentSessionScope(data.studentIds, data.studentClassIds, data.studentClassId),
           between(studentSessions.sessionOrder, data.fromSessionOrder, data.toSessionOrder),
         );
 
@@ -3344,35 +3368,38 @@ export async function removeStudentFromSessionsConfirm(data: {
       const remaining = await tx.selectDistinct({ studentId: studentSessions.studentId })
         .from(studentSessions)
         .where(and(
-          eq(studentSessions.studentClassId, data.studentClassId),
-          inArray(studentSessions.studentId, data.studentIds),
+          studentSessionScope(data.studentIds, data.studentClassIds, data.studentClassId),
         ));
       const remainingIds = new Set(remaining.map((row) => row.studentId));
       const orphaned = data.studentIds.filter((id) => !remainingIds.has(id));
 
       if (orphaned.length > 0) {
         if (data.orphanAction === "waiting") {
-          await tx.update(studentClasses)
-            .set({
-              status: "waiting",
-              startDate: null,
-              endDate: null,
-              totalSessions: 0,
-              attendedSessions: 0,
-              remainingSessions: 0,
-              scheduledWeekdays: null,
-              cycleHistory: null,
-              updatedAt: new Date(),
-            })
-            .where(and(
-              eq(studentClasses.id, data.studentClassId),
-              inArray(studentClasses.studentId, orphaned),
-            ));
+          for (const studentId of orphaned) {
+            await tx.update(studentClasses)
+              .set({
+                status: "waiting",
+                startDate: null,
+                endDate: null,
+                totalSessions: 0,
+                attendedSessions: 0,
+                remainingSessions: 0,
+                scheduledWeekdays: null,
+                cycleHistory: null,
+                updatedAt: new Date(),
+              })
+              .where(and(
+                eq(studentClasses.id, data.studentClassIds?.[studentId] ?? data.studentClassId),
+                eq(studentClasses.studentId, studentId),
+              ));
+          }
         } else {
-          await tx.delete(studentClasses).where(and(
-            eq(studentClasses.id, data.studentClassId),
-            inArray(studentClasses.studentId, orphaned),
-          ));
+          for (const studentId of orphaned) {
+            await tx.delete(studentClasses).where(and(
+              eq(studentClasses.id, data.studentClassIds?.[studentId] ?? data.studentClassId),
+              eq(studentClasses.studentId, studentId),
+            ));
+          }
         }
       }
     }
@@ -3380,7 +3407,12 @@ export async function removeStudentFromSessionsConfirm(data: {
 
   // Tính lại attendedSessions dùng cấu hình fee rules (thay vì chỉ đếm 'present')
   if (data.orphanAction !== "remove") {
-    await recalculateStudentClass(data.studentClassId);
+    const classIds = new Set(
+      data.studentIds.map((studentId) => data.studentClassIds?.[studentId] ?? data.studentClassId),
+    );
+    for (const classId of classIds) {
+      await recalculateStudentClass(classId);
+    }
   }
 }
 

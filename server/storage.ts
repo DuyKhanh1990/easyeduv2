@@ -265,12 +265,14 @@ export interface IStorage {
   removeStudentFromSessions(data: {
     studentIds: string[];
     studentClassId: string;
+    studentClassIds?: Record<string, string>;
     fromSessionOrder: number;
     toSessionOrder: number;
   }): Promise<{ hasAttendedSessions: boolean }>;
   removeStudentFromSessionsConfirm(data: {
     studentIds: string[];
     studentClassId: string;
+    studentClassIds?: Record<string, string>;
     fromSessionOrder: number;
     toSessionOrder: number;
     deleteOnlyUnattended: boolean;
@@ -1004,6 +1006,7 @@ export class DatabaseStorage implements IStorage {
   async removeStudentFromSessions(data: {
     studentIds: string[];
     studentClassId: string;
+    studentClassIds?: Record<string, string>;
     fromSessionOrder: number;
     toSessionOrder: number;
   }): Promise<{ hasAttendedSessions: boolean }> {
@@ -1013,6 +1016,7 @@ export class DatabaseStorage implements IStorage {
   async removeStudentFromSessionsConfirm(data: {
     studentIds: string[];
     studentClassId: string;
+    studentClassIds?: Record<string, string>;
     fromSessionOrder: number;
     toSessionOrder: number;
     deleteOnlyUnattended: boolean;
