@@ -369,6 +369,8 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
   const [selectedSurchargeKeys, setSelectedSurchargeKeys] = useState<string[]>([]);
   const [promoOpen, setPromoOpen] = useState(false);
   const [surchargeOpen, setSurchargeOpen] = useState(false);
+  const [sidebarPromotionRows, setSidebarPromotionRows] = useState<ManualAdjustment[]>([]);
+  const [sidebarSurchargeRows, setSidebarSurchargeRows] = useState<ManualAdjustment[]>([]);
   const [itemAdjustmentOpen, setItemAdjustmentOpen] = useState<{
     itemKey: string;
     kind: AdjustmentKind;
@@ -673,6 +675,54 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
     }));
   }
 
+  function initializeSidebarAdjustment(kind: AdjustmentKind) {
+    const keys = kind === "promotion" ? selectedPromoKeys : selectedSurchargeKeys;
+    const setRows = kind === "promotion" ? setSidebarPromotionRows : setSidebarSurchargeRows;
+    setRows(rows => rows.length > 0
+      ? rows
+      : keys.length > 0
+        ? keys.map((optionKey, index) => ({
+            id: `sidebar-${kind}-${index}-${optionKey}`,
+            optionKey,
+            valueType: "amount" as const,
+            value: 0,
+          }))
+        : [{ id: `sidebar-${kind}-blank`, valueType: "amount" as const, value: 0 }]);
+  }
+
+  function updateSidebarAdjustmentRows(kind: AdjustmentKind, updater: (rows: ManualAdjustment[]) => ManualAdjustment[]) {
+    const setRows = kind === "promotion" ? setSidebarPromotionRows : setSidebarSurchargeRows;
+    const setKeys = kind === "promotion" ? setSelectedPromoKeys : setSelectedSurchargeKeys;
+    setRows(previous => {
+      const next = updater(previous);
+      setKeys(Array.from(new Set(next.map(row => row.optionKey).filter((key): key is string => Boolean(key))));
+      return next;
+    });
+  }
+
+  function selectSidebarAdjustmentOption(kind: AdjustmentKind, rowId: string, optionKey: string) {
+    updateSidebarAdjustmentRows(kind, rows => rows.map(row => row.id === rowId ? { ...row, optionKey } : row));
+  }
+
+  function updateSidebarAdjustmentRow(kind: AdjustmentKind, rowId: string, patch: Partial<ManualAdjustment>) {
+    updateSidebarAdjustmentRows(kind, rows => rows.map(row => row.id === rowId ? { ...row, ...patch } : row));
+  }
+
+  function addSidebarAdjustmentRow(kind: AdjustmentKind) {
+    updateSidebarAdjustmentRows(kind, rows => [
+      ...rows,
+      {
+        id: `sidebar-${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        valueType: "amount",
+        value: 0,
+      },
+    ]);
+  }
+
+  function removeSidebarAdjustmentRow(kind: AdjustmentKind, rowId: string) {
+    updateSidebarAdjustmentRows(kind, rows => rows.filter(row => row.id !== rowId));
+  }
+
   const subtotal = form.items.reduce((sum, item) => {
     if ((item.priceType ?? "money") !== "money") return sum;
     return sum + getItemAmounts(item, promotionOptions, surchargeOptions).lineTotal;
@@ -688,12 +738,15 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
     }, 0);
   }
 
-  const discountAmt = selectedPromoKeys.length > 0
-    ? calcPromoAmt(selectedPromoKeys, promotionOptions, subtotal)
+  const hasSidebarPromotion = selectedPromoKeys.length > 0 || sidebarPromotionRows.some(row => row.value > 0);
+  const hasSidebarSurcharge = selectedSurchargeKeys.length > 0 || sidebarSurchargeRows.some(row => row.value > 0);
+
+  const discountAmt = hasSidebarPromotion
+    ? adjustmentTotal(subtotal, selectedPromoKeys, sidebarPromotionRows, promotionOptions, "promotion")
     : (form.discountType === "VND" ? form.discount : subtotal * form.discount / 100);
 
-  const surchargeAmt = selectedSurchargeKeys.length > 0
-    ? calcPromoAmt(selectedSurchargeKeys, surchargeOptions, subtotal)
+  const surchargeAmt = hasSidebarSurcharge
+    ? adjustmentTotal(subtotal, selectedSurchargeKeys, sidebarSurchargeRows, surchargeOptions, "surcharge")
     : (form.surchargeType === "VND" ? form.surcharge : subtotal * form.surcharge / 100);
 
   const total = Math.max(0, subtotal - discountAmt + surchargeAmt);
