@@ -96,7 +96,7 @@ function adjustmentTotal(
   const applied = new Set<string>();
   for (const row of orderedRows) {
     if (row.optionKey && !applied.has(row.optionKey)) {
-      const option = options.find(item => item.code === row.optionKey);
+      const option = options.find(item => item.id === row.optionKey || item.code === row.optionKey);
       if (option) {
         const value = parseFloat(option.valueAmount ?? "0") || 0;
         const amount = option.valueType === "percent" ? current * value / 100 : value;
@@ -136,34 +136,84 @@ function IssueAdjustmentDialog({
   onAddRow: () => void;
   onRemoveRow: (rowId: string) => void;
 }) {
+  const [openPickerId, setOpenPickerId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   const total = adjustmentTotal(baseAmount, [], rows, options, kind);
   const color = kind === "promotion" ? "text-emerald-600" : "text-orange-600";
+  const filteredOptions = options.filter(option => {
+    const needle = search.trim().toLowerCase();
+    return !needle || `${option.name} ${option.code}`.toLowerCase().includes(needle);
+  });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6">
         <DialogTitle className="text-xl font-semibold">{title}</DialogTitle>
         <div className="mt-3 space-y-3">
           {rows.map(row => {
-            const selected = options.find(option => option.code === row.optionKey);
+            const pickerId = `${kind}:${row.id}`;
+            const selected = options.find(option => option.id === row.optionKey || option.code === row.optionKey);
             return (
               <div key={row.id} className="space-y-2 rounded-lg border border-muted p-3">
                 <div className="flex items-center gap-2">
-                  <Select
-                    value={row.optionKey || "none"}
-                    onValueChange={value => onSelectOption(row.id, value === "none" ? "" : value)}
-                  >
-                    <SelectTrigger className="h-10 flex-1 text-sm">
-                      <SelectValue placeholder={`Chọn ${kind === "promotion" ? "khuyến mãi" : "phụ thu"}...`} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Chọn...</SelectItem>
-                      {options.map(option => (
-                        <SelectItem key={option.code} value={option.code}>
-                          {option.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={openPickerId === pickerId} onOpenChange={value => {
+                    setOpenPickerId(value ? pickerId : null);
+                    if (value) setSearch("");
+                  }}>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex min-h-10 flex-1 items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-1.5 text-left text-sm hover:border-purple-400"
+                      >
+                        <span className={selected ? "truncate" : "text-muted-foreground"}>
+                          {selected?.name ?? `Chọn ${kind === "promotion" ? "khuyến mãi" : "phụ thu"}...`}
+                        </span>
+                        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[26rem] max-w-[calc(100vw-2rem)] p-3" align="start">
+                      <div className="relative mb-2">
+                        <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          value={search}
+                          onChange={event => setSearch(event.target.value)}
+                          onKeyDown={event => event.stopPropagation()}
+                          placeholder={`Tìm theo tên hoặc mã ${kind === "promotion" ? "khuyến mãi" : "phụ thu"}...`}
+                          className="h-8 pl-7 text-xs"
+                          autoFocus
+                        />
+                      </div>
+                      <div className="max-h-64 space-y-1 overflow-y-auto">
+                        {options.length === 0 ? (
+                          <p className="py-3 text-center text-xs text-muted-foreground">
+                            Chưa có {kind === "promotion" ? "khuyến mãi" : "phụ thu"}
+                          </p>
+                        ) : filteredOptions.length === 0 ? (
+                          <p className="py-3 text-center text-xs text-muted-foreground">Không tìm thấy lựa chọn phù hợp</p>
+                        ) : filteredOptions.map(option => {
+                          const value = parseFloat(option.valueAmount ?? "0") || 0;
+                          return (
+                            <button
+                              key={option.id}
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-muted/60"
+                              onClick={() => {
+                                onSelectOption(row.id, option.id);
+                                setOpenPickerId(null);
+                                setSearch("");
+                              }}
+                            >
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-xs font-medium">{option.name}</span>
+                                <span className="block text-xs text-muted-foreground">
+                                  {kind === "promotion" ? "-" : "+"}{option.valueType === "percent" ? `${value}%` : fmtVND(value)}
+                                </span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                   <button type="button" onClick={() => onRemoveRow(row.id)} className="p-2 text-muted-foreground hover:text-destructive">
                     <X className="h-4 w-4" />
                   </button>
@@ -187,7 +237,7 @@ function IssueAdjustmentDialog({
                     <Input
                       type="number"
                       min={0}
-                      value={row.value}
+                      value={row.value || ""}
                       onChange={event => onUpdateRow(row.id, { value: parseFloat(event.target.value) || 0 })}
                       placeholder="Nhập nhanh..."
                       className="h-9 pr-8 text-sm"
