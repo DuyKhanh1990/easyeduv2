@@ -20,6 +20,41 @@ function formatInvoiceDate(value: string | Date | null | undefined): string {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value);
 }
 
+function formatInvoiceSchedule(
+  sessions: any[],
+  shiftMap: Map<string, { startTime: string | null; endTime: string | null }>,
+): string {
+  const weekdayLabels = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
+  const seen = new Set<string>();
+  const entries: Array<{ weekday: number; text: string }> = [];
+
+  for (const session of sessions) {
+    const weekday = Number(session.weekday);
+    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 7) continue;
+
+    const normalizedWeekday = weekday === 7 ? 0 : weekday;
+    const shift = shiftMap.get(session.shiftTemplateId);
+    const startTime = shift?.startTime?.trim();
+    const endTime = shift?.endTime?.trim();
+    const key = `${normalizedWeekday}_${startTime ?? ""}_${endTime ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const label = weekdayLabels[normalizedWeekday];
+    const text = startTime && endTime
+      ? `${label} (${startTime}-${endTime})`
+      : label;
+    entries.push({ weekday: normalizedWeekday, text });
+  }
+
+  entries.sort((a, b) => {
+    const weekdayOrder = (weekday: number) => weekday === 0 ? 7 : weekday;
+    return weekdayOrder(a.weekday) - weekdayOrder(b.weekday);
+  });
+
+  return entries.map(entry => entry.text).join(", ");
+}
+
 // ---------------------------------------------------------------------------
 // batchGetClassCounts — helper: lấy counts cho nhiều lớp trong 2 queries
 // ---------------------------------------------------------------------------
@@ -1431,12 +1466,29 @@ export async function scheduleClassStudents(classId: string, configs: any[], use
 
           const startDateFmt = formatInvoiceDate(newSessions[0].sessionDate);
           const endDateFmt = formatInvoiceDate(newSessions[newSessions.length - 1].sessionDate);
+          const scheduleShiftIds = Array.from(new Set(
+            filteredSessions
+              .map((session: any) => session.shiftTemplateId)
+              .filter(Boolean),
+          ));
+          const scheduleShiftRows = scheduleShiftIds.length > 0
+            ? await tx.select({
+                id: shiftTemplates.id,
+                startTime: shiftTemplates.startTime,
+                endTime: shiftTemplates.endTime,
+              }).from(shiftTemplates).where(inArray(shiftTemplates.id, scheduleShiftIds))
+            : [];
+          const scheduleShiftMap = new Map(
+            scheduleShiftRows.map(shift => [shift.id, shift]),
+          );
+          const scheduleText = formatInvoiceSchedule(filteredSessions, scheduleShiftMap);
           const promoNames = promoRecords.map((p: any) => p.name).join(", ");
           const surchargeNames = surchargeRecords.map((s: any) => s.name).join(", ");
           const descParts = [
             `Học phí từ ngày ${startDateFmt} đến ${endDateFmt}`,
             `Lớp ${cls.name}`,
             `Gói học phí: ${pkg.name}`,
+            scheduleText ? `Thời gian: ${scheduleText}` : null,
             promoNames ? `Khuyến mãi: ${promoNames}` : null,
             surchargeNames ? `Phụ thu: ${surchargeNames}` : null,
           ].filter(Boolean);
