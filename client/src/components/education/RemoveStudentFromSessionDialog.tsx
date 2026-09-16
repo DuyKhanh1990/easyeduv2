@@ -99,8 +99,6 @@ export function RemoveStudentFromSessionDialog({
       setOrphanedStudents(data.orphanedStudents ?? []);
       if (data.hasAttendedSessions) {
         setShowWarning(true);
-      } else if (quickDeleteAll) {
-        executeDelete(false);
       } else if ((data.orphanedStudents ?? []).length > 0) {
         setShowOrphanWarning(true);
       } else {
@@ -145,7 +143,9 @@ export function RemoveStudentFromSessionDialog({
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/waiting-students`] });
       toast({
         title: "Thành công",
-        description: "Đã xoá học viên khỏi buổi học thành công",
+        description: quickDeleteAll
+          ? "Đã xoá toàn bộ lịch học của học viên thành công"
+          : "Đã xoá học viên khỏi buổi học thành công",
       });
       onOpenChange(false);
       setShowWarning(false);
@@ -196,6 +196,13 @@ export function RemoveStudentFromSessionDialog({
   });
 
   const handleDeleteClick = () => {
+    if (quickDeleteAll) {
+      deleteMutation.mutate({
+        deleteOnlyUnattended: false,
+        orphanAction: quickDeleteAction,
+      });
+      return;
+    }
     setShowScopeSelection(false);
     checkAttendanceMutation.mutate();
   };
@@ -204,11 +211,6 @@ export function RemoveStudentFromSessionDialog({
     if (deleteOnlyUnattended) {
       setShowWarning(false);
       checkOrphansAfterAttendanceMutation.mutate();
-      return;
-    }
-    if (quickDeleteAll) {
-      setShowWarning(false);
-      deleteMutation.mutate({ deleteOnlyUnattended: false, orphanAction: quickDeleteAction });
       return;
     }
     if (orphanedStudents.length > 0) {
@@ -371,16 +373,18 @@ export function RemoveStudentFromSessionDialog({
             <Button
               variant="outline"
               onClick={() => onOpenChange(false)}
-              disabled={checkAttendanceMutation.isPending}
+              disabled={checkAttendanceMutation.isPending || deleteMutation.isPending}
             >
               {quickDeleteAll ? "Hủy" : "Hủy bỏ"}
             </Button>
             <Button
               variant="destructive"
               onClick={handleDeleteClick}
-              disabled={checkAttendanceMutation.isPending}
+              disabled={checkAttendanceMutation.isPending || deleteMutation.isPending}
             >
-              {checkAttendanceMutation.isPending
+              {deleteMutation.isPending
+                ? "Đang xoá..."
+                : checkAttendanceMutation.isPending
                 ? "Đang kiểm tra..."
                 : quickDeleteAll ? "Đồng ý" : "Xoá"}
             </Button>
