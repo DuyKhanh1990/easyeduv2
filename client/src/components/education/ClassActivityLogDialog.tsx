@@ -21,7 +21,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLocations } from "@/hooks/use-locations";
-import { Search, ScrollText, X, Eye } from "lucide-react";
+import { CalendarDays, Search, ScrollText, X, Eye } from "lucide-react";
 import { format } from "date-fns";
 import { vi } from "date-fns/locale";
 import { navigation } from "@/lib/sidebar-navigation";
@@ -516,6 +516,7 @@ function ChangeCycleLogCell({ raw }: { raw: string | null }) {
 // ─── Detail views (popup) ────────────────────────────────────────────────────
 
 function RemoveStudentLogDetailView({ log }: { log: ActivityLog }) {
+  const [expandedStudents, setExpandedStudents] = useState<Record<number, boolean>>({});
   const p = tryParseRemoveStudentLog(log.newContent);
   if (!p) return <div className="text-xs text-muted-foreground italic">Không có dữ liệu chi tiết.</div>;
   const totalSessions = p.students.reduce((total, student) => total + (student.sessions?.length ?? 0), 0);
@@ -546,11 +547,27 @@ function RemoveStudentLogDetailView({ log }: { log: ActivityLog }) {
         <div className="flex flex-col gap-1">
           {p.students.map((s, i) => (
             <div key={i} className="border border-border/40 rounded-md p-3 bg-muted/20">
-              <div className="text-xs font-semibold mb-2">
-                {s.name}{s.code ? <span className="text-muted-foreground"> ({s.code})</span> : null}
-                <span className="ml-2 text-[11px] font-normal text-muted-foreground">· {s.sessions?.length ?? 0} buổi</span>
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-xs font-semibold">
+                  {s.name}{s.code ? <span className="text-muted-foreground"> ({s.code})</span> : null}
+                  <span className="ml-2 text-[11px] font-normal text-muted-foreground">· {s.sessions?.length ?? 0} buổi</span>
+                </div>
+                {s.sessions && s.sessions.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className={`h-7 w-7 shrink-0 ${expandedStudents[i] ? "text-primary bg-primary/10" : "text-muted-foreground"}`}
+                    title={expandedStudents[i] ? "Ẩn các buổi đã xóa" : "Xem các buổi đã xóa"}
+                    aria-label={expandedStudents[i] ? `Ẩn các buổi đã xóa của ${s.name}` : `Xem các buổi đã xóa của ${s.name}`}
+                    aria-expanded={!!expandedStudents[i]}
+                    onClick={() => setExpandedStudents((current) => ({ ...current, [i]: !current[i] }))}
+                  >
+                    <CalendarDays className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
-              {s.sessions && s.sessions.length > 0 ? (
+              {expandedStudents[i] && s.sessions && s.sessions.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-[11px] border-collapse">
                     <thead>
