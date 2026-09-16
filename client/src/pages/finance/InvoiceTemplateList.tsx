@@ -9,6 +9,7 @@ import { Pencil, Trash2, Plus, FileText, Star } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import type { InvoicePrintTemplateRow } from "@shared/schema";
+import { fmtDate as formatInvoiceDate } from "@/types/invoice-types";
 import { InvoicePrintTemplate } from "./InvoicePrintTemplate";
 import { TEMPLATE_PRESETS } from "./invoiceTemplatePresets";
 import {
@@ -313,7 +314,7 @@ export function InvoiceTemplateList({ open, onOpenChange }: Props) {
                           {t.creatorName ?? "—"}
                         </td>
                         <td className="px-4 py-3 text-muted-foreground" data-testid={`text-template-created-${t.id}`}>
-                          {new Date(t.createdAt).toLocaleDateString("vi-VN")}
+                          {formatInvoiceDate(t.createdAt)}
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">

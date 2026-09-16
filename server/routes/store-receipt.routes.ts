@@ -18,6 +18,13 @@ import {
 import { z } from "zod";
 import { createStoreReceiptAuditLog } from "../storage/store-receipt-audit-log.storage";
 
+function formatInvoiceDate(value: string | Date | null | undefined): string {
+  if (!value) return "";
+  const raw = value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value);
+}
+
 async function ensureReceiptTables() {
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS store_inventory (
@@ -132,10 +139,10 @@ const receiptCreateSchema = z.object({
   items: z.array(receiptItemSchema).default([]),
 });
 
-function buildAutoInvoiceDescription(receiptCode: string, itemCount: number, totalQty: number): string {
+function buildAutoInvoiceDescription(receiptCode: string, receiptDate: string, itemCount: number, totalQty: number): string {
   const num = parseInt(receiptCode.replace("PNK-", "")) || 0;
   const numStr = num ? String(num).padStart(2, "0") : "01";
-  return `Phiếu nhập kho số ${numStr}, Số sản phẩm: ${itemCount}, Số lượng ${totalQty}`;
+  return `Phiếu nhập kho số ${numStr} ngày ${formatInvoiceDate(receiptDate)}, Số sản phẩm: ${itemCount}, Số lượng ${totalQty}`;
 }
 
 type ReceiptItemFull = {
@@ -147,6 +154,7 @@ type ReceiptItemFull = {
 async function createReceiptInvoice(params: {
   receiptId: string;
   receiptCode: string;
+  receiptDate: string;
   supplierId: string;
   locationId: string | null | undefined;
   invoiceNote: string | null | undefined;
@@ -166,7 +174,7 @@ async function createReceiptInvoice(params: {
   const totalQty = params.items.reduce((s, i) => s + i.quantity, 0);
   const description = params.invoiceNote?.trim()
     ? params.invoiceNote.trim()
-    : buildAutoInvoiceDescription(params.receiptCode, itemCount, totalQty);
+    : buildAutoInvoiceDescription(params.receiptCode, params.receiptDate, itemCount, totalQty);
 
   const subtotal = params.items.reduce((s, i) => s + i.quantity * i.costPrice, 0);
   const discountAmt = params.discountType === "VND" ? params.discount : subtotal * params.discount / 100;
@@ -573,6 +581,7 @@ export async function registerStoreReceiptRoutes(app: Express) {
         await createReceiptInvoice({
           receiptId: receipt.id,
           receiptCode: receipt.code,
+          receiptDate: receiptData.date,
           supplierId: receiptData.supplierId,
           locationId: receiptData.locationId,
           invoiceNote: receiptData.invoiceNote,
@@ -882,6 +891,7 @@ export async function registerStoreReceiptRoutes(app: Express) {
           await createReceiptInvoice({
             receiptId: receipt.id,
             receiptCode: receipt.code,
+            receiptDate: receiptData.date,
             supplierId: receiptData.supplierId,
             locationId: receiptData.locationId,
             invoiceNote: receiptData.invoiceNote,

@@ -5,6 +5,13 @@ import { invoices, invoiceItems } from "@shared/schema";
 import { getNextLocationCode } from "../storage/finance.storage";
 import { z } from "zod";
 
+function formatInvoiceDate(value: string | Date | null | undefined): string {
+  if (!value) return "";
+  const raw = value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value);
+}
+
 async function ensureTransferAuditLogTable() {
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS store_transfer_audit_logs (
@@ -112,6 +119,7 @@ async function ensureTransferTables() {
 async function createTransferIncomeInvoice(params: {
   transferId: string;
   transferCode: string;
+  transferDate: string;
   locationId: string | null | undefined;
   items: { productName: string; quantity: number; unitPrice: number }[];
   createdBy: string | null;
@@ -121,7 +129,7 @@ async function createTransferIncomeInvoice(params: {
 
   const grandTotal = params.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
   const itemListStr = params.items.map(i => `${i.productName} SL:${i.quantity}`).join("; ");
-  const description = `Phiếu thu chuyển kho nội bộ ${params.transferCode}: ${itemListStr}`;
+  const description = `Phiếu thu chuyển kho nội bộ ${params.transferCode} ngày ${formatInvoiceDate(params.transferDate)}: ${itemListStr}`;
 
   const [inv] = await db.insert(invoices).values({
     code: nextCode,
@@ -170,6 +178,7 @@ async function createTransferIncomeInvoice(params: {
 async function createTransferExpenseInvoice(params: {
   transferId: string;
   transferCode: string;
+  transferDate: string;
   locationId: string | null | undefined;
   items: { productName: string; quantity: number; unitPrice: number }[];
   createdBy: string | null;
@@ -179,7 +188,7 @@ async function createTransferExpenseInvoice(params: {
 
   const grandTotal = params.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
   const itemListStr = params.items.map(i => `${i.productName} SL:${i.quantity}`).join("; ");
-  const description = `Phiếu chi chuyển kho nội bộ ${params.transferCode}: ${itemListStr}`;
+  const description = `Phiếu chi chuyển kho nội bộ ${params.transferCode} ngày ${formatInvoiceDate(params.transferDate)}: ${itemListStr}`;
 
   const [inv] = await db.insert(invoices).values({
     code: nextCode,
@@ -767,6 +776,7 @@ export async function registerStoreTransferRoutes(app: Express) {
           await createTransferIncomeInvoice({
             transferId: transfer.id,
             transferCode: transfer.code,
+            transferDate: transfer.date,
             locationId: transfer.from_location_id,
             items: items.map(i => ({ productName: i.product_name, quantity: i.quantity, unitPrice: parseFloat(String(i.unit_price ?? 0)) })),
             createdBy: user.id,
@@ -842,6 +852,7 @@ export async function registerStoreTransferRoutes(app: Express) {
           await createTransferExpenseInvoice({
             transferId: transfer.id,
             transferCode: transfer.code,
+            transferDate: transfer.date,
             locationId: transfer.to_location_id,
             items: items.map(i => ({ productName: i.product_name, quantity: i.quantity, unitPrice: parseFloat(String(i.unit_price ?? 0)) })),
             createdBy: user.id,
@@ -940,6 +951,7 @@ export async function registerStoreTransferRoutes(app: Express) {
           await createTransferIncomeInvoice({
             transferId: transfer.id,
             transferCode: transfer.code,
+            transferDate: transfer.date,
             locationId: transfer.from_location_id,
             items: items.map(i => ({ productName: i.product_name, quantity: i.quantity, unitPrice: parseFloat(String(i.unit_price ?? 0)) })),
             createdBy: user.id,
@@ -954,6 +966,7 @@ export async function registerStoreTransferRoutes(app: Express) {
           await createTransferExpenseInvoice({
             transferId: transfer.id,
             transferCode: transfer.code,
+            transferDate: transfer.date,
             locationId: transfer.to_location_id,
             items: items.map(i => ({ productName: i.product_name, quantity: i.quantity, unitPrice: parseFloat(String(i.unit_price ?? 0)) })),
             createdBy: user.id,

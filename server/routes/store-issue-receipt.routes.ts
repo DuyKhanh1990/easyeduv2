@@ -15,6 +15,13 @@ import {
   sendInvoiceCreatedNotification,
 } from "../lib/invoice-notification";
 
+function formatInvoiceDate(value: string | Date | null | undefined): string {
+  if (!value) return "";
+  const raw = value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value);
+}
+
 async function ensureIssueReceiptTables() {
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS store_issue_receipts (
@@ -295,6 +302,7 @@ async function increaseInventory(
 async function createIssueInvoice(params: {
   receiptId: string;
   receiptCode: string;
+  receiptDate: string;
   recipientName: string | null | undefined;
   recipientId: string | null | undefined;
   locationId: string | null | undefined;
@@ -333,7 +341,7 @@ async function createIssueInvoice(params: {
   const itemListStr = params.items
     .map(i => `${i.productName} SL:${i.quantity}`)
     .join("; ");
-  const autoDescription = `Hoá đơn Phiếu xuất kho số ${numStr} bao gồm: ${itemListStr}`;
+  const autoDescription = `Hoá đơn Phiếu xuất kho số ${numStr} ngày ${formatInvoiceDate(params.receiptDate)} bao gồm: ${itemListStr}`;
   const description = params.invoiceNote?.trim()
     ? params.invoiceNote.trim()
     : autoDescription;
@@ -1068,6 +1076,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
         const issueInvoice = await createIssueInvoice({
           receiptId: r.id,
           receiptCode: r.code,
+          receiptDate: receiptData.date,
           recipientName: receiptData.recipientName,
           recipientId: receiptData.recipientId ?? null,
           locationId: receiptData.locationId,
@@ -1436,6 +1445,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
           const issueInvoice = await createIssueInvoice({
             receiptId: req.params.id,
             receiptCode: receiptData.code,
+            receiptDate: receiptData.date,
             recipientName: receiptData.recipientName,
             recipientId: receiptData.recipientId ?? null,
             locationId: receiptData.locationId,

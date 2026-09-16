@@ -23,6 +23,7 @@ import {
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { InvoicePrintTemplateRow } from "@shared/schema";
+import { fmtDate as formatInvoiceDate } from "@/types/invoice-types";
 
 /* ─────────────────── TYPES ─────────────────── */
 type PageSize = "A4" | "A5" | "K80";
@@ -221,7 +222,7 @@ const SAMPLE_DATA = {
   address: "123 Đường ABC, Quận 1, TP. HCM",
   invoice_code: "INV-2026-001",
   ngay_tao: "01/04/2025",
-  ngay_in_phieu: new Date().toLocaleDateString("vi-VN"),
+  ngay_in_phieu: formatInvoiceDate(new Date()),
   ngay_thanh_toan: "05/05/2025",
   han_thanh_toan: "05/06/2025",
   total: 5000000,

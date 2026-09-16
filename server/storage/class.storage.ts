@@ -13,6 +13,13 @@ import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 
 import type { Class } from "./base";
 
+function formatInvoiceDate(value: string | Date | null | undefined): string {
+  if (!value) return "";
+  const raw = value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value);
+}
+
 // ---------------------------------------------------------------------------
 // batchGetClassCounts — helper: lấy counts cho nhiều lớp trong 2 queries
 // ---------------------------------------------------------------------------
@@ -1422,8 +1429,8 @@ export async function scheduleClassStudents(classId: string, configs: any[], use
 
           const grandTotal = Math.max(0, baseAmount - totalPromotion + totalSurcharge);
 
-          const startDateFmt = newSessions[0].sessionDate;
-          const endDateFmt = newSessions[newSessions.length - 1].sessionDate;
+          const startDateFmt = formatInvoiceDate(newSessions[0].sessionDate);
+          const endDateFmt = formatInvoiceDate(newSessions[newSessions.length - 1].sessionDate);
           const promoNames = promoRecords.map((p: any) => p.name).join(", ");
           const surchargeNames = surchargeRecords.map((s: any) => s.name).join(", ");
           const descParts = [

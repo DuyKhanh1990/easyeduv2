@@ -7,6 +7,7 @@ import { Printer, AlertTriangle } from "lucide-react";
 import type { InvoicePrintTemplateRow } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
 import { useStaff } from "@/hooks/use-staff";
+import { fmtDate as formatInvoiceDate } from "@/types/invoice-types";
 
 interface InvoicePrintData {
   id: string;
@@ -94,12 +95,7 @@ function fmtMoney(n: number) {
 }
 
 function fmtDate(d: string | null | undefined) {
-  if (!d) return "";
-  try {
-    return new Date(d).toLocaleDateString("vi-VN");
-  } catch {
-    return String(d);
-  }
+  return formatInvoiceDate(d);
 }
 
 function paymentMethodLabel(m: string | null | undefined): string {
@@ -496,7 +492,7 @@ function renderTemplate(
     address: invoice.studentAddress ?? invoice.address ?? "",
     invoice_code: invoice.code ?? "",
     ngay_tao: fmtDate(invoice.createdAt),
-    ngay_in_phieu: new Date().toLocaleDateString("vi-VN"),
+    ngay_in_phieu: formatInvoiceDate(new Date()),
     ngay_thanh_toan: fmtDate(invoice.paidAt),
     han_thanh_toan: fmtDate(invoice.dueDate),
     // Compatibility alias for templates saved before the variable was renamed.

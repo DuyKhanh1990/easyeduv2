@@ -234,7 +234,7 @@ function DateRangePicker({
 
   const displayLabel = label ?? "Ngày tạo";
   const triggerText = dateRange.from
-    ? `${displayLabel}: ${format(dateRange.from, "d/MM/yyyy")} – ${dateRange.to ? format(dateRange.to, "d/MM/yyyy") : "..."}`
+    ? `${displayLabel}: ${format(dateRange.from, "dd/MM/yyyy")} – ${dateRange.to ? format(dateRange.to, "dd/MM/yyyy") : "..."}`
     : `${displayLabel}: Toàn thời gian`;
 
   return (

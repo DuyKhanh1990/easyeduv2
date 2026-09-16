@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Printer, Merge } from "lucide-react";
 import type { InvoicePrintTemplateRow } from "@shared/schema";
+import { fmtDate as formatInvoiceDate } from "@/types/invoice-types";
 
 export interface BulkCollectPrintData {
   items: Array<{
@@ -35,8 +36,7 @@ function fmtMoney(n: number): string {
 }
 
 function fmtDate(d: string | null | undefined): string {
-  if (!d) return "";
-  try { return new Date(d).toLocaleDateString("vi-VN"); } catch { return String(d); }
+  return formatInvoiceDate(d);
 }
 
 function paymentMethodLabel(m: string | null | undefined): string {
