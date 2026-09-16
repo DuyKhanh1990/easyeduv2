@@ -3017,6 +3017,8 @@ export default function Invoices() {
           paidAmount: isPaid ? String(amount) : "0",
           remainingAmount: isPaid ? "0" : String(amount),
           createdAt: typeof inv.createdAt === "string" ? inv.createdAt : new Date(inv.createdAt).toISOString(),
+           dueDate: s.dueDate ?? invAny.dueDate ?? null,
+           paidAt: s.paidAt ? new Date(s.paidAt).toISOString() : null,
            scheduleCount: invAny.scheduleCount ?? 2,
            hasSchedules: true,
            createdByName: invAny.createdByName ?? null,

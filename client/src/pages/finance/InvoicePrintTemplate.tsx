@@ -443,7 +443,7 @@ const PAGE_SIZES: Record<PageSize, { width: string; minHeight: string; label: st
 const DEFAULT_TEMPLATE = `<div style="font-family: Arial, sans-serif; font-size: 13px;">
   <div style="text-align: center; margin-bottom: 12px;">
     <div style="font-size: 18px; font-weight: bold;">HOÁ ĐƠN DỊCH VỤ</div>
-    <div style="color: #666; font-size: 12px;">Mã: {{invoice_code}} | Ngày: {{date}}</div>
+    <div style="color: #666; font-size: 12px;">Mã: {{invoice_code}} | Ngày tạo: {{ngay_tao}}</div>
   </div>
   <table style="width:100%;margin-bottom:10px;font-size:12px;">
     <tr>
