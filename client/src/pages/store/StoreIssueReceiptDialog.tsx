@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactElement } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, STATIC_STALE_TIME } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { X, Search, Trash2, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -152,6 +152,7 @@ function IssueAdjustmentDialog({
   onUpdateRow,
   onAddRow,
   onRemoveRow,
+  trigger,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -164,6 +165,7 @@ function IssueAdjustmentDialog({
   onUpdateRow: (rowId: string, patch: Partial<ManualAdjustment>) => void;
   onAddRow: () => void;
   onRemoveRow: (rowId: string) => void;
+  trigger: ReactElement;
 }) {
   const [openPickerId, setOpenPickerId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -175,23 +177,25 @@ function IssueAdjustmentDialog({
   });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6">
+      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogContent
+        className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
+        overlayClassName="bg-black/30 backdrop-blur-[1px]"
+      >
         <DialogTitle className="text-xl font-semibold">{title}</DialogTitle>
         <div className="mt-3 space-y-3">
           {rows.map(row => {
-            const pickerId = `${kind}:${row.id}`;
             const selected = options.find(option => option.id === row.optionKey || option.code === row.optionKey);
             return (
               <div key={row.id} className="space-y-2 rounded-lg border border-muted p-3">
                 <div className="flex items-center gap-2">
-                  <div className="relative flex-1">
+                  <Popover open={openPickerId === row.id} onOpenChange={value => {
+                    setOpenPickerId(value ? row.id : null);
+                    if (value) setSearch("");
+                  }}>
+                    <PopoverTrigger asChild>
                       <button
                         type="button"
-                        onClick={() => {
-                          const nextOpen = openPickerId === pickerId ? null : pickerId;
-                          setOpenPickerId(nextOpen);
-                          if (nextOpen) setSearch("");
-                        }}
                         className="flex min-h-10 flex-1 items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-1.5 text-left text-sm hover:border-purple-400"
                       >
                         <span className={selected ? "truncate" : "text-muted-foreground"}>
@@ -199,55 +203,50 @@ function IssueAdjustmentDialog({
                         </span>
                         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
                       </button>
-                      {openPickerId === pickerId && (
-                        <div
-                          className="absolute left-0 top-full z-[70] mt-1 w-[26rem] max-w-[calc(100vw-2rem)] rounded-md border bg-popover p-3 text-popover-foreground shadow-md"
-                          onMouseDown={event => event.stopPropagation()}
-                        >
-                          <div className="relative mb-2">
-                            <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                            <Input
-                              value={search}
-                              onChange={event => setSearch(event.target.value)}
-                              onKeyDown={event => event.stopPropagation()}
-                              placeholder={`Tìm theo tên hoặc mã ${kind === "promotion" ? "khuyến mãi" : "phụ thu"}...`}
-                              className="h-8 pl-7 text-xs"
-                              autoFocus
-                            />
-                          </div>
-                          <div className="max-h-64 space-y-1 overflow-y-auto">
-                            {options.length === 0 ? (
-                              <p className="py-3 text-center text-xs text-muted-foreground">
-                                Chưa có {kind === "promotion" ? "khuyến mãi" : "phụ thu"}
-                              </p>
-                            ) : filteredOptions.length === 0 ? (
-                              <p className="py-3 text-center text-xs text-muted-foreground">Không tìm thấy lựa chọn phù hợp</p>
-                            ) : filteredOptions.map(option => {
-                              const value = parseFloat(option.valueAmount ?? "0") || 0;
-                              return (
-                                <button
-                                  key={option.id}
-                                  type="button"
-                                  className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-muted/60"
-                                  onClick={() => {
-                                    onSelectOption(row.id, option.id);
-                                    setOpenPickerId(null);
-                                    setSearch("");
-                                  }}
-                                >
-                                  <span className="min-w-0 flex-1">
-                                    <span className="block truncate text-xs font-medium">{option.name}</span>
-                                    <span className="block text-xs text-muted-foreground">
-                                      {kind === "promotion" ? "-" : "+"}{option.valueType === "percent" ? `${value}%` : fmtVND(value)}
-                                    </span>
-                                  </span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                  </div>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[26rem] max-w-[calc(100vw-2rem)] p-3" align="start">
+                      <div className="relative mb-2">
+                        <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          value={search}
+                          onChange={event => setSearch(event.target.value)}
+                          onKeyDown={event => event.stopPropagation()}
+                          placeholder={`Tìm theo tên hoặc mã ${kind === "promotion" ? "khuyến mãi" : "phụ thu"}...`}
+                          className="h-8 pl-7 text-xs"
+                          autoFocus
+                        />
+                      </div>
+                      <div className="max-h-64 space-y-1 overflow-y-auto">
+                        {options.length === 0 ? (
+                          <p className="py-3 text-center text-xs text-muted-foreground">
+                            Chưa có {kind === "promotion" ? "khuyến mãi" : "phụ thu"}
+                          </p>
+                        ) : filteredOptions.length === 0 ? (
+                          <p className="py-3 text-center text-xs text-muted-foreground">Không tìm thấy lựa chọn phù hợp</p>
+                        ) : filteredOptions.map(option => {
+                          const value = parseFloat(option.valueAmount ?? "0") || 0;
+                          return (
+                            <button
+                              key={option.id}
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-muted/60"
+                              onClick={() => {
+                                onSelectOption(row.id, option.id);
+                                setOpenPickerId(null);
+                              }}
+                            >
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-xs font-medium">{option.name}</span>
+                                <span className="block text-xs text-muted-foreground">
+                                  {kind === "promotion" ? "-" : "+"}{option.valueType === "percent" ? `${value}%` : fmtVND(value)}
+                                </span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                   <button type="button" onClick={() => onRemoveRow(row.id)} className="p-2 text-muted-foreground hover:text-destructive">
                     <X className="h-4 w-4" />
                   </button>
@@ -732,22 +731,6 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
     );
   }
 
-  const activeAdjustmentItem = itemAdjustmentOpen
-    ? form.items.find(item => item._key === itemAdjustmentOpen.itemKey)
-    : undefined;
-  const activeAdjustmentRows = activeAdjustmentItem && itemAdjustmentOpen
-    ? (itemAdjustmentOpen.kind === "promotion"
-      ? activeAdjustmentItem.manualPromotionRows
-      : activeAdjustmentItem.manualSurchargeRows) ?? []
-    : [];
-  const activeAdjustmentBase = activeAdjustmentItem
-    ? activeAdjustmentItem.quantity * (
-      activeAdjustmentItem.priceType === "star"
-        ? 0
-        : activeAdjustmentItem.salePrice
-    )
-    : 0;
-
   return (
     <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 backdrop-blur-sm">
       <div className="relative flex flex-col bg-background w-full h-full shadow-2xl overflow-hidden">
@@ -766,22 +749,6 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
             </Button>
           </div>
         </div>
-
-        {activeAdjustmentItem && itemAdjustmentOpen && (
-          <IssueAdjustmentDialog
-            open={true}
-            onOpenChange={open => { if (!open) setItemAdjustmentOpen(null); }}
-            title={itemAdjustmentOpen.kind === "promotion" ? "Chọn khuyến mãi" : "Chọn phụ thu"}
-            kind={itemAdjustmentOpen.kind}
-            rows={activeAdjustmentRows}
-            options={itemAdjustmentOpen.kind === "promotion" ? promotionOptions : surchargeOptions}
-            baseAmount={activeAdjustmentBase}
-            onSelectOption={(rowId, optionKey) => selectItemAdjustmentOption(itemAdjustmentItem._key, itemAdjustmentOpen.kind, rowId, optionKey)}
-            onUpdateRow={(rowId, patch) => updateItemAdjustment(activeAdjustmentItem._key, itemAdjustmentOpen.kind, rowId, patch)}
-            onAddRow={() => addItemAdjustmentRow(activeAdjustmentItem._key, itemAdjustmentOpen.kind)}
-            onRemoveRow={rowId => removeItemAdjustmentRow(activeAdjustmentItem._key, itemAdjustmentOpen.kind, rowId)}
-          />
-        )}
 
         {/* Body */}
         <div className="flex flex-1 overflow-hidden">
@@ -965,40 +932,74 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                           />
                         </td>
                         <td className="px-2 py-1.5">
-                          <button
-                            type="button"
-                            onClick={() => openItemAdjustment(item._key, "promotion")}
-                            className="w-full min-h-7 rounded-md border border-input bg-background px-2 text-[10px] text-left text-muted-foreground hover:border-purple-400 transition-colors"
-                            title="Chọn khuyến mãi cho sản phẩm này"
-                          >
-                            {(() => {
-                              const amounts = getItemAmounts(item, promotionOptions, surchargeOptions);
-                              const hasValue = amounts.promotionAmount > 0;
-                              return (
-                                <span className={hasValue ? "font-semibold text-emerald-600" : "text-muted-foreground"}>
-                                  {hasValue ? `-${fmtVND(amounts.promotionAmount)}` : "Chọn..."}
-                                </span>
-                              );
-                            })()}
-                          </button>
+                          <IssueAdjustmentDialog
+                            open={itemAdjustmentOpen?.itemKey === item._key && itemAdjustmentOpen.kind === "promotion"}
+                            onOpenChange={value => {
+                              if (value) openItemAdjustment(item._key, "promotion");
+                              else setItemAdjustmentOpen(null);
+                            }}
+                            title="Chọn khuyến mãi"
+                            kind="promotion"
+                            rows={item.manualPromotionRows ?? []}
+                            options={promotionOptions}
+                            baseAmount={item.quantity * ((item.priceType ?? "money") === "star" ? 0 : item.salePrice)}
+                            onSelectOption={(rowId, optionKey) => selectItemAdjustmentOption(item._key, "promotion", rowId, optionKey)}
+                            onUpdateRow={(rowId, patch) => updateItemAdjustment(item._key, "promotion", rowId, patch)}
+                            onAddRow={() => addItemAdjustmentRow(item._key, "promotion")}
+                            onRemoveRow={rowId => removeItemAdjustmentRow(item._key, "promotion", rowId)}
+                            trigger={(
+                              <button
+                                type="button"
+                                className="w-full min-h-7 rounded-md border border-input bg-background px-2 text-[10px] text-left text-muted-foreground hover:border-purple-400 transition-colors"
+                                title="Chọn khuyến mãi cho sản phẩm này"
+                              >
+                                {(() => {
+                                  const amounts = getItemAmounts(item, promotionOptions, surchargeOptions);
+                                  const hasValue = amounts.promotionAmount > 0;
+                                  return (
+                                    <span className={hasValue ? "font-semibold text-emerald-600" : "text-muted-foreground"}>
+                                      {hasValue ? `-${fmtVND(amounts.promotionAmount)}` : "Chọn..."}
+                                    </span>
+                                  );
+                                })()}
+                              </button>
+                            )}
+                          />
                         </td>
                         <td className="px-2 py-1.5">
-                          <button
-                            type="button"
-                            onClick={() => openItemAdjustment(item._key, "surcharge")}
-                            className="w-full min-h-7 rounded-md border border-input bg-background px-2 text-[10px] text-left text-muted-foreground hover:border-purple-400 transition-colors"
-                            title="Chọn phụ thu cho sản phẩm này"
-                          >
-                            {(() => {
-                              const amounts = getItemAmounts(item, promotionOptions, surchargeOptions);
-                              const hasValue = amounts.surchargeAmount > 0;
-                              return (
-                                <span className={hasValue ? "font-semibold text-orange-600" : "text-muted-foreground"}>
-                                  {hasValue ? `+${fmtVND(amounts.surchargeAmount)}` : "Chọn..."}
-                                </span>
-                              );
-                            })()}
-                          </button>
+                          <IssueAdjustmentDialog
+                            open={itemAdjustmentOpen?.itemKey === item._key && itemAdjustmentOpen.kind === "surcharge"}
+                            onOpenChange={value => {
+                              if (value) openItemAdjustment(item._key, "surcharge");
+                              else setItemAdjustmentOpen(null);
+                            }}
+                            title="Chọn phụ thu"
+                            kind="surcharge"
+                            rows={item.manualSurchargeRows ?? []}
+                            options={surchargeOptions}
+                            baseAmount={item.quantity * ((item.priceType ?? "money") === "star" ? 0 : item.salePrice)}
+                            onSelectOption={(rowId, optionKey) => selectItemAdjustmentOption(item._key, "surcharge", rowId, optionKey)}
+                            onUpdateRow={(rowId, patch) => updateItemAdjustment(item._key, "surcharge", rowId, patch)}
+                            onAddRow={() => addItemAdjustmentRow(item._key, "surcharge")}
+                            onRemoveRow={rowId => removeItemAdjustmentRow(item._key, "surcharge", rowId)}
+                            trigger={(
+                              <button
+                                type="button"
+                                className="w-full min-h-7 rounded-md border border-input bg-background px-2 text-[10px] text-left text-muted-foreground hover:border-purple-400 transition-colors"
+                                title="Chọn phụ thu cho sản phẩm này"
+                              >
+                                {(() => {
+                                  const amounts = getItemAmounts(item, promotionOptions, surchargeOptions);
+                                  const hasValue = amounts.surchargeAmount > 0;
+                                  return (
+                                    <span className={hasValue ? "font-semibold text-orange-600" : "text-muted-foreground"}>
+                                      {hasValue ? `+${fmtVND(amounts.surchargeAmount)}` : "Chọn..."}
+                                    </span>
+                                  );
+                                })()}
+                              </button>
+                            )}
+                          />
                         </td>
                         <td className="px-2 py-1.5 text-right tabular-nums font-medium text-xs">
                           {(item.priceType ?? "money") === "money"
