@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Settings, Trash2, Eye, Pencil, Search, SlidersHorizontal, X, FileDown, History, List } from "lucide-react";
+import { Plus, Settings, Trash2, Eye, Pencil, Search, SlidersHorizontal, X, FileDown, History, List, Info } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { StoreIssueReceiptDialog, type IssueReceiptFormData } from "./StoreIssueReceiptDialog";
 import { exportXuatKho } from "./storeExportUtils";
@@ -18,6 +18,7 @@ import { StoreDateRangePicker, type DateRange } from "./StoreDateRangePicker";
 import { StoreIssueReceiptHistoryTab } from "./StoreIssueReceiptHistoryTab";
 import { useLocations } from "@/hooks/use-locations";
 import { HistoryDialog } from "@/components/common/HistoryDialog";
+import { StoreIssueReceiptNotes } from "./StoreIssueReceiptNotes";
 
 type IssueReceiptRow = {
   id: string;
@@ -71,6 +72,7 @@ export function StoreIssueReceiptTab() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<"list" | "history">("list");
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [notesDialogOpen, setNotesDialogOpen] = useState(false);
   const { data: locationsList } = useLocations();
   const locationOptions = (locationsList ?? []).map((l: any) => ({ value: l.id, label: l.name }));
 
@@ -332,6 +334,16 @@ export function StoreIssueReceiptTab() {
             >
               <History className="h-3.5 w-3.5" /> Lịch sử
             </button>
+            <button
+              onClick={() => setNotesDialogOpen(true)}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors ${
+                notesDialogOpen
+                  ? "border-orange-500 text-orange-600"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Info className="h-3.5 w-3.5" /> Lưu ý
+            </button>
           </div>
         </div>
         <div className="flex-1 min-h-0 overflow-hidden bg-slate-50">
@@ -366,6 +378,16 @@ export function StoreIssueReceiptTab() {
             }`}
           >
             <History className="h-3.5 w-3.5" /> Lịch sử
+          </button>
+          <button
+            onClick={() => setNotesDialogOpen(true)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              notesDialogOpen
+                ? "bg-orange-50 text-orange-600"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Info className="h-3.5 w-3.5" /> Lưu ý
           </button>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -685,6 +707,10 @@ export function StoreIssueReceiptTab() {
       )}
       <HistoryDialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen} title="Lịch sử phiếu xuất kho">
         <StoreIssueReceiptHistoryTab locationOptions={locationOptions} />
+      </HistoryDialog>
+
+      <HistoryDialog open={notesDialogOpen} onOpenChange={setNotesDialogOpen} title="Lưu ý phiếu xuất kho">
+        <StoreIssueReceiptNotes />
       </HistoryDialog>
     </div>
   );
