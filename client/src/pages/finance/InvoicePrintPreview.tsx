@@ -18,6 +18,8 @@ interface InvoicePrintData {
   paidAmount: string;
   remainingAmount?: string | null;
   createdAt: string;
+  dueDate?: string | null;
+  paidAt?: string | null;
   status?: string | null;
   items?: Array<{
     name?: string;
@@ -493,6 +495,11 @@ function renderTemplate(
     phone: invoice.studentPhone ?? invoice.phone ?? "",
     address: invoice.studentAddress ?? invoice.address ?? "",
     invoice_code: invoice.code ?? "",
+    ngay_tao: fmtDate(invoice.createdAt),
+    ngay_in_phieu: new Date().toLocaleDateString("vi-VN"),
+    ngay_thanh_toan: fmtDate(invoice.paidAt),
+    han_thanh_toan: fmtDate(invoice.dueDate),
+    // Compatibility alias for templates saved before the variable was renamed.
     date: fmtDate(invoice.createdAt),
     total,
     thanh_tien: total,

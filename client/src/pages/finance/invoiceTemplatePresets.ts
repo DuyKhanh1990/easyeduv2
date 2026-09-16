@@ -5,7 +5,7 @@
  *
  * Các biến hợp lệ (sẽ được thay thế khi xem trước / khi in):
  *   Cơ bản:   {{customer_name}}  {{phone}}  {{address}}
- *             {{invoice_code}}   {{date}}
+ *             {{invoice_code}}   {{ngay_tao}}
  *   Số tiền:  {{total}}  {{da_thanh_toan}}  {{con_lai}}  {{thu_ky_nay}}
  *   Học vụ:   {{lop}}  {{noi_dung}}  {{khoan_thu}}
  *   Thanh toán:{{phuong_thuc}}  {{nguoi_tao}}  {{nguoi_thanh_toan}}
@@ -35,7 +35,7 @@ const TUITION_RECEIPT_HTML = `<div style="font-family: Arial, sans-serif; font-s
           <div style="font-size:9.5px;color:#555;">Số phiếu thu</div>
           <div style="font-weight:bold;font-size:13px;letter-spacing:0.5px;">{{invoice_code}}</div>
         </div>
-        <div style="font-size:10px;margin-top:4px;text-align:right;">Ngày thu: <b>{{date}}</b></div>
+        <div style="font-size:10px;margin-top:4px;text-align:right;">Ngày thu: <b>{{ngay_thanh_toan}}</b></div>
         <div style="font-size:10px;text-align:right;">Mã HD gốc: <b>{{ma_hd_goc}}</b></div>
       </td>
     </tr>
@@ -47,7 +47,7 @@ const TUITION_RECEIPT_HTML = `<div style="font-family: Arial, sans-serif; font-s
   <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px;">
     <tr>
       <td style="padding:2px 4px;width:50%;"><span style="color:#555;">Mã HD:</span> <b>{{invoice_code}}</b></td>
-      <td style="padding:2px 4px;width:50%;"><span style="color:#555;">Ngày lập HD:</span> <b>{{date}}</b></td>
+      <td style="padding:2px 4px;width:50%;"><span style="color:#555;">Ngày tạo HĐ:</span> <b>{{ngay_tao}}</b></td>
     </tr>
     <tr>
       <td style="padding:2px 4px;"><span style="color:#555;">Học viên:</span> <b>{{customer_name}}</b></td>
@@ -137,7 +137,7 @@ const BULK_COLLECT_HTML = `<div style="font-family: Arial, sans-serif; font-size
   <!-- ============== TIÊU ĐỀ ============== -->
   <div style="text-align:center;margin-bottom:10px;">
     <div style="font-size:22px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;">Phiếu Thu Gộp</div>
-    <div style="font-size:11px;color:#555;margin-top:2px;">Ngày thu: <b>{{date}}</b></div>
+    <div style="font-size:11px;color:#555;margin-top:2px;">Ngày thu: <b>{{ngay_thanh_toan}}</b></div>
   </div>
 
   <!-- ============== BẢNG LIỆT KÊ HOÁ ĐƠN ============== -->
