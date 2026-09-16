@@ -1257,62 +1257,6 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
               )}
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Khuyến mãi</Label>
-              <IssueAdjustmentDialog
-                open={promoOpen}
-                onOpenChange={value => {
-                  setPromoOpen(value);
-                  if (value) initializeSidebarAdjustment("promotion");
-                }}
-                title="Chọn khuyến mãi"
-                kind="promotion"
-                rows={sidebarPromotionRows}
-                options={promotionOptions}
-                baseAmount={Math.max(0, subtotal - discountAmt)}
-                onSelectOption={(rowId, optionKey) => selectSidebarAdjustmentOption("promotion", rowId, optionKey)}
-                onUpdateRow={(rowId, patch) => updateSidebarAdjustmentRow("promotion", rowId, patch)}
-                onAddRow={() => addSidebarAdjustmentRow("promotion")}
-                onRemoveRow={rowId => removeSidebarAdjustmentRow("promotion", rowId)}
-                trigger={(
-                  <button className="w-full flex items-center justify-between h-8 px-3 rounded-md border border-input bg-background text-xs hover:bg-muted/40 transition-colors">
-                    <span className={discountAmt > 0 ? "text-foreground" : "text-muted-foreground"}>
-                      {discountAmt > 0 ? `- ${fmtVND(discountAmt)}` : "Chọn khuyến mãi..."}
-                    </span>
-                    <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
-                  </button>
-                )}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Phụ thu</Label>
-              <IssueAdjustmentDialog
-                open={surchargeOpen}
-                onOpenChange={value => {
-                  setSurchargeOpen(value);
-                  if (value) initializeSidebarAdjustment("surcharge");
-                }}
-                title="Chọn phụ thu"
-                kind="surcharge"
-                rows={sidebarSurchargeRows}
-                options={surchargeOptions}
-                baseAmount={subtotal}
-                onSelectOption={(rowId, optionKey) => selectSidebarAdjustmentOption("surcharge", rowId, optionKey)}
-                onUpdateRow={(rowId, patch) => updateSidebarAdjustmentRow("surcharge", rowId, patch)}
-                onAddRow={() => addSidebarAdjustmentRow("surcharge")}
-                onRemoveRow={rowId => removeSidebarAdjustmentRow("surcharge", rowId)}
-                trigger={(
-                  <button className="w-full flex items-center justify-between h-8 px-3 rounded-md border border-input bg-background text-xs hover:bg-muted/40 transition-colors">
-                    <span className={surchargeAmt > 0 ? "text-foreground" : "text-muted-foreground"}>
-                      {surchargeAmt > 0 ? `+ ${fmtVND(surchargeAmt)}` : "Chọn phụ thu..."}
-                    </span>
-                    <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
-                  </button>
-                )}
-              />
-            </div>
-
             {/* Invoice checkbox — default ON */}
             <div className="space-y-2">
               <div className="flex items-center gap-2">
@@ -1349,18 +1293,66 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                 <span className="text-muted-foreground">Thành tiền</span>
                 <span className="font-medium tabular-nums">{fmtVND(subtotal)}</span>
               </div>
-              {discountAmt > 0 && (
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Khuyến mãi</span>
-                  <span className="text-red-500 tabular-nums">- {fmtVND(discountAmt)}</span>
-                </div>
-              )}
-              {surchargeAmt > 0 && (
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Phụ thu</span>
-                  <span className="text-orange-500 tabular-nums">+ {fmtVND(surchargeAmt)}</span>
-                </div>
-              )}
+              <IssueAdjustmentDialog
+                open={promoOpen}
+                onOpenChange={value => {
+                  setPromoOpen(value);
+                  if (value) initializeSidebarAdjustment("promotion");
+                }}
+                title="Chọn khuyến mãi"
+                kind="promotion"
+                rows={sidebarPromotionRows}
+                options={promotionOptions}
+                baseAmount={subtotal}
+                onSelectOption={(rowId, optionKey) => selectSidebarAdjustmentOption("promotion", rowId, optionKey)}
+                onUpdateRow={(rowId, patch) => updateSidebarAdjustmentRow("promotion", rowId, patch)}
+                onAddRow={() => addSidebarAdjustmentRow("promotion")}
+                onRemoveRow={rowId => removeSidebarAdjustmentRow("promotion", rowId)}
+                trigger={(
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between rounded-md px-0.5 py-0.5 text-xs transition-colors hover:bg-muted/40"
+                  >
+                    <span className="flex items-center gap-1 text-emerald-600">
+                      <span>Khuyến mãi</span>
+                      <ChevronDown className="h-3 w-3" />
+                    </span>
+                    <span className={discountAmt > 0 ? "text-emerald-600 tabular-nums" : "text-muted-foreground"}>
+                      {discountAmt > 0 ? `- ${fmtVND(discountAmt)}` : "Chọn khuyến mãi..."}
+                    </span>
+                  </button>
+                )}
+              />
+              <IssueAdjustmentDialog
+                open={surchargeOpen}
+                onOpenChange={value => {
+                  setSurchargeOpen(value);
+                  if (value) initializeSidebarAdjustment("surcharge");
+                }}
+                title="Chọn phụ thu"
+                kind="surcharge"
+                rows={sidebarSurchargeRows}
+                options={surchargeOptions}
+                baseAmount={Math.max(0, subtotal - discountAmt)}
+                onSelectOption={(rowId, optionKey) => selectSidebarAdjustmentOption("surcharge", rowId, optionKey)}
+                onUpdateRow={(rowId, patch) => updateSidebarAdjustmentRow("surcharge", rowId, patch)}
+                onAddRow={() => addSidebarAdjustmentRow("surcharge")}
+                onRemoveRow={rowId => removeSidebarAdjustmentRow("surcharge", rowId)}
+                trigger={(
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between rounded-md px-0.5 py-0.5 text-xs transition-colors hover:bg-muted/40"
+                  >
+                    <span className="flex items-center gap-1 text-orange-600">
+                      <span>Phụ thu</span>
+                      <ChevronDown className="h-3 w-3" />
+                    </span>
+                    <span className={surchargeAmt > 0 ? "text-orange-600 tabular-nums" : "text-muted-foreground"}>
+                      {surchargeAmt > 0 ? `+ ${fmtVND(surchargeAmt)}` : "Chọn phụ thu..."}
+                    </span>
+                  </button>
+                )}
+              />
               <div className="flex items-center justify-between text-sm font-bold border-t border-border pt-2">
                 <span>TỔNG TIỀN:</span>
                 <span className="text-orange-600 tabular-nums">{fmtVND(total)}</span>
