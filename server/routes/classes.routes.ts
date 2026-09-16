@@ -5097,7 +5097,7 @@ export function registerClassesRoutes(app: Express): void {
       }
 
       // Pre-fetch for activity log (before removal)
-      let removeLogData: { classId: string; locationId: string | null; className: string; classCode: string; students: { name: string; code: string }[]; fromSessionIndex: number; toSessionIndex: number; deleteOnlyUnattended: boolean } | null = null;
+      let removeLogData: { classId: string; locationId: string | null; className: string; classCode: string; students: { name: string; code: string }[]; fromSessionIndex: number; toSessionIndex: number; deleteOnlyUnattended: boolean; deleteAllSessions: boolean; orphanAction: string } | null = null;
       try {
         const [sc2] = await db.select({ classId: studentClasses.classId })
           .from(studentClasses).where(eq(studentClasses.id, studentClassId)).limit(1);
@@ -5115,6 +5115,8 @@ export function registerClassesRoutes(app: Express): void {
             fromSessionIndex: fromSessionOrder,
             toSessionIndex: toSessionOrder,
             deleteOnlyUnattended: !!deleteOnlyUnattended,
+            deleteAllSessions: !!req.body.deleteAllSessions,
+            orphanAction: orphanAction ?? "keep",
           };
         }
       } catch (logPreErr) {
@@ -5134,13 +5136,17 @@ export function registerClassesRoutes(app: Express): void {
           userId,
           locationId: removeLogData.locationId,
           classId: removeLogData.classId,
-          action: "Xoá học viên khỏi buổi",
+          action: removeLogData.deleteAllSessions
+            ? "Xoá toàn bộ lịch học của học viên"
+            : "Xoá học viên khỏi buổi",
           oldContent: null,
           newContent: JSON.stringify({
             students: removeLogData.students,
             fromSessionIndex: removeLogData.fromSessionIndex,
             toSessionIndex: removeLogData.toSessionIndex,
             deleteOnlyUnattended: removeLogData.deleteOnlyUnattended,
+            deleteAllSessions: removeLogData.deleteAllSessions,
+            orphanAction: removeLogData.orphanAction,
             className: removeLogData.className,
             classCode: removeLogData.classCode,
           }),
