@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 
 const DAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+const FULL_DAY_LABELS = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
 
 const STEP_COLORS = [
   "bg-indigo-500",
@@ -436,6 +437,45 @@ export function ExtensionDialog({
 
   const allPkgs: any[] = feePackages || classData?.course?.feePackages || [];
 
+  const getScheduleText = (weekdays: number[]): string => {
+    const selectedWeekdays = new Set(
+      weekdays
+        .map((weekday) => Number(weekday) === 7 ? 0 : Number(weekday))
+        .filter((weekday) => Number.isInteger(weekday) && weekday >= 0 && weekday <= 6),
+    );
+    const seen = new Set<string>();
+    const entries: Array<{ weekday: number; text: string }> = [];
+
+    for (const session of classSessions || []) {
+      const weekday = Number(session.weekday) === 7 ? 0 : Number(session.weekday);
+      if (!selectedWeekdays.has(weekday)) continue;
+      const shift = session.shiftTemplate || (session.shiftTemplateId ? null : classData?.shiftTemplate);
+      const startTime = shift?.startTime?.trim();
+      const endTime = shift?.endTime?.trim();
+      const key = `${weekday}_${startTime ?? ""}_${endTime ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      entries.push({
+        weekday,
+        text: startTime && endTime
+          ? `${FULL_DAY_LABELS[weekday]} (${startTime}-${endTime})`
+          : FULL_DAY_LABELS[weekday],
+      });
+    }
+
+    // Imported/legacy session payloads may not include shiftTemplate relations.
+    // Still show the selected weekdays in the preview; the server resolves times
+    // from shift_templates when it creates the invoice.
+    for (const weekday of selectedWeekdays) {
+      if (!entries.some((entry) => entry.weekday === weekday)) {
+        entries.push({ weekday, text: FULL_DAY_LABELS[weekday] });
+      }
+    }
+
+    entries.sort((a, b) => (a.weekday === 0 ? 7 : a.weekday) - (b.weekday === 0 ? 7 : b.weekday));
+    return entries.map((entry) => entry.text).join(", ");
+  };
+
   // Build auto invoice description for a student
   const buildNote = (s: any): string => {
     const pkg = allPkgs.find((p: any) => p.id === studentPkgIds[s.id]);
@@ -484,15 +524,19 @@ export function ExtensionDialog({
     const pkgName = pkg?.name || "";
     const discNames = discIds.map((id: string) => (promotionOptions as any[]).find((p: any) => p.id === id)?.name).filter(Boolean).join(", ");
     const surchNames = surchIds.map((id: string) => (surchargeOptions as any[]).find((p: any) => p.id === id)?.name).filter(Boolean).join(", ");
-    const weekdayStr = selectedCycleWeekdays.map((wd: number) => DAY_LABELS[wd]).join(", ");
-    const shift = classData?.shiftTemplate;
-    const shiftStr = shift ? `${shift.name}: ${shift.startTime} - ${shift.endTime}` : "";
+    const record = activeMap[s.studentId] || s;
+    const studentOwnWeekdays: number[] = (() => {
+      if (cycleConfigOpen) return activeWeekdays;
+      const sw: number[] | null = record.scheduledWeekdays ?? null;
+      return (sw && sw.length > 0) ? sw : selectedCycleWeekdays;
+    })();
+    const scheduleText = getScheduleText(studentOwnWeekdays);
 
     let note = `Học phí gia hạn từ ngày ${startStr} đến ngày ${endStr}. Lớp ${className}`;
-    if (pkgName) note += `, Gói học phí ${pkgName}`;
-    if (discNames) note += `, Khuyến mãi ${discNames}`;
-    if (surchNames) note += `, Phụ thu ${surchNames}`;
-    note += `. Chu kỳ học ${weekdayStr}${shiftStr ? `, ${shiftStr}` : ""}`;
+    if (pkgName) note += `, Gói học phí: ${pkgName}`;
+    if (scheduleText) note += `, Thời gian: ${scheduleText}`;
+    if (discNames) note += `, Khuyến mãi: ${discNames}`;
+    if (surchNames) note += `, Phụ thu: ${surchNames}`;
     return note;
   };
 

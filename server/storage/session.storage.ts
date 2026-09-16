@@ -6,6 +6,7 @@ import {
   classSessions, studentClasses, studentSessions,
   classes, classSessionExclusions, sessionContents, students,
   invoices, invoiceItems, shiftTemplates, courseFeePackages,
+  financePromotions,
   format, parseISO,
   getDayName,
 } from "./base";
@@ -19,6 +20,49 @@ import type {
 import { getClass } from "./class.storage";
 import { getNextLocationCode } from "./finance.storage";
 import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
+
+const RENEWAL_WEEKDAY_LABELS = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
+
+function formatRenewalInvoiceDate(value: string | Date | null | undefined): string {
+  if (!value) return "";
+  const date = value instanceof Date ? value : parseISO(String(value).slice(0, 10));
+  return isNaN(date.getTime()) ? String(value) : format(date, "dd/MM/yyyy");
+}
+
+function formatRenewalSchedule(
+  weekdays: number[],
+  scheduleConfigByWeekday: Map<number, any>,
+  shiftMap: Map<string, { startTime: string | null; endTime: string | null }>,
+): string {
+  const seen = new Set<string>();
+  const entries: Array<{ weekday: number; text: string }> = [];
+
+  for (const rawWeekday of weekdays) {
+    const weekday = Number(rawWeekday);
+    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 7) continue;
+    const normalizedWeekday = weekday === 7 ? 0 : weekday;
+    const config = scheduleConfigByWeekday.get(normalizedWeekday);
+    const shift = config?.shiftTemplateId ? shiftMap.get(config.shiftTemplateId) : undefined;
+    const startTime = shift?.startTime?.trim();
+    const endTime = shift?.endTime?.trim();
+    const key = `${normalizedWeekday}_${startTime ?? ""}_${endTime ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const label = RENEWAL_WEEKDAY_LABELS[normalizedWeekday];
+    entries.push({
+      weekday: normalizedWeekday,
+      text: startTime && endTime ? `${label} (${startTime}-${endTime})` : label,
+    });
+  }
+
+  entries.sort((a, b) => {
+    const weekdayOrder = (weekday: number) => weekday === 0 ? 7 : weekday;
+    return weekdayOrder(a.weekday) - weekdayOrder(b.weekday);
+  });
+
+  return entries.map(entry => entry.text).join(", ");
+}
 
 // ---------------------------------------------------------------------------
 // recalculateStudentClass
@@ -669,6 +713,20 @@ export async function extendStudentSessions(data: {
     const configuredClassShiftId = (cls.shiftTemplateIds || []).find((id: string | null) => !!id) ?? null;
     const latestScheduleConfig = existingScheduleConfigs.find((config) => !!config.shiftTemplateId);
     const fallbackShiftTemplateId = configuredClassShiftId ?? latestScheduleConfig?.shiftTemplateId ?? null;
+    const scheduleShiftIds = Array.from(new Set([
+      ...existingScheduleConfigs.map((config) => config.shiftTemplateId),
+      ...(cls.shiftTemplateIds || []),
+    ].filter((id): id is string => !!id)));
+    const scheduleShiftRows = scheduleShiftIds.length > 0
+      ? await tx.select({
+          id: shiftTemplates.id,
+          startTime: shiftTemplates.startTime,
+          endTime: shiftTemplates.endTime,
+        }).from(shiftTemplates).where(inArray(shiftTemplates.id, scheduleShiftIds))
+      : [];
+    const scheduleShiftMap = new Map(
+      scheduleShiftRows.map(shift => [shift.id, shift]),
+    );
 
     // ── Pre-loop batch fetches (replaces 2 queries/student) ────────────────
     // 1. Fetch all student_classes records for this class in one query
@@ -980,6 +1038,34 @@ export async function extendStudentSessions(data: {
         const pkgId = perStudentMap[studentId] ?? null;
         const pkgInfo = pkgId ? await getFeePackageInfo(pkgId) : null;
         const pkgName = pkgInfo ? ((pkgInfo as any).name || "") : "";
+        const extensionDays = candidateDays.filter((day) => day.isStudentDay);
+        const renewalStartDate = extensionDays[0]?.dateStr ?? format(lastSessionDate, "yyyy-MM-dd");
+        const renewalEndDate = extensionDays[extensionDays.length - 1]?.dateStr ?? renewalStartDate;
+        const scheduleText = formatRenewalSchedule(
+          studentSessionWeekdays,
+          scheduleConfigByWeekday,
+          scheduleShiftMap,
+        );
+        const promotionRows = inv?.promotionKeys?.length
+          ? await tx.select({ name: financePromotions.name })
+              .from(financePromotions)
+              .where(inArray(financePromotions.id, inv.promotionKeys))
+          : [];
+        const surchargeRows = inv?.surchargeKeys?.length
+          ? await tx.select({ name: financePromotions.name })
+              .from(financePromotions)
+              .where(inArray(financePromotions.id, inv.surchargeKeys))
+          : [];
+        const promotionNames = promotionRows.map((promotion) => promotion.name).filter(Boolean).join(", ");
+        const surchargeNames = surchargeRows.map((surcharge) => surcharge.name).filter(Boolean).join(", ");
+        const automaticDescription = [
+          `Học phí gia hạn từ ngày ${formatRenewalInvoiceDate(renewalStartDate)} đến ngày ${formatRenewalInvoiceDate(renewalEndDate)}`,
+          `Lớp ${cls.name}`,
+          pkgName ? `Gói học phí: ${pkgName}` : null,
+          scheduleText ? `Thời gian: ${scheduleText}` : null,
+          promotionNames ? `Khuyến mãi: ${promotionNames}` : null,
+          surchargeNames ? `Phụ thu: ${surchargeNames}` : null,
+        ].filter(Boolean).join(", ");
 
         const [newInvoice] = await tx.insert(invoices).values({
           code: invoiceCode,
@@ -997,7 +1083,7 @@ export async function extendStudentSessions(data: {
           paidAmount: "0",
           remainingAmount: grandTotal.toFixed(2),
           status: "unpaid",
-          description: inv?.description ?? undefined,
+          description: automaticDescription || inv?.description || undefined,
           dueDate: todayStr,
           createdBy: data.userId ?? undefined,
         }).returning();
