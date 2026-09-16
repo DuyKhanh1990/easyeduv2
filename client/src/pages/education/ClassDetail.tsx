@@ -347,7 +347,11 @@ export function ClassDetail() {
             </TabsContent>
 
             <TabsContent value="active" className="h-full mt-0">
-              <ActiveTabContent classId={id!} activeStudents={activeStudents} />
+              <ActiveTabContent
+                classId={id!}
+                activeStudents={activeStudents}
+                canDelete={classPerm.canDelete}
+              />
             </TabsContent>
 
             <TabsContent value="attendance" className="h-full mt-0">

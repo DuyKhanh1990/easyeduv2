@@ -20,7 +20,8 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import { ChevronRight, Search, CalendarDays } from "lucide-react";
+import { ChevronRight, Search, CalendarDays, Trash2 } from "lucide-react";
+import { RemoveStudentFromSessionDialog } from "@/components/education/RemoveStudentFromSessionDialog";
 
 function formatVND(amount: number): string {
   return Math.round(amount).toLocaleString("vi-VN");
@@ -38,13 +39,21 @@ interface InvoiceSummary {
 interface ActiveTabContentProps {
   classId: string;
   activeStudents: any[] | undefined;
+  canDelete?: boolean;
 }
 
-export function ActiveTabContent({ classId, activeStudents }: ActiveTabContentProps) {
+export function ActiveTabContent({ classId, activeStudents, canDelete = true }: ActiveTabContentProps) {
   const [selectedActiveStudent, setSelectedActiveStudent] = useState<any>(null);
+  const [studentToDelete, setStudentToDelete] = useState<any>(null);
   const [listSearch, setListSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+
+  const { data: classSessions = [] } = useQuery<any[]>({
+    queryKey: [`/api/classes/${classId}/sessions`],
+    enabled: !!classId,
+    staleTime: 0,
+  });
 
   const { data: studentSessions } = useQuery<any[]>({
     queryKey: [`/api/classes/${classId}/student/${selectedActiveStudent?.id}/sessions`],
@@ -116,6 +125,7 @@ export function ActiveTabContent({ classId, activeStudents }: ActiveTabContentPr
               <TableHead>Hoá đơn</TableHead>
               <TableHead>Trạng thái</TableHead>
               <TableHead>Lịch học</TableHead>
+           {canDelete && <TableHead>Thao tác</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -211,11 +221,25 @@ export function ActiveTabContent({ classId, activeStudents }: ActiveTabContentPr
                     <CalendarDays className="h-4 w-4" />
                   </Button>
                 </TableCell>
+                 {canDelete && (
+                   <TableCell onClick={(e) => e.stopPropagation()}>
+                     <Button
+                       variant="ghost"
+                       size="icon"
+                       className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                       title="Xóa toàn bộ lịch học của học viên"
+                       data-testid={`btn-remove-all-student-sessions-${s.id}`}
+                       onClick={() => setStudentToDelete(s)}
+                     >
+                       <Trash2 className="h-4 w-4" />
+                     </Button>
+                   </TableCell>
+                 )}
               </TableRow>
             ))}
             {filteredActive.length === 0 && (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                 <TableCell colSpan={canDelete ? 10 : 9} className="text-center py-8 text-muted-foreground">
                   {listSearch ? "Không tìm thấy học viên phù hợp" : "Không có học viên chính thức nào"}
                 </TableCell>
               </TableRow>
@@ -338,6 +362,25 @@ export function ActiveTabContent({ classId, activeStudents }: ActiveTabContentPr
           </div>
         </DrawerContent>
       </Drawer>
+
+      {studentToDelete && (
+        <RemoveStudentFromSessionDialog
+          isOpen={!!studentToDelete}
+          onOpenChange={(open) => {
+            if (!open) setStudentToDelete(null);
+          }}
+          studentIds={[studentToDelete.studentId]}
+          studentClassId={studentToDelete.id}
+          fromSessionOrder={1}
+          toSessionOrder={Math.max(
+            1,
+            ...classSessions.map((session: any) => Number(session.sessionIndex) || 0),
+          )}
+          classId={classId}
+          classSessions={classSessions}
+          quickDeleteAll
+        />
+      )}
     </div>
   );
 }

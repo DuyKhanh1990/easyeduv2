@@ -3255,17 +3255,24 @@ export async function removeStudentFromSessions(data: {
   fromSessionOrder: number;
   toSessionOrder: number;
   deleteOnlyUnattended?: boolean;
+  deleteAllSessions?: boolean;
 }): Promise<{
   hasAttendedSessions: boolean;
   orphanedStudents: Array<{ studentClassId: string; studentId: string; studentName: string }>;
 }> {
+  const sessionScope = data.deleteAllSessions
+    ? and(
+        eq(studentSessions.studentClassId, data.studentClassId),
+        inArray(studentSessions.studentId, data.studentIds),
+      )
+    : and(
+        eq(studentSessions.studentClassId, data.studentClassId),
+        inArray(studentSessions.studentId, data.studentIds),
+        between(studentSessions.sessionOrder, data.fromSessionOrder, data.toSessionOrder),
+      );
   const sessionsToDelete = await db.select()
     .from(studentSessions)
-    .where(and(
-      eq(studentSessions.studentClassId, data.studentClassId),
-      inArray(studentSessions.studentId, data.studentIds),
-      between(studentSessions.sessionOrder, data.fromSessionOrder, data.toSessionOrder),
-    ));
+    .where(sessionScope);
 
   const attendedCount = sessionsToDelete.filter(s => s.attendanceStatus && s.attendanceStatus !== "pending").length;
   const effectiveSessionsToDelete = data.deleteOnlyUnattended
@@ -3309,14 +3316,20 @@ export async function removeStudentFromSessionsConfirm(data: {
   fromSessionOrder: number;
   toSessionOrder: number;
   deleteOnlyUnattended: boolean;
+  deleteAllSessions?: boolean;
   orphanAction?: "keep" | "remove" | "waiting";
 }): Promise<void> {
   await db.transaction(async (tx) => {
-    let deleteConditions = and(
-      eq(studentSessions.studentClassId, data.studentClassId),
-      inArray(studentSessions.studentId, data.studentIds),
-      between(studentSessions.sessionOrder, data.fromSessionOrder, data.toSessionOrder),
-    );
+    let deleteConditions = data.deleteAllSessions
+      ? and(
+          eq(studentSessions.studentClassId, data.studentClassId),
+          inArray(studentSessions.studentId, data.studentIds),
+        )
+      : and(
+          eq(studentSessions.studentClassId, data.studentClassId),
+          inArray(studentSessions.studentId, data.studentIds),
+          between(studentSessions.sessionOrder, data.fromSessionOrder, data.toSessionOrder),
+        );
 
     if (data.deleteOnlyUnattended) {
       deleteConditions = and(

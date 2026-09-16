@@ -244,7 +244,11 @@ export function ClassDetailDialog({ classId, isOpen, onClose }: ClassDetailDialo
                   </TabsContent>
 
                   <TabsContent value="active" className="mt-0">
-                    <ActiveTabContent classId={id} activeStudents={activeStudents} />
+                    <ActiveTabContent
+                      classId={id}
+                      activeStudents={activeStudents}
+                      canDelete={classPerm.canDelete}
+                    />
                   </TabsContent>
 
                   <TabsContent value="schedule" className="mt-0 space-y-4">

@@ -24,6 +24,7 @@ interface RemoveStudentFromSessionDialogProps {
   toSessionOrder: number;
   classId: string;
   classSessions?: any[];
+  quickDeleteAll?: boolean;
 }
 
 export function RemoveStudentFromSessionDialog({
@@ -34,9 +35,10 @@ export function RemoveStudentFromSessionDialog({
   fromSessionOrder: initialFromSessionOrder,
   toSessionOrder: initialToSessionOrder,
   classId,
-  classSessions = []
+  classSessions = [],
+  quickDeleteAll = false,
 }: RemoveStudentFromSessionDialogProps) {
-  const [showScopeSelection, setShowScopeSelection] = useState(true);
+  const [showScopeSelection, setShowScopeSelection] = useState(!quickDeleteAll);
   const [showWarning, setShowWarning] = useState(false);
   const [showOrphanWarning, setShowOrphanWarning] = useState(false);
   const [orphanedStudents, setOrphanedStudents] = useState<Array<{ studentClassId: string; studentId: string; studentName: string }>>([]);
@@ -49,7 +51,7 @@ export function RemoveStudentFromSessionDialog({
 
   useEffect(() => {
     if (!isOpen) {
-      setShowScopeSelection(true);
+      setShowScopeSelection(!quickDeleteAll);
       setShowWarning(false);
       setShowOrphanWarning(false);
       setOrphanedStudents([]);
@@ -128,6 +130,7 @@ export function RemoveStudentFromSessionDialog({
         toSessionOrder,
         deleteMode: fromSessionOrder === toSessionOrder ? "single" : "range",
         deleteOnlyUnattended,
+         deleteAllSessions: quickDeleteAll,
         orphanAction,
       });
     },
@@ -162,6 +165,7 @@ export function RemoveStudentFromSessionDialog({
         toSessionOrder,
         deleteMode: fromSessionOrder === toSessionOrder ? "single" : "range",
         deleteOnlyUnattended: true,
+         deleteAllSessions: quickDeleteAll,
       });
       return res.json();
     },
@@ -308,12 +312,14 @@ export function RemoveStudentFromSessionDialog({
       <Dialog open={isOpen && !showScopeSelection && !showWarning && !showOrphanWarning} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <DialogTitle className="flex items-center gap-2 text-destructive">
               <Trash2 className="h-5 w-5" />
-              Xoá học viên khỏi buổi học
+                {quickDeleteAll ? "Xoá toàn bộ lịch học" : "Xoá học viên khỏi buổi học"}
             </DialogTitle>
             <DialogDescription>
-              Bạn chắc chắn muốn xoá {studentIds.length} học viên khỏi {fromSessionOrder === toSessionOrder ? "buổi này" : `buổi ${fromSessionOrder} đến buổi ${toSessionOrder}`}?
+              {quickDeleteAll
+                ? `Bạn chắc chắn muốn xoá toàn bộ lịch học của ${studentIds.length} học viên trong lớp này?`
+                : `Bạn chắc chắn muốn xoá ${studentIds.length} học viên khỏi ${fromSessionOrder === toSessionOrder ? "buổi này" : `buổi ${fromSessionOrder} đến buổi ${toSessionOrder}`}?`}
             </DialogDescription>
           </DialogHeader>
 
@@ -336,7 +342,9 @@ export function RemoveStudentFromSessionDialog({
               onClick={handleDeleteClick}
               disabled={checkAttendanceMutation.isPending}
             >
-              {checkAttendanceMutation.isPending ? "Đang kiểm tra..." : "Xoá"}
+              {checkAttendanceMutation.isPending
+                ? "Đang kiểm tra..."
+                : quickDeleteAll ? "Xoá toàn bộ lịch" : "Xoá"}
             </Button>
           </DialogFooter>
         </DialogContent>
