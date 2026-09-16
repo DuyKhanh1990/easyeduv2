@@ -695,7 +695,7 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
     const setKeys = kind === "promotion" ? setSelectedPromoKeys : setSelectedSurchargeKeys;
     setRows(previous => {
       const next = updater(previous);
-      setKeys(Array.from(new Set(next.map(row => row.optionKey).filter((key): key is string => Boolean(key))));
+      setKeys(Array.from(new Set(next.map(row => row.optionKey).filter((key): key is string => Boolean(key)))));
       return next;
     });
   }
@@ -1227,90 +1227,58 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
 
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Khuyến mãi</Label>
-              <Popover open={promoOpen} onOpenChange={setPromoOpen}>
-                <PopoverTrigger asChild>
+              <IssueAdjustmentDialog
+                open={promoOpen}
+                onOpenChange={value => {
+                  setPromoOpen(value);
+                  if (value) initializeSidebarAdjustment("promotion");
+                }}
+                title="Chọn khuyến mãi"
+                kind="promotion"
+                rows={sidebarPromotionRows}
+                options={promotionOptions}
+                baseAmount={subtotal}
+                onSelectOption={(rowId, optionKey) => selectSidebarAdjustmentOption("promotion", rowId, optionKey)}
+                onUpdateRow={(rowId, patch) => updateSidebarAdjustmentRow("promotion", rowId, patch)}
+                onAddRow={() => addSidebarAdjustmentRow("promotion")}
+                onRemoveRow={rowId => removeSidebarAdjustmentRow("promotion", rowId)}
+                trigger={(
                   <button className="w-full flex items-center justify-between h-8 px-3 rounded-md border border-input bg-background text-xs hover:bg-muted/40 transition-colors">
                     <span className={discountAmt > 0 ? "text-foreground" : "text-muted-foreground"}>
                       {discountAmt > 0 ? `- ${fmtVND(discountAmt)}` : "Chọn khuyến mãi..."}
                     </span>
                     <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
                   </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-64 p-0" align="start">
-                  <div className="px-3 py-2 border-b border-border">
-                    <p className="text-xs font-semibold">Chọn khuyến mãi</p>
-                  </div>
-                  {promotionOptions.length === 0 ? (
-                    <p className="text-xs text-muted-foreground text-center py-4">Chưa có khuyến mãi</p>
-                  ) : (
-                    <div className="max-h-48 overflow-y-auto py-1">
-                      {promotionOptions.map(p => {
-                        const v = parseFloat(p.valueAmount ?? "0");
-                        const displayAmt = p.valueType === "percent"
-                          ? `-${v}%  (${fmtVND(subtotal * v / 100)})`
-                          : `- ${fmtVND(v)}`;
-                        return (
-                          <label key={p.code} className="flex items-start gap-2.5 px-3 py-2 hover:bg-muted/50 cursor-pointer">
-                            <Checkbox
-                              checked={selectedPromoKeys.includes(p.code)}
-                              onCheckedChange={() => handlePromoToggle(p.code, promotionOptions, subtotal)}
-                              className="mt-0.5"
-                            />
-                            <div>
-                              <p className="text-xs font-medium">{p.name}</p>
-                              <p className="text-[11px] text-muted-foreground">{displayAmt}</p>
-                            </div>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-                </PopoverContent>
-              </Popover>
+                )}
+              />
             </div>
 
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Phụ thu</Label>
-              <Popover open={surchargeOpen} onOpenChange={setSurchargeOpen}>
-                <PopoverTrigger asChild>
+              <IssueAdjustmentDialog
+                open={surchargeOpen}
+                onOpenChange={value => {
+                  setSurchargeOpen(value);
+                  if (value) initializeSidebarAdjustment("surcharge");
+                }}
+                title="Chọn phụ thu"
+                kind="surcharge"
+                rows={sidebarSurchargeRows}
+                options={surchargeOptions}
+                baseAmount={subtotal}
+                onSelectOption={(rowId, optionKey) => selectSidebarAdjustmentOption("surcharge", rowId, optionKey)}
+                onUpdateRow={(rowId, patch) => updateSidebarAdjustmentRow("surcharge", rowId, patch)}
+                onAddRow={() => addSidebarAdjustmentRow("surcharge")}
+                onRemoveRow={rowId => removeSidebarAdjustmentRow("surcharge", rowId)}
+                trigger={(
                   <button className="w-full flex items-center justify-between h-8 px-3 rounded-md border border-input bg-background text-xs hover:bg-muted/40 transition-colors">
                     <span className={surchargeAmt > 0 ? "text-foreground" : "text-muted-foreground"}>
                       {surchargeAmt > 0 ? `+ ${fmtVND(surchargeAmt)}` : "Chọn phụ thu..."}
                     </span>
                     <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
                   </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-64 p-0" align="start">
-                  <div className="px-3 py-2 border-b border-border">
-                    <p className="text-xs font-semibold">Chọn phụ thu</p>
-                  </div>
-                  {surchargeOptions.length === 0 ? (
-                    <p className="text-xs text-muted-foreground text-center py-4">Chưa có phụ thu</p>
-                  ) : (
-                    <div className="max-h-48 overflow-y-auto py-1">
-                      {surchargeOptions.map(p => {
-                        const v = parseFloat(p.valueAmount ?? "0");
-                        const displayAmt = p.valueType === "percent"
-                          ? `+${v}%  (${fmtVND(subtotal * v / 100)})`
-                          : `+ ${fmtVND(v)}`;
-                        return (
-                          <label key={p.code} className="flex items-start gap-2.5 px-3 py-2 hover:bg-muted/50 cursor-pointer">
-                            <Checkbox
-                              checked={selectedSurchargeKeys.includes(p.code)}
-                              onCheckedChange={() => handleSurchargeToggle(p.code, surchargeOptions, subtotal)}
-                              className="mt-0.5"
-                            />
-                            <div>
-                              <p className="text-xs font-medium">{p.name}</p>
-                              <p className="text-[11px] text-muted-foreground">{displayAmt}</p>
-                            </div>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-                </PopoverContent>
-              </Popover>
+                )}
+              />
             </div>
 
             {/* Invoice checkbox — default ON */}
