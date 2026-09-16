@@ -70,6 +70,10 @@ async function ensureIssueReceiptTables() {
   await db.execute(sql`ALTER TABLE store_issue_receipt_items ADD COLUMN IF NOT EXISTS price_type VARCHAR(10) DEFAULT 'money'`);
   await db.execute(sql`ALTER TABLE store_issue_receipt_items ADD COLUMN IF NOT EXISTS star_price INTEGER DEFAULT 0`);
   await db.execute(sql`ALTER TABLE store_issue_receipt_items ADD COLUMN IF NOT EXISTS total_stars INTEGER DEFAULT 0`);
+  await db.execute(sql`ALTER TABLE store_issue_receipt_items ADD COLUMN IF NOT EXISTS promotion_keys JSONB DEFAULT '[]'::jsonb`);
+  await db.execute(sql`ALTER TABLE store_issue_receipt_items ADD COLUMN IF NOT EXISTS surcharge_keys JSONB DEFAULT '[]'::jsonb`);
+  await db.execute(sql`ALTER TABLE store_issue_receipt_items ADD COLUMN IF NOT EXISTS manual_promotion_rows JSONB DEFAULT '[]'::jsonb`);
+  await db.execute(sql`ALTER TABLE store_issue_receipt_items ADD COLUMN IF NOT EXISTS manual_surcharge_rows JSONB DEFAULT '[]'::jsonb`);
   await db.execute(sql`ALTER TABLE store_issue_receipts ADD COLUMN IF NOT EXISTS recipient_id UUID`);
   await db.execute(sql`ALTER TABLE store_issue_receipts ADD COLUMN IF NOT EXISTS invoice_id UUID REFERENCES invoices(id) ON DELETE SET NULL`);
   await db.execute(sql`
@@ -98,6 +102,20 @@ const issueItemSchema = z.object({
   priceType: z.enum(["money", "star"]).default("money"),
   starPrice: z.number().int().min(0).default(0),
   totalStars: z.number().int().min(0).default(0),
+  promotionKeys: z.array(z.string()).default([]),
+  surchargeKeys: z.array(z.string()).default([]),
+  manualPromotionRows: z.array(z.object({
+    id: z.string(),
+    optionKey: z.string().optional(),
+    valueType: z.enum(["amount", "percent"]),
+    value: z.number().min(0),
+  })).default([]),
+  manualSurchargeRows: z.array(z.object({
+    id: z.string(),
+    optionKey: z.string().optional(),
+    valueType: z.enum(["amount", "percent"]),
+    value: z.number().min(0),
+  })).default([]),
 });
 
 const issueCreateSchema = z.object({
@@ -838,6 +856,10 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
           priceType: i.price_type ?? "money",
           starPrice: i.star_price ?? 0,
           totalStars: i.total_stars ?? 0,
+          promotionKeys: i.promotion_keys ?? [],
+          surchargeKeys: i.surcharge_keys ?? [],
+          manualPromotionRows: i.manual_promotion_rows ?? [],
+          manualSurchargeRows: i.manual_surcharge_rows ?? [],
         })),
       });
     } catch (err) {
@@ -909,13 +931,18 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
             INSERT INTO store_issue_receipt_items (
               receipt_id, product_id, product_code, product_name,
               quantity, unit_id, unit_name, sale_price, stock_before,
-              price_type, star_price, total_stars
+              price_type, star_price, total_stars,
+              promotion_keys, surcharge_keys, manual_promotion_rows, manual_surcharge_rows
             ) VALUES (
               ${r.id}, ${item.productId ?? null}, ${item.productCode}, ${item.productName},
               ${item.quantity}, ${item.unitId ?? null}, ${item.unitName ?? null},
               ${item.salePrice}, ${item.stockBefore},
               ${item.priceType ?? "money"}, ${item.starPrice ?? 0},
-              ${item.priceType === "star" ? item.quantity * (item.starPrice ?? 0) : 0}
+              ${item.priceType === "star" ? item.quantity * (item.starPrice ?? 0) : 0},
+              ${JSON.stringify(item.promotionKeys ?? [])}::jsonb,
+              ${JSON.stringify(item.surchargeKeys ?? [])}::jsonb,
+              ${JSON.stringify(item.manualPromotionRows ?? [])}::jsonb,
+              ${JSON.stringify(item.manualSurchargeRows ?? [])}::jsonb
             )
           `);
         }
@@ -1190,13 +1217,18 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
           INSERT INTO store_issue_receipt_items (
             receipt_id, product_id, product_code, product_name,
             quantity, unit_id, unit_name, sale_price, stock_before,
-            price_type, star_price, total_stars
+            price_type, star_price, total_stars,
+            promotion_keys, surcharge_keys, manual_promotion_rows, manual_surcharge_rows
           ) VALUES (
             ${req.params.id}, ${item.productId ?? null}, ${item.productCode}, ${item.productName},
             ${item.quantity}, ${item.unitId ?? null}, ${item.unitName ?? null},
             ${item.salePrice}, ${item.stockBefore},
             ${item.priceType ?? "money"}, ${item.starPrice ?? 0},
-            ${item.priceType === "star" ? item.quantity * (item.starPrice ?? 0) : 0}
+            ${item.priceType === "star" ? item.quantity * (item.starPrice ?? 0) : 0},
+            ${JSON.stringify(item.promotionKeys ?? [])}::jsonb,
+            ${JSON.stringify(item.surchargeKeys ?? [])}::jsonb,
+            ${JSON.stringify(item.manualPromotionRows ?? [])}::jsonb,
+            ${JSON.stringify(item.manualSurchargeRows ?? [])}::jsonb
           )
         `);
       }

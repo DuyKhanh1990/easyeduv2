@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { X, Search, Trash2, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -28,6 +29,10 @@ export type IssueReceiptItem = {
   stockBefore: number;
   priceType: "money" | "star";
   starPrice: number;
+  promotionKeys?: string[];
+  surchargeKeys?: string[];
+  manualPromotionRows?: ManualAdjustment[];
+  manualSurchargeRows?: ManualAdjustment[];
 };
 
 export type IssueReceiptFormData = {
@@ -60,6 +65,153 @@ type FinancePromotion = {
   valueType: string;
   isActive: boolean;
 };
+
+type ManualAdjustment = {
+  id: string;
+  optionKey?: string;
+  valueType: "amount" | "percent";
+  value: number;
+};
+
+type AdjustmentKind = "promotion" | "surcharge";
+
+function adjustmentTotal(
+  base: number,
+  keys: string[],
+  rows: ManualAdjustment[],
+  options: FinancePromotion[],
+  kind: AdjustmentKind,
+) {
+  const representedKeys = new Set(rows.map(row => row.optionKey).filter(Boolean));
+  const orderedRows = [
+    ...rows,
+    ...keys.filter(key => !representedKeys.has(key)).map((key, index) => ({
+      id: `legacy-${kind}-${index}-${key}`,
+      optionKey: key,
+      valueType: "amount" as const,
+      value: 0,
+    })),
+  ];
+  let current = Math.max(0, base);
+  const applied = new Set<string>();
+  for (const row of orderedRows) {
+    if (row.optionKey && !applied.has(row.optionKey)) {
+      const option = options.find(item => item.code === row.optionKey);
+      if (option) {
+        const value = parseFloat(option.valueAmount ?? "0") || 0;
+        const amount = option.valueType === "percent" ? current * value / 100 : value;
+        current = kind === "promotion" ? Math.max(0, current - amount) : current + amount;
+        applied.add(row.optionKey);
+      }
+    }
+    const value = Math.max(0, Number(row.value) || 0);
+    const amount = row.valueType === "percent" ? current * value / 100 : value;
+    current = kind === "promotion" ? Math.max(0, current - amount) : current + amount;
+  }
+  return kind === "promotion" ? Math.max(0, base - current) : Math.max(0, current - base);
+}
+
+function IssueAdjustmentDialog({
+  open,
+  onOpenChange,
+  title,
+  kind,
+  rows,
+  options,
+  baseAmount,
+  onSelectOption,
+  onUpdateRow,
+  onAddRow,
+  onRemoveRow,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  kind: AdjustmentKind;
+  rows: ManualAdjustment[];
+  options: FinancePromotion[];
+  baseAmount: number;
+  onSelectOption: (rowId: string, optionKey: string) => void;
+  onUpdateRow: (rowId: string, patch: Partial<ManualAdjustment>) => void;
+  onAddRow: () => void;
+  onRemoveRow: (rowId: string) => void;
+}) {
+  const total = adjustmentTotal(baseAmount, [], rows, options, kind);
+  const color = kind === "promotion" ? "text-emerald-600" : "text-orange-600";
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6">
+        <DialogTitle className="text-xl font-semibold">{title}</DialogTitle>
+        <div className="mt-3 space-y-3">
+          {rows.map(row => {
+            const selected = options.find(option => option.code === row.optionKey);
+            return (
+              <div key={row.id} className="space-y-2 rounded-lg border border-muted p-3">
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={row.optionKey || "none"}
+                    onValueChange={value => onSelectOption(row.id, value === "none" ? "" : value)}
+                  >
+                    <SelectTrigger className="h-10 flex-1 text-sm">
+                      <SelectValue placeholder={`Chọn ${kind === "promotion" ? "khuyến mãi" : "phụ thu"}...`} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Chọn...</SelectItem>
+                      {options.map(option => (
+                        <SelectItem key={option.code} value={option.code}>
+                          {option.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <button type="button" onClick={() => onRemoveRow(row.id)} className="p-2 text-muted-foreground hover:text-destructive">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                {selected && (
+                  <p className="text-[11px] text-muted-foreground">
+                    {selected.valueType === "percent"
+                      ? `${kind === "promotion" ? "-" : "+"}${selected.valueAmount ?? 0}%`
+                      : `${kind === "promotion" ? "-" : "+"} ${fmtVND(parseFloat(selected.valueAmount ?? "0") || 0)}`}
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <Select value={row.valueType} onValueChange={value => onUpdateRow(row.id, { valueType: value as "amount" | "percent" })}>
+                    <SelectTrigger className="h-9 w-36 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="amount">Số tiền</SelectItem>
+                      <SelectItem value="percent">Phần trăm</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <div className="relative flex-1">
+                    <Input
+                      type="number"
+                      min={0}
+                      value={row.value}
+                      onChange={event => onUpdateRow(row.id, { value: parseFloat(event.target.value) || 0 })}
+                      placeholder="Nhập nhanh..."
+                      className="h-9 pr-8 text-sm"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                      {row.valueType === "percent" ? "%" : "đ"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <button type="button" onClick={onAddRow} className="mt-1 w-fit text-base font-semibold text-purple-600 hover:text-purple-700">
+          + Thêm
+        </button>
+        <div className="mt-4 flex items-center justify-between border-t pt-4 text-base font-semibold">
+          <span>Tổng {kind === "promotion" ? "khuyến mãi" : "phụ thu"}</span>
+          <span className={color}>{kind === "promotion" ? "-" : "+"}{fmtVND(total)}</span>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 type InventorySearchResult = {
   id: string;
@@ -121,13 +273,23 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
     invoiceNote: initialData?.invoiceNote ?? "",
     paidAmount: (initialData as any)?.paidAmount ?? 0,
     status: initialData?.status ?? "completed",
-    items: initialData?.items ?? [],
+    items: (initialData?.items ?? []).map(item => ({
+      ...item,
+      promotionKeys: item.promotionKeys ?? [],
+      surchargeKeys: item.surchargeKeys ?? [],
+      manualPromotionRows: item.manualPromotionRows ?? [],
+      manualSurchargeRows: item.manualSurchargeRows ?? [],
+    })),
   });
 
   const [selectedPromoKeys, setSelectedPromoKeys] = useState<string[]>([]);
   const [selectedSurchargeKeys, setSelectedSurchargeKeys] = useState<string[]>([]);
   const [promoOpen, setPromoOpen] = useState(false);
   const [surchargeOpen, setSurchargeOpen] = useState(false);
+  const [itemAdjustmentOpen, setItemAdjustmentOpen] = useState<{
+    itemKey: string;
+    kind: AdjustmentKind;
+  } | null>(null);
 
   // Product search
   const [productSearch, setProductSearch] = useState("");
@@ -332,6 +494,10 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
         stockBefore: p.stock,
         priceType: "money" as const,
         starPrice: (p as any).star_price ?? 0,
+        promotionKeys: [],
+        surchargeKeys: [],
+        manualPromotionRows: [],
+        manualSurchargeRows: [],
       }],
     }));
     setProductSearch("");
@@ -351,6 +517,76 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
     setForm(f => ({
       ...f,
       items: f.items.map(i => i._key === key ? { ...i, [field]: value } : i),
+    }));
+  }
+
+  function openItemAdjustment(itemKey: string, kind: AdjustmentKind) {
+    const field = kind === "promotion" ? "manualPromotionRows" : "manualSurchargeRows";
+    setForm(f => ({
+      ...f,
+      items: f.items.map(item => item._key !== itemKey || (item[field] ?? []).length > 0
+        ? item
+        : { ...item, [field]: [{ id: `${kind}-${itemKey}-blank`, valueType: "amount" as const, value: 0 }] }),
+    }));
+    setItemAdjustmentOpen({ itemKey, kind });
+  }
+
+  function selectItemAdjustmentOption(itemKey: string, kind: AdjustmentKind, rowId: string, optionKey: string) {
+    const rowsField = kind === "promotion" ? "manualPromotionRows" : "manualSurchargeRows";
+    const keysField = kind === "promotion" ? "promotionKeys" : "surchargeKeys";
+    setForm(f => ({
+      ...f,
+      items: f.items.map(item => {
+        if (item._key !== itemKey) return item;
+        const rows = (item[rowsField] ?? []).map(row => row.id === rowId ? { ...row, optionKey } : row);
+        return {
+          ...item,
+          [rowsField]: rows,
+          [keysField]: Array.from(new Set(rows.map(row => row.optionKey).filter((key): key is string => Boolean(key)))),
+        };
+      }),
+    }));
+  }
+
+  function updateItemAdjustment(itemKey: string, kind: AdjustmentKind, rowId: string, patch: Partial<ManualAdjustment>) {
+    const field = kind === "promotion" ? "manualPromotionRows" : "manualSurchargeRows";
+    setForm(f => ({
+      ...f,
+      items: f.items.map(item => item._key !== itemKey
+        ? item
+        : { ...item, [field]: (item[field] ?? []).map(row => row.id === rowId ? { ...row, ...patch } : row) }),
+    }));
+  }
+
+  function addItemAdjustmentRow(itemKey: string, kind: AdjustmentKind) {
+    const field = kind === "promotion" ? "manualPromotionRows" : "manualSurchargeRows";
+    const row: ManualAdjustment = {
+      id: `${kind}-${itemKey}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      valueType: "amount",
+      value: 0,
+    };
+    setForm(f => ({
+      ...f,
+      items: f.items.map(item => item._key === itemKey
+        ? { ...item, [field]: [...(item[field] ?? []), row] }
+        : item),
+    }));
+  }
+
+  function removeItemAdjustmentRow(itemKey: string, kind: AdjustmentKind, rowId: string) {
+    const rowsField = kind === "promotion" ? "manualPromotionRows" : "manualSurchargeRows";
+    const keysField = kind === "promotion" ? "promotionKeys" : "surchargeKeys";
+    setForm(f => ({
+      ...f,
+      items: f.items.map(item => {
+        if (item._key !== itemKey) return item;
+        const rows = (item[rowsField] ?? []).filter(row => row.id !== rowId);
+        return {
+          ...item,
+          [rowsField]: rows,
+          [keysField]: Array.from(new Set(rows.map(row => row.optionKey).filter((key): key is string => Boolean(key)))),
+        };
+      }),
     }));
   }
 
@@ -410,6 +646,22 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
     );
   }
 
+  const activeAdjustmentItem = itemAdjustmentOpen
+    ? form.items.find(item => item._key === itemAdjustmentOpen.itemKey)
+    : undefined;
+  const activeAdjustmentRows = activeAdjustmentItem && itemAdjustmentOpen
+    ? (itemAdjustmentOpen.kind === "promotion"
+      ? activeAdjustmentItem.manualPromotionRows
+      : activeAdjustmentItem.manualSurchargeRows) ?? []
+    : [];
+  const activeAdjustmentBase = activeAdjustmentItem
+    ? activeAdjustmentItem.quantity * (
+      activeAdjustmentItem.priceType === "star"
+        ? 0
+        : activeAdjustmentItem.salePrice
+    )
+    : 0;
+
   return (
     <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 backdrop-blur-sm">
       <div className="relative flex flex-col bg-background w-full h-full shadow-2xl overflow-hidden">
@@ -428,6 +680,22 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
             </Button>
           </div>
         </div>
+
+        {activeAdjustmentItem && itemAdjustmentOpen && (
+          <IssueAdjustmentDialog
+            open={true}
+            onOpenChange={open => { if (!open) setItemAdjustmentOpen(null); }}
+            title={itemAdjustmentOpen.kind === "promotion" ? "Chọn khuyến mãi" : "Chọn phụ thu"}
+            kind={itemAdjustmentOpen.kind}
+            rows={activeAdjustmentRows}
+            options={itemAdjustmentOpen.kind === "promotion" ? promotionOptions : surchargeOptions}
+            baseAmount={activeAdjustmentBase}
+            onSelectOption={(rowId, optionKey) => selectItemAdjustmentOption(itemAdjustmentItem._key, itemAdjustmentOpen.kind, rowId, optionKey)}
+            onUpdateRow={(rowId, patch) => updateItemAdjustment(activeAdjustmentItem._key, itemAdjustmentOpen.kind, rowId, patch)}
+            onAddRow={() => addItemAdjustmentRow(activeAdjustmentItem._key, itemAdjustmentOpen.kind)}
+            onRemoveRow={rowId => removeItemAdjustmentRow(activeAdjustmentItem._key, itemAdjustmentOpen.kind, rowId)}
+          />
+        )}
 
         {/* Body */}
         <div className="flex flex-1 overflow-hidden">
@@ -613,24 +881,24 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                         <td className="px-2 py-1.5">
                           <button
                             type="button"
-                            onClick={() => setPromoOpen(true)}
+                            onClick={() => openItemAdjustment(item._key, "promotion")}
                             className="w-full min-h-7 rounded-md border border-input bg-background px-2 text-[10px] text-left text-muted-foreground hover:border-purple-400 transition-colors"
-                            title="Khuyến mãi đang áp dụng ở cấp phiếu"
+                            title="Chọn khuyến mãi cho sản phẩm này"
                           >
-                            {selectedPromoKeys.length > 0
-                              ? `${selectedPromoKeys.length} lựa chọn`
+                            {(item.manualPromotionRows ?? []).some(row => row.optionKey || row.value > 0)
+                              ? `${adjustmentTotal(item.quantity * item.salePrice, item.promotionKeys ?? [], item.manualPromotionRows ?? [], promotionOptions, "promotion").toLocaleString("vi-VN")} đ`
                               : "Chọn..."}
                           </button>
                         </td>
                         <td className="px-2 py-1.5">
                           <button
                             type="button"
-                            onClick={() => setSurchargeOpen(true)}
+                            onClick={() => openItemAdjustment(item._key, "surcharge")}
                             className="w-full min-h-7 rounded-md border border-input bg-background px-2 text-[10px] text-left text-muted-foreground hover:border-purple-400 transition-colors"
-                            title="Phụ thu đang áp dụng ở cấp phiếu"
+                            title="Chọn phụ thu cho sản phẩm này"
                           >
-                            {selectedSurchargeKeys.length > 0
-                              ? `${selectedSurchargeKeys.length} lựa chọn`
+                            {(item.manualSurchargeRows ?? []).some(row => row.optionKey || row.value > 0)
+                              ? `${adjustmentTotal(item.quantity * item.salePrice, item.surchargeKeys ?? [], item.manualSurchargeRows ?? [], surchargeOptions, "surcharge").toLocaleString("vi-VN")} đ`
                               : "Chọn..."}
                           </button>
                         </td>
