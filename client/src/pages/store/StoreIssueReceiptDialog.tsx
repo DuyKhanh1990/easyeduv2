@@ -534,8 +534,8 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                   </colgroup>
                   <thead>
                     <tr className="bg-muted/50">
-                      <th className="text-center px-3 py-2 font-semibold text-muted-foreground">Loại</th>
                       <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Sản phẩm</th>
+                      <th className="text-center px-3 py-2 font-semibold text-muted-foreground">Loại</th>
                       <th className="text-right px-3 py-2 font-semibold text-muted-foreground">Đơn giá</th>
                       <th className="text-center px-3 py-2 font-semibold text-muted-foreground">Số lượng</th>
                       <th className="text-center px-3 py-2 font-semibold text-muted-foreground">Khuyến mãi</th>
@@ -564,15 +564,6 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                               </span>
                             </div>
                           </div>
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <Input
-                            type="number"
-                            min={1}
-                            value={item.quantity}
-                            onChange={e => updateItem(item._key, "quantity", parseInt(e.target.value) || 1)}
-                            className="h-7 text-xs px-2 text-center w-full"
-                          />
                         </td>
                         <td className="px-2 py-1.5">
                           <Select
@@ -606,6 +597,18 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                               className="h-7 text-xs px-2 text-right w-full"
                             />
                           )}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <Input
+                            type="number"
+                            min={1}
+                            value={item.quantity}
+                            onChange={e => updateItem(item._key, "quantity", parseInt(e.target.value) || 1)}
+                            className={cn(
+                              "h-7 text-xs px-2 text-center w-full",
+                              item.quantity > item.stockBefore && "border-red-400 focus:ring-red-400"
+                            )}
+                          />
                         </td>
                         <td className="px-2 py-1.5">
                           <button
