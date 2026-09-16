@@ -8,7 +8,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { X, Search, Trash2, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -184,13 +183,14 @@ function IssueAdjustmentDialog({
             return (
               <div key={row.id} className="space-y-2 rounded-lg border border-muted p-3">
                 <div className="flex items-center gap-2">
-                  <Popover modal={false} open={openPickerId === pickerId} onOpenChange={value => {
-                    setOpenPickerId(value ? pickerId : null);
-                    if (value) setSearch("");
-                  }}>
-                    <PopoverTrigger asChild>
+                  <div className="relative flex-1">
                       <button
                         type="button"
+                        onClick={() => {
+                          const nextOpen = openPickerId === pickerId ? null : pickerId;
+                          setOpenPickerId(nextOpen);
+                          if (nextOpen) setSearch("");
+                        }}
                         className="flex min-h-10 flex-1 items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-1.5 text-left text-sm hover:border-purple-400"
                       >
                         <span className={selected ? "truncate" : "text-muted-foreground"}>
@@ -198,55 +198,55 @@ function IssueAdjustmentDialog({
                         </span>
                         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
                       </button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      className="w-[26rem] max-w-[calc(100vw-2rem)] p-3"
-                      align="start"
-                    >
-                      <div className="relative mb-2">
-                        <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                          value={search}
-                          onChange={event => setSearch(event.target.value)}
-                          onKeyDown={event => event.stopPropagation()}
-                          placeholder={`Tìm theo tên hoặc mã ${kind === "promotion" ? "khuyến mãi" : "phụ thu"}...`}
-                          className="h-8 pl-7 text-xs"
-                          autoFocus
-                        />
-                      </div>
-                      <div className="max-h-64 space-y-1 overflow-y-auto">
-                        {options.length === 0 ? (
-                          <p className="py-3 text-center text-xs text-muted-foreground">
-                            Chưa có {kind === "promotion" ? "khuyến mãi" : "phụ thu"}
-                          </p>
-                        ) : filteredOptions.length === 0 ? (
-                          <p className="py-3 text-center text-xs text-muted-foreground">Không tìm thấy lựa chọn phù hợp</p>
-                        ) : filteredOptions.map(option => {
-                          const value = parseFloat(option.valueAmount ?? "0") || 0;
-                          return (
-                            <button
-                              key={option.id}
-                              type="button"
-                              className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-muted/60"
-                              onPointerDown={event => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                onSelectOption(row.id, option.id);
-                                setOpenPickerId(null);
-                              }}
-                            >
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate text-xs font-medium">{option.name}</span>
-                                <span className="block text-xs text-muted-foreground">
-                                  {kind === "promotion" ? "-" : "+"}{option.valueType === "percent" ? `${value}%` : fmtVND(value)}
-                                </span>
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </PopoverContent>
-                  </Popover>
+                      {openPickerId === pickerId && (
+                        <div
+                          className="absolute left-0 top-full z-[70] mt-1 w-[26rem] max-w-[calc(100vw-2rem)] rounded-md border bg-popover p-3 text-popover-foreground shadow-md"
+                          onMouseDown={event => event.stopPropagation()}
+                        >
+                          <div className="relative mb-2">
+                            <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                              value={search}
+                              onChange={event => setSearch(event.target.value)}
+                              onKeyDown={event => event.stopPropagation()}
+                              placeholder={`Tìm theo tên hoặc mã ${kind === "promotion" ? "khuyến mãi" : "phụ thu"}...`}
+                              className="h-8 pl-7 text-xs"
+                              autoFocus
+                            />
+                          </div>
+                          <div className="max-h-64 space-y-1 overflow-y-auto">
+                            {options.length === 0 ? (
+                              <p className="py-3 text-center text-xs text-muted-foreground">
+                                Chưa có {kind === "promotion" ? "khuyến mãi" : "phụ thu"}
+                              </p>
+                            ) : filteredOptions.length === 0 ? (
+                              <p className="py-3 text-center text-xs text-muted-foreground">Không tìm thấy lựa chọn phù hợp</p>
+                            ) : filteredOptions.map(option => {
+                              const value = parseFloat(option.valueAmount ?? "0") || 0;
+                              return (
+                                <button
+                                  key={option.id}
+                                  type="button"
+                                  className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-muted/60"
+                                  onClick={() => {
+                                    onSelectOption(row.id, option.id);
+                                    setOpenPickerId(null);
+                                    setSearch("");
+                                  }}
+                                >
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block truncate text-xs font-medium">{option.name}</span>
+                                    <span className="block text-xs text-muted-foreground">
+                                      {kind === "promotion" ? "-" : "+"}{option.valueType === "percent" ? `${value}%` : fmtVND(value)}
+                                    </span>
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                  </div>
                   <button type="button" onClick={() => onRemoveRow(row.id)} className="p-2 text-muted-foreground hover:text-destructive">
                     <X className="h-4 w-4" />
                   </button>
