@@ -111,6 +111,35 @@ function adjustmentTotal(
   return kind === "promotion" ? Math.max(0, base - current) : Math.max(0, current - base);
 }
 
+function getItemAmounts(
+  item: IssueReceiptItem,
+  promotionOptions: FinancePromotion[],
+  surchargeOptions: FinancePromotion[],
+) {
+  const base = item.quantity * item.salePrice;
+  const promotionAmount = adjustmentTotal(
+    base,
+    item.promotionKeys ?? [],
+    item.manualPromotionRows ?? [],
+    promotionOptions,
+    "promotion",
+  );
+  const afterPromotion = Math.max(0, base - promotionAmount);
+  const surchargeAmount = adjustmentTotal(
+    afterPromotion,
+    item.surchargeKeys ?? [],
+    item.manualSurchargeRows ?? [],
+    surchargeOptions,
+    "surcharge",
+  );
+  return {
+    base,
+    promotionAmount,
+    surchargeAmount,
+    lineTotal: afterPromotion + surchargeAmount,
+  };
+}
+
 function IssueAdjustmentDialog({
   open,
   onOpenChange,
@@ -196,7 +225,9 @@ function IssueAdjustmentDialog({
                               key={option.id}
                               type="button"
                               className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-muted/60"
-                              onClick={() => {
+                              onMouseDown={event => {
+                                event.preventDefault();
+                                event.stopPropagation();
                                 onSelectOption(row.id, option.id);
                                 setOpenPickerId(null);
                                 setSearch("");
@@ -640,8 +671,10 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
     }));
   }
 
-  const subtotal = form.items.reduce((sum, i) =>
-    (i.priceType ?? "money") === "money" ? sum + i.quantity * i.salePrice : sum, 0);
+  const subtotal = form.items.reduce((sum, item) => {
+    if ((item.priceType ?? "money") !== "money") return sum;
+    return sum + getItemAmounts(item, promotionOptions, surchargeOptions).lineTotal;
+  }, 0);
 
   function calcPromoAmt(keys: string[], options: FinancePromotion[], base: number): number {
     return keys.reduce((sum, key) => {
@@ -935,9 +968,15 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                             className="w-full min-h-7 rounded-md border border-input bg-background px-2 text-[10px] text-left text-muted-foreground hover:border-purple-400 transition-colors"
                             title="Chọn khuyến mãi cho sản phẩm này"
                           >
-                            {(item.manualPromotionRows ?? []).some(row => row.optionKey || row.value > 0)
-                              ? `${adjustmentTotal(item.quantity * item.salePrice, item.promotionKeys ?? [], item.manualPromotionRows ?? [], promotionOptions, "promotion").toLocaleString("vi-VN")} đ`
-                              : "Chọn..."}
+                            {(() => {
+                              const amounts = getItemAmounts(item, promotionOptions, surchargeOptions);
+                              const hasValue = amounts.promotionAmount > 0;
+                              return (
+                                <span className={hasValue ? "font-semibold text-emerald-600" : "text-muted-foreground"}>
+                                  {hasValue ? `-${fmtVND(amounts.promotionAmount)}` : "Chọn..."}
+                                </span>
+                              );
+                            })()}
                           </button>
                         </td>
                         <td className="px-2 py-1.5">
@@ -947,14 +986,20 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                             className="w-full min-h-7 rounded-md border border-input bg-background px-2 text-[10px] text-left text-muted-foreground hover:border-purple-400 transition-colors"
                             title="Chọn phụ thu cho sản phẩm này"
                           >
-                            {(item.manualSurchargeRows ?? []).some(row => row.optionKey || row.value > 0)
-                              ? `${adjustmentTotal(item.quantity * item.salePrice, item.surchargeKeys ?? [], item.manualSurchargeRows ?? [], surchargeOptions, "surcharge").toLocaleString("vi-VN")} đ`
-                              : "Chọn..."}
+                            {(() => {
+                              const amounts = getItemAmounts(item, promotionOptions, surchargeOptions);
+                              const hasValue = amounts.surchargeAmount > 0;
+                              return (
+                                <span className={hasValue ? "font-semibold text-orange-600" : "text-muted-foreground"}>
+                                  {hasValue ? `+${fmtVND(amounts.surchargeAmount)}` : "Chọn..."}
+                                </span>
+                              );
+                            })()}
                           </button>
                         </td>
                         <td className="px-2 py-1.5 text-right tabular-nums font-medium text-xs">
                           {(item.priceType ?? "money") === "money"
-                            ? fmtVND(item.quantity * item.salePrice)
+                            ? fmtVND(getItemAmounts(item, promotionOptions, surchargeOptions).lineTotal)
                             : <span className="text-amber-600">⭐ {item.quantity * (item.starPrice ?? 0)}</span>
                           }
                         </td>
