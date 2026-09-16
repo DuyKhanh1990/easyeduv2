@@ -12,7 +12,15 @@ export function normalizeRoleCodePrefix(
   roleName: string | null | undefined,
 ): string {
   const raw = String(configuredPrefix ?? "").trim();
-  const prefix = raw || defaultRoleCodePrefix(roleName);
+  const defaultPrefix = defaultRoleCodePrefix(roleName);
+  const initials = defaultPrefix.slice(0, -1);
+  const legacyPrefix = initials
+    ? `${initials[0]}${initials.slice(1).toLowerCase()}-`
+    : "";
+  // Older roles used a title-cased initials format such as Ktt-. Treat that
+  // known generated value as automatic, while preserving arbitrary manual
+  // casing such as ktt- or KtT-.
+  const prefix = !raw || raw === legacyPrefix ? defaultPrefix : raw;
   if (!prefix) return "";
   return prefix.endsWith("-") ? prefix : `${prefix}-`;
 }

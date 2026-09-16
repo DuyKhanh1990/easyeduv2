@@ -82,6 +82,13 @@ function defaultRoleCodePrefix(roleName: string | null | undefined): string {
     : "";
 }
 
+function displayRoleCodePrefix(prefix: string | null | undefined, roleName: string): string {
+  const defaultPrefix = defaultRoleCodePrefix(roleName);
+  const initials = defaultPrefix.slice(0, -1);
+  const legacyPrefix = initials ? `${initials[0]}${initials.slice(1).toLowerCase()}-` : "";
+  return !prefix || prefix === legacyPrefix ? defaultPrefix : prefix;
+}
+
 export function Settings() {
   const { data: locations, isLoading: locationsLoading } = useLocations();
   const createLocation = useCreateLocation();
@@ -382,7 +389,7 @@ export function Settings() {
         name: editingRole.name, 
         description: editingRole.description || "",
         departmentId: editingRole.departmentId,
-        codePrefix: editingRole.codePrefix || defaultRoleCodePrefix(editingRole.name),
+        codePrefix: displayRoleCodePrefix(editingRole.codePrefix, editingRole.name),
         codeByLocationRole: Boolean(editingRole.codeByLocationRole),
       });
     } else {
