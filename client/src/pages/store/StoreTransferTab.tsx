@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Settings, Trash2, Eye, ArrowRightLeft, Search, SlidersHorizontal, X, FileDown, History, AlignJustify } from "lucide-react";
+import { Plus, Settings, Trash2, Eye, ArrowRightLeft, Search, SlidersHorizontal, X, FileDown, History, AlignJustify, Info } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { StoreTransferDialog, type TransferFormData } from "./StoreTransferDialog";
 import { exportChuyenKho } from "./storeExportUtils";
@@ -18,6 +18,7 @@ import { StoreTransferHistoryTab } from "./StoreTransferHistoryTab";
 import { useLocations } from "@/hooks/use-locations";
 import { cn } from "@/lib/utils";
 import { HistoryDialog } from "@/components/common/HistoryDialog";
+import { StoreTransferNotes } from "./StoreTransferNotes";
 
 type TransferRow = {
   id: string;
@@ -122,6 +123,7 @@ export function StoreTransferTab() {
 
   const [activeSubTab, setActiveSubTab] = useState<"list" | "history">("list");
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [notesDialogOpen, setNotesDialogOpen] = useState(false);
   const { data: locationsList } = useLocations();
   const locationOptions = (locationsList ?? []).map((l: any) => ({ value: l.id, label: l.name }));
 
@@ -365,6 +367,17 @@ export function StoreTransferTab() {
         >
           <History className="h-3.5 w-3.5" />
           Lịch sử
+        </button>
+        <button
+          onClick={() => setNotesDialogOpen(true)}
+          className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors ${
+            notesDialogOpen
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Info className="h-3.5 w-3.5" />
+          Lưu ý
         </button>
       </div>
 
@@ -619,6 +632,9 @@ export function StoreTransferTab() {
       </AlertDialog>
       <HistoryDialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen} title="Lịch sử chuyển kho">
         <StoreTransferHistoryTab locationOptions={locationOptions} />
+      </HistoryDialog>
+      <HistoryDialog open={notesDialogOpen} onOpenChange={setNotesDialogOpen} title="Lưu ý chuyển kho">
+        <StoreTransferNotes />
       </HistoryDialog>
     </div>
   );
