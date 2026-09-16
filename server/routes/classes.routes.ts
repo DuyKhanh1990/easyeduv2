@@ -6,7 +6,7 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import { db, pool } from "../db";
 import { classSessions, studentSessions, students, classes, studentClasses, staff, staffAssignments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, courseFeePackages, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
-import { eq, and, sql, inArray, avg, between, gte, lte, gt, desc, asc, or, ilike, isNotNull, ne } from "drizzle-orm";
+import { eq, and, sql, inArray, avg, between, gte, lte, gt, desc, asc, or, ilike, isNotNull, isNull, ne } from "drizzle-orm";
 import { sendAttendanceNotification, sendReviewNotification, sendContentNotification } from "../lib/attendance-notification";
 import { enforceAttendanceTimeLimit, getStaffRoleIds } from "../lib/attendance-limit";
 import { sendNotificationToMany } from "../lib/notification";
@@ -5097,21 +5097,101 @@ export function registerClassesRoutes(app: Express): void {
       }
 
       // Pre-fetch for activity log (before removal)
-      let removeLogData: { classId: string; locationId: string | null; className: string; classCode: string; students: { name: string; code: string }[]; fromSessionIndex: number; toSessionIndex: number; deleteOnlyUnattended: boolean; deleteAllSessions: boolean; orphanAction: string } | null = null;
+      let removeLogData: {
+        classId: string;
+        locationId: string | null;
+        className: string;
+        classCode: string;
+        students: {
+          name: string;
+          code: string;
+          sessions: {
+            sessionIndex: number | null;
+            sessionDate: string | null;
+            weekday: number | null;
+            startTime: string | null;
+            endTime: string | null;
+            attendanceStatus: string | null;
+          }[];
+        }[];
+        fromSessionIndex: number;
+        toSessionIndex: number;
+        deleteOnlyUnattended: boolean;
+        deleteAllSessions: boolean;
+        orphanAction: string;
+      } | null = null;
       try {
         const [sc2] = await db.select({ classId: studentClasses.classId })
           .from(studentClasses).where(eq(studentClasses.id, studentClassId)).limit(1);
         if (sc2) {
           const [ci] = await db.select({ name: classes.name, classCode: classes.classCode, locationId: classes.locationId })
             .from(classes).where(eq(classes.id, sc2.classId)).limit(1);
-          const stRows = await db.select({ fullName: students.fullName, code: students.code })
+          const stRows = await db.select({ id: students.id, fullName: students.fullName, code: students.code })
             .from(students).where(inArray(students.id, studentIds));
+          const sessionScope = req.body.deleteAllSessions
+            ? and(
+                eq(studentSessions.studentClassId, studentClassId),
+                inArray(studentSessions.studentId, studentIds),
+              )
+            : and(
+                eq(studentSessions.studentClassId, studentClassId),
+                inArray(studentSessions.studentId, studentIds),
+                between(studentSessions.sessionOrder, fromSessionOrder, toSessionOrder),
+              );
+          const removedSessionRows = await db.select({
+            studentId: studentSessions.studentId,
+            sessionIndex: classSessions.sessionIndex,
+            sessionDate: classSessions.sessionDate,
+            weekday: classSessions.weekday,
+            startTime: shiftTemplates.startTime,
+            endTime: shiftTemplates.endTime,
+            attendanceStatus: studentSessions.attendanceStatus,
+          })
+            .from(studentSessions)
+            .innerJoin(classSessions, eq(classSessions.id, studentSessions.classSessionId))
+            .leftJoin(shiftTemplates, eq(shiftTemplates.id, classSessions.shiftTemplateId))
+            .where(
+              deleteOnlyUnattended
+                ? and(
+                    sessionScope,
+                    or(
+                      isNull(studentSessions.attendanceStatus),
+                      eq(studentSessions.attendanceStatus, "pending"),
+                    ),
+                  )
+                : sessionScope,
+            )
+            .orderBy(asc(classSessions.sessionIndex), asc(classSessions.sessionDate));
+          const sessionsByStudent = new Map<string, {
+            sessionIndex: number | null;
+            sessionDate: string | null;
+            weekday: number | null;
+            startTime: string | null;
+            endTime: string | null;
+            attendanceStatus: string | null;
+          }[]>();
+          for (const session of removedSessionRows) {
+            const current = sessionsByStudent.get(session.studentId) ?? [];
+            current.push({
+              sessionIndex: session.sessionIndex ?? null,
+              sessionDate: session.sessionDate ?? null,
+              weekday: session.weekday ?? null,
+              startTime: session.startTime ?? null,
+              endTime: session.endTime ?? null,
+              attendanceStatus: session.attendanceStatus ?? null,
+            });
+            sessionsByStudent.set(session.studentId, current);
+          }
           removeLogData = {
             classId: sc2.classId,
             locationId: ci?.locationId ?? null,
             className: ci?.name ?? "",
             classCode: ci?.classCode ?? "",
-            students: stRows.map(s => ({ name: s.fullName ?? "", code: s.code ?? "" })),
+            students: stRows.map(s => ({
+              name: s.fullName ?? "",
+              code: s.code ?? "",
+              sessions: sessionsByStudent.get(s.id) ?? [],
+            })),
             fromSessionIndex: fromSessionOrder,
             toSessionIndex: toSessionOrder,
             deleteOnlyUnattended: !!deleteOnlyUnattended,

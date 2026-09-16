@@ -133,6 +133,7 @@ const ACTION_COLORS: Record<string, string> = {
   "Học bù": "bg-indigo-100 text-indigo-700 border-indigo-200",
   "Xếp bù": "bg-teal-100 text-teal-700 border-teal-200",
   "Xoá học viên khỏi buổi": "bg-red-100 text-red-700 border-red-200",
+  "Xoá toàn bộ lịch học của học viên": "bg-red-100 text-red-700 border-red-200",
   "Nhận xét học viên": "bg-sky-100 text-sky-700 border-sky-200",
   "Gán tiêu chí": "bg-violet-100 text-violet-700 border-violet-200",
   "Gán bảng điểm": "bg-orange-100 text-orange-700 border-orange-200",
@@ -243,11 +244,26 @@ type ExtensionLogPayload = {
 
 // ─── New schedule-operation log types ───────────────────────────────────────
 
+type RemovedStudentSessionLog = {
+  sessionIndex: number | null;
+  sessionDate: string | null;
+  weekday: number | null;
+  startTime: string | null;
+  endTime: string | null;
+  attendanceStatus: string | null;
+};
+type RemoveStudentLogStudent = {
+  name: string;
+  code: string;
+  sessions?: RemovedStudentSessionLog[];
+};
 type RemoveStudentFromSessionPayload = {
-  students: { name: string; code: string }[];
+  students: RemoveStudentLogStudent[];
   fromSessionIndex: number;
   toSessionIndex: number;
   deleteOnlyUnattended: boolean;
+  deleteAllSessions?: boolean;
+  orphanAction?: "keep" | "remove" | "waiting" | string;
   className: string;
   classCode: string;
 };
@@ -383,15 +399,18 @@ function tryParseChangeCycleLog(raw: string | null): ChangeCyclePayload | null {
 function RemoveStudentLogCell({ raw }: { raw: string | null }) {
   const p = tryParseRemoveStudentLog(raw);
   if (!p) return <span className="text-muted-foreground italic">—</span>;
+  const totalSessions = p.students.reduce((total, student) => total + (student.sessions?.length ?? 0), 0);
+  const hasSessionDetails = p.students.some(student => (student.sessions?.length ?? 0) > 0);
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-[11px] font-semibold text-red-700">
-        Buổi {p.fromSessionIndex}{p.fromSessionIndex !== p.toSessionIndex ? ` → ${p.toSessionIndex}` : ""}
-        {p.deleteOnlyUnattended ? " (chưa điểm danh)" : ""}
+        {p.deleteAllSessions
+          ? `Toàn bộ lịch${hasSessionDetails ? ` · ${totalSessions} buổi` : ""}`
+          : `Buổi ${p.fromSessionIndex}${p.fromSessionIndex !== p.toSessionIndex ? ` → ${p.toSessionIndex}` : ""}${p.deleteOnlyUnattended ? " (chưa điểm danh)" : ""}`}
       </span>
       {p.students.slice(0, 3).map((s, i) => (
         <span key={i} className="text-xs text-muted-foreground whitespace-nowrap">
-          {s.name}{s.code ? ` (${s.code})` : ""}
+          {s.name}{s.code ? ` (${s.code})` : ""}{s.sessions?.length ? ` · ${s.sessions.length} buổi` : ""}
         </span>
       ))}
       {p.students.length > 3 && (
@@ -499,22 +518,75 @@ function ChangeCycleLogCell({ raw }: { raw: string | null }) {
 function RemoveStudentLogDetailView({ log }: { log: ActivityLog }) {
   const p = tryParseRemoveStudentLog(log.newContent);
   if (!p) return <div className="text-xs text-muted-foreground italic">Không có dữ liệu chi tiết.</div>;
+  const totalSessions = p.students.reduce((total, student) => total + (student.sessions?.length ?? 0), 0);
+  const hasSessionDetails = p.students.some(student => (student.sessions?.length ?? 0) > 0);
+  const attendanceStatusLabels: Record<string, string> = {
+    pending: "Chưa điểm danh",
+    present: "Có mặt",
+    absent: "Vắng",
+    makeup_wait: "Chờ học bù",
+    makeup_done: "Đã học bù",
+    paused: "Tạm dừng",
+  };
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-md px-4 py-3">
         <div className="text-xs font-semibold text-red-800 dark:text-red-300 uppercase tracking-wide mb-1">Thông tin xoá</div>
         <div className="flex flex-wrap gap-x-8 gap-y-1">
-          <div className="text-xs"><span className="text-muted-foreground">Từ buổi: </span><span className="font-medium">{p.fromSessionIndex}</span></div>
-          <div className="text-xs"><span className="text-muted-foreground">Đến buổi: </span><span className="font-medium">{p.toSessionIndex}</span></div>
-          <div className="text-xs"><span className="text-muted-foreground">Chế độ: </span><span className="font-medium">{p.deleteOnlyUnattended ? "Chỉ buổi chưa điểm danh" : "Tất cả buổi trong khoảng"}</span></div>
+          <div className="text-xs"><span className="text-muted-foreground">Phạm vi: </span><span className="font-medium">{p.deleteAllSessions ? "Toàn bộ lịch học" : `Buổi ${p.fromSessionIndex} – ${p.toSessionIndex}`}</span></div>
+          <div className="text-xs"><span className="text-muted-foreground">Chế độ: </span><span className="font-medium">{p.deleteOnlyUnattended ? "Chỉ buổi chưa điểm danh" : "Bao gồm cả buổi đã điểm danh"}</span></div>
+          <div className="text-xs"><span className="text-muted-foreground">Kết quả: </span><span className="font-medium">{hasSessionDetails ? `${totalSessions} buổi đã xóa` : "Đã thực hiện xóa"}</span></div>
+          {p.orphanAction && p.orphanAction !== "keep" && (
+            <div className="text-xs"><span className="text-muted-foreground">Xử lý học viên: </span><span className="font-medium">{p.orphanAction === "waiting" ? "Chuyển về danh sách chờ" : "Xóa hẳn khỏi lớp"}</span></div>
+          )}
         </div>
       </div>
       <div>
         <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Học viên bị xoá ({p.students.length})</div>
         <div className="flex flex-col gap-1">
           {p.students.map((s, i) => (
-            <div key={i} className="text-xs py-1 border-b border-border/40 last:border-0">
-              {s.name}{s.code ? <span className="text-muted-foreground"> ({s.code})</span> : null}
+            <div key={i} className="border border-border/40 rounded-md p-3 bg-muted/20">
+              <div className="text-xs font-semibold mb-2">
+                {s.name}{s.code ? <span className="text-muted-foreground"> ({s.code})</span> : null}
+                <span className="ml-2 text-[11px] font-normal text-muted-foreground">· {s.sessions?.length ?? 0} buổi</span>
+              </div>
+              {s.sessions && s.sessions.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[11px] border-collapse">
+                    <thead>
+                      <tr className="bg-background">
+                        <th className="border border-border/40 px-2 py-1 text-left font-medium text-muted-foreground">Buổi</th>
+                        <th className="border border-border/40 px-2 py-1 text-left font-medium text-muted-foreground">Ngày</th>
+                        <th className="border border-border/40 px-2 py-1 text-left font-medium text-muted-foreground">Thời gian</th>
+                        <th className="border border-border/40 px-2 py-1 text-left font-medium text-muted-foreground">Điểm danh trước khi xóa</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {s.sessions.map((session, sessionIndex) => (
+                        <tr key={`${session.sessionIndex ?? "unknown"}-${session.sessionDate ?? sessionIndex}`}>
+                          <td className="border border-border/40 px-2 py-1 font-medium">Buổi {session.sessionIndex ?? "?"}</td>
+                          <td className="border border-border/40 px-2 py-1 text-muted-foreground">
+                            {session.weekday != null ? `${WEEKDAY_LABELS[session.weekday] ?? ""} ` : ""}
+                            {session.sessionDate ? formatDeletedSessionDate(session.sessionDate) : "—"}
+                          </td>
+                          <td className="border border-border/40 px-2 py-1 text-muted-foreground">
+                            {session.startTime
+                              ? `${session.startTime}${session.endTime ? ` – ${session.endTime}` : ""}`
+                              : "—"}
+                          </td>
+                          <td className="border border-border/40 px-2 py-1">
+                            {session.attendanceStatus
+                              ? (attendanceStatusLabels[session.attendanceStatus] ?? session.attendanceStatus)
+                              : "Chưa điểm danh"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground italic">Log cũ chưa lưu chi tiết từng buổi.</div>
+              )}
             </div>
           ))}
         </div>
@@ -1718,7 +1790,7 @@ function ContentCell({ log, field }: { log: ActivityLog; field: "oldContent" | "
     return <TuitionPackageLogCell raw={raw} />;
   }
 
-  if (log.action === "Xoá học viên khỏi buổi") {
+  if (log.action === "Xoá học viên khỏi buổi" || log.action === "Xoá toàn bộ lịch học của học viên") {
     if (field === "oldContent") return <span className="text-muted-foreground italic">—</span>;
     return <RemoveStudentLogCell raw={raw} />;
   }
@@ -1939,7 +2011,7 @@ export function LogDetailDialog({ log, open, onOpenChange }: { log: ActivityLog;
   const isMakeup = log.action === "Xếp bù";
   const isTransferClass = log.action === "Chuyển lớp";
   const isTuitionPackage = log.action === "Đổi gói học phí";
-  const isRemoveStudent = log.action === "Xoá học viên khỏi buổi";
+  const isRemoveStudent = log.action === "Xoá học viên khỏi buổi" || log.action === "Xoá toàn bộ lịch học của học viên";
   const isReview = log.action === "Nhận xét học viên";
   const isApplyCriteria = log.action === "Gán tiêu chí";
   const isApplyScoreSheet = log.action === "Gán bảng điểm";
@@ -2074,6 +2146,14 @@ export function buildActionSummary(log: ActivityLog): string {
       const p = tryParseRemoveStudentLog(log.newContent);
       const range = p ? ` buổi ${p.fromSessionIndex}${p.fromSessionIndex !== p.toSessionIndex ? `→${p.toSessionIndex}` : ""}` : "";
       return `Xoá học viên khỏi buổi${range}${classPart}`;
+    }
+    case "Xoá toàn bộ lịch học của học viên": {
+      const p = tryParseRemoveStudentLog(log.newContent);
+      if (!p) return `Xoá toàn bộ lịch học của học viên${classPart}`;
+      const totalSessions = p.students.reduce((total, student) => total + (student.sessions?.length ?? 0), 0);
+      const studentNames = p.students.slice(0, 2).map(student => student.name).join(", ");
+      const moreStudents = p.students.length > 2 ? ` +${p.students.length - 2}` : "";
+      return `Xoá toàn bộ lịch: ${studentNames}${moreStudents} · ${totalSessions} buổi${classPart}`;
     }
     case "Nhận xét học viên": {
       const p = tryParseReviewLog(log.newContent);
