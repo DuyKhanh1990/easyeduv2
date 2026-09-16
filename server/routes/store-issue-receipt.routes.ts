@@ -37,6 +37,8 @@ async function ensureIssueReceiptTables() {
       has_invoice BOOLEAN DEFAULT FALSE,
       invoice_note TEXT,
       paid_amount DECIMAL(15,2) DEFAULT 0,
+      payment_method VARCHAR(20) DEFAULT 'cash',
+      payment_due_date DATE,
       status VARCHAR(50) NOT NULL DEFAULT 'completed',
       total_amount DECIMAL(15,2) DEFAULT 0,
       created_by UUID,
@@ -90,6 +92,8 @@ async function ensureIssueReceiptTables() {
   await db.execute(sql`ALTER TABLE store_issue_receipt_items ADD COLUMN IF NOT EXISTS line_total DECIMAL(15,2) DEFAULT 0`);
   await db.execute(sql`ALTER TABLE store_issue_receipts ADD COLUMN IF NOT EXISTS recipient_id UUID`);
   await db.execute(sql`ALTER TABLE store_issue_receipts ADD COLUMN IF NOT EXISTS invoice_id UUID REFERENCES invoices(id) ON DELETE SET NULL`);
+  await db.execute(sql`ALTER TABLE store_issue_receipts ADD COLUMN IF NOT EXISTS payment_method VARCHAR(20) DEFAULT 'cash'`);
+  await db.execute(sql`ALTER TABLE store_issue_receipts ADD COLUMN IF NOT EXISTS payment_due_date DATE`);
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS student_star_transactions (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -165,6 +169,8 @@ const issueCreateSchema = z.object({
   hasInvoice: z.boolean().default(false),
   invoiceNote: z.string().optional().nullable(),
   paidAmount: z.number().min(0).default(0),
+  paymentMethod: z.enum(["cash", "transfer"]).default("cash"),
+  paymentDueDate: z.string().optional().nullable(),
   status: z.enum(["draft", "completed"]).default("completed"),
   totalAmount: z.number().min(0).default(0),
   sessionId: z.string().optional().nullable(),
@@ -300,6 +306,8 @@ async function createIssueInvoice(params: {
   invoicePromotionKeys: string[];
   invoiceSurchargeKeys: string[];
   paidAmount: number;
+  paymentMethod: "cash" | "transfer";
+  paymentDueDate: string | null | undefined;
   items: {
     quantity: number;
     productName: string;
@@ -343,6 +351,8 @@ async function createIssueInvoice(params: {
   const paid = Math.min(params.paidAmount, grandTotal);
   const remaining = Math.max(0, grandTotal - paid);
   const invStatus = remaining <= 0 ? "paid" : paid > 0 ? "partial" : "unpaid";
+  const today = new Date().toISOString().split("T")[0];
+  const dueDate = remaining > 0 ? (params.paymentDueDate?.trim() || today) : null;
 
   const nextCodeRow = await db.execute(sql`
     SELECT MAX(CAST(SUBSTRING(code FROM 3) AS INTEGER)) as max_num
@@ -369,6 +379,8 @@ async function createIssueInvoice(params: {
     grandTotal: String(grandTotal),
     paidAmount: String(paid),
     remainingAmount: String(remaining),
+    dueDate,
+    paymentMethod: remaining > 0 ? null : params.paymentMethod,
     status: invStatus,
     createdBy: params.createdBy ?? null,
     updatedBy: params.createdBy ?? null,
@@ -397,29 +409,31 @@ async function createIssueInvoice(params: {
     UPDATE invoices SET store_issue_receipt_id = ${params.receiptId} WHERE id = ${inv.id}
   `);
 
-  if (paid > 0 && remaining > 0) {
-    await db.insert(invoicePaymentSchedule).values([
-      {
+  if (remaining > 0) {
+    const scheduleRows: any[] = [];
+    if (paid > 0) {
+      scheduleRows.push({
         invoiceId: inv.id,
         label: "ĐỢT 1",
         code: `${nextCode}-1`,
         amount: String(paid),
-        dueDate: new Date().toISOString().split("T")[0],
+        dueDate: today,
         status: "paid",
         sortOrder: 0,
-        paymentMethod: "cash",
-      },
-      {
-        invoiceId: inv.id,
-        label: "ĐỢT 2",
-        code: `${nextCode}-2`,
-        amount: String(remaining),
-        dueDate: new Date().toISOString().split("T")[0],
-        status: "unpaid",
-        sortOrder: 1,
-        paymentMethod: "cash",
-      },
-    ] as any[]);
+        paymentMethod: params.paymentMethod,
+      });
+    }
+    scheduleRows.push({
+      invoiceId: inv.id,
+      label: paid > 0 ? "ĐỢT 2" : "ĐỢT 1",
+      code: `${nextCode}-${paid > 0 ? 2 : 1}`,
+      amount: String(remaining),
+      dueDate,
+      status: "unpaid",
+      sortOrder: paid > 0 ? 1 : 0,
+      paymentMethod: params.paymentMethod,
+    });
+    await db.insert(invoicePaymentSchedule).values(scheduleRows);
   }
 
   return {
@@ -892,6 +906,8 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
         hasInvoice: r.has_invoice,
         invoiceNote: r.invoice_note,
         paidAmount: r.paid_amount,
+        paymentMethod: r.payment_method ?? "cash",
+        paymentDueDate: r.payment_due_date ? String(r.payment_due_date).slice(0, 10) : null,
         status: r.status,
         totalAmount: r.total_amount,
         createdByName: r.created_by_name,
@@ -965,7 +981,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
           code, name, location_id, warehouse_id, date, recipient_name, recipient_id, note,
           discount, discount_type, surcharge, surcharge_type,
           promotion_keys, surcharge_keys, manual_promotion_rows, manual_surcharge_rows,
-          has_invoice, invoice_note, paid_amount, status, total_amount,
+          has_invoice, invoice_note, paid_amount, payment_method, payment_due_date, status, total_amount,
           created_by, created_by_name
         ) VALUES (
           ${receiptData.code}, ${receiptData.name},
@@ -979,7 +995,8 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
           ${JSON.stringify(receiptData.manualPromotionRows ?? [])}::jsonb,
           ${JSON.stringify(receiptData.manualSurchargeRows ?? [])}::jsonb,
           ${receiptData.hasInvoice}, ${receiptData.invoiceNote ?? null},
-          ${receiptData.paidAmount}, ${receiptData.status}, ${receiptData.totalAmount},
+          ${receiptData.paidAmount}, ${receiptData.paymentMethod}, ${receiptData.paymentDueDate ?? null},
+          ${receiptData.status}, ${receiptData.totalAmount},
           ${user.id}, ${user.fullName || user.username}
         ) RETURNING *
       `);
@@ -1062,6 +1079,8 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
           invoicePromotionKeys: receiptData.promotionKeys ?? [],
           invoiceSurchargeKeys: receiptData.surchargeKeys ?? [],
           paidAmount: receiptData.paidAmount,
+          paymentMethod: receiptData.paymentMethod,
+          paymentDueDate: receiptData.paymentDueDate,
           items: items.map(i => ({
             quantity: i.quantity,
             productName: i.productName,
@@ -1154,6 +1173,8 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
         "Cơ sở":         (auditOldLoc.rows[0] as any)?.name ?? null,
         "Chiết khấu":    `${existing.discount ?? 0} ${existing.discount_type ?? "VND"}`,
         "Phụ thu":       `${existing.surcharge ?? 0} ${existing.surcharge_type ?? "VND"}`,
+        "Hình thức thanh toán": existing.payment_method ?? "cash",
+        "Hạn thanh toán": existing.payment_due_date ? String(existing.payment_due_date).slice(0, 10) : null,
         "Phiếu thu":     existing.has_invoice ? "Có" : "Không",
         "Ghi chú":       existing.note ?? null,
         "Số sản phẩm":   oldItems.length,
@@ -1283,6 +1304,8 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
           has_invoice = ${receiptData.hasInvoice},
           invoice_note = ${receiptData.invoiceNote ?? null},
           paid_amount = ${receiptData.paidAmount},
+          payment_method = ${receiptData.paymentMethod},
+          payment_due_date = ${receiptData.paymentDueDate ?? null},
           status = ${receiptData.status},
           total_amount = ${receiptData.totalAmount},
           updated_at = NOW()
@@ -1332,6 +1355,8 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
           "Cơ sở":         (auditNewLoc.rows[0] as any)?.name ?? null,
           "Chiết khấu":    `${receiptData.discount ?? 0} ${receiptData.discountType ?? "VND"}`,
           "Phụ thu":       `${receiptData.surcharge ?? 0} ${receiptData.surchargeType ?? "VND"}`,
+          "Hình thức thanh toán": receiptData.paymentMethod ?? "cash",
+          "Hạn thanh toán": receiptData.paymentDueDate ?? null,
           "Phiếu thu":     receiptData.hasInvoice ? "Có" : "Không",
           "Ghi chú":       receiptData.note ?? null,
           "Số sản phẩm":   items.length,
@@ -1422,6 +1447,8 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
             invoicePromotionKeys: receiptData.promotionKeys ?? [],
             invoiceSurchargeKeys: receiptData.surchargeKeys ?? [],
             paidAmount: receiptData.paidAmount,
+            paymentMethod: receiptData.paymentMethod,
+            paymentDueDate: receiptData.paymentDueDate,
             items: items.map(i => ({
               quantity: i.quantity,
               productName: i.productName,

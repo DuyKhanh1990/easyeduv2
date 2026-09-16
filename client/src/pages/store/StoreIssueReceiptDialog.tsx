@@ -58,6 +58,8 @@ export type IssueReceiptFormData = {
   hasInvoice: boolean;
   invoiceNote: string;
   paidAmount: number;
+  paymentMethod: "cash" | "transfer";
+  paymentDueDate: string;
   status: "draft" | "completed";
   sessionId?: string;
   items: IssueReceiptItem[];
@@ -366,6 +368,8 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
     hasInvoice: initialData?.hasInvoice ?? true,
     invoiceNote: initialData?.invoiceNote ?? "",
     paidAmount: (initialData as any)?.paidAmount ?? 0,
+    paymentMethod: initialData?.paymentMethod ?? "cash",
+    paymentDueDate: initialData?.paymentDueDate ?? todayStr(),
     status: initialData?.status ?? "completed",
     items: (initialData?.items ?? []).map(item => ({
       ...item,
@@ -800,6 +804,8 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
         surchargeKeys: selectedSurchargeKeys,
         manualPromotionRows: sidebarPromotionRows,
         manualSurchargeRows: sidebarSurchargeRows,
+        paymentMethod: form.paymentMethod,
+        paymentDueDate: total > form.paidAmount ? form.paymentDueDate : "",
         items: form.items.map(item => {
           const amounts = getItemAmounts(item, promotionOptions, surchargeOptions);
           return {
@@ -1369,13 +1375,39 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                   className="h-7 text-xs text-right w-28 tabular-nums"
                 />
               </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground shrink-0">Hình thức</span>
+                <Select
+                  value={form.paymentMethod}
+                  onValueChange={value => setForm(f => ({ ...f, paymentMethod: value as "cash" | "transfer" }))}
+                >
+                  <SelectTrigger className="h-7 w-28 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">Tiền mặt</SelectItem>
+                    <SelectItem value="transfer">Chuyển khoản</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               {total > 0 && form.paidAmount < total && (
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Còn lại</span>
-                  <span className="text-destructive tabular-nums font-medium">
-                    {fmtVND(Math.max(0, total - form.paidAmount))}
-                  </span>
-                </div>
+                <>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Còn lại</span>
+                    <span className="text-destructive tabular-nums font-medium">
+                      {fmtVND(Math.max(0, total - form.paidAmount))}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground shrink-0">Hạn thanh toán</span>
+                    <Input
+                      type="date"
+                      value={form.paymentDueDate}
+                      onChange={e => setForm(f => ({ ...f, paymentDueDate: e.target.value }))}
+                      className="h-7 w-36 text-xs"
+                    />
+                  </div>
+                </>
               )}
             </div>
           </div>

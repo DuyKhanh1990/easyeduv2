@@ -222,6 +222,8 @@ export function StoreIssueReceiptTab() {
       hasInvoice: data.hasInvoice,
       invoiceNote: data.invoiceNote || null,
       paidAmount: Number((data as any).paidAmount) || 0,
+      paymentMethod: data.paymentMethod ?? "cash",
+      paymentDueDate: data.paymentDueDate || null,
       status,
       sessionId: data.sessionId ?? null,
       totalAmount: data.items.reduce((sum, i) => (i as any).priceType === "star" ? sum : sum + Number(i.quantity) * Number(i.salePrice), 0),
@@ -271,6 +273,10 @@ export function StoreIssueReceiptTab() {
         hasInvoice: detail.hasInvoice ?? false,
         invoiceNote: detail.invoiceNote ?? "",
         paidAmount: parseFloat(detail.paidAmount ?? "0"),
+        paymentMethod: detail.paymentMethod ?? "cash",
+        paymentDueDate: detail.paymentDueDate
+          ? String(detail.paymentDueDate).slice(0, 10)
+          : new Date().toISOString().slice(0, 10),
         status: detail.status,
         items: (detail.items ?? []).map((item: any, idx: number) => ({
           _key: `edit_${idx}`,

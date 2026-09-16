@@ -2509,6 +2509,8 @@ export const storeIssueReceipts = pgTable("store_issue_receipts", {
   hasInvoice: boolean("has_invoice").default(false),
   invoiceNote: text("invoice_note"),
   paidAmount: numeric("paid_amount").default("0"),
+  paymentMethod: varchar("payment_method", { length: 20 }).default("cash"),
+  paymentDueDate: date("payment_due_date"),
   status: varchar("status").notNull().default("completed"),
   totalAmount: numeric("total_amount").default("0"),
   recipientId: uuid("recipient_id"),
