@@ -184,7 +184,7 @@ function IssueAdjustmentDialog({
             return (
               <div key={row.id} className="space-y-2 rounded-lg border border-muted p-3">
                 <div className="flex items-center gap-2">
-                  <Popover open={openPickerId === pickerId} onOpenChange={value => {
+                  <Popover modal={false} open={openPickerId === pickerId} onOpenChange={value => {
                     setOpenPickerId(value ? pickerId : null);
                     if (value) setSearch("");
                   }}>
@@ -228,7 +228,9 @@ function IssueAdjustmentDialog({
                               key={option.id}
                               type="button"
                               className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-muted/60"
-                              onClick={() => {
+                              onPointerDown={event => {
+                                event.preventDefault();
+                                event.stopPropagation();
                                 onSelectOption(row.id, option.id);
                                 setOpenPickerId(null);
                               }}
