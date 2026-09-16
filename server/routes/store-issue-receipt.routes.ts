@@ -30,6 +30,10 @@ async function ensureIssueReceiptTables() {
       discount_type VARCHAR(10) DEFAULT 'VND',
       surcharge DECIMAL(15,2) DEFAULT 0,
       surcharge_type VARCHAR(10) DEFAULT 'VND',
+      promotion_keys JSONB DEFAULT '[]'::jsonb,
+      surcharge_keys JSONB DEFAULT '[]'::jsonb,
+      manual_promotion_rows JSONB DEFAULT '[]'::jsonb,
+      manual_surcharge_rows JSONB DEFAULT '[]'::jsonb,
       has_invoice BOOLEAN DEFAULT FALSE,
       invoice_note TEXT,
       paid_amount DECIMAL(15,2) DEFAULT 0,
@@ -53,6 +57,9 @@ async function ensureIssueReceiptTables() {
       unit_name VARCHAR(100),
       sale_price DECIMAL(15,2) DEFAULT 0,
       stock_before INTEGER DEFAULT 0,
+      promotion_amount DECIMAL(15,2) DEFAULT 0,
+      surcharge_amount DECIMAL(15,2) DEFAULT 0,
+      line_total DECIMAL(15,2) DEFAULT 0,
       created_at TIMESTAMP DEFAULT NOW() NOT NULL
     )
   `);
@@ -74,6 +81,13 @@ async function ensureIssueReceiptTables() {
   await db.execute(sql`ALTER TABLE store_issue_receipt_items ADD COLUMN IF NOT EXISTS surcharge_keys JSONB DEFAULT '[]'::jsonb`);
   await db.execute(sql`ALTER TABLE store_issue_receipt_items ADD COLUMN IF NOT EXISTS manual_promotion_rows JSONB DEFAULT '[]'::jsonb`);
   await db.execute(sql`ALTER TABLE store_issue_receipt_items ADD COLUMN IF NOT EXISTS manual_surcharge_rows JSONB DEFAULT '[]'::jsonb`);
+  await db.execute(sql`ALTER TABLE store_issue_receipts ADD COLUMN IF NOT EXISTS promotion_keys JSONB DEFAULT '[]'::jsonb`);
+  await db.execute(sql`ALTER TABLE store_issue_receipts ADD COLUMN IF NOT EXISTS surcharge_keys JSONB DEFAULT '[]'::jsonb`);
+  await db.execute(sql`ALTER TABLE store_issue_receipts ADD COLUMN IF NOT EXISTS manual_promotion_rows JSONB DEFAULT '[]'::jsonb`);
+  await db.execute(sql`ALTER TABLE store_issue_receipts ADD COLUMN IF NOT EXISTS manual_surcharge_rows JSONB DEFAULT '[]'::jsonb`);
+  await db.execute(sql`ALTER TABLE store_issue_receipt_items ADD COLUMN IF NOT EXISTS promotion_amount DECIMAL(15,2) DEFAULT 0`);
+  await db.execute(sql`ALTER TABLE store_issue_receipt_items ADD COLUMN IF NOT EXISTS surcharge_amount DECIMAL(15,2) DEFAULT 0`);
+  await db.execute(sql`ALTER TABLE store_issue_receipt_items ADD COLUMN IF NOT EXISTS line_total DECIMAL(15,2) DEFAULT 0`);
   await db.execute(sql`ALTER TABLE store_issue_receipts ADD COLUMN IF NOT EXISTS recipient_id UUID`);
   await db.execute(sql`ALTER TABLE store_issue_receipts ADD COLUMN IF NOT EXISTS invoice_id UUID REFERENCES invoices(id) ON DELETE SET NULL`);
   await db.execute(sql`
@@ -99,6 +113,9 @@ const issueItemSchema = z.object({
   unitName: z.string().optional().nullable(),
   salePrice: z.number().min(0).default(0),
   stockBefore: z.number().int().min(0).default(0),
+  promotionAmount: z.number().min(0).default(0),
+  surchargeAmount: z.number().min(0).default(0),
+  lineTotal: z.number().min(0).default(0),
   priceType: z.enum(["money", "star"]).default("money"),
   starPrice: z.number().int().min(0).default(0),
   totalStars: z.number().int().min(0).default(0),
@@ -131,6 +148,20 @@ const issueCreateSchema = z.object({
   discountType: z.enum(["VND", "%"]).default("VND"),
   surcharge: z.number().min(0).default(0),
   surchargeType: z.enum(["VND", "%"]).default("VND"),
+  promotionKeys: z.array(z.string()).default([]),
+  surchargeKeys: z.array(z.string()).default([]),
+  manualPromotionRows: z.array(z.object({
+    id: z.string(),
+    optionKey: z.string().optional(),
+    valueType: z.enum(["amount", "percent"]),
+    value: z.number().min(0),
+  })).default([]),
+  manualSurchargeRows: z.array(z.object({
+    id: z.string(),
+    optionKey: z.string().optional(),
+    valueType: z.enum(["amount", "percent"]),
+    value: z.number().min(0),
+  })).default([]),
   hasInvoice: z.boolean().default(false),
   invoiceNote: z.string().optional().nullable(),
   paidAmount: z.number().min(0).default(0),
@@ -266,8 +297,19 @@ async function createIssueInvoice(params: {
   discountType: "VND" | "%";
   surcharge: number;
   surchargeType: "VND" | "%";
+  invoicePromotionKeys: string[];
+  invoiceSurchargeKeys: string[];
   paidAmount: number;
-  items: { quantity: number; productName: string; salePrice: number }[];
+  items: {
+    quantity: number;
+    productName: string;
+    salePrice: number;
+    promotionKeys: string[];
+    surchargeKeys: string[];
+    promotionAmount: number;
+    surchargeAmount: number;
+    lineTotal: number;
+  }[];
   createdBy: string | null | undefined;
   createdByName: string | null | undefined;
 }): Promise<{
@@ -289,9 +331,14 @@ async function createIssueInvoice(params: {
     : autoDescription;
 
   const subtotal = params.items.reduce((s, i) => s + i.quantity * i.salePrice, 0);
-  const discountAmt = params.discountType === "VND" ? params.discount : subtotal * params.discount / 100;
-  const surchargeAmt = params.surchargeType === "VND" ? params.surcharge : subtotal * params.surcharge / 100;
-  const grandTotal = Math.max(0, subtotal - discountAmt + surchargeAmt);
+  const lineSubtotal = params.items.reduce((s, i) => s + (i.lineTotal ?? i.quantity * i.salePrice), 0);
+  const itemPromotionAmt = params.items.reduce((s, i) => s + (i.promotionAmount || 0), 0);
+  const itemSurchargeAmt = params.items.reduce((s, i) => s + (i.surchargeAmount || 0), 0);
+  const discountAmt = params.discountType === "VND" ? params.discount : lineSubtotal * params.discount / 100;
+  const surchargeAmt = params.surchargeType === "VND" ? params.surcharge : lineSubtotal * params.surcharge / 100;
+  const grandTotal = Math.max(0, lineSubtotal - discountAmt + surchargeAmt);
+  const totalPromotion = itemPromotionAmt + discountAmt;
+  const totalSurcharge = itemSurchargeAmt + surchargeAmt;
 
   const paid = Math.min(params.paidAmount, grandTotal);
   const remaining = Math.max(0, grandTotal - paid);
@@ -313,8 +360,10 @@ async function createIssueInvoice(params: {
     category: "Kho",
     description,
     totalAmount: String(subtotal),
-    totalPromotion: String(discountAmt),
-    totalSurcharge: String(surchargeAmt),
+    totalPromotion: String(totalPromotion),
+    totalSurcharge: String(totalSurcharge),
+    invoicePromotionKeys: params.invoicePromotionKeys,
+    invoiceSurchargeKeys: params.invoiceSurchargeKeys,
     invoicePromotionAmount: String(discountAmt),
     invoiceSurchargeAmount: String(surchargeAmt),
     grandTotal: String(grandTotal),
@@ -333,11 +382,11 @@ async function createIssueInvoice(params: {
         packageType: "Kho",
         unitPrice: String(item.salePrice),
         quantity: item.quantity,
-        promotionKeys: [],
-        surchargeKeys: [],
-        promotionAmount: "0",
-        surchargeAmount: "0",
-        subtotal: String(item.quantity * item.salePrice),
+        promotionKeys: item.promotionKeys,
+        surchargeKeys: item.surchargeKeys,
+        promotionAmount: String(item.promotionAmount || 0),
+        surchargeAmount: String(item.surchargeAmount || 0),
+        subtotal: String(item.lineTotal ?? item.quantity * item.salePrice),
         category: "Kho",
         sortOrder: idx,
       }))
@@ -836,6 +885,10 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
         discountType: r.discount_type,
         surcharge: r.surcharge,
         surchargeType: r.surcharge_type,
+        promotionKeys: r.promotion_keys ?? [],
+        surchargeKeys: r.surcharge_keys ?? [],
+        manualPromotionRows: r.manual_promotion_rows ?? [],
+        manualSurchargeRows: r.manual_surcharge_rows ?? [],
         hasInvoice: r.has_invoice,
         invoiceNote: r.invoice_note,
         paidAmount: r.paid_amount,
@@ -852,6 +905,9 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
           unitName: i.unit_name || i.unit_name_ref,
           salePrice: i.sale_price,
           stockBefore: i.stock_before,
+          promotionAmount: i.promotion_amount ?? 0,
+          surchargeAmount: i.surcharge_amount ?? 0,
+          lineTotal: i.line_total ?? 0,
           currentStock: i.current_stock,
           priceType: i.price_type ?? "money",
           starPrice: i.star_price ?? 0,
@@ -908,6 +964,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
         INSERT INTO store_issue_receipts (
           code, name, location_id, warehouse_id, date, recipient_name, recipient_id, note,
           discount, discount_type, surcharge, surcharge_type,
+          promotion_keys, surcharge_keys, manual_promotion_rows, manual_surcharge_rows,
           has_invoice, invoice_note, paid_amount, status, total_amount,
           created_by, created_by_name
         ) VALUES (
@@ -917,6 +974,10 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
           ${receiptData.note ?? null},
           ${receiptData.discount}, ${receiptData.discountType},
           ${receiptData.surcharge}, ${receiptData.surchargeType},
+          ${JSON.stringify(receiptData.promotionKeys ?? [])}::jsonb,
+          ${JSON.stringify(receiptData.surchargeKeys ?? [])}::jsonb,
+          ${JSON.stringify(receiptData.manualPromotionRows ?? [])}::jsonb,
+          ${JSON.stringify(receiptData.manualSurchargeRows ?? [])}::jsonb,
           ${receiptData.hasInvoice}, ${receiptData.invoiceNote ?? null},
           ${receiptData.paidAmount}, ${receiptData.status}, ${receiptData.totalAmount},
           ${user.id}, ${user.fullName || user.username}
@@ -932,7 +993,8 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
               receipt_id, product_id, product_code, product_name,
               quantity, unit_id, unit_name, sale_price, stock_before,
               price_type, star_price, total_stars,
-              promotion_keys, surcharge_keys, manual_promotion_rows, manual_surcharge_rows
+              promotion_keys, surcharge_keys, manual_promotion_rows, manual_surcharge_rows,
+              promotion_amount, surcharge_amount, line_total
             ) VALUES (
               ${r.id}, ${item.productId ?? null}, ${item.productCode}, ${item.productName},
               ${item.quantity}, ${item.unitId ?? null}, ${item.unitName ?? null},
@@ -942,7 +1004,8 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
               ${JSON.stringify(item.promotionKeys ?? [])}::jsonb,
               ${JSON.stringify(item.surchargeKeys ?? [])}::jsonb,
               ${JSON.stringify(item.manualPromotionRows ?? [])}::jsonb,
-              ${JSON.stringify(item.manualSurchargeRows ?? [])}::jsonb
+              ${JSON.stringify(item.manualSurchargeRows ?? [])}::jsonb,
+              ${item.promotionAmount ?? 0}, ${item.surchargeAmount ?? 0}, ${item.lineTotal ?? 0}
             )
           `);
         }
@@ -996,8 +1059,19 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
           discountType: receiptData.discountType,
           surcharge: receiptData.surcharge,
           surchargeType: receiptData.surchargeType,
+          invoicePromotionKeys: receiptData.promotionKeys ?? [],
+          invoiceSurchargeKeys: receiptData.surchargeKeys ?? [],
           paidAmount: receiptData.paidAmount,
-          items: items.map(i => ({ quantity: i.quantity, productName: i.productName, salePrice: i.priceType === "star" ? 0 : i.salePrice })),
+          items: items.map(i => ({
+            quantity: i.quantity,
+            productName: i.productName,
+            salePrice: i.priceType === "star" ? 0 : i.salePrice,
+            promotionKeys: i.promotionKeys ?? [],
+            surchargeKeys: i.surchargeKeys ?? [],
+            promotionAmount: i.priceType === "star" ? 0 : i.promotionAmount ?? 0,
+            surchargeAmount: i.priceType === "star" ? 0 : i.surchargeAmount ?? 0,
+            lineTotal: i.priceType === "star" ? 0 : i.lineTotal ?? i.quantity * i.salePrice,
+          })),
           createdBy: user.id,
           createdByName: user.fullName || user.username,
         });
@@ -1202,6 +1276,10 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
           discount_type = ${receiptData.discountType},
           surcharge = ${receiptData.surcharge},
           surcharge_type = ${receiptData.surchargeType},
+          promotion_keys = ${JSON.stringify(receiptData.promotionKeys ?? [])}::jsonb,
+          surcharge_keys = ${JSON.stringify(receiptData.surchargeKeys ?? [])}::jsonb,
+          manual_promotion_rows = ${JSON.stringify(receiptData.manualPromotionRows ?? [])}::jsonb,
+          manual_surcharge_rows = ${JSON.stringify(receiptData.manualSurchargeRows ?? [])}::jsonb,
           has_invoice = ${receiptData.hasInvoice},
           invoice_note = ${receiptData.invoiceNote ?? null},
           paid_amount = ${receiptData.paidAmount},
@@ -1218,7 +1296,8 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
             receipt_id, product_id, product_code, product_name,
             quantity, unit_id, unit_name, sale_price, stock_before,
             price_type, star_price, total_stars,
-            promotion_keys, surcharge_keys, manual_promotion_rows, manual_surcharge_rows
+            promotion_keys, surcharge_keys, manual_promotion_rows, manual_surcharge_rows,
+            promotion_amount, surcharge_amount, line_total
           ) VALUES (
             ${req.params.id}, ${item.productId ?? null}, ${item.productCode}, ${item.productName},
             ${item.quantity}, ${item.unitId ?? null}, ${item.unitName ?? null},
@@ -1228,7 +1307,8 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
             ${JSON.stringify(item.promotionKeys ?? [])}::jsonb,
             ${JSON.stringify(item.surchargeKeys ?? [])}::jsonb,
             ${JSON.stringify(item.manualPromotionRows ?? [])}::jsonb,
-            ${JSON.stringify(item.manualSurchargeRows ?? [])}::jsonb
+            ${JSON.stringify(item.manualSurchargeRows ?? [])}::jsonb,
+            ${item.promotionAmount ?? 0}, ${item.surchargeAmount ?? 0}, ${item.lineTotal ?? 0}
           )
         `);
       }
@@ -1339,8 +1419,19 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
             discountType: receiptData.discountType,
             surcharge: receiptData.surcharge,
             surchargeType: receiptData.surchargeType,
+            invoicePromotionKeys: receiptData.promotionKeys ?? [],
+            invoiceSurchargeKeys: receiptData.surchargeKeys ?? [],
             paidAmount: receiptData.paidAmount,
-            items: items.map(i => ({ quantity: i.quantity, productName: i.productName, salePrice: i.priceType === "star" ? 0 : i.salePrice })),
+            items: items.map(i => ({
+              quantity: i.quantity,
+              productName: i.productName,
+              salePrice: i.priceType === "star" ? 0 : i.salePrice,
+              promotionKeys: i.promotionKeys ?? [],
+              surchargeKeys: i.surchargeKeys ?? [],
+              promotionAmount: i.priceType === "star" ? 0 : i.promotionAmount ?? 0,
+              surchargeAmount: i.priceType === "star" ? 0 : i.surchargeAmount ?? 0,
+              lineTotal: i.priceType === "star" ? 0 : i.lineTotal ?? i.quantity * i.salePrice,
+            })),
             createdBy: user.id,
             createdByName: user.fullName || user.username,
           });

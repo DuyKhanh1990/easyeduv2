@@ -29,6 +29,9 @@ export type IssueReceiptItem = {
   stockBefore: number;
   priceType: "money" | "star";
   starPrice: number;
+  promotionAmount?: number;
+  surchargeAmount?: number;
+  lineTotal?: number;
   promotionKeys?: string[];
   surchargeKeys?: string[];
   manualPromotionRows?: ManualAdjustment[];
@@ -48,6 +51,10 @@ export type IssueReceiptFormData = {
   discountType: "VND" | "%";
   surcharge: number;
   surchargeType: "VND" | "%";
+  promotionKeys?: string[];
+  surchargeKeys?: string[];
+  manualPromotionRows?: ManualAdjustment[];
+  manualSurchargeRows?: ManualAdjustment[];
   hasInvoice: boolean;
   invoiceNote: string;
   paidAmount: number;
@@ -352,6 +359,10 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
     discountType: initialData?.discountType ?? "VND",
     surcharge: initialData?.surcharge ?? 0,
     surchargeType: initialData?.surchargeType ?? "VND",
+    promotionKeys: initialData?.promotionKeys ?? [],
+    surchargeKeys: initialData?.surchargeKeys ?? [],
+    manualPromotionRows: initialData?.manualPromotionRows ?? [],
+    manualSurchargeRows: initialData?.manualSurchargeRows ?? [],
     hasInvoice: initialData?.hasInvoice ?? true,
     invoiceNote: initialData?.invoiceNote ?? "",
     paidAmount: (initialData as any)?.paidAmount ?? 0,
@@ -365,12 +376,12 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
     })),
   });
 
-  const [selectedPromoKeys, setSelectedPromoKeys] = useState<string[]>([]);
-  const [selectedSurchargeKeys, setSelectedSurchargeKeys] = useState<string[]>([]);
+  const [selectedPromoKeys, setSelectedPromoKeys] = useState<string[]>(initialData?.promotionKeys ?? []);
+  const [selectedSurchargeKeys, setSelectedSurchargeKeys] = useState<string[]>(initialData?.surchargeKeys ?? []);
   const [promoOpen, setPromoOpen] = useState(false);
   const [surchargeOpen, setSurchargeOpen] = useState(false);
-  const [sidebarPromotionRows, setSidebarPromotionRows] = useState<ManualAdjustment[]>([]);
-  const [sidebarSurchargeRows, setSidebarSurchargeRows] = useState<ManualAdjustment[]>([]);
+  const [sidebarPromotionRows, setSidebarPromotionRows] = useState<ManualAdjustment[]>(initialData?.manualPromotionRows ?? []);
+  const [sidebarSurchargeRows, setSidebarSurchargeRows] = useState<ManualAdjustment[]>(initialData?.manualSurchargeRows ?? []);
   const [itemAdjustmentOpen, setItemAdjustmentOpen] = useState<{
     itemKey: string;
     kind: AdjustmentKind;
@@ -746,7 +757,7 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
     : (form.discountType === "VND" ? form.discount : subtotal * form.discount / 100);
 
   const surchargeAmt = hasSidebarSurcharge
-    ? adjustmentTotal(subtotal, selectedSurchargeKeys, sidebarSurchargeRows, surchargeOptions, "surcharge")
+    ? adjustmentTotal(Math.max(0, subtotal - discountAmt), selectedSurchargeKeys, sidebarSurchargeRows, surchargeOptions, "surcharge")
     : (form.surchargeType === "VND" ? form.surcharge : subtotal * form.surcharge / 100);
 
   const total = Math.max(0, subtotal - discountAmt + surchargeAmt);
@@ -779,7 +790,28 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
       return;
     }
     onSave(
-      { ...form, discount: discountAmt, discountType: "VND", surcharge: surchargeAmt, surchargeType: "VND", status, sessionId: sessionIdRef.current } as IssueReceiptFormData,
+      {
+        ...form,
+        discount: discountAmt,
+        discountType: "VND",
+        surcharge: surchargeAmt,
+        surchargeType: "VND",
+        promotionKeys: selectedPromoKeys,
+        surchargeKeys: selectedSurchargeKeys,
+        manualPromotionRows: sidebarPromotionRows,
+        manualSurchargeRows: sidebarSurchargeRows,
+        items: form.items.map(item => {
+          const amounts = getItemAmounts(item, promotionOptions, surchargeOptions);
+          return {
+            ...item,
+            promotionAmount: amounts.promotionAmount,
+            surchargeAmount: amounts.surchargeAmount,
+            lineTotal: amounts.lineTotal,
+          };
+        }),
+        status,
+        sessionId: sessionIdRef.current,
+      } as IssueReceiptFormData,
       status,
     );
   }
@@ -1237,7 +1269,7 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                 kind="promotion"
                 rows={sidebarPromotionRows}
                 options={promotionOptions}
-                baseAmount={subtotal}
+                baseAmount={Math.max(0, subtotal - discountAmt)}
                 onSelectOption={(rowId, optionKey) => selectSidebarAdjustmentOption("promotion", rowId, optionKey)}
                 onUpdateRow={(rowId, patch) => updateSidebarAdjustmentRow("promotion", rowId, patch)}
                 onAddRow={() => addSidebarAdjustmentRow("promotion")}
