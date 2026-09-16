@@ -115,6 +115,56 @@ async function emitCalendarUpdateForClass(classId: string): Promise<void> {
 type CycleTeacherInfo = { name: string; code: string };
 type CycleSessionInfo = { sessionIndex: number | null; weekday: number; sessionDate: string; startTime: string | null; teachers: CycleTeacherInfo[] };
 
+type StudentCycleSessionLog = {
+  sessionIndex: number | null;
+  sessionDate: string;
+  weekday: number;
+  startTime: string | null;
+  endTime: string | null;
+  attendanceStatus: string | null;
+};
+
+type StudentCycleSessionRow = StudentCycleSessionLog & {
+  id: string;
+  classSessionId: string;
+};
+
+async function fetchStudentCycleSessionRows(
+  studentClassId: string,
+  fromSessionOrder: number,
+): Promise<StudentCycleSessionRow[]> {
+  const rows = await db.select({
+    id: studentSessions.id,
+    classSessionId: studentSessions.classSessionId,
+    sessionIndex: classSessions.sessionIndex,
+    sessionDate: classSessions.sessionDate,
+    weekday: classSessions.weekday,
+    startTime: shiftTemplates.startTime,
+    endTime: shiftTemplates.endTime,
+    attendanceStatus: studentSessions.attendanceStatus,
+  })
+    .from(studentSessions)
+    .innerJoin(classSessions, eq(classSessions.id, studentSessions.classSessionId))
+    .leftJoin(shiftTemplates, eq(shiftTemplates.id, classSessions.shiftTemplateId))
+    .where(and(
+      eq(studentSessions.studentClassId, studentClassId),
+      gte(studentSessions.sessionOrder, fromSessionOrder),
+    ))
+    .orderBy(asc(classSessions.sessionIndex), asc(classSessions.sessionDate));
+
+  return rows.map((row) => ({
+    id: row.id,
+    classSessionId: row.classSessionId,
+    sessionIndex: row.sessionIndex ?? null,
+    sessionDate: row.sessionDate,
+    // The activity-log UI uses JavaScript's 0–6 weekday convention.
+    weekday: row.weekday === 7 ? 0 : (row.weekday ?? 0),
+    startTime: row.startTime ?? null,
+    endTime: row.endTime ?? null,
+    attendanceStatus: row.attendanceStatus ?? null,
+  }));
+}
+
 async function fetchSessionsWithTeachers(classId: string, fromIndex: number, toIndex: number): Promise<CycleSessionInfo[]> {
   const rows = await db.select({
     sessionIndex: classSessions.sessionIndex,
@@ -1545,7 +1595,15 @@ export function registerClassesRoutes(app: Express): void {
       const userId = (req as any).user?.id ?? null;
 
       // Pre-fetch data for activity log
-      let logMeta: { classId: string; locationId: string | null; studentName: string; studentCode: string; oldWeekdays: number[] | null } | null = null;
+      let logMeta: {
+        classId: string;
+        locationId: string | null;
+        studentName: string;
+        studentCode: string;
+        oldWeekdays: number[] | null;
+        deletedSessions: StudentCycleSessionLog[];
+        keptClassSessionIds: Set<string>;
+      } | null = null;
       try {
         const [scRow] = await db
           .select({ classId: studentClasses.classId, studentId: studentClasses.studentId, scheduledWeekdays: studentClasses.scheduledWeekdays })
@@ -1561,7 +1619,19 @@ export function registerClassesRoutes(app: Express): void {
             studentName: studentRow?.fullName ?? "",
             studentCode: studentRow?.code ?? "",
             oldWeekdays: scRow.scheduledWeekdays as number[] | null,
+             deletedSessions: [],
+             keptClassSessionIds: new Set<string>(),
           };
+           const oldSessionRows = await fetchStudentCycleSessionRows(id, parseInt(String(fromSessionOrder)));
+           const sessionsToDelete = mode === "all"
+             ? oldSessionRows
+             : oldSessionRows.filter((session) => !session.attendanceStatus || session.attendanceStatus === "pending");
+           logMeta.deletedSessions = sessionsToDelete.map(({ id: _id, classSessionId: _classSessionId, ...session }) => session);
+           logMeta.keptClassSessionIds = new Set(
+             oldSessionRows
+               .filter((session) => !sessionsToDelete.some((deleted) => deleted.id === session.id))
+               .map((session) => session.classSessionId),
+           );
         }
       } catch (prefetchErr) {
         console.error("[ChangeCycle] Pre-fetch log error:", prefetchErr);
@@ -1576,6 +1646,10 @@ export function registerClassesRoutes(app: Express): void {
 
       if (logMeta && userId) {
         try {
+          const afterSessionRows = await fetchStudentCycleSessionRows(id, parseInt(String(fromSessionOrder)));
+          const createdSessions = afterSessionRows
+            .filter((session) => !logMeta!.keptClassSessionIds.has(session.classSessionId))
+            .map(({ id: _id, classSessionId: _classSessionId, ...session }) => session);
           const formatDays = (days: number[] | null) =>
             !days || days.length === 0 ? "Tất cả" : days.sort((a, b) => a - b).map((w) => SCHEDULE_WEEKDAY_LABELS[w] ?? w).join(", ");
           await createActivityLog({
@@ -1592,6 +1666,8 @@ export function registerClassesRoutes(app: Express): void {
               mode,
               deleted: result.deleted,
               created: result.created,
+               deletedSessions: logMeta.deletedSessions,
+               createdSessions,
             }),
           });
         } catch (logErr) {
@@ -1638,7 +1714,19 @@ export function registerClassesRoutes(app: Express): void {
       }
 
       // Pre-fetch student info and old weekdays for logging
-      type BulkLogItem = { studentName: string; studentCode: string; oldWeekdays: number[] | null; newWeekdays: number[] | null; fromSessionOrder: number; classId: string; locationId: string | null };
+      type BulkLogItem = {
+        studentClassId: string;
+        studentName: string;
+        studentCode: string;
+        oldWeekdays: number[] | null;
+        newWeekdays: number[] | null;
+        fromSessionOrder: number;
+        classId: string;
+        locationId: string | null;
+        deletedSessions: StudentCycleSessionLog[];
+        keptClassSessionIds: Set<string>;
+        createdSessions: StudentCycleSessionLog[];
+      };
       const bulkLogItems: BulkLogItem[] = [];
       let sharedClassId: string | null = null;
       let sharedLocationId: string | null = null;
@@ -1663,7 +1751,13 @@ export function registerClassesRoutes(app: Express): void {
           for (const scRow of scRows) {
             const studentInput = students.find(s => s.studentClassId === scRow.id);
             const sInfo = studentInfoMap.get(scRow.studentId ?? "");
+            const oldSessionRows = await fetchStudentCycleSessionRows(scRow.id, orderMap[scRow.id] ?? 0);
+            const sessionsToDelete = mode === "all"
+              ? oldSessionRows
+              : oldSessionRows.filter((session) => !session.attendanceStatus || session.attendanceStatus === "pending");
+            const deletedIds = new Set(sessionsToDelete.map((session) => session.id));
             bulkLogItems.push({
+              studentClassId: scRow.id,
               studentName: sInfo?.fullName ?? "",
               studentCode: sInfo?.code ?? "",
               oldWeekdays: scRow.scheduledWeekdays as number[] | null,
@@ -1671,6 +1765,13 @@ export function registerClassesRoutes(app: Express): void {
               fromSessionOrder: orderMap[scRow.id] ?? 0,
               classId: scRow.classId,
               locationId: sharedLocationId,
+              deletedSessions: sessionsToDelete.map(({ id: _id, classSessionId: _classSessionId, ...session }) => session),
+              keptClassSessionIds: new Set(
+                oldSessionRows
+                  .filter((session) => !deletedIds.has(session.id))
+                  .map((session) => session.classSessionId),
+              ),
+              createdSessions: [],
             });
           }
         } catch (prefetchErr) {
@@ -1698,25 +1799,32 @@ export function registerClassesRoutes(app: Express): void {
         }
       }
 
+      for (const item of bulkLogItems) {
+        if (!item.fromSessionOrder) continue;
+        const afterSessionRows = await fetchStudentCycleSessionRows(
+          item.studentClassId,
+          item.fromSessionOrder,
+        ).catch(() => []);
+        item.createdSessions = afterSessionRows
+          .filter((session) => !item.keptClassSessionIds.has(session.classSessionId))
+          .map(({ id: _id, classSessionId: _classSessionId, ...session }) => session);
+      }
+
       if (userId && bulkLogItems.length > 0 && sharedClassId) {
         try {
           const formatDays = (days: number[] | null) =>
             !days || days.length === 0 ? "Tất cả" : days.sort((a, b) => a - b).map((w) => SCHEDULE_WEEKDAY_LABELS[w] ?? w).join(", ");
           const succeededIds = new Set(results.filter(r => !r.error).map(r => r.studentClassId));
           const logStudents = bulkLogItems
-            .filter(item => {
-              const sc = students.find(s => {
-                const scRow = bulkLogItems.find(b => b.studentName === item.studentName && b.studentCode === item.studentCode);
-                return !!scRow;
-              });
-              return true;
-            })
+             .filter(item => succeededIds.has(item.studentClassId))
             .map(item => ({
               name: item.studentName,
               code: item.studentCode,
               fromSessionOrder: item.fromSessionOrder,
               oldWeekdays: formatDays(item.oldWeekdays),
               newWeekdays: formatDays(item.newWeekdays),
+              deletedSessions: item.deletedSessions,
+              createdSessions: item.createdSessions,
             }));
           await createActivityLog({
             userId,
@@ -2024,7 +2132,16 @@ export function registerClassesRoutes(app: Express): void {
       let logPreData: {
         classId: string; className: string; classCode: string; locationId: string | null;
         newPkg: { name: string; type: string; fee: number; sessions: number | null; sessionPrice: number } | null;
-        studentsLog: Array<{ name: string; code: string; studentClassId: string; oldPackageName: string | null; oldPackageType: string | null; oldSessionPrice: number | null; sessionCount: number }>;
+         studentsLog: Array<{
+           name: string;
+           code: string;
+           studentClassId: string;
+           oldPackageName: string | null;
+           oldPackageType: string | null;
+           oldSessionPrice: number | null;
+           sessionCount: number;
+           sessions: Array<Omit<StudentCycleSessionLog, "attendanceStatus">>;
+         }>;
       } | null = null;
       try {
         const scRows = await db.select({
@@ -2041,10 +2158,19 @@ export function registerClassesRoutes(app: Express): void {
           className = ci?.name ?? ""; classCode = ci?.classCode ?? ""; classLocationId = ci?.locationId ?? null;
         }
 
-        const oldSessions = await db.select({
-          studentClassId: studentSessions.studentClassId, packageId: studentSessions.packageId,
-          packageType: studentSessions.packageType, sessionPrice: studentSessions.sessionPrice,
-        }).from(studentSessions).innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
+         const oldSessions = await db.select({
+           studentClassId: studentSessions.studentClassId,
+           packageId: studentSessions.packageId,
+           packageType: studentSessions.packageType,
+           sessionPrice: studentSessions.sessionPrice,
+           sessionIndex: classSessions.sessionIndex,
+           sessionDate: classSessions.sessionDate,
+           weekday: classSessions.weekday,
+           startTime: shiftTemplates.startTime,
+           endTime: shiftTemplates.endTime,
+         }).from(studentSessions)
+           .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
+           .leftJoin(shiftTemplates, eq(shiftTemplates.id, classSessions.shiftTemplateId))
           .where(and(
             inArray(studentSessions.studentClassId, student_class_ids),
             sql`${classSessions.sessionIndex} >= ${from_session_order}`,
@@ -2058,11 +2184,32 @@ export function registerClassesRoutes(app: Express): void {
           : [];
         const oldPkgMap = Object.fromEntries(oldPkgsRows.map(p => [p.id, p]));
 
-        const perSC: Record<string, { packageId: string | null; packageType: string | null; sessionPrice: string | null; sessionCount: number }> = {};
+         const perSC: Record<string, {
+           packageId: string | null;
+           packageType: string | null;
+           sessionPrice: string | null;
+           sessionCount: number;
+           sessions: Array<Omit<StudentCycleSessionLog, "attendanceStatus">>;
+         }> = {};
         for (const s of oldSessions) {
           if (!s.studentClassId) continue;
-          if (!perSC[s.studentClassId]) perSC[s.studentClassId] = { packageId: s.packageId, packageType: s.packageType, sessionPrice: s.sessionPrice, sessionCount: 0 };
+           if (!perSC[s.studentClassId]) {
+             perSC[s.studentClassId] = {
+               packageId: s.packageId,
+               packageType: s.packageType,
+               sessionPrice: s.sessionPrice,
+               sessionCount: 0,
+               sessions: [],
+             };
+           }
           perSC[s.studentClassId].sessionCount++;
+           perSC[s.studentClassId].sessions.push({
+             sessionIndex: s.sessionIndex ?? null,
+             sessionDate: s.sessionDate,
+             weekday: s.weekday === 7 ? 0 : (s.weekday ?? 0),
+             startTime: s.startTime ?? null,
+             endTime: s.endTime ?? null,
+           });
         }
 
         const [newPkgRow] = await db.select({ name: courseFeePackages.name, type: courseFeePackages.type, fee: courseFeePackages.fee, sessions: courseFeePackages.sessions })
@@ -2085,6 +2232,7 @@ export function registerClassesRoutes(app: Express): void {
               oldPackageName: oldPkg?.name ?? null, oldPackageType: old?.packageType ?? null,
               oldSessionPrice: old?.sessionPrice != null ? Number(old.sessionPrice) : null,
               sessionCount: old?.sessionCount ?? 0,
+               sessions: old?.sessions ?? [],
             };
           }),
         };

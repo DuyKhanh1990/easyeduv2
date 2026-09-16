@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Dialog,
@@ -164,6 +164,14 @@ type ContentPayload = { session: SessionInfo; items: ContentItem[] } | ContentIt
 type SessionUpdateField = { label: string; value: string; changed: boolean };
 type SessionUpdatePayload = { sessionIndex?: number | null; fields: SessionUpdateField[] };
 type DeletedSessionEntry = { sessionIndex: number | null; weekday: number; sessionDate: string; startTime: string | null };
+type ScheduleChangeSession = {
+  sessionIndex: number | null;
+  weekday: number;
+  sessionDate: string;
+  startTime: string | null;
+  endTime?: string | null;
+  attendanceStatus?: string | null;
+};
 type TeacherEntry = { id: string; name: string; code: string };
 type ChangeTeacherSessionEntry = { sessionIndex: number | null; weekday: number; sessionDate: string; startTime: string | null; teachers: TeacherEntry[] };
 
@@ -212,6 +220,7 @@ type TuitionPackageLogStudent = {
   oldPackageType: string | null;
   oldSessionPrice: number | null;
   sessionCount: number;
+  sessions?: ScheduleChangeSession[];
 };
 type TuitionPackageLogPayload = {
   newPackage: { name: string; type: string; fee: number; sessions: number | null; sessionPrice: number } | null;
@@ -311,6 +320,8 @@ type ChangeCycleSinglePayload = {
   mode: "all" | "unattended_only";
   deleted: number;
   created: number;
+  deletedSessions?: ScheduleChangeSession[];
+  createdSessions?: ScheduleChangeSession[];
 };
 
 type ChangeCycleBulkStudentEntry = {
@@ -319,6 +330,8 @@ type ChangeCycleBulkStudentEntry = {
   fromSessionOrder: number;
   oldWeekdays: string;
   newWeekdays: string;
+  deletedSessions?: ScheduleChangeSession[];
+  createdSessions?: ScheduleChangeSession[];
 };
 
 type ChangeCycleBulkPayload = {
@@ -713,6 +726,7 @@ function OnlineLinkLogDetailView({ log }: { log: ActivityLog }) {
 }
 
 function ChangeCycleLogDetailView({ log }: { log: ActivityLog }) {
+  const [expandedStudents, setExpandedStudents] = useState<Record<number, boolean>>({});
   const parsed = tryParseChangeCycleLog(log.newContent);
   if (!parsed) return <div className="text-xs text-muted-foreground italic">Không có dữ liệu chi tiết.</div>;
 
@@ -720,6 +734,7 @@ function ChangeCycleLogDetailView({ log }: { log: ActivityLog }) {
 
   if (parsed.kind === "single") {
     const { data: d } = parsed;
+    const hasScheduleDetails = (d.deletedSessions?.length ?? 0) > 0 || (d.createdSessions?.length ?? 0) > 0;
     return (
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5 bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-md px-4 py-3">
@@ -737,6 +752,20 @@ function ChangeCycleLogDetailView({ log }: { log: ActivityLog }) {
               <span className="text-muted-foreground">Chế độ: </span>
               <span className="font-medium">{modeLabel(d.mode)}</span>
             </div>
+            {hasScheduleDetails && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-primary"
+                title="Xem lịch thay đổi"
+                aria-label={`Xem lịch thay đổi của ${d.student.name}`}
+                aria-expanded={!!expandedStudents[0]}
+                onClick={() => setExpandedStudents((current) => ({ ...current, 0: !current[0] }))}
+              >
+                <CalendarDays className="h-4 w-4" />
+              </Button>
+            )}
           </div>
           <div className="flex items-center gap-3 mt-1 flex-wrap">
             <span className="text-xs px-2 py-0.5 rounded bg-muted border text-muted-foreground">{d.oldWeekdays}</span>
@@ -745,6 +774,12 @@ function ChangeCycleLogDetailView({ log }: { log: ActivityLog }) {
           </div>
           <div className="text-xs text-muted-foreground mt-1">Đã xóa <span className="font-medium text-red-600">{d.deleted}</span> buổi, tạo mới <span className="font-medium text-green-600">{d.created}</span> buổi.</div>
         </div>
+        {expandedStudents[0] && hasScheduleDetails && (
+          <StudentScheduleChangeTable
+            deletedSessions={d.deletedSessions}
+            createdSessions={d.createdSessions}
+          />
+        )}
       </div>
     );
   }
@@ -770,6 +805,28 @@ function ChangeCycleLogDetailView({ log }: { log: ActivityLog }) {
               <span className="text-xs px-1.5 py-0.5 rounded bg-muted border text-muted-foreground">{s.oldWeekdays}</span>
               <span className="text-xs text-muted-foreground font-mono">→</span>
               <span className="text-xs px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900 border border-purple-300 dark:border-purple-700 font-semibold text-purple-700 dark:text-purple-300">{s.newWeekdays}</span>
+              {((s.deletedSessions?.length ?? 0) > 0 || (s.createdSessions?.length ?? 0) > 0) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={`h-7 w-7 shrink-0 ${expandedStudents[i] ? "text-primary bg-primary/10" : "text-muted-foreground"}`}
+                  title={expandedStudents[i] ? "Ẩn lịch thay đổi" : "Xem lịch thay đổi"}
+                  aria-label={expandedStudents[i] ? `Ẩn lịch thay đổi của ${s.name}` : `Xem lịch thay đổi của ${s.name}`}
+                  aria-expanded={!!expandedStudents[i]}
+                  onClick={() => setExpandedStudents((current) => ({ ...current, [i]: !current[i] }))}
+                >
+                  <CalendarDays className="h-4 w-4" />
+                </Button>
+              )}
+              {expandedStudents[i] && (
+                <div className="basis-full pl-0">
+                  <StudentScheduleChangeTable
+                    deletedSessions={s.deletedSessions}
+                    createdSessions={s.createdSessions}
+                  />
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -786,6 +843,60 @@ function formatDeletedSessionDate(dateStr: string): string {
   if (parts.length !== 3) return dateStr;
   const [y, m, d] = parts;
   return `${parseInt(d)}/${parseInt(m)}/${y}`;
+}
+
+function formatScheduleChangeSession(session: ScheduleChangeSession): string {
+  const weekday = WEEKDAY_LABELS[session.weekday] ?? "";
+  const date = formatDeletedSessionDate(session.sessionDate);
+  const time = session.startTime
+    ? `${session.startTime}${session.endTime ? ` – ${session.endTime}` : ""}`
+    : "—";
+  return `Buổi ${session.sessionIndex ?? "?"}, ${weekday} ${date} · ${time}`;
+}
+
+function StudentScheduleChangeTable({
+  deletedSessions = [],
+  createdSessions = [],
+  affectedSessions = [],
+}: {
+  deletedSessions?: ScheduleChangeSession[];
+  createdSessions?: ScheduleChangeSession[];
+  affectedSessions?: ScheduleChangeSession[];
+}) {
+  const rows = [
+    ...deletedSessions.map((session) => ({ session, label: "Đã xóa", className: "text-red-600" })),
+    ...createdSessions.map((session) => ({ session, label: "Đã tạo", className: "text-green-600" })),
+    ...affectedSessions.map((session) => ({ session, label: "Áp dụng gói mới", className: "text-amber-700 dark:text-amber-400" })),
+  ];
+
+  if (rows.length === 0) {
+    return <div className="text-xs text-muted-foreground italic">Log cũ chưa lưu danh sách buổi chi tiết.</div>;
+  }
+
+  return (
+    <div className="overflow-x-auto mt-2">
+      <table className="w-full text-[11px] border-collapse">
+        <thead>
+          <tr className="bg-background">
+            <th className="border border-border/40 px-2 py-1 text-left font-medium text-muted-foreground">Thao tác</th>
+            <th className="border border-border/40 px-2 py-1 text-left font-medium text-muted-foreground">Buổi</th>
+            <th className="border border-border/40 px-2 py-1 text-left font-medium text-muted-foreground">Ngày và thời gian</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ session, label, className }, index) => (
+            <tr key={`${session.sessionIndex ?? "unknown"}-${session.sessionDate}-${index}`}>
+              <td className={`border border-border/40 px-2 py-1 font-medium ${className}`}>{label}</td>
+              <td className="border border-border/40 px-2 py-1 font-medium">Buổi {session.sessionIndex ?? "?"}</td>
+              <td className="border border-border/40 px-2 py-1 text-muted-foreground">
+                {formatScheduleChangeSession(session).replace(`Buổi ${session.sessionIndex ?? "?"}, `, "")}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function tryParseDeletedSessions(raw: string | null): DeletedSessionEntry[] | null {
@@ -1107,6 +1218,7 @@ function MakeupLogCell({ raw }: { raw: string | null }) {
 }
 
 function MakeupLogDetailView({ log }: { log: ActivityLog }) {
+  const [expandedStudents, setExpandedStudents] = useState<Record<number, boolean>>({});
   const payload = tryParseMakeupLog(log.newContent);
   if (!payload) {
     return <div className="text-xs text-muted-foreground italic">Không có dữ liệu chi tiết.</div>;
@@ -1143,42 +1255,60 @@ function MakeupLogDetailView({ log }: { log: ActivityLog }) {
           <div className="flex flex-col gap-2">
             {payload.students.map((s, idx) => (
               <div key={idx} className="border border-border/40 rounded-md px-3 py-2 bg-muted/20">
-                <div className="text-xs font-semibold mb-1.5">
-                  {s.name}{s.code ? ` (${s.code})` : ""}
-                </div>
-                <div className="flex items-start gap-2 flex-wrap">
-                  <div className="flex flex-col gap-0.5 shrink-0">
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Bù buổi</span>
-                    <span className="text-[11px] font-medium text-foreground whitespace-nowrap">
-                      {formatMakeupSessionLine(s.fromSession)}
-                    </span>
-                    {s.fromSession.className && (
-                      <span className="text-[10px] text-muted-foreground">
-                        Lớp {s.fromSession.className}{s.fromSession.classCode ? ` (${s.fromSession.classCode})` : ""}
-                      </span>
-                    )}
+                <div className="flex items-center justify-between gap-3 mb-1.5">
+                  <div className="text-xs font-semibold">
+                    {s.name}{s.code ? ` (${s.code})` : ""}
                   </div>
-                  <span className="text-xs text-muted-foreground font-mono mt-4 shrink-0">───►</span>
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Sang buổi</span>
-                    {s.toSession ? (
-                      <>
-                        <span className="text-[11px] font-medium text-teal-700 dark:text-teal-400 whitespace-nowrap">
-                          {formatMakeupSessionLine(s.toSession)}
+                  {s.fromSession && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className={`h-7 w-7 shrink-0 ${expandedStudents[idx] ? "text-primary bg-primary/10" : "text-muted-foreground"}`}
+                      title={expandedStudents[idx] ? "Ẩn lịch xếp bù" : "Xem lịch xếp bù"}
+                      aria-label={expandedStudents[idx] ? `Ẩn lịch xếp bù của ${s.name}` : `Xem lịch xếp bù của ${s.name}`}
+                      aria-expanded={!!expandedStudents[idx]}
+                      onClick={() => setExpandedStudents((current) => ({ ...current, [idx]: !current[idx] }))}
+                    >
+                      <CalendarDays className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+                {expandedStudents[idx] && (
+                  <div className="flex items-start gap-2 flex-wrap">
+                    <div className="flex flex-col gap-0.5 shrink-0">
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Bù buổi</span>
+                      <span className="text-[11px] font-medium text-foreground whitespace-nowrap">
+                        {formatMakeupSessionLine(s.fromSession)}
+                      </span>
+                      {s.fromSession.className && (
+                        <span className="text-[10px] text-muted-foreground">
+                          Lớp {s.fromSession.className}{s.fromSession.classCode ? ` (${s.fromSession.classCode})` : ""}
                         </span>
-                        {s.toSession.className && (
-                          <span className="text-[10px] text-muted-foreground">
-                            Lớp {s.toSession.className}{s.toSession.classCode ? ` (${s.toSession.classCode})` : ""}
+                      )}
+                    </div>
+                    <span className="text-xs text-muted-foreground font-mono mt-4 shrink-0">───►</span>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Sang buổi</span>
+                      {s.toSession ? (
+                        <>
+                          <span className="text-[11px] font-medium text-teal-700 dark:text-teal-400 whitespace-nowrap">
+                            {formatMakeupSessionLine(s.toSession)}
                           </span>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-[11px] text-muted-foreground italic">
-                        {payload.option === "end_of_schedule" ? "Cuối lịch học" : payload.option === "new_schedule" ? "Lịch bù mới" : "—"}
-                      </span>
-                    )}
+                          {s.toSession.className && (
+                            <span className="text-[10px] text-muted-foreground">
+                              Lớp {s.toSession.className}{s.toSession.classCode ? ` (${s.toSession.classCode})` : ""}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground italic">
+                          {payload.option === "end_of_schedule" ? "Cuối lịch học" : payload.option === "new_schedule" ? "Lịch bù mới" : "—"}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             ))}
           </div>
@@ -1343,6 +1473,7 @@ function TuitionPackageLogCell({ raw }: { raw: string | null }) {
 }
 
 function TuitionPackageLogDetailView({ log }: { log: ActivityLog }) {
+  const [expandedStudents, setExpandedStudents] = useState<Record<number, boolean>>({});
   const payload = tryParseTuitionPackageLog(log.newContent);
   if (!payload) return <div className="text-xs text-muted-foreground italic">Không có dữ liệu chi tiết.</div>;
   const { newPackage, fromSessionIndex, toSessionIndex, className, classCode, students } = payload;
@@ -1383,24 +1514,51 @@ function TuitionPackageLogDetailView({ log }: { log: ActivityLog }) {
           </thead>
           <tbody>
             {students.map((s, idx) => (
-              <tr key={idx} className={idx % 2 === 0 ? "bg-background" : "bg-muted/20"}>
-                <td className="border border-border/40 px-2 py-1">
-                  <div className="font-medium">{s.name}</div>
-                  {s.code && <div className="text-[10px] text-muted-foreground">{s.code}</div>}
-                </td>
-                <td className="border border-border/40 px-2 py-1 text-muted-foreground">
-                  {s.oldPackageName ?? <span className="italic">—</span>}
-                  {s.oldPackageType && <span className="text-[10px] ml-1">({s.oldPackageType})</span>}
-                </td>
-                <td className="border border-border/40 px-2 py-1 text-right text-muted-foreground">
-                  {s.oldSessionPrice != null ? formatVND(s.oldSessionPrice) : "—"}
-                </td>
-                <td className="border border-border/40 px-2 py-1 text-center text-muted-foreground">→</td>
-                <td className="border border-border/40 px-2 py-1 text-right font-semibold text-amber-700 dark:text-amber-400">
-                  {newPackage ? formatVND(newPackage.sessionPrice) : "—"}
-                </td>
-                <td className="border border-border/40 px-2 py-1 text-center text-muted-foreground">{s.sessionCount}</td>
-              </tr>
+              <Fragment key={idx}>
+                <tr className={idx % 2 === 0 ? "bg-background" : "bg-muted/20"}>
+                  <td className="border border-border/40 px-2 py-1">
+                    <div className="flex items-center gap-1.5">
+                      <div>
+                        <div className="font-medium">{s.name}</div>
+                        {s.code && <div className="text-[10px] text-muted-foreground">{s.code}</div>}
+                      </div>
+                      {(s.sessions?.length ?? 0) > 0 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className={`h-7 w-7 shrink-0 ${expandedStudents[idx] ? "text-primary bg-primary/10" : "text-muted-foreground"}`}
+                          title={expandedStudents[idx] ? "Ẩn các buổi áp dụng" : "Xem các buổi áp dụng"}
+                          aria-label={expandedStudents[idx] ? `Ẩn các buổi áp dụng cho ${s.name}` : `Xem các buổi áp dụng cho ${s.name}`}
+                          aria-expanded={!!expandedStudents[idx]}
+                          onClick={() => setExpandedStudents((current) => ({ ...current, [idx]: !current[idx] }))}
+                        >
+                          <CalendarDays className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                  <td className="border border-border/40 px-2 py-1 text-muted-foreground">
+                    {s.oldPackageName ?? <span className="italic">—</span>}
+                    {s.oldPackageType && <span className="text-[10px] ml-1">({s.oldPackageType})</span>}
+                  </td>
+                  <td className="border border-border/40 px-2 py-1 text-right text-muted-foreground">
+                    {s.oldSessionPrice != null ? formatVND(s.oldSessionPrice) : "—"}
+                  </td>
+                  <td className="border border-border/40 px-2 py-1 text-center text-muted-foreground">→</td>
+                  <td className="border border-border/40 px-2 py-1 text-right font-semibold text-amber-700 dark:text-amber-400">
+                    {newPackage ? formatVND(newPackage.sessionPrice) : "—"}
+                  </td>
+                  <td className="border border-border/40 px-2 py-1 text-center text-muted-foreground">{s.sessionCount}</td>
+                </tr>
+                {expandedStudents[idx] && (s.sessions?.length ?? 0) > 0 && (
+                  <tr>
+                    <td colSpan={6} className="border border-border/40 px-2 py-2 bg-muted/10">
+                      <StudentScheduleChangeTable affectedSessions={s.sessions} />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -1465,6 +1623,7 @@ function ExtensionLogCell({ raw }: { raw: string | null }) {
 }
 
 function ExtensionLogDetailView({ log }: { log: ActivityLog }) {
+  const [expandedStudents, setExpandedStudents] = useState<Record<number, boolean>>({});
   const payload = tryParseExtensionLog(log.newContent);
   if (!payload) {
     return <div className="text-xs text-muted-foreground italic">Không có dữ liệu chi tiết.</div>;
@@ -1535,16 +1694,32 @@ function ExtensionLogDetailView({ log }: { log: ActivityLog }) {
               return (
                 <div key={idx} className="border border-border/40 rounded-md px-3 py-2 bg-muted/20">
                   {/* Student header */}
-                  <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
-                    <span className="text-xs font-semibold">
-                      {s.name}{s.code ? ` (${s.code})` : ""}
-                    </span>
+                  <div className="flex items-center justify-between mb-1.5 flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold">
+                        {s.name}{s.code ? ` (${s.code})` : ""}
+                      </span>
+                      {hasPerStudentData && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className={`h-7 w-7 shrink-0 ${expandedStudents[idx] ? "text-primary bg-primary/10" : "text-muted-foreground"}`}
+                          title={expandedStudents[idx] ? "Ẩn lịch gia hạn" : "Xem lịch gia hạn"}
+                          aria-label={expandedStudents[idx] ? `Ẩn lịch gia hạn của ${s.name}` : `Xem lịch gia hạn của ${s.name}`}
+                          aria-expanded={!!expandedStudents[idx]}
+                          onClick={() => setExpandedStudents((current) => ({ ...current, [idx]: !current[idx] }))}
+                        >
+                          <CalendarDays className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
                     <span className={`text-[11px] px-1.5 py-0.5 rounded ${s.autoInvoice ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
                       {s.autoInvoice ? "Hoá đơn tự động" : "Không tự động"}
                     </span>
                   </div>
                   {/* From → To sessions */}
-                  {hasPerStudentData ? (
+                  {hasPerStudentData && expandedStudents[idx] ? (
                     <div className="flex items-start gap-1.5 flex-wrap">
                       <span className="text-[11px] text-muted-foreground whitespace-nowrap shrink-0">
                         Gia hạn từ:
