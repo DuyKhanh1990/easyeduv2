@@ -407,6 +407,8 @@ export const roles = pgTable("roles", {
   departmentId: uuid("department_id").notNull().references(() => departments.id),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
+  codePrefix: varchar("code_prefix", { length: 50 }).notNull().default(""),
+  codeByLocationRole: boolean("code_by_location_role").notNull().default(false),
   isSystem: boolean("is_system").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

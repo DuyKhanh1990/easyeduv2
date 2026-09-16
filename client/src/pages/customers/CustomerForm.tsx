@@ -385,10 +385,13 @@ export function CustomerForm({ initialData, onSubmit, isPending }: CustomerFormP
 
   const { data: locations } = useLocations();
   const { data: staff } = useStaff(undefined, true);
+  const selectedLocationId = (form.watch("locationIds") || [])[0] || "";
   const { data: nextCodeData } = useQuery<{ code: string }>({
-    queryKey: ["/api/students/next-code", type],
+    queryKey: ["/api/students/next-code", type, selectedLocationId],
     queryFn: async () => {
-      const res = await fetch(`/api/students/next-code?type=${encodeURIComponent(type)}`, { credentials: "include" });
+      const params = new URLSearchParams({ type });
+      if (selectedLocationId) params.set("locationId", selectedLocationId);
+      const res = await fetch(`/api/students/next-code?${params.toString()}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch next customer code");
       return res.json();
     },

@@ -75,6 +75,13 @@ function canViewSettingsTab(data: MyPermissionsResult | undefined, tabValue: str
   return !!(perm?.canView || perm?.canViewAll);
 }
 
+function defaultRoleCodePrefix(roleName: string | null | undefined): string {
+  const name = String(roleName ?? "").trim();
+  return name
+    ? `${name.split(/\s+/).map((word) => word[0]?.toUpperCase() ?? "").join("")}-`
+    : "";
+}
+
 export function Settings() {
   const { data: locations, isLoading: locationsLoading } = useLocations();
   const createLocation = useCreateLocation();
@@ -338,8 +345,10 @@ export function Settings() {
 
   const roleForm = useForm({
     resolver: zodResolver(insertRoleSchema),
-    defaultValues: { name: "", description: "", departmentId: "" }
+    defaultValues: { name: "", description: "", departmentId: "", codePrefix: "", codeByLocationRole: false }
   });
+  const rolePrefixAutoRef = useRef(true);
+  const roleNameValue = roleForm.watch("name");
 
   // Update roleForm departmentId when selectedDeptId changes
   useEffect(() => {
@@ -360,6 +369,7 @@ export function Settings() {
       setRoleDialogOpen(false);
       setEditingRole(null);
       roleForm.reset({ name: "", description: "", departmentId: selectedDeptId || "" });
+      rolePrefixAutoRef.current = true;
     } catch (error: any) {
       toast({ title: "Lỗi", description: error.message, variant: "destructive" });
     }
@@ -367,15 +377,25 @@ export function Settings() {
 
   useEffect(() => {
     if (editingRole) {
+      rolePrefixAutoRef.current = false;
       roleForm.reset({ 
         name: editingRole.name, 
         description: editingRole.description || "",
-        departmentId: editingRole.departmentId
+        departmentId: editingRole.departmentId,
+        codePrefix: editingRole.codePrefix || defaultRoleCodePrefix(editingRole.name),
+        codeByLocationRole: Boolean(editingRole.codeByLocationRole),
       });
     } else {
-      roleForm.reset({ name: "", description: "", departmentId: selectedDeptId || "" });
+      rolePrefixAutoRef.current = true;
+      roleForm.reset({ name: "", description: "", departmentId: selectedDeptId || "", codePrefix: "", codeByLocationRole: false });
     }
   }, [editingRole, roleForm, selectedDeptId]);
+
+  useEffect(() => {
+    if (!editingRole && rolePrefixAutoRef.current) {
+      roleForm.setValue("codePrefix", defaultRoleCodePrefix(roleNameValue));
+    }
+  }, [editingRole, roleNameValue, roleForm]);
 
   return (
     <DashboardLayout>
@@ -881,9 +901,41 @@ export function Settings() {
                           <DialogHeader><DialogTitle>{editingRole ? "Sửa vai trò" : `Thêm vai trò mới vào ${selectedDept.name}`}</DialogTitle></DialogHeader>
                           <Form {...roleForm}>
                             <form onSubmit={roleForm.handleSubmit(onRoleSubmit)} className="space-y-4">
-                              <FormField control={roleForm.control} name="name" render={({ field }) => (
-                                <FormItem><FormLabel>Tên vai trò *</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                               <FormField control={roleForm.control} name="name" render={({ field }) => (
+                                 <FormItem>
+                                   <FormLabel>Tên vai trò *</FormLabel>
+                                   <FormControl><Input {...field} disabled={Boolean(editingRole?.isSystem)} /></FormControl>
+                                   <FormMessage />
+                                 </FormItem>
                               )} />
+                               <FormField control={roleForm.control} name="codePrefix" render={({ field }) => (
+                                 <FormItem>
+                                   <FormLabel>Mã mặc định</FormLabel>
+                                   <FormControl>
+                                     <Input
+                                       {...field}
+                                       placeholder="VD: HV- hoặc KT-"
+                                       onChange={(event) => {
+                                         rolePrefixAutoRef.current = false;
+                                         field.onChange(event);
+                                       }}
+                                     />
+                                   </FormControl>
+                                   <p className="text-xs text-muted-foreground">Tiền tố mã cho user tạo mới theo vai trò này.</p>
+                                   <FormMessage />
+                                 </FormItem>
+                               )} />
+                               <FormField control={roleForm.control} name="codeByLocationRole" render={({ field }) => (
+                                 <FormItem className="flex items-start gap-3 rounded-lg border p-3">
+                                   <FormControl>
+                                     <Checkbox checked={Boolean(field.value)} onCheckedChange={field.onChange} />
+                                   </FormControl>
+                                   <div className="space-y-1">
+                                     <FormLabel className="cursor-pointer">Tạo mã theo cơ sở và vai trò</FormLabel>
+                                     <p className="text-xs text-muted-foreground">Dạng mã: Mã mặc định - Mã cơ sở - số thứ tự.</p>
+                                   </div>
+                                 </FormItem>
+                               )} />
                               <Button type="submit" className="w-full">{editingRole ? "Cập nhật" : "Lưu vai trò"}</Button>
                             </form>
                           </Form>
@@ -905,9 +957,8 @@ export function Settings() {
                                 {role.isSystem && <Badge variant="secondary" className="text-[10px] h-4 px-1">Mặc định</Badge>}
                               </div>
                               <div className="flex items-center gap-1">
-                                {!role.isSystem ? (
-                                  <>
-                                    {deptPerm.canEdit && (
+                                 <>
+                                     {deptPerm.canEdit && (
                                       <Button
                                         variant="ghost"
                                         size="icon"
@@ -921,7 +972,7 @@ export function Settings() {
                                         <Edit2 className="w-4 h-4" />
                                       </Button>
                                     )}
-                                    {deptPerm.canDelete && (
+                                     {!role.isSystem && deptPerm.canDelete && (
                                       <Button
                                         variant="ghost"
                                         size="icon"
@@ -936,10 +987,10 @@ export function Settings() {
                                         <Trash2 className="w-4 h-4" />
                                       </Button>
                                     )}
-                                  </>
-                                ) : (
+                                 </>
+                                 {role.isSystem && !deptPerm.canEdit ? (
                                   <span className="text-xs text-muted-foreground/50 px-2">🔒</span>
-                                )}
+                                 ) : null}
                               </div>
                             </div>
                           ))

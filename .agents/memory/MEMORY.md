@@ -45,3 +45,4 @@
 - [Student self-service leave](student-self-leave-request.md) — luồng học viên/phụ huynh tự gửi đơn phải tự suy ra học viên/cơ sở và tách bản ghi theo từng cơ sở.
 - [Staff leave notification routing](staff-leave-notification-routing.md) — đơn nghỉ phép nhân sự dùng deeplink quản lý riêng; đơn nghỉ học dùng deeplink learning overview.
 - [Grade-book view/edit consistency](grade-book-view-edit-consistency.md) — dialog xem phải chờ active students, map enrollment sau khi đủ dữ liệu và lọc cùng tập học viên có dữ liệu như dialog sửa.
+- [Role-based account code generation](role-code-generation.md) — one code per user; automatic multi-assignment codes use the first selected role and location.

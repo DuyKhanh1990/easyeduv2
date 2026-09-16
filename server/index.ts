@@ -783,6 +783,34 @@ app.use((req, res, next) => {
   // news_feed_posts, news_feed_reactions, push_tokens — declared in shared/schema.ts
   // Apply via: npx tsx scripts/push-db-direct.ts
 
+  // Migration: roles — configurable account-code prefixes and location scoping.
+  try {
+    const { db: migDb } = await import("./storage/base");
+    await migDb.execute(`
+      ALTER TABLE roles
+        ADD COLUMN IF NOT EXISTS code_prefix VARCHAR(50) NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS code_by_location_role BOOLEAN NOT NULL DEFAULT FALSE
+    ` as any);
+    await migDb.execute(`
+      UPDATE roles
+      SET code_prefix = CASE
+        WHEN name = 'Học viên' THEN 'HV-'
+        WHEN name = 'Phụ huynh' THEN 'PH-'
+        ELSE regexp_replace(
+          (
+            SELECT string_agg(substr(word, 1, 1), '')
+            FROM regexp_split_to_table(trim(roles.name), '\\s+') AS word
+          ) || '-',
+          '[^[:alnum:]-]', '', 'g'
+        )
+      END
+      WHERE code_prefix IS NULL OR btrim(code_prefix) = ''
+    ` as any);
+    console.log("Migration: roles code settings ensured");
+  } catch (err) {
+    console.error("Migration roles code settings failed:", err);
+  }
+
   // Seed default departments and roles
   try {
     const { storage } = await import("./storage");

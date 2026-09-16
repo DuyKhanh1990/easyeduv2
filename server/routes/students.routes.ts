@@ -5,10 +5,11 @@ import { z } from "zod";
 import { runSecurityTests } from "../middleware/security-test";
 import { cacheGet, cacheSet, cacheInvalidate } from "../lib/simple-cache";
 import { db } from "../db";
-import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, students, classes, attendanceFeeRules, users, staff, staffAssignments, locations, classGradeBooks, classGradeBookScores, scoreCategories, scoreSheetItems, sessionContents, studentSessionContents, classSessions, studentRelationshipHistory, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools, crmCustomFields, crmRequiredFields } from "@shared/schema";
+import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, students, classes, attendanceFeeRules, users, staff, staffAssignments, locations, roles, departments, classGradeBooks, classGradeBookScores, scoreCategories, scoreSheetItems, sessionContents, studentSessionContents, classSessions, studentRelationshipHistory, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools, crmCustomFields, crmRequiredFields } from "@shared/schema";
 import { eq, and, isNotNull, sql, inArray, desc, gte, lte, ne } from "drizzle-orm";
 import { getStudentLearningStatusSummary, getCustomerLearningStatusSummary, getCustomerSummary, getNewCustomersSummary, getStudentsBySource, getStudentsByRelationship, getStudentsByLocation, getStudentsByStaff, getStudentsLearningStatuses, getMonthlyStudentCounts } from "../storage/student.storage";
 import { createCrmConfigAuditLog, getCrmConfigAuditLogs } from "../storage/crm-config-audit.storage";
+import { codeStem, nextCodeForStem } from "../lib/role-code";
 
 const CRM_RESOURCE = "/customers";
 const CRM_CONFIG_BASE = "/customers/crm-config";
@@ -221,32 +222,38 @@ async function getCrmConfigRecord(table: any, id: string | string[]) {
   return row ?? null;
 }
 
-async function getNextCustomerCode(type: string): Promise<string> {
-  const prefix = type === "Phụ huynh" ? "PH-" : "HV-";
+async function getNextCustomerCode(type: string, locationId?: string): Promise<string> {
+  const [roleConfig] = await db
+    .select({
+      name: roles.name,
+      codePrefix: roles.codePrefix,
+      codeByLocationRole: roles.codeByLocationRole,
+    })
+    .from(roles)
+    .innerJoin(departments, eq(roles.departmentId, departments.id))
+    .where(and(eq(roles.name, type), eq(departments.isSystem, true)))
+    .limit(1);
+  const [location] = locationId
+    ? await db.select({ code: locations.code }).from(locations).where(eq(locations.id, locationId)).limit(1)
+    : [];
+  const stem = codeStem(
+    roleConfig?.codePrefix,
+    roleConfig?.name ?? type,
+    roleConfig?.codeByLocationRole,
+    location?.code,
+  );
   const [studentCodes, linkedAccountNames] = await Promise.all([
     db.select({ code: students.code })
       .from(students)
-      .where(sql`UPPER(${students.code}) LIKE ${`${prefix}%`}`),
+      .where(sql`UPPER(${students.code}) LIKE ${`${stem}%`}`),
     db.select({ code: users.username })
       .from(users)
-      .where(sql`
-        UPPER(${users.username}) LIKE ${`${prefix}%`}
-        AND (
-          LOWER(${users.username}) = 'admin'
-          OR EXISTS (SELECT 1 FROM ${staff} WHERE ${staff.userId} = ${users.id})
-          OR EXISTS (SELECT 1 FROM ${students} WHERE ${students.userId} = ${users.id})
-        )
-      `),
+      .where(sql`UPPER(${users.username}) LIKE ${`${stem}%`}`),
   ]);
-  const rows = [...studentCodes, ...linkedAccountNames];
-
-  const maxNum = rows.reduce((max, row) => {
-    const match = row.code?.trim().toUpperCase().match(new RegExp(`^${prefix}(\\d+)$`));
-    const num = match ? parseInt(match[1], 10) : 0;
-    return Number.isFinite(num) && num > max ? num : max;
-  }, 0);
-
-  return `${prefix}${(maxNum + 1).toString().padStart(2, "0")}`;
+  return nextCodeForStem(
+    [...studentCodes, ...linkedAccountNames].map((row) => row.code),
+    stem,
+  );
 }
 
 export function registerStudentsRoutes(app: Express): void {
@@ -355,7 +362,8 @@ export function registerStudentsRoutes(app: Express): void {
         return res.status(403).json({ message: "Bạn không có quyền thêm khách hàng mới." });
       }
       const type = req.query.type === "Phụ huynh" ? "Phụ huynh" : "Học viên";
-      const code = await getNextCustomerCode(type);
+      const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
+      const code = await getNextCustomerCode(type, locationId);
       res.json({ code });
     } catch (err) {
       res.status(500).json({ message: (err as any).message });
