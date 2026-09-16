@@ -43,6 +43,7 @@ export function RemoveStudentFromSessionDialog({
   const [showOrphanWarning, setShowOrphanWarning] = useState(false);
   const [orphanedStudents, setOrphanedStudents] = useState<Array<{ studentClassId: string; studentId: string; studentName: string }>>([]);
   const [deleteOption, setDeleteOption] = useState<"all" | "unattended">("all");
+  const [quickDeleteAction, setQuickDeleteAction] = useState<"waiting" | "remove">("waiting");
   const [deletionScope, setDeletionScope] = useState<"current" | "toEnd" | "range">("current");
   const [fromSessionOrder, setFromSessionOrder] = useState(initialFromSessionOrder);
   const [toSessionOrder, setToSessionOrder] = useState(initialToSessionOrder);
@@ -56,6 +57,7 @@ export function RemoveStudentFromSessionDialog({
       setShowOrphanWarning(false);
       setOrphanedStudents([]);
       setDeleteOption("all");
+      setQuickDeleteAction("waiting");
     }
   }, [isOpen]);
 
@@ -89,6 +91,7 @@ export function RemoveStudentFromSessionDialog({
         toSessionOrder,
         deleteMode: fromSessionOrder === toSessionOrder ? "single" : "range",
         deleteOnlyUnattended: false,
+        deleteAllSessions: quickDeleteAll,
       });
       return res.json();
     },
@@ -96,6 +99,8 @@ export function RemoveStudentFromSessionDialog({
       setOrphanedStudents(data.orphanedStudents ?? []);
       if (data.hasAttendedSessions) {
         setShowWarning(true);
+      } else if (quickDeleteAll) {
+        executeDelete(false);
       } else if ((data.orphanedStudents ?? []).length > 0) {
         setShowOrphanWarning(true);
       } else {
@@ -172,10 +177,13 @@ export function RemoveStudentFromSessionDialog({
     onSuccess: (data) => {
       const nextOrphanedStudents = data.orphanedStudents ?? [];
       setOrphanedStudents(nextOrphanedStudents);
-      if (nextOrphanedStudents.length > 0) {
+      if (nextOrphanedStudents.length > 0 && !quickDeleteAll) {
         setShowOrphanWarning(true);
       } else {
-        deleteMutation.mutate({ deleteOnlyUnattended: true, orphanAction: "keep" });
+        deleteMutation.mutate({
+          deleteOnlyUnattended: true,
+          orphanAction: quickDeleteAll ? quickDeleteAction : "keep",
+        });
       }
     },
     onError: (error: Error) => {
@@ -196,6 +204,11 @@ export function RemoveStudentFromSessionDialog({
     if (deleteOnlyUnattended) {
       setShowWarning(false);
       checkOrphansAfterAttendanceMutation.mutate();
+      return;
+    }
+    if (quickDeleteAll) {
+      setShowWarning(false);
+      deleteMutation.mutate({ deleteOnlyUnattended: false, orphanAction: quickDeleteAction });
       return;
     }
     if (orphanedStudents.length > 0) {
@@ -318,16 +331,41 @@ export function RemoveStudentFromSessionDialog({
             </DialogTitle>
             <DialogDescription>
               {quickDeleteAll
-                ? `Bạn chắc chắn muốn xoá toàn bộ lịch học của ${studentIds.length} học viên trong lớp này?`
+                ? "Hệ thống sẽ xóa toàn bộ lịch học của học viên trong lớp học này."
                 : `Bạn chắc chắn muốn xoá ${studentIds.length} học viên khỏi ${fromSessionOrder === toSessionOrder ? "buổi này" : `buổi ${fromSessionOrder} đến buổi ${toSessionOrder}`}?`}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="py-4">
-            <p className="text-sm text-muted-foreground mb-4">
-              Hành động này không thể hoàn tác
-            </p>
-          </div>
+          {quickDeleteAll ? (
+            <div className="py-4 space-y-4">
+              <RadioGroup
+                value={quickDeleteAction}
+                onValueChange={(value: "waiting" | "remove") => setQuickDeleteAction(value)}
+              >
+                <div className="flex items-start space-x-2">
+                  <RadioGroupItem value="waiting" id="quick-delete-waiting" className="mt-1" />
+                  <Label htmlFor="quick-delete-waiting" className="cursor-pointer flex-1">
+                    Xóa và chuyển về danh sách chờ
+                  </Label>
+                </div>
+                <div className="flex items-start space-x-2">
+                  <RadioGroupItem value="remove" id="quick-delete-remove" className="mt-1" />
+                  <Label htmlFor="quick-delete-remove" className="cursor-pointer flex-1">
+                    Xóa hẳn học viên khỏi lớp
+                  </Label>
+                </div>
+              </RadioGroup>
+              <p className="text-sm text-muted-foreground">
+                Hành động này không thể hoàn tác.
+              </p>
+            </div>
+          ) : (
+            <div className="py-4">
+              <p className="text-sm text-muted-foreground mb-4">
+                Hành động này không thể hoàn tác
+              </p>
+            </div>
+          )}
 
           <DialogFooter>
             <Button
@@ -335,7 +373,7 @@ export function RemoveStudentFromSessionDialog({
               onClick={() => onOpenChange(false)}
               disabled={checkAttendanceMutation.isPending}
             >
-              Hủy bỏ
+              {quickDeleteAll ? "Hủy" : "Hủy bỏ"}
             </Button>
             <Button
               variant="destructive"
@@ -344,7 +382,7 @@ export function RemoveStudentFromSessionDialog({
             >
               {checkAttendanceMutation.isPending
                 ? "Đang kiểm tra..."
-                : quickDeleteAll ? "Xoá toàn bộ lịch" : "Xoá"}
+                : quickDeleteAll ? "Đồng ý" : "Xoá"}
             </Button>
           </DialogFooter>
         </DialogContent>
