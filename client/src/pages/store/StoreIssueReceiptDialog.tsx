@@ -523,23 +523,23 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
               <div className="border border-border rounded-xl overflow-hidden">
                 <table className="w-full text-xs border-separate border-spacing-0">
                   <colgroup>
-                    <col style={{ width: "28%" }} />
-                    <col style={{ width: "10%" }} />
+                    <col style={{ width: "30%" }} />
+                    <col style={{ width: "11%" }} />
+                    <col style={{ width: "13%" }} />
                     <col style={{ width: "9%" }} />
+                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "12%" }} />
                     <col style={{ width: "9%" }} />
-                    <col style={{ width: "16%" }} />
-                    <col style={{ width: "14%" }} />
-                    <col style={{ width: "10%" }} />
                     <col style={{ width: "4%" }} />
                   </colgroup>
                   <thead>
                     <tr className="bg-muted/50">
-                      <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Sản phẩm</th>
-                      <th className="text-left px-3 py-2 font-semibold text-muted-foreground">ĐVT</th>
-                      <th className="text-center px-3 py-2 font-semibold text-muted-foreground">Khả dụng</th>
-                      <th className="text-center px-3 py-2 font-semibold text-muted-foreground">Số lượng</th>
                       <th className="text-center px-3 py-2 font-semibold text-muted-foreground">Loại</th>
+                      <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Sản phẩm</th>
                       <th className="text-right px-3 py-2 font-semibold text-muted-foreground">Đơn giá</th>
+                      <th className="text-center px-3 py-2 font-semibold text-muted-foreground">Số lượng</th>
+                      <th className="text-center px-3 py-2 font-semibold text-muted-foreground">Khuyến mãi</th>
+                      <th className="text-center px-3 py-2 font-semibold text-muted-foreground">Phụ thu</th>
                       <th className="text-right px-3 py-2 font-semibold text-muted-foreground">Thành tiền</th>
                       {!isEdit && <th></th>}
                     </tr>
@@ -555,45 +555,23 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                       <tr key={item._key} className="border-t border-border hover:bg-muted/20">
                         <td className="px-2 py-1.5">
                           <div>
-                            <p className="font-mono text-[10px] text-primary">{item.productCode}</p>
                             <p className="text-xs font-medium truncate" title={item.productName}>{item.productName}</p>
+                            <p className="font-mono text-[10px] text-primary">{item.productCode}</p>
+                            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+                              <span>ĐVT: {item.unitName || "—"}</span>
+                              <span className={item.stockBefore < item.quantity ? "text-red-500 font-medium" : "text-emerald-600 font-medium"}>
+                                Khả dụng: {item.stockBefore}
+                              </span>
+                            </div>
                           </div>
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <Select
-                            value={item.unitId || "none"}
-                            onValueChange={v => {
-                              const unit = units.find(u => u.id === v);
-                              updateItem(item._key, "unitId", v === "none" ? "" : v);
-                              if (unit) updateItem(item._key, "unitName", unit.name);
-                            }}
-                          >
-                            <SelectTrigger className="h-7 text-xs w-full"><SelectValue placeholder="—" /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">—</SelectItem>
-                              {units.map(u => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
-                        </td>
-                        <td className="px-2 py-1.5 text-center">
-                          <span className={cn(
-                            "text-xs font-medium tabular-nums",
-                            item.stockBefore < item.quantity ? "text-red-500" : "text-emerald-600"
-                          )}>
-                            {item.stockBefore}
-                          </span>
                         </td>
                         <td className="px-2 py-1.5">
                           <Input
                             type="number"
                             min={1}
-                            max={item.stockBefore}
                             value={item.quantity}
                             onChange={e => updateItem(item._key, "quantity", parseInt(e.target.value) || 1)}
-                            className={cn(
-                              "h-7 text-xs px-2 text-center w-full",
-                              item.quantity > item.stockBefore && "border-red-400 focus:ring-red-400"
-                            )}
+                            className="h-7 text-xs px-2 text-center w-full"
                           />
                         </td>
                         <td className="px-2 py-1.5">
@@ -628,6 +606,30 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                               className="h-7 text-xs px-2 text-right w-full"
                             />
                           )}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setPromoOpen(true)}
+                            className="w-full min-h-7 rounded-md border border-input bg-background px-2 text-[10px] text-left text-muted-foreground hover:border-purple-400 transition-colors"
+                            title="Khuyến mãi đang áp dụng ở cấp phiếu"
+                          >
+                            {selectedPromoKeys.length > 0
+                              ? `${selectedPromoKeys.length} lựa chọn`
+                              : "Chọn..."}
+                          </button>
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSurchargeOpen(true)}
+                            className="w-full min-h-7 rounded-md border border-input bg-background px-2 text-[10px] text-left text-muted-foreground hover:border-purple-400 transition-colors"
+                            title="Phụ thu đang áp dụng ở cấp phiếu"
+                          >
+                            {selectedSurchargeKeys.length > 0
+                              ? `${selectedSurchargeKeys.length} lựa chọn`
+                              : "Chọn..."}
+                          </button>
                         </td>
                         <td className="px-2 py-1.5 text-right tabular-nums font-medium text-xs">
                           {(item.priceType ?? "money") === "money"
