@@ -1258,6 +1258,7 @@ export const evaluationSubCriteria = pgTable("evaluation_sub_criteria", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   criteriaId: uuid("criteria_id").notNull().references(() => evaluationCriteria.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 255 }).notNull(),
+  inputType: varchar("input_type", { length: 20 }).notNull().default("text"), // text | checkbox
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

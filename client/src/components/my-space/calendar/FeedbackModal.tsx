@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { TeacherReview, ReviewCriteriaGroup } from "@/types/my-calendar";
 import { MessageSquare, Loader2, Star, ChevronDown, ChevronUp } from "lucide-react";
@@ -28,7 +29,7 @@ function StarDisplay({ rating }: { rating: number }) {
 function CriteriaCard({ group, colorIdx }: { group: ReviewCriteriaGroup; colorIdx: number }) {
   const [expanded, setExpanded] = useState(true);
   const color = CRITERIA_COLORS[colorIdx % CRITERIA_COLORS.length];
-  const hasComments = group.items.some((i) => i.comment);
+  const hasContent = group.items.some((i) => i.comment || i.inputType === "checkbox");
 
   return (
     <div className={cn("rounded-xl border overflow-hidden", color.bg, color.border)}>
@@ -49,7 +50,7 @@ function CriteriaCard({ group, colorIdx }: { group: ReviewCriteriaGroup; colorId
         </div>
       </button>
 
-      {expanded && hasComments && (
+      {expanded && hasContent && (
         <div className="px-4 pb-4 space-y-3 border-t border-inherit">
           {group.items.map((item, ii) => (
             <div key={ii}>
@@ -58,7 +59,15 @@ function CriteriaCard({ group, colorIdx }: { group: ReviewCriteriaGroup; colorId
                   {item.subCriteriaName}
                 </p>
               )}
-              {item.comment ? (
+              {item.inputType === "checkbox" ? (
+                <div className="flex items-center gap-2 rounded-lg bg-white/70 dark:bg-black/20 px-3 py-2.5 text-sm shadow-sm">
+                  <Checkbox checked={item.checked === true} disabled />
+                  <span className="text-foreground">{item.subCriteriaName || "Tiêu chí"}</span>
+                  <span className="ml-auto text-xs font-medium text-muted-foreground">
+                    {item.checked === true ? "Đạt" : "Chưa đạt"}
+                  </span>
+                </div>
+              ) : item.comment ? (
                 <div
                   className="bg-white/70 dark:bg-black/20 rounded-lg px-3 py-2.5 text-sm text-foreground leading-relaxed review-html-content shadow-sm"
                   dangerouslySetInnerHTML={{ __html: item.comment }}
@@ -71,7 +80,7 @@ function CriteriaCard({ group, colorIdx }: { group: ReviewCriteriaGroup; colorId
         </div>
       )}
 
-      {expanded && !hasComments && (
+      {expanded && !hasContent && (
         <div className="px-4 pb-3 border-t border-inherit">
           <p className="text-xs text-muted-foreground italic mt-2">Chưa có nhận xét</p>
         </div>

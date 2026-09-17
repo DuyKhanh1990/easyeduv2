@@ -252,10 +252,17 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
   });
 
   const criteriaForm = useForm<{ name: string }>({ defaultValues: { name: "" } });
-  const subForm = useForm<{ name: string }>({ defaultValues: { name: "" } });
+  const subForm = useForm<{ name: string; inputType: "text" | "checkbox" }>({
+    defaultValues: { name: "", inputType: "text" },
+  });
 
   useEffect(() => { criteriaForm.reset({ name: editingCriteria?.name || "" }); }, [editingCriteria]);
-  useEffect(() => { subForm.reset({ name: editingSubCriteria?.name || "" }); }, [editingSubCriteria]);
+  useEffect(() => {
+    subForm.reset({
+      name: editingSubCriteria?.name || "",
+      inputType: editingSubCriteria?.inputType === "checkbox" ? "checkbox" : "text",
+    });
+  }, [editingSubCriteria]);
 
   const createCriteria = useMutation({
     mutationFn: async (data: { name: string }) => (await apiRequest("POST", "/api/evaluation-criteria", data)).json(),
@@ -278,12 +285,16 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
   });
 
   const createSub = useMutation({
-    mutationFn: async (data: { name: string }) => (await apiRequest("POST", "/api/evaluation-sub-criteria", { name: data.name, criteriaId: selectedCriteriaId })).json(),
+    mutationFn: async (data: { name: string; inputType: "text" | "checkbox" }) => (
+      await apiRequest("POST", "/api/evaluation-sub-criteria", { ...data, criteriaId: selectedCriteriaId })
+    ).json(),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/evaluation-criteria", selectedCriteriaId, "sub-criteria"] }); toast({ title: "Đã thêm tiêu chí con" }); setIsSubDialogOpen(false); },
     onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
   });
   const updateSub = useMutation({
-    mutationFn: async (data: { name: string }) => (await apiRequest("PUT", `/api/evaluation-sub-criteria/${editingSubCriteria?.id}`, { name: data.name, criteriaId: selectedCriteriaId })).json(),
+    mutationFn: async (data: { name: string; inputType: "text" | "checkbox" }) => (
+      await apiRequest("PUT", `/api/evaluation-sub-criteria/${editingSubCriteria?.id}`, { ...data, criteriaId: selectedCriteriaId })
+    ).json(),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/evaluation-criteria", selectedCriteriaId, "sub-criteria"] }); toast({ title: "Đã cập nhật tiêu chí con" }); setIsSubDialogOpen(false); setEditingSubCriteria(null); },
     onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
   });
@@ -359,6 +370,7 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Tên tiêu chí con</TableHead>
+                   <TableHead className="w-32">Loại</TableHead>
                   <TableHead className="w-20 text-right">Thao tác</TableHead>
                 </TableRow>
               </TableHeader>
@@ -366,6 +378,11 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
                 {subCriteriaList.map((sub) => (
                   <TableRow key={sub.id} data-testid={`row-sub-criteria-${sub.id}`}>
                     <TableCell className="font-medium">{sub.name}</TableCell>
+                     <TableCell>
+                       <Badge variant="outline">
+                         {sub.inputType === "checkbox" ? "Tickbox" : "Nhập text"}
+                       </Badge>
+                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         {canEdit && (
@@ -414,6 +431,24 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
               <label className="text-sm font-medium">Tên tiêu chí con <span className="text-destructive">*</span></label>
               <Input {...subForm.register("name", { required: true })} placeholder="VD: Tiếp thu bài nhanh" data-testid="input-sub-criteria-name" />
             </div>
+             <div className="space-y-1.5">
+               <label className="text-sm font-medium">Loại tiêu chí</label>
+               <Select
+                 value={subForm.watch("inputType")}
+                 onValueChange={(value: "text" | "checkbox") => subForm.setValue("inputType", value)}
+               >
+                 <SelectTrigger data-testid="select-sub-criteria-input-type">
+                   <SelectValue />
+                 </SelectTrigger>
+                 <SelectContent>
+                   <SelectItem value="text">Nhập text</SelectItem>
+                   <SelectItem value="checkbox">Tickbox</SelectItem>
+                 </SelectContent>
+               </Select>
+               <p className="text-xs text-muted-foreground">
+                 Tickbox được dùng để đánh dấu học viên đạt tiêu chí.
+               </p>
+             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsSubDialogOpen(false)}>Huỷ</Button>
               <Button type="submit" disabled={createSub.isPending || updateSub.isPending}>{editingSubCriteria ? "Lưu" : "Thêm"}</Button>

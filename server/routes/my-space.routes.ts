@@ -179,9 +179,9 @@ async function getSessionContents(classSessionId: string, studentId?: string) {
   return { general, personal };
 }
 
-function parseReviewData(rawReviewData: any): { teacherName: string; criteria: { criteriaName: string; rating?: number; items: { subCriteriaName: string; comment: string }[] }[] }[] {
+function parseReviewData(rawReviewData: any): { teacherName: string; criteria: { criteriaName: string; rating?: number; items: { subCriteriaName: string; comment: string; inputType?: "text" | "checkbox"; checked?: boolean }[] }[] }[] {
   if (!rawReviewData || typeof rawReviewData !== "object" || Array.isArray(rawReviewData)) return [];
-  const result: { teacherName: string; criteria: { criteriaName: string; rating?: number; items: { subCriteriaName: string; comment: string }[] }[] }[] = [];
+  const result: { teacherName: string; criteria: { criteriaName: string; rating?: number; items: { subCriteriaName: string; comment: string; inputType?: "text" | "checkbox"; checked?: boolean }[] }[] }[] = [];
   for (const key of Object.keys(rawReviewData)) {
     const entry = rawReviewData[key];
     if (!entry || !Array.isArray(entry.items)) continue;
@@ -193,6 +193,9 @@ function parseReviewData(rawReviewData: any): { teacherName: string; criteria: {
       criteriaMap.get(cName)!.items.push({
         subCriteriaName: item.subCriteriaName || "",
         comment: item.comment ?? "",
+        ...(item.inputType === "checkbox"
+          ? { inputType: "checkbox" as const, checked: item.checked === true }
+          : {}),
       });
     }
     const criteria = Array.from(criteriaMap.entries()).map(([criteriaName, data]) => ({

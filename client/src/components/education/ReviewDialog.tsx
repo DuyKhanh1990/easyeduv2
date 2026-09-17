@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,7 @@ interface SubCriteriaItem {
   id: string;
   name: string;
   criteriaId: string;
+  inputType?: "text" | "checkbox";
 }
 
 interface CriteriaItem {
@@ -41,13 +43,14 @@ interface ReviewDialogProps {
   studentNames: string[];
   criteria: CriteriaItem[];
   teachers: TeacherItem[];
-  existingReviewData?: Record<string, { teacherName: string; items: { subCriteriaId?: string; subCriteriaName?: string; criteriaId: string; criteriaName: string; comment: string }[]; criteriaRatings?: Record<string, number> }> | null;
+  existingReviewData?: Record<string, { teacherName: string; items: { subCriteriaId?: string; subCriteriaName?: string; criteriaId: string; criteriaName: string; comment: string; inputType?: "text" | "checkbox"; checked?: boolean }[]; criteriaRatings?: Record<string, number> }> | null;
   existingPublished?: boolean;
   classSessionId: string;
 }
 
 type ReviewMap = Record<string, Record<string, string>>;
 type RatingMap = Record<string, Record<string, number>>;
+type CheckedMap = Record<string, Record<string, boolean>>;
 
 function buildEmptyComments(criteria: CriteriaItem[], teachers: TeacherItem[]): ReviewMap {
   const map: ReviewMap = {};
@@ -69,6 +72,19 @@ function buildEmptyRatings(criteria: CriteriaItem[], teachers: TeacherItem[]): R
   teachers.forEach((t) => {
     map[t.id] = {};
     criteria.forEach((c) => { map[t.id][c.id] = 0; });
+  });
+  return map;
+}
+
+function buildEmptyChecked(criteria: CriteriaItem[], teachers: TeacherItem[]): CheckedMap {
+  const map: CheckedMap = {};
+  teachers.forEach((t) => {
+    map[t.id] = {};
+    criteria.forEach((c) => {
+      c.subCriteria?.forEach((sc) => {
+        if (sc.inputType === "checkbox") map[t.id][sc.id] = false;
+      });
+    });
   });
   return map;
 }
@@ -116,6 +132,7 @@ export function ReviewDialog({
 
   const [comments, setComments] = useState<ReviewMap>({});
   const [ratings, setRatings] = useState<RatingMap>({});
+  const [checked, setChecked] = useState<CheckedMap>({});
   const [published, setPublished] = useState(false);
   const [activeTeacher, setActiveTeacher] = useState<string>("");
 
@@ -124,9 +141,11 @@ export function ReviewDialog({
     if (!isBulk && existingReviewData && Object.keys(existingReviewData).length > 0) {
       const map: ReviewMap = {};
       const rMap: RatingMap = {};
+      const checkedMap: CheckedMap = {};
       teachers.forEach((t) => {
         map[t.id] = {};
         rMap[t.id] = {};
+        checkedMap[t.id] = {};
         const teacherData = existingReviewData[t.id];
         criteria.forEach((c) => {
           // Primary: criteriaRatings[criteriaId] (format chuẩn của web)
@@ -138,6 +157,7 @@ export function ReviewDialog({
             c.subCriteria.forEach((sc) => {
               const found = teacherData?.items?.find((i) => i.subCriteriaId === sc.id);
               map[t.id][sc.id] = found?.comment || "";
+              if (sc.inputType === "checkbox") checkedMap[t.id][sc.id] = found?.checked === true;
             });
           } else {
             const found = teacherData?.items?.find((i) => i.criteriaId === c.id && !i.subCriteriaId);
@@ -147,10 +167,12 @@ export function ReviewDialog({
       });
       setComments(map);
       setRatings(rMap);
+      setChecked(checkedMap);
       setPublished(existingPublished ?? false);
     } else {
       setComments(buildEmptyComments(criteria, teachers));
       setRatings(buildEmptyRatings(criteria, teachers));
+      setChecked(buildEmptyChecked(criteria, teachers));
       setPublished(false);
     }
     if (teachers.length > 0) setActiveTeacher(teachers[0].id);
@@ -169,7 +191,9 @@ export function ReviewDialog({
                 criteriaName: c.name,
                 subCriteriaId: sc.id,
                 subCriteriaName: sc.name,
+                inputType: sc.inputType === "checkbox" ? "checkbox" : "text",
                 comment: comments[t.id]?.[sc.id] || "",
+                ...(sc.inputType === "checkbox" ? { checked: checked[t.id]?.[sc.id] === true } : {}),
               });
             });
           } else {
@@ -253,6 +277,8 @@ export function ReviewDialog({
             setComments={setComments}
             ratings={ratings}
             setRatings={setRatings}
+             checked={checked}
+             setChecked={setChecked}
           />
         ) : (
           <Tabs value={activeTeacher} onValueChange={setActiveTeacher}>
@@ -281,6 +307,8 @@ export function ReviewDialog({
                   setComments={setComments}
                   ratings={ratings}
                   setRatings={setRatings}
+                   checked={checked}
+                   setChecked={setChecked}
                 />
               </TabsContent>
             ))}
@@ -334,6 +362,8 @@ function CriteriaForm({
   setComments,
   ratings,
   setRatings,
+  checked,
+  setChecked,
 }: {
   teacherId: string;
   criteria: CriteriaItem[];
@@ -341,6 +371,8 @@ function CriteriaForm({
   setComments: (fn: (prev: ReviewMap) => ReviewMap) => void;
   ratings: RatingMap;
   setRatings: (fn: (prev: RatingMap) => RatingMap) => void;
+  checked: CheckedMap;
+  setChecked: (fn: (prev: CheckedMap) => CheckedMap) => void;
 }) {
   return (
     <div className="space-y-4 py-1">
@@ -362,17 +394,35 @@ function CriteriaForm({
             <div className="space-y-2 pl-3 border-l-2 border-muted">
               {c.subCriteria.map((sc) => (
                 <div key={sc.id} className="space-y-1">
-                  <Label className="text-xs text-orange-500 dark:text-orange-400 font-medium">{sc.name}</Label>
-                  <RichEditor
-                    value={comments[teacherId]?.[sc.id] || ""}
-                    onChange={(val) =>
-                      setComments((prev) => ({
-                        ...prev,
-                        [teacherId]: { ...prev[teacherId], [sc.id]: val },
-                      }))
-                    }
-                    placeholder={`Nhận xét về ${sc.name}...`}
-                  />
+                  {sc.inputType === "checkbox" ? (
+                    <label className="flex items-center gap-2 rounded-md border px-3 py-2 cursor-pointer hover:bg-muted/40">
+                      <Checkbox
+                        checked={checked[teacherId]?.[sc.id] === true}
+                        onCheckedChange={(value) =>
+                          setChecked((prev) => ({
+                            ...prev,
+                            [teacherId]: { ...prev[teacherId], [sc.id]: value === true },
+                          }))
+                        }
+                      />
+                      <span className="text-xs font-medium text-foreground">{sc.name}</span>
+                      <span className="ml-auto text-[11px] text-muted-foreground">Đạt</span>
+                    </label>
+                  ) : (
+                    <>
+                      <Label className="text-xs text-orange-500 dark:text-orange-400 font-medium">{sc.name}</Label>
+                      <RichEditor
+                        value={comments[teacherId]?.[sc.id] || ""}
+                        onChange={(val) =>
+                          setComments((prev) => ({
+                            ...prev,
+                            [teacherId]: { ...prev[teacherId], [sc.id]: val },
+                          }))
+                        }
+                        placeholder={`Nhận xét về ${sc.name}...`}
+                      />
+                    </>
+                  )}
                 </div>
               ))}
             </div>

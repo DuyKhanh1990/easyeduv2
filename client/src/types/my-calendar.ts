@@ -16,6 +16,8 @@ export interface PersonalContentItem extends SessionContentItem {
 export interface ReviewSubItem {
   subCriteriaName: string;
   comment: string;
+  inputType?: "text" | "checkbox";
+  checked?: boolean;
 }
 
 export interface ReviewCriteriaGroup {

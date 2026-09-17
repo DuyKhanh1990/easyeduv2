@@ -3412,7 +3412,7 @@ export function registerMobileRoutes(app: Express) {
       const teacherStaffIds = (sessionRow.teacherIds ?? []) as string[];
 
       // 2. Load criteria + sub-criteria
-      let criteriaList: { id: string; name: string; subCriteria: { id: string; name: string }[] }[] = [];
+       let criteriaList: { id: string; name: string; subCriteria: { id: string; name: string; inputType: "text" | "checkbox" }[] }[] = [];
       if (criteriaIds.length > 0) {
         const rawCriteria = await db
           .select({ id: evaluationCriteria.id, name: evaluationCriteria.name })
@@ -3420,14 +3420,23 @@ export function registerMobileRoutes(app: Express) {
           .where(inArray(evaluationCriteria.id, criteriaIds));
 
         const subRows = await db
-          .select({ id: evaluationSubCriteria.id, name: evaluationSubCriteria.name, criteriaId: evaluationSubCriteria.criteriaId })
+          .select({
+            id: evaluationSubCriteria.id,
+            name: evaluationSubCriteria.name,
+            criteriaId: evaluationSubCriteria.criteriaId,
+            inputType: evaluationSubCriteria.inputType,
+          })
           .from(evaluationSubCriteria)
           .where(inArray(evaluationSubCriteria.criteriaId, criteriaIds));
 
-        const subMap = new Map<string, { id: string; name: string }[]>();
+         const subMap = new Map<string, { id: string; name: string; inputType: "text" | "checkbox" }[]>();
         for (const s of subRows) {
           if (!subMap.has(s.criteriaId)) subMap.set(s.criteriaId, []);
-          subMap.get(s.criteriaId)!.push({ id: s.id, name: s.name });
+           subMap.get(s.criteriaId)!.push({
+             id: s.id,
+             name: s.name,
+             inputType: s.inputType === "checkbox" ? "checkbox" : "text",
+           });
         }
 
         // Preserve the order of evaluationCriteriaIds

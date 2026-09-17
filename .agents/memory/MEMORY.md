@@ -52,3 +52,4 @@
 - [Attendance default range](attendance-default-range.md) — màn hình điểm danh mặc định xem ngày hiện tại; bộ chọn thời gian đặt cạnh nút Bộ lọc.
 - [Bulk makeup across classes](bulk-makeup-cross-class.md) — chọn học viên từ nhiều lớp vẫn dùng chung một lịch đích; backend phải giữ lớp gốc riêng cho từng học viên.
 - [Makeup class eligibility](makeup-class-eligibility.md) — chỉ lớp có buổi tương lai chung cho toàn bộ học viên mới được chọn; các mức thấp hơn chỉ hiển thị để tham khảo.
+- [Evaluation criterion input types](evaluation-criterion-input-types.md) — loại nằm ở tiêu chí con: text để giáo viên nhập nhận xét, checkbox để đánh dấu học viên đạt; nhóm có thể hỗn hợp.
