@@ -855,7 +855,7 @@ export function MakeupDialog({
                               const eligibleCount = eligibility?.eligibleStudentCount ?? 0;
                               const totalCount = selectedStudentIds.length;
                               const isUnavailable =
-                                loadingClassEligibility || !eligibility || eligibleCount === 0;
+                                loadingClassEligibility || !eligibility || eligibleCount < totalCount;
                               return (
                                 <CommandItem
                                   key={candidateClass.id}

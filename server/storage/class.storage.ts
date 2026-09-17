@@ -457,6 +457,7 @@ export async function getMakeupClassEligibility(params: {
         );
       }).length;
       bestCount = Math.max(bestCount, count);
+      if (bestCount === uniqueStudentIds.length) break;
     }
 
     return {
