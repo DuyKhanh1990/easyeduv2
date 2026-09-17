@@ -853,7 +853,7 @@ export function MakeupDialog({
                             {filteredClassList.map((candidateClass) => {
                               const eligibility = classEligibilityMap.get(candidateClass.id);
                               const eligibleCount = eligibility?.eligibleStudentCount ?? 0;
-                              const totalCount = selectedStudentIds.length;
+                              const totalCount = selectedStudents.length;
                               const isUnavailable =
                                 loadingClassEligibility || !eligibility || eligibleCount < totalCount;
                               return (
@@ -938,7 +938,7 @@ export function MakeupDialog({
                                 const info = otherPartialSessionMap[s.id];
                                 return (
                                   <SelectItem key={s.id} value={`partial-${s.id}`} disabled className="opacity-40">
-                                    {formatSessionLabel(s)} ({info.canAttend.length}/{selectedStudentIds.length}) — không đủ điều kiện
+                                    {formatSessionLabel(s)} ({info.canAttend.length}/{selectedStudents.length}) — không đủ điều kiện
                                   </SelectItem>
                                 );
                               })}
