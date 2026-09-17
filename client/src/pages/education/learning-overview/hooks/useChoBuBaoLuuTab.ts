@@ -39,13 +39,30 @@ export interface ChoBuBaoLuuResponse {
   availableTeachers: { id: string; label: string }[];
 }
 
+export function getDefaultChoBuBaoLuuDateRange() {
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const toInputValue = (date: Date) => [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+
+  return {
+    dateFrom: toInputValue(firstDay),
+    dateTo: toInputValue(lastDay),
+  };
+}
+
 export function useChoBuBaoLuuTab(enabled: boolean) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const defaultDateRange = getDefaultChoBuBaoLuuDateRange();
   const [filters, setFiltersState] = useState<ChoBuBaoLuuFilters>({
     search: "",
-    dateFrom: "",
-    dateTo: "",
+    dateFrom: defaultDateRange.dateFrom,
+    dateTo: defaultDateRange.dateTo,
     classIds: [],
     teacherIds: [],
   });

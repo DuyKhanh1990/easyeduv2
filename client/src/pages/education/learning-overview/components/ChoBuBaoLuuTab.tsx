@@ -45,7 +45,16 @@ function ClassCard({ group }: { group: ClassGroup }) {
     <Card className="rounded-xl border border-border overflow-hidden">
       <CardContent className="p-0">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
+          <table className="w-full min-w-[760px] table-fixed text-sm border-collapse">
+            <colgroup>
+              <col style={{ width: "4%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "11%" }} />
+              <col style={{ width: "22%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "19%" }} />
+              <col style={{ width: "12%" }} />
+            </colgroup>
             <thead>
               <tr className="bg-muted/60 border-b">
                 <th className="px-3 py-2.5 w-10">
@@ -87,19 +96,19 @@ function ClassCard({ group }: { group: ClassGroup }) {
                         onCheckedChange={(v) => toggleRow(row.id, !!v)}
                       />
                     </td>
-                    <td className="px-3 py-2.5">
-                      <StudentNameLink studentId={row.studentId} name={row.studentName} code={row.studentCode} />
+                    <td className="max-w-0 px-3 py-2.5">
+                      <div className="truncate">
+                        <StudentNameLink studentId={row.studentId} name={row.studentName} code={row.studentCode} />
+                      </div>
                     </td>
-                    <td className="px-3 py-2.5 text-muted-foreground">
+                    <td className="whitespace-nowrap px-3 py-2.5 text-muted-foreground">
                       {row.sessionIndex != null ? `Buổi ${row.sessionIndex}` : "—"}
                     </td>
-                    <td className="px-3 py-2.5 text-muted-foreground text-xs">{shiftLabel}</td>
-                    <td className="px-3 py-2.5 text-muted-foreground">{dateLabel}</td>
-                    <td className="px-3 py-2.5 text-muted-foreground text-xs">{row.teacherNames}</td>
-                    <td className="px-3 py-2.5">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium ${statusInfo.className}`}
-                      >
+                    <td className="max-w-0 truncate px-3 py-2.5 text-xs text-muted-foreground">{shiftLabel}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-muted-foreground">{dateLabel}</td>
+                    <td className="max-w-0 truncate px-3 py-2.5 text-xs text-muted-foreground">{row.teacherNames}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5">
+                      <span className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-medium ${statusInfo.className}`}>
                         {statusInfo.label}
                       </span>
                     </td>

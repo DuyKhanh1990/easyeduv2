@@ -8,7 +8,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { StoreDateRangePicker, type DateRange } from "@/pages/store/StoreDateRangePicker";
-import { ChoBuBaoLuuFilters as FilterState } from "../hooks/useChoBuBaoLuuTab";
+import {
+  ChoBuBaoLuuFilters as FilterState,
+  getDefaultChoBuBaoLuuDateRange,
+} from "../hooks/useChoBuBaoLuuTab";
 
 type FilterOption = { id: string; label: string };
 
@@ -132,6 +135,11 @@ export function ChoBuBaoLuuFilters({
   };
 
   const handleDateRangeChange = (range: DateRange) => {
+    if (!range.from) {
+      onFiltersChange(getDefaultChoBuBaoLuuDateRange());
+      return;
+    }
+
     const dateFrom = range.from ? format(range.from, "yyyy-MM-dd") : "";
     const dateTo = range.to
       ? format(range.to, "yyyy-MM-dd")
@@ -179,7 +187,12 @@ export function ChoBuBaoLuuFilters({
           variant="ghost"
           size="sm"
           className="h-9 gap-1 text-muted-foreground"
-          onClick={() => onFiltersChange({ search: "", dateFrom: "", dateTo: "", classIds: [], teacherIds: [] })}
+          onClick={() => onFiltersChange({
+            search: "",
+            ...getDefaultChoBuBaoLuuDateRange(),
+            classIds: [],
+            teacherIds: [],
+          })}
           data-testid="button-clear-cho-bu-filters"
         >
           <X className="h-3.5 w-3.5" />
