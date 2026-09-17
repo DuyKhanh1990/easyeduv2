@@ -5,7 +5,7 @@ import { z } from "zod";
 import { runSecurityTests } from "../middleware/security-test";
 import { cacheGet, cacheSet, cacheInvalidate } from "../lib/simple-cache";
 import { db } from "../db";
-import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, students, classes, attendanceFeeRules, users, staff, staffAssignments, locations, roles, departments, classGradeBooks, classGradeBookScores, scoreCategories, scoreSheetItems, sessionContents, studentSessionContents, classSessions, studentRelationshipHistory, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools, crmCustomFields, crmRequiredFields, evaluationSubCriteria } from "@shared/schema";
+import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, students, classes, attendanceFeeRules, users, staff, staffAssignments, locations, roles, departments, classGradeBooks, classGradeBookScores, scoreCategories, scoreSheetItems, sessionContents, studentSessionContents, classSessions, studentRelationshipHistory, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools, crmCustomFields, crmRequiredFields, evaluationCriteria, evaluationSubCriteria } from "@shared/schema";
 import { eq, and, isNotNull, sql, inArray, desc, gte, lte, ne } from "drizzle-orm";
 import { getStudentLearningStatusSummary, getCustomerLearningStatusSummary, getCustomerSummary, getNewCustomersSummary, getStudentsBySource, getStudentsByRelationship, getStudentsByLocation, getStudentsByStaff, getStudentsLearningStatuses, getMonthlyStudentCounts } from "../storage/student.storage";
 import { createCrmConfigAuditLog, getCrmConfigAuditLogs } from "../storage/crm-config-audit.storage";
@@ -2549,63 +2549,73 @@ export function registerStudentsRoutes(app: Express): void {
         LIMIT ${size} OFFSET ${offset}
       `);
 
-      // Collect all sub-criteria IDs needed for format-2 reviews (subNotes format)
-      const subCriteriaIdsNeeded = new Set<string>();
-      for (const row of result.rows) {
-        const raw = (row as any).review_data;
-        if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
-        for (const teacherData of Object.values(raw)) {
-          const td = teacherData as any;
-          if (td?.subNotes && typeof td.subNotes === "object") {
-            for (const subId of Object.keys(td.subNotes)) subCriteriaIdsNeeded.add(subId);
-          }
-        }
-      }
+      const configuredSubCriteria = await db.select({
+        id: evaluationSubCriteria.id,
+        name: evaluationSubCriteria.name,
+        parentId: evaluationSubCriteria.parentId,
+        itemType: evaluationSubCriteria.itemType,
+      }).from(evaluationSubCriteria).orderBy(evaluationSubCriteria.name);
+      const configuredSubCriteriaById = new Map(configuredSubCriteria.map((item) => [item.id, item]));
+      const groupNameById = new Map(
+        configuredSubCriteria
+          .filter((item) => item.itemType === "heading")
+          .map((item) => [item.id, item.name])
+      );
+      const groupOrder = new Map(
+        configuredSubCriteria
+          .filter((item) => item.itemType === "heading")
+          .map((item, index) => [item.name, index])
+      );
+      const itemOrder = new Map(configuredSubCriteria.map((item, index) => [item.id, index]));
+      const configuredCriteria = await db.select({
+        id: evaluationCriteria.id,
+        name: evaluationCriteria.name,
+      }).from(evaluationCriteria);
+      const criteriaNameById = new Map(configuredCriteria.map((item) => [item.id, item.name]));
 
-      // Batch-lookup sub-criteria names (only if needed)
-      const subCriteriaNameMap = new Map<string, string>();
-      if (subCriteriaIdsNeeded.size > 0) {
-        const idList = [...subCriteriaIdsNeeded].map(id => `'${id}'`).join(",");
-        const scRows = await db.execute(sql.raw(
-          `SELECT id, name FROM evaluation_sub_criteria WHERE id IN (${idList})`
-        ));
-        for (const r of scRows.rows) {
-          subCriteriaNameMap.set((r as any).id, (r as any).name || "");
-        }
-      }
+      function normalizeReviewData(raw: any): {
+        criteriaId?: string;
+        criteriaName: string;
+        groupName?: string;
+        comment: string;
+        inputType: "text" | "checkbox";
+        checked?: boolean;
+      }[] {
+        const normalizeItem = (item: any) => {
+          const criteriaId = item.subCriteriaId || item.criteriaId;
+          const configured = configuredSubCriteriaById.get(criteriaId);
+          const inputType = item.inputType === "checkbox" ? "checkbox" : "text";
+          return {
+            criteriaId,
+            criteriaName: item.subCriteriaName || item.criteriaName || configured?.name || "—",
+            ...(item.groupName || configured?.parentId && groupNameById.get(configured.parentId)
+              ? { groupName: item.groupName || groupNameById.get(configured?.parentId as string) }
+              : {}),
+            comment: item.comment || "",
+            inputType,
+            ...(inputType === "checkbox" ? { checked: item.checked === true } : {}),
+          };
+        };
 
-      function normalizeReviewData(raw: any): { criteriaId?: string; criteriaName: string; comment: string }[] {
         if (!raw) return [];
         if (Array.isArray(raw)) {
-          // Legacy flat-array format: [{ criteriaName, comment }]
-          return raw.map((item: any) => ({
-            criteriaId: item.subCriteriaId || item.criteriaId,
-            criteriaName: item.subCriteriaName || item.criteriaName || "—",
-            comment: item.comment || "",
-          }));
+          return raw.map(normalizeItem);
         }
         if (typeof raw === "object") {
-          const items: { criteriaId?: string; criteriaName: string; comment: string }[] = [];
+          const items: ReturnType<typeof normalizeItem>[] = [];
           for (const teacherData of Object.values(raw)) {
             const td = teacherData as any;
             if (td?.items && Array.isArray(td.items)) {
-              // Format 1: { teacherId: { items: [{criteriaName, subCriteriaName, comment}], teacherName } }
               for (const item of td.items) {
-                items.push({
-                  criteriaId: item.subCriteriaId || item.criteriaId,
-                  criteriaName: item.subCriteriaName || item.criteriaName || "—",
-                  comment: item.comment || "",
-                });
+                items.push(normalizeItem(item));
               }
             } else if (td?.subNotes && typeof td.subNotes === "object") {
-              // Format 2: { teacherId: { scores: {}, subNotes: { subCriteriaId: "text" } } }
               for (const [subId, note] of Object.entries(td.subNotes)) {
                 if (note) {
-                  items.push({
+                  items.push(normalizeItem({
                     criteriaId: subId,
-                    criteriaName: subCriteriaNameMap.get(subId) || subId,
                     comment: String(note),
-                  });
+                  }));
                 }
               }
             }
@@ -2615,19 +2625,48 @@ export function registerStudentsRoutes(app: Express): void {
         return [];
       }
 
-      const rows = result.rows.map((row: any) => ({
-        id: row.id,
-        studentId: row.student_id,
-        studentName: row.student_name,
-        studentCode: row.student_code ?? null,
-        className: row.class_name,
-        sessionIndex: row.session_index,
-        sessionDate: row.session_date,
-        shiftName: row.shift_name || "—",
-        startTime: row.start_time || null,
-        endTime: row.end_time || null,
-        reviewData: normalizeReviewData(row.review_data),
-      }));
+      const rows = result.rows.map((row: any) => {
+        const raw = row.review_data;
+        const entries = raw && typeof raw === "object" && !Array.isArray(raw)
+          ? Object.values(raw) as any[]
+          : [];
+        const rawItems = Array.isArray(raw)
+          ? raw
+          : entries.flatMap((entry) => Array.isArray(entry?.items) ? entry.items : []);
+        const firstItem = rawItems.find((item: any) => item?.criteriaId || item?.subCriteriaId);
+        const criteriaId = firstItem?.criteriaId || entries
+          .flatMap((entry) => Object.keys(entry?.criteriaRatings || {}))
+          .find(Boolean);
+        const ratings = entries
+          .flatMap((entry) => Object.values(entry?.criteriaRatings || {}))
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value) && value > 0);
+        const reviewData = normalizeReviewData(raw);
+
+        reviewData.sort((a, b) => {
+          const aGroup = a.groupName ? (groupOrder.get(a.groupName) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+          const bGroup = b.groupName ? (groupOrder.get(b.groupName) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+          if (aGroup !== bGroup) return aGroup - bGroup;
+          return (itemOrder.get(a.criteriaId) ?? Number.MAX_SAFE_INTEGER)
+            - (itemOrder.get(b.criteriaId) ?? Number.MAX_SAFE_INTEGER);
+        });
+
+        return {
+          id: row.id,
+          studentId: row.student_id,
+          studentName: row.student_name,
+          studentCode: row.student_code ?? null,
+          className: row.class_name,
+          sessionIndex: row.session_index,
+          sessionDate: row.session_date,
+          shiftName: row.shift_name || "—",
+          startTime: row.start_time || null,
+          endTime: row.end_time || null,
+          criteriaName: criteriaNameById.get(criteriaId) || firstItem?.criteriaName || null,
+          overallRating: ratings[0] ?? null,
+          reviewData,
+        };
+      });
 
       res.json({ rows, total, page: pageNum, pageSize: size });
     } catch (err: any) {
