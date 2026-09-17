@@ -4,7 +4,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { EducationConfigHistoryTab } from "@/pages/education/EducationConfigHistoryTab";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { ShiftTemplate, Location, InsertShiftTemplate } from "@shared/schema";
 import { apiRequest, queryClient, STATIC_STALE_TIME } from "@/lib/queryClient";
@@ -232,6 +232,8 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
   const [isCriteriaDialogOpen, setIsCriteriaDialogOpen] = useState(false);
   const [editingSubCriteria, setEditingSubCriteria] = useState<any | null>(null);
   const [isSubDialogOpen, setIsSubDialogOpen] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<any | null>(null);
+  const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false);
 
   const { data: criteriaList = [] } = useQuery<any[]>({ queryKey: ["/api/evaluation-criteria"], staleTime: STATIC_STALE_TIME });
 
@@ -252,15 +254,18 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
   });
 
   const criteriaForm = useForm<{ name: string }>({ defaultValues: { name: "" } });
-  const subForm = useForm<{ name: string; inputType: "text" | "checkbox" }>({
-    defaultValues: { name: "", inputType: "text" },
+  const groupForm = useForm<{ name: string }>({ defaultValues: { name: "" } });
+  const subForm = useForm<{ name: string; inputType: "text" | "checkbox"; groupId: string }>({
+    defaultValues: { name: "", inputType: "text", groupId: "" },
   });
 
   useEffect(() => { criteriaForm.reset({ name: editingCriteria?.name || "" }); }, [editingCriteria]);
+  useEffect(() => { groupForm.reset({ name: editingGroup?.name || "" }); }, [editingGroup]);
   useEffect(() => {
     subForm.reset({
       name: editingSubCriteria?.name || "",
       inputType: editingSubCriteria?.inputType === "checkbox" ? "checkbox" : "text",
+      groupId: editingSubCriteria?.groupId || "",
     });
   }, [editingSubCriteria]);
 
@@ -284,23 +289,82 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
     onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
   });
 
-  const createSub = useMutation({
-    mutationFn: async (data: { name: string; inputType: "text" | "checkbox" }) => (
-      await apiRequest("POST", "/api/evaluation-sub-criteria", { ...data, criteriaId: selectedCriteriaId })
+  const createGroup = useMutation({
+    mutationFn: async (data: { name: string }) => (
+      await apiRequest("POST", "/api/evaluation-criteria-groups", {
+        ...data,
+        criteriaId: selectedCriteriaId,
+      })
     ).json(),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/evaluation-criteria", selectedCriteriaId, "sub-criteria"] }); toast({ title: "Đã thêm tiêu chí con" }); setIsSubDialogOpen(false); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/evaluation-criteria"] });
+      toast({ title: "Đã thêm tiêu đề nhóm" });
+      setIsGroupDialogOpen(false);
+    },
+    onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
+  });
+  const updateGroup = useMutation({
+    mutationFn: async (data: { name: string }) => (
+      await apiRequest("PUT", `/api/evaluation-criteria-groups/${editingGroup?.id}`, data)
+    ).json(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/evaluation-criteria"] });
+      toast({ title: "Đã cập nhật tiêu đề nhóm" });
+      setIsGroupDialogOpen(false);
+      setEditingGroup(null);
+    },
+    onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
+  });
+  const deleteGroup = useMutation({
+    mutationFn: async (id: string) => apiRequest("DELETE", `/api/evaluation-criteria-groups/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/evaluation-criteria"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/evaluation-criteria", selectedCriteriaId, "sub-criteria"] });
+      toast({ title: "Đã xoá tiêu đề nhóm" });
+    },
+    onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
+  });
+
+  const createSub = useMutation({
+    mutationFn: async (data: { name: string; inputType: "text" | "checkbox"; groupId: string }) => (
+      await apiRequest("POST", "/api/evaluation-sub-criteria", {
+        ...data,
+        groupId: data.groupId || null,
+        criteriaId: selectedCriteriaId,
+      })
+    ).json(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/evaluation-criteria"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/evaluation-criteria", selectedCriteriaId, "sub-criteria"] });
+      toast({ title: "Đã thêm tiêu chí con" });
+      setIsSubDialogOpen(false);
+    },
     onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
   });
   const updateSub = useMutation({
-    mutationFn: async (data: { name: string; inputType: "text" | "checkbox" }) => (
-      await apiRequest("PUT", `/api/evaluation-sub-criteria/${editingSubCriteria?.id}`, { ...data, criteriaId: selectedCriteriaId })
+    mutationFn: async (data: { name: string; inputType: "text" | "checkbox"; groupId: string }) => (
+      await apiRequest("PUT", `/api/evaluation-sub-criteria/${editingSubCriteria?.id}`, {
+        ...data,
+        groupId: data.groupId || null,
+        criteriaId: selectedCriteriaId,
+      })
     ).json(),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/evaluation-criteria", selectedCriteriaId, "sub-criteria"] }); toast({ title: "Đã cập nhật tiêu chí con" }); setIsSubDialogOpen(false); setEditingSubCriteria(null); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/evaluation-criteria"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/evaluation-criteria", selectedCriteriaId, "sub-criteria"] });
+      toast({ title: "Đã cập nhật tiêu chí con" });
+      setIsSubDialogOpen(false);
+      setEditingSubCriteria(null);
+    },
     onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
   });
   const deleteSub = useMutation({
     mutationFn: async (id: string) => apiRequest("DELETE", `/api/evaluation-sub-criteria/${id}`),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/evaluation-criteria", selectedCriteriaId, "sub-criteria"] }); toast({ title: "Đã xoá tiêu chí con" }); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/evaluation-criteria"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/evaluation-criteria", selectedCriteriaId, "sub-criteria"] });
+      toast({ title: "Đã xoá tiêu chí con" });
+    },
     onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
   });
 
