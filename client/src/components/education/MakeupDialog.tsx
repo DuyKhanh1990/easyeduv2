@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueries } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -79,6 +79,7 @@ export function MakeupDialog({
   const [subOption, setSubOption] = useState<string>("specific_session");
   const [selectedTargetSessionId, setSelectedTargetSessionId] = useState<string>("");
   const [selectedTargetClassId, setSelectedTargetClassId] = useState<string>("");
+  const [selectedCurrentClassId, setSelectedCurrentClassId] = useState<string>("");
   const [makeupStartDate, setMakeupStartDate] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
   const [locationFilter, setLocationFilter] = useState<"same" | "other">("same");
@@ -117,12 +118,6 @@ export function MakeupDialog({
     setSelectedTargetSessionId("");
   }, [locationFilter, makeupStartDate]);
 
-  // Fetch all classes for "other_class" option
-  const { data: allClassesFetched = [], isLoading: loadingClasses } = useQuery<any[]>({
-    queryKey: ["/api/classes?minimal=true"],
-    enabled: option === "other_class",
-  });
-
   // Filter out every source class when the selected students come from
   // multiple classes, not just the first class passed by the parent.
   const sourceClassIds = useMemo(
@@ -134,6 +129,43 @@ export function MakeupDialog({
     ]),
     [selectedStudents, classId],
   );
+  const sourceClassIdList = useMemo(() => [...sourceClassIds].sort(), [sourceClassIds]);
+
+  // Fetch class names for both the other-class list and the current-class
+  // selector when selected students come from multiple source classes.
+  const { data: allClassesFetched = [], isLoading: loadingClasses } = useQuery<any[]>({
+    queryKey: ["/api/classes?minimal=true"],
+    enabled: isOpen,
+  });
+
+  const sourceClassSessionQueries = useQueries({
+    queries: sourceClassIdList.map((sourceClassId) => ({
+      queryKey: ["/api/classes", sourceClassId, "sessions"],
+      enabled: isOpen,
+    })),
+  });
+  const sourceClassSessions = useMemo(
+    () => new Map(
+      sourceClassIdList.map((sourceClassId, index) => [
+        sourceClassId,
+        (sourceClassSessionQueries[index]?.data ?? (sourceClassId === classId ? classSessions : [])) as any[],
+      ]),
+    ),
+    [sourceClassIdList, sourceClassSessionQueries, classId, classSessions],
+  );
+  const sourceClassOptions = useMemo(
+    () => sourceClassIdList.map((sourceClassId) => {
+      const cls = allClassesFetched.find((candidate) => candidate.id === sourceClassId);
+      return {
+        id: sourceClassId,
+        name: cls?.name || "Lớp hiện tại",
+        classCode: cls?.classCode || "",
+      };
+    }),
+    [sourceClassIdList, allClassesFetched],
+  );
+  const currentClassId = selectedCurrentClassId || (sourceClassOptions.length === 1 ? sourceClassOptions[0].id : "");
+  const currentClassSessions = sourceClassSessions.get(currentClassId) ?? [];
 
   // Filter out source classes and separate candidates by location.
   const otherClasses = allClassesFetched.filter((c) => !sourceClassIds.has(c.id));
@@ -354,7 +386,7 @@ export function MakeupDialog({
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const future = classSessions.filter((session) => {
+     const future = currentClassSessions.filter((session) => {
       const sessionDate = new Date(session.sessionDate);
       if (sessionDate < today) return false;
       const isOriginal = selectedStudents.some(
@@ -405,7 +437,7 @@ export function MakeupDialog({
             new Date(ssDate).toDateString() === sessionDate.toDateString() &&
             ss.status !== "cancelled" &&
             ss.attendanceStatus !== "cancelled" &&
-            (!classId || ssClassId === classId)
+             (!currentClassId || ssClassId === currentClassId)
           );
         });
         if (sameDaySS) {
@@ -438,7 +470,7 @@ export function MakeupDialog({
       occupiedSessions: occupied,
       occupiedStatusMap: statusMap,
     };
-  }, [classSessions, selectedStudents]);
+   }, [currentClassSessions, selectedStudents, currentClassId]);
 
   // Bulk makeup requires every selected student to share the same target
   // session. Partial sessions remain visible for explanation but are disabled.
@@ -472,6 +504,8 @@ export function MakeupDialog({
   const isConfirmDisabled =
     isPending ||
     (option === "current_class" &&
+      !currentClassId) ||
+    (option === "current_class" &&
       subOption === "specific_session" &&
       !selectedTargetSessionId) ||
     (option === "other_class" &&
@@ -483,6 +517,7 @@ export function MakeupDialog({
       option,
       subOption,
       selectedTargetSessionId,
+      selectedCurrentClassId: currentClassId,
       selectedTargetClassId,
       makeupPlan: selectedMakeupStartOption?.plans ?? [],
       newSchedule: {
