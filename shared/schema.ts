@@ -1254,9 +1254,19 @@ export const evaluationCriteria = pgTable("evaluation_criteria", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const evaluationCriteriaGroups = pgTable("evaluation_criteria_groups", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  criteriaId: uuid("criteria_id").notNull().references(() => evaluationCriteria.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const evaluationSubCriteria = pgTable("evaluation_sub_criteria", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   criteriaId: uuid("criteria_id").notNull().references(() => evaluationCriteria.id, { onDelete: "cascade" }),
+  groupId: uuid("group_id").references(() => evaluationCriteriaGroups.id, { onDelete: "set null" }),
   name: varchar("name", { length: 255 }).notNull(),
   inputType: varchar("input_type", { length: 20 }).notNull().default("text"), // text | checkbox
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -1266,6 +1276,10 @@ export const evaluationSubCriteria = pgTable("evaluation_sub_criteria", {
 export const insertEvaluationCriteriaSchema = createInsertSchema(evaluationCriteria).omit({ id: true, createdAt: true, updatedAt: true });
 export type EvaluationCriteria = typeof evaluationCriteria.$inferSelect;
 export type InsertEvaluationCriteria = z.infer<typeof insertEvaluationCriteriaSchema>;
+
+export const insertEvaluationCriteriaGroupSchema = createInsertSchema(evaluationCriteriaGroups).omit({ id: true, createdAt: true, updatedAt: true });
+export type EvaluationCriteriaGroup = typeof evaluationCriteriaGroups.$inferSelect;
+export type InsertEvaluationCriteriaGroup = z.infer<typeof insertEvaluationCriteriaGroupSchema>;
 
 export const insertEvaluationSubCriteriaSchema = createInsertSchema(evaluationSubCriteria).omit({ id: true, createdAt: true, updatedAt: true });
 export type EvaluationSubCriteria = typeof evaluationSubCriteria.$inferSelect;
