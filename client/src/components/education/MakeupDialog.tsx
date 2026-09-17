@@ -23,7 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { format, parseISO } from "date-fns";
-import { AlertCircle, CalendarIcon, Check, ChevronsUpDown, Search, UserCheck, X } from "lucide-react";
+import { AlertCircle, CalendarIcon, Check, ChevronsUpDown, UserCheck, X } from "lucide-react";
 import {
   Command,
   CommandEmpty,
@@ -82,6 +82,7 @@ export function MakeupDialog({
   const [searchTerm, setSearchTerm] = useState("");
   const [locationFilter, setLocationFilter] = useState<"same" | "other">("same");
   const [isSessionPopoverOpen, setIsSessionPopoverOpen] = useState(false);
+  const [isClassPopoverOpen, setIsClassPopoverOpen] = useState(false);
   const [newSchedule, setNewSchedule] = useState({
     code: `MAKEUP_${Math.floor(Math.random() * 1000)
       .toString()
@@ -121,13 +122,64 @@ export function MakeupDialog({
     enabled: option === "other_class",
   });
 
-  // Filter out current class and separate by location
-  const otherClasses = allClassesFetched.filter((c) => c.id !== classId);
+  // Filter out every source class when the selected students come from
+  // multiple classes, not just the first class passed by the parent.
+  const sourceClassIds = useMemo(
+    () => new Set([
+      ...selectedStudents
+        .map((student) => student.sourceClassId || student.classId)
+        .filter(Boolean),
+      ...(classId ? [classId] : []),
+    ]),
+    [selectedStudents, classId],
+  );
+
+  // Filter out source classes and separate candidates by location.
+  const otherClasses = allClassesFetched.filter((c) => !sourceClassIds.has(c.id));
   const sameLocationClasses = otherClasses.filter((c) => locationId && c.locationId === locationId);
   const otherLocationClasses = otherClasses.filter((c) => !locationId || c.locationId !== locationId);
 
-  // Classes shown based on the location filter toggle
-  const filteredClassList = locationFilter === "same" ? sameLocationClasses : otherLocationClasses;
+  const selectedStudentIds = useMemo(
+    () => [...new Set(selectedStudents.map((student) => student.studentId).filter(Boolean))].sort(),
+    [selectedStudents],
+  );
+  const candidateClassIds = useMemo(
+    () => otherClasses.map((candidate) => candidate.id).sort(),
+    [otherClasses],
+  );
+
+  const { data: classEligibility = [], isLoading: loadingClassEligibility } = useQuery<
+    { classId: string; eligibleStudentCount: number; totalStudentCount: number }[]
+  >({
+    queryKey: ["/api/classes/makeup-eligibility", candidateClassIds, selectedStudentIds, [...sourceClassIds].sort()],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        classIds: candidateClassIds.join(","),
+        studentIds: selectedStudentIds.join(","),
+        excludeClassIds: [...sourceClassIds].join(","),
+      });
+      const response = await fetch(`/api/classes/makeup-eligibility?${params.toString()}`);
+      if (!response.ok) throw new Error("Không thể tính điều kiện xếp bù theo lớp");
+      return response.json();
+    },
+    enabled: option === "other_class" && candidateClassIds.length > 0 && selectedStudentIds.length > 0,
+  });
+
+  const classEligibilityMap = useMemo(
+    () => new Map(classEligibility.map((item) => [item.classId, item])),
+    [classEligibility],
+  );
+
+  // Classes shown based on the location filter toggle, with the most
+  // suitable classes at the top of the dropdown.
+  const filteredClassList = useMemo(() => {
+    const classes = locationFilter === "same" ? sameLocationClasses : otherLocationClasses;
+    return [...classes].sort((a, b) => {
+      const aScore = classEligibilityMap.get(a.id)?.eligibleStudentCount ?? -1;
+      const bScore = classEligibilityMap.get(b.id)?.eligibleStudentCount ?? -1;
+      return bScore - aScore || String(a.classCode || a.name).localeCompare(String(b.classCode || b.name));
+    });
+  }, [locationFilter, sameLocationClasses, otherLocationClasses, classEligibilityMap]);
 
   // Fetch sessions for selected other class
   const { data: targetClassSessions = [], isLoading: loadingTargetSessions } = useQuery<any[]>({
@@ -171,20 +223,30 @@ export function MakeupDialog({
   const todayForOther = new Date();
   todayForOther.setHours(0, 0, 0, 0);
   const futureTargetSessions = targetClassSessions.filter(
-    (s) => new Date(s.sessionDate) >= todayForOther
+    (s) => s.status !== "cancelled" && new Date(s.sessionDate) >= todayForOther
   );
 
-  // ── Categorize other-class sessions (available vs occupied) ────────────────
-  const { otherAvailableSessions, otherOccupiedSessions, otherOccupiedStatusMap } = useMemo(() => {
+  // ── Categorize other-class sessions (available / partial / occupied) ───────
+  const {
+    otherAllAvailableSessions,
+    otherPartialSessions,
+    otherPartialSessionMap,
+    otherOccupiedSessions,
+    otherOccupiedStatusMap,
+  } = useMemo(() => {
     const available: any[] = [];
+    const partial: any[] = [];
     const occupied: any[] = [];
     const statusMap: Record<string, string> = {};
+    const partialMap: Record<string, { canAttend: any[]; cannotAttend: any[] }> = {};
 
     for (const session of futureTargetSessions) {
       const sessionDate = new Date(session.sessionDate);
+      const canAttendStudents: any[] = [];
+      const cannotAttendStudents: any[] = [];
       let enrolledAttendanceStatus: string | undefined;
 
-      const anyEnrolled = selectedStudents.some((st) => {
+      for (const st of selectedStudents) {
         // Find this student's record in the target class
         const targetStudentRec = (targetClassActiveStudents as any[]).find(
           (ts: any) => ts.studentId === st.studentId
@@ -201,7 +263,8 @@ export function MakeupDialog({
         });
         if (matchingSS) {
           enrolledAttendanceStatus = matchingSS.attendanceStatus;
-          return true;
+          cannotAttendStudents.push(st);
+          continue;
         }
 
         // Same-day conflict in target class
@@ -216,22 +279,31 @@ export function MakeupDialog({
         });
         if (sameDaySS) {
           enrolledAttendanceStatus = sameDaySS.attendanceStatus;
-          return true;
+          cannotAttendStudents.push(st);
+          continue;
         }
 
-        return false;
-      });
+        canAttendStudents.push(st);
+      }
 
-      if (anyEnrolled) {
+      if (canAttendStudents.length === 0) {
         occupied.push(session);
         statusMap[session.id] = enrolledAttendanceStatus ?? "pending";
-      } else {
+      } else if (cannotAttendStudents.length === 0) {
         available.push(session);
+      } else {
+        partial.push(session);
+        partialMap[session.id] = {
+          canAttend: canAttendStudents,
+          cannotAttend: cannotAttendStudents,
+        };
       }
     }
 
     return {
-      otherAvailableSessions: available,
+      otherAllAvailableSessions: available,
+      otherPartialSessions: partial,
+      otherPartialSessionMap: partialMap,
       otherOccupiedSessions: occupied,
       otherOccupiedStatusMap: statusMap,
     };
@@ -364,8 +436,11 @@ export function MakeupDialog({
   // Info about the currently selected session (if it's a partial session)
   const selectedPartialInfo = useMemo(() => {
     if (!selectedTargetSessionId) return null;
+    if (option === "other_class") {
+      return otherPartialSessionMap[selectedTargetSessionId] ?? null;
+    }
     return partialSessionMap[selectedTargetSessionId] ?? null;
-  }, [selectedTargetSessionId, partialSessionMap]);
+  }, [option, selectedTargetSessionId, partialSessionMap, otherPartialSessionMap]);
 
   const newScheduleValid =
     newScheduleWeekdays.length > 0 &&
@@ -382,12 +457,9 @@ export function MakeupDialog({
 
   const handleConfirm = () => {
     // For partial sessions, only schedule students who can actually attend
-    const eligibleStudents =
-      option === "current_class" &&
-      subOption === "specific_session" &&
-      selectedPartialInfo
-        ? selectedPartialInfo.canAttend
-        : selectedStudents;
+    const eligibleStudents = selectedPartialInfo
+      ? selectedPartialInfo.canAttend
+      : selectedStudents;
 
     onConfirm({
       option,
@@ -733,51 +805,101 @@ export function MakeupDialog({
                   ))}
                 </div>
 
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Tìm lớp..."
-                    className="pl-8 text-sm"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    data-testid="input-search-class"
-                  />
-                </div>
-                <Select
-                  value={selectedTargetClassId}
-                  onValueChange={(v) => {
-                    setSelectedTargetClassId(v);
-                    setSelectedTargetSessionId("");
+                <Popover
+                  open={isClassPopoverOpen}
+                  onOpenChange={(open) => {
+                    setIsClassPopoverOpen(open);
+                    if (!open) setSearchTerm("");
                   }}
                 >
-                  <SelectTrigger className="bg-white" data-testid="select-target-class">
-                    <SelectValue placeholder="Chọn lớp trong danh sách" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white">
-                    {loadingClasses ? (
-                      <SelectItem value="__loading" disabled>
-                        Đang tải danh sách lớp...
-                      </SelectItem>
-                    ) : filteredClassList.filter((c) =>
-                        `${c.name} ${c.classCode}`.toLowerCase().includes(searchTerm.toLowerCase())
-                      ).length === 0 ? (
-                      <SelectItem value="__none" disabled>
-                        Không có lớp nào
-                      </SelectItem>
-                    ) : (
-                      filteredClassList
-                        .filter((c) =>
-                          `${c.name} ${c.classCode}`.toLowerCase().includes(searchTerm.toLowerCase())
-                        )
-                        .map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {c.name}
-                            {c.classCode ? ` (${c.classCode})` : ""}
-                          </SelectItem>
-                        ))
-                    )}
-                  </SelectContent>
-                </Select>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={isClassPopoverOpen}
+                      className="w-full justify-between bg-white text-sm font-normal"
+                      data-testid="select-target-class"
+                    >
+                      <span className="truncate">
+                        {selectedTargetClassId
+                          ? (() => {
+                              const selectedClass = otherClasses.find((c) => c.id === selectedTargetClassId);
+                              return selectedClass
+                                ? `${selectedClass.name}${selectedClass.classCode ? ` (${selectedClass.classCode})` : ""}`
+                                : "Chọn lớp trong danh sách";
+                            })()
+                          : "Chọn lớp trong danh sách"}
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    className="w-[var(--radix-popover-trigger-width)] p-0 bg-white"
+                    align="start"
+                  >
+                    <Command className="bg-white">
+                      <CommandInput
+                        placeholder="Tìm lớp..."
+                        className="h-10 text-sm"
+                        value={searchTerm}
+                        onValueChange={setSearchTerm}
+                        data-testid="input-search-class"
+                      />
+                      <CommandList className="max-h-[360px]">
+                        {loadingClasses ? (
+                          <CommandEmpty>Đang tải danh sách lớp...</CommandEmpty>
+                        ) : filteredClassList.length === 0 ? (
+                          <CommandEmpty>Không có lớp nào</CommandEmpty>
+                        ) : (
+                          <CommandGroup heading="Lớp có thể xếp bù">
+                            {filteredClassList.map((candidateClass) => {
+                              const eligibility = classEligibilityMap.get(candidateClass.id);
+                              const eligibleCount = eligibility?.eligibleStudentCount ?? 0;
+                              const totalCount = selectedStudentIds.length;
+                              const isUnavailable =
+                                loadingClassEligibility || !eligibility || eligibleCount === 0;
+                              return (
+                                <CommandItem
+                                  key={candidateClass.id}
+                                  value={`${candidateClass.name} ${candidateClass.classCode || ""}`}
+                                  disabled={isUnavailable}
+                                  onSelect={() => {
+                                    setSelectedTargetClassId(candidateClass.id);
+                                    setSelectedTargetSessionId("");
+                                    setIsClassPopoverOpen(false);
+                                    setSearchTerm("");
+                                  }}
+                                  className="cursor-pointer gap-2 py-2.5"
+                                  data-testid={`target-class-option-${candidateClass.id}`}
+                                >
+                                  <span className="min-w-0 flex-1 truncate">
+                                    {candidateClass.name}
+                                    {candidateClass.classCode ? ` (${candidateClass.classCode})` : ""}
+                                  </span>
+                                  <Badge
+                                    variant="outline"
+                                    className={cn(
+                                      "shrink-0 text-[11px]",
+                                      loadingClassEligibility
+                                        ? "text-muted-foreground"
+                                        : eligibleCount === totalCount
+                                          ? "border-green-200 bg-green-50 text-green-700"
+                                          : eligibleCount > 0
+                                            ? "border-amber-200 bg-amber-50 text-amber-700"
+                                            : "border-red-200 bg-red-50 text-red-600"
+                                    )}
+                                  >
+                                    {loadingClassEligibility ? "Đang tính..." : `${eligibleCount}/${totalCount}`}
+                                  </Badge>
+                                </CommandItem>
+                              );
+                            })}
+                          </CommandGroup>
+                        )}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
 
               {selectedTargetClassId && (
@@ -801,14 +923,27 @@ export function MakeupDialog({
                         </SelectItem>
                       ) : (
                         <>
-                          {otherAvailableSessions.length > 0 && (
+                          {otherAllAvailableSessions.length > 0 && (
                             <SelectGroup>
-                              <SelectLabel>Có thể xếp bù</SelectLabel>
-                              {otherAvailableSessions.map((s) => (
+                              <SelectLabel>Tất cả học viên có thể xếp bù</SelectLabel>
+                              {otherAllAvailableSessions.map((s) => (
                                 <SelectItem key={s.id} value={s.id}>
                                   {formatSessionLabel(s)}
                                 </SelectItem>
                               ))}
+                            </SelectGroup>
+                          )}
+                          {otherPartialSessions.length > 0 && (
+                            <SelectGroup>
+                              <SelectLabel>Chỉ một phần học viên xếp bù được</SelectLabel>
+                              {otherPartialSessions.map((s) => {
+                                const info = otherPartialSessionMap[s.id];
+                                return (
+                                  <SelectItem key={s.id} value={s.id}>
+                                    {formatSessionLabel(s)} ({info.canAttend.length}/{selectedStudentIds.length})
+                                  </SelectItem>
+                                );
+                              })}
                             </SelectGroup>
                           )}
                           {otherOccupiedSessions.length > 0 && (

@@ -365,6 +365,109 @@ export async function getClassesMinimal(locationId?: string, allowedLocationIds?
 }
 
 // ---------------------------------------------------------------------------
+// getMakeupClassEligibility
+// ---------------------------------------------------------------------------
+// Returns the best number of selected students that can share one future
+// session in each candidate class. This is intentionally calculated against
+// the same conflict rules used by the makeup dialog and the makeup mutation.
+export async function getMakeupClassEligibility(params: {
+  classIds: string[];
+  studentIds: string[];
+  excludeClassIds?: string[];
+  allowedLocationIds?: string[] | null;
+}): Promise<Array<{ classId: string; eligibleStudentCount: number; totalStudentCount: number }>> {
+  const uniqueClassIds = [...new Set(params.classIds.filter(Boolean))];
+  const uniqueStudentIds = [...new Set(params.studentIds.filter(Boolean))];
+  if (uniqueClassIds.length === 0 || uniqueStudentIds.length === 0) return [];
+
+  const conditions: any[] = [inArray(classes.id, uniqueClassIds)];
+  const excluded = new Set(params.excludeClassIds ?? []);
+  if (excluded.size > 0) {
+    conditions.push(sql`${classes.id} NOT IN (${sql.join([...excluded].map((id) => sql`${id}::uuid`), sql`, `)})`);
+  }
+  if (params.allowedLocationIds !== null && params.allowedLocationIds !== undefined) {
+    if (params.allowedLocationIds.length === 0) return [];
+    conditions.push(inArray(classes.locationId, params.allowedLocationIds));
+  }
+
+  const candidateRows = await db
+    .select({ id: classes.id })
+    .from(classes)
+    .where(and(...conditions));
+  const candidateIds = candidateRows.map((row) => row.id);
+  if (candidateIds.length === 0) return [];
+
+  const [sessionRows, conflictRows] = await Promise.all([
+    db
+      .select({
+        id: classSessions.id,
+        classId: classSessions.classId,
+        sessionDate: classSessions.sessionDate,
+        status: classSessions.status,
+      })
+      .from(classSessions)
+      .where(inArray(classSessions.classId, candidateIds)),
+    db
+      .select({
+        studentId: studentSessions.studentId,
+        classId: studentSessions.classId,
+        classSessionId: studentSessions.classSessionId,
+        sessionDate: classSessions.sessionDate,
+        status: studentSessions.status,
+        attendanceStatus: studentSessions.attendanceStatus,
+      })
+      .from(studentSessions)
+      .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
+      .where(and(
+        inArray(studentSessions.classId, candidateIds),
+        inArray(studentSessions.studentId, uniqueStudentIds),
+      )),
+  ]);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const sessionsByClass = new Map<string, typeof sessionRows>();
+  for (const session of sessionRows) {
+    if (session.status === "cancelled" || new Date(session.sessionDate) < today) continue;
+    const list = sessionsByClass.get(session.classId) ?? [];
+    list.push(session);
+    sessionsByClass.set(session.classId, list);
+  }
+
+  const conflictsByStudent = new Map<string, typeof conflictRows>();
+  for (const conflict of conflictRows) {
+    if (conflict.status === "cancelled" || conflict.attendanceStatus === "cancelled") continue;
+    const list = conflictsByStudent.get(conflict.studentId) ?? [];
+    list.push(conflict);
+    conflictsByStudent.set(conflict.studentId, list);
+  }
+
+  return candidateIds.map((classId) => {
+    const classSessionsForMakeup = sessionsByClass.get(classId) ?? [];
+    let bestCount = 0;
+
+    for (const targetSession of classSessionsForMakeup) {
+      const targetDate = new Date(targetSession.sessionDate).toDateString();
+      const count = uniqueStudentIds.filter((studentId) => {
+        const conflicts = conflictsByStudent.get(studentId) ?? [];
+        return !conflicts.some((conflict) =>
+          conflict.classId === classId &&
+          (conflict.classSessionId === targetSession.id ||
+            new Date(conflict.sessionDate).toDateString() === targetDate)
+        );
+      }).length;
+      bestCount = Math.max(bestCount, count);
+    }
+
+    return {
+      classId,
+      eligibleStudentCount: bestCount,
+      totalStudentCount: uniqueStudentIds.length,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // getClass
 // ---------------------------------------------------------------------------
 export async function getClass(id: string): Promise<any> {

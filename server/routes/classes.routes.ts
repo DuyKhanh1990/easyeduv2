@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { createActivityLog, getActivityLogs } from "../storage/activity-log.storage";
-import { getClassFormatSummary, getClassStatusSummary, getNewClassesSummary, getClassesByLocationSummary, getMonthlyAttendanceRate, getClassesByTeacherSummary, getSessionsByTeacherSummary } from "../storage/class.storage";
+import { getClassFormatSummary, getClassStatusSummary, getNewClassesSummary, getClassesByLocationSummary, getMonthlyAttendanceRate, getClassesByTeacherSummary, getSessionsByTeacherSummary, getMakeupClassEligibility } from "../storage/class.storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { db, pool } from "../db";
@@ -773,6 +773,36 @@ export function registerClassesRoutes(app: Express): void {
     if (!code) return res.json({ exists: false });
     const [existing] = await db.select({ id: classes.id }).from(classes).where(eq(classes.classCode, code));
     res.json({ exists: !!existing });
+  });
+
+  // Returns the best shared-session eligibility for the selected students
+  // across the candidate classes used by the makeup dialog.
+  app.get("/api/classes/makeup-eligibility", async (req, res) => {
+    try {
+      const classIds = String(req.query.classIds || "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean);
+      const studentIds = String(req.query.studentIds || "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean);
+      const excludeClassIds = String(req.query.excludeClassIds || "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean);
+
+      const result = await getMakeupClassEligibility({
+        classIds,
+        studentIds,
+        excludeClassIds,
+        allowedLocationIds: await getAllowedLocationIds(req),
+      });
+      res.json(result);
+    } catch (err: any) {
+      console.error("[MakeupClassEligibility] error:", err);
+      res.status(400).json({ message: err.message || "Không thể tính điều kiện xếp bù" });
+    }
   });
 
   // Classes - GET
