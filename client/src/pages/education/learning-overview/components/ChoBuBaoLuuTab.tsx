@@ -13,7 +13,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { format } from "date-fns";
-import { ClassGroup, ChoBuBaoLuuRow } from "../hooks/useChoBuBaoLuuTab";
+import { ChoBuBaoLuuFilters as FilterState, ClassGroup, ChoBuBaoLuuRow } from "../hooks/useChoBuBaoLuuTab";
+import { ChoBuBaoLuuFilters } from "./ChoBuBaoLuuFilters";
 
 const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   makeup_wait: { label: "Nghỉ chờ bù", className: "bg-orange-100 text-orange-700 border-orange-200" },
@@ -127,6 +128,10 @@ export function ChoBuBaoLuuTab({
   pageSize,
   onPageChange,
   onPageSizeChange,
+  filters,
+  onFiltersChange,
+  availableClasses,
+  availableTeachers,
   isLoading,
 }: {
   data: ClassGroup[];
@@ -135,6 +140,10 @@ export function ChoBuBaoLuuTab({
   pageSize: number;
   onPageChange: (p: number) => void;
   onPageSizeChange: (s: number) => void;
+  filters: FilterState;
+  onFiltersChange: (patch: Partial<FilterState>) => void;
+  availableClasses: { id: string; label: string }[];
+  availableTeachers: { id: string; label: string }[];
   isLoading: boolean;
 }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -147,28 +156,31 @@ export function ChoBuBaoLuuTab({
     );
   }
 
-  if (total === 0 && !isLoading) {
-    return (
-      <div className="flex items-center justify-center h-48 text-muted-foreground text-sm border rounded-md bg-muted/20">
-        Không có học viên nào đang chờ bù hoặc bảo lưu
-      </div>
-    );
-  }
-
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm flex flex-col h-full overflow-hidden">
-      {/* Fixed header */}
+      {/* Fixed filter bar */}
       <div className="shrink-0 bg-card border-b border-border/50 px-6 py-4">
-        <h2 className="text-lg font-semibold">Chờ bù - Bảo lưu</h2>
+        <ChoBuBaoLuuFilters
+          filters={filters}
+          onFiltersChange={onFiltersChange}
+          availableClasses={availableClasses}
+          availableTeachers={availableTeachers}
+        />
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-6 pt-4">
-        <div className="space-y-4">
-          {data.map((group) => (
-            <ClassCard key={group.classId} group={group} />
-          ))}
-        </div>
+        {data.length === 0 ? (
+          <div className="flex h-48 items-center justify-center rounded-md border bg-muted/20 text-sm text-muted-foreground">
+            Không có học viên nào phù hợp với bộ lọc
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {data.map((group) => (
+              <ClassCard key={group.classId} group={group} />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Footer - pagination */}

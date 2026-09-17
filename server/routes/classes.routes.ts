@@ -6179,13 +6179,48 @@ export function registerClassesRoutes(app: Express): void {
       const pageSize = Math.min(50, Math.max(20, parseInt(String(req.query.pageSize || "20"))));
       const offset = (page - 1) * pageSize;
       const upperBound = offset + pageSize;
+      const readQueryArray = (value: unknown): string[] => {
+        const values = Array.isArray(value) ? value : [value];
+        return values
+          .flatMap((item) => typeof item === "string" ? item.split(",") : [])
+          .map((item) => item.trim())
+          .filter(Boolean);
+      };
+      const search = String(req.query.search || "").trim();
+      const dateFrom = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.dateFrom || ""))
+        ? String(req.query.dateFrom)
+        : "";
+      const dateTo = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.dateTo || ""))
+        ? String(req.query.dateTo)
+        : "";
+      const classIds = readQueryArray(req.query.classes);
+      const teacherIds = readQueryArray(req.query.teachers);
+
+      const filterConditions = [
+        sql`ss.attendance_status IN ('makeup_wait', 'paused')`,
+      ];
+      if (search) {
+        const searchPattern = `%${search}%`;
+        filterConditions.push(sql`(s.full_name ILIKE ${searchPattern} OR s.code ILIKE ${searchPattern})`);
+      }
+      if (dateFrom) filterConditions.push(sql`cs.session_date >= ${dateFrom}::date`);
+      if (dateTo) filterConditions.push(sql`cs.session_date <= ${dateTo}::date`);
+      if (classIds.length > 0) {
+        filterConditions.push(sql`ss.class_id IN (${sql.join(classIds.map((id) => sql`${id}::uuid`), sql`, `)})`);
+      }
+      if (teacherIds.length > 0) {
+        filterConditions.push(sql`cs.teacher_ids && ARRAY[${sql.join(teacherIds.map((id) => sql`${id}::uuid`), sql`, `)}]::uuid[]`);
+      }
+      const whereSql = sql.join(filterConditions, sql` AND `);
 
       const result = await db.execute(sql`
         WITH class_list AS (
           SELECT DISTINCT c.id AS class_id, c.name AS class_name
           FROM student_sessions ss
+          JOIN students s ON s.id = ss.student_id
           JOIN classes c ON c.id = ss.class_id
-          WHERE ss.attendance_status IN ('makeup_wait', 'paused')
+          JOIN class_sessions cs ON cs.id = ss.class_session_id
+          WHERE ${whereSql}
         ),
         paginated_classes AS (
           SELECT *,
@@ -6223,12 +6258,30 @@ export function registerClassesRoutes(app: Express): void {
         JOIN selected_classes sc ON sc.class_id = ss.class_id
         JOIN class_sessions cs ON cs.id = ss.class_session_id
         LEFT JOIN shift_templates st ON st.id = cs.shift_template_id
-        WHERE ss.attendance_status IN ('makeup_wait', 'paused')
+        WHERE ${whereSql}
         ORDER BY sc.row_num, CASE WHEN s.account_status = 'Không hoạt động' THEN 1 ELSE 0 END, cs.session_date DESC, s.full_name
       `);
 
       const rows = result.rows as any[];
       const total = rows.length > 0 ? parseInt(rows[0].total_count) : 0;
+
+      const [classOptions, teacherOptions] = await Promise.all([
+        db.execute(sql`
+          SELECT DISTINCT c.id, c.name AS label
+          FROM student_sessions ss
+          JOIN classes c ON c.id = ss.class_id
+          WHERE ss.attendance_status IN ('makeup_wait', 'paused')
+          ORDER BY c.name
+        `),
+        db.execute(sql`
+          SELECT DISTINCT sf.id, sf.full_name AS label
+          FROM student_sessions ss
+          JOIN class_sessions cs ON cs.id = ss.class_session_id
+          JOIN staff sf ON sf.id = ANY(cs.teacher_ids)
+          WHERE ss.attendance_status IN ('makeup_wait', 'paused')
+          ORDER BY sf.full_name
+        `),
+      ]);
 
       const classMap = new Map<string, { classId: string; className: string; rowNum: number; rows: any[] }>();
       for (const row of rows) {
@@ -6254,7 +6307,14 @@ export function registerClassesRoutes(app: Express): void {
         .sort((a, b) => a.rowNum - b.rowNum)
         .map(({ rowNum, ...cls }) => ({ ...cls, totalSessions: cls.rows.length }));
 
-      res.json({ data, total, page, pageSize });
+      res.json({
+        data,
+        total,
+        page,
+        pageSize,
+        availableClasses: classOptions.rows,
+        availableTeachers: teacherOptions.rows,
+      });
     } catch (err: any) {
       console.error("Cho bu bao luu error:", err);
       res.status(500).json({ message: err.message || "Lỗi khi tải dữ liệu" });

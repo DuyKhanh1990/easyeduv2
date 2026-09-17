@@ -134,6 +134,10 @@ export function LearningOverview() {
                 pageSize={choBuBaoLuu.pageSize}
                 onPageChange={choBuBaoLuu.setPage}
                 onPageSizeChange={choBuBaoLuu.setPageSize}
+                filters={choBuBaoLuu.filters}
+                onFiltersChange={choBuBaoLuu.setFilters}
+                availableClasses={choBuBaoLuu.availableClasses}
+                availableTeachers={choBuBaoLuu.availableTeachers}
                 isLoading={choBuBaoLuu.isLoading}
               />
             </TabsContent>
