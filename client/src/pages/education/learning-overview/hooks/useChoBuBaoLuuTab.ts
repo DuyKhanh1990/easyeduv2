@@ -12,6 +12,8 @@ export type ChoBuBaoLuuFilters = {
 export interface ChoBuBaoLuuRow {
   id: string;
   studentId: string;
+  classId: string;
+  classSessionId: string;
   studentName: string;
   studentCode: string;
   sessionIndex: number | null;

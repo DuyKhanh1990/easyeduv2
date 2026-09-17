@@ -6240,6 +6240,7 @@ export function registerClassesRoutes(app: Express): void {
           s.account_status,
           sc.class_id,
           sc.class_name,
+           ss.class_session_id,
           sc.total_count,
           sc.row_num,
           cs.session_index,
@@ -6291,6 +6292,8 @@ export function registerClassesRoutes(app: Express): void {
         classMap.get(row.class_id)!.rows.push({
           id: row.id,
           studentId: row.student_id,
+           classId: row.class_id,
+           classSessionId: row.class_session_id,
           studentName: row.student_name,
           studentCode: row.student_code,
           sessionIndex: row.session_index,

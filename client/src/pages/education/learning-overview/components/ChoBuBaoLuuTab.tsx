@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { StudentNameLink } from "@/components/ui/StudentNameLink";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,6 +14,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { format } from "date-fns";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { MakeupDialog } from "@/components/education/MakeupDialog";
 import { ChoBuBaoLuuFilters as FilterState, ClassGroup, ChoBuBaoLuuRow } from "../hooks/useChoBuBaoLuuTab";
 import { ChoBuBaoLuuFilters } from "./ChoBuBaoLuuFilters";
 
@@ -21,25 +25,19 @@ const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   paused: { label: "Bảo lưu", className: "bg-blue-100 text-blue-700 border-blue-200" },
 };
 
-function ClassCard({ group }: { group: ClassGroup }) {
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-
-  const toggleAll = (checked: boolean) => {
-    if (checked) setSelected(new Set(group.rows.map((r) => r.id)));
-    else setSelected(new Set());
-  };
-
-  const toggleRow = (id: string, checked: boolean) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-  };
-
-  const allChecked = group.rows.length > 0 && selected.size === group.rows.length;
-  const someChecked = selected.size > 0 && selected.size < group.rows.length;
+function ClassCard({
+  group,
+  selectedIds,
+  onToggleAll,
+  onToggleRow,
+}: {
+  group: ClassGroup;
+  selectedIds: Set<string>;
+  onToggleAll: (rows: ChoBuBaoLuuRow[], checked: boolean) => void;
+  onToggleRow: (row: ChoBuBaoLuuRow, checked: boolean) => void;
+}) {
+  const allChecked = group.rows.length > 0 && group.rows.every((row) => selectedIds.has(row.id));
+  const someChecked = group.rows.some((row) => selectedIds.has(row.id)) && !allChecked;
 
   return (
     <Card className="rounded-xl border border-border overflow-hidden">
@@ -58,11 +56,13 @@ function ClassCard({ group }: { group: ClassGroup }) {
             <thead>
               <tr className="bg-muted/60 border-b">
                 <th className="px-3 py-2.5 w-10">
-                  <Checkbox
-                    checked={allChecked ? true : someChecked ? "indeterminate" : false}
-                    data-testid={`select-all-${group.classId}`}
-                    onCheckedChange={(v) => toggleAll(v === true)}
-                  />
+                  <div className="flex justify-center">
+                    <Checkbox
+                      checked={allChecked ? true : someChecked ? "indeterminate" : false}
+                      data-testid={`select-all-${group.classId}`}
+                      onCheckedChange={(v) => onToggleAll(group.rows, v === true)}
+                    />
+                  </div>
                 </th>
                 <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">Họ và tên</th>
                 <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">Buổi học</th>
@@ -87,14 +87,16 @@ function ClassCard({ group }: { group: ClassGroup }) {
                   <tr
                     key={row.id}
                     data-testid={`cho-bu-row-${row.id}`}
-                    className={`border-b hover:bg-muted/20 transition-colors ${selected.has(row.id) ? "bg-muted/30" : ""}`}
+                    className={`border-b hover:bg-muted/20 transition-colors ${selectedIds.has(row.id) ? "bg-muted/30" : ""}`}
                   >
                     <td className="px-3 py-2.5">
-                      <Checkbox
-                        checked={selected.has(row.id)}
-                        data-testid={`select-row-${row.id}`}
-                        onCheckedChange={(v) => toggleRow(row.id, !!v)}
-                      />
+                      <div className="flex justify-center">
+                        <Checkbox
+                          checked={selectedIds.has(row.id)}
+                          data-testid={`select-row-${row.id}`}
+                          onCheckedChange={(v) => onToggleRow(row, !!v)}
+                        />
+                      </div>
                     </td>
                     <td className="max-w-0 px-3 py-2.5">
                       <div className="truncate">
@@ -156,6 +158,119 @@ export function ChoBuBaoLuuTab({
   isLoading: boolean;
 }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const { toast } = useToast();
+  const [selectedRows, setSelectedRows] = useState<Map<string, ChoBuBaoLuuRow>>(new Map());
+  const [isMakeupDialogOpen, setIsMakeupDialogOpen] = useState(false);
+  const [makeupClassId, setMakeupClassId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const selectedRowsList = useMemo(() => Array.from(selectedRows.values()), [selectedRows]);
+  const selectedIds = useMemo(() => new Set(selectedRows.keys()), [selectedRows]);
+  const selectedClassIds = useMemo(
+    () => new Set(selectedRowsList.map((row) => row.classId)),
+    [selectedRowsList],
+  );
+  const selectedMakeupRows = useMemo(
+    () => selectedRowsList.filter((row) => row.attendanceStatus === "makeup_wait"),
+    [selectedRowsList],
+  );
+
+  const { data: makeupClassSessions = [] } = useQuery<any[]>({
+    queryKey: [`/api/classes/${makeupClassId}/sessions`],
+    enabled: isMakeupDialogOpen && !!makeupClassId,
+  });
+  const { data: makeupClass } = useQuery<any>({
+    queryKey: [`/api/classes/${makeupClassId}`],
+    enabled: isMakeupDialogOpen && !!makeupClassId,
+  });
+  const { data: makeupActiveStudents = [] } = useQuery<any[]>({
+    queryKey: [`/api/classes/${makeupClassId}/active-students`],
+    enabled: isMakeupDialogOpen && !!makeupClassId,
+    staleTime: 0,
+  });
+
+  const selectedStudentsForMakeup = useMemo(
+    () => selectedMakeupRows.map((row) => {
+      const activeStudent = makeupActiveStudents.find((student: any) => student.studentId === row.studentId);
+      return {
+        ...row,
+        student: { id: row.studentId, fullName: row.studentName, code: row.studentCode },
+        allStudentSessions: activeStudent?.studentSessions ?? [],
+      };
+    }),
+    [selectedMakeupRows, makeupActiveStudents],
+  );
+
+  const makeupMutation = useMutation({
+    mutationFn: async (data: any) => {
+      if (!makeupClassId) throw new Error("Chưa xác định lớp học");
+      const response = await apiRequest("POST", `/api/classes/${makeupClassId}/makeup`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/learning-overview/cho-bu-bao-luu"] });
+      setIsMakeupDialogOpen(false);
+      setMakeupClassId(null);
+      setSelectedRows(new Map());
+      toast({ title: "Thành công", description: "Đã xếp bù thành công" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Lỗi",
+        description: error.message || "Không thể xếp bù",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const toggleRow = (row: ChoBuBaoLuuRow, checked: boolean) => {
+    setSelectedRows((previous) => {
+      const next = new Map(previous);
+      if (checked) next.set(row.id, row);
+      else next.delete(row.id);
+      return next;
+    });
+  };
+
+  const toggleAll = (rows: ChoBuBaoLuuRow[], checked: boolean) => {
+    setSelectedRows((previous) => {
+      const next = new Map(previous);
+      rows.forEach((row) => {
+        if (checked) next.set(row.id, row);
+        else next.delete(row.id);
+      });
+      return next;
+    });
+  };
+
+  const openMakeupDialog = () => {
+    if (selectedClassIds.size !== 1) {
+      toast({
+        title: "Chọn học viên trong cùng một lớp",
+        description: "Dialog xếp bù hiện tại xử lý một lớp gốc mỗi lần.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (selectedMakeupRows.length === 0) {
+      toast({
+        title: "Không thể xếp bù",
+        description: "Chỉ học viên có trạng thái Nghỉ chờ bù mới được xếp bù.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (selectedMakeupRows.length !== selectedRowsList.length) {
+      toast({
+        title: "Bỏ chọn học viên Bảo lưu",
+        description: "Chỉ các dòng Nghỉ chờ bù được đưa vào dialog xếp bù.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setMakeupClassId(selectedMakeupRows[0].classId);
+    setIsMakeupDialogOpen(true);
+  };
 
   if (isLoading) {
     return (
@@ -169,12 +284,26 @@ export function ChoBuBaoLuuTab({
     <div className="rounded-xl border border-border bg-card shadow-sm flex flex-col h-full overflow-hidden">
       {/* Fixed filter bar */}
       <div className="shrink-0 bg-card border-b border-border/50 px-6 py-4">
-        <ChoBuBaoLuuFilters
-          filters={filters}
-          onFiltersChange={onFiltersChange}
-          availableClasses={availableClasses}
-          availableTeachers={availableTeachers}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <ChoBuBaoLuuFilters
+              filters={filters}
+              onFiltersChange={onFiltersChange}
+              availableClasses={availableClasses}
+              availableTeachers={availableTeachers}
+            />
+          </div>
+          {selectedRowsList.length > 0 && (
+            <Button
+              size="sm"
+              className="h-9 shrink-0 bg-blue-600 text-white hover:bg-blue-700"
+              onClick={openMakeupDialog}
+              data-testid="button-bulk-makeup"
+            >
+              Xếp bù ({selectedRowsList.length})
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Content */}
@@ -186,11 +315,34 @@ export function ChoBuBaoLuuTab({
         ) : (
           <div className="space-y-4">
             {data.map((group) => (
-              <ClassCard key={group.classId} group={group} />
+              <ClassCard
+                key={group.classId}
+                group={group}
+                selectedIds={selectedIds}
+                onToggleAll={toggleAll}
+                onToggleRow={toggleRow}
+              />
             ))}
           </div>
         )}
       </div>
+
+      {isMakeupDialogOpen && makeupClassId && (
+        <MakeupDialog
+          isOpen={isMakeupDialogOpen}
+          onOpenChange={(open) => {
+            setIsMakeupDialogOpen(open);
+            if (!open) setMakeupClassId(null);
+          }}
+          selectedStudents={selectedStudentsForMakeup}
+          classSessions={makeupClassSessions}
+          allClasses={[]}
+          classId={makeupClassId}
+          locationId={makeupClass?.locationId}
+          onConfirm={(makeupData) => makeupMutation.mutate(makeupData)}
+          isPending={makeupMutation.isPending}
+        />
+      )}
 
       {/* Footer - pagination */}
       <div className="shrink-0 px-6 py-3 border-t border-border/50">
