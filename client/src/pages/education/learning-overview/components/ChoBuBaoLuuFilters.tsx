@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
-import { CalendarDays, Check, ChevronDown, Search, X } from "lucide-react";
+import { Check, ChevronDown, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+import { StoreDateRangePicker, type DateRange } from "@/pages/store/StoreDateRangePicker";
 import { ChoBuBaoLuuFilters as FilterState } from "../hooks/useChoBuBaoLuuTab";
 
 type FilterOption = { id: string; label: string };
@@ -124,6 +126,19 @@ export function ChoBuBaoLuuFilters({
     filters.classIds.length > 0 ||
     filters.teacherIds.length > 0;
 
+  const dateRange: DateRange = {
+    from: filters.dateFrom ? new Date(`${filters.dateFrom}T00:00:00`) : undefined,
+    to: filters.dateTo ? new Date(`${filters.dateTo}T00:00:00`) : undefined,
+  };
+
+  const handleDateRangeChange = (range: DateRange) => {
+    const dateFrom = range.from ? format(range.from, "yyyy-MM-dd") : "";
+    const dateTo = range.to
+      ? format(range.to, "yyyy-MM-dd")
+      : dateFrom;
+    onFiltersChange({ dateFrom, dateTo });
+  };
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="relative min-w-[220px] flex-1">
@@ -137,26 +152,12 @@ export function ChoBuBaoLuuFilters({
         />
       </div>
 
-      <div className="flex h-9 items-center gap-1.5 rounded-md border bg-background px-2">
-        <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <Input
-          type="date"
-          value={filters.dateFrom}
-          onChange={(event) => onFiltersChange({ dateFrom: event.target.value })}
-          className="h-7 w-[130px] border-0 p-0 text-xs shadow-none focus-visible:ring-0"
-          aria-label="Ngày học từ ngày"
-          data-testid="input-cho-bu-date-from"
-        />
-        <span className="text-muted-foreground">–</span>
-        <Input
-          type="date"
-          value={filters.dateTo}
-          onChange={(event) => onFiltersChange({ dateTo: event.target.value })}
-          className="h-7 w-[130px] border-0 p-0 text-xs shadow-none focus-visible:ring-0"
-          aria-label="Ngày học đến ngày"
-          data-testid="input-cho-bu-date-to"
-        />
-      </div>
+      <StoreDateRangePicker
+        value={dateRange}
+        onChange={handleDateRangeChange}
+        placeholder="Chọn khoảng ngày học"
+        className="w-[240px] justify-start"
+      />
 
       <MultiSelectFilter
         label="Lớp"
