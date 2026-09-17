@@ -48,3 +48,4 @@
 - [Role-based account code generation](role-code-generation.md) — one code per user; automatic multi-assignment codes use the first selected role and location.
 - [Invoice schedule descriptions](invoice-schedule-description.md) — tuition invoice notes must derive weekday/shift times from each student's selected sessions, not the whole class schedule.
 - [Bulk student session scope](bulk-student-session-scope.md) — bulk session removal must carry each student's studentClassId; one shared class-row ID silently omits other students.
+- [Makeup attendance state](makeup-scheduled-status.md) — xếp bù thành công dùng trạng thái system-only makeup_scheduled trước khi có mặt chuyển thành makeup_done.

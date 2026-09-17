@@ -461,6 +461,7 @@ const SESSION_STATUS_LABEL: Record<string, { label: string; className: string }>
   attended:     { label: "Có học",         className: "bg-green-50 text-green-700 border-green-200" },
   absent:       { label: "Nghỉ học",       className: "bg-red-50 text-red-700 border-red-200" },
   makeup_wait:  { label: "Nghỉ chờ bù",   className: "bg-orange-50 text-orange-700 border-orange-200" },
+  makeup_scheduled: { label: "Đã xếp bù", className: "bg-violet-100 text-violet-900 border-violet-300" },
   makeup_done:  { label: "Đã học bù",     className: "bg-blue-50 text-blue-700 border-blue-200" },
 };
 

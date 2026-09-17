@@ -186,8 +186,8 @@ function computeAttendanceCoefficient(
   return Math.round((actual / scheduled) * 100) / 100;
 }
 
-// Invalid attendance statuses: Chưa điểm danh, Bảo lưu, Nghỉ chờ bù, Đã học bù
-const INVALID_STATUSES = ["pending", "paused", "reserved", "makeup_wait", "makeup_done"];
+// Invalid attendance statuses: Chưa điểm danh, Bảo lưu, Nghỉ chờ bù, Đã xếp bù, Đã học bù
+const INVALID_STATUSES = ["pending", "paused", "reserved", "makeup_wait", "makeup_scheduled", "makeup_done"];
 
 export async function getTeacherSalaryDetailRows(
   salaryTableId: string
@@ -210,7 +210,7 @@ export async function getTeacherSalaryDetailRows(
       cs.session_index,
       st.start_time,
       st.end_time,
-      COUNT(ss.id) FILTER (WHERE ss.attendance_status NOT IN ('pending', 'paused', 'reserved', 'makeup_wait', 'makeup_done')) AS eligible_count,
+      COUNT(ss.id) FILTER (WHERE ss.attendance_status NOT IN ('pending', 'paused', 'reserved', 'makeup_wait', 'makeup_scheduled', 'makeup_done')) AS eligible_count,
       COUNT(ss.id) FILTER (WHERE ss.attendance_status IN ('present', 'makeup_done', 'made_up')) AS attended_count,
       ta.check_in_at,
       ta.check_out_at

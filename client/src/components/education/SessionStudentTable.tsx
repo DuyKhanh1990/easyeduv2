@@ -32,10 +32,15 @@ const ATT_CFG: Record<string, { dot: string; text: string; label: string }> = {
   present:     { dot: "bg-emerald-500", text: "text-emerald-600", label: "Có học" },
   absent:      { dot: "bg-red-500",     text: "text-red-600",     label: "Nghỉ học" },
   makeup_wait: { dot: "bg-amber-500",   text: "text-amber-600",   label: "Nghỉ chờ bù" },
+  makeup_scheduled: { dot: "bg-violet-900", text: "text-violet-900", label: "Đã xếp bù" },
   makeup_done: { dot: "bg-blue-500",    text: "text-blue-600",    label: "Đã học bù" },
   paused:      { dot: "bg-yellow-500",  text: "text-yellow-600",  label: "Bảo lưu" },
   pending:     { dot: "bg-slate-400",   text: "text-slate-500",   label: "Chưa điểm danh" },
 };
+
+const MANUAL_ATT_CFG = Object.fromEntries(
+  Object.entries(ATT_CFG).filter(([value]) => value !== "makeup_scheduled"),
+) as typeof ATT_CFG;
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -337,7 +342,7 @@ export function SessionStudentTable({
                         </div>
                       </SelectTrigger>
                       <SelectContent className="bg-white opacity-100">
-                        {Object.entries(ATT_CFG).map(([val, cfg]) => (
+                         {Object.entries(MANUAL_ATT_CFG).map(([val, cfg]) => (
                           <SelectItem key={val} value={val} className={`${cfg.text} font-medium text-xs`}>
                             <span className="flex items-center gap-1.5">
                               <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />

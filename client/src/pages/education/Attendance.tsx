@@ -114,6 +114,7 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; d
   present:     { label: "Có học",        bg: "bg-emerald-50",  text: "text-emerald-700", dot: "bg-emerald-500" },
   absent:      { label: "Nghỉ học",      bg: "bg-red-50",      text: "text-red-700",     dot: "bg-red-500" },
   makeup_wait: { label: "Nghỉ chờ bù",  bg: "bg-orange-50",   text: "text-orange-700",  dot: "bg-orange-500" },
+  makeup_scheduled: { label: "Đã xếp bù", bg: "bg-violet-100", text: "text-violet-900", dot: "bg-violet-900" },
   makeup_done: { label: "Đã học bù",    bg: "bg-blue-50",     text: "text-blue-700",    dot: "bg-blue-500" },
   paused:      { label: "Bảo lưu",      bg: "bg-amber-50",    text: "text-amber-700",   dot: "bg-amber-500" },
   pending:     { label: "Chưa điểm danh", bg: "bg-slate-50",  text: "text-slate-500",   dot: "bg-slate-400" },
@@ -702,7 +703,9 @@ export function Attendance() {
                                             <StatusBadge status={record.attendanceStatus || "pending"} />
                                           </SelectTrigger>
                                           <SelectContent className="bg-white">
-                                            {Object.entries(STATUS_CONFIG).map(([val, cfg]) => (
+                                             {Object.entries(STATUS_CONFIG)
+                                               .filter(([val]) => val !== "makeup_scheduled")
+                                               .map(([val, cfg]) => (
                                               <SelectItem key={val} value={val}>
                                                 <span className={`flex items-center gap-1.5 ${cfg.text}`}>
                                                   <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
@@ -840,8 +843,8 @@ export function Attendance() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-2">
-            {Object.entries(STATUS_CONFIG)
-              .filter(([val]) => val !== "pending")
+             {Object.entries(STATUS_CONFIG)
+               .filter(([val]) => val !== "pending" && val !== "makeup_scheduled")
               .map(([status, cfg]) => (
                 <Button
                   key={status}

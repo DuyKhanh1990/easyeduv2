@@ -8,6 +8,7 @@ const ATTENDANCE_STATUS_LABELS: Record<string, string> = {
   present: "Có học",
   absent: "Vắng",
   makeup_wait: "Chờ học bù",
+  makeup_scheduled: "Đã xếp bù",
   makeup_done: "Đã học bù",
   cancelled: "Huỷ",
   pending: "Chưa điểm danh",

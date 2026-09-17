@@ -25,6 +25,11 @@ const ATTENDANCE_STATUS_LABELS: Record<string, AttendanceStatusLabel> = {
     color: "text-orange-500 font-semibold",
     badgeClass: "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-200",
   },
+  makeup_scheduled: {
+    label: "Đã xếp bù",
+    color: "text-violet-900 font-semibold",
+    badgeClass: "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-violet-200",
+  },
   makeup_done: {
     label: "Đã học bù",
     color: "text-blue-600 font-semibold",

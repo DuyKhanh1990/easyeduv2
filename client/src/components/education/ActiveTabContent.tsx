@@ -85,6 +85,7 @@ export function ActiveTabContent({ classId, activeStudents, canDelete = true }: 
     present: "Có học",
     absent: "Nghỉ học",
     makeup_wait: "Nghỉ chờ bù",
+    makeup_scheduled: "Đã xếp bù",
     makeup_done: "Đã học bù",
     paused: "Bảo lưu",
   };
@@ -304,6 +305,8 @@ export function ActiveTabContent({ classId, activeStudents, canDelete = true }: 
                       session.attendanceStatus === "makeup_done"
                     ) {
                       statusColor = "bg-blue-50 text-blue-600 border-blue-100";
+                    } else if (session.attendanceStatus === "makeup_scheduled") {
+                      statusColor = "bg-violet-50 text-violet-900 border-violet-200";
                     } else if (isPast) {
                       statusColor = "bg-muted/30 text-muted-foreground/60 border-muted/10";
                     } else if (isToday || date > new Date()) {
@@ -342,6 +345,8 @@ export function ActiveTabContent({ classId, activeStudents, canDelete = true }: 
                                 ? "text-red-600"
                                 : session.attendanceStatus === "makeup_wait"
                                 ? "text-orange-600"
+                                : session.attendanceStatus === "makeup_scheduled"
+                                ? "text-violet-900"
                                 : session.attendanceStatus === "makeup_done"
                                 ? "text-blue-600"
                                 : session.attendanceStatus === "paused"

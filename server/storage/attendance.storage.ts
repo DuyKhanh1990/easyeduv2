@@ -81,6 +81,10 @@ export async function updateStudentAttendance(
       if (classSession?.status === "cancelled") {
         throw new Error("Không thể điểm danh cho buổi học đã bị huỷ");
       }
+
+      if (status === "makeup_scheduled" && session.attendanceStatus !== "makeup_scheduled") {
+        throw new Error("Trạng thái Đã xếp bù chỉ được cập nhật tự động sau nghiệp vụ xếp bù");
+      }
     }
 
     // Track whether attendance status actually changed (used by callers to decide on push noti).
@@ -114,7 +118,7 @@ export async function updateStudentAttendance(
         eq(studentSessions.classSessionId, session.makeupFromSessionId),
       ));
 
-      if (originalSS && originalSS.attendanceStatus === "makeup_wait") {
+      if (originalSS && ["makeup_wait", "makeup_scheduled"].includes(originalSS.attendanceStatus ?? "")) {
         await tx.update(studentSessions)
           .set({ attendanceStatus: "makeup_done", updatedAt: new Date() })
           .where(eq(studentSessions.id, originalSS.id));
@@ -244,6 +248,10 @@ export async function bulkUpdateAttendance(
       sessionPrice: sSession.sessionPrice,
       studentClassId: sSession.studentClassId,
     });
+  }
+
+  if (sessionInfos.some((info) => info.newStatus === "makeup_scheduled" && info.oldStatus !== "makeup_scheduled")) {
+    throw new Error("Trạng thái Đã xếp bù chỉ được cập nhật tự động sau nghiệp vụ xếp bù");
   }
 
   // ── 4. Pre-fetch data cho ví (song song, trước transaction) ───────────

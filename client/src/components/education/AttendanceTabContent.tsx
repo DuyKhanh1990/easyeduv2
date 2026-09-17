@@ -46,6 +46,7 @@ const ATTENDANCE_STATUS_CONFIG: Record<string, StatusConfig> = {
   present:      { label: "Học viên có học", Icon: CheckCircle2, iconCls: "text-green-500",  textCls: "text-green-700"  },
   absent:       { label: "Nghỉ học",        Icon: XCircle,      iconCls: "text-red-400",    textCls: "text-red-600"    },
   makeup_wait:  { label: "Nghỉ chờ bù",     Icon: Clock,        iconCls: "text-orange-400", textCls: "text-orange-600" },
+  makeup_scheduled: { label: "Đã xếp bù",    Icon: Clock,        iconCls: "text-violet-900",  textCls: "text-violet-900" },
   makeup_done:  { label: "Đã học bù",       Icon: RefreshCw,    iconCls: "text-blue-400",   textCls: "text-blue-600"   },
   paused:       { label: "Bảo lưu",         Icon: PauseCircle,  iconCls: "text-yellow-500", textCls: "text-yellow-700" },
   pending:      { label: "Chưa điểm danh",  Icon: Circle,       iconCls: "text-gray-300",   textCls: "text-gray-400"   },
@@ -55,6 +56,7 @@ const STATUS_LABEL_VI: Record<string, string> = {
   present:     "Có học",
   absent:      "Nghỉ học",
   makeup_wait: "Nghỉ chờ bù",
+  makeup_scheduled: "Đã xếp bù",
   makeup_done: "Đã học bù",
   paused:      "Bảo lưu",
   pending:     "Chưa điểm danh",
@@ -69,10 +71,11 @@ function exportAllSessionsToExcel(
     const present     = sessionStudents.filter((s) => s.attendanceStatus === "present").length;
     const absent      = sessionStudents.filter((s) => s.attendanceStatus === "absent").length;
     const makeupWait  = sessionStudents.filter((s) => s.attendanceStatus === "makeup_wait").length;
+    const makeupScheduled = sessionStudents.filter((s) => s.attendanceStatus === "makeup_scheduled").length;
     const makeupDone  = sessionStudents.filter((s) => s.attendanceStatus === "makeup_done").length;
     const paused      = sessionStudents.filter((s) => s.attendanceStatus === "paused").length;
     const pending     = sessionStudents.filter((s) => !s.attendanceStatus || s.attendanceStatus === "pending").length;
-    const attended    = present + absent + makeupWait + makeupDone + paused;
+    const attended    = present + absent + makeupWait + makeupScheduled + makeupDone + paused;
     const total       = attended + pending;
     const contents    = (session.sessionContents || []).map((c: any) => c.title || c.name || "").filter(Boolean).join(", ");
     const teachers    = (session.teachers || []).map((t: any) => t.fullName).join(", ");
@@ -84,6 +87,7 @@ function exportAllSessionsToExcel(
       "Có học":           present,
       "Nghỉ học":         absent,
       "Nghỉ chờ bù":      makeupWait,
+      "Đã xếp bù":        makeupScheduled,
       "Đã học bù":        makeupDone,
       "Bảo lưu":          paused,
       "Chưa điểm danh":   pending,
@@ -636,6 +640,7 @@ export function AttendanceTabContent({
                       <th className="px-3 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">Có học</th>
                       <th className="px-3 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">Nghỉ học</th>
                       <th className="px-3 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">Nghỉ chờ bù</th>
+                       <th className="px-3 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">Đã xếp bù</th>
                       <th className="px-3 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">Đã học bù</th>
                       <th className="px-3 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">Bảo lưu</th>
                       <th className="px-3 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">Chưa điểm danh</th>
@@ -652,13 +657,14 @@ export function AttendanceTabContent({
                         present: sessionStudents.filter((s) => s.attendanceStatus === "present").length,
                         absent: sessionStudents.filter((s) => s.attendanceStatus === "absent").length,
                         makeup_wait: sessionStudents.filter((s) => s.attendanceStatus === "makeup_wait").length,
+                        makeup_scheduled: sessionStudents.filter((s) => s.attendanceStatus === "makeup_scheduled").length,
                         makeup_done: sessionStudents.filter((s) => s.attendanceStatus === "makeup_done").length,
                         paused: sessionStudents.filter((s) => s.attendanceStatus === "paused").length,
                         scheduled: sessionStudents.filter((s) => !s.attendanceStatus || s.attendanceStatus === "pending").length,
                       };
                       const teachers: any[] = session.teachers || [];
                       const contents: any[] = session.sessionContents || [];
-                      const attended = stats.present + stats.absent + stats.makeup_wait + stats.makeup_done + stats.paused;
+                       const attended = stats.present + stats.absent + stats.makeup_wait + stats.makeup_scheduled + stats.makeup_done + stats.paused;
                       const total = attended + stats.scheduled;
 
                       return (
@@ -678,6 +684,9 @@ export function AttendanceTabContent({
                           </td>
                           <td className="px-3 py-3">
                             <span className="font-semibold text-orange-500">{stats.makeup_wait}</span>
+                          </td>
+                          <td className="px-3 py-3">
+                            <span className="font-semibold text-violet-900">{stats.makeup_scheduled}</span>
                           </td>
                           <td className="px-3 py-3">
                             <span className="font-semibold text-blue-600">{stats.makeup_done}</span>

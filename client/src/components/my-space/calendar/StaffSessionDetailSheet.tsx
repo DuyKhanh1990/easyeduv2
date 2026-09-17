@@ -56,6 +56,7 @@ const ATTENDANCE_OPTIONS = [
   { value: "present", label: "Có học", className: "text-green-600" },
   { value: "absent", label: "Nghỉ học", className: "text-red-600" },
   { value: "makeup_wait", label: "Nghỉ chờ bù", className: "text-amber-600" },
+  { value: "makeup_scheduled", label: "Đã xếp bù", className: "text-violet-900" },
   { value: "makeup_done", label: "Đã học bù", className: "text-blue-600" },
   { value: "paused", label: "Bảo lưu", className: "text-yellow-600" },
 ];
@@ -494,7 +495,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {ATTENDANCE_OPTIONS.map((o) => (
+                                   {ATTENDANCE_OPTIONS.filter((o) => o.value !== "makeup_scheduled").map((o) => (
                                     <SelectItem key={o.value} value={o.value} className={cn("text-xs", o.className)}>
                                       {o.label}
                                     </SelectItem>

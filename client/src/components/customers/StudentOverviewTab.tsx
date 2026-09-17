@@ -287,10 +287,12 @@ export function StudentOverviewTab({ studentId, student, classesData, processedC
       const st = s.studentSession?.attendanceStatus;
       if (!st || st === "pending") continue;
       const isPresent = st === "present";
+       const isMakeupScheduled = st === "makeup_scheduled";
+       const isMakeupDone = st === "makeup_done";
       events.push({ id: `sess-${s.studentSession?.id || Math.random()}`, ts: new Date(date).getTime(),
         timeLabel: s.shiftTemplate ? s.shiftTemplate.startTime?.slice(0,5) : fmtTime(date),
         dateKey: buildDateKey(date), type: isPresent ? "present" : "absent",
-        title: isPresent ? "Điểm danh" : "Vắng mặt",
+         title: isPresent ? "Điểm danh" : isMakeupScheduled ? "Đã xếp bù" : isMakeupDone ? "Đã học bù" : "Vắng mặt",
         desc: `Buổi học ${clsName}${s.shiftTemplate ? ` — ca ${s.shiftTemplate.name} (${s.shiftTemplate.startTime?.slice(0,5)}–${s.shiftTemplate.endTime?.slice(0,5)})` : ""}` });
     }
   }

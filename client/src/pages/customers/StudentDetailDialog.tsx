@@ -745,6 +745,8 @@ export function StudentDetailDialog({
                                           const sessionPrice = Number(session.studentSession?.sessionPrice || 0);
                                           const attendanceStatus = session.studentSession?.attendanceStatus;
                                           const isAttended = attendanceStatus === 'present';
+                                           const isMakeupScheduled = attendanceStatus === 'makeup_scheduled';
+                                           const isMakeupDone = attendanceStatus === 'makeup_done';
                                           const isDeducted = !!attendanceStatus && deductingStatuses.has(attendanceStatus);
                                           const allocatedFee = session.allocatedFee != null ? Number(session.allocatedFee) : null;
                                           const deductAmount = allocatedFee != null ? allocatedFee : sessionPrice;
@@ -784,9 +786,15 @@ export function StudentDetailDialog({
                                                 <span className={`text-xs px-2 py-1 rounded font-medium ${
                                                   isAttended ? 'bg-green-100 text-green-700' :
                                                   attendanceStatus === 'absent' ? 'bg-red-100 text-red-700' :
+                                                   isMakeupScheduled ? 'bg-violet-100 text-violet-900' :
+                                                   isMakeupDone ? 'bg-blue-100 text-blue-700' :
                                                   'bg-gray-100 text-gray-700'
                                                 }`}>
-                                                  {isAttended ? 'Có mặt' : attendanceStatus === 'absent' ? 'Vắng' : 'Chưa điểm danh'}
+                                                   {isAttended ? 'Có mặt' :
+                                                     attendanceStatus === 'absent' ? 'Vắng' :
+                                                     isMakeupScheduled ? 'Đã xếp bù' :
+                                                     isMakeupDone ? 'Đã học bù' :
+                                                     'Chưa điểm danh'}
                                                 </span>
                                               </td>
                                               <td className="p-2 text-gray-600">{session.feePackage?.name || 'N/A'}</td>

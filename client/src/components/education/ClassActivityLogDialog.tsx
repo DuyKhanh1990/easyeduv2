@@ -539,6 +539,7 @@ function RemoveStudentLogDetailView({ log }: { log: ActivityLog }) {
     present: "Có mặt",
     absent: "Vắng",
     makeup_wait: "Chờ học bù",
+    makeup_scheduled: "Đã xếp bù",
     makeup_done: "Đã học bù",
     paused: "Tạm dừng",
   };
@@ -1029,6 +1030,7 @@ const ATTENDANCE_STATUS_LABELS: Record<string, string> = {
   present: "Có học",
   absent: "Nghỉ học",
   makeup_wait: "Nghỉ chờ bù",
+  makeup_scheduled: "Đã xếp bù",
   makeup_done: "Đã học bù",
   cancelled: "Huỷ",
   pending: "Chưa điểm danh",
@@ -2150,7 +2152,7 @@ function EducationConfigDetailView({ log }: { log: ActivityLog }) {
     if (key === "attendanceStatus") {
       const statuses: Record<string, string> = {
         pending: "Chưa điểm danh", present: "Có học", absent: "Nghỉ học",
-        makeup_wait: "Nghỉ chờ bù", makeup: "Học bù",
+         makeup_wait: "Nghỉ chờ bù", makeup_scheduled: "Đã xếp bù", makeup: "Học bù",
       };
       return statuses[String(value)] ?? String(value);
     }

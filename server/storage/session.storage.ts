@@ -1372,6 +1372,7 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
           await tx.update(studentSessions)
             .set({
               status: "makeup_moved",
+              attendanceStatus: "makeup_scheduled",
               note: `Xếp bù sang ${targetLabel} (${targetClassName})`,
               updatedAt: new Date(),
             })
@@ -1445,6 +1446,7 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
             await tx.update(studentSessions)
               .set({
                 status: "makeup_moved",
+                attendanceStatus: "makeup_scheduled",
                 note: `Xếp bù sang ${targetLabel}`,
                 updatedAt: new Date(),
               })
@@ -1509,6 +1511,7 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
               await tx.update(studentSessions)
                 .set({
                   status: "makeup_moved",
+                    attendanceStatus: "makeup_scheduled",
                   note: `Xếp bù sang ${targetLabel}`,
                   updatedAt: new Date(),
                 })
@@ -1576,6 +1579,7 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
           await tx.update(studentSessions)
             .set({
               status: "makeup_moved",
+                attendanceStatus: "makeup_scheduled",
               note: `Xếp bù sang lớp ${data.newSchedule?.name || "bù"}`,
               updatedAt: new Date(),
             })
