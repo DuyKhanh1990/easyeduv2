@@ -12,8 +12,8 @@ import {
 interface ReviewItem {
   criteriaId?: string;
   criteriaName: string;
+  groupName?: string;
   comment: string;
-  rating?: number;
 }
 
 interface SessionReview {
@@ -25,7 +25,26 @@ interface SessionReview {
   shiftName: string;
   startTime: string | null;
   endTime: string | null;
+  criteriaName: string | null;
+  overallRating: number | null;
   reviewData: ReviewItem[];
+}
+
+function StarDisplay({ rating }: { rating: number | null | undefined }) {
+  if (rating == null || rating <= 0) return null;
+
+  return (
+    <span className="flex gap-0.5 shrink-0" aria-label={`${rating} trên 5 sao`}>
+      {[1, 2, 3, 4, 5].map((star) => (
+        <span
+          key={star}
+          className={`text-base leading-none ${star <= rating ? "text-yellow-400" : "text-muted-foreground/30"}`}
+        >
+          ★
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function ReviewDetailDialog({
@@ -47,6 +66,17 @@ function ReviewDetailDialog({
     review.startTime && review.endTime
       ? `${review.shiftName} (${review.startTime} – ${review.endTime})`
       : review.shiftName;
+  const groupedItems = new Map<string, ReviewItem[]>();
+  const ungroupedItems: ReviewItem[] = [];
+  for (const item of review.reviewData) {
+    if (item.groupName) {
+      const items = groupedItems.get(item.groupName) ?? [];
+      items.push(item);
+      groupedItems.set(item.groupName, items);
+    } else {
+      ungroupedItems.push(item);
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -73,25 +103,37 @@ function ReviewDetailDialog({
 
           {review.reviewData.length > 0 ? (
             <div>
-              <p className="text-muted-foreground mb-2 font-medium">Chi tiết nhận xét</p>
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <p className="text-muted-foreground font-medium">Chi tiết nhận xét</p>
+                <StarDisplay rating={review.overallRating} />
+              </div>
               <div className="border rounded-md overflow-hidden divide-y">
-                {review.reviewData.map((item, i) => (
-                  <div key={i} className="px-3 py-2.5 space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-semibold text-foreground">{item.criteriaName}</p>
-                      {item.rating != null && item.rating > 0 && (
-                        <span className="flex gap-0.5 shrink-0">
-                          {[1, 2, 3, 4, 5].map((star) => (
-                            <span
-                              key={star}
-                              className={`text-sm ${star <= item.rating! ? "text-yellow-400" : "text-muted-foreground/30"}`}
-                            >
-                              ★
-                            </span>
-                          ))}
-                        </span>
-                      )}
+                {review.criteriaName && (
+                  <div className="px-3 py-2 bg-muted/30">
+                    <p className="text-xs font-semibold text-foreground">{review.criteriaName}</p>
+                  </div>
+                )}
+                {Array.from(groupedItems.entries()).map(([groupName, items]) => (
+                  <div key={groupName}>
+                    <div className="px-3 py-2 bg-muted/30 border-t">
+                      <p className="text-xs font-semibold text-foreground">{groupName}</p>
                     </div>
+                    {items.map((item, i) => (
+                      <div key={`${groupName}-${i}`} className="px-3 py-2.5 pl-6 space-y-1">
+                        <p className="text-xs font-semibold text-foreground">{item.criteriaName}</p>
+                        {item.comment ? (
+                          <div
+                            className="text-xs text-muted-foreground leading-relaxed review-html-content"
+                            dangerouslySetInnerHTML={{ __html: item.comment }}
+                          />
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                {ungroupedItems.map((item, i) => (
+                  <div key={`ungrouped-${i}`} className="px-3 py-2.5 space-y-1">
+                    <p className="text-xs font-semibold text-foreground">{item.criteriaName}</p>
                     {item.comment ? (
                       <div
                         className="text-xs text-muted-foreground leading-relaxed review-html-content"

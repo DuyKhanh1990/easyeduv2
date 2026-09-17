@@ -2347,30 +2347,32 @@ export function registerStudentsRoutes(app: Express): void {
         ORDER BY cs.session_date DESC, cs.session_index DESC
       `);
 
-      function normalizeStudentReviewData(raw: any): { criteriaId?: string; criteriaName: string; comment: string; rating?: number }[] {
+      function normalizeStudentReviewData(raw: any): {
+        criteriaId?: string;
+        criteriaName: string;
+        groupName?: string;
+        comment: string;
+      }[] {
         if (!raw) return [];
         if (Array.isArray(raw)) {
           return raw.map((item: any) => ({
             criteriaId: item.subCriteriaId || item.criteriaId,
             criteriaName: item.subCriteriaName || item.criteriaName || "—",
+            ...(item.groupName ? { groupName: item.groupName } : {}),
             comment: item.comment || "",
-            rating: item.rating,
           }));
         }
         if (typeof raw === "object") {
-          const items: { criteriaId?: string; criteriaName: string; comment: string; rating?: number }[] = [];
+          const items: { criteriaId?: string; criteriaName: string; groupName?: string; comment: string }[] = [];
           for (const teacherData of Object.values(raw)) {
             const td = teacherData as any;
-            const criteriaRatings: Record<string, number> = td?.criteriaRatings || {};
             if (td?.items && Array.isArray(td.items)) {
               for (const item of td.items) {
-                const parentCriteriaId = item.criteriaId;
-                const rating = criteriaRatings[parentCriteriaId] ?? undefined;
                 items.push({
                   criteriaId: item.subCriteriaId || item.criteriaId,
                   criteriaName: item.subCriteriaName || item.criteriaName || "—",
+                  ...(item.groupName ? { groupName: item.groupName } : {}),
                   comment: item.comment || "",
-                  rating,
                 });
               }
             } else if (td?.subNotes && typeof td.subNotes === "object") {
@@ -2385,13 +2387,12 @@ export function registerStudentsRoutes(app: Express): void {
               }
             }
             // If no items but criteriaRatings exist, surface ratings as items
-            if ((!td?.items || td.items.length === 0) && Object.keys(criteriaRatings).length > 0) {
-              for (const [cId, rating] of Object.entries(criteriaRatings)) {
+            if ((!td?.items || td.items.length === 0) && Object.keys(td?.criteriaRatings || {}).length > 0) {
+              for (const [cId] of Object.entries(td.criteriaRatings)) {
                 items.push({
                   criteriaId: cId,
                   criteriaName: cId,
                   comment: "",
-                  rating: rating as number,
                 });
               }
             }
@@ -2401,18 +2402,32 @@ export function registerStudentsRoutes(app: Express): void {
         return [];
       }
 
-      const rows = result.rows.map((row: any) => ({
-        id: row.id,
-        studentName: row.student_name,
-        className: row.class_name,
-        sessionIndex: row.session_index,
-        sessionDate: row.session_date,
-        shiftName: row.shift_name || "—",
-        startTime: row.start_time || null,
-        endTime: row.end_time || null,
-        reviewData: normalizeStudentReviewData(row.review_data),
-        reviewPublished: row.review_published,
-      })).filter((row) => row.reviewData.some(item => item.comment || (item.rating && item.rating > 0)));
+      const rows = result.rows.map((row: any) => {
+        const raw = row.review_data;
+        const entries = raw && typeof raw === "object" && !Array.isArray(raw) ? Object.values(raw) as any[] : [];
+        const ratings = entries
+          .flatMap((entry) => Object.values(entry?.criteriaRatings || {}))
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value) && value > 0);
+        const firstItem = entries
+          .flatMap((entry) => Array.isArray(entry?.items) ? entry.items : [])
+          .find((item) => item?.criteriaName || item?.subCriteriaName);
+
+        return {
+          id: row.id,
+          studentName: row.student_name,
+          className: row.class_name,
+          sessionIndex: row.session_index,
+          sessionDate: row.session_date,
+          shiftName: row.shift_name || "—",
+          startTime: row.start_time || null,
+          endTime: row.end_time || null,
+          criteriaName: firstItem?.criteriaName || null,
+          overallRating: ratings[0] ?? null,
+          reviewData: normalizeStudentReviewData(raw),
+          reviewPublished: row.review_published,
+        };
+      }).filter((row) => row.reviewData.some(item => item.comment) || (row.overallRating != null && row.overallRating > 0));
 
       res.json(rows);
     } catch (err: any) {
