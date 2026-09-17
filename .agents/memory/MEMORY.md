@@ -50,3 +50,4 @@
 - [Bulk student session scope](bulk-student-session-scope.md) — bulk session removal must carry each student's studentClassId; one shared class-row ID silently omits other students.
 - [Makeup attendance state](makeup-scheduled-status.md) — xếp bù thành công dùng trạng thái system-only makeup_scheduled trước khi có mặt chuyển thành makeup_done.
 - [Attendance default range](attendance-default-range.md) — màn hình điểm danh mặc định xem ngày hiện tại; bộ chọn thời gian đặt cạnh nút Bộ lọc.
+- [Bulk makeup across classes](bulk-makeup-cross-class.md) — chọn học viên từ nhiều lớp vẫn dùng chung một lịch đích; backend phải giữ lớp gốc riêng cho từng học viên.

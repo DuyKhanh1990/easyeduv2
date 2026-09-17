@@ -1174,6 +1174,7 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
   const { option, subOption, selectedTargetSessionId, students } = data;
   const cls = await getClass(classId);
   if (!cls) throw new Error("Lớp học không tồn tại");
+  const classCache = new Map<string, any>([[classId, cls]]);
 
   await db.transaction(async (tx) => {
     // ── Pre-loop: Create new class for new_schedule option ─────────────────
@@ -1238,6 +1239,13 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
 
     for (const student of students) {
       const studentId = student.studentId;
+      const sourceClassId = student.sourceClassId || student.classId || classId;
+      let sourceCls = classCache.get(sourceClassId);
+      if (!sourceCls) {
+        sourceCls = await getClass(sourceClassId);
+        if (sourceCls) classCache.set(sourceClassId, sourceCls);
+      }
+      if (!sourceCls) throw new Error("Lớp gốc của học viên không tồn tại");
       // original student_session record ID
       const originalStudentSessionId: string | undefined = student.id;
       // original class_session ID (the session the student missed)
@@ -1245,8 +1253,10 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
 
       const [sc] = await tx.select()
         .from(studentClasses)
-        .where(and(eq(studentClasses.classId, classId), eq(studentClasses.studentId, studentId)));
-      if (!sc) continue;
+        .where(and(eq(studentClasses.classId, sourceClassId), eq(studentClasses.studentId, studentId)));
+      if (!sc) {
+        throw new Error("Không tìm thấy học viên trong lớp gốc để xếp bù");
+      }
 
       // ── Resolve original class session from DB for accurate note labels ───
       let originalCS: { sessionIndex: number | null; sessionDate: string; shiftTemplateId: string | null } | null = null;
@@ -1364,7 +1374,7 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
           packageId: origPackageId,
           packageType: origPackageType,
           sessionPrice: origSessionPrice,
-          note: `Xếp bù từ ${origLabel} (${cls.name})`,
+          note: `Xếp bù từ ${origLabel} (${sourceCls.name})`,
         });
 
         // ✅ UPDATE original student_session → makeup_moved
@@ -1426,10 +1436,16 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
           const targetLabel = `Buổi ${targetCS.sessionIndex}: ${getDayName(targetCS.sessionDate)} ${format(parseISO(targetCS.sessionDate), "dd/MM/yy")}`;
 
           // ✅ INSERT new makeup student_session
+          const [targetSC] = await tx.select()
+            .from(studentClasses)
+            .where(and(
+              eq(studentClasses.classId, classId),
+              eq(studentClasses.studentId, studentId),
+            ));
           await tx.insert(studentSessions).values({
             studentId,
             classId,
-            studentClassId: sc.id,
+            studentClassId: targetSC?.id || null,
             classSessionId: selectedTargetSessionId,
             status: "scheduled",
             attendanceStatus: "pending",
@@ -1451,6 +1467,9 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
                 updatedAt: new Date(),
               })
               .where(eq(studentSessions.id, originalStudentSessionId));
+          }
+          if (targetSC) {
+            await recalculateStudentClass(targetSC.id, tx);
           }
 
         // ── End of schedule ─────────────────────────────────────────────────
@@ -1491,10 +1510,16 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
             const targetLabel = `Buổi ${newCS.sessionIndex}: ${getDayName(newCS.sessionDate)} ${format(parseISO(newCS.sessionDate), "dd/MM/yy")}`;
 
             // ✅ INSERT new makeup student_session at end of schedule
+            const [targetSC] = await tx.select()
+              .from(studentClasses)
+              .where(and(
+                eq(studentClasses.classId, classId),
+                eq(studentClasses.studentId, studentId),
+              ));
             await tx.insert(studentSessions).values({
               studentId,
               classId,
-              studentClassId: sc.id,
+              studentClassId: targetSC?.id || null,
               classSessionId: newCS.id,
               status: "scheduled",
               attendanceStatus: "pending",
@@ -1516,6 +1541,9 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
                   updatedAt: new Date(),
                 })
                 .where(eq(studentSessions.id, originalStudentSessionId));
+            }
+            if (targetSC) {
+              await recalculateStudentClass(targetSC.id, tx);
             }
 
             found = true;
@@ -1570,7 +1598,7 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
             packageId: origPackageId,
             packageType: origPackageType,
             sessionPrice: origSessionPrice,
-            note: `Xếp bù từ ${origLabel} (${cls.name})`,
+            note: `Xếp bù từ ${origLabel} (${sourceCls.name})`,
           });
         }
 

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { StudentNameLink } from "@/components/ui/StudentNameLink";
 import { Card, CardContent } from "@/components/ui/card";
@@ -166,13 +166,13 @@ export function ChoBuBaoLuuTab({
 
   const selectedRowsList = useMemo(() => Array.from(selectedRows.values()), [selectedRows]);
   const selectedIds = useMemo(() => new Set(selectedRows.keys()), [selectedRows]);
-  const selectedClassIds = useMemo(
-    () => new Set(selectedRowsList.map((row) => row.classId)),
-    [selectedRowsList],
-  );
   const selectedMakeupRows = useMemo(
     () => selectedRowsList.filter((row) => row.attendanceStatus === "makeup_wait"),
     [selectedRowsList],
+  );
+  const selectedSourceClassIds = useMemo(
+    () => Array.from(new Set(selectedMakeupRows.map((row) => row.classId))),
+    [selectedMakeupRows],
   );
 
   const { data: makeupClassSessions = [] } = useQuery<any[]>({
@@ -183,17 +183,23 @@ export function ChoBuBaoLuuTab({
     queryKey: [`/api/classes/${makeupClassId}`],
     enabled: isMakeupDialogOpen && !!makeupClassId,
   });
-  const { data: makeupActiveStudents = [] } = useQuery<any[]>({
-    queryKey: [`/api/classes/${makeupClassId}/active-students`],
-    enabled: isMakeupDialogOpen && !!makeupClassId,
-    staleTime: 0,
+  const makeupActiveStudentQueries = useQueries({
+    queries: selectedSourceClassIds.map((sourceClassId) => ({
+      queryKey: [`/api/classes/${sourceClassId}/active-students`],
+      enabled: isMakeupDialogOpen,
+      staleTime: 0,
+    })),
   });
+  const makeupActiveStudents = makeupActiveStudentQueries.flatMap((query) => query.data ?? []);
 
   const selectedStudentsForMakeup = useMemo(
     () => selectedMakeupRows.map((row) => {
-      const activeStudent = makeupActiveStudents.find((student: any) => student.studentId === row.studentId);
+      const activeStudent = makeupActiveStudents.find(
+        (student: any) => student.studentId === row.studentId && student.classId === row.classId,
+      ) ?? makeupActiveStudents.find((student: any) => student.studentId === row.studentId);
       return {
         ...row,
+        sourceClassId: row.classId,
         student: { id: row.studentId, fullName: row.studentName, code: row.studentCode },
         allStudentSessions: activeStudent?.studentSessions ?? [],
       };
@@ -244,14 +250,6 @@ export function ChoBuBaoLuuTab({
   };
 
   const openMakeupDialog = () => {
-    if (selectedClassIds.size !== 1) {
-      toast({
-        title: "Chọn học viên trong cùng một lớp",
-        description: "Dialog xếp bù hiện tại xử lý một lớp gốc mỗi lần.",
-        variant: "destructive",
-      });
-      return;
-    }
     if (selectedMakeupRows.length === 0) {
       toast({
         title: "Không thể xếp bù",
