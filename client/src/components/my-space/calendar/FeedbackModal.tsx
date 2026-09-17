@@ -30,6 +30,17 @@ function CriteriaCard({ group, colorIdx }: { group: ReviewCriteriaGroup; colorId
   const [expanded, setExpanded] = useState(true);
   const color = CRITERIA_COLORS[colorIdx % CRITERIA_COLORS.length];
   const hasContent = group.items.some((i) => i.comment || i.inputType === "checkbox");
+  const groupedItems = new Map<string, ReviewCriteriaGroup["items"]>();
+  const ungroupedItems: ReviewCriteriaGroup["items"] = [];
+  for (const item of group.items) {
+    if (item.groupName) {
+      const items = groupedItems.get(item.groupName) ?? [];
+      items.push(item);
+      groupedItems.set(item.groupName, items);
+    } else {
+      ungroupedItems.push(item);
+    }
+  }
 
   return (
     <div className={cn("rounded-xl border overflow-hidden", color.bg, color.border)}>
@@ -52,36 +63,21 @@ function CriteriaCard({ group, colorIdx }: { group: ReviewCriteriaGroup; colorId
 
       {expanded && hasContent && (
         <div className="px-4 pb-4 space-y-3 border-t border-inherit">
-          {group.items.map((item, ii) => (
-            <div key={ii}>
-              {item.groupName && (ii === 0 || group.items[ii - 1]?.groupName !== item.groupName) && (
-                <p className={cn("text-sm font-semibold mt-3 mb-1.5", color.text)}>
-                  {item.groupName}
-                </p>
-              )}
-              {item.subCriteriaName && (
-                <p className={cn("text-xs font-semibold mt-3 mb-1.5", color.text)}>
-                  {item.subCriteriaName}
-                </p>
-              )}
-              {item.inputType === "checkbox" ? (
-                <div className="flex items-center gap-2 rounded-lg bg-white/70 dark:bg-black/20 px-3 py-2.5 text-sm shadow-sm">
-                  <Checkbox checked={item.checked === true} disabled />
-                  <span className="text-foreground">{item.subCriteriaName || "Tiêu chí"}</span>
-                  <span className="ml-auto text-xs font-medium text-muted-foreground">
-                    {item.checked === true ? "Đạt" : "Chưa đạt"}
-                  </span>
-                </div>
-              ) : item.comment ? (
-                <div
-                  className="bg-white/70 dark:bg-black/20 rounded-lg px-3 py-2.5 text-sm text-foreground leading-relaxed review-html-content shadow-sm"
-                  dangerouslySetInnerHTML={{ __html: item.comment }}
-                />
-              ) : (
-                <div className="px-3 py-2 text-xs text-muted-foreground italic">Chưa có nhận xét</div>
-              )}
+          {Array.from(groupedItems.entries()).map(([groupName, items]) => (
+            <div key={groupName} className="space-y-2">
+              <p className={cn("text-sm font-semibold mt-3 mb-1.5", color.text)}>{groupName}</p>
+              {items.map((item, ii) => (
+                <ReviewItemRow key={`${groupName}-${ii}`} item={item} color={color} />
+              ))}
             </div>
           ))}
+          {ungroupedItems.length > 0 && (
+            <div className="space-y-2">
+              {ungroupedItems.map((item, ii) => (
+                <ReviewItemRow key={`ungrouped-${ii}`} item={item} color={color} />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -89,6 +85,40 @@ function CriteriaCard({ group, colorIdx }: { group: ReviewCriteriaGroup; colorId
         <div className="px-4 pb-3 border-t border-inherit">
           <p className="text-xs text-muted-foreground italic mt-2">Chưa có nhận xét</p>
         </div>
+      )}
+    </div>
+  );
+}
+
+function ReviewItemRow({
+  item,
+  color,
+}: {
+  item: ReviewCriteriaGroup["items"][number];
+  color: (typeof CRITERIA_COLORS)[number];
+}) {
+  if (item.inputType === "checkbox") {
+    return (
+      <div className="flex items-center gap-2 rounded-lg bg-white/70 dark:bg-black/20 px-3 py-2.5 text-sm shadow-sm">
+        <Checkbox checked={item.checked === true} disabled />
+        <span className="text-foreground">{item.subCriteriaName || "Tiêu chí"}</span>
+        <span className="ml-auto text-xs font-medium text-muted-foreground">
+          {item.checked === true ? "Đạt" : "Chưa đạt"}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg bg-white/70 dark:bg-black/20 px-3 py-2.5 shadow-sm">
+      <p className={cn("text-sm font-semibold", color.text)}>{item.subCriteriaName || "Tiêu chí"}</p>
+      {item.comment ? (
+        <div
+          className="mt-1 text-sm text-foreground leading-relaxed review-html-content"
+          dangerouslySetInnerHTML={{ __html: item.comment }}
+        />
+      ) : (
+        <p className="mt-1 text-xs text-muted-foreground italic">Chưa có nhận xét</p>
       )}
     </div>
   );

@@ -199,11 +199,26 @@ function parseReviewData(rawReviewData: any): { teacherName: string; criteria: {
           : {}),
       });
     }
-    const criteria = Array.from(criteriaMap.entries()).map(([criteriaName, data]) => ({
-      criteriaName,
-      items: data.items,
-      ...(entry.criteriaRatings?.[data.criteriaId] != null ? { rating: entry.criteriaRatings[data.criteriaId] } : {}),
-    }));
+    const criteria = Array.from(criteriaMap.entries()).map(([criteriaName, data]) => {
+      const groupNames = [...new Set(data.items.map((item) => item.groupName).filter(Boolean) as string[])]
+        .sort((a, b) => a.localeCompare(b, "vi"));
+      const orderedItems = [
+        ...groupNames.flatMap((groupName) =>
+          data.items
+            .filter((item) => item.groupName === groupName)
+            .sort((a, b) => a.subCriteriaName.localeCompare(b.subCriteriaName, "vi"))
+        ),
+        ...data.items
+          .filter((item) => !item.groupName)
+          .sort((a, b) => a.subCriteriaName.localeCompare(b.subCriteriaName, "vi")),
+      ];
+
+      return {
+        criteriaName,
+        items: orderedItems,
+        ...(entry.criteriaRatings?.[data.criteriaId] != null ? { rating: entry.criteriaRatings[data.criteriaId] } : {}),
+      };
+    });
     result.push({ teacherName: entry.teacherName || "Giáo viên", criteria });
   }
   return result;
