@@ -1124,7 +1124,28 @@ export function registerConfigRoutes(app: Express): void {
     try {
       const { evaluationSubCriteria, insertEvaluationSubCriteriaSchema } = await import("@shared/schema");
       const input = insertEvaluationSubCriteriaSchema.parse(req.body);
-      const [row] = await db.insert(evaluationSubCriteria).values(input).returning();
+      const itemType = input.itemType === "heading" ? "heading" : "criterion";
+      const parentId = itemType === "criterion" ? (input.parentId || null) : null;
+      if (itemType === "criterion" && !parentId) {
+        return res.status(400).json({ message: "Tiêu chí con phải chọn Nhóm chung" });
+      }
+      if (parentId) {
+        const [parent] = await db.select({ id: evaluationSubCriteria.id })
+          .from(evaluationSubCriteria)
+          .where(and(
+            eq(evaluationSubCriteria.id, parentId),
+            eq(evaluationSubCriteria.criteriaId, input.criteriaId),
+            eq(evaluationSubCriteria.itemType, "heading"),
+          ))
+          .limit(1);
+        if (!parent) return res.status(400).json({ message: "Nhóm chung không hợp lệ" });
+      }
+      const [row] = await db.insert(evaluationSubCriteria).values({
+        ...input,
+        itemType,
+        parentId,
+        inputType: itemType === "criterion" && input.inputType === "checkbox" ? "checkbox" : "text",
+      }).returning();
       res.status(201).json(row);
     } catch (err) {
       if (err instanceof z.ZodError) return res.status(400).json(err.errors);
@@ -1136,7 +1157,38 @@ export function registerConfigRoutes(app: Express): void {
     try {
       const { evaluationSubCriteria, insertEvaluationSubCriteriaSchema } = await import("@shared/schema");
       const input = insertEvaluationSubCriteriaSchema.partial().parse(req.body);
-      const [row] = await db.update(evaluationSubCriteria).set({ ...input, updatedAt: new Date() }).where(eq(evaluationSubCriteria.id, req.params.id)).returning();
+      const [current] = await db.select().from(evaluationSubCriteria)
+        .where(eq(evaluationSubCriteria.id, req.params.id))
+        .limit(1);
+      if (!current) return res.status(404).json({ message: "Not found" });
+      const itemType = input.itemType === "heading" ? "heading" : input.itemType === "criterion" ? "criterion" : current.itemType;
+      const parentId = itemType === "criterion" ? (input.parentId ?? current.parentId) : null;
+      const isLegacyUngroupedCriterion = itemType === "criterion"
+        && !parentId
+        && current.itemType === "criterion"
+        && !current.parentId
+        && input.parentId === null;
+      if (itemType === "criterion" && !parentId && !isLegacyUngroupedCriterion) {
+        return res.status(400).json({ message: "Tiêu chí con phải chọn Nhóm chung" });
+      }
+      if (parentId) {
+        const [parent] = await db.select({ id: evaluationSubCriteria.id })
+          .from(evaluationSubCriteria)
+          .where(and(
+            eq(evaluationSubCriteria.id, parentId),
+            eq(evaluationSubCriteria.criteriaId, input.criteriaId || current.criteriaId),
+            eq(evaluationSubCriteria.itemType, "heading"),
+          ))
+          .limit(1);
+        if (!parent || parent.id === req.params.id) return res.status(400).json({ message: "Nhóm chung không hợp lệ" });
+      }
+      const [row] = await db.update(evaluationSubCriteria).set({
+        ...input,
+        itemType,
+        parentId,
+        inputType: itemType === "criterion" && input.inputType === "checkbox" ? "checkbox" : "text",
+        updatedAt: new Date(),
+      }).where(eq(evaluationSubCriteria.id, req.params.id)).returning();
       if (!row) return res.status(404).json({ message: "Not found" });
       res.json(row);
     } catch (err) {
@@ -1148,6 +1200,13 @@ export function registerConfigRoutes(app: Express): void {
   app.delete("/api/evaluation-sub-criteria/:id", async (req, res) => {
     try {
       const { evaluationSubCriteria } = await import("@shared/schema");
+      const children = await db.select({ id: evaluationSubCriteria.id })
+        .from(evaluationSubCriteria)
+        .where(eq(evaluationSubCriteria.parentId, req.params.id))
+        .limit(1);
+      if (children.length > 0) {
+        return res.status(400).json({ message: "Không thể xoá tiêu đề đang có tiêu chí con" });
+      }
       await db.delete(evaluationSubCriteria).where(eq(evaluationSubCriteria.id, req.params.id));
       res.status(204).send();
     } catch (err) { res.status(500).json({ message: (err as any).message }); }

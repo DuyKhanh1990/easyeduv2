@@ -232,8 +232,6 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
   const [isCriteriaDialogOpen, setIsCriteriaDialogOpen] = useState(false);
   const [editingSubCriteria, setEditingSubCriteria] = useState<any | null>(null);
   const [isSubDialogOpen, setIsSubDialogOpen] = useState(false);
-  const [editingGroup, setEditingGroup] = useState<any | null>(null);
-  const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false);
 
   const { data: criteriaList = [] } = useQuery<any[]>({ queryKey: ["/api/evaluation-criteria"], staleTime: STATIC_STALE_TIME });
 
@@ -254,18 +252,16 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
   });
 
   const criteriaForm = useForm<{ name: string }>({ defaultValues: { name: "" } });
-  const groupForm = useForm<{ name: string }>({ defaultValues: { name: "" } });
-  const subForm = useForm<{ name: string; inputType: "text" | "checkbox"; groupId: string }>({
-    defaultValues: { name: "", inputType: "text", groupId: "" },
+  const subForm = useForm<{ name: string; inputType: "text" | "checkbox"; parentId: string }>({
+    defaultValues: { name: "", inputType: "text", parentId: "" },
   });
 
   useEffect(() => { criteriaForm.reset({ name: editingCriteria?.name || "" }); }, [editingCriteria]);
-  useEffect(() => { groupForm.reset({ name: editingGroup?.name || "" }); }, [editingGroup]);
   useEffect(() => {
     subForm.reset({
       name: editingSubCriteria?.name || "",
       inputType: editingSubCriteria?.inputType === "checkbox" ? "checkbox" : "text",
-      groupId: editingSubCriteria?.groupId || "",
+      parentId: editingSubCriteria?.parentId || "",
     });
   }, [editingSubCriteria]);
 
@@ -289,47 +285,13 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
     onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
   });
 
-  const createGroup = useMutation({
-    mutationFn: async (data: { name: string }) => (
-      await apiRequest("POST", "/api/evaluation-criteria-groups", {
-        ...data,
-        criteriaId: selectedCriteriaId,
-      })
-    ).json(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/evaluation-criteria"] });
-      toast({ title: "Đã thêm tiêu đề nhóm" });
-      setIsGroupDialogOpen(false);
-    },
-    onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
-  });
-  const updateGroup = useMutation({
-    mutationFn: async (data: { name: string }) => (
-      await apiRequest("PUT", `/api/evaluation-criteria-groups/${editingGroup?.id}`, data)
-    ).json(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/evaluation-criteria"] });
-      toast({ title: "Đã cập nhật tiêu đề nhóm" });
-      setIsGroupDialogOpen(false);
-      setEditingGroup(null);
-    },
-    onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
-  });
-  const deleteGroup = useMutation({
-    mutationFn: async (id: string) => apiRequest("DELETE", `/api/evaluation-criteria-groups/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/evaluation-criteria"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/evaluation-criteria", selectedCriteriaId, "sub-criteria"] });
-      toast({ title: "Đã xoá tiêu đề nhóm" });
-    },
-    onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
-  });
-
   const createSub = useMutation({
-    mutationFn: async (data: { name: string; inputType: "text" | "checkbox"; groupId: string }) => (
+    mutationFn: async (data: { name: string; inputType: "text" | "checkbox"; parentId: string }) => (
       await apiRequest("POST", "/api/evaluation-sub-criteria", {
-        ...data,
-        groupId: data.groupId || null,
+        name: data.name,
+        parentId: data.parentId || null,
+        itemType: data.parentId ? "criterion" : "heading",
+        inputType: data.parentId ? data.inputType : "text",
         criteriaId: selectedCriteriaId,
       })
     ).json(),
@@ -342,10 +304,14 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
     onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
   });
   const updateSub = useMutation({
-    mutationFn: async (data: { name: string; inputType: "text" | "checkbox"; groupId: string }) => (
+    mutationFn: async (data: { name: string; inputType: "text" | "checkbox"; parentId: string }) => (
       await apiRequest("PUT", `/api/evaluation-sub-criteria/${editingSubCriteria?.id}`, {
-        ...data,
-        groupId: data.groupId || null,
+        name: data.name,
+        parentId: data.parentId || null,
+        itemType: data.parentId
+          ? "criterion"
+          : editingSubCriteria?.itemType === "criterion" ? "criterion" : "heading",
+        inputType: data.parentId || editingSubCriteria?.itemType === "criterion" ? data.inputType : "text",
         criteriaId: selectedCriteriaId,
       })
     ).json(),
@@ -367,6 +333,39 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
     },
     onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
   });
+
+  const groupHeadings = subCriteriaList.filter((sub: any) => sub.itemType === "heading");
+  const groupedChildren = (parentId: string) => subCriteriaList.filter((sub: any) => sub.itemType !== "heading" && sub.parentId === parentId);
+  const ungroupedCriteria = subCriteriaList.filter((sub: any) => sub.itemType !== "heading" && !sub.parentId);
+  const renderSubRow = (sub: any, nested = false) => (
+    <TableRow key={sub.id} data-testid={`row-sub-criteria-${sub.id}`}>
+      <TableCell className={`font-medium ${nested ? "pl-10" : ""}`}>
+        {nested && <span className="text-muted-foreground mr-2">↳</span>}
+        {sub.name}
+      </TableCell>
+      <TableCell>
+        {sub.itemType === "heading" ? (
+          <Badge variant="secondary">Tiêu đề nhóm</Badge>
+        ) : (
+          <Badge variant="outline">{sub.inputType === "checkbox" ? "Tickbox" : "Nhập text"}</Badge>
+        )}
+      </TableCell>
+      <TableCell className="text-right">
+        <div className="flex justify-end gap-1">
+          {canEdit && (
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingSubCriteria(sub); setIsSubDialogOpen(true); }} data-testid={`btn-edit-sub-${sub.id}`}>
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {canDelete && (
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => deleteSub.mutate(sub.id)} data-testid={`btn-delete-sub-${sub.id}`}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      </TableCell>
+    </TableRow>
+  );
 
   return (
     <div className="flex gap-0 h-full border rounded-lg overflow-hidden">
@@ -439,30 +438,24 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {subCriteriaList.map((sub) => (
-                  <TableRow key={sub.id} data-testid={`row-sub-criteria-${sub.id}`}>
-                    <TableCell className="font-medium">{sub.name}</TableCell>
-                     <TableCell>
-                       <Badge variant="outline">
-                         {sub.inputType === "checkbox" ? "Tickbox" : "Nhập text"}
-                       </Badge>
-                     </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        {canEdit && (
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingSubCriteria(sub); setIsSubDialogOpen(true); }} data-testid={`btn-edit-sub-${sub.id}`}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        )}
-                        {canDelete && (
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => deleteSub.mutate(sub.id)} data-testid={`btn-delete-sub-${sub.id}`}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                {groupHeadings.map((heading: any) => (
+                  <Fragment key={heading.id}>
+                    {renderSubRow(heading)}
+                    {groupedChildren(heading.id).map((sub: any) => renderSubRow(sub, true))}
+                  </Fragment>
                 ))}
+                {ungroupedCriteria.length > 0 && (
+                  <Fragment>
+                    {groupHeadings.length > 0 && (
+                      <TableRow>
+                        <TableCell colSpan={3} className="bg-muted/30 text-xs font-semibold text-muted-foreground">
+                          Chưa phân nhóm
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {ungroupedCriteria.map((sub: any) => renderSubRow(sub))}
+                  </Fragment>
+                )}
               </TableBody>
             </Table>
           )}
@@ -489,30 +482,59 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
       {/* Sub-criteria Dialog */}
       <Dialog open={isSubDialogOpen} onOpenChange={(open) => { setIsSubDialogOpen(open); if (!open) setEditingSubCriteria(null); }}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>{editingSubCriteria ? "Sửa tiêu chí con" : "Thêm tiêu chí con"}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>
+              {editingSubCriteria
+                ? editingSubCriteria.itemType === "heading" ? "Sửa tiêu đề nhóm" : "Sửa tiêu chí con"
+                : "Thêm tiêu chí con / tiêu đề nhóm"}
+            </DialogTitle>
+          </DialogHeader>
           <form onSubmit={subForm.handleSubmit((d) => editingSubCriteria ? updateSub.mutate(d) : createSub.mutate(d))} className="space-y-4">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Tên tiêu chí con <span className="text-destructive">*</span></label>
+              <label className="text-sm font-medium">Tên <span className="text-destructive">*</span></label>
               <Input {...subForm.register("name", { required: true })} placeholder="VD: Tiếp thu bài nhanh" data-testid="input-sub-criteria-name" />
             </div>
-             <div className="space-y-1.5">
-               <label className="text-sm font-medium">Loại tiêu chí</label>
-               <Select
-                 value={subForm.watch("inputType")}
-                 onValueChange={(value: "text" | "checkbox") => subForm.setValue("inputType", value)}
-               >
-                 <SelectTrigger data-testid="select-sub-criteria-input-type">
-                   <SelectValue />
-                 </SelectTrigger>
-                 <SelectContent>
-                   <SelectItem value="text">Nhập text</SelectItem>
-                   <SelectItem value="checkbox">Tickbox</SelectItem>
-                 </SelectContent>
-               </Select>
-               <p className="text-xs text-muted-foreground">
-                 Tickbox được dùng để đánh dấu học viên đạt tiêu chí.
-               </p>
-             </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Nhóm chung</label>
+              <Select
+                value={subForm.watch("parentId") || "none"}
+                onValueChange={(value) => subForm.setValue("parentId", value === "none" ? "" : value)}
+              >
+                <SelectTrigger data-testid="select-sub-criteria-parent">
+                  <SelectValue placeholder="Không chọn — tạo tiêu đề nhóm" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Không chọn — tạo tiêu đề nhóm</SelectItem>
+                  {groupHeadings
+                    .filter((heading: any) => heading.id !== editingSubCriteria?.id)
+                    .map((heading: any) => (
+                      <SelectItem key={heading.id} value={heading.id}>{heading.name}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Không chọn nhóm sẽ tạo một tiêu đề nhóm. Chọn nhóm để tạo tiêu chí nằm bên trong nhóm đó.
+              </p>
+            </div>
+            <div className={`space-y-1.5 ${!subForm.watch("parentId") ? "opacity-50" : ""}`}>
+              <label className="text-sm font-medium">Loại tiêu chí</label>
+              <Select
+                value={subForm.watch("inputType")}
+                onValueChange={(value: "text" | "checkbox") => subForm.setValue("inputType", value)}
+                disabled={!subForm.watch("parentId")}
+              >
+                <SelectTrigger data-testid="select-sub-criteria-input-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="text">Nhập text</SelectItem>
+                  <SelectItem value="checkbox">Tickbox</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Chỉ áp dụng cho tiêu chí con trong một nhóm.
+              </p>
+            </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsSubDialogOpen(false)}>Huỷ</Button>
               <Button type="submit" disabled={createSub.isPending || updateSub.isPending}>{editingSubCriteria ? "Lưu" : "Thêm"}</Button>

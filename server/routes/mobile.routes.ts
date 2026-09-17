@@ -3412,7 +3412,17 @@ export function registerMobileRoutes(app: Express) {
       const teacherStaffIds = (sessionRow.teacherIds ?? []) as string[];
 
       // 2. Load criteria + sub-criteria
-       let criteriaList: { id: string; name: string; subCriteria: { id: string; name: string; inputType: "text" | "checkbox" }[] }[] = [];
+       let criteriaList: {
+         id: string;
+         name: string;
+         subCriteria: {
+           id: string;
+           name: string;
+           parentId: string | null;
+           itemType: "heading" | "criterion";
+           inputType: "text" | "checkbox";
+         }[];
+       }[] = [];
       if (criteriaIds.length > 0) {
         const rawCriteria = await db
           .select({ id: evaluationCriteria.id, name: evaluationCriteria.name })
@@ -3424,17 +3434,27 @@ export function registerMobileRoutes(app: Express) {
             id: evaluationSubCriteria.id,
             name: evaluationSubCriteria.name,
             criteriaId: evaluationSubCriteria.criteriaId,
+            parentId: evaluationSubCriteria.parentId,
+            itemType: evaluationSubCriteria.itemType,
             inputType: evaluationSubCriteria.inputType,
           })
           .from(evaluationSubCriteria)
           .where(inArray(evaluationSubCriteria.criteriaId, criteriaIds));
 
-         const subMap = new Map<string, { id: string; name: string; inputType: "text" | "checkbox" }[]>();
+         const subMap = new Map<string, {
+           id: string;
+           name: string;
+           parentId: string | null;
+           itemType: "heading" | "criterion";
+           inputType: "text" | "checkbox";
+         }[]>();
         for (const s of subRows) {
           if (!subMap.has(s.criteriaId)) subMap.set(s.criteriaId, []);
            subMap.get(s.criteriaId)!.push({
              id: s.id,
              name: s.name,
+             parentId: s.parentId,
+             itemType: s.itemType === "heading" ? "heading" : "criterion",
              inputType: s.inputType === "checkbox" ? "checkbox" : "text",
            });
         }

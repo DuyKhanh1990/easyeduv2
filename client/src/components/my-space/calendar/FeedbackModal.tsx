@@ -54,6 +54,11 @@ function CriteriaCard({ group, colorIdx }: { group: ReviewCriteriaGroup; colorId
         <div className="px-4 pb-4 space-y-3 border-t border-inherit">
           {group.items.map((item, ii) => (
             <div key={ii}>
+              {item.groupName && (ii === 0 || group.items[ii - 1]?.groupName !== item.groupName) && (
+                <p className={cn("text-sm font-semibold mt-3 mb-1.5", color.text)}>
+                  {item.groupName}
+                </p>
+              )}
               {item.subCriteriaName && (
                 <p className={cn("text-xs font-semibold mt-3 mb-1.5", color.text)}>
                   {item.subCriteriaName}

@@ -22,6 +22,8 @@ interface SubCriteriaItem {
   id: string;
   name: string;
   criteriaId: string;
+  parentId?: string | null;
+  itemType?: "heading" | "criterion";
   inputType?: "text" | "checkbox";
 }
 
@@ -43,7 +45,7 @@ interface ReviewDialogProps {
   studentNames: string[];
   criteria: CriteriaItem[];
   teachers: TeacherItem[];
-  existingReviewData?: Record<string, { teacherName: string; items: { subCriteriaId?: string; subCriteriaName?: string; criteriaId: string; criteriaName: string; comment: string; inputType?: "text" | "checkbox"; checked?: boolean }[]; criteriaRatings?: Record<string, number> }> | null;
+  existingReviewData?: Record<string, { teacherName: string; items: { subCriteriaId?: string; subCriteriaName?: string; criteriaId: string; criteriaName: string; groupName?: string; comment: string; inputType?: "text" | "checkbox"; checked?: boolean }[]; criteriaRatings?: Record<string, number> }> | null;
   existingPublished?: boolean;
   classSessionId: string;
 }
@@ -52,13 +54,18 @@ type ReviewMap = Record<string, Record<string, string>>;
 type RatingMap = Record<string, Record<string, number>>;
 type CheckedMap = Record<string, Record<string, boolean>>;
 
+function getEvaluableSubCriteria(criteria: CriteriaItem): SubCriteriaItem[] {
+  return (criteria.subCriteria || []).filter((sc) => sc.itemType !== "heading");
+}
+
 function buildEmptyComments(criteria: CriteriaItem[], teachers: TeacherItem[]): ReviewMap {
   const map: ReviewMap = {};
   teachers.forEach((t) => {
     map[t.id] = {};
     criteria.forEach((c) => {
-      if (c.subCriteria && c.subCriteria.length > 0) {
-        c.subCriteria.forEach((sc) => { map[t.id][sc.id] = ""; });
+      const subCriteria = getEvaluableSubCriteria(c);
+      if (subCriteria.length > 0) {
+        subCriteria.forEach((sc) => { map[t.id][sc.id] = ""; });
       } else {
         map[t.id][c.id] = "";
       }
@@ -81,7 +88,7 @@ function buildEmptyChecked(criteria: CriteriaItem[], teachers: TeacherItem[]): C
   teachers.forEach((t) => {
     map[t.id] = {};
     criteria.forEach((c) => {
-      c.subCriteria?.forEach((sc) => {
+      getEvaluableSubCriteria(c).forEach((sc) => {
         if (sc.inputType === "checkbox") map[t.id][sc.id] = false;
       });
     });
@@ -153,8 +160,9 @@ export function ReviewDialog({
           const fallbackScore =
             (teacherData?.items?.find((i: any) => i.criteriaId === c.id) as any)?.score ?? 0;
           rMap[t.id][c.id] = teacherData?.criteriaRatings?.[c.id] ?? fallbackScore;
-          if (c.subCriteria && c.subCriteria.length > 0) {
-            c.subCriteria.forEach((sc) => {
+            const subCriteria = getEvaluableSubCriteria(c);
+            if (subCriteria.length > 0) {
+              subCriteria.forEach((sc) => {
               const found = teacherData?.items?.find((i) => i.subCriteriaId === sc.id);
               map[t.id][sc.id] = found?.comment || "";
               if (sc.inputType === "checkbox") checkedMap[t.id][sc.id] = found?.checked === true;
@@ -184,13 +192,16 @@ export function ReviewDialog({
       teachers.forEach((t) => {
         const items: any[] = [];
         criteria.forEach((c) => {
-          if (c.subCriteria && c.subCriteria.length > 0) {
-            c.subCriteria.forEach((sc) => {
+          const subCriteria = getEvaluableSubCriteria(c);
+          if (subCriteria.length > 0) {
+            subCriteria.forEach((sc) => {
+              const group = c.subCriteria.find((candidate) => candidate.id === sc.parentId && candidate.itemType === "heading");
               items.push({
                 criteriaId: c.id,
                 criteriaName: c.name,
                 subCriteriaId: sc.id,
                 subCriteriaName: sc.name,
+                ...(group ? { groupName: group.name } : {}),
                 inputType: sc.inputType === "checkbox" ? "checkbox" : "text",
                 comment: comments[t.id]?.[sc.id] || "",
                 ...(sc.inputType === "checkbox" ? { checked: checked[t.id]?.[sc.id] === true } : {}),
@@ -374,6 +385,40 @@ function CriteriaForm({
   checked: CheckedMap;
   setChecked: (fn: (prev: CheckedMap) => CheckedMap) => void;
 }) {
+  const renderSubCriterion = (sc: SubCriteriaItem) => (
+    <div key={sc.id} className="space-y-1">
+      {sc.inputType === "checkbox" ? (
+        <label className="flex items-center gap-2 rounded-md border px-3 py-2 cursor-pointer hover:bg-muted/40">
+          <Checkbox
+            checked={checked[teacherId]?.[sc.id] === true}
+            onCheckedChange={(value) =>
+              setChecked((prev) => ({
+                ...prev,
+                [teacherId]: { ...prev[teacherId], [sc.id]: value === true },
+              }))
+            }
+          />
+          <span className="text-xs font-medium text-foreground">{sc.name}</span>
+          <span className="ml-auto text-[11px] text-muted-foreground">Đạt</span>
+        </label>
+      ) : (
+        <>
+          <Label className="text-xs text-orange-500 dark:text-orange-400 font-medium">{sc.name}</Label>
+          <RichEditor
+            value={comments[teacherId]?.[sc.id] || ""}
+            onChange={(val) =>
+              setComments((prev) => ({
+                ...prev,
+                [teacherId]: { ...prev[teacherId], [sc.id]: val },
+              }))
+            }
+            placeholder={`Nhận xét về ${sc.name}...`}
+          />
+        </>
+      )}
+    </div>
+  );
+
   return (
     <div className="space-y-4 py-1">
       {criteria.map((c) => (
@@ -392,39 +437,23 @@ function CriteriaForm({
           </div>
           {c.subCriteria && c.subCriteria.length > 0 ? (
             <div className="space-y-2 pl-3 border-l-2 border-muted">
-              {c.subCriteria.map((sc) => (
-                <div key={sc.id} className="space-y-1">
-                  {sc.inputType === "checkbox" ? (
-                    <label className="flex items-center gap-2 rounded-md border px-3 py-2 cursor-pointer hover:bg-muted/40">
-                      <Checkbox
-                        checked={checked[teacherId]?.[sc.id] === true}
-                        onCheckedChange={(value) =>
-                          setChecked((prev) => ({
-                            ...prev,
-                            [teacherId]: { ...prev[teacherId], [sc.id]: value === true },
-                          }))
-                        }
-                      />
-                      <span className="text-xs font-medium text-foreground">{sc.name}</span>
-                      <span className="ml-auto text-[11px] text-muted-foreground">Đạt</span>
-                    </label>
-                  ) : (
-                    <>
-                      <Label className="text-xs text-orange-500 dark:text-orange-400 font-medium">{sc.name}</Label>
-                      <RichEditor
-                        value={comments[teacherId]?.[sc.id] || ""}
-                        onChange={(val) =>
-                          setComments((prev) => ({
-                            ...prev,
-                            [teacherId]: { ...prev[teacherId], [sc.id]: val },
-                          }))
-                        }
-                        placeholder={`Nhận xét về ${sc.name}...`}
-                      />
-                    </>
-                  )}
-                </div>
-              ))}
+              {c.subCriteria
+                .filter((sc) => sc.itemType === "heading")
+                .map((heading) => {
+                  const children = c.subCriteria.filter((sc) => sc.parentId === heading.id && sc.itemType !== "heading");
+                  if (children.length === 0) return null;
+                  return (
+                    <div key={heading.id} className="space-y-2">
+                      <p className="text-sm font-semibold text-foreground">{heading.name}</p>
+                      <div className="space-y-2 pl-3 border-l border-muted">
+                        {children.map(renderSubCriterion)}
+                      </div>
+                    </div>
+                  );
+                })}
+              {c.subCriteria
+                .filter((sc) => sc.itemType !== "heading" && !sc.parentId)
+                .map(renderSubCriterion)}
             </div>
           ) : (
             <RichEditor
