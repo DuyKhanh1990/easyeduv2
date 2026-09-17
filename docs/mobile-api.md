@@ -278,7 +278,21 @@ GET /api/mobile/student/calendar/day?date=YYYY-MM-DD
             {
               "criteriaName": "Thái độ học tập",
               "rating": 4,
-              "items": [{ "subCriteriaName": "Tập trung", "comment": "Tốt" }]
+               "items": [
+                 {
+                   "groupName": "Tập trung trong giờ học",
+                   "subCriteriaName": "Chú ý nghe giảng",
+                   "comment": "",
+                   "inputType": "checkbox",
+                   "checked": true
+                 },
+                 {
+                   "groupName": "Tập trung trong giờ học",
+                   "subCriteriaName": "Chủ động phát biểu",
+                   "comment": "Có tiến bộ",
+                   "inputType": "text"
+                 }
+               ]
             }
           ]
         }
@@ -534,7 +548,21 @@ GET /api/my-space/calendar/student/session/:classSessionId?studentId=uuid
         {
           "criteriaName": "Thái độ học tập",
           "rating": 4,
-          "items": [{ "subCriteriaName": "Tập trung", "comment": "Tốt" }]
+           "items": [
+             {
+               "groupName": "Tập trung trong giờ học",
+               "subCriteriaName": "Chú ý nghe giảng",
+               "comment": "",
+               "inputType": "checkbox",
+               "checked": true
+             },
+             {
+               "groupName": "Tập trung trong giờ học",
+               "subCriteriaName": "Chủ động phát biểu",
+               "comment": "Có tiến bộ",
+               "inputType": "text"
+             }
+           ]
         }
       ]
     }
@@ -562,6 +590,40 @@ GET /api/my-space/calendar/student/session/:classSessionId?studentId=uuid
 
 > Hỗ trợ cả **buổi kiểm tra tập trung** (`test_sessions`) — fallback tự động nếu `classSessionId` không tìm thấy trong `class_sessions`.  
 > `studentName` / `studentCode` chỉ trả khi tài khoản là phụ huynh.
+
+### Cấu trúc `reviewData` dùng chung cho Web và Mobile
+
+`reviewData` chỉ có dữ liệu khi `reviewPublished === true`. Nếu chưa công khai, API trả `reviewData: []`.
+
+```ts
+type ReviewItem = {
+  groupName?: string;              // tiêu đề nhóm; dữ liệu cũ có thể không có
+  subCriteriaName: string;         // tên tiêu chí con
+  comment: string;                 // nội dung nhận xét; có thể là HTML
+  inputType?: "text" | "checkbox"; // thiếu field thì xử lý như "text"
+  checked?: boolean;               // chỉ dùng khi inputType === "checkbox"
+};
+
+type ReviewCriteria = {
+  criteriaName: string;            // tên bộ tiêu chí
+  rating?: number;                 // sao tổng, thường từ 1 đến 5
+  items: ReviewItem[];
+};
+
+type TeacherReview = {
+  teacherName: string;
+  criteria: ReviewCriteria[];
+};
+```
+
+Quy tắc hiển thị:
+
+1. Hiển thị `criteriaName` một lần và `rating` một lần ở phần đầu bộ tiêu chí.
+2. Gom các item có cùng `groupName`, sau đó hiển thị `groupName` một lần.
+3. `inputType: "checkbox"`: checkbox theo `checked`; `true` là `Đạt`, `false` là `Chưa đạt`.
+4. `inputType: "text"` hoặc item không có `inputType`: hiển thị `subCriteriaName` và `comment`.
+5. Không hiển thị `subCriteriaName` thêm một lần phía trên checkbox.
+6. Không suy luận checkbox chỉ vì `comment` rỗng.
 
 **Lỗi:**
 

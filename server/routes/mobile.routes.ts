@@ -239,24 +239,50 @@ function parseReviewData(rawReviewData: any): any[] {
   for (const key of Object.keys(rawReviewData)) {
     const entry = rawReviewData[key];
     if (!entry || !Array.isArray(entry.items)) continue;
-    const criteriaMap = new Map<string, { criteriaId: string; items: { subCriteriaName: string; comment: string }[]; fallbackScore?: number }>();
+    const criteriaMap = new Map<string, {
+      criteriaId: string;
+      items: {
+        groupName?: string;
+        subCriteriaName: string;
+        comment: string;
+        inputType?: "text" | "checkbox";
+        checked?: boolean;
+      }[];
+      fallbackScore?: number;
+    }>();
     for (const item of entry.items) {
       const cName = item.criteriaName || "Chung";
       const cId = item.criteriaId || "";
       if (!criteriaMap.has(cName)) criteriaMap.set(cName, { criteriaId: cId, items: [], fallbackScore: item.score });
       criteriaMap.get(cName)!.items.push({
+        ...(item.groupName ? { groupName: item.groupName } : {}),
         subCriteriaName: item.subCriteriaName || "",
         comment: item.comment ?? "",
+        ...(item.inputType === "checkbox"
+          ? { inputType: "checkbox" as const, checked: item.checked === true }
+          : {}),
       });
     }
     const criteria = Array.from(criteriaMap.entries()).map(([criteriaName, data]) => {
       // Primary: criteriaRatings[criteriaId] (web format)
       // Fallback: items[].score (mobile format — score per item, same across sub-criteria of one criteria)
       const rating = entry.criteriaRatings?.[data.criteriaId] ?? data.fallbackScore ?? undefined;
+      const groupNames = [...new Set(data.items.map((item) => item.groupName).filter(Boolean) as string[])]
+        .sort((a, b) => a.localeCompare(b, "vi"));
+      const orderedItems = [
+        ...groupNames.flatMap((groupName) =>
+          data.items
+            .filter((item) => item.groupName === groupName)
+            .sort((a, b) => a.subCriteriaName.localeCompare(b.subCriteriaName, "vi"))
+        ),
+        ...data.items
+          .filter((item) => !item.groupName)
+          .sort((a, b) => a.subCriteriaName.localeCompare(b.subCriteriaName, "vi")),
+      ];
       return {
         criteriaName,
-        items: data.items,
-        ...(rating != null && rating > 0 ? { rating } : {}),
+        items: orderedItems,
+        ...(rating != null ? { rating } : {}),
       };
     });
     result.push({ teacherName: entry.teacherName || "Giáo viên", criteria });
