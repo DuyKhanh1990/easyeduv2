@@ -861,9 +861,8 @@ export function MakeupDialog({
               </div>
 
               {!makeupStartDate && (
-                <Alert className="py-2">
-                  <CalendarIcon className="h-4 w-4" />
-                  <AlertDescription className="text-xs">
+                <Alert className="border-0 bg-transparent p-0 text-green-800 shadow-none">
+                  <AlertDescription className="text-xs leading-5 text-green-800">
                     Chọn ngày bắt đầu để hệ thống tìm các lớp có buổi học phù hợp cho toàn bộ học viên.
                   </AlertDescription>
                 </Alert>
