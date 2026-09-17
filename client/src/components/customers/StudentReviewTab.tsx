@@ -117,7 +117,7 @@ function ReviewDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg max-h-[90vh] flex flex-col z-[300]">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-5xl max-h-[90vh] flex flex-col z-[300]">
         <DialogHeader className="shrink-0">
           <DialogTitle className="text-sm font-semibold leading-snug pr-6">
             Nhận xét — {sessionLabel} — {dateLabel}
