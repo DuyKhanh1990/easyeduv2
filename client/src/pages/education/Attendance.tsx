@@ -43,7 +43,6 @@ import {
   X,
   SlidersHorizontal,
   Users,
-  CalendarDays,
   Clock,
   CheckSquare,
   ChevronLeft,
@@ -105,8 +104,8 @@ type StudentAttendance = {
 function getDefaultAttendanceDateRange(): DateRange {
   const now = new Date();
   return {
-    from: new Date(now.getFullYear(), now.getMonth(), 1),
-    to: new Date(now.getFullYear(), now.getMonth() + 1, 0),
+    from: now,
+    to: now,
   };
 }
 
@@ -336,6 +335,13 @@ export function Attendance() {
                 </button>
               )}
 
+              {/* Quick date filter */}
+              <StoreDateRangePicker
+                value={filters.dateRange}
+                onChange={(range) => setFilters(prev => ({ ...prev, dateRange: range }))}
+                className="h-8 text-xs"
+              />
+
               {/* Bộ lọc button */}
               <Button
                 variant="outline"
@@ -363,7 +369,7 @@ export function Attendance() {
               <DialogTitle className="flex items-center gap-2">
                 <SlidersHorizontal className="h-4 w-4" /> Bộ lọc
               </DialogTitle>
-              <DialogDescription>Lọc theo lớp học, học viên, ca học và thời gian</DialogDescription>
+              <DialogDescription>Lọc theo lớp học, học viên và ca học</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-2">
 
@@ -478,14 +484,6 @@ export function Attendance() {
                     {SHIFTS.map(shift => <SelectItem key={shift.value} value={shift.value}>{shift.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
-              </div>
-
-              {/* Date Range */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                  <CalendarDays className="h-3 w-3" /> Thời gian
-                </Label>
-                <StoreDateRangePicker value={filters.dateRange} onChange={(range) => setFilters(prev => ({ ...prev, dateRange: range }))} />
               </div>
 
               {/* Actions */}
