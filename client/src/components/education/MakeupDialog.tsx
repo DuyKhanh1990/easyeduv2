@@ -418,8 +418,9 @@ export function MakeupDialog({
     };
   }, [classSessions, selectedStudents]);
 
-  // Backward-compat alias: "available" = all sessions that are at least partially bookable
-  const availableSessions = [...allAvailableSessions, ...partialSessions];
+  // Bulk makeup requires every selected student to share the same target
+  // session. Partial sessions remain visible for explanation but are disabled.
+  const availableSessions = allAvailableSessions;
 
   const noSessionsAvailable =
     option === "current_class" &&
@@ -457,10 +458,6 @@ export function MakeupDialog({
 
   const handleConfirm = () => {
     // For partial sessions, only schedule students who can actually attend
-    const eligibleStudents = selectedPartialInfo
-      ? selectedPartialInfo.canAttend
-      : selectedStudents;
-
     onConfirm({
       option,
       subOption,
@@ -475,7 +472,7 @@ export function MakeupDialog({
         weekdays: newScheduleWeekdays,
         teacherIds: newScheduleTeachers,
       },
-      students: eligibleStudents,
+      students: selectedStudents,
     });
   };
 
@@ -673,11 +670,12 @@ export function MakeupDialog({
                                   <CommandItem
                                     key={s.id}
                                     value={`partial-${formatSessionLabel(s)}`}
+                                    disabled
                                     onSelect={() => {
                                       setSelectedTargetSessionId(s.id);
                                       setIsSessionPopoverOpen(false);
                                     }}
-                                    className="text-xs cursor-pointer"
+                                    className="text-xs cursor-not-allowed opacity-40"
                                     data-testid={`session-partial-${s.id}`}
                                   >
                                     <Check
@@ -688,7 +686,7 @@ export function MakeupDialog({
                                     />
                                     <span className="flex-1">{formatSessionLabel(s)}</span>
                                     <span className="ml-2 shrink-0 rounded-full bg-amber-100 text-amber-700 text-[10px] font-semibold px-1.5 py-0.5">
-                                      {canCount}/{total}
+                                      {canCount}/{total} — không đủ điều kiện
                                     </span>
                                   </CommandItem>
                                 );
@@ -939,8 +937,8 @@ export function MakeupDialog({
                               {otherPartialSessions.map((s) => {
                                 const info = otherPartialSessionMap[s.id];
                                 return (
-                                  <SelectItem key={s.id} value={s.id}>
-                                    {formatSessionLabel(s)} ({info.canAttend.length}/{selectedStudentIds.length})
+                                  <SelectItem key={s.id} value={`partial-${s.id}`} disabled className="opacity-40">
+                                    {formatSessionLabel(s)} ({info.canAttend.length}/{selectedStudentIds.length}) — không đủ điều kiện
                                   </SelectItem>
                                 );
                               })}
