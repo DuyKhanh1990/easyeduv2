@@ -105,8 +105,8 @@ type StudentAttendance = {
 function getDefaultAttendanceDateRange(): DateRange {
   const now = new Date();
   return {
-    from: now,
-    to: now,
+    from: new Date(now.getFullYear(), now.getMonth(), 1),
+    to: new Date(now.getFullYear(), now.getMonth() + 1, 0),
   };
 }
 
