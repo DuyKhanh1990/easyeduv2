@@ -1184,6 +1184,19 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
   const cls = await getClass(classId);
   if (!cls) throw new Error("Lớp học không tồn tại");
   const classCache = new Map<string, any>([[classId, cls]]);
+  const currentTargetClassId = data.selectedCurrentClassId || classId;
+  let currentTargetCls = classCache.get(currentTargetClassId);
+  if (!currentTargetCls) {
+    currentTargetCls = await getClass(currentTargetClassId);
+    if (currentTargetCls) classCache.set(currentTargetClassId, currentTargetCls);
+  }
+  if (!currentTargetCls) throw new Error("Lớp hiện tại để xếp bù không tồn tại");
+  if (
+    option === "current_class" &&
+    !new Set((students || []).map((student: any) => student.sourceClassId || student.classId || classId)).has(currentTargetClassId)
+  ) {
+    throw new Error("Lớp xếp bù phải thuộc danh sách lớp của học viên đang chọn");
+  }
 
   await db.transaction(async (tx) => {
     // ── Pre-loop: Create new class for new_schedule option ─────────────────
@@ -1415,7 +1428,10 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
           // ❌ Validate 1: Target session must exist
           const [targetCS] = await tx.select()
             .from(classSessions)
-            .where(eq(classSessions.id, selectedTargetSessionId));
+            .where(and(
+              eq(classSessions.id, selectedTargetSessionId),
+              eq(classSessions.classId, currentTargetClassId),
+            ));
           if (!targetCS) throw new Error("Buổi học bù không tồn tại");
 
           // ❌ Validate 2: No existing student_session for the same (student, session)
@@ -1435,7 +1451,7 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
             .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
             .where(and(
               eq(studentSessions.studentId, studentId),
-              eq(classSessions.classId, classId),
+              eq(classSessions.classId, currentTargetClassId),
               sql`DATE(${classSessions.sessionDate}) = DATE(${targetCS.sessionDate}::text::date)`,
               sql`${studentSessions.status} != 'cancelled'`,
               sql`${studentSessions.attendanceStatus} != 'cancelled'`,
@@ -1452,12 +1468,12 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
           const [targetSC] = await tx.select()
             .from(studentClasses)
             .where(and(
-              eq(studentClasses.classId, classId),
+              eq(studentClasses.classId, currentTargetClassId),
               eq(studentClasses.studentId, studentId),
             ));
           await tx.insert(studentSessions).values({
             studentId,
-            classId,
+            classId: currentTargetClassId,
             studentClassId: targetSC?.id || null,
             classSessionId: selectedTargetSessionId,
             status: "scheduled",
@@ -1489,32 +1505,33 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
         } else if (subOption === "end_of_schedule") {
           const lastCS = await tx.select()
             .from(classSessions)
-            .where(eq(classSessions.classId, classId))
+            .where(eq(classSessions.classId, currentTargetClassId))
             .orderBy(sql`${classSessions.sessionDate} DESC`)
             .limit(1);
 
-          const lastDate = lastCS[0] ? new Date(lastCS[0].sessionDate) : new Date(cls.startDate);
+          const targetClass = currentTargetCls;
+          const lastDate = lastCS[0] ? new Date(lastCS[0].sessionDate) : new Date(targetClass.startDate);
           let checkDate = new Date(lastDate);
           let found = false;
 
           while (!found) {
             checkDate.setDate(checkDate.getDate() + 1);
             const dbWeekday = checkDate.getDay();
-            if (!cls.weekdays.includes(dbWeekday)) continue;
+            if (!targetClass.weekdays.includes(dbWeekday)) continue;
 
             const dateStr = checkDate.toISOString().split("T")[0];
             const resIdx = await tx.select({ maxIdx: sql<number>`MAX(${classSessions.sessionIndex})` })
               .from(classSessions)
-              .where(eq(classSessions.classId, classId));
+              .where(eq(classSessions.classId, currentTargetClassId));
             const nextIdx = (resIdx[0]?.maxIdx || 0) + 1;
 
             const [newCS] = await tx.insert(classSessions).values({
-              classId,
+              classId: currentTargetClassId,
               sessionDate: dateStr,
               weekday: dbWeekday === 0 ? 0 : dbWeekday,
-              shiftTemplateId: (cls.shiftTemplateIds || [])[0] || null,
-              roomId: cls.roomId || "00000000-0000-0000-0000-000000000000",
-              teacherIds: cls.teacherIds && cls.teacherIds.length > 0 ? cls.teacherIds : null,
+              shiftTemplateId: (targetClass.shiftTemplateIds || [])[0] || null,
+              roomId: targetClass.roomId || "00000000-0000-0000-0000-000000000000",
+              teacherIds: targetClass.teacherIds && targetClass.teacherIds.length > 0 ? targetClass.teacherIds : null,
               sessionIndex: nextIdx,
               status: "scheduled",
             }).returning();
@@ -1526,12 +1543,12 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
             const [targetSC] = await tx.select()
               .from(studentClasses)
               .where(and(
-                eq(studentClasses.classId, classId),
+                eq(studentClasses.classId, currentTargetClassId),
                 eq(studentClasses.studentId, studentId),
               ));
             await tx.insert(studentSessions).values({
               studentId,
-              classId,
+            classId: currentTargetClassId,
               studentClassId: targetSC?.id || null,
               classSessionId: newCS.id,
               status: "scheduled",

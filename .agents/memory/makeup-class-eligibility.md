@@ -14,3 +14,9 @@ Khi các dòng đang chọn có nhiều buổi cần bù cho cùng một học v
 **Why:** Một học viên có thể nghỉ nhiều buổi, nên kiểm tra chỉ một buổi chung sẽ tạo kế hoạch thiếu hoặc đánh đồng số buổi của các học viên.
 
 **How to apply:** Gửi nhu cầu theo dạng `studentId → số dòng cần bù`, sinh phương án theo từng buổi bắt đầu trong ngày đã chọn, hiển thị xem trước chuỗi buổi của từng học viên, và lưu từng dòng gốc vào một buổi đích tương ứng.
+
+Khi chọn “xếp bù vào lớp hiện tại” mà danh sách có học viên từ nhiều lớp, người dùng phải chọn một lớp nguồn làm lớp đích. Cả “Buổi cụ thể” và “Cuối lịch” đều phải dùng lớp đã chọn; không được mặc định dùng lớp đầu tiên.
+
+**Why:** Một danh sách xếp bù có thể gom nhiều lớp, nên dùng lớp đầu tiên có thể tạo buổi mới hoặc gán buổi vào sai lịch.
+
+**How to apply:** Nạp sessions theo từng lớp nguồn, hiển thị selector khi có từ hai lớp, gửi `selectedCurrentClassId`, và backend xác thực lớp đích thuộc tập lớp của các dòng đang chọn trước khi tạo/gán buổi.

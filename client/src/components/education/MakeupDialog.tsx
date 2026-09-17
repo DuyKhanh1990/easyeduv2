@@ -184,6 +184,24 @@ export function MakeupDialog({
   }, [selectedStudents]);
   const makeupStudentCount = studentNeeds.length;
   const makeupSessionCount = selectedStudents.length;
+  const groupedSelectedStudents = useMemo(() => {
+    const groups = new Map<string, { studentId: string; name: string; code?: string; sessions: any[] }>();
+    selectedStudents.forEach((session, index) => {
+      const studentId = String(session.studentId || session.student?.id || session.id || index);
+      const existing = groups.get(studentId);
+      if (existing) {
+        existing.sessions.push(session);
+        return;
+      }
+      groups.set(studentId, {
+        studentId,
+        name: session.student?.fullName || session.fullName || "Học viên",
+        code: session.student?.code || session.studentCode,
+        sessions: [session],
+      });
+    });
+    return [...groups.values()];
+  }, [selectedStudents]);
   const locationScopedClasses = locationFilter === "same" ? sameLocationClasses : otherLocationClasses;
   const candidateClassIds = useMemo(
     () => locationScopedClasses.map((candidate) => candidate.id).sort(),
@@ -560,28 +578,43 @@ export function MakeupDialog({
               Số buổi xếp bù: <span className="font-semibold text-foreground">{makeupSessionCount}</span>
             </p>
             <div className="max-h-[130px] overflow-y-auto rounded-md border bg-muted/20 p-2 space-y-1">
-              {selectedStudents.length > 0 ? (
-                selectedStudents.map((s) => (
+              {groupedSelectedStudents.length > 0 ? (
+                groupedSelectedStudents.map((group) => {
+                  const sessionDetails = group.sessions
+                    .map((session) => {
+                      const date = session.sessionDate
+                        ? `${getDayName(session.sessionDate)}, ${format(parseISO(session.sessionDate), "dd/MM/yyyy")}`
+                        : "";
+                      return `Buổi ${session.sessionIndex}${date ? ` — ${date}` : ""}${session.startTime ? ` ${session.startTime}` : ""}`;
+                    })
+                    .join("\n");
+                  const firstSession = group.sessions[0];
+                  const firstDate = firstSession?.sessionDate
+                    ? `${getDayName(firstSession.sessionDate)}, ${format(parseISO(firstSession.sessionDate), "dd/MM")}`
+                    : "";
+                  const sessionRange = group.sessions.length === 1
+                    ? firstDate
+                    : `${firstDate} + ${group.sessions.length - 1} buổi`;
+                  return (
                   <div
-                    key={s.id ?? s.studentId}
-                    className="flex items-center gap-2 text-sm"
+                    key={group.studentId}
+                    className="flex min-w-0 items-center gap-2 text-sm"
+                    title={sessionDetails}
                   >
                     <Checkbox checked disabled />
-                    <span className="font-medium">
-                      {s.student?.fullName || s.fullName}
-                    </span>
-                    <span className="text-muted-foreground text-xs">
-                      — Buổi&nbsp;{s.sessionIndex}{" "}
-                      {s.sessionDate
-                        ? `${getDayName(s.sessionDate)}, ${format(
-                            parseISO(s.sessionDate),
-                            "dd/MM/yyyy"
-                          )}`
-                        : ""}
-                      {s.startTime ? ` ${s.startTime}` : ""}
-                    </span>
+                    <span className="min-w-0 flex-1 truncate font-medium">{group.name}</span>
+                    {group.code && (
+                      <span className="shrink-0 text-xs text-muted-foreground">{group.code}</span>
+                    )}
+                    <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[10px] font-normal">
+                      {group.sessions.length} buổi
+                    </Badge>
+                    {sessionRange && (
+                      <span className="shrink-0 text-xs text-muted-foreground">{sessionRange}</span>
+                    )}
                   </div>
-                ))
+                  );
+                })
               ) : (
                 <p className="text-sm text-muted-foreground italic">
                   Chưa có học viên nào được chọn
@@ -647,6 +680,38 @@ export function MakeupDialog({
                 </label>
               </RadioGroup>
 
+              {sourceClassOptions.length > 1 && (
+                <div className="space-y-2">
+                  <Label className="text-sm">Chọn lớp hiện tại để xếp bù</Label>
+                  <Select
+                    value={currentClassId}
+                    onValueChange={(value) => {
+                      setSelectedCurrentClassId(value);
+                      setSelectedTargetSessionId("");
+                    }}
+                    disabled={loadingClasses}
+                  >
+                    <SelectTrigger className="bg-white" data-testid="select-current-makeup-class">
+                      <SelectValue placeholder="Chọn lớp của học viên để xếp bù" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white">
+                      {sourceClassOptions.map((sourceClass) => (
+                        <SelectItem key={sourceClass.id} value={sourceClass.id}>
+                          {sourceClass.name}
+                          {sourceClass.classCode ? ` (${sourceClass.classCode})` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {sourceClassOptions.length === 1 && (
+                <p className="text-xs text-muted-foreground">
+                  Lớp xếp bù: <span className="font-medium text-foreground">{sourceClassOptions[0].name}</span>
+                </p>
+              )}
+
               {/* Buổi cụ thể */}
               {subOption === "specific_session" && (
                 <div className="space-y-2">
@@ -672,7 +737,7 @@ export function MakeupDialog({
                         role="combobox"
                         aria-expanded={isSessionPopoverOpen}
                         className="w-full justify-between bg-white text-xs font-normal h-10"
-                        disabled={noSessionsAvailable}
+                        disabled={!currentClassId || noSessionsAvailable}
                         data-testid="button-select-makeup-session"
                       >
                         <span className="truncate">{selectedSessionLabel}</span>
