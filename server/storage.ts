@@ -37,6 +37,7 @@ import type { InvoiceSubjectResult } from "./storage/student.storage";
 import * as financeStorage from "./storage/finance.storage";
 import * as courseStorage from "./storage/course.storage";
 import * as classStorage from "./storage/class.storage";
+import type { ClassViewScope } from "./lib/class-access";
 import * as sessionStorage from "./storage/session.storage";
 import * as attendanceStorage from "./storage/attendance.storage";
 import * as shiftStorage from "./storage/shift.storage";
@@ -196,10 +197,10 @@ export interface IStorage {
   deleteTeacherAvailability(id: string): Promise<void>;
   checkTeacherAtLocation(teacherId: string, locationId: string): Promise<boolean>;
   // Classes & Sessions
-  getClasses(locationId?: string, allowedLocationIds?: string[] | null): Promise<Class[]>;
-  getClassesList(locationId?: string, allowedLocationIds?: string[] | null): Promise<any[]>;
-  getClassesListPaginated(params: { locationId?: string; allowedLocationIds?: string[] | null; search?: string; status?: string; page: number; pageSize: number }): Promise<{ data: any[]; total: number; page: number; pageSize: number }>;
-  getClassesMinimal(locationId?: string, allowedLocationIds?: string[] | null): Promise<{ id: string; name: string; classCode: string; locationId: string }[]>;
+  getClasses(locationId?: string, allowedLocationIds?: string[] | null, viewScope?: ClassViewScope): Promise<Class[]>;
+  getClassesList(locationId?: string, allowedLocationIds?: string[] | null, viewScope?: ClassViewScope): Promise<any[]>;
+  getClassesListPaginated(params: { locationId?: string; allowedLocationIds?: string[] | null; viewScope?: ClassViewScope; search?: string; status?: string; page: number; pageSize: number }): Promise<{ data: any[]; total: number; page: number; pageSize: number }>;
+  getClassesMinimal(locationId?: string, allowedLocationIds?: string[] | null, viewScope?: ClassViewScope): Promise<{ id: string; name: string; classCode: string; locationId: string }[]>;
   getClass(id: string): Promise<any>;
   getClassAssignInfo(id: string): Promise<any>;
   updateClass(id: string, data: any): Promise<Class>;
@@ -208,7 +209,7 @@ export interface IStorage {
   countClassInvoices(ids: string[]): Promise<number>;
   createClass(data: any): Promise<Class>;
   findClassByCode(classCode: string): Promise<{ id: string; classCode: string; name: string } | null>;
-  createMinimalClass(data: { classCode: string; name: string; locationId: string }): Promise<{ id: string; classCode: string; name: string }>;
+  createMinimalClass(data: { classCode: string; name: string; locationId: string; createdBy?: string | null }): Promise<{ id: string; classCode: string; name: string }>;
   getClassSessions(classId: string): Promise<ClassSession[]>;
   getClassStudents(classId: string, status: string): Promise<any[]>;
   getAvailableStudentsForClass(classId: string, searchTerm?: string): Promise<any[]>;
@@ -559,20 +560,20 @@ export class DatabaseStorage implements IStorage {
     return courseStorage.deleteCourseProgramContent(id);
   }
 
-  async getClasses(locationId?: string, allowedLocationIds?: string[] | null): Promise<any[]> {
-    return classStorage.getClasses(locationId, allowedLocationIds);
+  async getClasses(locationId?: string, allowedLocationIds?: string[] | null, viewScope?: ClassViewScope): Promise<any[]> {
+    return classStorage.getClasses(locationId, allowedLocationIds, viewScope);
   }
 
-  async getClassesList(locationId?: string, allowedLocationIds?: string[] | null): Promise<any[]> {
-    return classStorage.getClassesList(locationId, allowedLocationIds);
+  async getClassesList(locationId?: string, allowedLocationIds?: string[] | null, viewScope?: ClassViewScope): Promise<any[]> {
+    return classStorage.getClassesList(locationId, allowedLocationIds, viewScope);
   }
 
-  async getClassesListPaginated(params: { locationId?: string; allowedLocationIds?: string[] | null; search?: string; status?: string; page: number; pageSize: number }): Promise<{ data: any[]; total: number; page: number; pageSize: number }> {
+  async getClassesListPaginated(params: { locationId?: string; allowedLocationIds?: string[] | null; viewScope?: ClassViewScope; search?: string; status?: string; page: number; pageSize: number }): Promise<{ data: any[]; total: number; page: number; pageSize: number }> {
     return classStorage.getClassesListPaginated(params);
   }
 
-  async getClassesMinimal(locationId?: string, allowedLocationIds?: string[] | null): Promise<{ id: string; name: string; classCode: string; locationId: string }[]> {
-    return classStorage.getClassesMinimal(locationId, allowedLocationIds);
+  async getClassesMinimal(locationId?: string, allowedLocationIds?: string[] | null, viewScope?: ClassViewScope): Promise<{ id: string; name: string; classCode: string; locationId: string }[]> {
+    return classStorage.getClassesMinimal(locationId, allowedLocationIds, viewScope);
   }
 
   async getClass(id: string): Promise<any> {
@@ -611,7 +612,7 @@ export class DatabaseStorage implements IStorage {
     return classStorage.findClassByCode(classCode);
   }
 
-  async createMinimalClass(data: { classCode: string; name: string; locationId: string }): Promise<{ id: string; classCode: string; name: string }> {
+  async createMinimalClass(data: { classCode: string; name: string; locationId: string; createdBy?: string | null }): Promise<{ id: string; classCode: string; name: string }> {
     return classStorage.createMinimalClass(data);
   }
 

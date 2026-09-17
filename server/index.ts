@@ -124,6 +124,17 @@ app.use((req, res, next) => {
 (async () => {
   await registerRoutes(httpServer, app);
 
+  // Recover legacy class ownership from the authoritative creation audit log.
+  // The createdBy column itself is declared in shared/schema.ts and must be
+  // applied to each center database through the normal schema push process.
+  try {
+    const { recoverClassCreatorsFromActivityLogs } = await import("./services/class-owner-recovery.service");
+    const result = await recoverClassCreatorsFromActivityLogs();
+    console.log(`Class owner recovery: ${result.recovered} recovered, ${result.unresolved} still unresolved`);
+  } catch (err) {
+    console.error("Class owner recovery skipped:", err);
+  }
+
   // One-time Omicall backfill: split legacy "extension|password" values
   // into the dedicated encrypted password column. This is data migration only;
   // the column itself is defined in shared/schema.ts and applied by db:push.

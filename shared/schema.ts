@@ -753,6 +753,7 @@ export const classes = pgTable("classes", {
   classCode: varchar("class_code", { length: 50 }).notNull().unique(),
   name: varchar("name", { length: 255 }).notNull(),
   locationId: uuid("location_id").notNull().references(() => locations.id),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
   programId: uuid("program_id").references(() => coursePrograms.id),
   courseId: uuid("course_id").references(() => courses.id),
   managerIds: uuid("manager_ids").array().notNull(),

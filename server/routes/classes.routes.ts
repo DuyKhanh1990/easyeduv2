@@ -13,6 +13,7 @@ import { sendNotificationToMany } from "../lib/notification";
 import { emitToUser } from "../lib/ws-hub";
 import { sendUpdateSessionNotification, sendCancelSessionNotification, sendUpdateCycleNotification, sendExcludeDatesNotification } from "../lib/schedule-notification";
 import { notificationService } from "../application/notification/services/NotificationService";
+import { buildClassVisibilitySql, canViewClass, resolveClassViewAccess, type ClassViewScope } from "../lib/class-access";
 
 async function resolveStaffFullName(userId: string | undefined | null): Promise<string | null> {
   if (!userId) return null;
@@ -27,6 +28,40 @@ async function checkAttendanceLimitForSession(classSessionId: string, req: any):
 }
 
 const CLASSES_RESOURCE = "/classes";
+
+async function getClassReadScope(req: any): Promise<{ scope: ClassViewScope; canView: boolean; canViewAll: boolean }> {
+  return resolveClassViewAccess(req);
+}
+
+async function assertClassReadable(req: any, res: any, classId: string): Promise<boolean> {
+  // Student routes use their existing enrollment-based access rules.
+  if (req.isStudent) return true;
+
+  const access = await getClassReadScope(req);
+  if (!access.canView && !access.canViewAll) {
+    res.status(403).json({ message: "Bạn không có quyền xem lớp học." });
+    return false;
+  }
+  if (!(await canViewClass(access.scope, classId))) {
+    res.status(403).json({ message: "Bạn không có quyền xem lớp học này." });
+    return false;
+  }
+  return true;
+}
+
+async function assertClassSessionReadable(req: any, res: any, classSessionId: string): Promise<boolean> {
+  if (req.isStudent) return true;
+  const [row] = await db
+    .select({ classId: classSessions.classId })
+    .from(classSessions)
+    .where(eq(classSessions.id, classSessionId))
+    .limit(1);
+  if (!row) {
+    res.status(404).json({ message: "Không tìm thấy buổi học." });
+    return false;
+  }
+  return assertClassReadable(req, res, row.classId);
+}
 
 async function getClassPermissions(req: any) {
   if (req.isSuperAdmin) {
@@ -837,12 +872,17 @@ export function registerClassesRoutes(app: Express): void {
 
   // Classes - GET
   app.get(api.classes.list.path, async (req, res) => {
+    if (req.isStudent) return res.status(403).json({ message: "Bạn không có quyền xem danh sách lớp học." });
+    const readAccess = await getClassReadScope(req);
+    if (!readAccess.canView && !readAccess.canViewAll) {
+      return res.status(403).json({ message: "Bạn không có quyền xem lớp học." });
+    }
     const locationId = req.query.locationId as string | undefined;
     const minimal = req.query.minimal === "true";
     const view = req.query.view as string | undefined;
     const allowedLocationIds = await getAllowedLocationIds(req);
     if (minimal) {
-      const results = await storage.getClassesMinimal(locationId, allowedLocationIds);
+      const results = await storage.getClassesMinimal(locationId, allowedLocationIds, readAccess.scope);
       return res.json(results);
     }
     if (view === "list") {
@@ -851,20 +891,24 @@ export function registerClassesRoutes(app: Express): void {
         const pageSize = parseInt((req.query.pageSize as string) || "20", 10);
         const search = (req.query.search as string) || undefined;
         const status = (req.query.status as string) || undefined;
-        const results = await storage.getClassesListPaginated({ locationId, allowedLocationIds, search, status, page, pageSize });
+        const results = await storage.getClassesListPaginated({ locationId, allowedLocationIds, viewScope: readAccess.scope, search, status, page, pageSize });
         return res.json(results);
       } catch (err: any) {
         console.error("[getClassesListPaginated] error:", err);
         return res.status(500).json({ message: err.message || "Lỗi server" });
       }
     }
-    const results = await storage.getClasses(locationId, allowedLocationIds);
+    const results = await storage.getClasses(locationId, allowedLocationIds, readAccess.scope);
     res.json(results);
   });
 
   // Classes ending soon - must be BEFORE /api/classes/:id to avoid route conflict
   app.get(api.classes.endingSoon.path, async (req, res) => {
     try {
+      const readAccess = await getClassReadScope(req);
+      if (!readAccess.canView && !readAccess.canViewAll) {
+        return res.status(403).json({ message: "Bạn không có quyền xem lớp học." });
+      }
       const {
         page = "1", pageSize = "20", search = "",
         classes: classesParam, maxRemaining, dateFrom = "", dateTo = "", statusFilter = "",
@@ -879,6 +923,7 @@ export function registerClassesRoutes(app: Express): void {
 
       const allowedLocationIds = req.allowedLocationIds;
       const isSuperAdmin = req.isSuperAdmin;
+      const visibilityClause = sql.raw(buildClassVisibilitySql(readAccess.scope));
 
       if (!isSuperAdmin && allowedLocationIds && allowedLocationIds.length === 0) {
         return res.json({ data: [], total: 0, page: pageNum, pageSize: pageSizeNum, availableClasses: [] });
@@ -941,6 +986,7 @@ export function registerClassesRoutes(app: Express): void {
           INNER JOIN locations l ON c.location_id = l.id
           WHERE c.status IN ('active', 'planning')
             AND ${locationClause}
+            AND ${visibilityClause}
             AND EXISTS (
               SELECT 1
               FROM class_sessions cs_scheduled
@@ -980,6 +1026,7 @@ export function registerClassesRoutes(app: Express): void {
         FROM classes c
         WHERE c.status IN ('active', 'planning')
           AND ${locationClause}
+          AND ${visibilityClause}
           AND EXISTS (
             SELECT 1
             FROM class_sessions cs_scheduled
@@ -1027,8 +1074,10 @@ export function registerClassesRoutes(app: Express): void {
       const isSuperAdmin = (req as any).isSuperAdmin ?? false;
       const allowedLocationIds = await getAllowedLocationIds(req);
       const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
+      const readAccess = await getClassReadScope(req);
+      if (!readAccess.canView && !readAccess.canViewAll) return res.status(403).json({ message: "Bạn không có quyền xem lớp học." });
 
-      const summary = await getClassFormatSummary({ isSuperAdmin, allowedLocationIds, locationId });
+      const summary = await getClassFormatSummary({ isSuperAdmin, allowedLocationIds, locationId, viewScope: readAccess.scope });
       res.json(summary);
     } catch (err: any) {
       console.error("Class format summary error:", err);
@@ -1047,8 +1096,10 @@ export function registerClassesRoutes(app: Express): void {
       const isSuperAdmin = (req as any).isSuperAdmin ?? false;
       const allowedLocationIds = await getAllowedLocationIds(req);
       const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
+      const readAccess = await getClassReadScope(req);
+      if (!readAccess.canView && !readAccess.canViewAll) return res.status(403).json({ message: "Bạn không có quyền xem lớp học." });
 
-      const summary = await getClassStatusSummary({ isSuperAdmin, allowedLocationIds, locationId });
+      const summary = await getClassStatusSummary({ isSuperAdmin, allowedLocationIds, locationId, viewScope: readAccess.scope });
       res.json(summary);
     } catch (err: any) {
       console.error("Class status summary error:", err);
@@ -1066,7 +1117,9 @@ export function registerClassesRoutes(app: Express): void {
       const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
       const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom : undefined;
       const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo : undefined;
-      const data = await getClassesByLocationSummary({ isSuperAdmin, allowedLocationIds, locationId, dateFrom, dateTo });
+      const readAccess = await getClassReadScope(req);
+      if (!readAccess.canView && !readAccess.canViewAll) return res.status(403).json({ message: "Bạn không có quyền xem lớp học." });
+      const data = await getClassesByLocationSummary({ isSuperAdmin, allowedLocationIds, locationId, dateFrom, dateTo, viewScope: readAccess.scope });
       res.json(data);
     } catch (err: any) {
       console.error("Classes by location error:", err);
@@ -1083,7 +1136,9 @@ export function registerClassesRoutes(app: Express): void {
       const allowedLocationIds = await getAllowedLocationIds(req);
       const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
       const months = req.query.months ? parseInt(String(req.query.months), 10) : 6;
-      const data = await getMonthlyAttendanceRate({ isSuperAdmin, allowedLocationIds, locationId, months });
+      const readAccess = await getClassReadScope(req);
+      if (!readAccess.canView && !readAccess.canViewAll) return res.status(403).json({ message: "Bạn không có quyền xem lớp học." });
+      const data = await getMonthlyAttendanceRate({ isSuperAdmin, allowedLocationIds, locationId, months, viewScope: readAccess.scope });
       res.json(data);
     } catch (err: any) {
       console.error("Monthly attendance rate error:", err);
@@ -1101,7 +1156,9 @@ export function registerClassesRoutes(app: Express): void {
       const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
       const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom : undefined;
       const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo : undefined;
-      const data = await getClassesByTeacherSummary({ isSuperAdmin, allowedLocationIds, locationId, dateFrom, dateTo });
+      const readAccess = await getClassReadScope(req);
+      if (!readAccess.canView && !readAccess.canViewAll) return res.status(403).json({ message: "Bạn không có quyền xem lớp học." });
+      const data = await getClassesByTeacherSummary({ isSuperAdmin, allowedLocationIds, locationId, dateFrom, dateTo, viewScope: readAccess.scope });
       res.json(data);
     } catch (err: any) {
       console.error("Classes by teacher error:", err);
@@ -1119,7 +1176,9 @@ export function registerClassesRoutes(app: Express): void {
       const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
       const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom : undefined;
       const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo : undefined;
-      const data = await getSessionsByTeacherSummary({ isSuperAdmin, allowedLocationIds, locationId, dateFrom, dateTo });
+      const readAccess = await getClassReadScope(req);
+      if (!readAccess.canView && !readAccess.canViewAll) return res.status(403).json({ message: "Bạn không có quyền xem lớp học." });
+      const data = await getSessionsByTeacherSummary({ isSuperAdmin, allowedLocationIds, locationId, dateFrom, dateTo, viewScope: readAccess.scope });
       res.json(data);
     } catch (err: any) {
       console.error("Sessions by teacher error:", err);
@@ -1138,8 +1197,10 @@ export function registerClassesRoutes(app: Express): void {
       const isSuperAdmin = (req as any).isSuperAdmin ?? false;
       const allowedLocationIds = await getAllowedLocationIds(req);
       const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
+      const readAccess = await getClassReadScope(req);
+      if (!readAccess.canView && !readAccess.canViewAll) return res.status(403).json({ message: "Bạn không có quyền xem lớp học." });
 
-      const summary = await getNewClassesSummary({ isSuperAdmin, allowedLocationIds, locationId });
+      const summary = await getNewClassesSummary({ isSuperAdmin, allowedLocationIds, locationId, viewScope: readAccess.scope });
       res.json(summary);
     } catch (err: any) {
       console.error("New classes summary error:", err);
@@ -1148,36 +1209,46 @@ export function registerClassesRoutes(app: Express): void {
   });
 
   app.get(api.classes.get.path, async (req, res) => {
-    const cls = await storage.getClass(req.params.id);
+    const classId = String(req.params.id);
+    if (!(await assertClassReadable(req, res, classId))) return;
+    const cls = await storage.getClass(classId);
     if (!cls) return res.status(404).json({ message: "Not found" });
     res.json(cls);
   });
 
   app.get(api.classes.assignInfo.path, async (req, res) => {
-    const info = await storage.getClassAssignInfo(req.params.id);
+    const classId = String(req.params.id);
+    if (!(await assertClassReadable(req, res, classId))) return;
+    const info = await storage.getClassAssignInfo(classId);
     if (!info) return res.status(404).json({ message: "Not found" });
     res.json(info);
   });
 
   app.get(api.classes.waitingStudents.path, async (req, res) => {
-    const studentList = await storage.getClassStudents(req.params.id, "waiting");
+    const classId = String(req.params.id);
+    if (!(await assertClassReadable(req, res, classId))) return;
+    const studentList = await storage.getClassStudents(classId, "waiting");
     res.json(studentList);
   });
 
   app.get(api.classes.activeStudents.path, async (req, res) => {
-    const studentList = await storage.getClassStudents(req.params.id, "active");
+    const classId = String(req.params.id);
+    if (!(await assertClassReadable(req, res, classId))) return;
+    const studentList = await storage.getClassStudents(classId, "active");
     res.json(studentList);
   });
 
   app.get(api.classes.availableStudents.path, async (req, res) => {
+    const classId = String(req.params.id);
+    if (!(await assertClassReadable(req, res, classId))) return;
     const searchTerm = req.query.searchTerm as string;
-    const studentList = await storage.getAvailableStudentsForClass(req.params.id, searchTerm);
+    const studentList = await storage.getAvailableStudentsForClass(classId, searchTerm);
     res.json(studentList);
   });
 
   app.post(api.classes.addStudents.path, async (req, res) => {
     const { studentIds, status } = req.body;
-    const classId = req.params.id;
+    const classId = String(req.params.id);
     await storage.addClassStudents(classId, studentIds, (req.user as any).id, status);
     res.status(201).json({ success: true });
 
@@ -1215,7 +1286,7 @@ export function registerClassesRoutes(app: Express): void {
     try {
       const { configs, classScheduleConfig } = req.body;
       const userId = (req.user as any)?.id;
-      const classId = req.params.id;
+      const classId = String(req.params.id);
 
       // If classScheduleConfig is provided, generate class sessions first (one-step flow)
       if (classScheduleConfig) {
@@ -1246,12 +1317,16 @@ export function registerClassesRoutes(app: Express): void {
   });
 
   app.get(api.classes.sessions.path, async (req, res) => {
-    const sessions = await storage.getClassSessions(req.params.id);
+    const classId = String(req.params.id);
+    if (!(await assertClassReadable(req, res, classId))) return;
+    const sessions = await storage.getClassSessions(classId);
     res.json(sessions);
   });
 
   app.get(api.classes.studentSessions.path, async (req, res) => {
-    const sessions = await storage.getStudentSessionsForClass(req.params.id, req.params.studentId);
+    const classId = String(req.params.id);
+    if (!(await assertClassReadable(req, res, classId))) return;
+    const sessions = await storage.getStudentSessionsForClass(classId, String(req.params.studentId));
     res.json(sessions);
   });
 
@@ -1259,6 +1334,7 @@ export function registerClassesRoutes(app: Express): void {
   // Returns average allocatedAmount per session per student in the given session index range.
   // Falls back to session_price when no invoice allocation exists yet (provisional).
   app.get("/api/classes/:classId/student-allocated-fees", async (req, res) => {
+    if (!(await assertClassReadable(req, res, String(req.params.classId)))) return;
     try {
       const { classId } = req.params;
       const fromOrder = req.query.fromOrder ? parseInt(req.query.fromOrder as string) : null;
@@ -1296,6 +1372,7 @@ export function registerClassesRoutes(app: Express): void {
   // GET /api/classes/:classId/invoice-summary
   // Returns aggregated invoice info per student for the given class.
   app.get("/api/classes/:classId/invoice-summary", async (req, res) => {
+    if (!(await assertClassReadable(req, res, String(req.params.classId)))) return;
     try {
       const { classId } = req.params;
       const rows = await db
@@ -1447,13 +1524,16 @@ export function registerClassesRoutes(app: Express): void {
 
   // Class Sessions - student sessions
   app.get(api.classSessions.studentSessions.path, async (req, res) => {
-    const sessions = await storage.getStudentSessionsByClassSession(req.params.id);
+    const classSessionId = String(req.params.id);
+    if (!(await assertClassSessionReadable(req, res, classSessionId))) return;
+    const sessions = await storage.getStudentSessionsByClassSession(classSessionId);
     res.json(sessions);
   });
 
   // GET /api/classes/:classId/enrolled-students
   // Returns all enrolled students (waiting + active) with invoice summaries — used by revenue report.
   app.get("/api/classes/:classId/enrolled-students", async (req, res) => {
+    if (!(await assertClassReadable(req, res, String(req.params.classId)))) return;
     try {
       const { classId } = req.params;
 
@@ -1527,6 +1607,7 @@ export function registerClassesRoutes(app: Express): void {
   // GET /api/classes/:classId/all-student-sessions
   // Returns all student sessions for the class (used for attendance overview tab)
   app.get("/api/classes/:classId/all-student-sessions", async (req, res) => {
+    if (!(await assertClassReadable(req, res, String(req.params.classId)))) return;
     try {
       const { classId } = req.params;
       const { db: baseDb, eq: baseEq, studentSessions: baseSs, students: baseStudents } = await import("../storage/base");
@@ -1550,6 +1631,7 @@ export function registerClassesRoutes(app: Express): void {
 
   // Get all student sessions for a specific student in a specific class
   app.get("/api/classes/:classId/student/:studentId/sessions", async (req, res) => {
+    if (!(await assertClassReadable(req, res, String(req.params.classId)))) return;
     try {
       const { classId, studentId } = req.params;
       const { db: baseDb, eq: baseEq, and: baseAnd, asc: baseAsc, studentSessions: baseSs, classSessions: baseCs } = await import("../storage/base");
@@ -3269,8 +3351,9 @@ export function registerClassesRoutes(app: Express): void {
 
   // Get exclusions
   app.get(api.classes.exclusions.path, async (req, res) => {
+    if (!(await assertClassReadable(req, res, String(req.params.id)))) return;
     try {
-      const exclusions = await storage.getClassExclusions(req.params.id);
+      const exclusions = await storage.getClassExclusions(String(req.params.id));
       res.json(exclusions);
     } catch (err: any) {
       res.status(400).json({ message: err.message || "Không thể lấy danh sách loại trừ" });
@@ -3279,8 +3362,9 @@ export function registerClassesRoutes(app: Express): void {
 
   // Detect distinct weekday-cycle patterns for a class
   app.get(api.classes.cycles.path, async (req, res) => {
+    if (!(await assertClassReadable(req, res, String(req.params.id)))) return;
     try {
-      const cycles = await storage.getClassCycles(req.params.id);
+      const cycles = await storage.getClassCycles(String(req.params.id));
       res.json(cycles);
     } catch (err: any) {
       res.status(400).json({ message: err.message || "Không thể lấy thông tin chu kỳ" });
@@ -4436,7 +4520,11 @@ export function registerClassesRoutes(app: Express): void {
       const clsPerms = await getClassPermissions(req);
       if (!clsPerms.canCreate) return res.status(403).json({ message: "Bạn không có quyền tạo lớp học." });
       console.log("Creating class with body:", JSON.stringify(req.body, null, 2));
-      const cls = await storage.createClass(req.body);
+      const cls = await storage.createClass({
+        ...req.body,
+        // Never trust createdBy from the browser.
+        createdBy: (req.user as any)?.id ?? null,
+      });
 
       let conflicts: any[] = [];
       try {
@@ -5907,6 +5995,7 @@ export function registerClassesRoutes(app: Express): void {
   // ============================================================
 
   app.get("/api/classes/:classId/grade-books", async (req, res) => {
+    if (!(await assertClassReadable(req, res, String(req.params.classId)))) return;
     try {
       const { classId } = req.params;
       const result = await db.execute(sql`
@@ -6004,6 +6093,7 @@ export function registerClassesRoutes(app: Express): void {
   });
 
   app.get("/api/classes/:classId/grade-books/:id", async (req, res) => {
+    if (!(await assertClassReadable(req, res, String(req.params.classId)))) return;
     try {
       const { id } = req.params;
       const [book] = await db

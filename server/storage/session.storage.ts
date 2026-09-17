@@ -1218,6 +1218,7 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
         classCode: newSchedule.code || `MAKEUP_${Date.now()}`,
         name: newSchedule.name || "Lớp bù",
         locationId: cls.locationId,
+          createdBy: userId,
         weekdays: newSchedule.weekdays || [],
         scheduleConfig: newSchedule.scheduleConfig,
         managerIds: cls.managerIds || [],

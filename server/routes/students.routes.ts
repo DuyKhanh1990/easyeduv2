@@ -1729,7 +1729,7 @@ export function registerStudentsRoutes(app: Express): void {
 
         if (!cls) {
           if (!className) continue;
-          cls = await storage.createMinimalClass({ classCode, name: className, locationId });
+          cls = await storage.createMinimalClass({ classCode, name: className, locationId, createdBy: userId });
           created.push(cls.id);
         }
 

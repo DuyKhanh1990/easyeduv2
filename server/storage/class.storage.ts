@@ -10,6 +10,7 @@ import { studentWalletTransactions } from "@shared/schema";
 import { distributeInvoiceFeeToSessions } from "./invoice-session-allocation.storage";
 import { getNextLocationCode } from "./finance.storage";
 import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
+import { buildClassVisibilityCondition, buildClassVisibilitySql, type ClassViewScope } from "../lib/class-access";
 
 import type { Class } from "./base";
 
@@ -115,7 +116,11 @@ async function batchGetClassCounts(classIds: string[]): Promise<Map<string, Clas
 // ---------------------------------------------------------------------------
 // getClasses
 // ---------------------------------------------------------------------------
-export async function getClasses(locationId?: string, allowedLocationIds?: string[] | null): Promise<any[]> {
+export async function getClasses(
+  locationId?: string,
+  allowedLocationIds?: string[] | null,
+  viewScope?: ClassViewScope,
+): Promise<any[]> {
   const whereFilters = [];
   if (locationId && locationId !== "all") {
     if (allowedLocationIds !== null && allowedLocationIds !== undefined && !allowedLocationIds.includes(locationId)) {
@@ -127,6 +132,7 @@ export async function getClasses(locationId?: string, allowedLocationIds?: strin
   } else if (allowedLocationIds !== null && allowedLocationIds !== undefined && allowedLocationIds.length === 0) {
     return [];
   }
+  if (viewScope) whereFilters.push(buildClassVisibilityCondition(viewScope));
 
   const result = await db.query.classes.findMany({
     where: whereFilters.length > 0 ? and(...whereFilters) : undefined,
@@ -171,7 +177,11 @@ export async function getClasses(locationId?: string, allowedLocationIds?: strin
 // ---------------------------------------------------------------------------
 // getClassesList
 // ---------------------------------------------------------------------------
-export async function getClassesList(locationId?: string, allowedLocationIds?: string[] | null): Promise<any[]> {
+export async function getClassesList(
+  locationId?: string,
+  allowedLocationIds?: string[] | null,
+  viewScope?: ClassViewScope,
+): Promise<any[]> {
   const whereFilters = [];
   if (locationId && locationId !== "all") {
     if (allowedLocationIds !== null && allowedLocationIds !== undefined && !allowedLocationIds.includes(locationId)) {
@@ -183,6 +193,7 @@ export async function getClassesList(locationId?: string, allowedLocationIds?: s
   } else if (allowedLocationIds !== null && allowedLocationIds !== undefined && allowedLocationIds.length === 0) {
     return [];
   }
+  if (viewScope) whereFilters.push(buildClassVisibilityCondition(viewScope));
 
   const result = await db.query.classes.findMany({
     where: whereFilters.length > 0 ? and(...whereFilters) : undefined,
@@ -233,6 +244,7 @@ export async function getClassesList(locationId?: string, allowedLocationIds?: s
 export async function getClassesListPaginated(params: {
   locationId?: string;
   allowedLocationIds?: string[] | null;
+  viewScope?: ClassViewScope;
   search?: string;
   status?: string;
   page: number;
@@ -255,6 +267,7 @@ export async function getClassesListPaginated(params: {
   } else if (params.allowedLocationIds !== null && params.allowedLocationIds !== undefined && params.allowedLocationIds.length === 0) {
     return { data: [], total: 0, page, pageSize };
   }
+  if (params.viewScope) whereFilters.push(buildClassVisibilityCondition(params.viewScope));
 
   const today = new Date().toISOString().split("T")[0];
   if (params.status && params.status !== "all") {
@@ -345,7 +358,11 @@ export async function getClassesListPaginated(params: {
 // ---------------------------------------------------------------------------
 // getClassesMinimal
 // ---------------------------------------------------------------------------
-export async function getClassesMinimal(locationId?: string, allowedLocationIds?: string[] | null): Promise<{ id: string; name: string; classCode: string; locationId: string }[]> {
+export async function getClassesMinimal(
+  locationId?: string,
+  allowedLocationIds?: string[] | null,
+  viewScope?: ClassViewScope,
+): Promise<{ id: string; name: string; classCode: string; locationId: string }[]> {
   const conditions: any[] = [];
   if (locationId && locationId !== "all") {
     if (allowedLocationIds !== null && allowedLocationIds !== undefined && !allowedLocationIds.includes(locationId)) {
@@ -357,6 +374,7 @@ export async function getClassesMinimal(locationId?: string, allowedLocationIds?
   } else if (allowedLocationIds !== null && allowedLocationIds !== undefined && allowedLocationIds.length === 0) {
     return [];
   }
+  if (viewScope) conditions.push(buildClassVisibilityCondition(viewScope));
   return await db
     .select({ id: classes.id, name: classes.name, classCode: classes.classCode, locationId: classes.locationId })
     .from(classes)
@@ -868,6 +886,7 @@ export async function createClass(data: any): Promise<Class> {
       classCode: data.classCode,
       name: data.name,
       locationId: data.locationId,
+      createdBy: data.createdBy ?? null,
       programId: data.programId,
       courseId: data.courseId,
       managerIds: Array.isArray(data.managerIds) ? data.managerIds : (data.managerId ? [data.managerId] : []),
@@ -1376,6 +1395,7 @@ export async function createMinimalClass(data: {
   classCode: string;
   name: string;
   locationId: string;
+  createdBy?: string | null;
 }): Promise<{ id: string; classCode: string; name: string }> {
   const [newClass] = await db
     .insert(classes)
@@ -1383,6 +1403,7 @@ export async function createMinimalClass(data: {
       classCode: data.classCode,
       name: data.name,
       locationId: data.locationId,
+      createdBy: data.createdBy ?? null,
       managerIds: [],
       status: "planning",
       learningFormat: "offline",
@@ -1934,6 +1955,7 @@ export async function getClassFormatSummary(params: {
   isSuperAdmin: boolean;
   allowedLocationIds: string[] | null;
   locationId?: string;
+  viewScope?: ClassViewScope;
 }): Promise<{
   total: number;
   offline: number;
@@ -1941,7 +1963,7 @@ export async function getClassFormatSummary(params: {
   online: number;
   onlinePct: number;
 }> {
-  const where = buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
+  const where = `${buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId)} AND ${params.viewScope ? buildClassVisibilitySql(params.viewScope) : "1=1"}`;
   const queryStr = `
     SELECT
       COUNT(*) AS total,
@@ -1971,6 +1993,7 @@ export async function getClassStatusSummary(params: {
   isSuperAdmin: boolean;
   allowedLocationIds: string[] | null;
   locationId?: string;
+  viewScope?: ClassViewScope;
 }): Promise<{
   planning: number;
   recruiting: number;
@@ -1978,7 +2001,7 @@ export async function getClassStatusSummary(params: {
   closed: number;
   total: number;
 }> {
-  const where = buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
+  const where = `${buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId)} AND ${params.viewScope ? buildClassVisibilitySql(params.viewScope) : "1=1"}`;
   const queryStr = `
     SELECT
       COUNT(*) FILTER (WHERE c.status = 'planning')   AS planning,
@@ -2007,11 +2030,12 @@ export async function getNewClassesSummary(params: {
   isSuperAdmin: boolean;
   allowedLocationIds: string[] | null;
   locationId?: string;
+  viewScope?: ClassViewScope;
 }): Promise<{
   today: number;
   thisMonth: number;
 }> {
-  const where = buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
+  const where = `${buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId)} AND ${params.viewScope ? buildClassVisibilitySql(params.viewScope) : "1=1"}`;
   const queryStr = `
     SELECT
       COUNT(*) FILTER (WHERE DATE(c.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh') = CURRENT_DATE) AS today,
@@ -2039,8 +2063,10 @@ export async function getClassesByLocationSummary(params: {
   locationId?: string;
   dateFrom?: string;
   dateTo?: string;
+  viewScope?: ClassViewScope;
 }): Promise<{ name: string; count: number; pct: number }[]> {
   const { isSuperAdmin, allowedLocationIds, locationId, dateFrom, dateTo } = params;
+  const classScopeWhere = params.viewScope ? buildClassVisibilitySql(params.viewScope) : "1=1";
 
   let locWhere = "1=1";
   if (locationId && locationId !== "all") {
@@ -2062,7 +2088,7 @@ export async function getClassesByLocationSummary(params: {
   const queryStr = `
     SELECT l.name, COUNT(c.id)::int AS count
     FROM locations l
-    LEFT JOIN classes c ON c.location_id = l.id ${dateWhere}
+     LEFT JOIN classes c ON c.location_id = l.id ${dateWhere} AND ${classScopeWhere}
     WHERE ${locWhere}
     GROUP BY l.id, l.name
     ORDER BY count DESC, l.name ASC
@@ -2085,9 +2111,10 @@ export async function getMonthlyAttendanceRate(params: {
   allowedLocationIds: string[] | null;
   locationId?: string;
   months?: number;
+  viewScope?: ClassViewScope;
 }): Promise<{ monthKey: string; label: string; total: number; present: number; rate: number }[]> {
   const months = Math.max(1, Math.min(24, params.months ?? 6));
-  const where = buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
+  const where = `${buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId)} AND ${params.viewScope ? buildClassVisibilitySql(params.viewScope) : "1=1"}`;
 
   const queryStr = `
     WITH month_series AS (
@@ -2141,8 +2168,9 @@ export async function getClassesByTeacherSummary(params: {
   limit?: number;
   dateFrom?: string;
   dateTo?: string;
+  viewScope?: ClassViewScope;
 }): Promise<{ name: string; count: number; pct: number }[]> {
-  const where = buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
+  const where = `${buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId)} AND ${params.viewScope ? buildClassVisibilitySql(params.viewScope) : "1=1"}`;
   const limit = Math.max(1, Math.min(50, params.limit ?? 10));
   const dateConds: string[] = [];
   if (params.dateFrom) dateConds.push(`c.created_at >= '${params.dateFrom.replace(/[^0-9\-]/g, "")}'::date`);
@@ -2177,8 +2205,9 @@ export async function getSessionsByTeacherSummary(params: {
   limit?: number;
   dateFrom?: string;
   dateTo?: string;
+  viewScope?: ClassViewScope;
 }): Promise<{ name: string; count: number; pct: number }[]> {
-  const where = buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
+  const where = `${buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId)} AND ${params.viewScope ? buildClassVisibilitySql(params.viewScope) : "1=1"}`;
   const limit = Math.max(1, Math.min(50, params.limit ?? 10));
   const dateConds: string[] = [];
   if (params.dateFrom) dateConds.push(`cs.session_date >= '${params.dateFrom.replace(/[^0-9\-]/g, "")}'::date`);
