@@ -1172,6 +1172,15 @@ function getNextWeekdayDate(weekday: number): string {
 
 export async function makeupClassStudents(classId: string, data: any, userId: string): Promise<void> {
   const { option, subOption, selectedTargetSessionId, students } = data;
+  const makeupPlanByStudent = new Map<string, string[]>(
+    Array.isArray(data.makeupPlan)
+      ? data.makeupPlan.map((plan: any) => [
+          String(plan.studentId),
+          Array.isArray(plan.sessionIds) ? plan.sessionIds.filter(Boolean).map(String) : [],
+        ])
+      : [],
+  );
+  const makeupPlanCursor = new Map<string, number>();
   const cls = await getClass(classId);
   if (!cls) throw new Error("Lớp học không tồn tại");
   const classCache = new Map<string, any>([[classId, cls]]);
@@ -1306,13 +1315,17 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
         // ── Xếp bù sang lớp khác ────────────────────────────────────────────
         const { selectedTargetClassId } = data;
         if (!selectedTargetClassId) throw new Error("Chưa chọn lớp đích để xếp bù");
-        if (!selectedTargetSessionId) throw new Error("Chưa chọn buổi học để xếp bù");
+        const plannedSessionIds = makeupPlanByStudent.get(String(studentId));
+        const planCursor = makeupPlanCursor.get(String(studentId)) ?? 0;
+        const targetSessionId = plannedSessionIds?.[planCursor] || selectedTargetSessionId;
+        makeupPlanCursor.set(String(studentId), planCursor + 1);
+        if (!targetSessionId) throw new Error("Chưa chọn buổi học để xếp bù");
 
         // ❌ Validate 1: Target session must exist and belong to target class
         const [targetCS] = await tx.select()
           .from(classSessions)
           .where(and(
-            eq(classSessions.id, selectedTargetSessionId),
+            eq(classSessions.id, targetSessionId),
             eq(classSessions.classId, selectedTargetClassId),
           ));
         if (!targetCS) throw new Error("Buổi học bù không tồn tại hoặc không thuộc lớp đích");
@@ -1322,7 +1335,7 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
           .from(studentSessions)
           .where(and(
             eq(studentSessions.studentId, studentId),
-            eq(studentSessions.classSessionId, selectedTargetSessionId),
+            eq(studentSessions.classSessionId, targetSessionId),
             sql`${studentSessions.status} != 'cancelled'`,
           ));
         if (duplicate) {
@@ -1366,7 +1379,7 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
           studentId,
           classId: selectedTargetClassId,
           studentClassId: targetSC?.id || null,
-          classSessionId: selectedTargetSessionId,
+          classSessionId: targetSessionId,
           status: "scheduled",
           attendanceStatus: "pending",
           sessionSource: "makeup",

@@ -79,6 +79,7 @@ export function MakeupDialog({
   const [subOption, setSubOption] = useState<string>("specific_session");
   const [selectedTargetSessionId, setSelectedTargetSessionId] = useState<string>("");
   const [selectedTargetClassId, setSelectedTargetClassId] = useState<string>("");
+  const [makeupStartDate, setMakeupStartDate] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
   const [locationFilter, setLocationFilter] = useState<"same" | "other">("same");
   const [isSessionPopoverOpen, setIsSessionPopoverOpen] = useState(false);
@@ -110,11 +111,11 @@ export function MakeupDialog({
     });
   }, [newScheduleWeekdays]);
 
-  // Reset class + session selection when location filter changes
+  // Reset target selection when the location or start date changes
   useEffect(() => {
     setSelectedTargetClassId("");
     setSelectedTargetSessionId("");
-  }, [locationFilter]);
+  }, [locationFilter, makeupStartDate]);
 
   // Fetch all classes for "other_class" option
   const { data: allClassesFetched = [], isLoading: loadingClasses } = useQuery<any[]>({
@@ -139,47 +140,68 @@ export function MakeupDialog({
   const sameLocationClasses = otherClasses.filter((c) => locationId && c.locationId === locationId);
   const otherLocationClasses = otherClasses.filter((c) => !locationId || c.locationId !== locationId);
 
-  const selectedStudentIds = useMemo(
-    () => [...new Set(selectedStudents.map((student) => student.studentId).filter(Boolean))].sort(),
-    [selectedStudents],
-  );
+  const studentNeeds = useMemo(() => {
+    const needs = new Map<string, number>();
+    for (const student of selectedStudents) {
+      if (!student.studentId) continue;
+      needs.set(student.studentId, (needs.get(student.studentId) ?? 0) + 1);
+    }
+    return [...needs.entries()]
+      .map(([studentId, count]) => ({ studentId, count }))
+      .sort((a, b) => a.studentId.localeCompare(b.studentId));
+  }, [selectedStudents]);
+  const makeupStudentCount = studentNeeds.length;
+  const makeupSessionCount = selectedStudents.length;
+  const locationScopedClasses = locationFilter === "same" ? sameLocationClasses : otherLocationClasses;
   const candidateClassIds = useMemo(
-    () => otherClasses.map((candidate) => candidate.id).sort(),
-    [otherClasses],
+    () => locationScopedClasses.map((candidate) => candidate.id).sort(),
+    [locationScopedClasses],
   );
 
-  const { data: classEligibility = [], isLoading: loadingClassEligibility } = useQuery<
-    { classId: string; eligibleStudentCount: number; totalStudentCount: number }[]
+  const { data: makeupStartOptions = [], isLoading: loadingMakeupStartOptions } = useQuery<
+    {
+      classId: string;
+      className: string;
+      classCode?: string;
+      startSessionId: string;
+      startSession: any;
+      plans: { studentId: string; requiredCount: number; sessionIds: string[]; sessions: any[] }[];
+    }[]
   >({
-    queryKey: ["/api/classes/makeup-eligibility", candidateClassIds, selectedStudentIds, [...sourceClassIds].sort()],
+    queryKey: [
+      "/api/classes/makeup-start-options",
+      candidateClassIds,
+      studentNeeds,
+      makeupStartDate,
+      [...sourceClassIds].sort(),
+    ],
     queryFn: async () => {
       const params = new URLSearchParams({
         classIds: candidateClassIds.join(","),
-        studentIds: selectedStudentIds.join(","),
+        studentNeeds: JSON.stringify(studentNeeds),
+        startDate: makeupStartDate,
         excludeClassIds: [...sourceClassIds].join(","),
       });
-      const response = await fetch(`/api/classes/makeup-eligibility?${params.toString()}`);
-      if (!response.ok) throw new Error("Không thể tính điều kiện xếp bù theo lớp");
+      const response = await fetch(`/api/classes/makeup-start-options?${params.toString()}`);
+      if (!response.ok) throw new Error("Không thể tìm lịch xếp bù phù hợp");
       return response.json();
     },
-    enabled: option === "other_class" && candidateClassIds.length > 0 && selectedStudentIds.length > 0,
+    enabled: option === "other_class" && !!makeupStartDate && candidateClassIds.length > 0 && studentNeeds.length > 0,
   });
 
-  const classEligibilityMap = useMemo(
-    () => new Map(classEligibility.map((item) => [item.classId, item])),
-    [classEligibility],
+  const filteredStartOptions = useMemo(
+    () => makeupStartOptions.filter((item) => {
+      const haystack = `${item.className} ${item.classCode || ""} ${formatSessionLabel(item.startSession)}`.toLowerCase();
+      return !searchTerm.trim() || haystack.includes(searchTerm.trim().toLowerCase());
+    }),
+    [makeupStartOptions, searchTerm],
   );
-
-  // Classes shown based on the location filter toggle, with the most
-  // suitable classes at the top of the dropdown.
-  const filteredClassList = useMemo(() => {
-    const classes = locationFilter === "same" ? sameLocationClasses : otherLocationClasses;
-    return [...classes].sort((a, b) => {
-      const aScore = classEligibilityMap.get(a.id)?.eligibleStudentCount ?? -1;
-      const bScore = classEligibilityMap.get(b.id)?.eligibleStudentCount ?? -1;
-      return bScore - aScore || String(a.classCode || a.name).localeCompare(String(b.classCode || b.name));
-    });
-  }, [locationFilter, sameLocationClasses, otherLocationClasses, classEligibilityMap]);
+  const selectedMakeupStartOption = useMemo(
+    () => makeupStartOptions.find(
+      (item) => item.classId === selectedTargetClassId && item.startSessionId === selectedTargetSessionId,
+    ),
+    [makeupStartOptions, selectedTargetClassId, selectedTargetSessionId],
+  );
 
   // Fetch sessions for selected other class
   const { data: targetClassSessions = [], isLoading: loadingTargetSessions } = useQuery<any[]>({
@@ -453,16 +475,16 @@ export function MakeupDialog({
       subOption === "specific_session" &&
       !selectedTargetSessionId) ||
     (option === "other_class" &&
-      (!selectedTargetClassId || !selectedTargetSessionId)) ||
+      (!selectedMakeupStartOption || !selectedTargetClassId || !selectedTargetSessionId)) ||
     (option === "new_schedule" && !newScheduleValid);
 
   const handleConfirm = () => {
-    // For partial sessions, only schedule students who can actually attend
     onConfirm({
       option,
       subOption,
       selectedTargetSessionId,
       selectedTargetClassId,
+      makeupPlan: selectedMakeupStartOption?.plans ?? [],
       newSchedule: {
         ...newSchedule,
         scheduleConfig: newScheduleConfig.map((c) => ({
@@ -495,10 +517,13 @@ export function MakeupDialog({
               <p className="text-sm font-medium">
                 Học viên đang xếp bù{" "}
                 <Badge variant="secondary" className="ml-1 text-xs">
-                  {selectedStudents.length}
+                  {makeupStudentCount}
                 </Badge>
               </p>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Số buổi xếp bù: <span className="font-semibold text-foreground">{makeupSessionCount}</span>
+            </p>
             <div className="max-h-[130px] overflow-y-auto rounded-md border bg-muted/20 p-2 space-y-1">
               {selectedStudents.length > 0 ? (
                 selectedStudents.map((s) => (
@@ -781,7 +806,7 @@ export function MakeupDialog({
           {option === "other_class" && (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label className="text-sm">Tìm & chọn lớp</Label>
+                <Label className="text-sm">Chọn ngày bắt đầu xếp bù</Label>
 
                 {/* Location filter toggle */}
                 <div className="flex gap-2">
@@ -803,6 +828,50 @@ export function MakeupDialog({
                   ))}
                 </div>
 
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="h-10 w-full justify-start bg-white text-sm font-normal"
+                      data-testid="button-select-makeup-start-date"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {makeupStartDate
+                        ? format(parseISO(makeupStartDate), "dd/MM/yyyy")
+                        : "Chọn ngày bắt đầu"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto bg-white p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={makeupStartDate ? parseISO(makeupStartDate) : undefined}
+                      onSelect={(date) => {
+                        setMakeupStartDate(date ? format(date, "yyyy-MM-dd") : "");
+                        setSearchTerm("");
+                      }}
+                      disabled={(date) => {
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        return date < today;
+                      }}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {!makeupStartDate && (
+                <Alert className="py-2">
+                  <CalendarIcon className="h-4 w-4" />
+                  <AlertDescription className="text-xs">
+                    Chọn ngày bắt đầu để hệ thống tìm các lớp có buổi học phù hợp cho toàn bộ học viên.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {makeupStartDate && (
+                <div className="space-y-2">
+                  <Label className="text-sm">Chọn lớp và buổi bắt đầu</Label>
                 <Popover
                   open={isClassPopoverOpen}
                   onOpenChange={(open) => {
@@ -819,14 +888,9 @@ export function MakeupDialog({
                       data-testid="select-target-class"
                     >
                       <span className="truncate">
-                        {selectedTargetClassId
-                          ? (() => {
-                              const selectedClass = otherClasses.find((c) => c.id === selectedTargetClassId);
-                              return selectedClass
-                                ? `${selectedClass.name}${selectedClass.classCode ? ` (${selectedClass.classCode})` : ""}`
-                                : "Chọn lớp trong danh sách";
-                            })()
-                          : "Chọn lớp trong danh sách"}
+                        {selectedMakeupStartOption
+                          ? `${selectedMakeupStartOption.className}${selectedMakeupStartOption.classCode ? ` (${selectedMakeupStartOption.classCode})` : ""} — ${formatSessionLabel(selectedMakeupStartOption.startSession)}`
+                          : "Chọn lớp và buổi bắt đầu"}
                       </span>
                       <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
@@ -846,48 +910,40 @@ export function MakeupDialog({
                       <CommandList className="max-h-[360px]">
                         {loadingClasses ? (
                           <CommandEmpty>Đang tải danh sách lớp...</CommandEmpty>
-                        ) : filteredClassList.length === 0 ? (
-                          <CommandEmpty>Không có lớp nào</CommandEmpty>
+                        ) : loadingMakeupStartOptions ? (
+                          <CommandEmpty>Đang kiểm tra lịch phù hợp...</CommandEmpty>
+                        ) : filteredStartOptions.length === 0 ? (
+                          <CommandEmpty>
+                            Không có lớp/buổi nào đủ điều kiện từ ngày này. Hãy chọn ngày bắt đầu khác.
+                          </CommandEmpty>
                         ) : (
-                          <CommandGroup heading="Lớp có thể xếp bù">
-                            {filteredClassList.map((candidateClass) => {
-                              const eligibility = classEligibilityMap.get(candidateClass.id);
-                              const eligibleCount = eligibility?.eligibleStudentCount ?? 0;
-                              const totalCount = selectedStudents.length;
-                              const isUnavailable =
-                                loadingClassEligibility || !eligibility || eligibleCount < totalCount;
+                          <CommandGroup heading="Lớp và buổi bắt đầu đủ điều kiện">
+                            {filteredStartOptions.map((startOption) => {
                               return (
                                 <CommandItem
-                                  key={candidateClass.id}
-                                  value={`${candidateClass.name} ${candidateClass.classCode || ""}`}
-                                  disabled={isUnavailable}
+                                  key={`${startOption.classId}-${startOption.startSessionId}`}
+                                  value={`${startOption.className} ${startOption.classCode || ""} ${formatSessionLabel(startOption.startSession)}`}
                                   onSelect={() => {
-                                    setSelectedTargetClassId(candidateClass.id);
-                                    setSelectedTargetSessionId("");
+                                    setSelectedTargetClassId(startOption.classId);
+                                    setSelectedTargetSessionId(startOption.startSessionId);
                                     setIsClassPopoverOpen(false);
                                     setSearchTerm("");
                                   }}
                                   className="cursor-pointer gap-2 py-2.5"
-                                  data-testid={`target-class-option-${candidateClass.id}`}
+                                  data-testid={`target-start-option-${startOption.classId}-${startOption.startSessionId}`}
                                 >
                                   <span className="min-w-0 flex-1 truncate">
-                                    {candidateClass.name}
-                                    {candidateClass.classCode ? ` (${candidateClass.classCode})` : ""}
+                                    {startOption.className}
+                                    {startOption.classCode ? ` (${startOption.classCode})` : ""}
+                                    <span className="ml-1 text-muted-foreground">
+                                      — {formatSessionLabel(startOption.startSession)}
+                                    </span>
                                   </span>
                                   <Badge
                                     variant="outline"
-                                    className={cn(
-                                      "shrink-0 text-[11px]",
-                                      loadingClassEligibility
-                                        ? "text-muted-foreground"
-                                        : eligibleCount === totalCount
-                                          ? "border-green-200 bg-green-50 text-green-700"
-                                          : eligibleCount > 0
-                                            ? "border-amber-200 bg-amber-50 text-amber-700"
-                                            : "border-red-200 bg-red-50 text-red-600"
-                                    )}
+                                    className="shrink-0 border-green-200 bg-green-50 text-[11px] text-green-700"
                                   >
-                                    {loadingClassEligibility ? "Đang tính..." : `${eligibleCount}/${totalCount}`}
+                                    {makeupStudentCount} HV · {makeupSessionCount} buổi
                                   </Badge>
                                 </CommandItem>
                               );
@@ -898,71 +954,26 @@ export function MakeupDialog({
                     </Command>
                   </PopoverContent>
                 </Popover>
-              </div>
-
-              {selectedTargetClassId && (
-                <div className="space-y-2">
-                  <Label className="text-sm">Chọn buổi</Label>
-                  <Select
-                    value={selectedTargetSessionId}
-                    onValueChange={setSelectedTargetSessionId}
-                  >
-                    <SelectTrigger className="bg-white" data-testid="select-target-session">
-                      <SelectValue placeholder="Chọn buổi học của lớp đã chọn" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-white">
-                      {loadingTargetSessions ? (
-                        <SelectItem value="__loading" disabled>
-                          Đang tải buổi học...
-                        </SelectItem>
-                      ) : futureTargetSessions.length === 0 ? (
-                        <SelectItem value="__none" disabled>
-                          Không có buổi học nào
-                        </SelectItem>
-                      ) : (
-                        <>
-                          {otherAllAvailableSessions.length > 0 && (
-                            <SelectGroup>
-                              <SelectLabel>Tất cả học viên có thể xếp bù</SelectLabel>
-                              {otherAllAvailableSessions.map((s) => (
-                                <SelectItem key={s.id} value={s.id}>
-                                  {formatSessionLabel(s)}
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
-                          )}
-                          {otherPartialSessions.length > 0 && (
-                            <SelectGroup>
-                              <SelectLabel>Chỉ một phần học viên xếp bù được</SelectLabel>
-                              {otherPartialSessions.map((s) => {
-                                const info = otherPartialSessionMap[s.id];
-                                return (
-                                  <SelectItem key={s.id} value={`partial-${s.id}`} disabled className="opacity-40">
-                                    {formatSessionLabel(s)} ({info.canAttend.length}/{selectedStudents.length}) — không đủ điều kiện
-                                  </SelectItem>
-                                );
-                              })}
-                            </SelectGroup>
-                          )}
-                          {otherOccupiedSessions.length > 0 && (
-                            <SelectGroup>
-                              <SelectLabel className="text-muted-foreground">Đã có lịch (không chọn được)</SelectLabel>
-                              {otherOccupiedSessions.map((s) => (
-                                <SelectItem
-                                  key={s.id}
-                                  value={`occupied-${s.id}`}
-                                  disabled
-                                  className="opacity-40"
-                                >
-                                  {formatSessionLabel(s)} — {getAttendanceLabel(otherOccupiedStatusMap[s.id])}
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
-                          )}
-                        </>
-                      )}
-                    </SelectContent>
-                  </Select>
+                {selectedMakeupStartOption && (
+                  <div className="rounded-md border border-green-200 bg-green-50/60 p-3 space-y-2">
+                    <p className="text-xs font-semibold text-green-800">
+                      Lịch xếp bù dự kiến
+                    </p>
+                    {selectedMakeupStartOption.plans.map((plan) => {
+                      const student = selectedStudents.find((item) => item.studentId === plan.studentId);
+                      return (
+                        <div key={plan.studentId} className="space-y-1">
+                          <p className="text-xs font-medium text-green-900">
+                            {student?.student?.fullName || student?.fullName || "Học viên"} — {plan.requiredCount} buổi
+                          </p>
+                          <p className="pl-3 text-[11px] text-green-800">
+                            {plan.sessions.map((session) => formatSessionLabel(session)).join(" → ")}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 </div>
               )}
             </div>

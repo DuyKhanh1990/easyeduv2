@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { createActivityLog, getActivityLogs } from "../storage/activity-log.storage";
-import { getClassFormatSummary, getClassStatusSummary, getNewClassesSummary, getClassesByLocationSummary, getMonthlyAttendanceRate, getClassesByTeacherSummary, getSessionsByTeacherSummary, getMakeupClassEligibility } from "../storage/class.storage";
+import { getClassFormatSummary, getClassStatusSummary, getNewClassesSummary, getClassesByLocationSummary, getMonthlyAttendanceRate, getClassesByTeacherSummary, getSessionsByTeacherSummary, getMakeupClassEligibility, getMakeupStartOptions } from "../storage/class.storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { db, pool } from "../db";
@@ -802,6 +802,36 @@ export function registerClassesRoutes(app: Express): void {
     } catch (err: any) {
       console.error("[MakeupClassEligibility] error:", err);
       res.status(400).json({ message: err.message || "Không thể tính điều kiện xếp bù" });
+    }
+  });
+
+  app.get("/api/classes/makeup-start-options", async (req, res) => {
+    try {
+      const classIds = String(req.query.classIds || "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean);
+      const excludeClassIds = String(req.query.excludeClassIds || "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean);
+      const studentNeeds = JSON.parse(String(req.query.studentNeeds || "[]"));
+      if (!Array.isArray(studentNeeds)) throw new Error("Danh sách số buổi xếp bù không hợp lệ");
+
+      const result = await getMakeupStartOptions({
+        classIds,
+        studentNeeds: studentNeeds.map((need: any) => ({
+          studentId: String(need.studentId || ""),
+          count: Number(need.count || 0),
+        })),
+        startDate: String(req.query.startDate || ""),
+        excludeClassIds,
+        allowedLocationIds: await getAllowedLocationIds(req),
+      });
+      res.json(result);
+    } catch (err: any) {
+      console.error("[MakeupStartOptions] error:", err);
+      res.status(400).json({ message: err.message || "Không thể tìm lịch xếp bù" });
     }
   });
 

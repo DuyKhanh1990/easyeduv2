@@ -468,6 +468,177 @@ export async function getMakeupClassEligibility(params: {
   });
 }
 
+// Returns valid start-session options for a selected makeup start date. A
+// candidate is valid only when every selected student can attend the start
+// session and then all of that student's required consecutive sessions.
+export async function getMakeupStartOptions(params: {
+  classIds: string[];
+  studentNeeds: Array<{ studentId: string; count: number }>;
+  startDate: string;
+  excludeClassIds?: string[];
+  allowedLocationIds?: string[] | null;
+}): Promise<any[]> {
+  const uniqueClassIds = [...new Set(params.classIds.filter(Boolean))];
+  const needsByStudent = new Map<string, number>();
+  for (const need of params.studentNeeds) {
+    if (!need.studentId) continue;
+    const count = Math.max(0, Math.floor(Number(need.count) || 0));
+    if (count > 0) needsByStudent.set(need.studentId, Math.max(needsByStudent.get(need.studentId) ?? 0, count));
+  }
+  const uniqueStudentIds = [...needsByStudent.keys()];
+  const startDate = String(params.startDate || "").slice(0, 10);
+  if (
+    uniqueClassIds.length === 0 ||
+    uniqueStudentIds.length === 0 ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(startDate)
+  ) return [];
+
+  const conditions: any[] = [inArray(classes.id, uniqueClassIds)];
+  const excluded = new Set(params.excludeClassIds ?? []);
+  if (excluded.size > 0) {
+    conditions.push(sql`${classes.id} NOT IN (${sql.join([...excluded].map((id) => sql`${id}::uuid`), sql`, `)})`);
+  }
+  if (params.allowedLocationIds !== null && params.allowedLocationIds !== undefined) {
+    if (params.allowedLocationIds.length === 0) return [];
+    conditions.push(inArray(classes.locationId, params.allowedLocationIds));
+  }
+
+  const candidateRows = await db
+    .select({ id: classes.id, name: classes.name, classCode: classes.classCode })
+    .from(classes)
+    .where(and(...conditions));
+  if (candidateRows.length === 0) return [];
+
+  const candidateIds = candidateRows.map((row) => row.id);
+  const classInfo = new Map(candidateRows.map((row) => [row.id, row]));
+  const [sessionRows, conflictRows] = await Promise.all([
+    db
+      .select({
+        id: classSessions.id,
+        classId: classSessions.classId,
+        sessionDate: classSessions.sessionDate,
+        sessionIndex: classSessions.sessionIndex,
+        weekday: classSessions.weekday,
+        status: classSessions.status,
+        shiftTemplateId: classSessions.shiftTemplateId,
+        startTime: shiftTemplates.startTime,
+        endTime: shiftTemplates.endTime,
+      })
+      .from(classSessions)
+      .leftJoin(shiftTemplates, eq(classSessions.shiftTemplateId, shiftTemplates.id))
+      .where(inArray(classSessions.classId, candidateIds)),
+    db
+      .select({
+        studentId: studentSessions.studentId,
+        classId: studentSessions.classId,
+        classSessionId: studentSessions.classSessionId,
+        sessionDate: classSessions.sessionDate,
+        status: studentSessions.status,
+        attendanceStatus: studentSessions.attendanceStatus,
+      })
+      .from(studentSessions)
+      .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
+      .where(and(
+        inArray(studentSessions.classId, candidateIds),
+        inArray(studentSessions.studentId, uniqueStudentIds),
+      )),
+  ]);
+
+  const sessionsByClass = new Map<string, typeof sessionRows>();
+  for (const session of sessionRows) {
+    const sessionDate = String(session.sessionDate).slice(0, 10);
+    if (session.status === "cancelled" || sessionDate < startDate) continue;
+    const list = sessionsByClass.get(session.classId) ?? [];
+    list.push(session);
+    sessionsByClass.set(session.classId, list);
+  }
+
+  const conflictsByStudent = new Map<string, typeof conflictRows>();
+  for (const conflict of conflictRows) {
+    if (conflict.status === "cancelled" || conflict.attendanceStatus === "cancelled") continue;
+    const list = conflictsByStudent.get(conflict.studentId) ?? [];
+    list.push(conflict);
+    conflictsByStudent.set(conflict.studentId, list);
+  }
+
+  const isAvailable = (studentId: string, classId: string, session: typeof sessionRows[number]) => {
+    const targetDate = String(session.sessionDate).slice(0, 10);
+    return !(conflictsByStudent.get(studentId) ?? []).some((conflict) =>
+      conflict.classId === classId &&
+      (conflict.classSessionId === session.id ||
+        String(conflict.sessionDate).slice(0, 10) === targetDate)
+    );
+  };
+
+  const options: any[] = [];
+  for (const classId of candidateIds) {
+    const classSessionsForMakeup = (sessionsByClass.get(classId) ?? []).sort((a, b) => {
+      const aIndex = a.sessionIndex ?? Number.MAX_SAFE_INTEGER;
+      const bIndex = b.sessionIndex ?? Number.MAX_SAFE_INTEGER;
+      return aIndex - bIndex ||
+        String(a.sessionDate).localeCompare(String(b.sessionDate)) ||
+        String(a.id).localeCompare(String(b.id));
+    });
+    const classStartSessions = classSessionsForMakeup.filter(
+      (session) => String(session.sessionDate).slice(0, 10) === startDate
+    );
+
+    for (const startSession of classStartSessions) {
+      const startIndex = classSessionsForMakeup.findIndex((session) => session.id === startSession.id);
+      const plans: any[] = [];
+      let valid = true;
+
+      for (const [studentId, requiredCount] of needsByStudent) {
+        const plannedSessions = classSessionsForMakeup.slice(startIndex, startIndex + requiredCount);
+        if (
+          plannedSessions.length !== requiredCount ||
+          plannedSessions.some((session) => !isAvailable(studentId, classId, session))
+        ) {
+          valid = false;
+          break;
+        }
+        plans.push({
+          studentId,
+          requiredCount,
+          sessionIds: plannedSessions.map((session) => session.id),
+          sessions: plannedSessions.map((session) => ({
+            id: session.id,
+            sessionIndex: session.sessionIndex,
+            sessionDate: session.sessionDate,
+            weekday: session.weekday,
+            startTime: session.startTime,
+            endTime: session.endTime,
+          })),
+        });
+      }
+
+      if (valid) {
+        const info = classInfo.get(classId);
+        options.push({
+          classId,
+          className: info?.name ?? "",
+          classCode: info?.classCode ?? "",
+          startSessionId: startSession.id,
+          startSession: {
+            id: startSession.id,
+            sessionIndex: startSession.sessionIndex,
+            sessionDate: startSession.sessionDate,
+            weekday: startSession.weekday,
+            startTime: startSession.startTime,
+            endTime: startSession.endTime,
+          },
+          plans,
+        });
+      }
+    }
+  }
+
+  return options.sort((a, b) =>
+    String(a.className).localeCompare(String(b.className)) ||
+    String(a.startSession?.startTime ?? "").localeCompare(String(b.startSession?.startTime ?? ""))
+  );
+}
+
 // ---------------------------------------------------------------------------
 // getClass
 // ---------------------------------------------------------------------------
