@@ -11,6 +11,58 @@ import {
 import { cn } from "@/lib/utils";
 import { SessionReview, useStudentReviewsTab } from "../hooks/useStudentReviewsTab";
 
+function StarDisplay({ rating }: { rating: number | null | undefined }) {
+  if (rating == null || rating <= 0) return null;
+
+  return (
+    <span className="flex gap-0.5 shrink-0" aria-label={`${rating} trên 5 sao`}>
+      {[1, 2, 3, 4, 5].map((star) => (
+        <span
+          key={star}
+          className={`text-base leading-none ${star <= rating ? "text-yellow-400" : "text-muted-foreground/30"}`}
+        >
+          ★
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function ReviewItemRow({ item }: { item: SessionReview["reviewData"][number] }) {
+  if (item.inputType === "checkbox") {
+    return (
+      <div className="flex items-center gap-2.5 rounded-md border bg-background px-3 py-2.5">
+        <span
+          aria-label={item.checked ? "Đã đạt" : "Chưa đạt"}
+          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border text-[11px] font-bold ${
+            item.checked
+              ? "border-blue-500 bg-blue-500 text-white"
+              : "border-slate-300 bg-white text-transparent"
+          }`}
+        >
+          ✓
+        </span>
+        <span className="min-w-0 flex-1 text-xs font-semibold leading-relaxed text-foreground">
+          {item.criteriaName}
+        </span>
+        <span className="shrink-0 text-[11px] text-muted-foreground">Đạt</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-md border bg-background px-3 py-2.5">
+      <p className="text-xs font-semibold leading-relaxed text-foreground">{item.criteriaName}</p>
+      {item.comment ? (
+        <div
+          className="mt-1 text-xs text-muted-foreground leading-relaxed review-html-content"
+          dangerouslySetInnerHTML={{ __html: item.comment }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function ReviewDetailDialog({
   review,
   open,
@@ -30,10 +82,21 @@ function ReviewDetailDialog({
     review.startTime && review.endTime
       ? `${review.shiftName} (${review.startTime.substring(0, 5)} – ${review.endTime.substring(0, 5)})`
       : review.shiftName;
+  const groupedItems = new Map<string, SessionReview["reviewData"]>();
+  const ungroupedItems: SessionReview["reviewData"] = [];
+  for (const item of review.reviewData) {
+    if (item.groupName) {
+      const items = groupedItems.get(item.groupName) ?? [];
+      items.push(item);
+      groupedItems.set(item.groupName, items);
+    } else {
+      ungroupedItems.push(item);
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg flex flex-col max-h-[85vh]">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-5xl max-h-[90vh] flex flex-col z-[300]">
         <DialogHeader className="shrink-0">
           <DialogTitle className="text-sm font-semibold leading-snug pr-6">
             Nhận xét — {sessionLabel} — {dateLabel}
@@ -57,20 +120,26 @@ function ReviewDetailDialog({
           {review.reviewData.length > 0 ? (
             <div>
               <p className="text-muted-foreground mb-2 font-medium">Chi tiết nhận xét</p>
-              <div className="border rounded-md overflow-hidden divide-y">
-                {review.reviewData.map((item, i) => (
-                  <div key={i} className="px-3 py-2.5 space-y-0.5">
-                    <p className="text-xs font-semibold text-foreground">{item.criteriaName}</p>
-                    {item.comment ? (
-                      <div
-                        className="text-xs text-muted-foreground leading-relaxed review-html-content"
-                        dangerouslySetInnerHTML={{ __html: item.comment }}
-                      />
-                    ) : (
-                      <span className="text-xs italic text-muted-foreground">Không có nhận xét</span>
-                    )}
-                  </div>
-                ))}
+              <div className="rounded-md border bg-background px-4 py-3">
+                <div className="flex items-center justify-between gap-3 border-b pb-3">
+                  <p className="text-sm font-bold text-foreground">{review.criteriaName || "Bộ tiêu chí"}</p>
+                  <StarDisplay rating={review.overallRating} />
+                </div>
+                <div className="mt-4 space-y-4">
+                  {Array.from(groupedItems.entries()).map(([groupName, items]) => (
+                    <div key={groupName} className="space-y-2">
+                      <p className="text-sm font-bold text-foreground">{groupName}</p>
+                      <div className="space-y-2 border-l-2 border-muted pl-3">
+                        {items.map((item, i) => <ReviewItemRow key={`${groupName}-${i}`} item={item} />)}
+                      </div>
+                    </div>
+                  ))}
+                  {ungroupedItems.length > 0 && (
+                    <div className="space-y-2">
+                      {ungroupedItems.map((item, i) => <ReviewItemRow key={`ungrouped-${i}`} item={item} />)}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           ) : (

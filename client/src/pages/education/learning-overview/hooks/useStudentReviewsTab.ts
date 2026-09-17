@@ -4,7 +4,10 @@ import { useQuery } from "@tanstack/react-query";
 export interface ReviewItem {
   criteriaId?: string;
   criteriaName: string;
+  groupName?: string;
   comment: string;
+  inputType: "text" | "checkbox";
+  checked?: boolean;
 }
 
 export interface SessionReview {
@@ -18,6 +21,8 @@ export interface SessionReview {
   shiftName: string;
   startTime: string | null;
   endTime: string | null;
+  criteriaName: string | null;
+  overallRating: number | null;
   reviewData: ReviewItem[];
 }
 
