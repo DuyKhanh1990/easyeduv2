@@ -598,20 +598,22 @@ export function MakeupDialog({
                   return (
                   <div
                     key={group.studentId}
-                    className="flex min-w-0 items-center gap-2 text-sm"
+                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_52px_132px] items-center gap-2 text-sm"
                     title={sessionDetails}
                   >
-                    <Checkbox checked disabled />
-                    <span className="min-w-0 flex-1 truncate font-medium">{group.name}</span>
-                    {group.code && (
-                      <span className="shrink-0 text-xs text-muted-foreground">{group.code}</span>
-                    )}
-                    <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[10px] font-normal">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Checkbox checked disabled />
+                      <span className="min-w-0 truncate font-medium">
+                        {group.name}
+                        {group.code && (
+                          <span className="font-normal text-muted-foreground"> ({group.code})</span>
+                        )}
+                      </span>
+                    </div>
+                    <Badge variant="outline" className="w-[52px] justify-center px-1.5 py-0 text-[10px] font-normal">
                       {group.sessions.length} buổi
                     </Badge>
-                    {sessionRange && (
-                      <span className="shrink-0 text-xs text-muted-foreground">{sessionRange}</span>
-                    )}
+                    <span className="min-w-0 truncate text-xs text-muted-foreground">{sessionRange}</span>
                   </div>
                   );
                 })
