@@ -409,14 +409,16 @@ export function MakeupDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[calc(100%-2rem)] sm:max-w-[560px] max-h-[90vh] bg-white flex flex-col overflow-hidden">
-        <DialogHeader className="shrink-0">
+      <DialogContent className="h-[90vh] max-h-[90vh] w-[90vw] !max-w-[90vw] bg-white p-0 flex flex-col overflow-hidden">
+        <DialogHeader className="shrink-0 border-b px-6 py-4">
           <DialogTitle className="text-base font-semibold tracking-wide">
             XẾP BÙ BUỔI HỌC
           </DialogTitle>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain space-y-5 py-2 pr-1">
+        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden md:grid-cols-2">
+          <aside className="min-h-0 overflow-y-auto border-b bg-slate-50/60 px-6 py-5 md:border-b-0 md:border-r">
+            <div className="space-y-6">
           {/* ── 1. Danh sách học viên đang xếp bù ── */}
           <div className="space-y-2">
             <div className="flex items-center gap-1.5">
@@ -488,10 +490,13 @@ export function MakeupDialog({
               ))}
             </RadioGroup>
           </div>
+            </div>
+          </aside>
 
           {/* ── 3. Lớp hiện tại ── */}
-          {option === "current_class" && (
-            <div className="space-y-4 border-t pt-4">
+          <section className="min-w-0 min-h-0 overflow-y-auto overscroll-contain px-6 py-5">
+            {option === "current_class" && (
+            <div className="space-y-4">
               <RadioGroup
                 value={subOption}
                 onValueChange={setSubOption}
@@ -704,7 +709,7 @@ export function MakeupDialog({
 
           {/* ── 4. Lớp khác ── */}
           {option === "other_class" && (
-            <div className="space-y-4 border-t pt-4">
+            <div className="space-y-4">
               <div className="space-y-2">
                 <Label className="text-sm">Tìm & chọn lớp</Label>
 
@@ -832,7 +837,7 @@ export function MakeupDialog({
 
           {/* ── 5. Tạo riêng lịch bù ── */}
           {option === "new_schedule" && (
-            <div className="space-y-4 border-t pt-4">
+            <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="text-sm">Mã lớp</Label>
@@ -1096,9 +1101,10 @@ export function MakeupDialog({
               </div>
             </div>
           )}
+          </section>
         </div>
 
-        <DialogFooter className="shrink-0 gap-2 border-t bg-white pt-4 mt-2">
+        <DialogFooter className="shrink-0 gap-2 border-t bg-white px-6 py-4">
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
