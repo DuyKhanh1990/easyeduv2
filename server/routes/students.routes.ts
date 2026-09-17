@@ -2352,6 +2352,8 @@ export function registerStudentsRoutes(app: Express): void {
         criteriaName: string;
         groupName?: string;
         comment: string;
+        inputType: "text" | "checkbox";
+        checked?: boolean;
       }[] {
         if (!raw) return [];
         if (Array.isArray(raw)) {
@@ -2360,10 +2362,19 @@ export function registerStudentsRoutes(app: Express): void {
             criteriaName: item.subCriteriaName || item.criteriaName || "—",
             ...(item.groupName ? { groupName: item.groupName } : {}),
             comment: item.comment || "",
+            inputType: item.inputType === "checkbox" ? "checkbox" : "text",
+            ...(item.inputType === "checkbox" ? { checked: item.checked === true } : {}),
           }));
         }
         if (typeof raw === "object") {
-          const items: { criteriaId?: string; criteriaName: string; groupName?: string; comment: string }[] = [];
+          const items: {
+            criteriaId?: string;
+            criteriaName: string;
+            groupName?: string;
+            comment: string;
+            inputType: "text" | "checkbox";
+            checked?: boolean;
+          }[] = [];
           for (const teacherData of Object.values(raw)) {
             const td = teacherData as any;
             if (td?.items && Array.isArray(td.items)) {
@@ -2373,6 +2384,8 @@ export function registerStudentsRoutes(app: Express): void {
                   criteriaName: item.subCriteriaName || item.criteriaName || "—",
                   ...(item.groupName ? { groupName: item.groupName } : {}),
                   comment: item.comment || "",
+                  inputType: item.inputType === "checkbox" ? "checkbox" : "text",
+                  ...(item.inputType === "checkbox" ? { checked: item.checked === true } : {}),
                 });
               }
             } else if (td?.subNotes && typeof td.subNotes === "object") {
@@ -2382,6 +2395,7 @@ export function registerStudentsRoutes(app: Express): void {
                     criteriaId: subId,
                     criteriaName: subId,
                     comment: String(note),
+                    inputType: "text",
                   });
                 }
               }
@@ -2393,6 +2407,7 @@ export function registerStudentsRoutes(app: Express): void {
                   criteriaId: cId,
                   criteriaName: cId,
                   comment: "",
+                  inputType: "text",
                 });
               }
             }
