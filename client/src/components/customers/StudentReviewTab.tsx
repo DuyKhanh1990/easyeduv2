@@ -52,7 +52,7 @@ function StarDisplay({ rating }: { rating: number | null | undefined }) {
 function ReviewItemRow({ item }: { item: ReviewItem }) {
   if (item.inputType === "checkbox") {
     return (
-      <div className="flex items-center gap-2.5 px-5 py-2.5 border-b last:border-b-0">
+      <div className="flex items-center gap-2.5 rounded-md border bg-background px-3 py-2.5">
         <span
           aria-label={item.checked ? "Đã đạt" : "Chưa đạt"}
           className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border text-[11px] font-bold ${
@@ -72,7 +72,7 @@ function ReviewItemRow({ item }: { item: ReviewItem }) {
   }
 
   return (
-    <div className="px-5 py-2.5 border-b last:border-b-0">
+    <div className="rounded-md border bg-background px-3 py-2.5">
       <p className="text-xs font-semibold leading-relaxed text-foreground">{item.criteriaName}</p>
       {item.comment ? (
         <div
@@ -141,20 +141,26 @@ function ReviewDetailDialog({
           {review.reviewData.length > 0 ? (
             <div>
               <p className="text-muted-foreground mb-2 font-medium">Chi tiết nhận xét</p>
-              <div className="border rounded-md overflow-hidden">
-                <div className="flex items-center justify-between gap-3 border-b bg-muted/20 px-3 py-2.5">
+              <div className="rounded-md border bg-background px-4 py-3">
+                <div className="flex items-center justify-between gap-3 border-b pb-3">
                   <p className="text-sm font-bold text-foreground">{review.criteriaName || "Bộ tiêu chí"}</p>
                   <StarDisplay rating={review.overallRating} />
                 </div>
-                {Array.from(groupedItems.entries()).map(([groupName, items]) => (
-                  <div key={groupName}>
-                    <div className="border-b bg-muted/10 px-3 py-2.5">
+                <div className="mt-4 space-y-4">
+                  {Array.from(groupedItems.entries()).map(([groupName, items]) => (
+                    <div key={groupName} className="space-y-2">
                       <p className="text-sm font-bold text-foreground">{groupName}</p>
+                      <div className="space-y-2 border-l-2 border-muted pl-3">
+                        {items.map((item, i) => <ReviewItemRow key={`${groupName}-${i}`} item={item} />)}
+                      </div>
                     </div>
-                    {items.map((item, i) => <ReviewItemRow key={`${groupName}-${i}`} item={item} />)}
-                  </div>
-                ))}
-                {ungroupedItems.map((item, i) => <ReviewItemRow key={`ungrouped-${i}`} item={item} />)}
+                  ))}
+                  {ungroupedItems.length > 0 && (
+                    <div className="space-y-2">
+                      {ungroupedItems.map((item, i) => <ReviewItemRow key={`ungrouped-${i}`} item={item} />)}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           ) : (

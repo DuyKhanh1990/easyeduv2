@@ -5,7 +5,7 @@ import { z } from "zod";
 import { runSecurityTests } from "../middleware/security-test";
 import { cacheGet, cacheSet, cacheInvalidate } from "../lib/simple-cache";
 import { db } from "../db";
-import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, students, classes, attendanceFeeRules, users, staff, staffAssignments, locations, roles, departments, classGradeBooks, classGradeBookScores, scoreCategories, scoreSheetItems, sessionContents, studentSessionContents, classSessions, studentRelationshipHistory, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools, crmCustomFields, crmRequiredFields } from "@shared/schema";
+import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, students, classes, attendanceFeeRules, users, staff, staffAssignments, locations, roles, departments, classGradeBooks, classGradeBookScores, scoreCategories, scoreSheetItems, sessionContents, studentSessionContents, classSessions, studentRelationshipHistory, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools, crmCustomFields, crmRequiredFields, evaluationSubCriteria } from "@shared/schema";
 import { eq, and, isNotNull, sql, inArray, desc, gte, lte, ne } from "drizzle-orm";
 import { getStudentLearningStatusSummary, getCustomerLearningStatusSummary, getCustomerSummary, getNewCustomersSummary, getStudentsBySource, getStudentsByRelationship, getStudentsByLocation, getStudentsByStaff, getStudentsLearningStatuses, getMonthlyStudentCounts } from "../storage/student.storage";
 import { createCrmConfigAuditLog, getCrmConfigAuditLogs } from "../storage/crm-config-audit.storage";
@@ -2443,6 +2443,43 @@ export function registerStudentsRoutes(app: Express): void {
           reviewPublished: row.review_published,
         };
       }).filter((row) => row.reviewData.some(item => item.comment) || (row.overallRating != null && row.overallRating > 0));
+
+      // Keep the customer detail view in the same order as the teacher form.
+      // Review JSON follows the order in which the teacher submitted items,
+      // which is not necessarily the configured group/criterion order.
+      const criteriaIds = [...new Set(result.rows.flatMap((row: any) => {
+        const raw = row.review_data;
+        if (!raw || typeof raw !== "object") return [];
+        return Object.values(raw).flatMap((entry: any) =>
+          Array.isArray(entry?.items) ? entry.items.map((item: any) => item.criteriaId).filter(Boolean) : []
+        );
+      }))];
+      if (criteriaIds.length > 0) {
+        const configuredItems = await db.select({
+          id: evaluationSubCriteria.id,
+          name: evaluationSubCriteria.name,
+          itemType: evaluationSubCriteria.itemType,
+          parentId: evaluationSubCriteria.parentId,
+          criteriaId: evaluationSubCriteria.criteriaId,
+        }).from(evaluationSubCriteria)
+          .where(inArray(evaluationSubCriteria.criteriaId, criteriaIds))
+          .orderBy(evaluationSubCriteria.name);
+        const itemOrder = new Map(configuredItems.map((item, index) => [item.id, index]));
+        const groupOrder = new Map(
+          configuredItems
+            .filter((item) => item.itemType === "heading")
+            .map((item, index) => [item.name, index])
+        );
+        for (const row of rows) {
+          row.reviewData.sort((a: any, b: any) => {
+            const aGroup = a.groupName ? (groupOrder.get(a.groupName) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+            const bGroup = b.groupName ? (groupOrder.get(b.groupName) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+            if (aGroup !== bGroup) return aGroup - bGroup;
+            return (itemOrder.get(a.criteriaId) ?? Number.MAX_SAFE_INTEGER)
+              - (itemOrder.get(b.criteriaId) ?? Number.MAX_SAFE_INTEGER);
+          });
+        }
+      }
 
       res.json(rows);
     } catch (err: any) {
