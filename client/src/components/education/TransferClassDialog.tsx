@@ -554,10 +554,10 @@ export function TransferClassDialog({
                         <span className="font-semibold text-foreground">
                           {transferCount > 0 && currentSessionPrice > 0 ? (
                             <span className="flex items-center justify-end gap-1.5 whitespace-nowrap">
-                              <span>{formatCurrency(currentTotal)}</span>
                               <span className="text-[11px] font-normal text-muted-foreground whitespace-nowrap">
                                 ({formatCurrencyValue(currentSessionPrice)} x {transferCount})
                               </span>
+                              <span>{formatCurrency(currentTotal)}</span>
                             </span>
                           ) : "—"}
                         </span>
@@ -774,10 +774,10 @@ export function TransferClassDialog({
                       <span className="font-semibold text-foreground">
                         {transferCount > 0 && targetSessionPrice > 0 ? (
                           <span className="flex items-center justify-end gap-1.5 whitespace-nowrap">
-                            <span>{formatCurrency(targetTotal)}</span>
                             <span className="text-[11px] font-normal text-muted-foreground whitespace-nowrap">
                               ({formatCurrencyValue(targetSessionPrice)} x {transferCount})
                             </span>
+                            <span>{formatCurrency(targetTotal)}</span>
                           </span>
                         ) : "—"}
                       </span>
