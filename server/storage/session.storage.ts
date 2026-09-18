@@ -11,7 +11,7 @@ import {
   getDayName,
 } from "./base";
 
-import { attendanceFeeRules } from "@shared/schema";
+import { attendanceFeeRules, studentWalletTransactions } from "@shared/schema";
 
 import type {
   ClassSession,
@@ -454,8 +454,45 @@ export async function transferStudentClass(data: {
   toSessionIndex: number;
   transferCount: number;
   userId: string;
+  refundToDepositAmount?: number;
+  refundDescription?: string;
+  createdByName?: string | null;
 }): Promise<void> {
   await db.transaction(async (tx) => {
+    const refundAmount = data.refundToDepositAmount == null
+      ? 0
+      : Number(data.refundToDepositAmount);
+
+    if (!Number.isFinite(refundAmount) || refundAmount < 0) {
+      throw new Error("Số tiền hoàn vào ví cọc không hợp lệ");
+    }
+
+    // Lock the student's wallet before checking it. The same transaction also
+    // performs the class transfer, so an insufficient balance rolls back both.
+    if (refundAmount > 0) {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${data.studentId}))`);
+      const walletRows = await tx
+        .select({
+          type: studentWalletTransactions.type,
+          amount: studentWalletTransactions.amount,
+          category: studentWalletTransactions.category,
+        })
+        .from(studentWalletTransactions)
+        .where(eq(studentWalletTransactions.studentId, data.studentId));
+
+      const tuitionBalance = walletRows.reduce((balance, row) => {
+        if ((row.category ?? "").trim() !== "Học phí") return balance;
+        const amount = Number(row.amount) || 0;
+        return balance + (row.type === "credit" ? amount : -amount);
+      }, 0);
+
+      if (refundAmount > tuitionBalance + 0.000001) {
+        throw new Error(
+          `Số dư ví học phí không đủ để hoàn ${refundAmount.toLocaleString("vi-VN")} đ (còn ${Math.max(0, tuitionBalance).toLocaleString("vi-VN")} đ)`,
+        );
+      }
+    }
+
     const oldSessions = await tx.select({
       id: studentSessions.id,
       studentClassId: studentSessions.studentClassId,
@@ -567,6 +604,44 @@ export async function transferStudentClass(data: {
 
     if (studentClassId) await recalculateStudentClass(studentClassId, tx);
     await recalculateStudentClass(targetStudentClass.id, tx);
+
+    if (refundAmount > 0) {
+      const transferCode = `WALLET-REFUND-${Date.now()}`;
+      const amount = refundAmount.toFixed(2);
+      const description = data.refundDescription?.trim()
+        || `Hoàn tiền chuyển lớp vào ví cọc học viên`;
+      const amountLabel = refundAmount.toLocaleString("vi-VN") + " đ";
+      const className = fromClass?.name || data.fromClassId;
+
+      await tx.insert(studentWalletTransactions).values([
+        {
+          studentId: data.studentId,
+          type: "debit",
+          amount,
+          category: "Học phí",
+          action: `Hoàn tiền chuyển lớp: trừ ví học phí ${amountLabel}, chuyển vào ví đặt cọc`,
+          classId: data.fromClassId,
+          className,
+          invoiceCode: transferCode,
+          invoiceDescription: description,
+          createdBy: data.userId,
+          createdByName: data.createdByName ?? null,
+        },
+        {
+          studentId: data.studentId,
+          type: "credit",
+          amount,
+          category: "Đặt cọc",
+          action: `Hoàn tiền chuyển lớp: cộng ví đặt cọc ${amountLabel}, trừ từ ví học phí`,
+          classId: data.fromClassId,
+          className,
+          invoiceCode: transferCode,
+          invoiceDescription: description,
+          createdBy: data.userId,
+          createdByName: data.createdByName ?? null,
+        },
+      ]);
+    }
   });
 }
 

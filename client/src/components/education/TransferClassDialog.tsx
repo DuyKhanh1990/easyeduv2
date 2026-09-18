@@ -40,6 +40,7 @@ import {
   TrendingDown,
   Minus,
   FileText,
+  Wallet,
 } from "lucide-react";
 import {
   Command,
@@ -136,6 +137,7 @@ export function TransferClassDialog({
   const [isTargetClassPickerOpen, setIsTargetClassPickerOpen] = useState(false);
   const [autoInvoice, setAutoInvoice] = useState(true);
   const [invoiceCategory, setInvoiceCategory] = useState<"Hoàn học phí" | "Đặt cọc">("Hoàn học phí");
+  const [refundMethod, setRefundMethod] = useState<"invoice" | "deposit">("invoice");
   const [actualSessionCount, setActualSessionCount] = useState(0);
   const [roundingMode, setRoundingMode] = useState<"none" | "down" | "up">("none");
 
@@ -302,6 +304,20 @@ export function TransferClassDialog({
 
   // Financial difference
   const diff = targetTotal - currentTotal;
+  const refundAmount = Number(Math.abs(diff).toFixed(2));
+  const shouldRefundToDeposit = diff < 0 && refundMethod === "deposit";
+
+  const { data: feeWalletData, isLoading: loadingFeeWallet } = useQuery<{
+    summary?: { hocPhi?: number };
+  }>({
+    queryKey: ["/api/students", student?.id, "fee-wallet"],
+    enabled: isOpen && !!student?.id && shouldRefundToDeposit,
+  });
+  const tuitionWalletBalance = Number(feeWalletData?.summary?.hocPhi ?? 0);
+  const insufficientTuitionWallet =
+    shouldRefundToDeposit &&
+    !loadingFeeWallet &&
+    refundAmount > tuitionWalletBalance + 0.000001;
 
   // Session info for invoice note
   const getDayName = (day: number) => {
@@ -354,7 +370,11 @@ export function TransferClassDialog({
 
   const transferMutation = useMutation({
     mutationFn: async (values: TransferFormValues) => {
-      await apiRequest("POST", "/api/students/transfer-class", values);
+      await apiRequest("POST", "/api/students/transfer-class", {
+        ...values,
+        refundToDepositAmount: shouldRefundToDeposit ? refundAmount : undefined,
+        refundDescription: shouldRefundToDeposit ? buildInvoiceNote() : undefined,
+      });
     },
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${currentClass?.id}/active-students`] });
@@ -368,7 +388,9 @@ export function TransferClassDialog({
         }
       });
 
-      if (autoInvoice) {
+      if (shouldRefundToDeposit) {
+        queryClient.invalidateQueries({ queryKey: ["/api/students", student.id, "fee-wallet"] });
+      } else if (autoInvoice) {
         const invoiceType = diff < 0 ? "Chi" : "Thu";
         const category = diff < 0 ? invoiceCategory : "Học phí";
         const amount = Math.round(Math.abs(diff));
@@ -390,7 +412,9 @@ export function TransferClassDialog({
 
       toast({
         title: "Thành công",
-        description: autoInvoice
+        description: shouldRefundToDeposit
+          ? "Đã chuyển lớp và chuyển tiền hoàn vào ví cọc"
+          : autoInvoice
           ? "Đã chuyển lớp và tạo hoá đơn thành công"
           : "Đã chuyển lớp cho học viên thành công",
       });
@@ -406,6 +430,16 @@ export function TransferClassDialog({
   });
 
   const onSubmit = (values: TransferFormValues) => {
+    if (shouldRefundToDeposit && (loadingFeeWallet || insufficientTuitionWallet)) {
+      toast({
+        title: "Không thể chuyển lớp",
+        description: loadingFeeWallet
+          ? "Đang kiểm tra số dư ví học phí, vui lòng thử lại sau"
+          : `Ví học phí không đủ số dư để hoàn ${formatCurrency(refundAmount)}`,
+        variant: "destructive",
+      });
+      return;
+    }
     transferMutation.mutate(values);
   };
 
@@ -850,70 +884,117 @@ export function TransferClassDialog({
               </div>
             )}
 
-            {/* Auto invoice switch */}
-            <div className="rounded-md border p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-medium">Hoá đơn tự động</span>
-                </div>
-                <Switch
-                  checked={autoInvoice}
-                  onCheckedChange={setAutoInvoice}
-                  data-testid="switch-auto-invoice"
-                />
+            {diff < 0 && showFinancial && (
+              <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 p-3">
+                <span className="text-sm font-medium">Cách hoàn tiền</span>
+                <Select
+                  value={refundMethod}
+                  onValueChange={(value) => setRefundMethod(value as "invoice" | "deposit")}
+                >
+                  <SelectTrigger className="h-8 w-auto min-w-[190px] text-xs" data-testid="select-refund-method">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="invoice" className="text-xs">Xuất Phiếu chi</SelectItem>
+                    <SelectItem value="deposit" className="text-xs">Chuyển vào ví cọc</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
+            )}
 
-              {autoInvoice && (
-                <div className="space-y-2 pt-1 border-t">
-                  <div className="grid grid-cols-2 gap-3 text-xs text-muted-foreground">
-                    <div>
-                      <span className="font-medium text-foreground">Loại phiếu: </span>
-                      {diff < 0 ? "Phiếu chi" : "Phiếu thu"}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-foreground">Loại: </span>
-                      {diff < 0 ? (
-                        <Select
-                          value={invoiceCategory}
-                          onValueChange={(v) => setInvoiceCategory(v as any)}
-                        >
-                          <SelectTrigger className="h-6 text-xs border-dashed w-auto min-w-[130px]" data-testid="select-invoice-category">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Hoàn học phí" className="text-xs">Hoàn học phí</SelectItem>
-                            <SelectItem value="Đặt cọc" className="text-xs">Đặt cọc</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <span>Học phí</span>
-                      )}
-                    </div>
-                    <div>
-                      <span className="font-medium text-foreground">Số tiền: </span>
-                      {showFinancial ? formatCurrency(Math.abs(diff)) : "—"}
-                    </div>
-                  </div>
-                  {showFinancial && (
-                    <div className="text-xs text-muted-foreground bg-muted/50 rounded p-2 italic">
-                      {buildInvoiceNote()}
-                    </div>
-                  )}
-                  {!showFinancial && (
-                    <p className="text-xs text-muted-foreground italic">
-                      Chọn đầy đủ lớp mới và gói học phí để xem hoá đơn tự động
-                    </p>
-                  )}
+            {shouldRefundToDeposit ? (
+              <div className="rounded-md border border-violet-200 bg-violet-50/60 p-4 space-y-2 dark:border-violet-900 dark:bg-violet-950/20">
+                <div className="flex items-center gap-2 text-sm font-medium text-violet-700 dark:text-violet-300">
+                  <Wallet className="h-4 w-4" />
+                  <span>Chuyển khoản hoàn vào ví cọc</span>
                 </div>
-              )}
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-muted-foreground">Số dư ví học phí: </span>
+                    <span className="font-semibold">{loadingFeeWallet ? "Đang kiểm tra..." : formatCurrency(tuitionWalletBalance)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Số tiền hoàn: </span>
+                    <span className="font-semibold">{formatCurrency(refundAmount)}</span>
+                  </div>
+                </div>
+                {insufficientTuitionWallet && (
+                  <p className="text-xs font-medium text-red-600">
+                    Ví học phí không đủ số dư. Còn {formatCurrency(tuitionWalletBalance)}, cần {formatCurrency(refundAmount)}. Không thể chuyển âm.
+                  </p>
+                )}
+                {!loadingFeeWallet && !insufficientTuitionWallet && (
+                  <p className="text-xs text-muted-foreground">
+                    Hệ thống sẽ trừ ví học phí và cộng đúng số tiền này vào ví cọc, đồng thời ghi lại hai giao dịch đối ứng.
+                  </p>
+                )}
+              </div>
+            ) : (
+              /* Auto invoice switch */
+              <div className="rounded-md border p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-medium">Hoá đơn tự động</span>
+                  </div>
+                  <Switch
+                    checked={autoInvoice}
+                    onCheckedChange={setAutoInvoice}
+                    data-testid="switch-auto-invoice"
+                  />
+                </div>
 
-              {!autoInvoice && (
-                <p className="text-xs text-muted-foreground pt-1 border-t">
-                  Chỉ chuyển lớp, không tạo hoá đơn
-                </p>
-              )}
-            </div>
+                {autoInvoice && (
+                  <div className="space-y-2 pt-1 border-t">
+                    <div className="grid grid-cols-2 gap-3 text-xs text-muted-foreground">
+                      <div>
+                        <span className="font-medium text-foreground">Loại phiếu: </span>
+                        {diff < 0 ? "Phiếu chi" : "Phiếu thu"}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-foreground">Loại: </span>
+                        {diff < 0 ? (
+                          <Select
+                            value={invoiceCategory}
+                            onValueChange={(v) => setInvoiceCategory(v as any)}
+                          >
+                            <SelectTrigger className="h-6 text-xs border-dashed w-auto min-w-[130px]" data-testid="select-invoice-category">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Hoàn học phí" className="text-xs">Hoàn học phí</SelectItem>
+                              <SelectItem value="Đặt cọc" className="text-xs">Đặt cọc</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span>Học phí</span>
+                        )}
+                      </div>
+                      <div>
+                        <span className="font-medium text-foreground">Số tiền: </span>
+                        {showFinancial ? formatCurrency(Math.abs(diff)) : "—"}
+                      </div>
+                    </div>
+                    {showFinancial && (
+                      <div className="text-xs text-muted-foreground bg-muted/50 rounded p-2 italic">
+                        {buildInvoiceNote()}
+                      </div>
+                    )}
+                    {!showFinancial && (
+                      <p className="text-xs text-muted-foreground italic">
+                        Chọn đầy đủ lớp mới và gói học phí để xem hoá đơn tự động
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {!autoInvoice && (
+                  <p className="text-xs text-muted-foreground pt-1 border-t">
+                    Chỉ chuyển lớp, không tạo hoá đơn
+                  </p>
+                )}
+              </div>
+            )}
 
             <DialogFooter>
               <Button
@@ -926,7 +1007,7 @@ export function TransferClassDialog({
               </Button>
               <Button
                 type="submit"
-                disabled={isPending}
+                disabled={isPending || loadingFeeWallet || insufficientTuitionWallet}
                 data-testid="button-confirm-transfer"
               >
                 {isPending && (

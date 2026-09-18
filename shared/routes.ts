@@ -308,6 +308,8 @@ export const api = {
         fromSessionIndex: z.number().int().min(1),
         toSessionIndex: z.number().int().min(1),
         transferCount: z.number().int().min(1),
+        refundToDepositAmount: z.number().positive().optional(),
+        refundDescription: z.string().max(1000).optional(),
       }),
       responses: {
         200: z.object({ success: z.boolean() }),

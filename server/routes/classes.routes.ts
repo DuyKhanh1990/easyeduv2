@@ -1416,11 +1416,17 @@ export function registerClassesRoutes(app: Express): void {
         fromSessionIndex: z.number().int().min(1),
         toSessionIndex: z.number().int().min(1),
         transferCount: z.number().int().min(1),
+        refundToDepositAmount: z.number().positive().optional(),
+        refundDescription: z.string().max(1000).optional(),
       });
 
       const data = transferSchema.parse(req.body);
       const userId = (req.user as any).id;
-      await storage.transferStudentClass({ ...data, userId });
+      await storage.transferStudentClass({
+        ...data,
+        userId,
+        createdByName: await resolveStaffFullName(userId),
+      });
 
       // ── Activity log ──────────────────────────────────────────────────────
       try {
@@ -1473,7 +1479,11 @@ export function registerClassesRoutes(app: Express): void {
     try {
       const data = api.students.transferClass.input.parse(req.body);
       const userId = (req.user as any).id;
-      await storage.transferStudentClass({ ...data, userId });
+      await storage.transferStudentClass({
+        ...data,
+        userId,
+        createdByName: await resolveStaffFullName(userId),
+      });
 
       // ── Activity log ──────────────────────────────────────────────────────
       try {
