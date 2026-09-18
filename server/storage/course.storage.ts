@@ -1,8 +1,9 @@
 import {
   db, eq, and, asc, sql, inArray,
   courses, courseFeePackages, coursePrograms, courseProgramContents, users,
-  studentSessions, classSessions,
+  studentSessions, classSessions, invoices, invoiceSessionAllocations,
 } from "./base";
+import { distributeInvoiceFeeToSessionsInTransaction } from "./invoice-session-allocation.storage";
 import type {
   Course, InsertCourse,
   CourseFeePackage, InsertCourseFeePackage,
@@ -235,6 +236,7 @@ export async function updateStudentTuitionPackage(
       type: courseFeePackages.type,
       fee: courseFeePackages.fee,
       sessions: courseFeePackages.sessions,
+      totalAmount: courseFeePackages.totalAmount,
     })
       .from(courseFeePackages)
       .where(eq(courseFeePackages.id, packageId));
@@ -248,6 +250,9 @@ export async function updateStudentTuitionPackage(
     // joined mid-class.
     const matchingSessions = await tx.select({
       id: studentSessions.id,
+      studentClassId: studentSessions.studentClassId,
+      studentId: studentSessions.studentId,
+      classId: studentSessions.classId,
       attendanceStatus: studentSessions.attendanceStatus,
     })
       .from(studentSessions)
@@ -267,29 +272,124 @@ export async function updateStudentTuitionPackage(
       warning = `Có ${attendedCount} buổi đã điểm danh trong khoảng này`;
     }
 
-    // Keep Vietnamese type values ("buổi" / "khoá") consistent with how
-    // initial scheduling stores them — the UI checks packageType === 'buổi'.
-    const packageType = feePackage.type; // "buổi" or "khoá"
-    let sessionPrice: string;
-
-    if (feePackage.type === "buổi") {
-      sessionPrice = feePackage.fee.toString();
-    } else {
-      const numSessions = Number(feePackage.sessions);
-      const numFee = Number(feePackage.fee);
-      sessionPrice = (numFee / numSessions).toFixed(2);
+    const sessionsByStudentClass = new Map<string, typeof matchingSessions>();
+    for (const session of matchingSessions) {
+      if (!session.studentClassId) continue;
+      const group = sessionsByStudentClass.get(session.studentClassId) ?? [];
+      group.push(session);
+      sessionsByStudentClass.set(session.studentClassId, group);
     }
 
-    if (matchingSessions.length > 0) {
-      const matchingIds = matchingSessions.map(s => s.id);
+    // The selected package applies to the actual selected sessions for each
+    // student, not to the package template's configured session count.
+    for (const sessions of sessionsByStudentClass.values()) {
+      const matchingIds = sessions.map((session) => session.id);
+      const packageTotal = Number(feePackage.totalAmount ?? feePackage.fee);
+      const sessionPrice = feePackage.type === "buổi"
+        ? Number(feePackage.fee)
+        : packageTotal / Math.max(1, sessions.length);
       await tx.update(studentSessions)
         .set({
           packageId: packageId,
-          packageType: packageType,
-          sessionPrice: sessionPrice,
+          packageType: feePackage.type,
+          sessionPrice: sessionPrice.toFixed(2),
           updatedAt: new Date(),
         })
         .where(inArray(studentSessions.id, matchingIds));
+    }
+
+    for (const [studentClassId, selectedSessions] of sessionsByStudentClass) {
+      const sample = selectedSessions[0];
+      if (!sample?.studentId || !sample.classId) continue;
+
+      // Rebuild every tuition allocation for this student/class after changing
+      // package membership. Existing net totals (after promotions/surcharges)
+      // stay intact but are divided by the sessions that still belong to each
+      // package.
+      const tuitionInvoices = await tx.select({ id: invoices.id })
+        .from(invoices)
+        .where(and(
+          eq(invoices.studentId, sample.studentId),
+          eq(invoices.classId, sample.classId),
+          eq(invoices.category, "Học phí"),
+          sql`${invoices.status} <> 'cancelled'`,
+        ));
+
+      for (const invoice of tuitionInvoices) {
+        await distributeInvoiceFeeToSessionsInTransaction(
+          tx,
+          invoice.id,
+          sample.studentId,
+          sample.classId,
+        );
+      }
+
+      const allSessions = await tx.select({
+        id: studentSessions.id,
+        packageId: studentSessions.packageId,
+        packageType: studentSessions.packageType,
+      })
+        .from(studentSessions)
+        .where(eq(studentSessions.studentClassId, studentClassId));
+
+      if (allSessions.length === 0) continue;
+
+      const allSessionIds = allSessions.map((session) => session.id);
+      const allocationTotals = await tx.select({
+        studentSessionId: invoiceSessionAllocations.studentSessionId,
+        total: sql<string>`SUM(${invoiceSessionAllocations.allocatedAmount})`,
+      })
+        .from(invoiceSessionAllocations)
+        .where(inArray(invoiceSessionAllocations.studentSessionId, allSessionIds))
+        .groupBy(invoiceSessionAllocations.studentSessionId);
+      const allocationBySession = new Map(
+        allocationTotals.map((row) => [row.studentSessionId, Number(row.total)]),
+      );
+
+      const packageIds = Array.from(new Set(
+        allSessions.map((session) => session.packageId).filter((id): id is string => Boolean(id)),
+      ));
+      const packageRows = packageIds.length > 0
+        ? await tx.select({
+            id: courseFeePackages.id,
+            type: courseFeePackages.type,
+            fee: courseFeePackages.fee,
+            totalAmount: courseFeePackages.totalAmount,
+          })
+            .from(courseFeePackages)
+            .where(inArray(courseFeePackages.id, packageIds))
+        : [];
+      const packageById = new Map(packageRows.map((pkg) => [pkg.id, pkg]));
+      const sessionCountByPackage = new Map<string, number>();
+      for (const session of allSessions) {
+        if (!session.packageId) continue;
+        sessionCountByPackage.set(
+          session.packageId,
+          (sessionCountByPackage.get(session.packageId) ?? 0) + 1,
+        );
+      }
+
+      const idsByPrice = new Map<string, string[]>();
+      for (const session of allSessions) {
+        const allocatedPrice = allocationBySession.get(session.id);
+        const pkg = session.packageId ? packageById.get(session.packageId) : null;
+        const fallbackPrice = pkg
+          ? pkg.type === "buổi"
+            ? Number(pkg.fee)
+            : Number(pkg.totalAmount ?? pkg.fee)
+              / Math.max(1, sessionCountByPackage.get(pkg.id) ?? 1)
+          : 0;
+        const price = (allocatedPrice ?? fallbackPrice).toFixed(2);
+        const ids = idsByPrice.get(price) ?? [];
+        ids.push(session.id);
+        idsByPrice.set(price, ids);
+      }
+
+      for (const [price, sessionIds] of idsByPrice) {
+        await tx.update(studentSessions)
+          .set({ sessionPrice: price, updatedAt: new Date() })
+          .where(inArray(studentSessions.id, sessionIds));
+      }
     }
 
     return { warning };
