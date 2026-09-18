@@ -17,6 +17,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChevronDown } from "lucide-react";
 
@@ -199,6 +201,9 @@ export function ScheduleTabContent({
   const [bulkNewPkgId, setBulkNewPkgId] = useState<string>("");
   const [openPromoStudentId, setOpenPromoStudentId] = useState<string | null>(null);
   const [openSurchargeStudentId, setOpenSurchargeStudentId] = useState<string | null>(null);
+  const [autoGenerateInvoice, setAutoGenerateInvoice] = useState(false);
+  const [invoiceDescription, setInvoiceDescription] = useState("");
+  const [invoiceDescriptionEdited, setInvoiceDescriptionEdited] = useState(false);
 
   // Auto-fill Từ buổi / Đến buổi when dialog opens.
   // useEffect is needed because Radix UI Dialog does NOT call onOpenChange
@@ -214,6 +219,9 @@ export function ScheduleTabContent({
         null,
       );
       setToSessionId(lastSession?.id || selectedClassSessionId || "");
+      setAutoGenerateInvoice(false);
+      setInvoiceDescription("");
+      setInvoiceDescriptionEdited(false);
     }
     prevOpenRef.current = isChangeTuitionPackageDialogOpen;
   }, [isChangeTuitionPackageDialogOpen]);
@@ -326,6 +334,35 @@ export function ScheduleTabContent({
     }
     return { oldTotal, newTotal, diff: newTotal - oldTotal };
   }, [selectedStudentIds, currentSessionStudents, tuitionSessionRange, bulkNewPkgId, studentNewPkgIds, studentDiscountIds, studentSurchargeIds, feePackages, promotionOptions, surchargeOptions, studentAllocatedFees]);
+
+  const autoInvoiceDescription = useMemo(() => {
+    const fromSession = classSessions?.find((session: any) => session.sessionIndex === tuitionSessionRange.min);
+    const toSession = classSessions?.find((session: any) => session.sessionIndex === tuitionSessionRange.max);
+    const formatDate = (value: any) => {
+      const raw = String(value ?? "").slice(0, 10);
+      const parts = raw.split("-");
+      return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : raw;
+    };
+    const oldNames = selectedStudentIds.map((studentId) => {
+      const student = currentSessionStudents?.find((s: any) => s.studentId === studentId);
+      return feePackages?.find((pkg: any) => pkg.id === student?.packageId)?.name
+        || student?.packageType
+        || "gói hiện tại";
+    });
+    const oldName = [...new Set(oldNames)].join(", ") || "gói học phí hiện tại";
+    const newNames = selectedStudentIds.map((studentId) => {
+      const packageId = (bulkNewPkgId && bulkNewPkgId !== "__none__") ? bulkNewPkgId : studentNewPkgIds[studentId];
+      return feePackages?.find((pkg: any) => pkg.id === packageId)?.name;
+    }).filter(Boolean);
+    const newName = [...new Set(newNames)].join(", ") || "gói học phí mới";
+    return `Thay đổi gói học phí ${oldName} sang ${newName} từ buổi ${tuitionSessionRange.min || "?"} ngày ${formatDate(fromSession?.sessionDate)} - Buổi ${tuitionSessionRange.max || "?"} ngày ${formatDate(toSession?.sessionDate)}`;
+  }, [classSessions, tuitionSessionRange, selectedStudentIds, firstStudentSessions, currentSessionStudents, bulkNewPkgId, studentNewPkgIds, feePackages]);
+
+  useEffect(() => {
+    if (!invoiceDescriptionEdited && autoInvoiceDescription) {
+      setInvoiceDescription(autoInvoiceDescription);
+    }
+  }, [autoInvoiceDescription, invoiceDescriptionEdited]);
 
   // Fresh active-students fetch used to populate allStudentSessions in the makeup dialog
   const { data: activeStudentsForMakeup } = useQuery<any[]>({
@@ -1273,6 +1310,39 @@ export function ScheduleTabContent({
 
           {/* Footer – totals + actions */}
           <div className="border-t shrink-0 px-6 py-4 bg-muted/20 space-y-3">
+            <div className="rounded-lg border border-border bg-background p-3 space-y-3">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Tự động sinh hóa đơn điều chỉnh</p>
+                  <p className="text-xs text-muted-foreground">
+                    Bật để tạo Phiếu thu/Phiếu chi ngay sau khi cập nhật gói.
+                  </p>
+                </div>
+                <Switch
+                  checked={autoGenerateInvoice}
+                  onCheckedChange={setAutoGenerateInvoice}
+                  aria-label="Tự động sinh hóa đơn điều chỉnh"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-foreground">
+                  Nội dung ghi chú trên hóa đơn
+                </label>
+                <Textarea
+                  value={invoiceDescription}
+                  onChange={(event) => {
+                    setInvoiceDescription(event.target.value);
+                    setInvoiceDescriptionEdited(true);
+                  }}
+                  placeholder="Nội dung sẽ hiển thị trên hóa đơn điều chỉnh..."
+                  className="min-h-[56px] text-xs resize-none"
+                  disabled={!autoGenerateInvoice}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Nội dung này có thể sửa trước khi xuất hóa đơn.
+                </p>
+              </div>
+            </div>
             {/* Tổng tiền summary */}
             <div className="flex items-center gap-6 flex-wrap">
               <div className="flex items-center gap-2 text-sm">
@@ -1286,7 +1356,9 @@ export function ScheduleTabContent({
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-sm text-foreground">Chênh lệch:</span>
-                {calcTuitionTotals.diff === 0 ? (
+                {!autoGenerateInvoice ? (
+                  <Badge variant="secondary" className="text-xs">Không tự sinh hóa đơn</Badge>
+                ) : calcTuitionTotals.diff === 0 ? (
                   <Badge variant="secondary" className="text-xs">Không phát sinh hoá đơn</Badge>
                 ) : calcTuitionTotals.diff > 0 ? (
                   <Badge className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border-blue-200">
@@ -1335,6 +1407,8 @@ export function ScheduleTabContent({
                       package_id: packageId,
                       promotion_ids: studentDiscountIds[studentId] ?? [],
                       surcharge_ids: studentSurchargeIds[studentId] ?? [],
+                       create_adjustment_invoice: autoGenerateInvoice,
+                       invoice_description: invoiceDescription.trim(),
                     };
                   });
                   if (changes.some((change) => !change.student_class_id || !change.package_id)) {

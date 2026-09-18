@@ -2297,6 +2297,10 @@ export function registerClassesRoutes(app: Express): void {
             packageId: String(change.package_id ?? ""),
             promotionIds: Array.isArray(change.promotion_ids) ? change.promotion_ids.map(String) : [],
             surchargeIds: Array.isArray(change.surcharge_ids) ? change.surcharge_ids.map(String) : [],
+            createAdjustmentInvoice: change.create_adjustment_invoice === true,
+            invoiceDescription: typeof change.invoice_description === "string"
+              ? change.invoice_description.trim()
+              : "",
           }))
         : [];
       const student_class_ids = changes.map((change: any) => change.studentClassId);

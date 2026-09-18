@@ -233,6 +233,8 @@ export async function updateStudentTuitionPackage(
     packageId: string;
     promotionIds?: string[];
     surchargeIds?: string[];
+    createAdjustmentInvoice?: boolean;
+    invoiceDescription?: string;
   }>,
   fromSessionIndex: number,
   toSessionIndex: number,
@@ -322,6 +324,8 @@ export async function updateStudentTuitionPackage(
           packageId: change.packageId,
           promotionIds: [...(change.promotionIds ?? [])].sort(),
           surchargeIds: [...(change.surchargeIds ?? [])].sort(),
+          createAdjustmentInvoice: change.createAdjustmentInvoice === true,
+          invoiceDescription: change.invoiceDescription?.trim() || null,
         }))
         .sort((left, right) => left.studentClassId.localeCompare(right.studentClassId)),
     });
@@ -365,7 +369,9 @@ export async function updateStudentTuitionPackage(
       classId: studentSessions.classId,
       attendanceStatus: studentSessions.attendanceStatus,
       sessionPrice: studentSessions.sessionPrice,
+      packageId: studentSessions.packageId,
       sessionIndex: classSessions.sessionIndex,
+      sessionDate: classSessions.sessionDate,
     })
       .from(studentSessions)
       .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
@@ -425,6 +431,13 @@ export async function updateStudentTuitionPackage(
     for (const row of packageAdjustmentRows) {
       effectiveOverrideCentsBySession.set(row.studentSessionId, Math.round(Number(row.amount) * 100));
     }
+    const oldPackageIds = [...new Set(matchingSessions.map((session) => session.packageId).filter(Boolean))] as string[];
+    const oldPackageRows = oldPackageIds.length > 0
+      ? await tx.select({ id: courseFeePackages.id, name: courseFeePackages.name })
+        .from(courseFeePackages)
+        .where(inArray(courseFeePackages.id, oldPackageIds))
+      : [];
+    const oldPackageNameById = new Map(oldPackageRows.map((pkg) => [pkg.id, pkg.name]));
 
     const splitCents = (totalCents: number, count: number): number[] => {
       const sign = totalCents < 0 ? -1 : 1;
@@ -436,6 +449,10 @@ export async function updateStudentTuitionPackage(
       );
     };
     const formatAmount = (cents: number) => (cents / 100).toFixed(2);
+    const formatInvoiceDate = (value: string | null | undefined) => {
+      const parts = String(value ?? "").slice(0, 10).split("-");
+      return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : String(value ?? "");
+    };
     const businessDate = new Intl.DateTimeFormat("en-CA", {
       timeZone: "Asia/Bangkok",
       year: "numeric",
@@ -495,11 +512,16 @@ export async function updateStudentTuitionPackage(
       }
 
       let invoiceId: string | null = null;
-      if (differenceCents !== 0) {
+       if (change.createAdjustmentInvoice === true && differenceCents !== 0) {
         const isIncome = differenceCents > 0;
         const absoluteCents = Math.abs(differenceCents);
         const code = await getNextLocationCode(enrollment.locationId, isIncome ? "PT" : "PC", tx);
-        const description = `Điều chỉnh chênh lệch đổi gói học phí lớp ${enrollment.className}, buổi ${fromSessionIndex}-${toSessionIndex}: ${feePackage.name}`;
+         const firstSelectedSession = selectedSessions[0];
+         const lastSelectedSession = selectedSessions[selectedSessions.length - 1];
+         const oldPackageName = oldPackageNameById.get(firstSelectedSession.packageId ?? "")
+           || "gói học phí hiện tại";
+         const description = change.invoiceDescription?.trim()
+           || `Thay đổi gói học phí ${oldPackageName} sang ${feePackage.name} từ buổi ${firstSelectedSession.sessionIndex} ngày ${formatInvoiceDate(firstSelectedSession.sessionDate)} - Buổi ${lastSelectedSession.sessionIndex} ngày ${formatInvoiceDate(lastSelectedSession.sessionDate)}`;
         const [invoice] = await tx.insert(invoices).values({
           code,
           type: isIncome ? "Thu" : "Chi",
