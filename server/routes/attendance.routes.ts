@@ -33,6 +33,22 @@ export function registerAttendanceRoutes(app: Express): void {
       if (studentIds.length > 0) {
         conditions.push(inArray(studentSessions.studentId, studentIds));
       }
+      const shiftValue = typeof shiftStr === "string" ? shiftStr.trim() : "";
+      if (shiftValue && shiftValue !== "all") {
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(shiftValue)) {
+          conditions.push(eq(classSessions.shiftTemplateId, shiftValue));
+        } else {
+          // Keep existing bookmarked/old clients working while the UI migrates
+          // from hardcoded time ranges to configured shift-template IDs.
+          const legacyTimeMatch = shiftValue.match(/^(\d{2}:\d{2})-(\d{2}:\d{2})$/);
+          if (legacyTimeMatch) {
+            conditions.push(
+              eq(shiftTemplates.startTime, legacyTimeMatch[1]),
+              eq(shiftTemplates.endTime, legacyTimeMatch[2]),
+            );
+          }
+        }
+      }
 
       if (!isSuperAdmin && allowedLocationIds && allowedLocationIds.length > 0) {
         conditions.push(inArray(classes.locationId, allowedLocationIds));

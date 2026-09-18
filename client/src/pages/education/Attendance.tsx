@@ -55,13 +55,6 @@ import { apiRequest } from "@/lib/queryClient";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { useToast } from "@/hooks/use-toast";
 
-const SHIFTS = [
-  { label: "Tất cả", value: "all" },
-  { label: "07:00 - 09:00", value: "07:00-09:00" },
-  { label: "09:00 - 11:00", value: "09:00-11:00" },
-  { label: "13:00 - 15:00", value: "13:00-15:00" },
-];
-
 type AttendanceFilters = {
   classes: string[];
   students: string[];
@@ -198,6 +191,29 @@ export function Attendance() {
     },
   });
 
+  const { data: shiftTemplates = [], isLoading: loadingShifts } = useQuery<any[]>({
+    queryKey: ["/api/shift-templates", "class"],
+    queryFn: async () => {
+      const response = await fetch("/api/shift-templates?type=class");
+      if (!response.ok) throw new Error("Không thể tải danh sách ca học");
+      return response.json();
+    },
+  });
+
+  const shiftOptions = useMemo(() => {
+    const options = shiftTemplates
+      .filter((shift: any) => shift?.id && shift?.startTime && shift?.endTime)
+      .sort((a: any, b: any) =>
+        `${a.startTime}-${a.endTime}-${a.name}`.localeCompare(`${b.startTime}-${b.endTime}-${b.name}`)
+      )
+      .map((shift: any) => ({
+        label: `${shift.name} (${shift.startTime} - ${shift.endTime})`,
+        value: shift.id,
+      }));
+
+    return [{ label: "Tất cả", value: "all" }, ...options];
+  }, [shiftTemplates]);
+
   const { data: attendanceData = [] } = useQuery({
     queryKey: ["/api/attendance", filters],
     staleTime: 0,
@@ -264,7 +280,7 @@ export function Attendance() {
     .map((s: any) => `${s.code}`)
     .join(", ");
 
-  const isLoading = loadingClasses || loadingStudents;
+  const isLoading = loadingClasses || loadingStudents || loadingShifts;
 
   const totalPages = Math.max(1, Math.ceil(Object.keys(attendanceByClass).length / pageSize));
 
@@ -481,7 +497,7 @@ export function Attendance() {
                 <Select value={filters.shift} onValueChange={(value) => setFilters(prev => ({ ...prev, shift: value }))}>
                   <SelectTrigger id="shift" data-testid="select-shift" className="h-9 text-sm border-border/70"><SelectValue /></SelectTrigger>
                   <SelectContent className="bg-white z-[200]">
-                    {SHIFTS.map(shift => <SelectItem key={shift.value} value={shift.value}>{shift.label}</SelectItem>)}
+                    {shiftOptions.map(shift => <SelectItem key={shift.value} value={shift.value}>{shift.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
