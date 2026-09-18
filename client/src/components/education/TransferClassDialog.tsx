@@ -115,6 +115,8 @@ export function TransferClassDialog({
   const [selectedTargetPackageId, setSelectedTargetPackageId] = useState<string>("");
   const [autoInvoice, setAutoInvoice] = useState(true);
   const [invoiceCategory, setInvoiceCategory] = useState<"Hoàn học phí" | "Đặt cọc">("Hoàn học phí");
+  const [actualSessionCount, setActualSessionCount] = useState(0);
+  const [roundingMode, setRoundingMode] = useState<"none" | "down" | "up">("none");
 
   const form = useForm<TransferFormValues>({
     resolver: zodResolver(transferSchema),
@@ -179,6 +181,16 @@ export function TransferClassDialog({
     }
   }, [fromSessionIndex, currentSessions]);
 
+  // Default to the student's actual enrolled session count, while allowing
+  // the operator to adjust the denominator for the transfer calculation.
+  useEffect(() => {
+    if (!isOpen || !currentClass?.id || !student?.id) return;
+    const registeredCount = currentSessions?.length ?? 0;
+    if (registeredCount > 0) {
+      setActualSessionCount(registeredCount);
+    }
+  }, [isOpen, currentClass?.id, student?.id, currentSessions?.length]);
+
   // Reset target package when class changes
   useEffect(() => {
     setSelectedTargetPackageId("");
@@ -221,29 +233,38 @@ export function TransferClassDialog({
   // For an enrolled student, the invoice allocation is based on the actual
   // number of registered sessions, which can differ from the package template
   // (e.g. a 20-session course package applied to 49 enrolled sessions).
-  const currentActualSessionCount = currentSessions?.length ?? 0;
-  const currentPackageSessionCount = currentActualSessionCount > 0
-    ? currentActualSessionCount
+  const currentRegisteredSessionCount = currentSessions?.length ?? 0;
+  const currentSessionCount = actualSessionCount > 0
+    ? actualSessionCount
+    : currentRegisteredSessionCount > 0
+    ? currentRegisteredSessionCount
     : getPackageSessionCount(currentFeePackage);
   const currentBaseSessionPrice = getPackageBaseSessionPrice(currentFeePackage, currentStoredSessionPrice);
   const currentBaseTotal = getPackageBaseTotal(
     currentFeePackage,
-    currentBaseSessionPrice * currentPackageSessionCount,
+    currentBaseSessionPrice * currentSessionCount,
   );
   const currentDiscountPerSession = Number(currentSession?.pricing?.discountAmount ?? 0);
-  const currentDiscountAmount = currentDiscountPerSession * currentPackageSessionCount;
+  // Keep the invoice's total discount stable when the operator changes the
+  // editable session count; the source allocation was created for the
+  // student's original registered session count.
+  const currentDiscountAmount = currentDiscountPerSession
+    * (currentRegisteredSessionCount > 0 ? currentRegisteredSessionCount : currentSessionCount);
   const currentDiscountPercent = currentSession?.pricing?.discountPercent ?? null;
   const currentAllocatedSessionPrice = Number(currentSession?.pricing?.allocatedFee ?? 0);
   const hasCurrentPackagePrice = !!currentFeePackage && currentBaseSessionPrice > 0;
-  const currentSessionPrice = currentAllocatedSessionPrice > 0
-    ? currentAllocatedSessionPrice
+  const currentNetTotal = Math.max(0, currentBaseTotal - currentDiscountAmount);
+  const currentSessionPrice = currentSessionCount > 0 && (currentAllocatedSessionPrice > 0 || currentNetTotal > 0)
+    ? Number((currentNetTotal / currentSessionCount).toFixed(2))
     : hasCurrentPackagePrice
     ? Math.max(0, currentBaseSessionPrice - currentDiscountPerSession)
     : currentStoredSessionPrice;
-  const currentNetTotal = currentAllocatedSessionPrice > 0
-    ? currentAllocatedSessionPrice * currentPackageSessionCount
-    : Math.max(0, currentBaseTotal - currentDiscountAmount);
-  const currentTotal = currentSessionPrice * transferCount;
+  const exactCurrentTotal = currentSessionPrice * transferCount;
+  const currentTotal = roundingMode === "down"
+    ? Math.floor(exactCurrentTotal)
+    : roundingMode === "up"
+    ? Math.ceil(exactCurrentTotal)
+    : exactCurrentTotal;
 
   // Target class fee info
   const selectedTargetPackage = targetFeePackages.find((p) => p.id === selectedTargetPackageId);
@@ -481,9 +502,22 @@ export function TransferClassDialog({
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Số buổi đăng ký thực tế:</span>
-                      <span className="font-medium">
-                        {currentPackageSessionCount > 0 ? `${currentPackageSessionCount} buổi` : "—"}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min={1}
+                          step={1}
+                          value={actualSessionCount > 0 ? actualSessionCount : ""}
+                          onChange={(event) => {
+                            const value = Number(event.target.value);
+                            setActualSessionCount(Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0);
+                          }}
+                          className="h-7 w-24 text-right"
+                          disabled={loadingCurrent}
+                          data-testid="input-actual-session-count"
+                        />
+                        <span className="font-medium">buổi</span>
+                      </div>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Đơn giá sau giảm:</span>
@@ -493,11 +527,31 @@ export function TransferClassDialog({
                     </div>
                     <div className="flex justify-between border-t pt-1.5 mt-1">
                       <span className="font-medium">Thành tiền:</span>
-                      <span className="font-semibold text-foreground">
-                        {transferCount > 0 && currentSessionPrice > 0
-                          ? formatCurrency(currentTotal)
-                          : "—"}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-foreground">
+                          {transferCount > 0 && currentSessionPrice > 0
+                            ? formatCurrency(currentTotal)
+                            : "—"}
+                        </span>
+                        {transferCount > 0 && currentSessionPrice > 0 && (
+                          <Select
+                            value={roundingMode}
+                            onValueChange={(value) => setRoundingMode(value as "none" | "down" | "up")}
+                          >
+                            <SelectTrigger
+                              className="h-7 w-[126px] text-xs"
+                              data-testid="select-rounding-mode"
+                            >
+                              <SelectValue placeholder="Làm tròn" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none" className="text-xs">Không làm tròn</SelectItem>
+                              <SelectItem value="down" className="text-xs">Bỏ phần lẻ</SelectItem>
+                              <SelectItem value="up" className="text-xs">Làm tròn lên</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </CardContent>
