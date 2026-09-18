@@ -926,7 +926,7 @@ export function ScheduleTabContent({
           }
         }}
       >
-        <DialogContent className="max-w-full w-full p-0 flex flex-col h-[85vh]">
+        <DialogContent className="max-w-full w-full min-h-[100dvh] h-[100dvh] max-h-[100dvh] p-0 flex flex-col rounded-none">
           {/* Header */}
           <DialogHeader className="px-6 pt-5 pb-4 border-b shrink-0">
             <DialogTitle className="text-base">Đổi gói học phí</DialogTitle>
