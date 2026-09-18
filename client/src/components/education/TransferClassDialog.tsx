@@ -32,7 +32,25 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Search, TrendingUp, TrendingDown, Minus, FileText } from "lucide-react";
+import {
+  Loader2,
+  Check,
+  ChevronsUpDown,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  FileText,
+} from "lucide-react";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 
 const transferSchema = z.object({
@@ -113,6 +131,7 @@ export function TransferClassDialog({
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTargetPackageId, setSelectedTargetPackageId] = useState<string>("");
+  const [isTargetClassPickerOpen, setIsTargetClassPickerOpen] = useState(false);
   const [autoInvoice, setAutoInvoice] = useState(true);
   const [invoiceCategory, setInvoiceCategory] = useState<"Hoàn học phí" | "Đặt cọc">("Hoàn học phí");
   const [actualSessionCount, setActualSessionCount] = useState(0);
@@ -153,13 +172,15 @@ export function TransferClassDialog({
     enabled: isOpen,
   });
 
-  // Filter classes based on search
+  // Filter classes inside the target-class picker.
   const filteredClasses = availableClasses?.filter(
     (c) =>
       c.id !== currentClass?.id &&
       (c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         c.classCode.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  const hasTransferSchedule = (classItem: any) => Number(classItem?.totalSessions ?? 0) > 0;
 
   // Fetch sessions for the selected target class
   const { data: targetSessions, isLoading: loadingTarget } = useQuery<any[]>({
@@ -569,33 +590,80 @@ export function TransferClassDialog({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Chọn lớp mới</FormLabel>
-                        <div className="relative mb-2">
-                          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                          <Input
-                            placeholder="Tìm kiếm lớp..."
-                            className="pl-8"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                          />
-                        </div>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value}
-                          disabled={loadingClasses}
+                        <Popover
+                          open={isTargetClassPickerOpen}
+                          onOpenChange={setIsTargetClassPickerOpen}
                         >
-                          <FormControl>
-                            <SelectTrigger data-testid="select-to-class">
-                              <SelectValue placeholder="Chọn lớp đích" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {filteredClasses?.map((c) => (
-                              <SelectItem key={c.id} value={c.id}>
-                                {c.name} ({c.classCode})
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          <PopoverTrigger asChild>
+                            <FormControl>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                role="combobox"
+                                aria-expanded={isTargetClassPickerOpen}
+                                className="w-full justify-between font-normal"
+                                disabled={loadingClasses}
+                                data-testid="select-to-class"
+                              >
+                                {targetClass
+                                  ? `${targetClass.name} (${targetClass.classCode})`
+                                  : loadingClasses
+                                  ? "Đang tải danh sách lớp..."
+                                  : "Chọn lớp đích"}
+                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                              </Button>
+                            </FormControl>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                            <Command shouldFilter={false}>
+                              <CommandInput
+                                placeholder="Tìm kiếm lớp..."
+                                value={searchTerm}
+                                onValueChange={setSearchTerm}
+                              />
+                              <CommandList>
+                                <CommandEmpty>Không tìm thấy lớp</CommandEmpty>
+                                <CommandGroup>
+                                  {filteredClasses?.map((c) => {
+                                    const canTransfer = hasTransferSchedule(c);
+                                    const isSelected = c.id === field.value;
+                                    return (
+                                      <CommandItem
+                                        key={c.id}
+                                        value={`${c.name} ${c.classCode}`}
+                                        disabled={!canTransfer}
+                                        onSelect={() => {
+                                          if (!canTransfer) return;
+                                          field.onChange(c.id);
+                                          setIsTargetClassPickerOpen(false);
+                                          setSearchTerm("");
+                                        }}
+                                        className={cn(
+                                          !canTransfer && "cursor-not-allowed opacity-40",
+                                        )}
+                                      >
+                                        <Check
+                                          className={cn(
+                                            "mr-2 h-4 w-4",
+                                            isSelected ? "opacity-100" : "opacity-0",
+                                          )}
+                                        />
+                                        <span className="truncate">
+                                          {c.name} ({c.classCode})
+                                        </span>
+                                        {!canTransfer && (
+                                          <span className="ml-auto text-xs text-muted-foreground">
+                                            Chưa có lịch
+                                          </span>
+                                        )}
+                                      </CommandItem>
+                                    );
+                                  })}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
                         <FormMessage />
                       </FormItem>
                     )}
