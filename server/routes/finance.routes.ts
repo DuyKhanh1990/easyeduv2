@@ -1,7 +1,11 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { distributeInvoiceFeeToSessions } from "../storage/invoice-session-allocation.storage";
-import { createWalletEntry, getNetWalletAmountByInvoiceAndCategory } from "../storage/wallet.storage";
+import {
+  createWalletEntry,
+  getNetWalletAmountByInvoiceAndCategory,
+  getStudentWalletBalance,
+} from "../storage/wallet.storage";
 import { saveInvoiceCommissions, getInvoiceFilterOptions, getThuChiReportEntries, getNextLocationCode, getAvailableFinanceVouchers } from "../storage/finance.storage";
 import { createInvoiceAuditLog } from "../storage/invoice-audit-log.storage";
 import { createIssueReceiptsForInvoice, cancelIssueReceiptForInvoice } from "./store-issue-receipt.routes";
@@ -65,6 +69,32 @@ function getPaidScheduleAmount(schedules: any[], grandTotal: number): number {
     .filter((schedule: any) => isPaidInvoiceStatus(schedule.status))
     .reduce((sum: number, schedule: any) => sum + (parseFloat(schedule.amount ?? "0") || 0), 0);
   return Math.min(Math.max(0, grandTotal), Math.max(0, paidAmount));
+}
+
+async function assertTuitionRefundWalletSufficient(
+  invoice: any,
+  targetPaidAmount: number,
+): Promise<void> {
+  if (!isTuitionRefundInvoice(invoice)) return;
+
+  const grandTotal = parseFloat(invoice.grandTotal ?? "0") || 0;
+  const targetDebit = Math.max(0, Math.min(grandTotal, Number(targetPaidAmount) || 0));
+  const existingNet = invoice.id
+    ? await getNetWalletAmountByInvoiceAndCategory(invoice.id, "Học phí")
+    : 0;
+  // existingNet is negative for an already-applied debit. Only the new
+  // increment must be covered by the currently available wallet balance.
+  const additionalDebit = Math.max(0, targetDebit + existingNet);
+  if (additionalDebit <= 0) return;
+
+  const balance = await getStudentWalletBalance(invoice.studentId, "Học phí");
+  if (additionalDebit > balance + 0.000001) {
+    const requestedLabel = additionalDebit.toLocaleString("vi-VN") + " đ";
+    const balanceLabel = Math.max(0, balance).toLocaleString("vi-VN") + " đ";
+    throw new Error(
+      `Ví học phí không đủ để hoàn ${requestedLabel}. Số dư hiện tại: ${balanceLabel}.`,
+    );
+  }
 }
 
 /**
@@ -821,6 +851,21 @@ export function registerFinanceRoutes(app: Express): void {
       }
     }
 
+    const prospectiveInvoice = {
+      ...payload,
+      studentId: validatedStudentId,
+      subjectName: resolvedSubjectName,
+    };
+    if (isTuitionRefundInvoice(prospectiveInvoice)) {
+      const grandTotal = parseFloat(payload.grandTotal ?? "0") || 0;
+      const paidAmount = (payload.paymentSchedule?.length ?? 0) > 0
+        ? getPaidScheduleAmount(payload.paymentSchedule ?? [], grandTotal)
+        : isPaidInvoiceStatus(payload.status)
+        ? grandTotal
+        : 0;
+      await assertTuitionRefundWalletSufficient(prospectiveInvoice, paidAmount);
+    }
+
     const paidOnCreate = isPaidInvoiceStatus(payload.status) && !(payload.paymentSchedule?.length ?? 0);
     const data = await storage.createInvoice({
       ...payload,
@@ -1072,6 +1117,19 @@ export function registerFinanceRoutes(app: Express): void {
       } else if (patchData.status && !isPaidInvoiceStatus(patchData.status) && isPaidInvoiceStatus(before?.status)) {
         patchData.paidBy = null;
         patchData.paidAt = null;
+      }
+
+      const prospectiveInvoice = before
+        ? { ...before, ...patchData, paymentSchedule: patchData.paymentSchedule ?? before.paymentSchedule }
+        : null;
+      if (prospectiveInvoice && isTuitionRefundInvoice(prospectiveInvoice)) {
+        const grandTotal = parseFloat(prospectiveInvoice.grandTotal ?? "0") || 0;
+        const paidAmount = (prospectiveInvoice.paymentSchedule ?? []).length > 0
+          ? getPaidScheduleAmount(prospectiveInvoice.paymentSchedule, grandTotal)
+          : isPaidInvoiceStatus(prospectiveInvoice.status)
+          ? grandTotal
+          : 0;
+        await assertTuitionRefundWalletSufficient(prospectiveInvoice, paidAmount);
       }
 
       const data = await storage.updateInvoice(req.params.id, patchData);
@@ -1464,6 +1522,27 @@ export function registerFinanceRoutes(app: Express): void {
       if (paidAt !== undefined) data.paidAt = paidAt;
       const userId = (req as any).user?.id ?? null;
       data.updatedBy = userId;
+
+      if (before.invoiceId) {
+        const invoice = await storage.getInvoice(before.invoiceId);
+        if (isTuitionRefundInvoice(invoice)) {
+          const schedules = await db
+            .select()
+            .from(invoicePaymentSchedule)
+            .where(eq(invoicePaymentSchedule.invoiceId, before.invoiceId));
+          const prospectiveSchedules = schedules.map((schedule) =>
+            schedule.id === before.id && amount !== undefined
+              ? { ...schedule, amount: Number(amount) }
+              : schedule,
+          );
+          const grandTotal = parseFloat(invoice.grandTotal ?? "0") || 0;
+          await assertTuitionRefundWalletSufficient(
+            invoice,
+            getPaidScheduleAmount(prospectiveSchedules, grandTotal),
+          );
+        }
+      }
+
       const updated = await storage.updateInvoiceSchedule(req.params.id, data as any);
 
       if (before.invoiceId) {
@@ -1527,6 +1606,24 @@ export function registerFinanceRoutes(app: Express): void {
         .from(invoicePaymentSchedule)
         .where(eq(invoicePaymentSchedule.id, req.params.id))
         .limit(1);
+
+      if (scheduleBefore?.invoiceId) {
+        const invoice = await storage.getInvoice(scheduleBefore.invoiceId);
+        if (isTuitionRefundInvoice(invoice)) {
+          const schedules = await db
+            .select()
+            .from(invoicePaymentSchedule)
+            .where(eq(invoicePaymentSchedule.invoiceId, scheduleBefore.invoiceId));
+          const prospectiveSchedules = schedules.map((schedule) =>
+            schedule.id === scheduleBefore.id ? { ...schedule, status } : schedule,
+          );
+          const grandTotal = parseFloat(invoice.grandTotal ?? "0") || 0;
+          await assertTuitionRefundWalletSufficient(
+            invoice,
+            getPaidScheduleAmount(prospectiveSchedules, grandTotal),
+          );
+        }
+      }
 
       const updated = await storage.updateInvoiceScheduleStatus(req.params.id, status, userId);
 
@@ -1710,6 +1807,9 @@ export function registerFinanceRoutes(app: Express): void {
 
           const grandTotal = parseFloat(before.grandTotal ?? "0");
           const paidAt = paymentDate ? new Date(paymentDate) : new Date();
+          if (isTuitionRefundInvoice(before)) {
+            await assertTuitionRefundWalletSufficient(before, grandTotal);
+          }
 
           // Update invoice to paid
           await db.update(invoices).set({
@@ -1802,6 +1902,24 @@ export function registerFinanceRoutes(app: Express): void {
           if (isPaidInvoiceStatus(scheduleBefore.status)) {
             results.push({ id: schedId, ok: true, code: scheduleBefore.code ?? undefined });
             continue;
+          }
+
+          if (scheduleBefore.invoiceId) {
+            const invoice = await storage.getInvoice(scheduleBefore.invoiceId);
+            if (isTuitionRefundInvoice(invoice)) {
+              const schedules = await db
+                .select()
+                .from(invoicePaymentSchedule)
+                .where(eq(invoicePaymentSchedule.invoiceId, scheduleBefore.invoiceId));
+              const prospectiveSchedules = schedules.map((schedule) =>
+                schedule.id === scheduleBefore.id ? { ...schedule, status: "paid" } : schedule,
+              );
+              const grandTotal = parseFloat(invoice.grandTotal ?? "0") || 0;
+              await assertTuitionRefundWalletSufficient(
+                invoice,
+                getPaidScheduleAmount(prospectiveSchedules, grandTotal),
+              );
+            }
           }
 
           const paidAt = paymentDate ? new Date(paymentDate) : new Date();
