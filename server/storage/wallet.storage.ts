@@ -46,6 +46,29 @@ export async function getStudentWalletTransactions(studentId: string) {
     .orderBy(desc(studentWalletTransactions.createdAt));
 }
 
+export async function getStudentWalletBalance(
+  studentId: string,
+  category: string,
+): Promise<number> {
+  const rows = await db
+    .select({
+      type: studentWalletTransactions.type,
+      amount: studentWalletTransactions.amount,
+    })
+    .from(studentWalletTransactions)
+    .where(
+      and(
+        eq(studentWalletTransactions.studentId, studentId),
+        eq(studentWalletTransactions.category, category),
+      ),
+    );
+
+  return rows.reduce((balance, row) => {
+    const amount = parseFloat(row.amount ?? "0") || 0;
+    return balance + (row.type === "credit" ? amount : -amount);
+  }, 0);
+}
+
 export async function getNetWalletAmountByInvoiceAndCategory(invoiceId: string, category: string): Promise<number> {
   const rows = await db
     .select()
