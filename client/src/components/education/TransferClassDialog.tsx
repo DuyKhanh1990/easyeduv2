@@ -31,11 +31,14 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Loader2,
   Check,
   ChevronsUpDown,
+  ChevronDown,
+  Search,
   TrendingUp,
   TrendingDown,
   Minus,
@@ -136,6 +139,9 @@ export function TransferClassDialog({
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTargetPackageId, setSelectedTargetPackageId] = useState<string>("");
   const [isTargetClassPickerOpen, setIsTargetClassPickerOpen] = useState(false);
+  const [isTargetDiscountDialogOpen, setIsTargetDiscountDialogOpen] = useState(false);
+  const [targetDiscountSearch, setTargetDiscountSearch] = useState("");
+  const [selectedTargetDiscountIds, setSelectedTargetDiscountIds] = useState<string[]>([]);
   const [autoInvoice, setAutoInvoice] = useState(true);
   const [invoiceCategory, setInvoiceCategory] = useState<"Hoàn học phí" | "Đặt cọc">("Hoàn học phí");
   const [refundMethod, setRefundMethod] = useState<"invoice" | "deposit">("invoice");
@@ -174,6 +180,12 @@ export function TransferClassDialog({
   // Fetch all fee packages to resolve class fee packages
   const { data: allFeePackages } = useQuery<any[]>({
     queryKey: ["/api/fee-packages"],
+    enabled: isOpen,
+  });
+
+  const { data: promotionOptions = [] } = useQuery<any[]>({
+    queryKey: ["/api/finance/promotions", { type: "promotion" }],
+    queryFn: () => apiRequest("GET", "/api/finance/promotions?type=promotion").then((response) => response.json()),
     enabled: isOpen,
   });
 
@@ -220,6 +232,8 @@ export function TransferClassDialog({
   // Reset target package when class changes
   useEffect(() => {
     setSelectedTargetPackageId("");
+    setSelectedTargetDiscountIds([]);
+    setIsTargetDiscountDialogOpen(false);
   }, [selectedToClassId]);
 
   // Auto-select fee package of target class (use class's feePackageId or first from course)
@@ -295,12 +309,30 @@ export function TransferClassDialog({
   // Target class fee info
   const selectedTargetPackage = targetFeePackages.find((p) => p.id === selectedTargetPackageId);
   const targetPackageSessionCount = getPackageSessionCount(selectedTargetPackage);
-  const targetSessionPrice = getPackageBaseSessionPrice(selectedTargetPackage);
   const targetBaseTotal = getPackageBaseTotal(
     selectedTargetPackage,
-    targetSessionPrice * targetPackageSessionCount,
+    getPackageBaseSessionPrice(selectedTargetPackage) * targetPackageSessionCount,
   );
-  const targetTotalAfterDiscount = targetBaseTotal;
+  const normalizedTargetDiscountSearch = targetDiscountSearch.trim().toLowerCase();
+  const filteredTargetDiscounts = promotionOptions
+    .filter((promotion: any) => promotion.isActive)
+    .filter((promotion: any) =>
+      !normalizedTargetDiscountSearch ||
+      `${promotion.name ?? ""} ${promotion.code ?? ""}`.toLowerCase().includes(normalizedTargetDiscountSearch),
+    );
+  const targetDiscountAmount = Math.min(
+    targetBaseTotal,
+    selectedTargetDiscountIds.reduce((total, discountId) => {
+      const promotion = promotionOptions.find((item: any) => item.id === discountId);
+      if (!promotion) return total;
+      const value = Number(promotion.valueAmount ?? 0) || 0;
+      return total + (promotion.valueType === "percent" ? targetBaseTotal * value / 100 : value);
+    }, 0),
+  );
+  const targetTotalAfterDiscount = Math.max(0, targetBaseTotal - targetDiscountAmount);
+  const targetSessionPrice = targetPackageSessionCount > 0
+    ? Number((targetTotalAfterDiscount / targetPackageSessionCount).toFixed(2))
+    : getPackageBaseSessionPrice(selectedTargetPackage);
   const targetTotal = targetSessionPrice * transferCount;
 
   // Financial difference
@@ -802,9 +834,116 @@ export function TransferClassDialog({
                         {targetBaseTotal > 0 ? formatCurrency(targetBaseTotal) : "—"}
                       </span>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex items-center justify-between gap-3">
                       <span className="text-muted-foreground">Giảm trừ:</span>
-                      <span className="font-medium">0đ</span>
+                      <Dialog
+                        open={isTargetDiscountDialogOpen}
+                        onOpenChange={(open) => {
+                          setIsTargetDiscountDialogOpen(open);
+                          if (open) setTargetDiscountSearch("");
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className={cn(
+                            "flex min-w-0 items-center gap-1 rounded px-1.5 py-0.5 text-right text-sm transition-colors",
+                            selectedTargetPackage
+                              ? "hover:bg-green-50 hover:text-green-700 dark:hover:bg-green-950/30"
+                              : "cursor-not-allowed text-muted-foreground opacity-60",
+                          )}
+                          onClick={() => selectedTargetPackage && setIsTargetDiscountDialogOpen(true)}
+                          disabled={!selectedTargetPackage}
+                          data-testid="button-target-discount"
+                        >
+                          <span className={targetDiscountAmount > 0 ? "font-semibold text-green-600" : "font-medium"}>
+                            {targetDiscountAmount > 0 ? `- ${formatCurrency(targetDiscountAmount)}` : "0đ"}
+                          </span>
+                          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        </button>
+                        <DialogContent
+                          className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
+                          overlayClassName="bg-black/30 backdrop-blur-[1px]"
+                        >
+                          <DialogHeader>
+                            <DialogTitle>Chọn giảm trừ</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-3">
+                            <div className="relative">
+                              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                              <Input
+                                value={targetDiscountSearch}
+                                onChange={(event) => setTargetDiscountSearch(event.target.value)}
+                                placeholder="Tìm theo tên hoặc mã giảm trừ..."
+                                className="h-9 pl-8 text-xs"
+                                autoFocus
+                              />
+                            </div>
+                            <div className="max-h-64 overflow-y-auto space-y-1">
+                              {promotionOptions.length === 0 ? (
+                                <p className="py-4 text-center text-xs text-muted-foreground">
+                                  Chưa có giảm trừ nào
+                                </p>
+                              ) : filteredTargetDiscounts.length === 0 ? (
+                                <p className="py-4 text-center text-xs text-muted-foreground">
+                                  Không tìm thấy giảm trừ phù hợp
+                                </p>
+                              ) : (
+                                filteredTargetDiscounts.map((promotion: any) => {
+                                  const value = Number(promotion.valueAmount ?? 0) || 0;
+                                  const discountPreview = promotion.valueType === "percent"
+                                    ? targetBaseTotal * value / 100
+                                    : value;
+                                  const valueLabel = promotion.valueType === "percent"
+                                    ? `${formatCurrencyValue(value)}%`
+                                    : formatCurrency(discountPreview);
+                                  return (
+                                    <label
+                                      key={promotion.id}
+                                      className="flex cursor-pointer items-start gap-2.5 rounded px-2 py-2 hover:bg-muted/60"
+                                    >
+                                      <Checkbox
+                                        checked={selectedTargetDiscountIds.includes(promotion.id)}
+                                        onCheckedChange={() => {
+                                          setSelectedTargetDiscountIds((current) =>
+                                            current.includes(promotion.id)
+                                              ? current.filter((id) => id !== promotion.id)
+                                              : [...current, promotion.id],
+                                          );
+                                        }}
+                                        className="mt-0.5"
+                                      />
+                                      <span className="min-w-0 flex-1">
+                                        <span className="block truncate text-xs font-medium">
+                                          {promotion.name}
+                                        </span>
+                                        <span className="block text-xs text-muted-foreground">
+                                          -{valueLabel}
+                                          {promotion.valueType === "percent" && targetBaseTotal > 0
+                                            ? ` (${formatCurrency(discountPreview)})`
+                                            : ""}
+                                        </span>
+                                      </span>
+                                    </label>
+                                  );
+                                })
+                              )}
+                            </div>
+                            <div className="flex items-center justify-between border-t pt-3 text-xs">
+                              <span className="text-muted-foreground">
+                                Đã chọn {selectedTargetDiscountIds.length} giảm trừ
+                              </span>
+                              <span className="font-semibold text-green-600">
+                                Tổng giảm: {formatCurrency(targetDiscountAmount)}
+                              </span>
+                            </div>
+                          </div>
+                          <DialogFooter>
+                            <Button type="button" onClick={() => setIsTargetDiscountDialogOpen(false)}>
+                              Xong
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Sau giảm trừ:</span>
