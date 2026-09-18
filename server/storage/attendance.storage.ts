@@ -1,6 +1,6 @@
 import {
   db,
-  eq, and, inArray,
+  eq, and, inArray, sql,
   classSessions, studentSessions, classes,
 } from "./base";
 
