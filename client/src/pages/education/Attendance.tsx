@@ -136,6 +136,9 @@ export function Attendance() {
     attendanceStatus: [],
   });
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const [classSearch, setClassSearch] = useState("");
+  const [shiftSearch, setShiftSearch] = useState("");
+  const [shiftPopoverOpen, setShiftPopoverOpen] = useState(false);
 
   const [expandedClasses, setExpandedClasses] = useState<string[]>([""]);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
@@ -244,6 +247,20 @@ export function Attendance() {
         s.fullName.toLowerCase().includes(filters.studentSearch.toLowerCase())
     );
   }, [studentsData, filters.studentSearch]);
+
+  const filteredClasses = useMemo(() => {
+    const query = classSearch.trim().toLowerCase();
+    if (!query) return classesData;
+    return classesData.filter((cls: any) =>
+      `${cls.classCode ?? ""} ${cls.name ?? ""}`.toLowerCase().includes(query)
+    );
+  }, [classesData, classSearch]);
+
+  const filteredShiftOptions = useMemo(() => {
+    const query = shiftSearch.trim().toLowerCase();
+    if (!query) return shiftOptions;
+    return shiftOptions.filter((shift) => shift.label.toLowerCase().includes(query));
+  }, [shiftOptions, shiftSearch]);
 
   const attendanceByClass = useMemo(() => {
     const grouped: Record<string, any> = {};
@@ -405,16 +422,32 @@ export function Attendance() {
                       ) : <span className="text-muted-foreground">Chọn lớp...</span>}
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-60 bg-white shadow-lg border border-border/70 z-[200]" align="start">
-                    <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
-                      {classesData.map((cls: any) => (
-                        <div key={cls.id} className="flex items-center space-x-2 px-1 py-1.5 rounded-lg hover:bg-muted/50 cursor-pointer"
-                          onClick={() => setFilters(prev => ({ ...prev, classes: prev.classes.includes(cls.id) ? prev.classes.filter(id => id !== cls.id) : [...prev.classes, cls.id] }))}>
-                          <Checkbox id={`class-${cls.id}`} checked={filters.classes.includes(cls.id)} data-testid={`checkbox-class-${cls.classCode}`}
-                            onCheckedChange={(checked) => setFilters(prev => ({ ...prev, classes: checked ? [...prev.classes, cls.id] : prev.classes.filter(id => id !== cls.id) }))} />
-                          <Label htmlFor={`class-${cls.id}`} className="text-sm cursor-pointer flex-1">{cls.classCode}</Label>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] min-w-60 bg-white shadow-lg border border-border/70 z-[200]" align="start">
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Tìm theo mã hoặc tên lớp"
+                          className="pl-8 h-9"
+                          value={classSearch}
+                          onChange={(e) => setClassSearch(e.target.value)}
+                          data-testid="input-class-search"
+                        />
+                      </div>
+                      <ScrollArea className="h-48">
+                        <div className="space-y-0.5 pr-2">
+                          {filteredClasses.length > 0 ? filteredClasses.map((cls: any) => (
+                            <div key={cls.id} className="flex items-center space-x-2 px-1 py-1.5 rounded-lg hover:bg-muted/50 cursor-pointer"
+                              onClick={() => setFilters(prev => ({ ...prev, classes: prev.classes.includes(cls.id) ? prev.classes.filter(id => id !== cls.id) : [...prev.classes, cls.id] }))}>
+                              <Checkbox id={`class-${cls.id}`} checked={filters.classes.includes(cls.id)} data-testid={`checkbox-class-${cls.classCode}`}
+                                onCheckedChange={(checked) => setFilters(prev => ({ ...prev, classes: checked ? [...prev.classes, cls.id] : prev.classes.filter(id => id !== cls.id) }))} />
+                              <Label htmlFor={`class-${cls.id}`} className="text-sm cursor-pointer flex-1">{cls.classCode}</Label>
+                            </div>
+                          )) : (
+                            <p className="py-6 text-center text-sm text-muted-foreground">Không tìm thấy lớp học</p>
+                          )}
                         </div>
-                      ))}
+                      </ScrollArea>
                     </div>
                   </PopoverContent>
                 </Popover>
@@ -494,12 +527,55 @@ export function Attendance() {
                 <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                   <Clock className="h-3 w-3" /> Ca học
                 </Label>
-                <Select value={filters.shift} onValueChange={(value) => setFilters(prev => ({ ...prev, shift: value }))}>
-                  <SelectTrigger id="shift" data-testid="select-shift" className="h-9 text-sm border-border/70"><SelectValue /></SelectTrigger>
-                  <SelectContent className="bg-white z-[200]">
-                    {shiftOptions.map(shift => <SelectItem key={shift.value} value={shift.value}>{shift.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <Popover open={shiftPopoverOpen} onOpenChange={(open) => {
+                  setShiftPopoverOpen(open);
+                  if (!open) setShiftSearch("");
+                }}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      id="shift"
+                      data-testid="select-shift"
+                      className="w-full h-9 justify-between text-sm border-border/70 font-normal"
+                    >
+                      <span className={filters.shift === "all" ? "text-foreground" : "truncate"}>{shiftOptions.find((shift) => shift.value === filters.shift)?.label ?? "Tất cả"}</span>
+                      <ChevronDown className="h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] min-w-60 bg-white shadow-lg border border-border/70 z-[200] p-2" align="start">
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Tìm theo tên hoặc khung giờ"
+                          className="pl-8 h-9"
+                          value={shiftSearch}
+                          onChange={(e) => setShiftSearch(e.target.value)}
+                          data-testid="input-shift-search"
+                        />
+                      </div>
+                      <ScrollArea className="h-48">
+                        <div className="space-y-0.5">
+                          {filteredShiftOptions.length > 0 ? filteredShiftOptions.map((shift) => (
+                            <button
+                              key={shift.value}
+                              type="button"
+                              className={`w-full text-left px-2 py-1.5 rounded-md text-sm hover:bg-muted/50 ${filters.shift === shift.value ? "bg-primary/10 text-primary font-medium" : ""}`}
+                              onClick={() => {
+                                setFilters(prev => ({ ...prev, shift: shift.value }));
+                                setShiftPopoverOpen(false);
+                              }}
+                            >
+                              {shift.label}
+                            </button>
+                          )) : (
+                            <p className="py-6 text-center text-sm text-muted-foreground">Không tìm thấy ca học</p>
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
 
               {/* Actions */}
