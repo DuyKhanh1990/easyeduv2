@@ -5,7 +5,7 @@ import {
   eq, sql, and, or, inArray, asc, desc, gte,
   classSessions, studentClasses, studentSessions,
   classes, classSessionExclusions, sessionContents, students,
-  invoices, invoiceItems, shiftTemplates, courseFeePackages,
+  invoices, invoiceItems, invoiceSessionAllocations, shiftTemplates, courseFeePackages,
   financePromotions,
   format, parseISO,
   getDayName,
@@ -1658,7 +1658,7 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
 // getStudentSessionsForClass
 // ---------------------------------------------------------------------------
 export async function getStudentSessionsForClass(classId: string, studentId: string): Promise<any[]> {
-  return await db.query.studentSessions.findMany({
+  const rows = await db.query.studentSessions.findMany({
     where: and(eq(studentSessions.classId, classId), eq(studentSessions.studentId, studentId)),
     columns: {
       id: true,
@@ -1687,6 +1687,9 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
           id: true,
           name: true,
           fee: true,
+          type: true,
+          sessions: true,
+          totalAmount: true,
         },
       },
     },
@@ -1695,6 +1698,79 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
       asc(table.createdAt),
     ],
   });
+
+  const sessionIds = rows.map((row) => row.id);
+  if (sessionIds.length === 0) return rows;
+
+  // Use the amount allocated by the student's tuition invoice when available.
+  // This is the post-promotion amount and preserves the existing session_price
+  // fallback for legacy records that do not have allocations yet.
+  const allocationRows = await db
+    .select({
+      studentSessionId: invoiceSessionAllocations.studentSessionId,
+      allocatedAmount: invoiceSessionAllocations.allocatedAmount,
+      promotionAmount: invoiceItems.promotionAmount,
+      quantity: invoiceItems.quantity,
+      promotionKeys: invoiceItems.promotionKeys,
+      invoiceStatus: invoices.status,
+    })
+    .from(invoiceSessionAllocations)
+    .innerJoin(invoiceItems, eq(invoiceSessionAllocations.invoiceItemId, invoiceItems.id))
+    .innerJoin(invoices, eq(invoiceSessionAllocations.invoiceId, invoices.id))
+    .where(and(
+      inArray(invoiceSessionAllocations.studentSessionId, sessionIds),
+      sql`${invoices.status} <> 'cancelled'`,
+    ));
+
+  const promotionIds = Array.from(new Set(
+    allocationRows.flatMap((row) => row.promotionKeys ?? []).filter(Boolean),
+  ));
+  const promotionRows = promotionIds.length > 0
+    ? await db
+      .select({
+        id: financePromotions.id,
+        valueAmount: financePromotions.valueAmount,
+        valueType: financePromotions.valueType,
+      })
+      .from(financePromotions)
+      .where(inArray(financePromotions.id, promotionIds))
+    : [];
+  const promotionMap = new Map(promotionRows.map((promotion) => [promotion.id, promotion]));
+
+  const pricingBySession = new Map<string, {
+    allocatedFee: number;
+    discountAmount: number;
+    discountPercent: number | null;
+  }>();
+
+  for (const row of allocationRows) {
+    const quantity = Math.max(1, Number(row.quantity) || 1);
+    const current = pricingBySession.get(row.studentSessionId) ?? {
+      allocatedFee: 0,
+      discountAmount: 0,
+      discountPercent: null,
+    };
+
+    current.allocatedFee += Number(row.allocatedAmount) || 0;
+    current.discountAmount += (Number(row.promotionAmount) || 0) / quantity;
+
+    const percent = (row.promotionKeys ?? []).reduce((sum, promotionId) => {
+      const promotion = promotionMap.get(promotionId);
+      return promotion?.valueType === "percent"
+        ? sum + (Number(promotion.valueAmount) || 0)
+        : sum;
+    }, 0);
+    if (percent > 0) {
+      current.discountPercent = (current.discountPercent ?? 0) + percent;
+    }
+
+    pricingBySession.set(row.studentSessionId, current);
+  }
+
+  return rows.map((row) => ({
+    ...row,
+    pricing: pricingBySession.get(row.id) ?? null,
+  }));
 }
 
 // ---------------------------------------------------------------------------

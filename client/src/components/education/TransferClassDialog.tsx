@@ -66,6 +66,41 @@ interface TransferClassDialogProps {
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat("vi-VN").format(Math.round(amount)) + "đ";
 
+const formatPercent = (value: number | null | undefined) => {
+  if (value == null || !Number.isFinite(value) || value <= 0) return "";
+  return Number.isInteger(value) ? `${value}%` : `${value.toFixed(2).replace(/\.?0+$/, "")}%`;
+};
+
+const isCoursePackage = (pkg: any) =>
+  pkg?.type === "khoá" || pkg?.type === "khóa";
+
+const packageTypeLabel = (pkg: any) =>
+  isCoursePackage(pkg) ? "Khóa" : pkg?.type === "buổi" ? "Buổi" : "";
+
+const getPackageSessionCount = (pkg: any, fallback = 0) => {
+  const sessions = Number(pkg?.sessions);
+  return sessions > 0 ? sessions : fallback;
+};
+
+const getPackageBaseSessionPrice = (pkg: any, fallback = 0) => {
+  if (!pkg) return fallback;
+  const sessions = getPackageSessionCount(pkg);
+  if (isCoursePackage(pkg) && sessions > 0) {
+    const total = Number(pkg.totalAmount ?? pkg.fee ?? 0);
+    return total / sessions;
+  }
+  return Number(pkg.fee ?? fallback) || fallback;
+};
+
+const getPackageBaseTotal = (pkg: any, fallback = 0) => {
+  if (!pkg) return fallback;
+  const sessions = getPackageSessionCount(pkg);
+  if (isCoursePackage(pkg)) {
+    return Number(pkg.totalAmount ?? pkg.fee ?? 0);
+  }
+  return (Number(pkg.fee ?? 0) || 0) * sessions;
+};
+
 export function TransferClassDialog({
   isOpen,
   onClose,
@@ -179,16 +214,32 @@ export function TransferClassDialog({
     return Number(idx) === Number(fromSessionIndex);
   }) ?? currentSessions?.[0];
   const currentFeePackage = currentSession?.feePackage;
-  const currentSessionPrice = currentSession ? Number(currentSession.sessionPrice ?? 0) : 0;
+  const currentStoredSessionPrice = currentSession ? Number(currentSession.sessionPrice ?? 0) : 0;
+  const currentPackageSessionCount = getPackageSessionCount(currentFeePackage, currentSessions?.length ?? 0);
+  const currentBaseSessionPrice = getPackageBaseSessionPrice(currentFeePackage, currentStoredSessionPrice);
+  const currentBaseTotal = getPackageBaseTotal(
+    currentFeePackage,
+    currentBaseSessionPrice * currentPackageSessionCount,
+  );
+  const currentDiscountPerSession = Number(currentSession?.pricing?.discountAmount ?? 0);
+  const currentDiscountAmount = currentDiscountPerSession * currentPackageSessionCount;
+  const currentDiscountPercent = currentSession?.pricing?.discountPercent ?? null;
+  const hasCurrentPackagePrice = !!currentFeePackage && currentBaseSessionPrice > 0;
+  const currentSessionPrice = hasCurrentPackagePrice
+    ? Math.max(0, currentBaseSessionPrice - currentDiscountPerSession)
+    : currentStoredSessionPrice;
+  const currentNetTotal = Math.max(0, currentBaseTotal - currentDiscountAmount);
   const currentTotal = currentSessionPrice * transferCount;
 
   // Target class fee info
   const selectedTargetPackage = targetFeePackages.find((p) => p.id === selectedTargetPackageId);
-  const targetSessionPrice = selectedTargetPackage
-    ? selectedTargetPackage.type === "khoá" && Number(selectedTargetPackage.sessions) > 0
-      ? Number(selectedTargetPackage.fee) / Number(selectedTargetPackage.sessions)
-      : Number(selectedTargetPackage.fee ?? 0)
-    : 0;
+  const targetPackageSessionCount = getPackageSessionCount(selectedTargetPackage);
+  const targetSessionPrice = getPackageBaseSessionPrice(selectedTargetPackage);
+  const targetBaseTotal = getPackageBaseTotal(
+    selectedTargetPackage,
+    targetSessionPrice * targetPackageSessionCount,
+  );
+  const targetTotalAfterDiscount = targetBaseTotal;
   const targetTotal = targetSessionPrice * transferCount;
 
   // Financial difference
@@ -383,12 +434,45 @@ export function TransferClassDialog({
 
                   {/* Fee summary - current class */}
                   <div className="rounded-md border bg-muted/40 p-3 space-y-1.5 text-sm">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center gap-3">
                       <span className="text-muted-foreground">Gói học phí:</span>
-                      <span className="font-medium">{currentFeePackage?.name || "—"}</span>
+                      <span className="font-medium text-right">
+                        {currentFeePackage?.name || "—"}
+                        {packageTypeLabel(currentFeePackage) && (
+                          <Badge variant="outline" className="ml-2 text-[10px] px-1.5 py-0">
+                            {packageTypeLabel(currentFeePackage)}
+                          </Badge>
+                        )}
+                      </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Học phí áp dụng:</span>
+                      <span className="text-muted-foreground">Tổng học phí:</span>
+                      <span className="font-medium">
+                        {currentBaseTotal > 0 ? formatCurrency(currentBaseTotal) : "—"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Giảm trừ:</span>
+                      <span className="font-medium">
+                        {currentDiscountAmount > 0
+                          ? `${formatCurrency(currentDiscountAmount)}${formatPercent(currentDiscountPercent) ? ` (${formatPercent(currentDiscountPercent)})` : ""}`
+                          : "0đ"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Sau giảm trừ:</span>
+                      <span className="font-medium">
+                        {currentNetTotal > 0 ? formatCurrency(currentNetTotal) : "—"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Số buổi của gói:</span>
+                      <span className="font-medium">
+                        {currentPackageSessionCount > 0 ? `${currentPackageSessionCount} buổi` : "—"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Đơn giá sau giảm:</span>
                       <span className="font-medium">
                         {currentSessionPrice > 0 ? formatCurrency(currentSessionPrice) + "/buổi" : "—"}
                       </span>
@@ -483,24 +567,31 @@ export function TransferClassDialog({
 
                   {/* Fee summary - new class */}
                   <div className="rounded-md border bg-muted/40 p-3 space-y-1.5 text-sm">
-                    <div className="flex justify-between items-center">
+                    <div className="flex justify-between items-center gap-3">
                       <span className="text-muted-foreground">Gói học phí:</span>
                       {selectedToClassId && targetFeePackages.length > 0 ? (
-                        <Select
-                          value={selectedTargetPackageId}
-                          onValueChange={setSelectedTargetPackageId}
-                        >
-                          <SelectTrigger className="h-7 w-auto min-w-[140px] text-xs border-0 shadow-none bg-transparent p-0 pr-6 font-medium" data-testid="select-target-package">
-                            <SelectValue placeholder="Chọn gói" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {targetFeePackages.map((p) => (
-                              <SelectItem key={p.id} value={p.id} className="text-xs">
-                                {p.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <div className="flex items-center gap-2">
+                          <Select
+                            value={selectedTargetPackageId}
+                            onValueChange={setSelectedTargetPackageId}
+                          >
+                            <SelectTrigger className="h-7 w-auto min-w-[140px] text-xs border-0 shadow-none bg-transparent p-0 pr-6 font-medium" data-testid="select-target-package">
+                              <SelectValue placeholder="Chọn gói" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {targetFeePackages.map((p) => (
+                                <SelectItem key={p.id} value={p.id} className="text-xs">
+                                  {p.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {packageTypeLabel(selectedTargetPackage) && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">
+                              {packageTypeLabel(selectedTargetPackage)}
+                            </Badge>
+                          )}
+                        </div>
                       ) : (
                         <span className="font-medium text-muted-foreground">
                           {selectedToClassId ? "Không có gói" : "—"}
@@ -508,7 +599,29 @@ export function TransferClassDialog({
                       )}
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Học phí áp dụng:</span>
+                      <span className="text-muted-foreground">Tổng học phí:</span>
+                      <span className="font-medium">
+                        {targetBaseTotal > 0 ? formatCurrency(targetBaseTotal) : "—"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Giảm trừ:</span>
+                      <span className="font-medium">0đ</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Sau giảm trừ:</span>
+                      <span className="font-medium">
+                        {targetTotalAfterDiscount > 0 ? formatCurrency(targetTotalAfterDiscount) : "—"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Số buổi của gói:</span>
+                      <span className="font-medium">
+                        {targetPackageSessionCount > 0 ? `${targetPackageSessionCount} buổi` : "—"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Đơn giá sau giảm:</span>
                       <span className="font-medium">
                         {targetSessionPrice > 0 ? formatCurrency(targetSessionPrice) + "/buổi" : "—"}
                       </span>
