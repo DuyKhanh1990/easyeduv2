@@ -302,6 +302,10 @@ export function TransferClassDialog({
   const effectiveTransferCount = selectedToClassId && !loadingTarget
     ? Math.min(transferCount, targetAvailableCount)
     : transferCount;
+  const currentAvailableSessionCount = (currentSessions ?? []).filter((session) => {
+    const sessionIndex = Number(session.classSession?.sessionIndex ?? session.sessionIndex);
+    return Number.isFinite(sessionIndex) && sessionIndex >= Number(fromSessionIndex);
+  }).length;
   const targetSessionShortfall =
     Boolean(selectedToClassId)
     && !loadingTarget
@@ -689,6 +693,17 @@ export function TransferClassDialog({
   });
 
   const onSubmit = (values: TransferFormValues) => {
+    if (
+      currentAvailableSessionCount > 0
+      && transferCount > currentAvailableSessionCount
+    ) {
+      toast({
+        title: "Số buổi chuyển không hợp lệ",
+        description: `Từ buổi ${fromSessionIndex} chỉ còn ${currentAvailableSessionCount} buổi có thể chuyển.`,
+        variant: "destructive",
+      });
+      return;
+    }
     if (selectedToClassId && !loadingTarget && targetAvailableCount <= 0) {
       toast({
         title: "Không thể chuyển lớp",
@@ -811,9 +826,22 @@ export function TransferClassDialog({
                               type="number"
                               {...field}
                               min={1}
+                              max={currentAvailableSessionCount > 0 ? currentAvailableSessionCount : undefined}
+                              onChange={(event) => {
+                                const rawValue = Number(event.target.value);
+                                const cappedValue = currentAvailableSessionCount > 0
+                                  ? Math.min(rawValue, currentAvailableSessionCount)
+                                  : rawValue;
+                                field.onChange(Number.isFinite(cappedValue) ? cappedValue : 0);
+                              }}
                               data-testid="input-transfer-count"
                             />
                           </FormControl>
+                          {currentAvailableSessionCount > 0 && (
+                            <p className="text-[11px] text-muted-foreground">
+                              Tối đa {currentAvailableSessionCount} buổi còn lại từ mốc đã chọn.
+                            </p>
+                          )}
                           <FormMessage />
                         </FormItem>
                       )}
