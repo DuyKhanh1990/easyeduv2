@@ -927,14 +927,6 @@ export function ScheduleTabContent({
         }}
       >
         <DialogContent className="max-w-full w-full min-h-[100dvh] h-[100dvh] max-h-[100dvh] p-0 flex flex-col rounded-none">
-          {/* Header */}
-          <DialogHeader className="px-6 pt-5 pb-4 border-b shrink-0">
-            <DialogTitle className="text-base">Đổi gói học phí</DialogTitle>
-            <DialogDescription className="text-xs">
-              Đổi gói học phí cho {selectedStudentIds.length} học viên được chọn
-            </DialogDescription>
-          </DialogHeader>
-
           {/* Two-panel body */}
           <div className="flex flex-1 min-h-0 divide-x divide-border overflow-hidden">
 
@@ -1017,7 +1009,7 @@ export function ScheduleTabContent({
                 </div>
 
                 {/* Old package table */}
-                <div className="space-y-2">
+                <div className="h-[112px] shrink-0 space-y-2">
                   <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Danh sách học viên</p>
                   <div className="border border-border rounded-lg overflow-auto">
                     <table className="w-full text-xs min-w-[420px]">
@@ -1081,7 +1073,7 @@ export function ScheduleTabContent({
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {/* Bulk apply */}
-                <div className="space-y-2">
+                <div className="h-[112px] shrink-0 space-y-2">
                   <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Áp dụng chung cho tất cả học viên (tùy chọn)</p>
                   <Select value={bulkNewPkgId} onValueChange={(v) => {
                     setBulkNewPkgId(v);
