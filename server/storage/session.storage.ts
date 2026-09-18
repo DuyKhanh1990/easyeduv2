@@ -512,6 +512,11 @@ export async function transferStudentClass(data: {
     if (oldSessionCandidates.length === 0) {
       throw new Error("Không tìm thấy buổi học học viên để chuyển");
     }
+    if (data.transferCount > oldSessionCandidates.length) {
+      throw new Error(
+        `Từ buổi ${data.fromSessionIndex} chỉ còn ${oldSessionCandidates.length} buổi có thể chuyển`,
+      );
+    }
 
     const targetSessionCandidates = await tx.select()
       .from(classSessions)
