@@ -457,8 +457,8 @@ export async function transferStudentClass(data: {
   refundToDepositAmount?: number;
   refundDescription?: string;
   createdByName?: string | null;
-}): Promise<void> {
-  await db.transaction(async (tx) => {
+}): Promise<{ transferCount: number }> {
+  return db.transaction(async (tx) => {
     const refundAmount = data.refundToDepositAmount == null
       ? 0
       : Number(data.refundToDepositAmount);
@@ -493,7 +493,7 @@ export async function transferStudentClass(data: {
       }
     }
 
-    const oldSessions = await tx.select({
+    const oldSessionCandidates = await tx.select({
       id: studentSessions.id,
       studentClassId: studentSessions.studentClassId,
       sessionIndex: classSessions.sessionIndex,
@@ -509,13 +509,11 @@ export async function transferStudentClass(data: {
     .orderBy(asc(classSessions.sessionIndex))
     .limit(data.transferCount);
 
-    if (oldSessions.length === 0) {
+    if (oldSessionCandidates.length === 0) {
       throw new Error("Không tìm thấy buổi học học viên để chuyển");
     }
 
-    const studentClassId = oldSessions[0].studentClassId;
-
-    const targetClassSessions = await tx.select()
+    const targetSessionCandidates = await tx.select()
       .from(classSessions)
       .where(and(
         eq(classSessions.classId, data.toClassId),
@@ -525,9 +523,18 @@ export async function transferStudentClass(data: {
       .orderBy(asc(classSessions.sessionIndex))
       .limit(data.transferCount);
 
-    if (targetClassSessions.length < data.transferCount) {
-      throw new Error(`Lớp mới không đủ ${data.transferCount} buổi học để chuyển vào (chỉ còn ${targetClassSessions.length} buổi)`);
+    if (targetSessionCandidates.length === 0) {
+      throw new Error("Lớp mới không còn buổi học khả dụng từ buổi đã chọn");
     }
+
+    const effectiveTransferCount = Math.min(
+      data.transferCount,
+      oldSessionCandidates.length,
+      targetSessionCandidates.length,
+    );
+    const oldSessions = oldSessionCandidates.slice(0, effectiveTransferCount);
+    const targetClassSessions = targetSessionCandidates.slice(0, effectiveTransferCount);
+    const studentClassId = oldSessions[0].studentClassId;
 
     let [targetStudentClass] = await tx.select()
       .from(studentClasses)
@@ -642,6 +649,7 @@ export async function transferStudentClass(data: {
         },
       ]);
     }
+    return { transferCount: effectiveTransferCount };
   });
 }
 

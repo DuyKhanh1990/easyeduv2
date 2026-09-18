@@ -292,6 +292,22 @@ export function TransferClassDialog({
     enabled: !!selectedToClassId,
   });
 
+  const targetAvailableSessions = (targetSessions ?? []).filter((session) => {
+    const sessionIndex = Number(session.sessionIndex);
+    return Number.isFinite(sessionIndex)
+      && sessionIndex >= Number(toSessionIndex)
+      && session.status === "scheduled";
+  });
+  const targetAvailableCount = targetAvailableSessions.length;
+  const effectiveTransferCount = selectedToClassId && !loadingTarget
+    ? Math.min(transferCount, targetAvailableCount)
+    : transferCount;
+  const targetSessionShortfall =
+    Boolean(selectedToClassId)
+    && !loadingTarget
+    && targetAvailableCount > 0
+    && targetAvailableCount < transferCount;
+
   // Auto-calculate transferCount = number of sessions from selected index to end
   useEffect(() => {
     if (!currentSessions || currentSessions.length === 0) return;
@@ -513,7 +529,7 @@ export function TransferClassDialog({
     : hasCurrentPackagePrice
     ? Math.max(0, currentBaseSessionPrice - currentDiscountPerSession)
     : currentStoredSessionPrice;
-  const exactCurrentTotal = currentSessionPrice * transferCount;
+  const exactCurrentTotal = currentSessionPrice * effectiveTransferCount;
   const currentTotal = roundingMode === "down"
     ? Math.floor(exactCurrentTotal)
     : roundingMode === "up"
@@ -543,7 +559,7 @@ export function TransferClassDialog({
   const targetSessionPrice = targetPackageSessionCount > 0
     ? Number((targetTotalAfterDiscount / targetPackageSessionCount).toFixed(2))
     : getPackageBaseSessionPrice(selectedTargetPackage);
-  const targetTotal = targetSessionPrice * transferCount;
+  const targetTotal = targetSessionPrice * effectiveTransferCount;
 
   // Financial difference
   const diff = targetTotal - currentTotal;
@@ -596,9 +612,9 @@ export function TransferClassDialog({
       : `Do học phí 2 lớp bằng nhau`;
 
     if (diff >= 0) {
-      return `Thu tiền Chuyển lớp ${fromName}, ${transferCount} buổi bắt đầu từ ${fromLabel} Sang Lớp ${toName}, ${transferCount} buổi bắt đầu từ ${toLabel}. ${suffix}`;
+      return `Thu tiền Chuyển lớp ${fromName}, ${effectiveTransferCount} buổi bắt đầu từ ${fromLabel} Sang Lớp ${toName}, ${effectiveTransferCount} buổi bắt đầu từ ${toLabel}. ${suffix}`;
     } else {
-      return `Hoàn tiền Chuyển lớp ${fromName}, ${transferCount} buổi bắt đầu từ ${fromLabel} Sang Lớp ${toName}, ${transferCount} buổi bắt đầu từ ${toLabel}. ${suffix}`;
+      return `Hoàn tiền Chuyển lớp ${fromName}, ${effectiveTransferCount} buổi bắt đầu từ ${fromLabel} Sang Lớp ${toName}, ${effectiveTransferCount} buổi bắt đầu từ ${toLabel}. ${suffix}`;
     }
   };
 
@@ -673,6 +689,22 @@ export function TransferClassDialog({
   });
 
   const onSubmit = (values: TransferFormValues) => {
+    if (selectedToClassId && !loadingTarget && targetAvailableCount <= 0) {
+      toast({
+        title: "Không thể chuyển lớp",
+        description: "Lớp mới không còn buổi học khả dụng từ buổi bắt đầu đã chọn.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (selectedToClassId && loadingTarget) {
+      toast({
+        title: "Đang tải lịch lớp mới",
+        description: "Vui lòng chờ hệ thống tải xong lịch lớp mới rồi thử lại.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (shouldRefundToDeposit && (loadingFeeWallet || insufficientTuitionWallet)) {
       toast({
         title: "Không thể chuyển lớp",
@@ -683,14 +715,17 @@ export function TransferClassDialog({
       });
       return;
     }
-    transferMutation.mutate(values);
+    transferMutation.mutate({
+      ...values,
+      transferCount: effectiveTransferCount,
+    });
   };
 
   const isPending = transferMutation.isPending || createInvoiceMutation.isPending;
 
   if (!student || !currentClass) return null;
 
-  const showFinancial = selectedToClassId && currentSessionPrice > 0 && targetSessionPrice > 0 && transferCount > 0;
+  const showFinancial = selectedToClassId && currentSessionPrice > 0 && targetSessionPrice > 0 && effectiveTransferCount > 0;
 
   return (
     <>
@@ -847,16 +882,16 @@ export function TransferClassDialog({
                       <span className="font-medium">Thành tiền:</span>
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-foreground">
-                          {transferCount > 0 && currentSessionPrice > 0 ? (
+                          {effectiveTransferCount > 0 && currentSessionPrice > 0 ? (
                             <span className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                               <span className="text-[11px] font-normal text-muted-foreground whitespace-nowrap">
-                                ({formatCurrencyValue(currentSessionPrice)} x {transferCount})
+                                ({formatCurrencyValue(currentSessionPrice)} x {effectiveTransferCount})
                               </span>
                               <span>{formatCurrency(currentTotal)}</span>
                             </span>
                           ) : "—"}
                         </span>
-                        {transferCount > 0 && currentSessionPrice > 0 && (
+                        {effectiveTransferCount > 0 && currentSessionPrice > 0 && (
                           <Select
                             value={roundingMode}
                             onValueChange={(value) => setRoundingMode(value as "none" | "down" | "up")}
@@ -991,7 +1026,7 @@ export function TransferClassDialog({
                             </FormControl>
                             <SelectContent>
                               {targetSessions?.map((s) => {
-                                if (s.sessionIndex == null || !s.sessionDate) return null;
+                                if (s.sessionIndex == null || !s.sessionDate || s.status !== "scheduled") return null;
                                 return (
                                   <SelectItem key={s.id} value={s.sessionIndex.toString()}>
                                     Buổi {s.sessionIndex}: {getDayName(new Date(s.sessionDate).getDay())}, {format(new Date(s.sessionDate), "dd/MM/yyyy")}
@@ -1005,6 +1040,20 @@ export function TransferClassDialog({
                       )}
                     />
                   </div>
+                  {targetSessionShortfall && (
+                    <div className="flex items-start gap-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+                      <span className="font-semibold">Cảnh báo:</span>
+                      <span>
+                        Lớp mới có {targetAvailableCount} buổi có thể chuyển ít hơn số buổi lớp cũ đang chọn.
+                        Hệ thống sẽ chỉ chuyển {targetAvailableCount} buổi sang lớp mới.
+                      </span>
+                    </div>
+                  )}
+                  {selectedToClassId && !loadingTarget && targetAvailableCount === 0 && (
+                    <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+                      Lớp mới không còn buổi học khả dụng từ buổi bắt đầu đã chọn.
+                    </div>
+                  )}
 
                   {/* Fee summary - new class */}
                   <div className="rounded-md border bg-muted/40 p-3 space-y-1.5 text-sm">
@@ -1260,10 +1309,10 @@ export function TransferClassDialog({
                     <div className="flex justify-between border-t pt-1.5 mt-1">
                       <span className="font-medium">Thành tiền:</span>
                       <span className="font-semibold text-foreground">
-                        {transferCount > 0 && targetSessionPrice > 0 ? (
+                        {effectiveTransferCount > 0 && targetSessionPrice > 0 ? (
                           <span className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                             <span className="text-[11px] font-normal text-muted-foreground whitespace-nowrap">
-                              ({formatCurrencyValue(targetSessionPrice)} x {transferCount})
+                              ({formatCurrencyValue(targetSessionPrice)} x {effectiveTransferCount})
                             </span>
                             <span>{formatCurrency(targetTotal)}</span>
                           </span>
