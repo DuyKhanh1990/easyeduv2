@@ -81,11 +81,13 @@ interface TransferClassDialogProps {
   };
 }
 
-const formatCurrency = (amount: number) =>
+const formatCurrencyValue = (amount: number) =>
   new Intl.NumberFormat("vi-VN", {
     minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
     maximumFractionDigits: 2,
-  }).format(amount) + "đ";
+  }).format(amount);
+
+const formatCurrency = (amount: number) => formatCurrencyValue(amount) + "đ";
 
 const formatPercent = (value: number | null | undefined) => {
   if (value == null || !Number.isFinite(value) || value <= 0) return "";
@@ -550,9 +552,14 @@ export function TransferClassDialog({
                       <span className="font-medium">Thành tiền:</span>
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-foreground">
-                          {transferCount > 0 && currentSessionPrice > 0
-                            ? formatCurrency(currentTotal)
-                            : "—"}
+                          {transferCount > 0 && currentSessionPrice > 0 ? (
+                            <span className="flex flex-col items-end">
+                              <span>{formatCurrency(currentTotal)}</span>
+                              <span className="text-[11px] font-normal text-muted-foreground whitespace-nowrap">
+                                ({formatCurrencyValue(currentSessionPrice)} x {transferCount})
+                              </span>
+                            </span>
+                          ) : "—"}
                         </span>
                         {transferCount > 0 && currentSessionPrice > 0 && (
                           <Select
@@ -765,9 +772,14 @@ export function TransferClassDialog({
                     <div className="flex justify-between border-t pt-1.5 mt-1">
                       <span className="font-medium">Thành tiền:</span>
                       <span className="font-semibold text-foreground">
-                        {transferCount > 0 && targetSessionPrice > 0
-                          ? formatCurrency(targetTotal)
-                          : "—"}
+                        {transferCount > 0 && targetSessionPrice > 0 ? (
+                          <span className="flex flex-col items-end">
+                            <span>{formatCurrency(targetTotal)}</span>
+                            <span className="text-[11px] font-normal text-muted-foreground whitespace-nowrap">
+                              ({formatCurrencyValue(targetSessionPrice)} x {transferCount})
+                            </span>
+                          </span>
+                        ) : "—"}
                       </span>
                     </div>
                   </div>
