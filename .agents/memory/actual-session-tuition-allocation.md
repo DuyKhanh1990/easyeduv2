@@ -7,4 +7,4 @@ Với gói khóa, `course_fee_packages.sessions` là số buổi cấu hình tha
 
 **Why:** Một gói 5.000.000đ cấu hình 20 buổi có thể được đăng ký thực tế 49 buổi; trong trường hợp đó hóa đơn phân bổ 4.500.000đ trên 49 buổi, tương đương 91.836,73đ/buổi.
 
-**How to apply:** Ở các màn hình hiển thị hoặc tính chuyển lớp, ưu tiên `invoice_session_allocations.allocated_amount`/`pricing.allocatedFee` cho học viên đã có hóa đơn. Giữ package total và tổng promotion theo hóa đơn; chỉ dùng giá gói làm fallback khi chưa có allocation.
+**How to apply:** Ở các màn hình hiển thị hoặc tính chuyển lớp, ưu tiên `invoice_session_allocations.allocated_amount`/`pricing.allocatedFee` cho học viên đã có hóa đơn. Giữ package total và tổng promotion theo hóa đơn; chỉ dùng giá gói làm fallback khi chưa có allocation. Khi thu tiền, làm tròn chỉ xử lý phần thập phân của đồng: bỏ phần lẻ hoặc làm tròn lên, không tự làm tròn theo 10.000đ/100.000đ.
