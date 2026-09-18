@@ -1305,35 +1305,38 @@ export function ScheduleTabContent({
             <div className="rounded-lg border border-border bg-background p-3 space-y-3">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-sm font-medium text-foreground">Tự động sinh hóa đơn điều chỉnh</p>
-                  <p className="text-xs text-muted-foreground">
-                    Bật để tạo Phiếu thu/Phiếu chi ngay sau khi cập nhật gói.
-                  </p>
+                  <p className="text-sm font-medium text-foreground">Hóa đơn tự động</p>
+                  {autoGenerateInvoice && (
+                    <p className="text-xs text-muted-foreground">
+                      Bật để tạo Phiếu thu/Phiếu chi ngay sau khi cập nhật gói.
+                    </p>
+                  )}
                 </div>
                 <Switch
                   checked={autoGenerateInvoice}
                   onCheckedChange={setAutoGenerateInvoice}
-                  aria-label="Tự động sinh hóa đơn điều chỉnh"
+                  aria-label="Hóa đơn tự động"
                 />
               </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-foreground">
-                  Nội dung ghi chú trên hóa đơn
-                </label>
-                <Textarea
-                  value={invoiceDescription}
-                  onChange={(event) => {
-                    setInvoiceDescription(event.target.value);
-                    setInvoiceDescriptionEdited(true);
-                  }}
-                  placeholder="Nội dung sẽ hiển thị trên hóa đơn điều chỉnh..."
-                  className="min-h-[56px] text-xs resize-none"
-                  disabled={!autoGenerateInvoice}
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  Nội dung này có thể sửa trước khi xuất hóa đơn.
-                </p>
-              </div>
+              {autoGenerateInvoice && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-foreground">
+                    Nội dung ghi chú trên hóa đơn
+                  </label>
+                  <Textarea
+                    value={invoiceDescription}
+                    onChange={(event) => {
+                      setInvoiceDescription(event.target.value);
+                      setInvoiceDescriptionEdited(true);
+                    }}
+                    placeholder="Nội dung sẽ hiển thị trên hóa đơn điều chỉnh..."
+                    className="min-h-[56px] text-xs resize-none"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Nội dung này có thể sửa trước khi xuất hóa đơn.
+                  </p>
+                </div>
+              )}
             </div>
             {/* Tổng tiền summary */}
             <div className="flex items-center gap-6 flex-wrap">
