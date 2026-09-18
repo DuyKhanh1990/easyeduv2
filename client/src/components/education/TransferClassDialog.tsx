@@ -51,6 +51,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 
@@ -885,20 +886,37 @@ export function TransferClassDialog({
             )}
 
             {diff < 0 && showFinancial && (
-              <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/30 p-3">
                 <span className="text-sm font-medium">Cách hoàn tiền</span>
-                <Select
+                <RadioGroup
                   value={refundMethod}
                   onValueChange={(value) => setRefundMethod(value as "invoice" | "deposit")}
+                  className="flex flex-wrap items-center gap-x-5 gap-y-2"
+                  aria-label="Cách hoàn tiền"
                 >
-                  <SelectTrigger className="h-8 w-auto min-w-[190px] text-xs" data-testid="select-refund-method">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="invoice" className="text-xs">Xuất Phiếu chi</SelectItem>
-                    <SelectItem value="deposit" className="text-xs">Chuyển vào ví cọc</SelectItem>
-                  </SelectContent>
-                </Select>
+                  <label
+                    htmlFor="refund-method-invoice"
+                    className="flex cursor-pointer items-center gap-2 text-xs"
+                  >
+                    <RadioGroupItem
+                      value="invoice"
+                      id="refund-method-invoice"
+                      data-testid="radio-refund-method-invoice"
+                    />
+                    <span>Xuất Phiếu chi</span>
+                  </label>
+                  <label
+                    htmlFor="refund-method-deposit"
+                    className="flex cursor-pointer items-center gap-2 text-xs"
+                  >
+                    <RadioGroupItem
+                      value="deposit"
+                      id="refund-method-deposit"
+                      data-testid="radio-refund-method-deposit"
+                    />
+                    <span>Chuyển vào ví cọc</span>
+                  </label>
+                </RadioGroup>
               </div>
             )}
 
