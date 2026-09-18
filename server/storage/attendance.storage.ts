@@ -4,7 +4,12 @@ import {
   classSessions, studentSessions, classes,
 } from "./base";
 
-import { attendanceFeeRules, invoiceSessionAllocations, studentWalletTransactions } from "@shared/schema";
+import {
+  attendanceFeeRules,
+  invoiceSessionAllocations,
+  studentWalletTransactions,
+  tuitionPackageSessionAdjustments,
+} from "@shared/schema";
 import { recalculateStudentClass, batchRecalculateStudentClasses } from "./session.storage";
 import { createWalletEntry } from "./wallet.storage";
 
@@ -26,15 +31,23 @@ async function getClassName(classId: string | null | undefined): Promise<string 
 }
 
 async function getEffectiveSessionPrice(studentSessionId: string, fallbackPrice: number): Promise<number> {
-  const allocations = await db
-    .select({ allocatedAmount: invoiceSessionAllocations.allocatedAmount })
-    .from(invoiceSessionAllocations)
-    .where(eq(invoiceSessionAllocations.studentSessionId, studentSessionId));
-  if (allocations.length > 0) {
-    const total = allocations.reduce((sum, a) => sum + Number(a.allocatedAmount), 0);
-    return total;
-  }
-  return fallbackPrice;
+  const [allocations, overrides] = await Promise.all([
+    db
+      .select({ amount: invoiceSessionAllocations.allocatedAmount })
+      .from(invoiceSessionAllocations)
+      .where(eq(invoiceSessionAllocations.studentSessionId, studentSessionId)),
+    db
+      .select({ amount: tuitionPackageSessionAdjustments.effectiveAmount })
+      .from(tuitionPackageSessionAdjustments)
+      .where(eq(tuitionPackageSessionAdjustments.studentSessionId, studentSessionId))
+      .orderBy(sql`${tuitionPackageSessionAdjustments.appliedSequence} desc`)
+      .limit(1),
+  ]);
+  if (overrides.length > 0) return Number(overrides[0].amount);
+  const base = allocations.length > 0
+    ? allocations.reduce((sum, row) => sum + Number(row.amount), 0)
+    : fallbackPrice;
+  return base;
 }
 
 // ---------------------------------------------------------------------------
@@ -261,7 +274,7 @@ export async function bulkUpdateAttendance(
     ? `Buổi ${classSession.sessionIndex}`
     : "Buổi học";
 
-  const [className, allocationRows] = await Promise.all([
+  const [className, allocationRows, packageAdjustmentRows] = await Promise.all([
     classId ? getClassName(classId) : Promise.resolve(null),
     db
       .select({
@@ -270,6 +283,15 @@ export async function bulkUpdateAttendance(
       })
       .from(invoiceSessionAllocations)
       .where(inArray(invoiceSessionAllocations.studentSessionId, studentSessionIds)),
+    db
+      .select({
+        studentSessionId: tuitionPackageSessionAdjustments.studentSessionId,
+        allocatedAmount: tuitionPackageSessionAdjustments.effectiveAmount,
+        appliedSequence: tuitionPackageSessionAdjustments.appliedSequence,
+      })
+      .from(tuitionPackageSessionAdjustments)
+      .where(inArray(tuitionPackageSessionAdjustments.studentSessionId, studentSessionIds))
+      .orderBy(tuitionPackageSessionAdjustments.appliedSequence),
   ]);
 
   const allocationMap = new Map<string, number>();
@@ -280,6 +302,9 @@ export async function bulkUpdateAttendance(
         (allocationMap.get(row.studentSessionId) ?? 0) + Number(row.allocatedAmount),
       );
     }
+  }
+  for (const row of packageAdjustmentRows) {
+    allocationMap.set(row.studentSessionId, Number(row.allocatedAmount));
   }
 
   // ── 5. Atomic transaction: update điểm danh + ghi ví ──────────────────

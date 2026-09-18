@@ -5,7 +5,7 @@ import {
   eq, sql, and, or, inArray, asc, desc, gte,
   classSessions, studentClasses, studentSessions,
   classes, classSessionExclusions, sessionContents, students,
-  invoices, invoiceItems, invoiceSessionAllocations, shiftTemplates, courseFeePackages,
+  invoices, invoiceItems, invoiceSessionAllocations, tuitionPackageSessionAdjustments, shiftTemplates, courseFeePackages,
   financePromotions,
   format, parseISO,
   getDayName,
@@ -1852,6 +1852,23 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
       current.discountPercent = (current.discountPercent ?? 0) + percent;
     }
 
+    pricingBySession.set(row.studentSessionId, current);
+  }
+  const packageAdjustmentRows = await db.select({
+    studentSessionId: tuitionPackageSessionAdjustments.studentSessionId,
+    amount: tuitionPackageSessionAdjustments.effectiveAmount,
+    appliedSequence: tuitionPackageSessionAdjustments.appliedSequence,
+  })
+    .from(tuitionPackageSessionAdjustments)
+    .where(inArray(tuitionPackageSessionAdjustments.studentSessionId, sessionIds))
+    .orderBy(tuitionPackageSessionAdjustments.appliedSequence);
+  for (const row of packageAdjustmentRows) {
+    const current = pricingBySession.get(row.studentSessionId) ?? {
+      allocatedFee: Number(rows.find((session) => session.id === row.studentSessionId)?.sessionPrice ?? 0),
+      discountAmount: 0,
+      discountPercent: null,
+    };
+    current.allocatedFee = Number(row.amount) || 0;
     pricingBySession.set(row.studentSessionId, current);
   }
 

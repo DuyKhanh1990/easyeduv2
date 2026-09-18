@@ -274,7 +274,11 @@ export function ScheduleTabContent({
     return { min, max, count };
   }, [fromSessionId, toSessionId, classSessions, selectedStudentIds, firstStudentSessions, sessionsForDropdown]);
 
-  const { data: studentAllocatedFees = {} } = useQuery<Record<string, string>>({
+  const { data: studentAllocatedFees = {} } = useQuery<Record<string, {
+    total: string;
+    average: string;
+    count: number;
+  }>>({
     queryKey: [`/api/classes/${classId}/student-allocated-fees`, tuitionSessionRange.min, tuitionSessionRange.max],
     queryFn: () => fetch(`/api/classes/${classId}/student-allocated-fees?fromOrder=${tuitionSessionRange.min}&toOrder=${tuitionSessionRange.max}`).then(r => r.json()),
     enabled: isChangeTuitionPackageDialogOpen && tuitionSessionRange.count > 0,
@@ -291,14 +295,18 @@ export function ScheduleTabContent({
     if (!selectedStudentIds.length || !currentSessionStudents) return { oldTotal: 0, newTotal: 0, diff: 0 };
     let oldTotal = 0;
     let newTotal = 0;
-    const count = tuitionSessionRange.count;
     for (const sid of selectedStudentIds) {
-      const oldPrice = parseFloat(studentAllocatedFees[sid] ?? "0") || 0;
-      oldTotal += oldPrice * count;
+      const allocation = studentAllocatedFees[sid];
+      const oldAmount = parseFloat(allocation?.total ?? "0") || 0;
+      const count = allocation?.count ?? tuitionSessionRange.count;
+      oldTotal += oldAmount;
 
       const newPkgId = bulkNewPkgId || studentNewPkgIds[sid] || "";
       const newPkg = feePackages?.find((p: any) => p.id === newPkgId);
-      const newPriceBase = parseFloat(newPkg?.fee ?? "0") || 0;
+      const isPerSessionPackage = newPkg?.type === "buổi";
+      const newPriceBase = isPerSessionPackage
+        ? parseFloat(newPkg?.fee ?? "0") || 0
+        : parseFloat(newPkg?.totalAmount ?? newPkg?.fee ?? "0") || 0;
 
       const discounts = (studentDiscountIds[sid] ?? []).map((id: string) => promotionOptions.find((p: any) => p.id === id)).filter(Boolean);
       const surcharges = (studentSurchargeIds[sid] ?? []).map((id: string) => surchargeOptions.find((p: any) => p.id === id)).filter(Boolean);
@@ -314,7 +322,7 @@ export function ScheduleTabContent({
         else surchargeAmt += parseFloat(s.valueAmount) || 0;
       }
       const newApplied = Math.max(0, newPriceBase - discountAmt + surchargeAmt);
-      newTotal += newApplied * count;
+      newTotal += newApplied * (isPerSessionPackage ? count : 1);
     }
     return { oldTotal, newTotal, diff: newTotal - oldTotal };
   }, [selectedStudentIds, currentSessionStudents, tuitionSessionRange, bulkNewPkgId, studentNewPkgIds, studentDiscountIds, studentSurchargeIds, feePackages, promotionOptions, surchargeOptions, studentAllocatedFees]);
@@ -990,9 +998,10 @@ export function ScheduleTabContent({
                           const student = currentSessionStudents?.find((s: any) => s.studentId === studentId);
                           const currentPkg = feePackages?.find((p: any) => p.id === student?.packageId);
                           const currentPkgName = currentPkg?.name || (student?.packageType ? student.packageType : "—");
-                          const allocatedFeePerSession = parseFloat(studentAllocatedFees[studentId] ?? "0") || 0;
-                          const sessCount = tuitionSessionRange.count;
-                          const oldThanhTien = allocatedFeePerSession * sessCount;
+                          const allocation = studentAllocatedFees[studentId];
+                          const allocatedFeePerSession = parseFloat(allocation?.average ?? "0") || 0;
+                          const sessCount = allocation?.count ?? tuitionSessionRange.count;
+                          const oldThanhTien = parseFloat(allocation?.total ?? "0") || 0;
                           return (
                             <tr key={studentId} className="border-b border-border hover:bg-muted/30 transition-colors">
                               <td className="px-3 py-2.5 font-medium text-foreground whitespace-nowrap">
@@ -1079,7 +1088,11 @@ export function ScheduleTabContent({
                           const student = currentSessionStudents?.find((s: any) => s.studentId === studentId);
                           const effectivePkgId = (bulkNewPkgId && bulkNewPkgId !== "__none__") ? bulkNewPkgId : (studentNewPkgIds[studentId] || "");
                           const newPkg = feePackages?.find((p: any) => p.id === effectivePkgId);
-                          const newFeeBase = parseFloat(newPkg?.fee ?? "0") || 0;
+                          const sessCount = studentAllocatedFees[studentId]?.count ?? tuitionSessionRange.count;
+                          const isPerSessionPackage = newPkg?.type === "buổi";
+                          const newFeeBase = isPerSessionPackage
+                            ? parseFloat(newPkg?.fee ?? "0") || 0
+                            : parseFloat(newPkg?.totalAmount ?? newPkg?.fee ?? "0") || 0;
 
                           const discIds = studentDiscountIds[studentId] ?? [];
                           const surchIds = studentSurchargeIds[studentId] ?? [];
@@ -1093,9 +1106,9 @@ export function ScheduleTabContent({
                             const s = surchargeOptions.find((p: any) => p.id === sid);
                             if (s) surchAmt += s.valueType === "percent" ? newFeeBase * parseFloat(s.valueAmount) / 100 : parseFloat(s.valueAmount) || 0;
                           }
-                          const newApplied = Math.max(0, newFeeBase - discAmt + surchAmt);
-                          const sessCount = tuitionSessionRange.count;
-                          const newThanhTien = newApplied * sessCount;
+                          const adjustedPackageAmount = Math.max(0, newFeeBase - discAmt + surchAmt);
+                          const newThanhTien = adjustedPackageAmount * (isPerSessionPackage ? sessCount : 1);
+                          const newApplied = sessCount > 0 ? newThanhTien / sessCount : 0;
 
                           return (
                             <tr key={studentId} className="border-b border-border hover:bg-muted/30 transition-colors">
@@ -1295,11 +1308,6 @@ export function ScheduleTabContent({
               <Button
                 size="sm"
                 onClick={() => {
-                  const packageId = (bulkNewPkgId && bulkNewPkgId !== "__none__") ? bulkNewPkgId : (bulkPackageSelection || Object.values(studentNewPkgIds)[0] || Object.values(studentPackageSelections)[0]);
-                  if (!packageId) {
-                    toast({ title: "Lỗi", description: "Vui lòng chọn gói học phí mới", variant: "destructive" });
-                    return;
-                  }
                   if (!fromSessionId || !toSessionId) {
                     toast({ title: "Lỗi", description: "Vui lòng chọn khoảng buổi học", variant: "destructive" });
                     return;
@@ -1317,10 +1325,31 @@ export function ScheduleTabContent({
                     toast({ title: "Lỗi", description: "Không tìm thấy thông tin lớp học của học viên", variant: "destructive" });
                     return;
                   }
+                  const changes = selectedStudentIds.map((studentId) => {
+                    const studentClassId = currentSessionStudents?.find((s: any) => s.studentId === studentId)?.studentClassId;
+                    const packageId = (bulkNewPkgId && bulkNewPkgId !== "__none__")
+                      ? bulkNewPkgId
+                      : studentNewPkgIds[studentId];
+                    return {
+                      student_class_id: studentClassId,
+                      package_id: packageId,
+                      promotion_ids: studentDiscountIds[studentId] ?? [],
+                      surcharge_ids: studentSurchargeIds[studentId] ?? [],
+                    };
+                  });
+                  if (changes.some((change) => !change.student_class_id || !change.package_id)) {
+                    toast({ title: "Lỗi", description: "Vui lòng chọn gói học phí mới cho tất cả học viên", variant: "destructive" });
+                    return;
+                  }
                   const minOrder = Math.min(fromSession.sessionIndex, toSession.sessionIndex);
                   const maxOrder = Math.max(fromSession.sessionIndex, toSession.sessionIndex);
                   updateTuitionPackageMutation.mutate(
-                    { student_class_ids: studentClassIds, package_id: packageId, from_session_order: minOrder, to_session_order: maxOrder },
+                    {
+                      changes,
+                      from_session_order: minOrder,
+                      to_session_order: maxOrder,
+                      operation_key: crypto.randomUUID(),
+                    },
                     {
                       onSuccess: (data: any) => {
                         if (data.warning) toast({ title: "Cảnh báo", description: data.warning });

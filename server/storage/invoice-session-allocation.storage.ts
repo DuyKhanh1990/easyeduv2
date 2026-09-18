@@ -1,6 +1,6 @@
 import {
   db, eq, and, inArray,
-  invoiceSessionAllocations, invoiceItems, studentSessions,
+  invoiceSessionAllocations, invoiceItems, studentSessions, tuitionPackageSessionAdjustments,
 } from "./base";
 import type { InvoiceSessionAllocation } from "@shared/schema";
 
@@ -119,14 +119,23 @@ export async function getSessionAllocationMap(
 ): Promise<Record<string, number>> {
   if (studentSessionIds.length === 0) return {};
 
-  const rows = await db.select()
-    .from(invoiceSessionAllocations)
-    .where(inArray(invoiceSessionAllocations.studentSessionId, studentSessionIds));
+  const [rows, adjustments] = await Promise.all([
+    db.select()
+      .from(invoiceSessionAllocations)
+      .where(inArray(invoiceSessionAllocations.studentSessionId, studentSessionIds)),
+    db.select()
+      .from(tuitionPackageSessionAdjustments)
+      .where(inArray(tuitionPackageSessionAdjustments.studentSessionId, studentSessionIds)),
+  ]);
 
   const map: Record<string, number> = {};
   for (const row of rows) {
     const prev = map[row.studentSessionId] ?? 0;
     map[row.studentSessionId] = prev + Number(row.allocatedAmount);
+  }
+  adjustments.sort((left, right) => left.appliedSequence - right.appliedSequence);
+  for (const row of adjustments) {
+    map[row.studentSessionId] = Number(row.effectiveAmount);
   }
   return map;
 }

@@ -20,6 +20,8 @@ export {
   classSessionExclusions,
   sessionContents, studentSessionContents,
   invoices, invoiceItems, invoicePaymentSchedule, invoiceSessionAllocations, invoiceCommissions, studentComments,
+  tuitionPackageChangeRequests, tuitionPackageChangeOperations, tuitionPackageSessionAdjustments,
+  studentWalletTransactions, attendanceFeeRules,
   invoicePrintTemplates,
   financeTransactionCategories, financePromotions, financeVouchers, financeVoucherUsages,
   rolePermissions,

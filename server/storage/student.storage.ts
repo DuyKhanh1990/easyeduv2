@@ -5,7 +5,7 @@ import {
   studentLocations, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools,
   crmRequiredFields, crmCustomFields, crmRegistrationFormFields,
   courseFeePackages, shiftTemplates, studentComments,
-  staffAssignments, locations, invoices, invoiceSessionAllocations, departments, roles,
+  staffAssignments, locations, invoices, invoiceSessionAllocations, tuitionPackageSessionAdjustments, departments, roles,
   studentRelationshipHistory, studentNotificationChannels,
 } from "./base";
 import { hashPassword } from "../auth";
@@ -1797,14 +1797,23 @@ export async function getStudentClassSessions(params: {
   const sessionIds = pageRows.map(s => s.student_sessions?.id).filter((id): id is string => !!id);
   const allocationMap = new Map<string, number>();
   if (sessionIds.length > 0) {
-    const allocations = await db.select()
-      .from(invoiceSessionAllocations)
-      .where(inArray(invoiceSessionAllocations.studentSessionId, sessionIds));
+    const [allocations, adjustments] = await Promise.all([
+      db.select()
+        .from(invoiceSessionAllocations)
+        .where(inArray(invoiceSessionAllocations.studentSessionId, sessionIds)),
+      db.select()
+        .from(tuitionPackageSessionAdjustments)
+        .where(inArray(tuitionPackageSessionAdjustments.studentSessionId, sessionIds)),
+    ]);
     for (const alloc of allocations) {
       allocationMap.set(
         alloc.studentSessionId,
         (allocationMap.get(alloc.studentSessionId) ?? 0) + Number(alloc.allocatedAmount)
       );
+    }
+    adjustments.sort((left, right) => left.appliedSequence - right.appliedSequence);
+    for (const adjustment of adjustments) {
+      allocationMap.set(adjustment.studentSessionId, Number(adjustment.effectiveAmount));
     }
   }
 

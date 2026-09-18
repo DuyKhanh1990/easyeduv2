@@ -213,6 +213,46 @@ export const invoiceSessionAllocations = pgTable("invoice_session_allocations", 
 });
 
 // ==========================================
+// TUITION PACKAGE CHANGE OFFSETS
+// ==========================================
+export const tuitionPackageChangeRequests = pgTable("tuition_package_change_requests", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  operationKey: varchar("operation_key", { length: 80 }).notNull().unique(),
+  requestHash: text("request_hash").notNull(),
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const tuitionPackageChangeOperations = pgTable("tuition_package_change_operations", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  requestId: uuid("request_id").notNull().references(() => tuitionPackageChangeRequests.id, { onDelete: "cascade" }),
+  studentClassId: uuid("student_class_id").notNull().references(() => studentClasses.id, { onDelete: "cascade" }),
+  oldTotal: decimal("old_total", { precision: 15, scale: 2 }).notNull(),
+  newTotal: decimal("new_total", { precision: 15, scale: 2 }).notNull(),
+  difference: decimal("difference", { precision: 15, scale: 2 }).notNull(),
+  adjustmentInvoiceId: uuid("adjustment_invoice_id").references(() => invoices.id, { onDelete: "set null" }),
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  requestStudentClassUnique: uniqueIndex("tuition_package_change_operation_student_unique")
+    .on(table.requestId, table.studentClassId),
+}));
+
+export const tuitionPackageSessionAdjustments = pgTable("tuition_package_session_adjustments", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  operationId: uuid("operation_id").notNull().references(() => tuitionPackageChangeOperations.id, { onDelete: "cascade" }),
+  studentSessionId: uuid("student_session_id").notNull().references(() => studentSessions.id, { onDelete: "cascade" }),
+  effectiveAmount: decimal("effective_amount", { precision: 15, scale: 2 }).notNull(),
+  appliedSequence: serial("applied_sequence").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  operationSessionUnique: uniqueIndex("tuition_package_session_adjustment_unique")
+    .on(table.operationId, table.studentSessionId),
+  studentSessionIdx: index("tuition_package_session_adjustment_session_idx")
+    .on(table.studentSessionId, table.appliedSequence),
+}));
+
+// ==========================================
 // INVOICE COMMISSIONS (Hoa hồng nhân viên)
 // ==========================================
 export const invoiceCommissions = pgTable("invoice_commissions", {

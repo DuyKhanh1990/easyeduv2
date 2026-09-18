@@ -1,9 +1,12 @@
 import {
   db, eq, and, asc, sql, inArray,
   courses, courseFeePackages, coursePrograms, courseProgramContents, users,
-  studentSessions, classSessions, invoices, invoiceSessionAllocations,
+  studentClasses, studentSessions, classSessions, classes,
+  invoices, invoiceItems, invoicePaymentSchedule, invoiceSessionAllocations,
+  financePromotions, tuitionPackageChangeRequests, tuitionPackageChangeOperations, tuitionPackageSessionAdjustments,
+  studentWalletTransactions, attendanceFeeRules,
 } from "./base";
-import { distributeInvoiceFeeToSessionsInTransaction } from "./invoice-session-allocation.storage";
+import { getNextLocationCode } from "./finance.storage";
 import type {
   Course, InsertCourse,
   CourseFeePackage, InsertCourseFeePackage,
@@ -225,35 +228,144 @@ export async function migrateContentLibrarySchema(): Promise<void> {
 // ==========================================
 
 export async function updateStudentTuitionPackage(
-  studentClassIds: string[],
-  packageId: string,
+  changes: Array<{
+    studentClassId: string;
+    packageId: string;
+    promotionIds?: string[];
+    surchargeIds?: string[];
+  }>,
   fromSessionIndex: number,
   toSessionIndex: number,
-): Promise<{ warning?: string }> {
+  userId?: string | null,
+  operationKey?: string,
+): Promise<{
+  warning?: string;
+  adjustments: Array<{ studentClassId: string; difference: number; invoiceId: string | null }>;
+  replayed?: boolean;
+}> {
   return await db.transaction(async (tx) => {
-    const [feePackage] = await tx.select({
+    if (changes.length === 0) throw new Error("Vui lòng chọn ít nhất một học viên");
+    if (!operationKey || !/^[a-zA-Z0-9-]{8,80}$/.test(operationKey)) {
+      throw new Error("Mã thao tác đổi gói không hợp lệ");
+    }
+
+    const studentClassIds = [...new Set(changes.map((change) => change.studentClassId))];
+    if (studentClassIds.length !== changes.length) {
+      throw new Error("Danh sách học viên bị trùng");
+    }
+
+    const enrollmentRows = await tx.select({
+      id: studentClasses.id,
+      studentId: studentClasses.studentId,
+      classId: studentClasses.classId,
+      className: classes.name,
+      locationId: classes.locationId,
+      courseId: classes.courseId,
+    })
+      .from(studentClasses)
+      .innerJoin(classes, eq(studentClasses.classId, classes.id))
+      .where(inArray(studentClasses.id, studentClassIds))
+      .for("update");
+
+    if (enrollmentRows.length !== studentClassIds.length) {
+      throw new Error("Không tìm thấy đầy đủ thông tin học viên trong lớp");
+    }
+    const classIds = new Set(enrollmentRows.map((row) => row.classId));
+    if (classIds.size !== 1) throw new Error("Chỉ được đổi gói cho học viên trong cùng một lớp");
+
+    const changeByStudentClass = new Map(changes.map((change) => [change.studentClassId, change]));
+    const packageIds = [...new Set(changes.map((change) => change.packageId))];
+    const packageRows = await tx.select({
       id: courseFeePackages.id,
+      courseId: courseFeePackages.courseId,
+      name: courseFeePackages.name,
       type: courseFeePackages.type,
       fee: courseFeePackages.fee,
-      sessions: courseFeePackages.sessions,
       totalAmount: courseFeePackages.totalAmount,
     })
       .from(courseFeePackages)
-      .where(eq(courseFeePackages.id, packageId));
+      .where(inArray(courseFeePackages.id, packageIds));
+    if (packageRows.length !== packageIds.length) throw new Error("Gói học phí không tồn tại");
 
-    if (!feePackage) {
-      throw new Error("Gói học phí không tồn tại");
+    const enrollmentById = new Map(enrollmentRows.map((row) => [row.id, row]));
+    const packageById = new Map(packageRows.map((pkg) => [pkg.id, pkg]));
+    for (const change of changes) {
+      const enrollment = enrollmentById.get(change.studentClassId)!;
+      const feePackage = packageById.get(change.packageId)!;
+      if (enrollment.courseId && feePackage.courseId !== enrollment.courseId) {
+        throw new Error("Gói học phí không thuộc khóa học của lớp");
+      }
     }
 
-    // Join studentSessions → classSessions to filter by sessionIndex (class-level index),
-    // not sessionOrder (student-level sequential counter) which can differ if the student
-    // joined mid-class.
+    const promotionIds = [...new Set(changes.flatMap((change) => change.promotionIds ?? []))];
+    const surchargeIds = [...new Set(changes.flatMap((change) => change.surchargeIds ?? []))];
+    const adjustmentIds = [...new Set([...promotionIds, ...surchargeIds])];
+    const adjustmentRows = adjustmentIds.length > 0
+      ? await tx.select().from(financePromotions).where(inArray(financePromotions.id, adjustmentIds))
+      : [];
+    const adjustmentById = new Map(adjustmentRows.map((row) => [row.id, row]));
+    for (const id of promotionIds) {
+      const row = adjustmentById.get(id);
+      if (!row || row.type !== "promotion" || !row.isActive) throw new Error("Khuyến mãi không hợp lệ");
+    }
+    for (const id of surchargeIds) {
+      const row = adjustmentById.get(id);
+      if (!row || row.type !== "surcharge" || !row.isActive) throw new Error("Phụ thu không hợp lệ");
+    }
+
+    const requestHash = JSON.stringify({
+      fromSessionIndex,
+      toSessionIndex,
+      changes: changes
+        .map((change) => ({
+          studentClassId: change.studentClassId,
+          packageId: change.packageId,
+          promotionIds: [...(change.promotionIds ?? [])].sort(),
+          surchargeIds: [...(change.surchargeIds ?? [])].sort(),
+        }))
+        .sort((left, right) => left.studentClassId.localeCompare(right.studentClassId)),
+    });
+    const insertedRequests = await tx.insert(tuitionPackageChangeRequests).values({
+      operationKey,
+      requestHash,
+      createdBy: userId ?? null,
+    })
+      .onConflictDoNothing({ target: tuitionPackageChangeRequests.operationKey })
+      .returning();
+    const request = insertedRequests[0] ?? (await tx.select()
+      .from(tuitionPackageChangeRequests)
+      .where(eq(tuitionPackageChangeRequests.operationKey, operationKey))
+      .limit(1))[0];
+    if (!request) throw new Error("Không thể khởi tạo thao tác đổi gói");
+
+    if (insertedRequests.length === 0) {
+      if (request.requestHash !== requestHash) {
+        throw new Error("Mã thao tác đã được sử dụng cho một yêu cầu đổi gói khác");
+      }
+      const existingOperations = await tx.select()
+        .from(tuitionPackageChangeOperations)
+        .where(eq(tuitionPackageChangeOperations.requestId, request.id));
+      if (existingOperations.length !== studentClassIds.length) {
+        throw new Error("Thao tác đổi gói trước đó chưa hoàn tất");
+      }
+      return {
+        replayed: true,
+        adjustments: existingOperations.map((operation) => ({
+          studentClassId: operation.studentClassId,
+          difference: Number(operation.difference),
+          invoiceId: operation.adjustmentInvoiceId,
+        })),
+      };
+    }
+
     const matchingSessions = await tx.select({
       id: studentSessions.id,
       studentClassId: studentSessions.studentClassId,
       studentId: studentSessions.studentId,
       classId: studentSessions.classId,
       attendanceStatus: studentSessions.attendanceStatus,
+      sessionPrice: studentSessions.sessionPrice,
+      sessionIndex: classSessions.sessionIndex,
     })
       .from(studentSessions)
       .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
@@ -264,7 +376,8 @@ export async function updateStudentTuitionPackage(
           sql`${classSessions.sessionIndex} <= ${toSessionIndex}`,
         )
       )
-      .orderBy(asc(classSessions.sessionIndex));
+      .orderBy(asc(classSessions.sessionIndex))
+      .for("update");
 
     const attendedCount = matchingSessions.filter(s => s.attendanceStatus && s.attendanceStatus !== "pending").length;
     let warning: string | undefined;
@@ -280,118 +393,222 @@ export async function updateStudentTuitionPackage(
       sessionsByStudentClass.set(session.studentClassId, group);
     }
 
-    // The selected package applies to the actual selected sessions for each
-    // student, not to the package template's configured session count.
-    for (const sessions of sessionsByStudentClass.values()) {
-      const matchingIds = sessions.map((session) => session.id);
-      const packageTotal = Number(feePackage.totalAmount ?? feePackage.fee);
-      const sessionPrice = feePackage.type === "buổi"
-        ? Number(feePackage.fee)
-        : packageTotal / Math.max(1, sessions.length);
-      await tx.update(studentSessions)
-        .set({
-          packageId: packageId,
-          packageType: feePackage.type,
-          sessionPrice: sessionPrice.toFixed(2),
-          updatedAt: new Date(),
-        })
-        .where(inArray(studentSessions.id, matchingIds));
+    if (sessionsByStudentClass.size !== studentClassIds.length) {
+      throw new Error("Một số học viên không có buổi học trong khoảng đã chọn");
     }
+
+    const selectedSessionIds = matchingSessions.map((session) => session.id);
+    const allocationRows = await tx.select({
+      invoiceId: invoiceSessionAllocations.invoiceId,
+      invoiceItemId: invoiceSessionAllocations.invoiceItemId,
+      studentSessionId: invoiceSessionAllocations.studentSessionId,
+      amount: invoiceSessionAllocations.allocatedAmount,
+    })
+      .from(invoiceSessionAllocations)
+      .where(inArray(invoiceSessionAllocations.studentSessionId, selectedSessionIds));
+    const packageAdjustmentRows = await tx.select({
+      studentSessionId: tuitionPackageSessionAdjustments.studentSessionId,
+      amount: tuitionPackageSessionAdjustments.effectiveAmount,
+      appliedSequence: tuitionPackageSessionAdjustments.appliedSequence,
+    })
+      .from(tuitionPackageSessionAdjustments)
+      .where(inArray(tuitionPackageSessionAdjustments.studentSessionId, selectedSessionIds))
+      .orderBy(asc(tuitionPackageSessionAdjustments.appliedSequence));
+    const allocatedCentsBySession = new Map<string, number>();
+    for (const row of allocationRows) {
+      allocatedCentsBySession.set(
+        row.studentSessionId,
+        (allocatedCentsBySession.get(row.studentSessionId) ?? 0) + Math.round(Number(row.amount) * 100),
+      );
+    }
+    const effectiveOverrideCentsBySession = new Map<string, number>();
+    for (const row of packageAdjustmentRows) {
+      effectiveOverrideCentsBySession.set(row.studentSessionId, Math.round(Number(row.amount) * 100));
+    }
+
+    const splitCents = (totalCents: number, count: number): number[] => {
+      const sign = totalCents < 0 ? -1 : 1;
+      const absolute = Math.abs(totalCents);
+      const base = Math.floor(absolute / count);
+      const remainder = absolute - base * count;
+      return Array.from({ length: count }, (_, index) =>
+        sign * (base + (index >= count - remainder ? 1 : 0)),
+      );
+    };
+    const formatAmount = (cents: number) => (cents / 100).toFixed(2);
+    const businessDate = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+    const results: Array<{ studentClassId: string; difference: number; invoiceId: string | null }> = [];
 
     for (const [studentClassId, selectedSessions] of sessionsByStudentClass) {
-      const sample = selectedSessions[0];
-      if (!sample?.studentId || !sample.classId) continue;
+      const change = changeByStudentClass.get(studentClassId)!;
+      const feePackage = packageById.get(change.packageId)!;
+      const enrollment = enrollmentById.get(studentClassId)!;
+      const marker = `TUITION_CHANGE:${operationKey}:${studentClassId}`;
 
-      // Rebuild every tuition allocation for this student/class after changing
-      // package membership. Existing net totals (after promotions/surcharges)
-      // stay intact but are divided by the sessions that still belong to each
-      // package.
-      const tuitionInvoices = await tx.select({ id: invoices.id })
-        .from(invoices)
-        .where(and(
-          eq(invoices.studentId, sample.studentId),
-          eq(invoices.classId, sample.classId),
-          eq(invoices.category, "Học phí"),
-          sql`${invoices.status} <> 'cancelled'`,
-        ));
+      const oldCentsBySession = selectedSessions.map((session) =>
+        effectiveOverrideCentsBySession.has(session.id)
+          ? effectiveOverrideCentsBySession.get(session.id)!
+          : allocatedCentsBySession.has(session.id)
+          ? allocatedCentsBySession.get(session.id)!
+          : Math.round(Number(session.sessionPrice ?? 0) * 100),
+      );
+      const oldTotalCents = oldCentsBySession.reduce((sum, amount) => sum + amount, 0);
+      const isPerSessionPackage = feePackage.type === "buổi";
+      const adjustmentBase = isPerSessionPackage
+        ? Number(feePackage.fee)
+        : Number(feePackage.totalAmount ?? feePackage.fee);
 
-      for (const invoice of tuitionInvoices) {
-        await distributeInvoiceFeeToSessionsInTransaction(
-          tx,
-          invoice.id,
-          sample.studentId,
-          sample.classId,
-        );
+      const calculateAdjustment = (ids: string[], expectedType: "promotion" | "surcharge") =>
+        ids.reduce((sum, id) => {
+          const item = adjustmentById.get(id)!;
+          if (item.type !== expectedType) return sum;
+          const value = Number(item.valueAmount ?? 0);
+          return sum + (item.valueType === "percent" ? Math.round(adjustmentBase * value) / 100 : value);
+        }, 0);
+      const promotionAmount = calculateAdjustment(change.promotionIds ?? [], "promotion");
+      const surchargeAmount = calculateAdjustment(change.surchargeIds ?? [], "surcharge");
+      const adjustedPackageAmount = Math.max(0, adjustmentBase - promotionAmount + surchargeAmount);
+      const targetCentsBySession = isPerSessionPackage
+        ? Array.from(
+            { length: selectedSessions.length },
+            () => Math.round(adjustedPackageAmount * 100),
+          )
+        : splitCents(Math.round(adjustedPackageAmount * 100), selectedSessions.length);
+      const newTotalCents = targetCentsBySession.reduce((sum, amount) => sum + amount, 0);
+      const deltaCentsBySession = targetCentsBySession.map((target, index) => target - oldCentsBySession[index]);
+      const differenceCents = newTotalCents - oldTotalCents;
+
+      for (let index = 0; index < selectedSessions.length; index++) {
+        await tx.update(studentSessions)
+          .set({
+            packageId: feePackage.id,
+            packageType: feePackage.type,
+            sessionPrice: formatAmount(targetCentsBySession[index]),
+            updatedAt: new Date(),
+          })
+          .where(eq(studentSessions.id, selectedSessions[index].id));
       }
 
-      const allSessions = await tx.select({
-        id: studentSessions.id,
-        packageId: studentSessions.packageId,
-        packageType: studentSessions.packageType,
-      })
-        .from(studentSessions)
-        .where(eq(studentSessions.studentClassId, studentClassId));
+      let invoiceId: string | null = null;
+      if (differenceCents !== 0) {
+        const isIncome = differenceCents > 0;
+        const absoluteCents = Math.abs(differenceCents);
+        const code = await getNextLocationCode(enrollment.locationId, isIncome ? "PT" : "PC", tx);
+        const description = `Điều chỉnh chênh lệch đổi gói học phí lớp ${enrollment.className}, buổi ${fromSessionIndex}-${toSessionIndex}: ${feePackage.name}`;
+        const [invoice] = await tx.insert(invoices).values({
+          code,
+          type: isIncome ? "Thu" : "Chi",
+          locationId: enrollment.locationId,
+          studentId: enrollment.studentId,
+          classId: enrollment.classId,
+          category: isIncome ? "Học phí" : "Hoàn học phí",
+          totalAmount: formatAmount(absoluteCents),
+          totalPromotion: "0",
+          totalSurcharge: "0",
+          grandTotal: formatAmount(absoluteCents),
+          paidAmount: "0",
+          remainingAmount: formatAmount(absoluteCents),
+          status: "unpaid",
+          description,
+          note: marker,
+          dueDate: businessDate,
+          createdBy: userId ?? null,
+          updatedBy: userId ?? null,
+        }).returning();
+        const [item] = await tx.insert(invoiceItems).values({
+          invoiceId: invoice.id,
+          packageId: feePackage.id,
+          packageName: `Chênh lệch đổi gói: ${feePackage.name}`,
+          packageType: null,
+          unitPrice: formatAmount(absoluteCents),
+          quantity: 1,
+          promotionKeys: change.promotionIds ?? [],
+          surchargeKeys: change.surchargeIds ?? [],
+          promotionAmount: "0",
+          surchargeAmount: "0",
+          subtotal: formatAmount(absoluteCents),
+          category: "Học phí",
+          sortOrder: 0,
+        }).returning();
+        await tx.insert(invoicePaymentSchedule).values({
+          invoiceId: invoice.id,
+          label: "ĐỢT 1",
+          code: `${code}-1`,
+          amount: formatAmount(absoluteCents),
+          dueDate: businessDate,
+          status: "unpaid",
+          sortOrder: 0,
+          createdBy: userId ?? null,
+          updatedBy: userId ?? null,
+        });
+        invoiceId = invoice.id;
+      }
 
-      if (allSessions.length === 0) continue;
+      const [operation] = await tx.insert(tuitionPackageChangeOperations).values({
+        requestId: request.id,
+        studentClassId,
+        oldTotal: formatAmount(oldTotalCents),
+        newTotal: formatAmount(newTotalCents),
+        difference: formatAmount(differenceCents),
+        adjustmentInvoiceId: invoiceId,
+        createdBy: userId ?? null,
+      }).returning();
 
-      const allSessionIds = allSessions.map((session) => session.id);
-      const allocationTotals = await tx.select({
-        studentSessionId: invoiceSessionAllocations.studentSessionId,
-        total: sql<string>`SUM(${invoiceSessionAllocations.allocatedAmount})`,
-      })
-        .from(invoiceSessionAllocations)
-        .where(inArray(invoiceSessionAllocations.studentSessionId, allSessionIds))
-        .groupBy(invoiceSessionAllocations.studentSessionId);
-      const allocationBySession = new Map(
-        allocationTotals.map((row) => [row.studentSessionId, Number(row.total)]),
+      await tx.insert(tuitionPackageSessionAdjustments).values(
+        selectedSessions.map((session, index) => ({
+          operationId: operation.id,
+          studentSessionId: session.id,
+          effectiveAmount: formatAmount(targetCentsBySession[index]),
+        })),
       );
 
-      const packageIds = Array.from(new Set(
-        allSessions.map((session) => session.packageId).filter((id): id is string => Boolean(id)),
-      ));
-      const packageRows = packageIds.length > 0
-        ? await tx.select({
-            id: courseFeePackages.id,
-            type: courseFeePackages.type,
-            fee: courseFeePackages.fee,
-            totalAmount: courseFeePackages.totalAmount,
-          })
-            .from(courseFeePackages)
-            .where(inArray(courseFeePackages.id, packageIds))
-        : [];
-      const packageById = new Map(packageRows.map((pkg) => [pkg.id, pkg]));
-      const sessionCountByPackage = new Map<string, number>();
-      for (const session of allSessions) {
-        if (!session.packageId) continue;
-        sessionCountByPackage.set(
-          session.packageId,
-          (sessionCountByPackage.get(session.packageId) ?? 0) + 1,
-        );
+      const [feeRuleRows, creatorRows] = await Promise.all([
+        tx.select({ status: attendanceFeeRules.attendanceStatus })
+          .from(attendanceFeeRules)
+          .where(eq(attendanceFeeRules.deductsFee, true)),
+        userId
+          ? tx.select({ name: users.username }).from(users).where(eq(users.id, userId)).limit(1)
+          : Promise.resolve([]),
+      ]);
+      const deductingStatuses = new Set(feeRuleRows.map((row) => row.status));
+      const creatorName = creatorRows[0]?.name ?? null;
+      const attendedAdjustmentCents = selectedSessions.reduce((sum, session, index) =>
+        deductingStatuses.has(session.attendanceStatus)
+          ? sum + deltaCentsBySession[index]
+          : sum,
+      0);
+      if (attendedAdjustmentCents !== 0) {
+        const isAdditionalDebit = attendedAdjustmentCents > 0;
+        await tx.insert(studentWalletTransactions).values({
+          studentId: enrollment.studentId,
+          invoiceId: null,
+          type: isAdditionalDebit ? "debit" : "credit",
+          amount: formatAmount(Math.abs(attendedAdjustmentCents)),
+          category: "Học phí",
+          action: isAdditionalDebit
+            ? `Điều chỉnh tăng tiền buổi đã học khi đổi gói: ${feePackage.name}`
+            : `Hoàn chênh lệch tiền buổi đã học khi đổi gói: ${feePackage.name}`,
+          classId: enrollment.classId,
+          className: enrollment.className,
+          invoiceCode: null,
+          invoiceDescription: `Đổi gói buổi ${fromSessionIndex}-${toSessionIndex}`,
+          createdBy: userId ?? null,
+          createdByName: creatorName,
+        });
       }
 
-      const idsByPrice = new Map<string, string[]>();
-      for (const session of allSessions) {
-        const allocatedPrice = allocationBySession.get(session.id);
-        const pkg = session.packageId ? packageById.get(session.packageId) : null;
-        const fallbackPrice = pkg
-          ? pkg.type === "buổi"
-            ? Number(pkg.fee)
-            : Number(pkg.totalAmount ?? pkg.fee)
-              / Math.max(1, sessionCountByPackage.get(pkg.id) ?? 1)
-          : 0;
-        const price = (allocatedPrice ?? fallbackPrice).toFixed(2);
-        const ids = idsByPrice.get(price) ?? [];
-        ids.push(session.id);
-        idsByPrice.set(price, ids);
-      }
-
-      for (const [price, sessionIds] of idsByPrice) {
-        await tx.update(studentSessions)
-          .set({ sessionPrice: price, updatedAt: new Date() })
-          .where(inArray(studentSessions.id, sessionIds));
-      }
+      results.push({
+        studentClassId,
+        difference: differenceCents / 100,
+        invoiceId,
+      });
     }
 
-    return { warning };
+    return { warning, adjustments: results };
   });
 }

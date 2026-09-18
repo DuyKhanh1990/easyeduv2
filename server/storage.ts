@@ -220,7 +220,13 @@ export interface IStorage {
   updateAttendanceStatus(id: string, status: string, note?: string): Promise<void>;
   updateStudentAttendance(id: string, status: string, note?: string, userId?: string | null, userFullName?: string | null): Promise<void>;
   bulkUpdateAttendance(sessionId: string, students: { studentSessionId: string; attendanceStatus: string }[], userId?: string | null, userFullName?: string | null): Promise<void>;
-  updateStudentTuitionPackage(studentClassIds: string[], packageId: string, fromSessionOrder: number, toSessionOrder: number): Promise<{ warning?: string }>;
+  updateStudentTuitionPackage(
+    changes: Array<{ studentClassId: string; packageId: string; promotionIds?: string[]; surchargeIds?: string[] }>,
+    fromSessionOrder: number,
+    toSessionOrder: number,
+    userId?: string | null,
+    operationKey?: string,
+  ): Promise<{ warning?: string; adjustments: Array<{ studentClassId: string; difference: number; invoiceId: string | null }>; replayed?: boolean }>;
   makeupClassStudents(classId: string, data: any, userId: string): Promise<void>;
   cancelClassSessions(params: { classId: string, fromSessionId: string, toSessionId: string, reason: string, userId: string }): Promise<void>;
   updateClassSession(id: string, updates: any): Promise<ClassSession>;
@@ -642,8 +648,14 @@ export class DatabaseStorage implements IStorage {
     return attendanceStorage.updateStudentAttendance(id, status, note, userId, userFullName);
   }
 
-  async updateStudentTuitionPackage(studentClassIds: string[], packageId: string, fromSessionOrder: number, toSessionOrder: number): Promise<{ warning?: string }> {
-    return courseStorage.updateStudentTuitionPackage(studentClassIds, packageId, fromSessionOrder, toSessionOrder);
+  async updateStudentTuitionPackage(
+    changes: Array<{ studentClassId: string; packageId: string; promotionIds?: string[]; surchargeIds?: string[] }>,
+    fromSessionOrder: number,
+    toSessionOrder: number,
+    userId?: string | null,
+    operationKey?: string,
+  ): Promise<{ warning?: string; adjustments: Array<{ studentClassId: string; difference: number; invoiceId: string | null }>; replayed?: boolean }> {
+    return courseStorage.updateStudentTuitionPackage(changes, fromSessionOrder, toSessionOrder, userId, operationKey);
   }
 
   async bulkUpdateAttendance(sessionId: string, students: { studentSessionId: string; attendanceStatus: string }[], userId?: string | null, userFullName?: string | null): Promise<void> {

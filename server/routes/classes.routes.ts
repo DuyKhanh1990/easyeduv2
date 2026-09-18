@@ -1341,27 +1341,49 @@ export function registerClassesRoutes(app: Express): void {
       const toOrder = req.query.toOrder ? parseInt(req.query.toOrder as string) : null;
 
       const rows = await db.execute(sql`
+        WITH invoice_amounts AS (
+          SELECT student_session_id, SUM(allocated_amount)::numeric AS amount
+          FROM invoice_session_allocations
+          GROUP BY student_session_id
+        ),
+        package_adjustments AS (
+          SELECT DISTINCT ON (student_session_id)
+            student_session_id,
+            effective_amount::numeric AS amount
+          FROM tuition_package_session_adjustments
+          ORDER BY student_session_id, applied_sequence DESC
+        ),
+        per_session AS (
+          SELECT
+            ss.id,
+            ss.student_id,
+            COALESCE(MAX(tpa.amount), MAX(ia.amount), MAX(ss.session_price), 0)::numeric AS amount
+          FROM student_sessions ss
+          JOIN class_sessions cs ON cs.id = ss.class_session_id
+          LEFT JOIN invoice_amounts ia ON ia.student_session_id = ss.id
+          LEFT JOIN package_adjustments tpa ON tpa.student_session_id = ss.id
+          WHERE ss.class_id = ${classId}
+            ${fromOrder !== null && toOrder !== null
+              ? sql`AND cs.session_index BETWEEN ${fromOrder} AND ${toOrder}`
+              : sql``}
+          GROUP BY ss.id, ss.student_id
+        )
         SELECT
-          ss.student_id AS "studentId",
-          ROUND(
-            COALESCE(
-              AVG(isa.allocated_amount),
-              AVG(ss.session_price)
-            )::numeric, 2
-          ) AS "avgAllocatedAmount"
-        FROM student_sessions ss
-        JOIN class_sessions cs ON cs.id = ss.class_session_id
-        LEFT JOIN invoice_session_allocations isa ON isa.student_session_id = ss.id
-        WHERE ss.class_id = ${classId}
-          ${fromOrder !== null && toOrder !== null
-            ? sql`AND cs.session_index BETWEEN ${fromOrder} AND ${toOrder}`
-            : sql``}
-        GROUP BY ss.student_id
+          student_id AS "studentId",
+          ROUND(SUM(amount), 2) AS "totalAllocatedAmount",
+          ROUND(AVG(amount), 2) AS "avgAllocatedAmount",
+          COUNT(*)::int AS "sessionCount"
+        FROM per_session
+        GROUP BY student_id
       `);
 
-      const result: Record<string, string> = {};
+      const result: Record<string, { total: string; average: string; count: number }> = {};
       for (const row of rows.rows as any[]) {
-        result[row.studentId] = row.avgAllocatedAmount ?? "0";
+        result[row.studentId] = {
+          total: row.totalAllocatedAmount ?? "0",
+          average: row.avgAllocatedAmount ?? "0",
+          count: Number(row.sessionCount ?? 0),
+        };
       }
       res.json(result);
     } catch (err: any) {
@@ -2268,11 +2290,21 @@ export function registerClassesRoutes(app: Express): void {
 
   app.post(api.studentSessions.tuitionPackage.path, async (req, res) => {
     try {
-      const { student_class_ids, package_id, from_session_order, to_session_order } = req.body;
+      const { from_session_order, to_session_order, operation_key } = req.body;
+      const changes = Array.isArray(req.body.changes)
+        ? req.body.changes.map((change: any) => ({
+            studentClassId: String(change.student_class_id ?? ""),
+            packageId: String(change.package_id ?? ""),
+            promotionIds: Array.isArray(change.promotion_ids) ? change.promotion_ids.map(String) : [],
+            surchargeIds: Array.isArray(change.surcharge_ids) ? change.surcharge_ids.map(String) : [],
+          }))
+        : [];
+      const student_class_ids = changes.map((change: any) => change.studentClassId);
+      const package_id = changes[0]?.packageId;
       if (!student_class_ids || !Array.isArray(student_class_ids) || student_class_ids.length === 0) {
         return res.status(400).json({ message: "Vui lòng chọn ít nhất một học viên" });
       }
-      if (!package_id) {
+      if (!package_id || changes.some((change: any) => !change.studentClassId || !change.packageId)) {
         return res.status(400).json({ message: "Vui lòng chọn gói học phí" });
       }
       if (from_session_order === undefined || to_session_order === undefined) {
@@ -2281,6 +2313,21 @@ export function registerClassesRoutes(app: Express): void {
       if (isNaN(from_session_order) || isNaN(to_session_order)) {
         return res.status(400).json({ message: "Khoảng buổi học không hợp lệ" });
       }
+      if (typeof operation_key !== "string" || !/^[a-zA-Z0-9-]{8,80}$/.test(operation_key)) {
+        return res.status(400).json({ message: "Mã thao tác đổi gói không hợp lệ" });
+      }
+      const permission = await getClassPermissions(req);
+      if (!permission.canEdit) {
+        return res.status(403).json({ message: "Bạn không có quyền đổi gói học phí." });
+      }
+      const targetClasses = await db.select({ classId: studentClasses.classId })
+        .from(studentClasses)
+        .where(inArray(studentClasses.id, student_class_ids));
+      const uniqueClassIds = [...new Set(targetClasses.map((row) => row.classId))];
+      if (targetClasses.length !== student_class_ids.length || uniqueClassIds.length !== 1) {
+        return res.status(400).json({ message: "Danh sách học viên không hợp lệ hoặc không cùng một lớp." });
+      }
+      if (!(await assertClassReadable(req, res, uniqueClassIds[0]))) return;
 
       // ── Pre-fetch for activity log (before update) ──────────────────────
       let logPreData: {
@@ -2392,10 +2439,16 @@ export function registerClassesRoutes(app: Express): void {
         };
       } catch (preErr) { console.error("[Activity log pre-fetch] Đổi gói học phí:", preErr); }
 
-      const result = await storage.updateStudentTuitionPackage(student_class_ids, package_id, from_session_order, to_session_order);
+      const result = await storage.updateStudentTuitionPackage(
+        changes,
+        from_session_order,
+        to_session_order,
+        (req.user as any)?.id ?? null,
+        typeof operation_key === "string" ? operation_key : undefined,
+      );
 
       // ── Activity log (after update) ────────────────────────────────────
-      if (logPreData) {
+      if (logPreData && !result.replayed) {
         try {
           const userId = (req.user as any)?.id ?? null;
           const userLocId = await getUserLocationId(req);
