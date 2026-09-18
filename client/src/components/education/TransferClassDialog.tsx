@@ -64,7 +64,10 @@ interface TransferClassDialogProps {
 }
 
 const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat("vi-VN").format(Math.round(amount)) + "đ";
+  new Intl.NumberFormat("vi-VN", {
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(amount) + "đ";
 
 const formatPercent = (value: number | null | undefined) => {
   if (value == null || !Number.isFinite(value) || value <= 0) return "";
@@ -215,7 +218,13 @@ export function TransferClassDialog({
   }) ?? currentSessions?.[0];
   const currentFeePackage = currentSession?.feePackage;
   const currentStoredSessionPrice = currentSession ? Number(currentSession.sessionPrice ?? 0) : 0;
-  const currentPackageSessionCount = getPackageSessionCount(currentFeePackage, currentSessions?.length ?? 0);
+  // For an enrolled student, the invoice allocation is based on the actual
+  // number of registered sessions, which can differ from the package template
+  // (e.g. a 20-session course package applied to 49 enrolled sessions).
+  const currentActualSessionCount = currentSessions?.length ?? 0;
+  const currentPackageSessionCount = currentActualSessionCount > 0
+    ? currentActualSessionCount
+    : getPackageSessionCount(currentFeePackage);
   const currentBaseSessionPrice = getPackageBaseSessionPrice(currentFeePackage, currentStoredSessionPrice);
   const currentBaseTotal = getPackageBaseTotal(
     currentFeePackage,
@@ -224,11 +233,16 @@ export function TransferClassDialog({
   const currentDiscountPerSession = Number(currentSession?.pricing?.discountAmount ?? 0);
   const currentDiscountAmount = currentDiscountPerSession * currentPackageSessionCount;
   const currentDiscountPercent = currentSession?.pricing?.discountPercent ?? null;
+  const currentAllocatedSessionPrice = Number(currentSession?.pricing?.allocatedFee ?? 0);
   const hasCurrentPackagePrice = !!currentFeePackage && currentBaseSessionPrice > 0;
-  const currentSessionPrice = hasCurrentPackagePrice
+  const currentSessionPrice = currentAllocatedSessionPrice > 0
+    ? currentAllocatedSessionPrice
+    : hasCurrentPackagePrice
     ? Math.max(0, currentBaseSessionPrice - currentDiscountPerSession)
     : currentStoredSessionPrice;
-  const currentNetTotal = Math.max(0, currentBaseTotal - currentDiscountAmount);
+  const currentNetTotal = currentAllocatedSessionPrice > 0
+    ? currentAllocatedSessionPrice * currentPackageSessionCount
+    : Math.max(0, currentBaseTotal - currentDiscountAmount);
   const currentTotal = currentSessionPrice * transferCount;
 
   // Target class fee info
@@ -466,7 +480,7 @@ export function TransferClassDialog({
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Số buổi của gói:</span>
+                      <span className="text-muted-foreground">Số buổi đăng ký thực tế:</span>
                       <span className="font-medium">
                         {currentPackageSessionCount > 0 ? `${currentPackageSessionCount} buổi` : "—"}
                       </span>

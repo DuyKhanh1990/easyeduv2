@@ -54,3 +54,4 @@
 - [Makeup class eligibility](makeup-class-eligibility.md) — chỉ lớp có buổi tương lai chung cho toàn bộ học viên mới được chọn; các mức thấp hơn chỉ hiển thị để tham khảo.
 - [Evaluation criterion input types](evaluation-criterion-input-types.md) — loại nằm ở tiêu chí con: text để giáo viên nhập nhận xét, checkbox để đánh dấu học viên đạt; nhóm có thể hỗn hợp.
 - [Legacy class owner recovery](class-owner-recovery.md) — chỉ khôi phục từ log tạo lớp; createdBy thiếu không được coi là wildcard.
+- [Actual session tuition allocation](actual-session-tuition-allocation.md) — học phí áp dụng của gói khóa phải phân bổ theo số buổi đăng ký thực tế và allocation của hóa đơn.
