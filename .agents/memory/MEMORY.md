@@ -50,6 +50,7 @@
 - [Bulk student session scope](bulk-student-session-scope.md) — bulk session removal must carry each student's studentClassId; one shared class-row ID silently omits other students.
 - [Makeup attendance state](makeup-scheduled-status.md) — xếp bù thành công dùng trạng thái system-only makeup_scheduled trước khi có mặt chuyển thành makeup_done.
 - [Attendance default range](attendance-default-range.md) — màn hình điểm danh mặc định xem ngày hiện tại; bộ chọn thời gian đặt cạnh nút Bộ lọc.
+- [QR attendance time zone](qr-attendance-time-window.md) — giờ lịch lưu dạng wall-clock Asia/Bangkok trong khi Node chạy UTC; QR hiển thị tối thiểu 15 phút và mở nút theo role.
 - [Bulk makeup across classes](bulk-makeup-cross-class.md) — chọn học viên từ nhiều lớp vẫn dùng chung một lịch đích; backend phải giữ lớp gốc riêng cho từng học viên.
 - [Makeup class eligibility](makeup-class-eligibility.md) — chỉ lớp có buổi tương lai chung cho toàn bộ học viên mới được chọn; các mức thấp hơn chỉ hiển thị để tham khảo.
 - [Evaluation criterion input types](evaluation-criterion-input-types.md) — loại nằm ở tiêu chí con: text để giáo viên nhập nhận xét, checkbox để đánh dấu học viên đạt; nhóm có thể hỗn hợp.

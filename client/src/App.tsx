@@ -35,6 +35,7 @@ const CreateClass = lazy(() => import("@/pages/education/CreateClass").then(m =>
 const CreateTutorClass = lazy(() => import("@/pages/education/CreateTutorClass").then(m => ({ default: m.CreateTutorClass })));
 const ClassDetail = lazy(() => import("@/pages/education/ClassDetail").then(m => ({ default: m.ClassDetail })));
 const Attendance = lazy(() => import("@/pages/education/Attendance").then(m => ({ default: m.Attendance })));
+const AttendanceQrScanner = lazy(() => import("@/pages/education/AttendanceQrScanner").then(m => ({ default: m.AttendanceQrScanner })));
 const LearningOverview = lazy(() => import("@/pages/education/learning-overview").then(m => ({ default: m.LearningOverview })));
 const Schedule = lazy(() => import("@/pages/education/Schedule").then(m => ({ default: m.Schedule })));
 
@@ -106,6 +107,7 @@ function Router() {
         <Route path="/schedule" component={Schedule} />
         <Route path="/learning-overview" component={LearningOverview} />
         <Route path="/attendance" component={Attendance} />
+        <Route path="/attendance/qr" component={AttendanceQrScanner} />
         <Route path="/invoices/new" component={Invoices} />
         <Route path="/invoices/debt" component={Invoices} />
         <Route path="/invoices/:id" component={Invoices} />

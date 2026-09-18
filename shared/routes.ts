@@ -543,6 +543,11 @@ export const api = {
   attendance: {
     list: { path: "/api/attendance", method: "GET" },
   },
+  attendanceQr: {
+    getStudentToken: { path: "/api/attendance-qr/students/:studentId", method: "GET" },
+    createStudentToken: { path: "/api/attendance-qr/students/:studentId", method: "POST" },
+    scan: { path: "/api/attendance-qr/scan/:token", method: "GET" },
+  },
   dashboard: {
     stats: {
       method: 'GET' as const,

@@ -608,6 +608,23 @@ export const students = pgTable("students", {
 }));
 
 // ==========================================
+// STUDENT ATTENDANCE QR TOKENS
+// ==========================================
+export const studentAttendanceQrTokens = pgTable("student_attendance_qr_tokens", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: uuid("student_id").notNull().unique().references(() => students.id, { onDelete: "cascade" }),
+  tokenHash: varchar("token_hash", { length: 64 }).notNull().unique(),
+  tokenEncrypted: text("token_encrypted").notNull(),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  revokedAt: timestamp("revoked_at"),
+}, (table) => ({
+  studentIdx: index("student_attendance_qr_tokens_student_idx").on(table.studentId),
+  tokenHashIdx: index("student_attendance_qr_tokens_hash_idx").on(table.tokenHash),
+}));
+
+// ==========================================
 // STUDENT LOCATIONS TABLE
 // ==========================================
 export const studentLocations = pgTable("student_locations", {

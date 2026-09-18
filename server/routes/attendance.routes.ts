@@ -1,10 +1,258 @@
 import type { Express } from "express";
 import { api } from "@shared/routes";
 import { db } from "../db";
-import { classSessions, studentSessions, students, classes, shiftTemplates, studentLocations, staff } from "@shared/schema";
-import { eq, and, gte, lte, inArray, sql } from "drizzle-orm";
+import { classSessions, studentSessions, students, classes, shiftTemplates, studentLocations, staff, studentAttendanceQrTokens } from "@shared/schema";
+import { eq, and, gte, lte, inArray, sql, isNull, ne } from "drizzle-orm";
+import { createHash, randomBytes } from "crypto";
+import { decrypt, encrypt } from "../lib/encryption";
+import { getAttendanceTimingWindow } from "../lib/attendance-limit";
+
+function getBangkokDateKey(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function hashQrToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+async function assertQrStudentAccess(studentId: string, req: any): Promise<any> {
+  const [student] = await db
+    .select({ id: students.id, code: students.code, fullName: students.fullName })
+    .from(students)
+    .where(eq(students.id, studentId))
+    .limit(1);
+
+  if (!student) {
+    const err: any = new Error("Không tìm thấy học viên.");
+    err.status = 404;
+    throw err;
+  }
+
+  if (!req.isSuperAdmin) {
+    const locations = await db
+      .select({ locationId: studentLocations.locationId })
+      .from(studentLocations)
+      .where(eq(studentLocations.studentId, studentId));
+    const locationIds = new Set((req.allowedLocationIds ?? []).filter(Boolean));
+    if (!locations.some((row) => row.locationId && locationIds.has(row.locationId))) {
+      const err: any = new Error("Bạn không có quyền truy cập học viên này.");
+      err.status = 403;
+      throw err;
+    }
+  }
+
+  return student;
+}
 
 export function registerAttendanceRoutes(app: Express): void {
+  app.get(api.attendanceQr.getStudentToken.path, async (req, res) => {
+    try {
+      const studentId = String(req.params.studentId);
+      await assertQrStudentAccess(studentId, req);
+      const [row] = await db
+        .select({
+          tokenEncrypted: studentAttendanceQrTokens.tokenEncrypted,
+          createdAt: studentAttendanceQrTokens.createdAt,
+          revokedAt: studentAttendanceQrTokens.revokedAt,
+        })
+        .from(studentAttendanceQrTokens)
+        .where(eq(studentAttendanceQrTokens.studentId, studentId))
+        .limit(1);
+
+      if (!row || row.revokedAt) return res.json({ enabled: false });
+
+      let token: string;
+      try {
+        token = decrypt(row.tokenEncrypted);
+      } catch {
+        return res.status(409).json({ message: "Mã QR cũ không còn hợp lệ. Vui lòng tạo lại mã." });
+      }
+
+      return res.json({
+        enabled: true,
+        token,
+        createdAt: row.createdAt,
+      });
+    } catch (err: any) {
+      res.status(err.status ?? 400).json({ message: err.message || "Không thể tải mã QR." });
+    }
+  });
+
+  app.post(api.attendanceQr.createStudentToken.path, async (req, res) => {
+    try {
+      const student = await assertQrStudentAccess(String(req.params.studentId), req);
+      const token = randomBytes(32).toString("base64url");
+      const tokenHash = hashQrToken(token);
+      const now = new Date();
+      const [existing] = await db
+        .select({ id: studentAttendanceQrTokens.id })
+        .from(studentAttendanceQrTokens)
+        .where(eq(studentAttendanceQrTokens.studentId, student.id))
+        .limit(1);
+
+      if (existing) {
+        await db
+          .update(studentAttendanceQrTokens)
+          .set({
+            tokenHash,
+            tokenEncrypted: encrypt(token),
+            createdBy: req.user?.id ?? null,
+            updatedAt: now,
+            revokedAt: null,
+          })
+          .where(eq(studentAttendanceQrTokens.id, existing.id));
+      } else {
+        await db.insert(studentAttendanceQrTokens).values({
+          studentId: student.id,
+          tokenHash,
+          tokenEncrypted: encrypt(token),
+          createdBy: req.user?.id ?? null,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+
+      return res.status(201).json({
+        enabled: true,
+        student: { id: student.id, code: student.code, fullName: student.fullName },
+        token,
+        createdAt: now,
+      });
+    } catch (err: any) {
+      res.status(err.status ?? 400).json({ message: err.message || "Không thể tạo mã QR." });
+    }
+  });
+
+  app.get(api.attendanceQr.scan.path, async (req, res) => {
+    try {
+      if (req.isStudent) return res.status(403).json({ message: "Chỉ staff mới được quét QR điểm danh." });
+
+      const token = String(req.params.token || "").trim();
+      if (!token || token.length < 20) return res.status(400).json({ message: "Mã QR không hợp lệ." });
+
+      const [qrRow] = await db
+        .select({ studentId: studentAttendanceQrTokens.studentId })
+        .from(studentAttendanceQrTokens)
+        .where(and(
+          eq(studentAttendanceQrTokens.tokenHash, hashQrToken(token)),
+          isNull(studentAttendanceQrTokens.revokedAt),
+        ))
+        .limit(1);
+
+      if (!qrRow) return res.status(404).json({ message: "Mã QR không hợp lệ hoặc đã bị thu hồi." });
+
+      const student = await assertQrStudentAccess(qrRow.studentId, req);
+      const today = getBangkokDateKey();
+      const rows = await db
+        .select({
+          studentSessionId: studentSessions.id,
+          classSessionId: classSessions.id,
+          classId: classes.id,
+          className: classes.name,
+          classCode: classes.classCode,
+          sessionDate: classSessions.sessionDate,
+          sessionIndex: classSessions.sessionIndex,
+          sessionStatus: classSessions.status,
+          studentSessionStatus: studentSessions.status,
+          attendanceStatus: studentSessions.attendanceStatus,
+          teacherIds: classSessions.teacherIds,
+          startTime: shiftTemplates.startTime,
+          endTime: shiftTemplates.endTime,
+        })
+        .from(studentSessions)
+        .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
+        .innerJoin(classes, eq(classSessions.classId, classes.id))
+        .innerJoin(shiftTemplates, eq(classSessions.shiftTemplateId, shiftTemplates.id))
+        .where(and(
+          eq(studentSessions.studentId, student.id),
+          eq(classSessions.sessionDate, today),
+          ne(studentSessions.status, "cancelled"),
+          ne(classSessions.status, "cancelled"),
+        ));
+
+      const roleIds = req.roleIds ?? [];
+      const candidates = [];
+      for (const row of rows) {
+        const timing = await getAttendanceTimingWindow(
+          row.classSessionId,
+          roleIds,
+          req.isSuperAdmin ?? false,
+        );
+        if (timing?.isVisible) candidates.push({ row, timing });
+      }
+
+      if (candidates.length === 0) {
+        return res.status(404).json({
+          code: "NO_VISIBLE_SESSION",
+          message: "Hiện không có lịch học để điểm danh.",
+        });
+      }
+
+      const now = new Date();
+      candidates.sort((a, b) => {
+        const aStarted = a.timing.sessionStart <= now ? 0 : 1;
+        const bStarted = b.timing.sessionStart <= now ? 0 : 1;
+        return aStarted - bStarted || a.timing.sessionStart.getTime() - b.timing.sessionStart.getTime();
+      });
+
+      const activeCandidates = candidates.filter((candidate) => candidate.timing.sessionStart <= now);
+      const upcomingCandidates = candidates.filter((candidate) => candidate.timing.sessionStart > now);
+      if (activeCandidates.length > 1 || (
+        activeCandidates.length === 0 &&
+        upcomingCandidates.length > 1 &&
+        upcomingCandidates[0].timing.sessionStart.getTime() === upcomingCandidates[1].timing.sessionStart.getTime()
+      )) {
+        return res.status(409).json({
+          code: "AMBIGUOUS_SESSION",
+          message: "Có nhiều lịch học trùng thời gian. Vui lòng xử lý lịch trùng trước khi điểm danh QR.",
+        });
+      }
+      const selected = activeCandidates[0] ?? upcomingCandidates[0];
+
+      const teacherIds = selected.row.teacherIds ?? [];
+      const teacherRows = teacherIds.length > 0
+        ? await db.select({ id: staff.id, fullName: staff.fullName, code: staff.code }).from(staff).where(inArray(staff.id, teacherIds))
+        : [];
+      const teacherNameMap = new Map(teacherRows.map((teacher) => [teacher.id, teacher.fullName || teacher.code || ""]));
+
+      return res.json({
+        student: {
+          id: student.id,
+          code: student.code,
+          fullName: student.fullName,
+        },
+        session: {
+          studentSessionId: selected.row.studentSessionId,
+          classSessionId: selected.row.classSessionId,
+          classId: selected.row.classId,
+          className: selected.row.className,
+          classCode: selected.row.classCode,
+          sessionDate: selected.row.sessionDate,
+          sessionIndex: selected.row.sessionIndex,
+          startTime: selected.row.startTime,
+          endTime: selected.row.endTime,
+          teacherName: teacherIds.map((id: string) => teacherNameMap.get(id)).filter(Boolean).join(", "),
+          attendanceStatus: selected.row.attendanceStatus || "pending",
+        },
+        attendance: {
+          canAttend: selected.timing.canAttend,
+          displayFrom: selected.timing.displayFrom.toISOString(),
+          openAt: selected.timing.attendanceOpenAt.toISOString(),
+          latestAt: selected.timing.attendanceLatestAt.toISOString(),
+        },
+      });
+    } catch (err: any) {
+      res.status(err.status ?? 400).json({ message: err.message || "Không thể xử lý mã QR." });
+    }
+  });
+
   app.get(api.attendance.list.path, async (req, res) => {
     try {
       const { classes: classesStr = "", students: studentsStr = "", shift: shiftStr = "all", dateFrom = "", dateTo = "" } = req.query;

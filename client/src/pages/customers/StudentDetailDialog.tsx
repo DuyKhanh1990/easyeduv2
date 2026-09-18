@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Facebook, Pencil, Check } from "lucide-react";
+import { Facebook, Pencil, Check, QrCode } from "lucide-react";
 
 import { X, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import { StudentOverviewTab } from "@/components/customers/StudentOverviewTab";
 import { StudentAppointmentsTab } from "@/components/customers/StudentAppointmentsTab";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/hooks/use-language";
+import { StudentAttendanceQrDialog } from "@/components/customers/StudentAttendanceQrDialog";
 
 const TABS = [
   { value: "overview",      labelKey: "studentDetail.tab.overview",      color: "#6366f1", gradientFrom: "#6366f1", gradientTo: "#8b5cf6" },
@@ -83,6 +84,7 @@ export function StudentDetailDialog({
   const [scoreReviewSubTab, setScoreReviewSubTab] = useState<"score" | "review">("score");
   const [sessionsPage, setSessionsPage] = useState(1);
   const [sessionsPageSize, setSessionsPageSize] = useState(20);
+  const [attendanceQrOpen, setAttendanceQrOpen] = useState(false);
   const queryClient = useQueryClient();
 
   // Deferred mount flag: queries are NOT enabled on the first render so React
@@ -304,7 +306,8 @@ export function StudentDetailDialog({
   if (!open || !student) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[200] overflow-hidden flex flex-col bg-background">
+    <>
+      <div className="fixed inset-0 z-[200] overflow-hidden flex flex-col bg-background">
         {/* ── Gradient header – colour follows active tab ── */}
         <div
           className="flex-shrink-0 relative overflow-hidden transition-all duration-300"
@@ -323,6 +326,14 @@ export function StudentDetailDialog({
             <h2 className="text-sm font-bold text-white truncate max-w-[220px]">
               {student.fullName}
             </h2>
+            <button
+              onClick={() => setAttendanceQrOpen(true)}
+              className="flex h-7 items-center gap-1.5 rounded-full bg-white/20 px-2.5 text-xs font-semibold text-white transition-colors hover:bg-white/35"
+              title="Tạo QR điểm danh"
+            >
+              <QrCode className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">QR điểm danh</span>
+            </button>
             <button
               onClick={(e) => { e.stopPropagation(); onOpenChange(false); }}
               className="ml-auto flex items-center justify-center w-7 h-7 rounded-full bg-white/20 hover:bg-white/35 transition-colors text-white shrink-0"
@@ -884,7 +895,13 @@ export function StudentDetailDialog({
           </div>
           )}
         </div>
-    </div>,
+      </div>
+      <StudentAttendanceQrDialog
+        open={attendanceQrOpen}
+        onOpenChange={setAttendanceQrOpen}
+        student={student}
+      />
+    </>,
     document.body
   );
 }

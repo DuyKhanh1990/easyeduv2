@@ -31,6 +31,7 @@
     "express": "^5.2.1",
     "express-session": "^1.18.1",
     "fast-glob": "^3.3.3",
+    "html5-qrcode": "^2.3.8",
     "http-proxy-middleware": "^3.0.7",
     "jose": "^6.2.8",
     "js-yaml": "^5.2.1",
