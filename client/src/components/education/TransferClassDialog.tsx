@@ -31,7 +31,6 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Loader2,
@@ -44,6 +43,7 @@ import {
   Minus,
   FileText,
   Wallet,
+  X,
 } from "lucide-react";
 import {
   Command,
@@ -57,6 +57,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+import { useMyPermissions } from "@/hooks/use-my-permissions";
+import { FinancePromotionDialog } from "@/pages/finance/components/FinancePromotionDialog";
 
 const transferSchema = z.object({
   studentId: z.string().uuid(),
@@ -129,6 +131,68 @@ const getPackageBaseTotal = (pkg: any, fallback = 0) => {
   return (Number(pkg.fee ?? 0) || 0) * sessions;
 };
 
+type TransferAdjustmentRow = {
+  id: string;
+  optionKey?: string;
+  valueType: "amount" | "percent";
+  value: number;
+};
+
+const normalizeSearchText = (value: unknown) =>
+  String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+const formatPromotionLabel = (option: any) =>
+  option?.kind === "voucher" ? `Voucher: ${option.name}` : option?.name;
+
+const applyTransferPromotions = (
+  startingAmount: number,
+  keys: string[],
+  rows: TransferAdjustmentRow[],
+  options: any[],
+) => {
+  const representedKeys = new Set(rows.map((row) => row.optionKey).filter(Boolean));
+  const orderedRows: TransferAdjustmentRow[] = [
+    ...rows,
+    ...keys
+      .filter((key) => !representedKeys.has(key))
+      .map((key, index) => ({
+        id: `legacy-transfer-promotion-${index}-${key}`,
+        optionKey: key,
+        valueType: "amount" as const,
+        value: 0,
+      })),
+  ];
+  let currentAmount = Math.max(0, startingAmount);
+  const appliedOptionKeys = new Set<string>();
+
+  const applyValue = (valueType: "amount" | "percent", rawValue: number) => {
+    const value = Math.max(0, Number(rawValue) || 0);
+    const adjustment = valueType === "percent"
+      ? Math.round(currentAmount * value / 100)
+      : value;
+    currentAmount = Math.max(0, currentAmount - adjustment);
+  };
+
+  orderedRows.forEach((row) => {
+    if (row.optionKey && !appliedOptionKeys.has(row.optionKey)) {
+      appliedOptionKeys.add(row.optionKey);
+      const option = options.find((item: any) => item.id === row.optionKey);
+      if (option) {
+        applyValue(
+          option.valueType === "percent" ? "percent" : "amount",
+          Number(option.valueAmount ?? 0),
+        );
+      }
+    }
+    if (row.value > 0) applyValue(row.valueType, row.value);
+  });
+
+  return {
+    finalAmount: currentAmount,
+    adjustmentAmount: Math.max(0, startingAmount - currentAmount),
+  };
+};
+
 export function TransferClassDialog({
   isOpen,
   onClose,
@@ -140,13 +204,20 @@ export function TransferClassDialog({
   const [selectedTargetPackageId, setSelectedTargetPackageId] = useState<string>("");
   const [isTargetClassPickerOpen, setIsTargetClassPickerOpen] = useState(false);
   const [isTargetDiscountDialogOpen, setIsTargetDiscountDialogOpen] = useState(false);
-  const [targetDiscountSearch, setTargetDiscountSearch] = useState("");
-  const [selectedTargetDiscountIds, setSelectedTargetDiscountIds] = useState<string[]>([]);
+  const [targetPromotionSearch, setTargetPromotionSearch] = useState("");
+  const [targetPromotionKeys, setTargetPromotionKeys] = useState<string[]>([]);
+  const [targetPromotionRows, setTargetPromotionRows] = useState<TransferAdjustmentRow[]>([]);
+  const [openTargetPromotionPicker, setOpenTargetPromotionPicker] = useState<string | null>(null);
+  const [quickCreatePromotionOpen, setQuickCreatePromotionOpen] = useState(false);
   const [autoInvoice, setAutoInvoice] = useState(true);
   const [invoiceCategory, setInvoiceCategory] = useState<"Hoàn học phí" | "Đặt cọc">("Hoàn học phí");
   const [refundMethod, setRefundMethod] = useState<"invoice" | "deposit">("invoice");
   const [actualSessionCount, setActualSessionCount] = useState(0);
   const [roundingMode, setRoundingMode] = useState<"none" | "down" | "up">("none");
+  const { data: myPerms } = useMyPermissions();
+  const canCreatePromotion = Boolean(
+    myPerms?.isSuperAdmin || myPerms?.permissions["/finance-config#promotions"]?.canCreate,
+  );
 
   const form = useForm<TransferFormValues>({
     resolver: zodResolver(transferSchema),
@@ -188,6 +259,22 @@ export function TransferClassDialog({
     queryFn: () => apiRequest("GET", "/api/finance/promotions?type=promotion").then((response) => response.json()),
     enabled: isOpen,
   });
+
+  const transferAsOfDate = format(new Date(), "yyyy-MM-dd");
+  const { data: availableVouchers = [] } = useQuery<any[]>({
+    queryKey: ["/api/finance/vouchers/available", student?.id, transferAsOfDate],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        studentId: student.id,
+        asOfDate: transferAsOfDate,
+      });
+      return apiRequest("GET", `/api/finance/vouchers/available?${params}`).then((response) => response.json());
+    },
+    enabled: isOpen && Boolean(student?.id),
+    staleTime: 15_000,
+  });
+
+  const promotionOptionsWithVouchers = [...promotionOptions, ...availableVouchers];
 
   // Filter classes inside the target-class picker.
   const filteredClasses = availableClasses?.filter(
@@ -232,8 +319,10 @@ export function TransferClassDialog({
   // Reset target package when class changes
   useEffect(() => {
     setSelectedTargetPackageId("");
-    setSelectedTargetDiscountIds([]);
+    setTargetPromotionKeys([]);
+    setTargetPromotionRows([]);
     setIsTargetDiscountDialogOpen(false);
+    setOpenTargetPromotionPicker(null);
   }, [selectedToClassId]);
 
   // Auto-select fee package of target class (use class's feePackageId or first from course)
@@ -262,6 +351,131 @@ export function TransferClassDialog({
       setSelectedTargetPackageId(defaultPkg?.id ?? targetFeePackages[0].id);
     }
   }, [selectedToClassId, targetFeePackages.length]);
+
+  useEffect(() => {
+    setTargetPromotionKeys([]);
+    setTargetPromotionRows([]);
+    setOpenTargetPromotionPicker(null);
+  }, [selectedTargetPackageId]);
+
+  const ensureTargetPromotionRows = (
+    keys: string[],
+    rows: TransferAdjustmentRow[],
+  ): TransferAdjustmentRow[] => {
+    const representedKeys = new Set(rows.map((row) => row.optionKey).filter(Boolean));
+    const keyRows = keys
+      .filter((key) => !representedKeys.has(key))
+      .map((key, index) => ({
+        id: `transfer-promotion-option-${index}-${key}`,
+        optionKey: key,
+        valueType: "amount" as const,
+        value: 0,
+      }));
+    if (rows.length > 0 || keyRows.length > 0) return [...rows, ...keyRows];
+    return [{
+      id: `transfer-promotion-blank-${Date.now()}`,
+      valueType: "amount",
+      value: 0,
+    }];
+  };
+
+  const openTargetDiscountPicker = () => {
+    if (!selectedTargetPackage) return;
+    setTargetPromotionRows((rows) => ensureTargetPromotionRows(targetPromotionKeys, rows));
+    setTargetPromotionSearch("");
+    setOpenTargetPromotionPicker(null);
+    setIsTargetDiscountDialogOpen(true);
+  };
+
+  const addTargetPromotionRow = () => {
+    setTargetPromotionRows((rows) => [
+      ...rows,
+      {
+        id: `transfer-promotion-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        valueType: "amount",
+        value: 0,
+      },
+    ]);
+  };
+
+  const updateTargetPromotionRow = (
+    rowId: string,
+    patch: Partial<TransferAdjustmentRow>,
+  ) => {
+    setTargetPromotionRows((rows) =>
+      rows.map((row) => row.id === rowId ? { ...row, ...patch } : row),
+    );
+  };
+
+  const selectTargetPromotionOption = (rowId: string, optionKey: string) => {
+    setTargetPromotionRows((rows) => {
+      const nextRows = rows.map((row) => row.id === rowId ? { ...row, optionKey } : row);
+      setTargetPromotionKeys(
+        Array.from(new Set(nextRows.map((row) => row.optionKey).filter((key): key is string => Boolean(key))),
+      ));
+      return nextRows;
+    });
+  };
+
+  const removeTargetPromotionRow = (rowId: string) => {
+    setTargetPromotionRows((rows) => {
+      const nextRows = rows.filter((row) => row.id !== rowId);
+      setTargetPromotionKeys(
+        Array.from(new Set(nextRows.map((row) => row.optionKey).filter((key): key is string => Boolean(key))),
+      ));
+      return nextRows;
+    });
+  };
+
+  const createPromotionMutation = useMutation({
+    mutationFn: async (data: {
+      code: string;
+      name: string;
+      valueAmount: string | null;
+      valueType: "percent" | "vnd";
+      quantity: number | null;
+      fromDate: string | null;
+      toDate: string | null;
+    }) => {
+      const response = await apiRequest("POST", "/api/finance/promotions", {
+        ...data,
+        type: "promotion",
+      });
+      return response.json();
+    },
+    onSuccess: (created: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/finance/promotions"] });
+      if (created?.id) {
+        setTargetPromotionRows((rows) => {
+          const blankRow = rows.find((row) => !row.optionKey);
+          const nextRows = blankRow
+            ? rows.map((row) => row.id === blankRow.id ? { ...row, optionKey: created.id } : row)
+            : [
+                ...rows,
+                {
+                  id: `transfer-promotion-created-${created.id}`,
+                  optionKey: created.id,
+                  valueType: "amount" as const,
+                  value: 0,
+                },
+              ];
+          setTargetPromotionKeys(
+            Array.from(new Set(nextRows.map((row) => row.optionKey).filter((key): key is string => Boolean(key))),
+          ));
+          return nextRows;
+        });
+      }
+      setQuickCreatePromotionOpen(false);
+      toast({ title: "Đã thêm giảm trừ", description: "Giảm trừ mới đã được chọn cho lớp mới." });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Không thể thêm giảm trừ",
+        description: error.message || "Vui lòng thử lại",
+        variant: "destructive",
+      });
+    },
+  });
 
   // Current class fee info from student's sessions
   const currentSession = currentSessions?.find((s) => {
@@ -313,23 +527,19 @@ export function TransferClassDialog({
     selectedTargetPackage,
     getPackageBaseSessionPrice(selectedTargetPackage) * targetPackageSessionCount,
   );
-  const normalizedTargetDiscountSearch = targetDiscountSearch.trim().toLowerCase();
-  const filteredTargetDiscounts = promotionOptions
-    .filter((promotion: any) => promotion.isActive)
-    .filter((promotion: any) =>
-      !normalizedTargetDiscountSearch ||
-      `${promotion.name ?? ""} ${promotion.code ?? ""}`.toLowerCase().includes(normalizedTargetDiscountSearch),
-    );
-  const targetDiscountAmount = Math.min(
+  const targetPromotionResult = applyTransferPromotions(
     targetBaseTotal,
-    selectedTargetDiscountIds.reduce((total, discountId) => {
-      const promotion = promotionOptions.find((item: any) => item.id === discountId);
-      if (!promotion) return total;
-      const value = Number(promotion.valueAmount ?? 0) || 0;
-      return total + (promotion.valueType === "percent" ? targetBaseTotal * value / 100 : value);
-    }, 0),
+    targetPromotionKeys,
+    targetPromotionRows,
+    promotionOptionsWithVouchers,
   );
-  const targetTotalAfterDiscount = Math.max(0, targetBaseTotal - targetDiscountAmount);
+  const normalizedTargetPromotionSearch = normalizeSearchText(targetPromotionSearch);
+  const filteredTargetPromotions = promotionOptionsWithVouchers.filter((option: any) =>
+    !normalizedTargetPromotionSearch ||
+    normalizeSearchText(`${option.name ?? ""} ${option.code ?? ""}`).includes(normalizedTargetPromotionSearch),
+  );
+  const targetDiscountAmount = targetPromotionResult.adjustmentAmount;
+  const targetTotalAfterDiscount = targetPromotionResult.finalAmount;
   const targetSessionPrice = targetPackageSessionCount > 0
     ? Number((targetTotalAfterDiscount / targetPackageSessionCount).toFixed(2))
     : getPackageBaseSessionPrice(selectedTargetPackage);
@@ -483,6 +693,7 @@ export function TransferClassDialog({
   const showFinancial = selectedToClassId && currentSessionPrice > 0 && targetSessionPrice > 0 && transferCount > 0;
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="w-screen h-screen max-w-none max-h-screen overflow-y-auto rounded-none">
         <DialogHeader>
@@ -840,7 +1051,13 @@ export function TransferClassDialog({
                         open={isTargetDiscountDialogOpen}
                         onOpenChange={(open) => {
                           setIsTargetDiscountDialogOpen(open);
-                          if (open) setTargetDiscountSearch("");
+                          if (open) {
+                            setTargetPromotionSearch("");
+                            setOpenTargetPromotionPicker(null);
+                            setTargetPromotionRows((rows) => ensureTargetPromotionRows(targetPromotionKeys, rows));
+                          } else {
+                            setOpenTargetPromotionPicker(null);
+                          }
                         }}
                       >
                         <button
@@ -851,7 +1068,7 @@ export function TransferClassDialog({
                               ? "hover:bg-green-50 hover:text-green-700 dark:hover:bg-green-950/30"
                               : "cursor-not-allowed text-muted-foreground opacity-60",
                           )}
-                          onClick={() => selectedTargetPackage && setIsTargetDiscountDialogOpen(true)}
+                          onClick={openTargetDiscountPicker}
                           disabled={!selectedTargetPackage}
                           data-testid="button-target-discount"
                         >
@@ -864,77 +1081,154 @@ export function TransferClassDialog({
                           className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
                           overlayClassName="bg-black/30 backdrop-blur-[1px]"
                         >
-                          <DialogHeader>
-                            <DialogTitle>Chọn giảm trừ</DialogTitle>
-                          </DialogHeader>
-                          <div className="space-y-3">
-                            <div className="relative">
-                              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                              <Input
-                                value={targetDiscountSearch}
-                                onChange={(event) => setTargetDiscountSearch(event.target.value)}
-                                placeholder="Tìm theo tên hoặc mã giảm trừ..."
-                                className="h-9 pl-8 text-xs"
-                                autoFocus
-                              />
-                            </div>
-                            <div className="max-h-64 overflow-y-auto space-y-1">
-                              {promotionOptions.length === 0 ? (
-                                <p className="py-4 text-center text-xs text-muted-foreground">
-                                  Chưa có giảm trừ nào
-                                </p>
-                              ) : filteredTargetDiscounts.length === 0 ? (
-                                <p className="py-4 text-center text-xs text-muted-foreground">
-                                  Không tìm thấy giảm trừ phù hợp
-                                </p>
-                              ) : (
-                                filteredTargetDiscounts.map((promotion: any) => {
-                                  const value = Number(promotion.valueAmount ?? 0) || 0;
-                                  const discountPreview = promotion.valueType === "percent"
-                                    ? targetBaseTotal * value / 100
-                                    : value;
-                                  const valueLabel = promotion.valueType === "percent"
-                                    ? `${formatCurrencyValue(value)}%`
-                                    : formatCurrency(discountPreview);
-                                  return (
-                                    <label
-                                      key={promotion.id}
-                                      className="flex cursor-pointer items-start gap-2.5 rounded px-2 py-2 hover:bg-muted/60"
+                          <div className="flex items-center justify-between gap-2">
+                            <DialogTitle className="text-xl font-semibold">Chọn giảm trừ</DialogTitle>
+                            {canCreatePromotion && (
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-0.5 text-[11px] font-medium text-purple-600 hover:text-purple-700"
+                                onClick={() => setQuickCreatePromotionOpen(true)}
+                                data-testid="button-quick-add-transfer-promotion"
+                              >
+                                <span className="text-sm leading-none">+</span> Thêm mới
+                              </button>
+                            )}
+                          </div>
+                          <div className="mt-3 space-y-4">
+                            {targetPromotionRows.map((row) => {
+                              const selectedOption = promotionOptionsWithVouchers.find(
+                                (option: any) => option.id === row.optionKey,
+                              );
+                              return (
+                                <div key={row.id} className="space-y-2 rounded-lg border border-muted p-2">
+                                  <Popover
+                                    open={openTargetPromotionPicker === row.id}
+                                    onOpenChange={(open) => {
+                                      setOpenTargetPromotionPicker(open ? row.id : null);
+                                      if (open) setTargetPromotionSearch("");
+                                    }}
+                                  >
+                                    <PopoverTrigger asChild>
+                                      <button
+                                        type="button"
+                                        className="flex min-h-9 w-full items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-1.5 text-left text-xs hover:border-purple-400"
+                                      >
+                                        <span className={selectedOption ? "truncate" : "text-muted-foreground"}>
+                                          {selectedOption ? formatPromotionLabel(selectedOption) : "Chọn giảm trừ..."}
+                                        </span>
+                                        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                      </button>
+                                    </PopoverTrigger>
+                                    <PopoverContent
+                                      className="w-[28rem] max-w-[calc(100vw-2rem)] p-3"
+                                      align="start"
                                     >
-                                      <Checkbox
-                                        checked={selectedTargetDiscountIds.includes(promotion.id)}
-                                        onCheckedChange={() => {
-                                          setSelectedTargetDiscountIds((current) =>
-                                            current.includes(promotion.id)
-                                              ? current.filter((id) => id !== promotion.id)
-                                              : [...current, promotion.id],
-                                          );
-                                        }}
-                                        className="mt-0.5"
+                                      <div className="relative mb-2">
+                                        <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                                        <Input
+                                          value={targetPromotionSearch}
+                                          onChange={(event) => setTargetPromotionSearch(event.target.value)}
+                                          placeholder="Tìm theo tên hoặc mã giảm trừ..."
+                                          className="h-8 pl-7 text-xs"
+                                          autoFocus
+                                          onKeyDown={(event) => event.stopPropagation()}
+                                        />
+                                      </div>
+                                      <div className="max-h-64 space-y-1 overflow-y-auto">
+                                        {promotionOptionsWithVouchers.length === 0 ? (
+                                          <p className="py-3 text-center text-xs text-muted-foreground">
+                                            Chưa có giảm trừ
+                                          </p>
+                                        ) : filteredTargetPromotions.length === 0 ? (
+                                          <p className="py-3 text-center text-xs text-muted-foreground">
+                                            Không tìm thấy giảm trừ phù hợp
+                                          </p>
+                                        ) : (
+                                          filteredTargetPromotions.map((option: any) => {
+                                            const value = Number(option.valueAmount ?? 0) || 0;
+                                            return (
+                                              <button
+                                                key={option.id}
+                                                type="button"
+                                                className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-muted/60"
+                                                onClick={() => {
+                                                  selectTargetPromotionOption(row.id, option.id);
+                                                  setOpenTargetPromotionPicker(null);
+                                                }}
+                                              >
+                                                <span className="min-w-0 flex-1">
+                                                  <span className="flex items-center gap-1 text-xs font-medium">
+                                                    {option.kind === "voucher" && (
+                                                      <span className="shrink-0 rounded bg-red-100 px-1 text-[9px] font-semibold text-red-600">
+                                                        Voucher
+                                                      </span>
+                                                    )}
+                                                    <span className="truncate">{option.name}</span>
+                                                  </span>
+                                                  <span className="block text-xs text-muted-foreground">
+                                                    -{option.valueType === "percent" ? `${value}%` : formatCurrency(value)}
+                                                  </span>
+                                                </span>
+                                              </button>
+                                            );
+                                          })
+                                        )}
+                                      </div>
+                                    </PopoverContent>
+                                  </Popover>
+
+                                  <div className="flex items-center gap-1.5">
+                                    <select
+                                      value={row.valueType}
+                                      onChange={(event) =>
+                                        updateTargetPromotionRow(row.id, {
+                                          valueType: event.target.value as TransferAdjustmentRow["valueType"],
+                                        })
+                                      }
+                                      className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
+                                    >
+                                      <option value="amount">Số tiền</option>
+                                      <option value="percent">Phần trăm</option>
+                                    </select>
+                                    <div className="relative min-w-0 flex-1">
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        value={row.value || ""}
+                                        onChange={(event) =>
+                                          updateTargetPromotionRow(row.id, {
+                                            value: Math.max(0, Number(event.target.value) || 0),
+                                          })
+                                        }
+                                        placeholder="Nhập nhanh..."
+                                        className="h-8 pr-8 text-xs"
                                       />
-                                      <span className="min-w-0 flex-1">
-                                        <span className="block truncate text-xs font-medium">
-                                          {promotion.name}
-                                        </span>
-                                        <span className="block text-xs text-muted-foreground">
-                                          -{valueLabel}
-                                          {promotion.valueType === "percent" && targetBaseTotal > 0
-                                            ? ` (${formatCurrency(discountPreview)})`
-                                            : ""}
-                                        </span>
+                                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
+                                        {row.valueType === "percent" ? "%" : "₫"}
                                       </span>
-                                    </label>
-                                  );
-                                })
-                              )}
-                            </div>
-                            <div className="flex items-center justify-between border-t pt-3 text-xs">
-                              <span className="text-muted-foreground">
-                                Đã chọn {selectedTargetDiscountIds.length} giảm trừ
-                              </span>
-                              <span className="font-semibold text-green-600">
-                                Tổng giảm: {formatCurrency(targetDiscountAmount)}
-                              </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
+                                      onClick={() => removeTargetPromotionRow(row.id)}
+                                      aria-label="Xóa dòng giảm trừ"
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            <button
+                              type="button"
+                              className="text-xs font-medium text-purple-600 hover:text-purple-700"
+                              onClick={addTargetPromotionRow}
+                            >
+                              + Thêm
+                            </button>
+                            <div className="flex justify-between border-t pt-3 text-xs font-semibold">
+                              <span>Tổng giảm trừ lớp mới</span>
+                              <span className="text-green-600">-{formatCurrency(targetDiscountAmount)}</span>
                             </div>
                           </div>
                           <DialogFooter>
@@ -1177,5 +1471,13 @@ export function TransferClassDialog({
         </Form>
       </DialogContent>
     </Dialog>
+    <FinancePromotionDialog
+      open={quickCreatePromotionOpen}
+      onClose={() => setQuickCreatePromotionOpen(false)}
+      onSave={(data) => createPromotionMutation.mutate(data)}
+      title="Thêm mới giảm trừ"
+      isSaving={createPromotionMutation.isPending}
+    />
+    </>
   );
 }
