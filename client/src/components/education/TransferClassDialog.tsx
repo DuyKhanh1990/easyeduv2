@@ -430,65 +430,82 @@ export function TransferClassDialog({
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg font-semibold text-primary">LỚP HIỆN TẠI</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">Tên lớp: <span className="font-normal">{currentClass.name} ({currentClass.classCode})</span></p>
-                    <p className="text-sm font-medium">Giáo viên: <span className="font-normal">{currentClass.teacherName || "Chưa gán"}</span></p>
-                    <p className="text-sm font-medium">Chu kỳ: <span className="font-normal">{currentClass.weekdays?.map(getDayName).join(", ")}</span></p>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-1 gap-x-4 gap-y-1 text-sm md:grid-cols-[1.25fr_1.5fr_0.75fr]">
+                    <p
+                      className="min-w-0 truncate text-foreground"
+                      title={`${currentClass.name} (${currentClass.classCode})`}
+                    >
+                      <span className="font-semibold">Tên lớp:</span>{" "}
+                      <span>{currentClass.name} ({currentClass.classCode})</span>
+                    </p>
+                    <p
+                      className="min-w-0 truncate text-foreground"
+                      title={currentClass.teacherName || "Chưa gán"}
+                    >
+                      <span className="font-semibold">Giáo viên:</span>{" "}
+                      <span>{currentClass.teacherName || "Chưa gán"}</span>
+                    </p>
+                    <p className="min-w-0 truncate text-foreground">
+                      <span className="font-semibold">Chu kỳ:</span>{" "}
+                      <span>{currentClass.weekdays?.map(getDayName).join(", ") || "—"}</span>
+                    </p>
                   </div>
 
-                  <FormField
-                    control={form.control}
-                    name="fromSessionIndex"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Chọn buổi bắt đầu chuyển</FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value?.toString()}
-                          disabled={loadingCurrent}
-                        >
-                          <FormControl>
-                            <SelectTrigger data-testid="select-from-session">
-                              <SelectValue placeholder="Chọn buổi học" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {currentSessions?.map((s) => {
-                              const sessionIndex = s.classSession?.sessionIndex ?? s.sessionIndex;
-                              const sessionDate = s.classSession?.sessionDate ?? s.sessionDate;
-                              if (sessionIndex == null || !sessionDate) return null;
-                              return (
-                                <SelectItem key={s.id} value={sessionIndex.toString()}>
-                                  Buổi {sessionIndex}: {getDayName(new Date(sessionDate).getDay())}, {format(new Date(sessionDate), "dd/MM/yyyy")}
-                                </SelectItem>
-                              );
-                            })}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="fromSessionIndex"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Chọn buổi bắt đầu chuyển</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value?.toString()}
+                            disabled={loadingCurrent}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-from-session">
+                                <SelectValue placeholder="Chọn buổi học" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {currentSessions?.map((s) => {
+                                const sessionIndex = s.classSession?.sessionIndex ?? s.sessionIndex;
+                                const sessionDate = s.classSession?.sessionDate ?? s.sessionDate;
+                                if (sessionIndex == null || !sessionDate) return null;
+                                return (
+                                  <SelectItem key={s.id} value={sessionIndex.toString()}>
+                                    Buổi {sessionIndex}: {getDayName(new Date(sessionDate).getDay())}, {format(new Date(sessionDate), "dd/MM/yyyy")}
+                                  </SelectItem>
+                                );
+                              })}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                  <FormField
-                    control={form.control}
-                    name="transferCount"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Số buổi chuyển</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            {...field}
-                            min={1}
-                            data-testid="input-transfer-count"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                    <FormField
+                      control={form.control}
+                      name="transferCount"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Số buổi chuyển</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              {...field}
+                              min={1}
+                              data-testid="input-transfer-count"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
                   {/* Fee summary - current class */}
                   <div className="rounded-md border bg-muted/40 p-3 space-y-1.5 text-sm">
@@ -590,123 +607,125 @@ export function TransferClassDialog({
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg font-semibold text-primary">LỚP MỚI</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="toClassId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Chọn lớp mới</FormLabel>
-                        <Popover
-                          open={isTargetClassPickerOpen}
-                          onOpenChange={setIsTargetClassPickerOpen}
-                        >
-                          <PopoverTrigger asChild>
-                            <FormControl>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                role="combobox"
-                                aria-expanded={isTargetClassPickerOpen}
-                                className="w-full justify-between font-normal"
-                                disabled={loadingClasses}
-                                data-testid="select-to-class"
-                              >
-                                {targetClass
-                                  ? `${targetClass.name} (${targetClass.classCode})`
-                                  : loadingClasses
-                                  ? "Đang tải danh sách lớp..."
-                                  : "Chọn lớp đích"}
-                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                              </Button>
-                            </FormControl>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                            <Command shouldFilter={false}>
-                              <CommandInput
-                                placeholder="Tìm kiếm lớp..."
-                                value={searchTerm}
-                                onValueChange={setSearchTerm}
-                              />
-                              <CommandList>
-                                <CommandEmpty>Không tìm thấy lớp</CommandEmpty>
-                                <CommandGroup>
-                                  {filteredClasses?.map((c) => {
-                                    const canTransfer = hasTransferSchedule(c);
-                                    const isSelected = c.id === field.value;
-                                    return (
-                                      <CommandItem
-                                        key={c.id}
-                                        value={`${c.name} ${c.classCode}`}
-                                        disabled={!canTransfer}
-                                        onSelect={() => {
-                                          if (!canTransfer) return;
-                                          field.onChange(c.id);
-                                          setIsTargetClassPickerOpen(false);
-                                          setSearchTerm("");
-                                        }}
-                                        className={cn(
-                                          !canTransfer && "cursor-not-allowed opacity-40",
-                                        )}
-                                      >
-                                        <Check
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="toClassId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Chọn lớp mới</FormLabel>
+                          <Popover
+                            open={isTargetClassPickerOpen}
+                            onOpenChange={setIsTargetClassPickerOpen}
+                          >
+                            <PopoverTrigger asChild>
+                              <FormControl>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  role="combobox"
+                                  aria-expanded={isTargetClassPickerOpen}
+                                  className="w-full justify-between font-normal"
+                                  disabled={loadingClasses}
+                                  data-testid="select-to-class"
+                                >
+                                  {targetClass
+                                    ? `${targetClass.name} (${targetClass.classCode})`
+                                    : loadingClasses
+                                    ? "Đang tải danh sách lớp..."
+                                    : "Chọn lớp đích"}
+                                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                </Button>
+                              </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                              <Command shouldFilter={false}>
+                                <CommandInput
+                                  placeholder="Tìm kiếm lớp..."
+                                  value={searchTerm}
+                                  onValueChange={setSearchTerm}
+                                />
+                                <CommandList>
+                                  <CommandEmpty>Không tìm thấy lớp</CommandEmpty>
+                                  <CommandGroup>
+                                    {filteredClasses?.map((c) => {
+                                      const canTransfer = hasTransferSchedule(c);
+                                      const isSelected = c.id === field.value;
+                                      return (
+                                        <CommandItem
+                                          key={c.id}
+                                          value={`${c.name} ${c.classCode}`}
+                                          disabled={!canTransfer}
+                                          onSelect={() => {
+                                            if (!canTransfer) return;
+                                            field.onChange(c.id);
+                                            setIsTargetClassPickerOpen(false);
+                                            setSearchTerm("");
+                                          }}
                                           className={cn(
-                                            "mr-2 h-4 w-4",
-                                            isSelected ? "opacity-100" : "opacity-0",
+                                            !canTransfer && "cursor-not-allowed opacity-40",
                                           )}
-                                        />
-                                        <span className="truncate">
-                                          {c.name} ({c.classCode})
-                                        </span>
-                                        {!canTransfer && (
-                                          <span className="ml-auto text-xs text-muted-foreground">
-                                            Chưa có lịch
+                                        >
+                                          <Check
+                                            className={cn(
+                                              "mr-2 h-4 w-4",
+                                              isSelected ? "opacity-100" : "opacity-0",
+                                            )}
+                                          />
+                                          <span className="truncate">
+                                            {c.name} ({c.classCode})
                                           </span>
-                                        )}
-                                      </CommandItem>
-                                    );
-                                  })}
-                                </CommandGroup>
-                              </CommandList>
-                            </Command>
-                          </PopoverContent>
-                        </Popover>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                                          {!canTransfer && (
+                                            <span className="ml-auto text-xs text-muted-foreground">
+                                              Chưa có lịch
+                                            </span>
+                                          )}
+                                        </CommandItem>
+                                      );
+                                    })}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                  <FormField
-                    control={form.control}
-                    name="toSessionIndex"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Chọn buổi bắt đầu ở lớp mới</FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value?.toString()}
-                          disabled={!selectedToClassId || loadingTarget}
-                        >
-                          <FormControl>
-                            <SelectTrigger data-testid="select-to-session">
-                              <SelectValue placeholder={!selectedToClassId ? "Vui lòng chọn lớp mới trước" : "Chọn buổi học"} />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {targetSessions?.map((s) => {
-                              if (s.sessionIndex == null || !s.sessionDate) return null;
-                              return (
-                                <SelectItem key={s.id} value={s.sessionIndex.toString()}>
-                                  Buổi {s.sessionIndex}: {getDayName(new Date(s.sessionDate).getDay())}, {format(new Date(s.sessionDate), "dd/MM/yyyy")}
-                                </SelectItem>
-                              );
-                            })}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                    <FormField
+                      control={form.control}
+                      name="toSessionIndex"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Chọn buổi bắt đầu ở lớp mới</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value?.toString()}
+                            disabled={!selectedToClassId || loadingTarget}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-to-session">
+                                <SelectValue placeholder={!selectedToClassId ? "Vui lòng chọn lớp mới trước" : "Chọn buổi học"} />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {targetSessions?.map((s) => {
+                                if (s.sessionIndex == null || !s.sessionDate) return null;
+                                return (
+                                  <SelectItem key={s.id} value={s.sessionIndex.toString()}>
+                                    Buổi {s.sessionIndex}: {getDayName(new Date(s.sessionDate).getDay())}, {format(new Date(s.sessionDate), "dd/MM/yyyy")}
+                                  </SelectItem>
+                                );
+                              })}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
                   {/* Fee summary - new class */}
                   <div className="rounded-md border bg-muted/40 p-3 space-y-1.5 text-sm">
