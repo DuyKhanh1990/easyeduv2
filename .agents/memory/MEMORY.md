@@ -55,3 +55,4 @@
 - [Evaluation criterion input types](evaluation-criterion-input-types.md) — loại nằm ở tiêu chí con: text để giáo viên nhập nhận xét, checkbox để đánh dấu học viên đạt; nhóm có thể hỗn hợp.
 - [Legacy class owner recovery](class-owner-recovery.md) — chỉ khôi phục từ log tạo lớp; createdBy thiếu không được coi là wildcard.
 - [Actual session tuition allocation](actual-session-tuition-allocation.md) — học phí áp dụng của gói khóa phải phân bổ theo số buổi đăng ký thực tế và allocation của hóa đơn.
+- [Tuition refund expense wallet](tuition-refund-expense-wallet.md) — Phiếu chi Hoàn học phí đã thanh toán phải reconcile debit theo invoiceId vào ví Học phí, kể cả đợt thanh toán.

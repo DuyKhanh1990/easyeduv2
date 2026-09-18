@@ -50,6 +50,72 @@ const STATUS_LABEL: Record<string, string> = {
 const isPaidInvoiceStatus = (status: string | null | undefined): boolean =>
   status === "paid" || status === "confirmed";
 
+const TUITION_REFUND_CATEGORY = "Hoàn học phí";
+
+function isTuitionRefundInvoice(invoice: any): boolean {
+  return Boolean(
+    invoice?.studentId &&
+    invoice?.type === "Chi" &&
+    String(invoice?.category ?? "").trim() === TUITION_REFUND_CATEGORY,
+  );
+}
+
+function getPaidScheduleAmount(schedules: any[], grandTotal: number): number {
+  const paidAmount = (schedules ?? [])
+    .filter((schedule: any) => isPaidInvoiceStatus(schedule.status))
+    .reduce((sum: number, schedule: any) => sum + (parseFloat(schedule.amount ?? "0") || 0), 0);
+  return Math.min(Math.max(0, grandTotal), Math.max(0, paidAmount));
+}
+
+/**
+ * Keep a paid "Hoàn học phí" expense invoice reflected in the student's
+ * tuition wallet. Wallet entries are immutable, so reconciliation writes the
+ * delta needed to reach the desired net balance for this invoice. This makes
+ * retries and amount/status edits idempotent instead of duplicating debits.
+ */
+async function syncTuitionRefundWallet(
+  invoice: any,
+  paidAmount: number,
+  userId?: string | null,
+): Promise<void> {
+  if (!isTuitionRefundInvoice(invoice)) return;
+
+  const targetDebit = Math.max(0, Math.min(
+    parseFloat(invoice.grandTotal ?? "0") || 0,
+    Number(paidAmount) || 0,
+  ));
+  const existingNet = await getNetWalletAmountByInvoiceAndCategory(invoice.id, "Học phí");
+  const desiredNet = -targetDebit;
+  const delta = desiredNet - existingNet;
+  if (Math.abs(delta) < 0.000001) return;
+
+  const type = delta < 0 ? "debit" : "credit";
+  const amount = Math.abs(delta);
+  const [creatorName, className] = await Promise.all([
+    resolveCreatorName(userId),
+    resolveClassName(invoice.classId),
+  ]);
+  const amountLabel = amount.toLocaleString("vi-VN") + " đ";
+  const action = type === "debit"
+    ? `Trừ tiền ví học phí do thanh toán Phiếu chi Hoàn học phí ${invoice.code ?? ""}: ${amountLabel}`
+    : `Hoàn lại tiền vào ví học phí do huỷ/điều chỉnh Phiếu chi Hoàn học phí ${invoice.code ?? ""}: ${amountLabel}`;
+
+  await createWalletEntry({
+    studentId: invoice.studentId,
+    invoiceId: invoice.id,
+    type,
+    amount,
+    category: "Học phí",
+    action,
+    classId: invoice.classId,
+    className,
+    invoiceCode: invoice.code,
+    invoiceDescription: invoice.note || invoice.description,
+    createdBy: userId,
+    createdByName: creatorName,
+  });
+}
+
 function walletActionFor(
   category: string | null | undefined,
   type: "credit" | "debit",
@@ -776,6 +842,15 @@ export function registerFinanceRoutes(app: Express): void {
         console.warn("[BIDV] ensureVirtualAccount failed (non-critical):", err?.message),
       );
     }
+    if (isTuitionRefundInvoice(data)) {
+      const grandTotal = parseFloat(data.grandTotal ?? "0") || 0;
+      const paidAmount = (data.paymentSchedule ?? []).length > 0
+        ? getPaidScheduleAmount(data.paymentSchedule, grandTotal)
+        : isPaidInvoiceStatus(data.status)
+        ? grandTotal
+        : 0;
+      await syncTuitionRefundWallet(data, paidAmount, userId);
+    }
     if (data.studentId && isPaidInvoiceStatus(data.status) && data.type === "Thu") {
       const grandTotal = parseFloat(data.grandTotal ?? "0");
       const creationItems = payload.items ?? [];
@@ -1002,6 +1077,19 @@ export function registerFinanceRoutes(app: Express): void {
       const data = await storage.updateInvoice(req.params.id, patchData);
       if (data.studentId && data.classId && data.category === "Học phí") {
         await distributeInvoiceFeeToSessions(data.id, data.studentId, data.classId);
+      }
+      if (isTuitionRefundInvoice(data)) {
+        const grandTotal = parseFloat(data.grandTotal ?? "0") || 0;
+        const paidAmount = (data.paymentSchedule ?? []).length > 0
+          ? getPaidScheduleAmount(data.paymentSchedule, grandTotal)
+          : isPaidInvoiceStatus(data.status)
+          ? grandTotal
+          : 0;
+        await syncTuitionRefundWallet(data, paidAmount, userId);
+      } else if (isTuitionRefundInvoice(before)) {
+        // If an already-paid refund invoice is changed to another category/type,
+        // remove the old invoice-scoped tuition debit through the immutable ledger.
+        await syncTuitionRefundWallet(before, 0, userId);
       }
       // Handle wallet credit/debit when invoice status transitions to/from "paid"
       if (data.studentId && data.type === "Thu") {
@@ -1378,6 +1466,22 @@ export function registerFinanceRoutes(app: Express): void {
       data.updatedBy = userId;
       const updated = await storage.updateInvoiceSchedule(req.params.id, data as any);
 
+      if (before.invoiceId) {
+        const invoice = await storage.getInvoice(before.invoiceId);
+        if (isTuitionRefundInvoice(invoice)) {
+          const schedules = await db
+            .select()
+            .from(invoicePaymentSchedule)
+            .where(eq(invoicePaymentSchedule.invoiceId, before.invoiceId));
+          const grandTotal = parseFloat(invoice.grandTotal ?? "0") || 0;
+          await syncTuitionRefundWallet(
+            invoice,
+            getPaidScheduleAmount(schedules, grandTotal),
+            userId,
+          );
+        }
+      }
+
       if (createdAt !== undefined || paidAt !== undefined) {
         const parent = await storage.getInvoice(before.invoiceId);
         const oldContent: Record<string, unknown> = { scheduleLabel: before.label };
@@ -1485,6 +1589,22 @@ export function registerFinanceRoutes(app: Express): void {
               }
             }
           }
+        }
+      }
+
+      if (scheduleBefore?.invoiceId) {
+        const invoice = await storage.getInvoice(scheduleBefore.invoiceId);
+        if (isTuitionRefundInvoice(invoice)) {
+          const schedules = await db
+            .select()
+            .from(invoicePaymentSchedule)
+            .where(eq(invoicePaymentSchedule.invoiceId, scheduleBefore.invoiceId));
+          const grandTotal = parseFloat(invoice.grandTotal ?? "0") || 0;
+          await syncTuitionRefundWallet(
+            invoice,
+            getPaidScheduleAmount(schedules, grandTotal),
+            userId,
+          );
         }
       }
 
@@ -1652,6 +1772,9 @@ export function registerFinanceRoutes(app: Express): void {
               }
             }
           }
+          if (isTuitionRefundInvoice(before) && schedules.length === 0) {
+            await syncTuitionRefundWallet(before, grandTotal, userId);
+          }
 
           // Generate settle code
           const kode = await generateNextSettleCode(before.locationId);
@@ -1714,7 +1837,9 @@ export function registerFinanceRoutes(app: Express): void {
                  .filter(schedule => isPaidInvoiceStatus(schedule.status))
                  .reduce((sum, schedule) => sum + parseFloat(schedule.amount ?? "0"), 0);
                const remainingAmount = Math.max(0, grandTotal - paidAmount);
-                 const summaryStatus = paidAmount >= grandTotal && grandTotal > 0
+                const allPaid = parentSchedules.length > 0 &&
+                  parentSchedules.every(schedule => isPaidInvoiceStatus(schedule.status));
+                const summaryStatus = paidAmount >= grandTotal && grandTotal > 0
                   ? "paid"
                  : paidAmount > 0
                    ? "partial"
@@ -1733,6 +1858,20 @@ export function registerFinanceRoutes(app: Express): void {
                  .where(eq(invoices.id, scheduleBefore.invoiceId));
              }
            }
+
+            const invoice = await storage.getInvoice(scheduleBefore.invoiceId);
+            if (isTuitionRefundInvoice(invoice)) {
+              const schedules = await db
+                .select()
+                .from(invoicePaymentSchedule)
+                .where(eq(invoicePaymentSchedule.invoiceId, scheduleBefore.invoiceId));
+              const grandTotal = parseFloat(invoice.grandTotal ?? "0") || 0;
+              await syncTuitionRefundWallet(
+                invoice,
+                getPaidScheduleAmount(schedules, grandTotal),
+                userId,
+              );
+            }
 
           // Assign settle code
           let schedLocId: string | null = null;
@@ -1883,6 +2022,14 @@ export function registerFinanceRoutes(app: Express): void {
             });
           }
         }
+      }
+      if (before && isTuitionRefundInvoice(before)) {
+        const grandTotal = parseFloat(before.grandTotal ?? "0") || 0;
+        await syncTuitionRefundWallet(
+          before,
+          isPaidInvoiceStatus(status) ? grandTotal : 0,
+          userId,
+        );
       }
 
       // Assign/clear settle code on invoice paid status transition (no schedules)
