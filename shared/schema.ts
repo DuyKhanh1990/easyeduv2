@@ -785,6 +785,7 @@ export const classes = pgTable("classes", {
   locationIdx: index("classes_location_idx").on(table.locationId),
   locationStatusIdx: index("classes_location_status_idx").on(table.locationId, table.status),
   createdAtIdx: index("classes_created_at_idx").on(table.createdAt),
+  createdByIdx: index("classes_created_by_idx").on(table.createdBy),
   tinodeTopicIdUniq: uniqueIndex("classes_tinode_topic_id_uidx").on(table.tinodeTopicId),
 }));
 
