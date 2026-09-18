@@ -417,7 +417,7 @@ export function TransferClassDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="w-[90vw] max-w-[90vw] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-screen h-screen max-w-none max-h-screen overflow-y-auto rounded-none">
         <DialogHeader>
           <DialogTitle>Chuyển lớp: {student.fullName}</DialogTitle>
         </DialogHeader>
@@ -553,7 +553,7 @@ export function TransferClassDialog({
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-foreground">
                           {transferCount > 0 && currentSessionPrice > 0 ? (
-                            <span className="flex flex-col items-end">
+                            <span className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                               <span>{formatCurrency(currentTotal)}</span>
                               <span className="text-[11px] font-normal text-muted-foreground whitespace-nowrap">
                                 ({formatCurrencyValue(currentSessionPrice)} x {transferCount})
@@ -773,7 +773,7 @@ export function TransferClassDialog({
                       <span className="font-medium">Thành tiền:</span>
                       <span className="font-semibold text-foreground">
                         {transferCount > 0 && targetSessionPrice > 0 ? (
-                          <span className="flex flex-col items-end">
+                          <span className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                             <span>{formatCurrency(targetTotal)}</span>
                             <span className="text-[11px] font-normal text-muted-foreground whitespace-nowrap">
                               ({formatCurrencyValue(targetSessionPrice)} x {transferCount})
