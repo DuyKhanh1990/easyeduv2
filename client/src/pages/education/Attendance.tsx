@@ -1,5 +1,4 @@
 import { useState, useMemo } from "react";
-import { useLocation } from "wouter";
 import { StudentNameLink } from "@/components/ui/StudentNameLink";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -49,7 +48,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
-  QrCode,
 } from "lucide-react";
 import { format } from "date-fns";
 import { StoreDateRangePicker, DateRange } from "@/pages/store/StoreDateRangePicker";
@@ -125,7 +123,6 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export function Attendance() {
-  const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { data: myPerms } = useMyPermissions();
   const canAttend = !myPerms || myPerms.isSuperAdmin || !!(myPerms.permissions["/attendance"]?.canCreate);
@@ -358,16 +355,6 @@ export function Attendance() {
 
             {/* Right side controls */}
             <div className="flex items-center gap-2 flex-shrink-0">
-              <Button
-                variant="default"
-                size="sm"
-                className="h-8 gap-1.5 bg-indigo-600 text-xs hover:bg-indigo-700"
-                onClick={() => navigate("/attendance/qr")}
-                data-testid="button-open-qr-scanner"
-              >
-                <QrCode className="h-3.5 w-3.5" />
-                Quét QR
-              </Button>
               {/* Clear filters */}
               {(filters.classes.length > 0 || filters.students.length > 0 || filters.shift !== "all" || filters.attendanceStatus.length > 0) && (
                 <button
