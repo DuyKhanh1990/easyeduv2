@@ -3,9 +3,9 @@ import { api } from "@shared/routes";
 import { db } from "../db";
 import { classSessions, studentSessions, students, classes, shiftTemplates, studentLocations, staff, studentAttendanceQrTokens } from "@shared/schema";
 import { eq, and, gte, lte, inArray, sql, isNull, ne } from "drizzle-orm";
-import { createHash, randomBytes } from "crypto";
-import { decrypt, encrypt } from "../lib/encryption";
+import { decrypt } from "../lib/encryption";
 import { getAttendanceTimingWindow } from "../lib/attendance-limit";
+import { ensureStudentQrToken, hashQrToken } from "../lib/attendance-qr";
 
 function getBangkokDateKey(now = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -16,78 +16,6 @@ function getBangkokDateKey(now = new Date()): string {
   }).formatToParts(now);
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}`;
-}
-
-function hashQrToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
-
-async function ensureStudentQrToken(studentId: string, createdBy: string | null) {
-  const [existing] = await db
-    .select({
-      id: studentAttendanceQrTokens.id,
-      tokenEncrypted: studentAttendanceQrTokens.tokenEncrypted,
-      createdAt: studentAttendanceQrTokens.createdAt,
-      revokedAt: studentAttendanceQrTokens.revokedAt,
-    })
-    .from(studentAttendanceQrTokens)
-    .where(eq(studentAttendanceQrTokens.studentId, studentId))
-    .limit(1);
-
-  if (existing && !existing.revokedAt) {
-    try {
-      return {
-        token: decrypt(existing.tokenEncrypted),
-        createdAt: existing.createdAt,
-      };
-    } catch {
-      // Regenerate an unreadable legacy token below.
-    }
-  }
-
-  const token = randomBytes(32).toString("base64url");
-  const now = new Date();
-  const values = {
-    tokenHash: hashQrToken(token),
-    tokenEncrypted: encrypt(token),
-    createdBy,
-    updatedAt: now,
-    revokedAt: null,
-  };
-
-  if (existing) {
-    await db
-      .update(studentAttendanceQrTokens)
-      .set(values)
-      .where(eq(studentAttendanceQrTokens.id, existing.id));
-    return { token, createdAt: existing.createdAt };
-  }
-
-  await db
-    .insert(studentAttendanceQrTokens)
-    .values({
-      studentId,
-      ...values,
-      createdAt: now,
-    })
-    .onConflictDoNothing({ target: studentAttendanceQrTokens.studentId });
-
-  // Another simultaneous page load may have created the row first. Always
-  // return the persisted token so every view of a student shares one QR.
-  const [saved] = await db
-    .select({
-      tokenEncrypted: studentAttendanceQrTokens.tokenEncrypted,
-      createdAt: studentAttendanceQrTokens.createdAt,
-    })
-    .from(studentAttendanceQrTokens)
-    .where(eq(studentAttendanceQrTokens.studentId, studentId))
-    .limit(1);
-  if (!saved) throw new Error("Không thể tạo mã QR mặc định.");
-
-  return {
-    token: decrypt(saved.tokenEncrypted),
-    createdAt: saved.createdAt,
-  };
 }
 
 async function assertQrStudentAccess(studentId: string, req: any): Promise<any> {
