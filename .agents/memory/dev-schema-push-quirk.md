@@ -7,4 +7,4 @@ When `drizzle-kit push` cannot complete its interactive table-choice prompt in t
 
 **Why:** The shell invocation may not provide a usable interactive confirmation when unrelated existing constraints are detected, even though the requested schema change is straightforward; the application still needs the development schema before runtime verification.
 
-**How to apply:** Use this only for an exact, non-destructive development table/column after checking the schema source; never use it to bypass production schema migration or resolve ambiguous renames.
+**How to apply:** Use this only for an exact, non-destructive development table/column after checking the schema source; never use it to bypass production schema migration or resolve ambiguous renames. Also verify unique constraints separately: the direct push helper may report success without creating a new `.unique()` index, so apply and verify that index explicitly in development.

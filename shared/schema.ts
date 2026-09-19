@@ -2189,7 +2189,7 @@ export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
 // ==========================================
 export const onlineLearningRules = pgTable("online_learning_rules", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  locationId: uuid("location_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  locationId: uuid("location_id").notNull().unique().references(() => locations.id, { onDelete: "cascade" }),
   earlyEntryMinutes: integer("early_entry_minutes").notNull().default(0),
   lateEntryMinutes: integer("late_entry_minutes").notNull().default(0),
   earlyEndMinutes: integer("early_end_minutes").notNull().default(0),
