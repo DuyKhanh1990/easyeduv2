@@ -38,6 +38,7 @@ export interface OnlineRuleConfig {
   earlyEntryMinutes: number;
   lateEntryMinutes: number;
   earlyEndMinutes: number;
+  autoAttendanceOnJoin: boolean;
 }
 
 // Lightweight session — returned by the monthly calendar endpoint

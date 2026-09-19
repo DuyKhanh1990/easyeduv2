@@ -2056,12 +2056,14 @@ export function registerConfigRoutes(app: Express): void {
         earlyEntryMinutes: z.coerce.number().int().min(0).default(0),
         lateEntryMinutes: z.coerce.number().int().min(0).default(0),
         earlyEndMinutes: z.coerce.number().int().min(0).default(0),
+        autoAttendanceOnJoin: z.boolean().default(false),
       }).parse(req.body);
       const [row] = await db.insert(onlineLearningRules).values({
         locationId: body.locationId,
         earlyEntryMinutes: body.earlyEntryMinutes,
         lateEntryMinutes: body.lateEntryMinutes,
         earlyEndMinutes: body.earlyEndMinutes,
+        autoAttendanceOnJoin: body.autoAttendanceOnJoin,
       }).returning();
       res.status(201).json(row);
     } catch (err: any) {
@@ -2078,6 +2080,7 @@ export function registerConfigRoutes(app: Express): void {
         earlyEntryMinutes: z.coerce.number().int().min(0).default(0),
         lateEntryMinutes: z.coerce.number().int().min(0).default(0),
         earlyEndMinutes: z.coerce.number().int().min(0).default(0),
+        autoAttendanceOnJoin: z.boolean().default(false),
       }).parse(req.body);
       const [row] = await db
         .update(onlineLearningRules)

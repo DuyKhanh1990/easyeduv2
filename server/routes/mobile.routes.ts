@@ -1110,13 +1110,19 @@ export function registerMobileRoutes(app: Express) {
         locationName = loc?.name ?? null;
       }
 
-      let onlineRule: { earlyEntryMinutes: number; lateEntryMinutes: number; earlyEndMinutes: number } | null = null;
+      let onlineRule: {
+        earlyEntryMinutes: number;
+        lateEntryMinutes: number;
+        earlyEndMinutes: number;
+        autoAttendanceOnJoin: boolean;
+      } | null = null;
       if (row.locationId) {
         const [rule] = await db
           .select({
             earlyEntryMinutes: onlineLearningRules.earlyEntryMinutes,
             lateEntryMinutes: onlineLearningRules.lateEntryMinutes,
             earlyEndMinutes: onlineLearningRules.earlyEndMinutes,
+            autoAttendanceOnJoin: onlineLearningRules.autoAttendanceOnJoin,
           })
           .from(onlineLearningRules)
           .where(eq(onlineLearningRules.locationId, row.locationId))
@@ -1185,8 +1191,13 @@ export function registerMobileRoutes(app: Express) {
         : ctx.studentIds;
 
       const [ss] = await db
-        .select({ id: studentSessions.id, onlineEndedAt: studentSessions.onlineEndedAt })
+        .select({
+          id: studentSessions.id,
+          onlineEndedAt: studentSessions.onlineEndedAt,
+          locationId: classes.locationId,
+        })
         .from(studentSessions)
+        .innerJoin(classes, eq(studentSessions.classId, classes.id))
         .where(and(
           inArray(studentSessions.studentId, targetStudentIds),
           eq(studentSessions.classSessionId, classSessionId)
@@ -1198,6 +1209,18 @@ export function registerMobileRoutes(app: Express) {
 
       const now = new Date();
       await db.update(studentSessions).set({ onlineClickedAt: now }).where(eq(studentSessions.id, ss.id));
+
+      const [onlineRule] = ss.locationId
+        ? await db
+            .select({ autoAttendanceOnJoin: onlineLearningRules.autoAttendanceOnJoin })
+            .from(onlineLearningRules)
+            .where(eq(onlineLearningRules.locationId, ss.locationId))
+            .limit(1)
+        : [];
+      if (onlineRule?.autoAttendanceOnJoin) {
+        await updateStudentAttendance(ss.id, "present", undefined, user.id, undefined);
+      }
+
       res.json({ onlineClickedAt: now.toISOString() });
     } catch (err: any) {
       console.error("[Mobile] online-click error:", err);
@@ -1257,6 +1280,7 @@ export function registerMobileRoutes(app: Express) {
           earlyEntryMinutes: onlineLearningRules.earlyEntryMinutes,
           lateEntryMinutes: onlineLearningRules.lateEntryMinutes,
           earlyEndMinutes: onlineLearningRules.earlyEndMinutes,
+          autoAttendanceOnJoin: onlineLearningRules.autoAttendanceOnJoin,
         })
         .from(onlineLearningRules);
 

@@ -19,6 +19,7 @@ import {
   Form, FormControl, FormField, FormItem, FormLabel, FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -1343,6 +1344,7 @@ type OnlineLearningRule = {
   earlyEntryMinutes: number;
   lateEntryMinutes: number;
   earlyEndMinutes: number;
+  autoAttendanceOnJoin: boolean;
 };
 
 type OnlineLearningForm = {
@@ -1350,6 +1352,7 @@ type OnlineLearningForm = {
   earlyEntryMinutes: string;
   lateEntryMinutes: string;
   earlyEndMinutes: string;
+  autoAttendanceOnJoin: boolean;
 };
 
 function OnlineLearningTab() {
@@ -1414,6 +1417,7 @@ function OnlineLearningTab() {
       earlyEntryMinutes: "0",
       lateEntryMinutes: "0",
       earlyEndMinutes: "0",
+      autoAttendanceOnJoin: false,
     },
   });
 
@@ -1424,6 +1428,7 @@ function OnlineLearningTab() {
         earlyEntryMinutes: String(editingRule.earlyEntryMinutes),
         lateEntryMinutes: String(editingRule.lateEntryMinutes),
         earlyEndMinutes: String(editingRule.earlyEndMinutes),
+        autoAttendanceOnJoin: editingRule.autoAttendanceOnJoin,
       });
     } else {
       form.reset({
@@ -1431,6 +1436,7 @@ function OnlineLearningTab() {
         earlyEntryMinutes: "0",
         lateEntryMinutes: "0",
         earlyEndMinutes: "0",
+        autoAttendanceOnJoin: false,
       });
     }
   }, [editingRule, isDialogOpen, locations]);
@@ -1445,6 +1451,7 @@ function OnlineLearningTab() {
       earlyEntryMinutes: parseInt(data.earlyEntryMinutes) || 0,
       lateEntryMinutes: parseInt(data.lateEntryMinutes) || 0,
       earlyEndMinutes: parseInt(data.earlyEndMinutes) || 0,
+      autoAttendanceOnJoin: data.autoAttendanceOnJoin,
     };
     if (editingRule) {
       updateMutation.mutate({ id: editingRule.id, ...payload });
@@ -1482,6 +1489,7 @@ function OnlineLearningTab() {
                 <TableHead>Vào sớm trước (phút)</TableHead>
                 <TableHead>Vào muộn sau (phút)</TableHead>
                 <TableHead>Kết thúc sớm (phút)</TableHead>
+                <TableHead>Tự động điểm danh</TableHead>
                 <TableHead className="text-right">Thao tác</TableHead>
               </TableRow>
             </TableHeader>
@@ -1492,6 +1500,7 @@ function OnlineLearningTab() {
                   <TableCell>{rule.earlyEntryMinutes}</TableCell>
                   <TableCell>{rule.lateEntryMinutes}</TableCell>
                   <TableCell>{rule.earlyEndMinutes}</TableCell>
+                  <TableCell>{rule.autoAttendanceOnJoin ? "Bật" : "Tắt"}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditingRule(rule); setIsDialogOpen(true); }}>
@@ -1561,6 +1570,22 @@ function OnlineLearningTab() {
                   <span className="text-sm text-muted-foreground">phút</span>
                 </div>
               </div>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div className="space-y-1 pr-4">
+                <label htmlFor="auto-attendance-on-join" className="text-sm font-medium">
+                  Tự động điểm danh học viên
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Khi học viên bấm “Vào học online”, hệ thống sẽ ghi nhận Có học.
+                </p>
+              </div>
+              <Switch
+                id="auto-attendance-on-join"
+                checked={form.watch("autoAttendanceOnJoin")}
+                onCheckedChange={(checked) => form.setValue("autoAttendanceOnJoin", checked)}
+              />
             </div>
 
             <DialogFooter>

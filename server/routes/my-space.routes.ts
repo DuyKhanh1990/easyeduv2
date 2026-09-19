@@ -28,9 +28,11 @@ import {
   staffAttendances,
   salarySheets,
   salarySheetEmployees,
+  onlineLearningRules,
 } from "@shared/schema";
 import { storage } from "../storage";
 import { eq, and, gte, lte, sql, inArray, isNotNull, or, desc } from "drizzle-orm";
+import { updateStudentAttendance } from "../storage/attendance.storage";
 
 async function getStudentForUser(userId: string) {
   const [student] = await db
@@ -919,8 +921,13 @@ export function registerMySpaceRoutes(app: Express): void {
         : ctx.studentIds;
 
       const [ss] = await db
-        .select({ id: studentSessions.id, onlineEndedAt: studentSessions.onlineEndedAt })
+        .select({
+          id: studentSessions.id,
+          onlineEndedAt: studentSessions.onlineEndedAt,
+          locationId: classes.locationId,
+        })
         .from(studentSessions)
+        .innerJoin(classes, eq(studentSessions.classId, classes.id))
         .where(and(
           inArray(studentSessions.studentId, targetStudentIds),
           eq(studentSessions.classSessionId, classSessionId)
@@ -937,6 +944,17 @@ export function registerMySpaceRoutes(app: Express): void {
       await db.update(studentSessions)
         .set({ onlineClickedAt: now })
         .where(eq(studentSessions.id, ss.id));
+
+      const [onlineRule] = ss.locationId
+        ? await db
+            .select({ autoAttendanceOnJoin: onlineLearningRules.autoAttendanceOnJoin })
+            .from(onlineLearningRules)
+            .where(eq(onlineLearningRules.locationId, ss.locationId))
+            .limit(1)
+        : [];
+      if (onlineRule?.autoAttendanceOnJoin) {
+        await updateStudentAttendance(ss.id, "present", undefined, user.id, undefined);
+      }
 
       res.json({ onlineClickedAt: now.toISOString() });
     } catch (err: any) {

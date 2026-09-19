@@ -2193,6 +2193,7 @@ export const onlineLearningRules = pgTable("online_learning_rules", {
   earlyEntryMinutes: integer("early_entry_minutes").notNull().default(0),
   lateEntryMinutes: integer("late_entry_minutes").notNull().default(0),
   earlyEndMinutes: integer("early_end_minutes").notNull().default(0),
+  autoAttendanceOnJoin: boolean("auto_attendance_on_join").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
