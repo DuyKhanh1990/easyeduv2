@@ -22,6 +22,74 @@ function hashQrToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+async function ensureStudentQrToken(studentId: string, createdBy: string | null) {
+  const [existing] = await db
+    .select({
+      id: studentAttendanceQrTokens.id,
+      tokenEncrypted: studentAttendanceQrTokens.tokenEncrypted,
+      createdAt: studentAttendanceQrTokens.createdAt,
+      revokedAt: studentAttendanceQrTokens.revokedAt,
+    })
+    .from(studentAttendanceQrTokens)
+    .where(eq(studentAttendanceQrTokens.studentId, studentId))
+    .limit(1);
+
+  if (existing && !existing.revokedAt) {
+    try {
+      return {
+        token: decrypt(existing.tokenEncrypted),
+        createdAt: existing.createdAt,
+      };
+    } catch {
+      // Regenerate an unreadable legacy token below.
+    }
+  }
+
+  const token = randomBytes(32).toString("base64url");
+  const now = new Date();
+  const values = {
+    tokenHash: hashQrToken(token),
+    tokenEncrypted: encrypt(token),
+    createdBy,
+    updatedAt: now,
+    revokedAt: null,
+  };
+
+  if (existing) {
+    await db
+      .update(studentAttendanceQrTokens)
+      .set(values)
+      .where(eq(studentAttendanceQrTokens.id, existing.id));
+    return { token, createdAt: existing.createdAt };
+  }
+
+  await db
+    .insert(studentAttendanceQrTokens)
+    .values({
+      studentId,
+      ...values,
+      createdAt: now,
+    })
+    .onConflictDoNothing({ target: studentAttendanceQrTokens.studentId });
+
+  // Another simultaneous page load may have created the row first. Always
+  // return the persisted token so every view of a student shares one QR.
+  const [saved] = await db
+    .select({
+      tokenEncrypted: studentAttendanceQrTokens.tokenEncrypted,
+      createdAt: studentAttendanceQrTokens.createdAt,
+    })
+    .from(studentAttendanceQrTokens)
+    .where(eq(studentAttendanceQrTokens.studentId, studentId))
+    .limit(1);
+  if (!saved) throw new Error("Không thể tạo mã QR mặc định.");
+
+  return {
+    token: decrypt(saved.tokenEncrypted),
+    createdAt: saved.createdAt,
+  };
+}
+
 async function assertQrStudentAccess(studentId: string, req: any): Promise<any> {
   const [student] = await db
     .select({ id: students.id, code: students.code, fullName: students.fullName })
@@ -55,30 +123,13 @@ export function registerAttendanceRoutes(app: Express): void {
   app.get(api.attendanceQr.getStudentToken.path, async (req, res) => {
     try {
       const studentId = String(req.params.studentId);
-      await assertQrStudentAccess(studentId, req);
-      const [row] = await db
-        .select({
-          tokenEncrypted: studentAttendanceQrTokens.tokenEncrypted,
-          createdAt: studentAttendanceQrTokens.createdAt,
-          revokedAt: studentAttendanceQrTokens.revokedAt,
-        })
-        .from(studentAttendanceQrTokens)
-        .where(eq(studentAttendanceQrTokens.studentId, studentId))
-        .limit(1);
-
-      if (!row || row.revokedAt) return res.json({ enabled: false });
-
-      let token: string;
-      try {
-        token = decrypt(row.tokenEncrypted);
-      } catch {
-        return res.status(409).json({ message: "Mã QR cũ không còn hợp lệ. Vui lòng tạo lại mã." });
-      }
+      const student = await assertQrStudentAccess(studentId, req);
+      const qr = await ensureStudentQrToken(student.id, req.user?.id ?? null);
 
       return res.json({
         enabled: true,
-        token,
-        createdAt: row.createdAt,
+        token: qr.token,
+        createdAt: qr.createdAt,
       });
     } catch (err: any) {
       res.status(err.status ?? 400).json({ message: err.message || "Không thể tải mã QR." });
@@ -88,42 +139,13 @@ export function registerAttendanceRoutes(app: Express): void {
   app.post(api.attendanceQr.createStudentToken.path, async (req, res) => {
     try {
       const student = await assertQrStudentAccess(String(req.params.studentId), req);
-      const token = randomBytes(32).toString("base64url");
-      const tokenHash = hashQrToken(token);
-      const now = new Date();
-      const [existing] = await db
-        .select({ id: studentAttendanceQrTokens.id })
-        .from(studentAttendanceQrTokens)
-        .where(eq(studentAttendanceQrTokens.studentId, student.id))
-        .limit(1);
-
-      if (existing) {
-        await db
-          .update(studentAttendanceQrTokens)
-          .set({
-            tokenHash,
-            tokenEncrypted: encrypt(token),
-            createdBy: req.user?.id ?? null,
-            updatedAt: now,
-            revokedAt: null,
-          })
-          .where(eq(studentAttendanceQrTokens.id, existing.id));
-      } else {
-        await db.insert(studentAttendanceQrTokens).values({
-          studentId: student.id,
-          tokenHash,
-          tokenEncrypted: encrypt(token),
-          createdBy: req.user?.id ?? null,
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
+      const qr = await ensureStudentQrToken(student.id, req.user?.id ?? null);
 
       return res.status(201).json({
         enabled: true,
         student: { id: student.id, code: student.code, fullName: student.fullName },
-        token,
-        createdAt: now,
+        token: qr.token,
+        createdAt: qr.createdAt,
       });
     } catch (err: any) {
       res.status(err.status ?? 400).json({ message: err.message || "Không thể tạo mã QR." });

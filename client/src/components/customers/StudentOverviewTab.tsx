@@ -11,6 +11,7 @@ import {
 import { format, isToday, isTomorrow, isYesterday } from "date-fns";
 import { vi } from "date-fns/locale";
 import type { Task, TaskStatus, TaskLevel } from "@shared/schema";
+import { StudentAttendanceQrInline } from "@/components/customers/StudentAttendanceQrDialog";
 
 interface StudentOverviewTabProps {
   studentId: string;
@@ -348,16 +349,19 @@ export function StudentOverviewTab({ studentId, student, classesData, processedC
 
               {/* Avatar + Name + Info — w-[38%] của cột trái ≈ w-[25%] tổng */}
               <div className="flex items-start gap-4 w-[38%] shrink-0 pr-6 border-r border-gray-100">
-                <div className="shrink-0 relative mt-0.5">
-                  {student.avatarUrl ? (
-                    <img src={student.avatarUrl} alt={student.fullName}
-                      className="w-16 h-16 rounded-2xl object-cover shadow-md ring-2 ring-white" />
-                  ) : (
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-2xl font-bold shadow-md ring-2 ring-white">
-                      {getInitial(student.fullName)}
-                    </div>
-                  )}
-                  <span className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white shadow ${statusDot}`} />
+                <div className="flex shrink-0 flex-col items-center gap-2">
+                  <div className="relative mt-0.5">
+                    {student.avatarUrl ? (
+                      <img src={student.avatarUrl} alt={student.fullName}
+                        className="w-16 h-16 rounded-2xl object-cover shadow-md ring-2 ring-white" />
+                    ) : (
+                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-2xl font-bold shadow-md ring-2 ring-white">
+                        {getInitial(student.fullName)}
+                      </div>
+                    )}
+                    <span className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white shadow ${statusDot}`} />
+                  </div>
+                  <StudentAttendanceQrInline student={student} />
                 </div>
                 <div className="min-w-[170px]">
                   <div className="mb-1">
