@@ -3,7 +3,6 @@ import { api } from "@shared/routes";
 import { db } from "../db";
 import { classSessions, studentSessions, students, classes, shiftTemplates, studentLocations, staff, studentAttendanceQrTokens } from "@shared/schema";
 import { eq, and, gte, lte, inArray, sql, isNull, ne } from "drizzle-orm";
-import { decrypt } from "../lib/encryption";
 import { getAttendanceTimingWindow } from "../lib/attendance-limit";
 import { ensureStudentQrToken, hashQrToken } from "../lib/attendance-qr";
 
