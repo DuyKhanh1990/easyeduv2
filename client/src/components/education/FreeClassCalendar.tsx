@@ -139,15 +139,34 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
   const classEnd = String(classData?.endDate || "").slice(0, 10);
   const today = format(new Date(), "yyyy-MM-dd");
   const monthLabel = format(monthDate, "M");
+  const scheduleWindow = useMemo(() => {
+    const starts = students
+      .map((student: any) => String(student.startDate || classStart || "").slice(0, 10))
+      .filter(Boolean)
+      .sort();
+    const ends = students
+      .map((student: any) => String(student.endDate || classEnd || "").slice(0, 10))
+      .filter(Boolean)
+      .sort();
+    return {
+      start: starts[0] || classStart,
+      end: ends[ends.length - 1] || classEnd,
+    };
+  }, [students, classStart, classEnd]);
   const selectedDayStudentIds = selectedDate
     ? students
         .filter((student: any) => registrations.has(`${student.id}:${selectedDate}`))
         .map((student: any) => student.id)
     : [];
   const selectedDayStudentIdSet = new Set(selectedDayStudentIds);
-  const allSelectedDayStudents = students.length > 0
-    && selectedStudentIds.length === students.length
-    && students.every((student: any) => selectedStudentIds.includes(student.id));
+  const selectableStudentsForDate = selectedDate
+    ? students.filter((student: any) =>
+        (!student.startDate || selectedDate >= String(student.startDate).slice(0, 10))
+        && (!student.endDate || selectedDate <= String(student.endDate).slice(0, 10)),
+      )
+    : [];
+  const allSelectedDayStudents = selectableStudentsForDate.length > 0
+    && selectableStudentsForDate.every((student: any) => selectedStudentIds.includes(student.id));
   const monthlyStats = useMemo(() => {
     const stats = new Map<string, { registered: number; attended: number }>();
     for (const student of students) {
@@ -163,7 +182,10 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
   }, [days, registrations, students]);
   const visibleDays = mode === "attend"
     ? days.filter((day) => students.some((student: any) => registrations.has(`${student.id}:${day.value}`)))
-    : days;
+    : days.filter((day) =>
+        (!scheduleWindow.start || day.value >= scheduleWindow.start)
+        && (!scheduleWindow.end || day.value <= scheduleWindow.end),
+      );
 
   useEffect(() => {
     const currentMonth = today.slice(0, 7);
@@ -747,9 +769,9 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                     <Checkbox
                       className="h-3.5 w-3.5"
                       checked={allSelectedDayStudents}
-                      disabled={!selectedDate || students.length === 0}
+                      disabled={!selectedDate || selectableStudentsForDate.length === 0}
                       onCheckedChange={(checked) =>
-                        setSelectedStudentIds(checked === true ? students.map((student: any) => student.id) : [])
+                        setSelectedStudentIds(checked === true ? selectableStudentsForDate.map((student: any) => student.id) : [])
                       }
                       aria-label="Chọn tất cả học viên trong ngày"
                     />
@@ -819,7 +841,11 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                           <Checkbox
                             className="mt-0.5 h-3.5 w-3.5 shrink-0"
                             checked={selectedStudentIds.includes(student.id)}
-                            disabled={!selectedDate}
+                            disabled={
+                              !selectedDate
+                              || (!!student.startDate && selectedDate < String(student.startDate).slice(0, 10))
+                              || (!!student.endDate && selectedDate > String(student.endDate).slice(0, 10))
+                            }
                             onCheckedChange={(checked) =>
                               setSelectedStudentIds((current) =>
                                 checked === true
@@ -896,14 +922,16 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                         )}
                       >
                         <div className="flex min-h-14 flex-col items-center gap-1">
-                          <Checkbox
-                            className="h-3.5 w-3.5"
-                            hideIndicator
-                            checked={!!current}
-                            disabled={!!outside || !classPerm?.canEdit || updateMutation.isPending}
-                            onCheckedChange={() => toggle(student, day.value, current)}
-                            aria-label={`Đăng ký ${student.fullName} ngày ${day.label}`}
-                          />
+                          {!outside && (
+                            <Checkbox
+                              className="h-3.5 w-3.5"
+                              hideIndicator
+                              checked={!!current}
+                              disabled={!classPerm?.canEdit || updateMutation.isPending}
+                              onCheckedChange={() => toggle(student, day.value, current)}
+                              aria-label={`Đăng ký ${student.fullName} ngày ${day.label}`}
+                            />
+                          )}
                           {current && (
                             <>
                               <Select

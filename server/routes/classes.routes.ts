@@ -5,7 +5,7 @@ import { getClassFormatSummary, getClassStatusSummary, getNewClassesSummary, get
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { db, pool } from "../db";
-import { classSessions, studentSessions, freeClassRegistrations, students, classes, studentClasses, staff, staffAssignments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, courseFeePackages, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
+import { classSessions, studentSessions, freeClassRegistrations, students, classes, studentClasses, staff, staffAssignments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, invoiceItems, courseFeePackages, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
 import { eq, and, sql, inArray, avg, between, gte, lte, gt, desc, asc, or, ilike, isNotNull, isNull, ne } from "drizzle-orm";
 import { sendAttendanceNotification, sendReviewNotification, sendContentNotification } from "../lib/attendance-notification";
 import { enforceAttendanceTimeLimit, getStaffRoleIds } from "../lib/attendance-limit";
@@ -14,6 +14,8 @@ import { emitToUser } from "../lib/ws-hub";
 import { sendUpdateSessionNotification, sendCancelSessionNotification, sendUpdateCycleNotification, sendExcludeDatesNotification } from "../lib/schedule-notification";
 import { notificationService } from "../application/notification/services/NotificationService";
 import { buildClassVisibilitySql, canViewClass, resolveClassViewAccess, type ClassViewScope } from "../lib/class-access";
+import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
+import { getNextLocationCode } from "../storage/finance.storage";
 
 async function resolveStaffFullName(userId: string | undefined | null): Promise<string | null> {
   if (!userId) return null;
@@ -1290,6 +1292,8 @@ export function registerClassesRoutes(app: Express): void {
       const [classRow] = await db
         .select({
           id: classes.id,
+          name: classes.name,
+          locationId: classes.locationId,
           classType: classes.classType,
           startDate: classes.startDate,
           endDate: classes.endDate,
@@ -1308,6 +1312,7 @@ export function registerClassesRoutes(app: Express): void {
         if (!Array.isArray(configs) || configs.length === 0) {
           return res.status(400).json({ message: "Chưa có học viên để xếp lịch" });
         }
+        const autoCreatedInvoices: Array<{ id: string; code: string | null; grandTotal: string; studentId: string; description: string | null; status: string }> = [];
         await db.transaction(async (tx) => {
           for (const config of configs) {
             const studentId = String(config.studentId || "");
@@ -1352,8 +1357,91 @@ export function registerClassesRoutes(app: Express): void {
               remainingSessions: Math.max(0, totalSessions - attendedCount),
               updatedAt: new Date(),
             }).where(eq(studentClasses.id, sc.id));
+
+            // Free classes have no student_sessions to carry a package. When
+            // requested, create the same tuition invoice shape as normal
+            // scheduling and keep the package on invoice_items.
+            if (config.autoInvoice === true && config.packageId) {
+              const [pkg] = await tx
+                .select()
+                .from(courseFeePackages)
+                .where(eq(courseFeePackages.id, String(config.packageId)))
+                .limit(1);
+              if (!pkg) throw new Error(`Không tìm thấy gói học phí của học viên ${config.fullName || studentId}`);
+
+              const [existingInvoice] = await tx
+                .select({ id: invoices.id })
+                .from(invoices)
+                .innerJoin(invoiceItems, eq(invoiceItems.invoiceId, invoices.id))
+                .where(and(
+                  eq(invoices.classId, classId),
+                  eq(invoices.studentId, studentId),
+                  eq(invoices.category, "Học phí"),
+                  eq(invoiceItems.packageId, pkg.id),
+                ))
+                .limit(1);
+              if (!existingInvoice) {
+                const fee = Number(pkg.fee || 0);
+                const packageTotal = Number(pkg.totalAmount || 0);
+                const baseAmount = pkg.type === "buổi" ? totalSessions * fee : packageTotal;
+                const invoiceCode = await getNextLocationCode(classRow.locationId, "PT", tx);
+                const description = `Học phí lớp ${classRow.name || ""}, gói ${pkg.name}, từ ${startDate} đến ${endDate}`;
+                const [invoice] = await tx.insert(invoices).values({
+                  code: invoiceCode,
+                  studentId,
+                  classId,
+                  locationId: classRow.locationId,
+                  category: "Học phí",
+                  totalAmount: String(baseAmount),
+                  totalPromotion: "0",
+                  totalSurcharge: "0",
+                  grandTotal: String(baseAmount),
+                  remainingAmount: String(baseAmount),
+                  paidAmount: "0",
+                  status: "unpaid",
+                  description,
+                  createdBy: userId || null,
+                }).returning();
+                if (invoice) {
+                  await tx.insert(invoiceItems).values({
+                    invoiceId: invoice.id,
+                    packageId: pkg.id,
+                    packageName: pkg.name,
+                    packageType: pkg.type,
+                    unitPrice: String(pkg.type === "buổi" ? fee : packageTotal),
+                    quantity: pkg.type === "buổi" ? totalSessions : 1,
+                    promotionKeys: [],
+                    surchargeKeys: [],
+                    promotionAmount: "0",
+                    surchargeAmount: "0",
+                    subtotal: String(baseAmount),
+                    sortOrder: 0,
+                  });
+                  autoCreatedInvoices.push({
+                    id: invoice.id,
+                    code: invoice.code,
+                    grandTotal: String(invoice.grandTotal || baseAmount),
+                    studentId,
+                    description: invoice.description,
+                    status: invoice.status,
+                  });
+                }
+              }
+            }
           }
         });
+        await Promise.allSettled(autoCreatedInvoices.map((invoice) =>
+          sendInvoiceCreatedNotification(
+            invoice.code,
+            invoice.grandTotal,
+            invoice.studentId,
+            userId,
+            invoice.id,
+            null,
+            invoice.description,
+            invoice.status,
+          ),
+        ));
         res.status(200).json({ success: true, freeClass: true });
         return;
       }
@@ -1490,7 +1578,13 @@ export function registerClassesRoutes(app: Express): void {
       if (!classRow) return res.status(404).json({ message: "Không tìm thấy lớp học" });
       if (classRow.classType !== "free") return res.status(400).json({ message: "Lớp này không phải lớp tự do" });
       const [sc] = await db
-        .select({ id: studentClasses.id, studentId: studentClasses.studentId, totalSessions: studentClasses.totalSessions })
+        .select({
+          id: studentClasses.id,
+          studentId: studentClasses.studentId,
+          totalSessions: studentClasses.totalSessions,
+          startDate: studentClasses.startDate,
+          endDate: studentClasses.endDate,
+        })
         .from(studentClasses)
         .where(and(eq(studentClasses.id, String(studentClassId)), eq(studentClasses.classId, classId)))
         .limit(1);
@@ -1498,6 +1592,9 @@ export function registerClassesRoutes(app: Express): void {
       const requestedDate = String(date);
       if ((classRow.startDate && requestedDate < classRow.startDate) || (classRow.endDate && requestedDate > classRow.endDate)) {
         return res.status(400).json({ message: "Ngày học nằm ngoài thời hạn của lớp" });
+      }
+      if ((sc.startDate && requestedDate < sc.startDate) || (sc.endDate && requestedDate > sc.endDate)) {
+        return res.status(400).json({ message: "Ngày học nằm ngoài khoảng thời gian của học viên" });
       }
       const actorId = (req.user as any)?.id || null;
 
