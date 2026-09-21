@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Dialog,
@@ -984,6 +984,7 @@ export function SessionContentDialog({
   const [viewingContentId, setViewingContentId] = useState<string | null>(null);
   const [viewingFallbackContent, setViewingFallbackContent] = useState<{ title: string; type: string; content?: string | null } | null>(null);
   const [viewingExamId, setViewingExamId] = useState<string | null>(null);
+  const hydratedSessionKeyRef = useRef<string | null>(null);
 
   const handleViewItem = (item: SelectedContent) => {
     if (item.type === "Bài kiểm tra") {
@@ -1045,7 +1046,11 @@ export function SessionContentDialog({
         name: ss.student?.fullName || "Không xác định",
       }));
 
-  const { data: existingContents = [], isLoading: isLoadingExisting } = useQuery<SessionContentRecord[]>({
+  const {
+    data: existingContents = [],
+    isLoading: isLoadingExisting,
+    isFetched: isExistingContentsFetched,
+  } = useQuery<SessionContentRecord[]>({
     queryKey: [isFreeSession ? `${freeContentPath}/contents` : `/api/class-sessions/${classSessionId}/contents`],
     queryFn: async () => {
       if (!isFreeSession) {
@@ -1075,7 +1080,11 @@ export function SessionContentDialog({
     resourceUrl: string | null;
   }
 
-  const { data: existingPersonalContents = [], isLoading: isLoadingPersonal } = useQuery<PersonalContentRecord[]>({
+  const {
+    data: existingPersonalContents = [],
+    isLoading: isLoadingPersonal,
+    isFetched: isPersonalContentsFetched,
+  } = useQuery<PersonalContentRecord[]>({
     queryKey: [isFreeSession ? `${freeContentPath}/student-contents` : `/api/class-sessions/${classSessionId}/student-contents`],
     queryFn: async () => {
       if (!isFreeSession) {
@@ -1104,40 +1113,6 @@ export function SessionContentDialog({
   });
 
   useEffect(() => {
-    if (isOpen && existingContents.length > 0) {
-      const loaded: SelectedContent[] = existingContents.map((ec) => ({
-        id: ec.resourceUrl || ec.id,
-        dbId: ec.id,
-        title: ec.title,
-        type: ec.contentType,
-        description: ec.description,
-        dueDate: ec.dueDate ?? null,
-        originalDueDate: ec.dueDate ?? null,
-      }));
-      setSelectedCommon(loaded);
-      setOriginalCommonDbIds(new Set(loaded.map((l) => l.dbId!).filter(Boolean)));
-    } else if (isOpen && existingContents.length === 0 && !isLoadingExisting) {
-      setSelectedCommon([]);
-      setOriginalCommonDbIds(new Set());
-    }
-  }, [isOpen, existingContents, isLoadingExisting]);
-
-  useEffect(() => {
-    if (isOpen && !isLoadingPersonal) {
-      const loaded = existingPersonalContents.map((pc) => ({
-        id: pc.resourceUrl || pc.sessionContentId,
-        dbId: pc.sessionContentId,
-        title: pc.title,
-        type: pc.contentType,
-        description: pc.description ?? undefined,
-        studentId: pc.studentId,
-      }));
-      setSelectedPersonal(loaded as any[]);
-      setOriginalPersonalSessionContentIds(new Set(existingPersonalContents.map((pc) => pc.sessionContentId)));
-    }
-  }, [isOpen, existingPersonalContents, isLoadingPersonal]);
-
-  useEffect(() => {
     if (!isOpen) {
       setSelectedCommon([]);
       setSelectedPersonal([]);
@@ -1146,8 +1121,63 @@ export function SessionContentDialog({
       setLibraryOpen(false);
       setExamPickerOpen(false);
       setViewingExamId(null);
+      hydratedSessionKeyRef.current = null;
     }
   }, [isOpen]);
+
+  const sessionContentKey = [
+    classSessionId,
+    freeClassId ?? "",
+    freeSessionDate ?? "",
+  ].join("|");
+
+  useEffect(() => {
+    if (
+      !isOpen
+      || isLoadingExisting
+      || isLoadingPersonal
+      || !isExistingContentsFetched
+      || !isPersonalContentsFetched
+      || hydratedSessionKeyRef.current === sessionContentKey
+    ) {
+      return;
+    }
+
+    const loadedCommon: SelectedContent[] = existingContents.map((ec) => ({
+      id: ec.resourceUrl || ec.id,
+      dbId: ec.id,
+      title: ec.title,
+      type: ec.contentType,
+      description: ec.description,
+      dueDate: ec.dueDate ?? null,
+      originalDueDate: ec.dueDate ?? null,
+    }));
+    const loadedPersonal = existingPersonalContents.map((pc) => ({
+      id: pc.resourceUrl || pc.sessionContentId,
+      dbId: pc.sessionContentId,
+      title: pc.title,
+      type: pc.contentType,
+      description: pc.description ?? undefined,
+      studentId: pc.studentId,
+    }));
+
+    setSelectedCommon(loadedCommon);
+    setOriginalCommonDbIds(new Set(loadedCommon.map((item) => item.dbId!).filter(Boolean)));
+    setSelectedPersonal(loadedPersonal as any[]);
+    setOriginalPersonalSessionContentIds(
+      new Set(existingPersonalContents.map((item) => item.sessionContentId)),
+    );
+    hydratedSessionKeyRef.current = sessionContentKey;
+  }, [
+    isOpen,
+    isLoadingExisting,
+    isLoadingPersonal,
+    isExistingContentsFetched,
+    isPersonalContentsFetched,
+    existingContents,
+    existingPersonalContents,
+    sessionContentKey,
+  ]);
 
   const isSaving = false;
 
