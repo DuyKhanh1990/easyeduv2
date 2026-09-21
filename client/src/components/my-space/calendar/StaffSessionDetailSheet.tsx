@@ -122,12 +122,15 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
 
   const studentSessionsKey = `/api/class-sessions/${classSessionId}/student-sessions`;
 
-  const { data: studentSessions = [], isLoading: loadingStudents } = useQuery<any[]>({
+  const embeddedStudentSessions = session?.studentSessions;
+  const { data: fetchedStudentSessions = [], isLoading: loadingFetchedStudents } = useQuery<any[]>({
     queryKey: [studentSessionsKey],
-    enabled: isOpen && !!classSessionId,
+    enabled: isOpen && !!classSessionId && embeddedStudentSessions === undefined,
     staleTime: 0,
     refetchOnWindowFocus: true,
   });
+  const studentSessions = embeddedStudentSessions ?? fetchedStudentSessions;
+  const loadingStudents = embeddedStudentSessions === undefined && loadingFetchedStudents;
 
   const { data: availableStudents = [], isLoading: loadingAvailable } = useQuery<any[]>({
     queryKey: [`/api/classes/${classId}/available-students`],

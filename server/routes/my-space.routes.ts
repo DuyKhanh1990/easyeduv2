@@ -80,6 +80,39 @@ async function getSessionAttendanceStats(classSessionId: string): Promise<{ enro
   return { enrolledCount: row?.enrolledCount ?? 0, pendingCount: row?.pendingCount ?? 0, reviewedCount: row?.reviewedCount ?? 0 };
 }
 
+async function getRegularSessionStudents(classSessionId: string) {
+  const rows = await db
+    .select({
+      id: studentSessions.id,
+      studentId: studentSessions.studentId,
+      studentClassId: studentSessions.studentClassId,
+      attendanceStatus: studentSessions.attendanceStatus,
+      attendanceNote: studentSessions.attendanceNote,
+      reviewData: studentSessions.reviewData,
+      reviewPublished: studentSessions.reviewPublished,
+      studentFullName: students.fullName,
+      studentCode: students.code,
+    })
+    .from(studentSessions)
+    .innerJoin(students, eq(studentSessions.studentId, students.id))
+    .where(eq(studentSessions.classSessionId, classSessionId))
+    .orderBy(students.fullName);
+
+  return rows.map((row) => ({
+    id: row.id,
+    studentId: row.studentId,
+    studentClassId: row.studentClassId,
+    attendanceStatus: row.attendanceStatus,
+    attendanceNote: row.attendanceNote,
+    reviewData: row.reviewData,
+    reviewPublished: row.reviewPublished,
+    student: {
+      fullName: row.studentFullName,
+      code: row.studentCode,
+    },
+  }));
+}
+
 async function getTeacherNames(teacherIds: string[]): Promise<string[]> {
   if (!teacherIds || teacherIds.length === 0) return [];
   const records = await db
@@ -1664,10 +1697,13 @@ export function registerMySpaceRoutes(app: Express): void {
         });
       }
 
-      const teachers = await getTeachersWithIds(row.teacherIds ?? []);
+      const [teachers, contents, stats, regularStudentSessions] = await Promise.all([
+        getTeachersWithIds(row.teacherIds ?? []),
+        getSessionContents(row.classSessionId),
+        getSessionAttendanceStats(row.classSessionId),
+        getRegularSessionStudents(row.classSessionId),
+      ]);
       const teacherNames = teachers.map((t) => t.fullName);
-      const contents = await getSessionContents(row.classSessionId);
-      const stats = await getSessionAttendanceStats(row.classSessionId);
 
       res.json({
         classSessionId: row.classSessionId,
@@ -1698,6 +1734,7 @@ export function registerMySpaceRoutes(app: Express): void {
         enrolledCount: stats.enrolledCount,
         attendancePendingCount: stats.pendingCount,
         reviewedCount: stats.reviewedCount,
+        studentSessions: regularStudentSessions,
       });
     } catch (err: any) {
       console.error("Staff session detail error:", err);
@@ -1719,36 +1756,7 @@ export function registerMySpaceRoutes(app: Express): void {
       const { classSessionId } = req.params;
       if (classSessionId.startsWith("free-")) return res.json([]);
 
-      const rows = await db
-        .select({
-          id: studentSessions.id,
-          studentId: studentSessions.studentId,
-          studentClassId: studentSessions.studentClassId,
-          attendanceStatus: studentSessions.attendanceStatus,
-          attendanceNote: studentSessions.attendanceNote,
-          reviewData: studentSessions.reviewData,
-          reviewPublished: studentSessions.reviewPublished,
-          studentFullName: students.fullName,
-          studentCode: students.code,
-        })
-        .from(studentSessions)
-        .innerJoin(students, eq(studentSessions.studentId, students.id))
-        .where(eq(studentSessions.classSessionId, classSessionId))
-        .orderBy(students.fullName);
-
-      return res.json(rows.map((row) => ({
-        id: row.id,
-        studentId: row.studentId,
-        studentClassId: row.studentClassId,
-        attendanceStatus: row.attendanceStatus,
-        attendanceNote: row.attendanceNote,
-        reviewData: row.reviewData,
-        reviewPublished: row.reviewPublished,
-        student: {
-          fullName: row.studentFullName,
-          code: row.studentCode,
-        },
-      })));
+      return res.json(await getRegularSessionStudents(classSessionId));
     } catch (err: any) {
       console.error("Staff class session student list error:", err);
       return res.status(500).json({ message: err.message || "Lỗi khi tải danh sách học viên buổi học" });

@@ -41,6 +41,20 @@ export interface OnlineRuleConfig {
   autoAttendanceOnJoin: boolean;
 }
 
+export interface RegularSessionStudent {
+  id: string;
+  studentId: string;
+  studentClassId: string | null;
+  attendanceStatus: string | null;
+  attendanceNote: string | null;
+  reviewData: unknown;
+  reviewPublished: boolean | null;
+  student: {
+    fullName: string;
+    code: string;
+  };
+}
+
 // Lightweight session — returned by the monthly calendar endpoint
 export interface MyCalendarSessionLight {
   classSessionId: string;
@@ -95,6 +109,7 @@ export interface MyCalendarSession extends MyCalendarSessionLight {
   enrolledCount?: number;
   attendancePendingCount?: number;
   reviewedCount?: number;
+  studentSessions?: RegularSessionStudent[];
   isFreeSession?: boolean;
   freeStatus?: string | null;
   freeStudents?: MyCalendarSessionLight["freeStudents"];
