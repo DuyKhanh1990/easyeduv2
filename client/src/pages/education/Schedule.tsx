@@ -88,6 +88,8 @@ function getClassColor(classId: string) {
 }
 
 const WEEKDAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+const UNASSIGNED_ROOM_KEY = "__unassigned__";
+const UNASSIGNED_ROOM_NAME = "Chưa xếp phòng";
 
 function formatShiftTime(start: string, end: string) {
   return `${start?.slice(0, 5) ?? ""} – ${end?.slice(0, 5) ?? ""}`;
@@ -1528,8 +1530,12 @@ function RoomView({
   // All rooms across the full week (for week mode)
   const allWeekRooms = useMemo(() => {
     const map = new Map<string, { key: string; name: string; capacity: number | null }>();
+    let hasUnassigned = false;
     sessions.forEach(s => {
-      if (!s.roomName) return;
+      if (!s.roomName) {
+        hasUnassigned = true;
+        return;
+      }
       const key = s.roomId || s.roomName;
       if (!map.has(key)) {
         map.set(key, {
@@ -1539,13 +1545,24 @@ function RoomView({
         });
       }
     });
+    if (hasUnassigned) {
+      map.set(UNASSIGNED_ROOM_KEY, {
+        key: UNASSIGNED_ROOM_KEY,
+        name: UNASSIGNED_ROOM_NAME,
+        capacity: null,
+      });
+    }
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "vi"));
   }, [sessions, capacityMap]);
 
   const rooms = useMemo(() => {
     const map = new Map<string, { key: string; name: string; capacity: number | null }>();
+    let hasUnassigned = false;
     daySessions.forEach(s => {
-      if (!s.roomName) return;
+      if (!s.roomName) {
+        hasUnassigned = true;
+        return;
+      }
       const key = s.roomId || s.roomName;
       if (!map.has(key)) {
         map.set(key, {
@@ -1555,13 +1572,21 @@ function RoomView({
         });
       }
     });
+    if (hasUnassigned) {
+      map.set(UNASSIGNED_ROOM_KEY, {
+        key: UNASSIGNED_ROOM_KEY,
+        name: UNASSIGNED_ROOM_NAME,
+        capacity: null,
+      });
+    }
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "vi"));
   }, [daySessions, capacityMap]);
 
   const { gridStartH, gridEndH } = useMemo(() => {
-    if (daySessions.length === 0) return { gridStartH: 7, gridEndH: 20 };
-    const starts = daySessions.map(s => timeToMinutes(s.shiftStart));
-    const ends = daySessions.map(s => timeToMinutes(s.shiftEnd));
+    const timedSessions = daySessions.filter(s => s.shiftStart && s.shiftEnd);
+    if (timedSessions.length === 0) return { gridStartH: 7, gridEndH: 20 };
+    const starts = timedSessions.map(s => timeToMinutes(s.shiftStart));
+    const ends = timedSessions.map(s => timeToMinutes(s.shiftEnd));
     const minStart = Math.min(...starts);
     const maxEnd = Math.max(...ends);
     return {
@@ -1634,7 +1659,9 @@ function RoomView({
             ) : (
               allWeekRooms.map((room, rowIdx) => {
                 const weekSessions = sessions.filter(s =>
-                  s.roomId === room.key || s.roomName === room.name
+                  room.key === UNASSIGNED_ROOM_KEY
+                    ? !s.roomName
+                    : s.roomId === room.key || s.roomName === room.name
                 );
                 const totalCount = weekSessions.length;
                 return (
@@ -1842,7 +1869,9 @@ function RoomView({
           ) : (
             rooms.map((room, roomIdx) => {
               const roomSessions = daySessions.filter(s =>
-                s.roomId === room.key || s.roomName === room.name
+                room.key === UNASSIGNED_ROOM_KEY
+                  ? !s.roomName
+                  : s.roomId === room.key || s.roomName === room.name
               );
               const laneMap = computeLanes(roomSessions);
               const maxLanes = roomSessions.length === 0 ? 1 : Math.max(...Array.from(laneMap.values()).map(v => v.laneCount));
@@ -1873,7 +1902,18 @@ function RoomView({
                     )}
                   </div>
 
-                  {/* Time grid */}
+                  {/* Unassigned sessions have no time slot, so keep them in a readable
+                      flow instead of placing them at 00:00 in the time grid. */}
+                  {room.key === UNASSIGNED_ROOM_KEY ? (
+                    <div className="flex flex-1 flex-wrap content-start gap-2 p-3">
+                      {roomSessions.map(s => (
+                        <div key={s.id} className="w-[220px] max-w-full">
+                          <SessionCard session={s} onClick={() => onSessionClick(s)} />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                  /* Time grid */
                   <div
                     className="relative flex-1"
                     style={{ minHeight: rowMinH }}
@@ -1990,6 +2030,7 @@ function RoomView({
                       </TooltipProvider>
                     )}
                   </div>
+                  )}
                 </div>
               );
             })
