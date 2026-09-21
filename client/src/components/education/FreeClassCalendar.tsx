@@ -1206,7 +1206,7 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
         </DialogContent>
       </Dialog>
       <SessionContentDialog
-        open={!!contentDialogDate}
+        isOpen={!!contentDialogDate}
         onOpenChange={(open) => {
           if (!open) setContentDialogDate(null);
         }}
