@@ -476,6 +476,16 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
           >
             Điểm danh
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 border-emerald-200 px-2 text-xs text-emerald-700 hover:bg-emerald-50"
+            disabled={!classPerm?.canEdit || !selectedDate}
+            onClick={() => selectedDate && setContentDialogDate(selectedDate)}
+          >
+            <BookOpen className="h-3.5 w-3.5" />
+            Nội dung
+          </Button>
         </div>
       </div>
       <div className="flex-1 overflow-auto">
@@ -1195,6 +1205,16 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <SessionContentDialog
+        open={!!contentDialogDate}
+        onOpenChange={(open) => {
+          if (!open) setContentDialogDate(null);
+        }}
+        classSessionId={contentDialogDate ? `free-${classId}__${contentDialogDate}` : ""}
+        freeClassId={classId}
+        freeSessionDate={contentDialogDate ?? undefined}
+        freeStudents={contentDialogStudents}
+      />
       <ReviewDialog
         open={!!reviewTarget}
         onOpenChange={(open) => {
