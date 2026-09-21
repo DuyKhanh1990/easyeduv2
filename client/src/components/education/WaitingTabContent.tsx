@@ -35,6 +35,7 @@ import {
 import { UserPlus, Plus, Search, Trash2 } from "lucide-react";
 import { ScheduleDialog } from "@/components/education/ScheduleDialog";
 import { ClassScheduleSetupDialog } from "@/components/education/ClassScheduleSetupDialog";
+import { FreeScheduleDialog } from "@/components/education/FreeScheduleDialog";
 import { useLocations } from "@/hooks/use-locations";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -75,6 +76,7 @@ export function WaitingTabContent({
   const { data: locations } = useLocations();
 
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [showInlineCreate, setShowInlineCreate] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
 
@@ -233,6 +235,7 @@ export function WaitingTabContent({
   const [selectedStudentsForSession, setSelectedStudentsForSession] = useState<string[]>([]);
   const [searchTermForSession, setSearchTermForSession] = useState("");
   const [isSetupDialogOpen, setIsSetupDialogOpen] = useState(false);
+  const [isFreeScheduleDialogOpen, setIsFreeScheduleDialogOpen] = useState(false);
   const [freshSessions, setFreshSessions] = useState<any[] | null>(null);
   const [listSearch, setListSearch] = useState("");
   const [confirmRemoveId, setConfirmRemoveId] = useState<{ studentClassId: string; name: string } | null>(null);
@@ -666,6 +669,10 @@ export function WaitingTabContent({
             disabled={selectedForSchedule.length === 0 || scheduleMutation.isPending}
             className={selectedForSchedule.length > 0 ? "bg-green-600 hover:bg-green-700 text-white" : ""}
             onClick={() => {
+              if (classData?.classType === "free") {
+                setIsFreeScheduleDialogOpen(true);
+                return;
+              }
               // Only show setup dialog if we KNOW the class has no sessions (empty array).
               // If still loading (undefined), open ScheduleDialog directly to avoid false positive.
               const hasNoSessions = Array.isArray(effectiveSessions) && effectiveSessions.length === 0;
@@ -679,6 +686,26 @@ export function WaitingTabContent({
           >
             Xếp lịch ({selectedForSchedule.length})
           </Button>
+          )}
+
+          {isFreeScheduleDialogOpen && (
+            <FreeScheduleDialog
+              isOpen={isFreeScheduleDialogOpen}
+              onOpenChange={setIsFreeScheduleDialogOpen}
+              students={
+                waitingStudents?.filter((s) => selectedForSchedule.includes(s.studentId)) || []
+              }
+              classData={classData}
+              onConfirm={(configs) =>
+                scheduleMutation.mutate(configs, {
+                  onSuccess: () => {
+                    setSelectedForSchedule([]);
+                    setIsFreeScheduleDialogOpen(false);
+                  },
+                })
+              }
+              isPending={scheduleMutation.isPending}
+            />
           )}
 
           {isSetupDialogOpen && (

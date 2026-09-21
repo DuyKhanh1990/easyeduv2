@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { z } from "zod";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,6 +52,8 @@ const CLASS_PALETTE = [
 export function CreateClass() {
   const [step, setStep] = useState(1);
   const [, setLocation] = useLocation();
+  const search = useSearch();
+  const isFreeClass = new URLSearchParams(search).get("classType") === "free";
   const { toast } = useToast();
   const [endType, setEndType] = useState<"date" | "sessions">("date");
   const [sessionCount, setSessionCount] = useState<string>("10");
@@ -61,7 +63,7 @@ export function CreateClass() {
   const [isLiveChecking, setIsLiveChecking] = useState(false);
   const [conflictDetail, setConflictDetail] = useState<{ conflicts: any[]; title: string } | null>(null);
 
-  const form = useForm({
+  const form = useForm<any>({
     resolver: zodResolver(insertClassSchema.extend({
       startDate: z.string().min(1, "Ngày bắt đầu là bắt buộc"),
       endDate: z.string().optional(),
@@ -77,12 +79,13 @@ export function CreateClass() {
           shift_template_id: z.string().min(1, "Vui lòng chọn ca học"),
           room_id: z.string().optional()
         })).min(1, "Vui lòng thêm ít nhất một ca học")
-      })).min(1, "Lịch học là bắt buộc"),
+      })).optional(),
       teachers_config: z.array(z.object({
         teacher_id: z.string().min(1, "Vui lòng chọn giáo viên"),
         mode: z.enum(["all", "specific"]),
         shift_keys: z.array(z.string())
-      })).min(1, "Giáo viên là bắt buộc"),
+      })).optional(),
+      classType: z.string().optional(),
     })),
     defaultValues: {
       classCode: `CLS-${Date.now().toString().slice(-6)}`,
@@ -112,9 +115,9 @@ export function CreateClass() {
     }
   });
 
-  const { data: locations } = useQuery({ queryKey: ["/api/locations"], staleTime: STATIC_STALE_TIME });
-  const { data: programs } = useQuery({ queryKey: ["/api/course-programs"], staleTime: STATIC_STALE_TIME });
-  const { data: courses } = useQuery({ queryKey: ["/api/courses"], staleTime: STATIC_STALE_TIME });
+  const { data: locations } = useQuery<any[]>({ queryKey: ["/api/locations"], staleTime: STATIC_STALE_TIME });
+  const { data: programs } = useQuery<any[]>({ queryKey: ["/api/course-programs"], staleTime: STATIC_STALE_TIME });
+  const { data: courses } = useQuery<any[]>({ queryKey: ["/api/courses"], staleTime: STATIC_STALE_TIME });
   const { data: subjects } = useQuery<any[]>({ queryKey: ["/api/subjects"], staleTime: STATIC_STALE_TIME });
   const { data: evaluationCriteriaList } = useQuery<any[]>({ queryKey: ["/api/evaluation-criteria"], staleTime: STATIC_STALE_TIME });
   
@@ -157,9 +160,9 @@ export function CreateClass() {
     name: "teachers_config"
   });
 
-  const selectedWeekdays = form.watch("weekdays") || [];
-  const scheduleConfig = form.watch("schedule_config") || [];
-  const teachersConfig = form.watch("teachers_config") || [];
+  const selectedWeekdays: number[] = (form.watch("weekdays") || []) as number[];
+  const scheduleConfig: any[] = (form.watch("schedule_config") || []) as any[];
+  const teachersConfig: any[] = (form.watch("teachers_config") || []) as any[];
   const selectedFeePackageId = form.watch("feePackageId");
   const watchedStartDate = form.watch("startDate");
   const watchedEndDate = form.watch("endDate");
@@ -268,6 +271,15 @@ export function CreateClass() {
       }
     }
     if (step === 2) {
+      if (isFreeClass) {
+        const isValid = await form.trigger(["startDate", "endDate"]);
+        const freeEndDate = String(form.getValues("endDate") || "");
+        if (!isValid || !freeEndDate) {
+          return toast({ title: "Thiếu thông tin", description: "Vui lòng chọn thời hạn áp dụng cho lớp tự do", variant: "destructive" });
+        }
+        setStep(s => s + 1);
+        return;
+      }
       const fieldsToValidate: any[] = ["weekdays", "startDate", "schedule_config", "teachers_config"];
       if (endType === "date") fieldsToValidate.push("endDate");
       const isValid = await form.trigger(fieldsToValidate);
@@ -319,10 +331,11 @@ export function CreateClass() {
       const valOrNull = (val: string | undefined | null) => (val && val.trim() !== "" ? val : null);
       const submitData = {
         ...data,
-        weekdays: data.weekdays.map(Number),
+        classType: isFreeClass ? "free" : "group",
+        weekdays: (data.weekdays || []).map(Number),
         managerIds: data.managerIds || [],
         teacherIds: [...new Set((data.teachers_config || []).map((t: any) => t.teacher_id))],
-        shiftTemplateId: data.schedule_config[0]?.shifts[0]?.shift_template_id || "00000000-0000-0000-0000-000000000000",
+        shiftTemplateId: data.schedule_config?.[0]?.shifts?.[0]?.shift_template_id || "00000000-0000-0000-0000-000000000000",
         endType,
         sessionCount: endType === "sessions" ? Number(sessionCount) : undefined,
         color: selectedColor,
@@ -358,7 +371,7 @@ export function CreateClass() {
         
         // Detailed logging of errors to help debug
         Object.keys(form.formState.errors).forEach(key => {
-          console.log(`Field ${key} error:`, form.formState.errors[key as keyof typeof form.formState.errors]);
+          console.log(`Field ${key} error:`, (form.formState.errors as any)[key]);
         });
 
         toast({
@@ -710,6 +723,45 @@ export function CreateClass() {
                 )}
 
                 {step === 2 && (
+                  isFreeClass ? (
+                    <div className="space-y-6">
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+                        <h3 className="font-semibold text-emerald-900">Lớp Tự do</h3>
+                        <p className="mt-1 text-sm text-emerald-800">
+                          Lớp không có ca cố định. Nhân viên sẽ đăng ký ngày học theo tháng,
+                          sau đó giáo viên điểm danh riêng từng ngày.
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-6">
+                        <FormField
+                          control={form.control}
+                          name="startDate"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Ngày bắt đầu <span className="text-destructive">*</span></FormLabel>
+                              <FormControl><Input type="date" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="endDate"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Ngày giới hạn <span className="text-destructive">*</span></FormLabel>
+                              <FormControl><Input type="date" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Số buổi trong gói học phí chỉ là tham khảo. Khi xếp học viên, bạn sẽ
+                        nhập lại số buổi và khoảng thời gian áp dụng cho từng học viên.
+                      </p>
+                    </div>
+                  ) : (
                   <div className="space-y-8">
                     {/* Time Range */}
                     <div className="pb-6 border-b">
@@ -806,7 +858,7 @@ export function CreateClass() {
                               id={`day-${day.value}`} 
                               checked={selectedWeekdays.includes(day.value)}
                               onCheckedChange={(checked) => {
-                                const current = form.getValues("weekdays") || [];
+                                const current: number[] = (form.getValues("weekdays") || []) as number[];
                                 if (checked) {
                                   form.setValue("weekdays", [...current, day.value]);
                                 } else {
@@ -1110,6 +1162,7 @@ export function CreateClass() {
                       </div>
                     </div>
                   </div>
+                  )
                 )}
 
                 {step === 3 && (
@@ -1127,7 +1180,7 @@ export function CreateClass() {
                         </div>
                         <div className="space-y-1">
                           <p className="text-muted-foreground">Thời gian</p>
-                          <p className="font-semibold">{form.watch("start_date")} đến {form.watch("end_date")}</p>
+                         <p className="font-semibold">{form.watch("startDate")} đến {form.watch("endDate")}</p>
                         </div>
                         <div className="space-y-1">
                           <p className="text-muted-foreground">Cơ sở</p>

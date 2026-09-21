@@ -16,6 +16,7 @@ import { ActiveTabContent } from "@/components/education/ActiveTabContent";
 import { AttendanceTabContent } from "@/components/education/AttendanceTabContent";
 import { ScoreSheetTabContent } from "@/components/education/ScoreSheetTabContent";
 import { ActivityLogTabContent } from "@/components/education/ActivityLogTabContent";
+import { FreeClassCalendar } from "@/components/education/FreeClassCalendar";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { CopyClassDialog } from "@/components/education/CopyClassDialog";
 import { CloseClassDialog } from "@/components/education/CloseClassDialog";
@@ -49,6 +50,8 @@ export function ClassDetail() {
   const handleTabChange = (val: string) => {
     if (val !== "schedule") {
       setBgTab(val);
+    } else if (isFreeClass) {
+      setBgTab("schedule");
     } else {
       // Do not show actions from a previous schedule instance while the
       // popup is getting its content ready.
@@ -56,21 +59,6 @@ export function ClassDetail() {
     }
     setActiveTab(val);
   };
-
-  const isScheduleOpen = activeTab === "schedule";
-
-  useEffect(() => {
-    if (!isScheduleOpen) {
-      setScheduleContentReady(false);
-      return;
-    }
-
-    // Let the overlay paint before mounting the schedule tree. The schedule
-    // contains many queries and dialogs, so mounting it in the click handler
-    // can make the tab feel intermittently unresponsive on production data.
-    const frame = requestAnimationFrame(() => setScheduleContentReady(true));
-    return () => cancelAnimationFrame(frame);
-  }, [isScheduleOpen]);
 
   const actionBtn = (grad: string, extra?: string) =>
     `inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gradient-to-r ${grad} text-white text-[11px] font-semibold shadow-sm hover:opacity-90 active:scale-95 transition-all shrink-0 ${extra ?? ""}`;
@@ -91,6 +79,21 @@ export function ClassDetail() {
     refetchOnMount: "always",
     staleTime: 0,
   });
+  const isFreeClass = classData?.classType === "free";
+  const isScheduleOpen = activeTab === "schedule" && !!classData && !isFreeClass;
+
+  useEffect(() => {
+    if (isFreeClass && activeTab === "schedule") setBgTab("schedule");
+  }, [isFreeClass, activeTab]);
+
+  useEffect(() => {
+    if (!isScheduleOpen) {
+      setScheduleContentReady(false);
+      return;
+    }
+    const frame = requestAnimationFrame(() => setScheduleContentReady(true));
+    return () => cancelAnimationFrame(frame);
+  }, [isScheduleOpen]);
 
   const needsWaiting = activeTab === "waiting" || activeTab === "schedule";
   const needsActive = activeTab === "active" || activeTab === "schedule" || activeTab === "attendance";
@@ -163,7 +166,7 @@ export function ClassDetail() {
   const TABS = [
     { value: "waiting", label: `Học viên chờ (${waitingCount})` },
     { value: "active", label: `Học viên chính thức (${activeCount})` },
-    { value: "schedule", label: "Lịch học" },
+    { value: "schedule", label: isFreeClass ? "Lịch" : "Lịch học" },
     { value: "attendance", label: "Điểm danh" },
     { value: "score-sheet", label: "Bảng điểm" },
     { value: "log", label: "Nhật ký" },
@@ -362,6 +365,16 @@ export function ClassDetail() {
                 enrolledStudents={activeStudents}
               />
             </TabsContent>
+
+            {isFreeClass && (
+              <TabsContent value="schedule" className="h-full mt-0">
+                <FreeClassCalendar
+                  classId={id!}
+                  classData={classData}
+                  classPerm={classPerm}
+                />
+              </TabsContent>
+            )}
 
             <TabsContent value="score-sheet" className="h-full mt-0">
               <ScoreSheetTabContent

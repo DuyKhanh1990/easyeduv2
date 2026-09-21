@@ -508,6 +508,8 @@ export const api = {
     removeWaitingStudent: { path: "/api/classes/:id/waiting-students/:studentClassId", method: "DELETE" },
     scheduleStudents: { path: "/api/classes/:id/schedule-students", method: "POST" },
     sessions: { path: "/api/classes/:id/sessions", method: "GET" },
+    freeSchedule: { path: "/api/classes/:id/free-schedule", method: "GET" },
+    updateFreeSchedule: { path: "/api/classes/:id/free-schedule", method: "PATCH" },
     studentSessions: { path: "/api/classes/:id/student/:studentId/sessions", method: "GET" },
     changeTeacher: { path: "/api/classes/:id/change-teacher", method: "POST" },
     checkAttendanceBeforeDelete: { path: "/api/classes/check-attendance-before-delete", method: "POST" },

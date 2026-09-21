@@ -58,3 +58,4 @@
 - [Actual session tuition allocation](actual-session-tuition-allocation.md) — học phí áp dụng của gói khóa phải phân bổ theo số buổi đăng ký thực tế và allocation của hóa đơn.
 - [Tuition refund expense wallet](tuition-refund-expense-wallet.md) — Phiếu chi Hoàn học phí đã thanh toán phải reconcile debit theo invoiceId vào ví Học phí, kể cả đợt thanh toán.
 - [Tuition package change offsets](tuition-package-change-offsets.md) — đổi gói theo bù trừ; giữ nguyên buổi ngoài khoảng, dùng override tuyệt đối có thứ tự và chứng từ theo chênh lệch.
+- [Free class calendar model](free-class-calendar.md) — lớp tự do dùng bản ghi theo học viên/ngày; đăng ký không trừ buổi, điểm danh mới cập nhật số đã dùng.

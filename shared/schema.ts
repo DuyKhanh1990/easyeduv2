@@ -68,6 +68,33 @@ export const studentSessions = pgTable("student_sessions", {
 }));
 
 // ==========================================
+// FREE CLASS DAILY REGISTRATIONS
+// ==========================================
+// A free class has no fixed class_sessions. Each attended day consumes one
+// session from the student's enrollment, while merely registering a day does
+// not consume anything.
+export const freeClassRegistrations = pgTable("free_class_registrations", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  classId: uuid("class_id").notNull().references(() => classes.id, { onDelete: "cascade" }),
+  studentClassId: uuid("student_class_id").notNull().references(() => studentClasses.id, { onDelete: "cascade" }),
+  studentId: uuid("student_id").notNull().references(() => students.id, { onDelete: "cascade" }),
+  registrationDate: date("registration_date").notNull(),
+  teacherId: uuid("teacher_id").references(() => staff.id, { onDelete: "set null" }),
+  status: varchar("status", { length: 20 }).notNull().default("registered"), // registered | attended
+  registeredBy: uuid("registered_by").references(() => users.id, { onDelete: "set null" }),
+  registeredAt: timestamp("registered_at").defaultNow().notNull(),
+  attendedBy: uuid("attended_by").references(() => users.id, { onDelete: "set null" }),
+  attendedAt: timestamp("attended_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  classDateIdx: index("free_class_registrations_class_date_idx").on(table.classId, table.registrationDate),
+  studentClassDateIdx: index("free_class_registrations_student_class_date_idx").on(table.studentClassId, table.registrationDate),
+  statusIdx: index("free_class_registrations_status_idx").on(table.status),
+  studentClassDateUnique: unique("free_class_registrations_student_class_date_unique").on(table.studentClassId, table.registrationDate),
+}));
+
+// ==========================================
 // STUDENT COMMENTS (Discussion/Notes)
 // ==========================================
 export const studentComments = pgTable("student_comments", {
@@ -832,7 +859,7 @@ export const classes = pgTable("classes", {
   evaluationCriteriaIds: uuid("evaluation_criteria_ids").array(),
   scoreSheetId: uuid("score_sheet_id").references(() => scoreSheets.id, { onDelete: "set null" }),
   scheduleGenerated: boolean("schedule_generated").notNull().default(false),
-  classType: varchar("class_type", { length: 20 }).default("group"), // group, tutor
+  classType: varchar("class_type", { length: 20 }).default("group"), // group, tutor, free
   tinodeTopicId: varchar("tinode_topic_id", { length: 100 }),
   cycleHistory: jsonb("cycle_history"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -894,6 +921,15 @@ export const classSessionsRelations = relations(classSessions, ({ one }) => ({
 export const insertClassSchema = createInsertSchema(classes).omit({ id: true, createdAt: true, updatedAt: true });
 export type Class = typeof classes.$inferSelect;
 export type InsertClass = z.infer<typeof insertClassSchema>;
+
+export const insertFreeClassRegistrationSchema = createInsertSchema(freeClassRegistrations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  registeredAt: true,
+});
+export type FreeClassRegistration = typeof freeClassRegistrations.$inferSelect;
+export type InsertFreeClassRegistration = z.infer<typeof insertFreeClassRegistrationSchema>;
 
 export const insertClassSessionSchema = createInsertSchema(classSessions).omit({ id: true, createdAt: true, updatedAt: true });
 export type ClassSession = typeof classSessions.$inferSelect;

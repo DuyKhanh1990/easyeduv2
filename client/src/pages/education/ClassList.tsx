@@ -6,7 +6,7 @@ import { useClassList, PAGE_SIZE_OPTIONS } from "@/hooks/use-class-list";
 import type { PageSizeOption } from "@/hooks/use-class-list";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
-import { Plus, LayoutGrid, List, Upload, Download, FileSpreadsheet, X, Users, User, FileDown } from "lucide-react";
+import { Plus, LayoutGrid, List, Upload, Download, FileSpreadsheet, X, Users, User, FileDown, CalendarDays } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { 
@@ -530,7 +530,7 @@ export function ClassList() {
           <DialogHeader>
             <DialogTitle>Chọn loại lớp học</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-4 pt-2">
+          <div className="grid grid-cols-3 gap-4 pt-2">
             <button
               className="flex flex-col items-center gap-3 p-5 rounded-xl border-2 border-border hover:border-primary hover:bg-primary/5 transition-all text-center group"
               onClick={() => { setShowCreateTypeDialog(false); navigate("/classes/create"); }}
@@ -553,6 +553,18 @@ export function ClassList() {
               <div>
                 <p className="font-bold text-sm">Lớp Gia sư (1-1)</p>
                 <p className="text-xs text-muted-foreground mt-0.5">1 học viên, dạy kèm riêng lẻ</p>
+              </div>
+            </button>
+            <button
+              className="flex flex-col items-center gap-3 p-5 rounded-xl border-2 border-border hover:border-emerald-500 hover:bg-emerald-50 transition-all text-center group"
+              onClick={() => { setShowCreateTypeDialog(false); navigate("/classes/create?classType=free"); }}
+            >
+              <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center group-hover:bg-emerald-200 transition-colors">
+                <CalendarDays className="h-6 w-6 text-emerald-600" />
+              </div>
+              <div>
+                <p className="font-bold text-sm">Lớp Tự do</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Đăng ký ngày học theo tháng</p>
               </div>
             </button>
           </div>

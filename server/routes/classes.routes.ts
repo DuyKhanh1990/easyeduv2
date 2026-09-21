@@ -5,7 +5,7 @@ import { getClassFormatSummary, getClassStatusSummary, getNewClassesSummary, get
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { db, pool } from "../db";
-import { classSessions, studentSessions, students, classes, studentClasses, staff, staffAssignments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, courseFeePackages, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
+import { classSessions, studentSessions, freeClassRegistrations, students, classes, studentClasses, staff, staffAssignments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, courseFeePackages, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
 import { eq, and, sql, inArray, avg, between, gte, lte, gt, desc, asc, or, ilike, isNotNull, isNull, ne } from "drizzle-orm";
 import { sendAttendanceNotification, sendReviewNotification, sendContentNotification } from "../lib/attendance-notification";
 import { enforceAttendanceTimeLimit, getStaffRoleIds } from "../lib/attendance-limit";
@@ -1287,6 +1287,69 @@ export function registerClassesRoutes(app: Express): void {
       const { configs, classScheduleConfig } = req.body;
       const userId = (req.user as any)?.id;
       const classId = String(req.params.id);
+      const [classRow] = await db
+        .select({ id: classes.id, classType: classes.classType, startDate: classes.startDate, endDate: classes.endDate })
+        .from(classes)
+        .where(eq(classes.id, classId))
+        .limit(1);
+      if (!classRow) return res.status(404).json({ message: "Không tìm thấy lớp học" });
+
+      // Free classes do not have fixed class_sessions. Scheduling a student
+      // activates their enrollment and stores the configured allowance/window
+      // on student_classes; actual consumption is recorded per calendar day.
+      if (classRow.classType === "free") {
+        if (!Array.isArray(configs) || configs.length === 0) {
+          return res.status(400).json({ message: "Chưa có học viên để xếp lịch" });
+        }
+        await db.transaction(async (tx) => {
+          for (const config of configs) {
+            const studentId = String(config.studentId || "");
+            if (!studentId) throw new Error("Thiếu học viên trong cấu hình xếp lịch");
+            let [sc] = await tx
+              .select()
+              .from(studentClasses)
+              .where(and(eq(studentClasses.classId, classId), eq(studentClasses.studentId, studentId)))
+              .limit(1);
+            if (!sc) {
+              [sc] = await tx.insert(studentClasses).values({
+                classId,
+                studentId,
+                status: "waiting",
+                createdBy: userId || null,
+              } as any).returning();
+            }
+            if (!sc) continue;
+            const startDate = String(config.startDate || classRow.startDate || "").slice(0, 10);
+            const endDate = String(config.endDate || classRow.endDate || "").slice(0, 10);
+            const totalSessions = Math.max(1, Number(config.totalSessions ?? config.sessionCount ?? 0));
+            if (!startDate || !endDate) {
+              throw new Error("Lớp tự do cần ngày bắt đầu và ngày kết thúc");
+            }
+            if (endDate < startDate) {
+              throw new Error("Ngày kết thúc phải sau hoặc bằng ngày bắt đầu");
+            }
+            const [attended] = await tx
+              .select({ count: sql<number>`count(*)::int` })
+              .from(freeClassRegistrations)
+              .where(and(
+                eq(freeClassRegistrations.studentClassId, sc.id),
+                eq(freeClassRegistrations.status, "attended"),
+              ));
+            const attendedCount = Number(attended?.count || 0);
+            await tx.update(studentClasses).set({
+              status: "active",
+              startDate,
+              endDate,
+              totalSessions,
+              attendedSessions: attendedCount,
+              remainingSessions: Math.max(0, totalSessions - attendedCount),
+              updatedAt: new Date(),
+            }).where(eq(studentClasses.id, sc.id));
+          }
+        });
+        res.status(200).json({ success: true, freeClass: true });
+        return;
+      }
 
       // If classScheduleConfig is provided, generate class sessions first (one-step flow)
       if (classScheduleConfig) {
@@ -1313,6 +1376,178 @@ export function registerClassesRoutes(app: Express): void {
       })();
     } catch (err: any) {
       res.status(400).json({ message: err.message || "Không thể xếp lịch cho học viên" });
+    }
+  });
+
+  app.get(api.classes.freeSchedule.path, async (req, res) => {
+    const classId = String(req.params.id);
+    if (!(await assertClassReadable(req, res, classId))) return;
+    try {
+      const [classRow] = await db
+        .select({ id: classes.id, classType: classes.classType, startDate: classes.startDate, endDate: classes.endDate })
+        .from(classes)
+        .where(eq(classes.id, classId))
+        .limit(1);
+      if (!classRow) return res.status(404).json({ message: "Không tìm thấy lớp học" });
+      if (classRow.classType !== "free") return res.status(400).json({ message: "Lớp này không phải lớp tự do" });
+
+      const month = String(req.query.month || "");
+      if (!/^\d{4}-\d{2}$/.test(month)) {
+        return res.status(400).json({ message: "Tháng không hợp lệ" });
+      }
+      const monthStart = `${month}-01`;
+      const [year, monthNumber] = month.split("-").map(Number);
+      const nextMonth = new Date(Date.UTC(year, monthNumber, 1)).toISOString().slice(0, 10);
+      const studentsInClass = await db
+        .select({
+          id: studentClasses.id,
+          studentId: studentClasses.studentId,
+          status: studentClasses.status,
+          startDate: studentClasses.startDate,
+          endDate: studentClasses.endDate,
+          totalSessions: studentClasses.totalSessions,
+          attendedSessions: studentClasses.attendedSessions,
+          remainingSessions: studentClasses.remainingSessions,
+          fullName: students.fullName,
+          code: students.code,
+        })
+        .from(studentClasses)
+        .innerJoin(students, eq(students.id, studentClasses.studentId))
+        .where(and(
+          eq(studentClasses.classId, classId),
+          inArray(studentClasses.status, ["active", "waiting"]),
+        ))
+        .orderBy(asc(students.fullName));
+      const registrations = await db
+        .select({
+          id: freeClassRegistrations.id,
+          studentClassId: freeClassRegistrations.studentClassId,
+          studentId: freeClassRegistrations.studentId,
+          registrationDate: freeClassRegistrations.registrationDate,
+          teacherId: freeClassRegistrations.teacherId,
+          status: freeClassRegistrations.status,
+          registeredBy: freeClassRegistrations.registeredBy,
+          registeredAt: freeClassRegistrations.registeredAt,
+          attendedBy: freeClassRegistrations.attendedBy,
+          attendedAt: freeClassRegistrations.attendedAt,
+        })
+        .from(freeClassRegistrations)
+        .where(and(
+          eq(freeClassRegistrations.classId, classId),
+          gte(freeClassRegistrations.registrationDate, monthStart),
+          sql`${freeClassRegistrations.registrationDate} < ${nextMonth}`,
+        ))
+        .orderBy(asc(freeClassRegistrations.registrationDate));
+      res.json({ month, students: studentsInClass, registrations });
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Không thể tải lịch lớp tự do" });
+    }
+  });
+
+  app.patch(api.classes.updateFreeSchedule.path, async (req, res) => {
+    const classId = String(req.params.id);
+    if (!(await assertClassReadable(req, res, classId))) return;
+    const permissions = await getClassPermissions(req);
+    if (!permissions.canEdit) return res.status(403).json({ message: "Bạn không có quyền cập nhật lịch lớp." });
+    try {
+      const { studentClassId, date, action, value, teacherId } = req.body || {};
+      if (!studentClassId || !/^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
+        return res.status(400).json({ message: "Thiếu học viên hoặc ngày học hợp lệ" });
+      }
+      if (action !== "register" && action !== "attend") {
+        return res.status(400).json({ message: "Thao tác lịch không hợp lệ" });
+      }
+      const [classRow] = await db
+        .select({ classType: classes.classType, startDate: classes.startDate, endDate: classes.endDate })
+        .from(classes)
+        .where(eq(classes.id, classId))
+        .limit(1);
+      if (!classRow) return res.status(404).json({ message: "Không tìm thấy lớp học" });
+      if (classRow.classType !== "free") return res.status(400).json({ message: "Lớp này không phải lớp tự do" });
+      const [sc] = await db
+        .select({ id: studentClasses.id, studentId: studentClasses.studentId, totalSessions: studentClasses.totalSessions })
+        .from(studentClasses)
+        .where(and(eq(studentClasses.id, String(studentClassId)), eq(studentClasses.classId, classId)))
+        .limit(1);
+      if (!sc) return res.status(404).json({ message: "Không tìm thấy học viên trong lớp" });
+      const requestedDate = String(date);
+      if ((classRow.startDate && requestedDate < classRow.startDate) || (classRow.endDate && requestedDate > classRow.endDate)) {
+        return res.status(400).json({ message: "Ngày học nằm ngoài thời hạn của lớp" });
+      }
+      const actorId = (req.user as any)?.id || null;
+
+      await db.transaction(async (tx) => {
+        const [existing] = await tx
+          .select()
+          .from(freeClassRegistrations)
+          .where(and(
+            eq(freeClassRegistrations.studentClassId, sc.id),
+            eq(freeClassRegistrations.registrationDate, String(date)),
+          ))
+          .limit(1);
+        if (action === "register") {
+          if (value === false) {
+            if (existing?.status === "attended") {
+              throw new Error("Ngày đã điểm danh không thể hủy đăng ký");
+            }
+            if (existing) await tx.delete(freeClassRegistrations).where(eq(freeClassRegistrations.id, existing.id));
+          } else if (existing) {
+            if (existing.status !== "attended") {
+              await tx.update(freeClassRegistrations).set({
+                teacherId: teacherId || existing.teacherId || null,
+                updatedAt: new Date(),
+              }).where(eq(freeClassRegistrations.id, existing.id));
+            }
+          } else {
+            await tx.insert(freeClassRegistrations).values({
+              classId,
+              studentClassId: sc.id,
+              studentId: sc.studentId,
+              registrationDate: String(date),
+              teacherId: teacherId || null,
+              status: "registered",
+              registeredBy: actorId,
+            });
+          }
+        } else {
+          if (!existing) throw new Error("Học viên chưa đăng ký ngày này");
+          if (value !== false && existing.status !== "attended" && Number(sc.totalSessions || 0) > 0) {
+            const [attendedBefore] = await tx
+              .select({ count: sql<number>`count(*)::int` })
+              .from(freeClassRegistrations)
+              .where(and(
+                eq(freeClassRegistrations.studentClassId, sc.id),
+                eq(freeClassRegistrations.status, "attended"),
+              ));
+            if (Number(attendedBefore?.count || 0) >= Number(sc.totalSessions)) {
+              throw new Error("Học viên đã sử dụng hết số buổi");
+            }
+          }
+          await tx.update(freeClassRegistrations).set({
+            status: value === false ? "registered" : "attended",
+            teacherId: teacherId || existing.teacherId || null,
+            attendedBy: value === false ? null : actorId,
+            attendedAt: value === false ? null : new Date(),
+            updatedAt: new Date(),
+          }).where(eq(freeClassRegistrations.id, existing.id));
+        }
+        const [attended] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(freeClassRegistrations)
+          .where(and(
+            eq(freeClassRegistrations.studentClassId, sc.id),
+            eq(freeClassRegistrations.status, "attended"),
+          ));
+        const attendedCount = Number(attended?.count || 0);
+        await tx.update(studentClasses).set({
+          attendedSessions: attendedCount,
+          remainingSessions: Math.max(0, Number(sc.totalSessions || 0) - attendedCount),
+          updatedAt: new Date(),
+        }).where(eq(studentClasses.id, sc.id));
+      });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Không thể cập nhật lịch lớp tự do" });
     }
   });
 
