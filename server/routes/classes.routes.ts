@@ -51,6 +51,89 @@ async function assertClassReadable(req: any, res: any, classId: string): Promise
   return true;
 }
 
+type FreeClassAccessContext = {
+  registrationId?: string;
+  studentClassId?: string;
+  date?: string;
+};
+
+async function isAssignedToFreeClass(
+  req: any,
+  classId: string,
+  context: FreeClassAccessContext = {},
+): Promise<boolean> {
+  if (req.isSuperAdmin || (req.user as any)?.username === "admin") return true;
+  const staffId = req.staffId as string | null | undefined;
+  if (!staffId) return false;
+
+  const registrationConditions = [
+    eq(freeClassRegistrations.classId, classId),
+    eq(freeClassRegistrations.teacherId, staffId),
+  ];
+  if (context.registrationId) {
+    registrationConditions.push(eq(freeClassRegistrations.id, context.registrationId));
+  }
+  if (context.studentClassId) {
+    registrationConditions.push(eq(freeClassRegistrations.studentClassId, context.studentClassId));
+  }
+  if (context.date) {
+    registrationConditions.push(eq(freeClassRegistrations.registrationDate, context.date));
+  }
+
+  const [row] = await db
+    .select({ id: classes.id })
+    .from(classes)
+    .leftJoin(freeClassRegistrations, eq(freeClassRegistrations.classId, classes.id))
+    .where(and(
+      eq(classes.id, classId),
+      eq(classes.classType, "free"),
+      or(
+        sql`${staffId} = ANY(COALESCE(${classes.teacherIds}, ARRAY[]::uuid[]))`,
+        and(...registrationConditions),
+      ),
+    ))
+    .limit(1);
+
+  return !!row;
+}
+
+async function assertFreeClassReadable(
+  req: any,
+  res: any,
+  classId: string,
+  context: FreeClassAccessContext = {},
+): Promise<boolean> {
+  if (req.isStudent) return true;
+
+  const access = await getClassReadScope(req);
+  const hasRegularReadAccess =
+    access.canView &&
+    await canViewClass(access.scope, classId);
+  if (hasRegularReadAccess || await isAssignedToFreeClass(req, classId, context)) {
+    return true;
+  }
+
+  res.status(403).json({ message: "Bạn không có quyền xem lớp học." });
+  return false;
+}
+
+async function assertFreeClassEditable(
+  req: any,
+  res: any,
+  classId: string,
+  context: FreeClassAccessContext = {},
+): Promise<boolean> {
+  if (!(await assertFreeClassReadable(req, res, classId, context))) return false;
+
+  const permissions = await getClassPermissions(req);
+  if (permissions.canEdit || await isAssignedToFreeClass(req, classId, context)) {
+    return true;
+  }
+
+  res.status(403).json({ message: "Bạn không có quyền cập nhật lịch lớp." });
+  return false;
+}
+
 async function assertClassSessionReadable(req: any, res: any, classSessionId: string): Promise<boolean> {
   if (req.isStudent) return true;
   const [row] = await db
@@ -1476,7 +1559,7 @@ export function registerClassesRoutes(app: Express): void {
 
   app.get(api.classes.freeSchedule.path, async (req, res) => {
     const classId = String(req.params.id);
-    if (!(await assertClassReadable(req, res, classId))) return;
+    if (!(await assertFreeClassReadable(req, res, classId))) return;
     try {
       const [classRow] = await db
         .select({
@@ -1557,9 +1640,6 @@ export function registerClassesRoutes(app: Express): void {
 
   app.patch(api.classes.updateFreeSchedule.path, async (req, res) => {
     const classId = String(req.params.id);
-    if (!(await assertClassReadable(req, res, classId))) return;
-    const permissions = await getClassPermissions(req);
-    if (!permissions.canEdit) return res.status(403).json({ message: "Bạn không có quyền cập nhật lịch lớp." });
     try {
       const requestBody = req.body || {};
       const { studentClassId, date, action, value, status, teacherId, note } = requestBody;
@@ -1567,6 +1647,10 @@ export function registerClassesRoutes(app: Express): void {
       if (!studentClassId || !/^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
         return res.status(400).json({ message: "Thiếu học viên hoặc ngày học hợp lệ" });
       }
+      if (!(await assertFreeClassEditable(req, res, classId, {
+        studentClassId: String(studentClassId),
+        date: String(date),
+      }))) return;
       if (action !== "register" && action !== "attend") {
         return res.status(400).json({ message: "Thao tác lịch không hợp lệ" });
       }
@@ -1681,16 +1765,15 @@ export function registerClassesRoutes(app: Express): void {
 
   app.post("/api/classes/:classId/free-schedule/review", async (req, res) => {
     const classId = String(req.params.classId);
-    if (!(await assertClassReadable(req, res, classId))) return;
-    const permissions = await getClassPermissions(req);
-    if (!permissions.canEdit) return res.status(403).json({ message: "Bạn không có quyền cập nhật nhận xét." });
-
     try {
       const body = z.object({
         registrationId: z.string().uuid(),
         reviewData: z.record(z.any()),
         published: z.boolean().optional().default(false),
       }).parse(req.body);
+      if (!(await assertFreeClassEditable(req, res, classId, {
+        registrationId: body.registrationId,
+      }))) return;
 
       const [registration] = await db
         .select({ id: freeClassRegistrations.id })

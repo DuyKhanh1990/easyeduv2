@@ -63,3 +63,4 @@
 - [Free class attendance selection](free-class-attendance-selection.md) — checkbox đầu dòng là chọn học viên, Select mới đổi trạng thái; trạng thái Có học tự chọn học viên.
 - [Unified free-class calendar](unified-free-class-calendar.md) — cùng lưới tháng: checkbox đăng ký ở trên, Select điểm danh xuất hiện dưới ô đã đăng ký.
 - [Free-class session content isolation](free-class-session-content-isolation.md) — lớp tự do dùng bảng riêng theo classId + ngày; studentId null là giao cả lớp, có studentId là giao cá nhân.
+- [Free-class staff permissions](free-class-staff-permissions.md) — giáo viên được phân công phải thao tác được lớp tự do dù không có quyền quản trị /classes; khóa theo đăng ký/ngày.
