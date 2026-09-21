@@ -82,6 +82,10 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
   const [criteriaDialogOpen, setCriteriaDialogOpen] = useState(false);
   const [criteriaDraft, setCriteriaDraft] = useState<string[]>([]);
   const [criteriaOverride, setCriteriaOverride] = useState<string[] | undefined>();
+  const [bulkAttendanceDialogOpen, setBulkAttendanceDialogOpen] = useState(false);
+  const [bulkAttendanceStatus, setBulkAttendanceStatus] = useState<
+    "registered" | "attended" | "reserved"
+  >("attended");
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const month = format(monthDate, "yyyy-MM");
@@ -262,6 +266,47 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
     },
   });
 
+  const bulkMutation = useMutation({
+    mutationFn: async (payload: {
+      studentClassIds: string[];
+      date: string;
+      action: CalendarMode;
+      status?: "registered" | "attended" | "reserved";
+    }) => {
+      await Promise.all(
+        payload.studentClassIds.map((studentClassId) =>
+          apiRequest("PATCH", `/api/classes/${classId}/free-schedule`, {
+            studentClassId,
+            date: payload.date,
+            action: payload.action,
+            value: payload.action === "register"
+              ? true
+              : payload.status === "attended",
+            status: payload.status,
+          }),
+        ),
+      );
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/free-schedule`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/active-students`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}`] });
+      setBulkAttendanceDialogOpen(false);
+      toast({
+        title: variables.action === "register"
+          ? "Đã đăng ký lịch hàng loạt"
+          : "Đã cập nhật điểm danh hàng loạt",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Không thể cập nhật hàng loạt",
+        description: error?.message || "Vui lòng thử lại.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const toggle = (student: any, date: string, current: any) => {
     if (!classPerm?.canEdit || updateMutation.isPending) return;
     updateMutation.mutate({
@@ -269,6 +314,31 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
       date,
       action: "register",
       value: !current,
+    });
+  };
+
+  const selectedRegisteredStudentIds = selectedStudentIds.filter((studentId) =>
+    selectedDayStudentIdSet.has(studentId),
+  );
+  const runBulkRegistration = () => {
+    if (!selectedDate || selectedStudentIds.length === 0 || bulkMutation.isPending) return;
+    bulkMutation.mutate({
+      studentClassIds: selectedStudentIds,
+      date: selectedDate,
+      action: "register",
+    });
+  };
+  const openBulkAttendance = () => {
+    if (!selectedDate || selectedRegisteredStudentIds.length === 0 || bulkMutation.isPending) return;
+    setBulkAttendanceDialogOpen(true);
+  };
+  const runBulkAttendance = () => {
+    if (!selectedDate || selectedRegisteredStudentIds.length === 0 || bulkMutation.isPending) return;
+    bulkMutation.mutate({
+      studentClassIds: selectedRegisteredStudentIds,
+      date: selectedDate,
+      action: "attend",
+      status: bulkAttendanceStatus,
     });
   };
 
