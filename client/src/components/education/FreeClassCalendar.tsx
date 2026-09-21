@@ -32,6 +32,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { ReviewDialog } from "@/components/education/ReviewDialog";
+import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import {
   Select,
   SelectContent,
@@ -65,6 +66,9 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
     reviewData: Record<string, any>;
     published: boolean;
   }>>({});
+  const [criteriaDialogOpen, setCriteriaDialogOpen] = useState(false);
+  const [criteriaDraft, setCriteriaDraft] = useState<string[]>([]);
+  const [criteriaOverride, setCriteriaOverride] = useState<string[] | undefined>();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const month = format(monthDate, "yyyy-MM");
@@ -78,7 +82,7 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
   });
   const { data: allEvaluationCriteria = [] } = useQuery<any[]>({
     queryKey: ["/api/evaluation-criteria"],
-    enabled: mode === "attend",
+    enabled: mode === "attend" || criteriaDialogOpen,
   });
 
   const updateMutation = useMutation({
@@ -148,16 +152,49 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
     .filter(Boolean)
     .join(", ") || "Chưa gán";
   const classLocationLabel = classData?.location?.name || classData?.locationName || "—";
-  const evaluationCriteriaIds = data?.evaluationCriteriaIds ?? classData?.evaluationCriteriaIds ?? [];
+  const evaluationCriteriaIds = criteriaOverride
+    ?? data?.evaluationCriteriaIds
+    ?? classData?.evaluationCriteriaIds
+    ?? [];
   const reviewCriteria = (allEvaluationCriteria as any[]).filter((criterion) =>
-    evaluationCriteriaIds.includes(criterion.id),
+    evaluationCriteriaIds.map(String).includes(String(criterion.id)),
   );
+  const criteriaOptions = (allEvaluationCriteria as any[]).map((criterion) => ({
+    value: String(criterion.id),
+    label: criterion.name,
+  }));
+  const criteriaLabel = reviewCriteria.length > 0
+    ? reviewCriteria.map((criterion) => criterion.name).join(", ")
+    : "Chưa xác định";
   const reviewTeachers = (classData?.teachers || [])
     .map((teacher: any) => ({ id: teacher.id, fullName: teacher.fullName }))
     .filter((teacher: any) => teacher.id && teacher.fullName);
   if (reviewTeachers.length === 0) {
     reviewTeachers.push({ id: "free-class-teacher", fullName: classTeacherLabel });
   }
+
+  const criteriaMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await apiRequest("PATCH", `/api/classes/${classId}`, {
+        evaluationCriteriaIds: ids.length > 0 ? ids : null,
+      });
+      return ids;
+    },
+    onSuccess: (ids) => {
+      setCriteriaOverride(ids);
+      setCriteriaDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/free-schedule`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}`] });
+      toast({ title: "Đã cập nhật tiêu chí nhận xét" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Không thể cập nhật tiêu chí",
+        description: error?.message || "Vui lòng thử lại.",
+        variant: "destructive",
+      });
+    },
+  });
 
   const toggle = (student: any, date: string, current: any) => {
     if (!classPerm?.canEdit || updateMutation.isPending) return;
@@ -274,11 +311,29 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                       </span>
                     </div>
                     <div className="flex min-w-0 items-center gap-2 md:col-span-2">
-                      <Star className="h-4 w-4 shrink-0 text-slate-500" />
+                      <ClipboardCheck className="h-4 w-4 shrink-0 text-slate-500" />
                       <span className="w-16 shrink-0 text-xs font-medium text-slate-600">Đã học:</span>
                       <span className="text-sm font-semibold text-blue-600">
                         {selectedAttendedCount}/{selectedAttendStudents.length} học viên
                       </span>
+                    </div>
+                    <div className="flex min-w-0 items-center gap-2 md:col-span-2">
+                      <Star className="h-4 w-4 shrink-0 text-slate-500" />
+                      <span className="w-16 shrink-0 text-xs font-medium text-slate-600">Tiêu chí:</span>
+                      <span className="min-w-0 truncate text-sm font-semibold text-blue-600">{criteriaLabel}</span>
+                      {classPerm?.canEdit && (
+                        <button
+                          type="button"
+                          className="shrink-0 text-slate-300 transition-colors hover:text-indigo-500"
+                          title="Gán tiêu chí nhận xét"
+                          onClick={() => {
+                            setCriteriaDraft(evaluationCriteriaIds.map(String));
+                            setCriteriaDialogOpen(true);
+                          }}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -518,6 +573,54 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
               }}
             >
               Lưu
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={criteriaDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && !criteriaMutation.isPending) setCriteriaDialogOpen(false);
+        }}
+      >
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Gán tiêu chí nhận xét</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <p className="text-xs text-muted-foreground">
+              Chọn các tiêu chí sẽ xuất hiện trong biểu mẫu nhận xét của học viên lớp tự do.
+            </p>
+            <SearchableMultiSelect
+              options={criteriaOptions}
+              value={criteriaDraft}
+              onChange={setCriteriaDraft}
+              placeholder="Chọn tiêu chí..."
+              searchPlaceholder="Tìm tiêu chí..."
+              disabled={criteriaMutation.isPending}
+              data-testid="select-free-class-evaluation-criteria"
+            />
+            {criteriaOptions.length === 0 && (
+              <p className="text-xs text-amber-600">
+                Chưa có tiêu chí đánh giá. Vui lòng tạo tiêu chí trong cấu hình giáo dục trước.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={criteriaMutation.isPending}
+              onClick={() => setCriteriaDialogOpen(false)}
+            >
+              Huỷ
+            </Button>
+            <Button
+              size="sm"
+              disabled={criteriaMutation.isPending}
+              onClick={() => criteriaMutation.mutate(criteriaDraft)}
+            >
+              {criteriaMutation.isPending ? "Đang lưu..." : "Lưu lại"}
             </Button>
           </DialogFooter>
         </DialogContent>
