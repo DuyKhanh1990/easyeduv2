@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
 import {
   format, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
   addWeeks, subWeeks, addMonths, subMonths, addDays, subDays,
@@ -18,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { PageGuideButton } from "@/components/guides/PageGuideDialog";
 import { SessionDetailSheet } from "@/components/education/SessionDetailSheet";
+import { FreeClassScheduleSheet } from "@/components/education/FreeClassScheduleSheet";
 import { TestSessionDetailDialog } from "@/components/education/TestSessionDetailDialog";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -102,7 +102,6 @@ function getScheduleTimeLabel(session: Pick<ScheduleSession, "isFreeSession" | "
 }
 
 export function Schedule() {
-  const [, navigateRoute] = useLocation();
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -113,6 +112,7 @@ export function Schedule() {
   const [filterTimeFrom, setFilterTimeFrom] = useState("");
   const [filterTimeTo, setFilterTimeTo] = useState("");
   const [selectedSession, setSelectedSession] = useState<{ sessionId: string; classId: string } | null>(null);
+  const [selectedFreeSession, setSelectedFreeSession] = useState<ScheduleSession | null>(null);
   const [selectedTestSessionId, setSelectedTestSessionId] = useState<string | null>(null);
 
   const [holidayUpdateOpen, setHolidayUpdateOpen] = useState(false);
@@ -201,7 +201,7 @@ export function Schedule() {
     return true;
   }), [sessions, filterTeachers, filterLocations, filterClasses, filterTimeFrom, filterTimeTo, search]);
 
-  function navigateCalendar(dir: 1 | -1) {
+  function navigate(dir: 1 | -1) {
     if (viewMode === "month") setCurrentDate(d => dir === 1 ? addMonths(d, 1) : subMonths(d, 1));
     else if (viewMode === "list-day") setCurrentDate(d => dir === 1 ? addDays(d, 1) : subDays(d, 1));
     else setCurrentDate(d => dir === 1 ? addWeeks(d, 1) : subWeeks(d, 1));
@@ -211,7 +211,7 @@ export function Schedule() {
     if (session.isTestSession) {
       setSelectedTestSessionId(session.id);
     } else if (session.isFreeSession) {
-      navigateRoute(`/classes/${session.classId}?tab=schedule&date=${encodeURIComponent(session.sessionDate)}`);
+      setSelectedFreeSession(session);
     } else {
       setSelectedSession({ sessionId: session.id, classId: session.classId });
     }
@@ -245,14 +245,14 @@ export function Schedule() {
             </div>
 
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => navigateCalendar(-1)} data-testid="btn-prev">
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => navigate(-1)} data-testid="btn-prev">
                 <ChevronLeft className="w-4 h-4" />
               </Button>
               <div className="flex items-center gap-2 px-3 py-1.5 border rounded-md bg-white text-sm font-medium min-w-[220px] justify-center">
                 <Calendar className="w-4 h-4 text-muted-foreground" />
                 <span data-testid="date-label">{dateLabel}</span>
               </div>
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => navigateCalendar(1)} data-testid="btn-next">
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => navigate(1)} data-testid="btn-next">
                 <ChevronRight className="w-4 h-4" />
               </Button>
             </div>
@@ -377,6 +377,11 @@ export function Schedule() {
         sessionId={selectedSession?.sessionId ?? null}
         classId={selectedSession?.classId ?? null}
         onClose={() => setSelectedSession(null)}
+      />
+      <FreeClassScheduleSheet
+        classId={selectedFreeSession?.classId ?? null}
+        initialDate={selectedFreeSession?.sessionDate ?? null}
+        onClose={() => setSelectedFreeSession(null)}
       />
       {/* Test session detail dialog (lớp TEST) */}
       <TestSessionDetailDialog

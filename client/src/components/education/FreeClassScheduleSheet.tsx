@@ -8,12 +8,10 @@ export function FreeClassScheduleSheet({
   classId,
   initialDate,
   onClose,
-  onUpdated,
 }: {
   classId: string | null;
   initialDate?: string | null;
   onClose: () => void;
-  onUpdated?: () => void;
 }) {
   const isOpen = !!classId;
   const { data: classData } = useQuery<any>({
