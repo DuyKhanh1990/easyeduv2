@@ -3795,6 +3795,141 @@ export function registerClassesRoutes(app: Express): void {
           };
         });
 
+      // Flexible classes do not have class_sessions. Project each registered
+      // student/date pair into one synthetic calendar session so /schedule
+      // can show the same daily class card as fixed-schedule classes.
+      const freeLocationConditions = [
+        eq(classes.classType, "free"),
+        gte(freeClassRegistrations.registrationDate, from),
+        lte(freeClassRegistrations.registrationDate, to),
+        inArray(studentClasses.status, ["active", "waiting"]),
+      ];
+      if (effectiveLocationId) {
+        freeLocationConditions.push(eq(classes.locationId, effectiveLocationId));
+      } else if (allowedLocationIds !== null && allowedLocationIds.length > 0) {
+        freeLocationConditions.push(inArray(classes.locationId, allowedLocationIds));
+      }
+      const freeRows = await db
+        .select({
+          registrationId: freeClassRegistrations.id,
+          classId: classes.id,
+          classCode: classes.classCode,
+          className: classes.name,
+          classColor: classes.color,
+          classTeacherIds: classes.teacherIds,
+          locationId: classes.locationId,
+          locationName: locations.name,
+          sessionDate: freeClassRegistrations.registrationDate,
+          registrationStatus: freeClassRegistrations.status,
+          teacherId: freeClassRegistrations.teacherId,
+          studentClassId: freeClassRegistrations.studentClassId,
+          studentId: freeClassRegistrations.studentId,
+          studentName: students.fullName,
+          studentCode: students.code,
+        })
+        .from(freeClassRegistrations)
+        .innerJoin(classes, eq(freeClassRegistrations.classId, classes.id))
+        .innerJoin(locations, eq(classes.locationId, locations.id))
+        .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
+        .innerJoin(students, eq(freeClassRegistrations.studentId, students.id))
+        .where(and(...freeLocationConditions));
+
+      const freeSessionMap = new Map<string, {
+        id: string;
+        classId: string;
+        classCode: string;
+        className: string;
+        locationId: string;
+        locationName: string;
+        sessionDate: string;
+        weekday: number;
+        sessionIndex: null;
+        totalSessions: number;
+        enrolledCount: number;
+        status: string;
+        teachers: string[];
+        teacherIds: string[];
+        shiftStart: string;
+        shiftEnd: string;
+        shiftName: string;
+        learningFormat: string;
+        classColor: string | null;
+        roomId: null;
+        roomName: null;
+        lessons: string[];
+        homeworks: string[];
+        tests: string[];
+        curriculums: string[];
+        isFreeSession: true;
+        freeStudents: {
+          registrationId: string;
+          studentClassId: string;
+          studentId: string;
+          fullName: string;
+          code: string;
+          status: string;
+          teacherId: string | null;
+        }[];
+      }>();
+      for (const row of freeRows) {
+        const key = `${row.classId}:${row.sessionDate}`;
+        let session = freeSessionMap.get(key);
+        if (!session) {
+          const date = String(row.sessionDate).slice(0, 10);
+          const classTeacherIds = row.classTeacherIds ?? [];
+          session = {
+            id: `free-${row.classId}-${date}`,
+            classId: row.classId,
+            classCode: row.classCode,
+            className: row.className,
+            locationId: row.locationId,
+            locationName: row.locationName,
+            sessionDate: date,
+            weekday: new Date(`${date}T00:00:00Z`).getUTCDay(),
+            sessionIndex: null,
+            totalSessions: 0,
+            enrolledCount: 0,
+            status: "scheduled",
+            teachers: [],
+            teacherIds: [...classTeacherIds],
+            shiftStart: "",
+            shiftEnd: "",
+            shiftName: "Lớp tự do",
+            learningFormat: "offline",
+            classColor: row.classColor ?? null,
+            roomId: null,
+            roomName: null,
+            lessons: [],
+            homeworks: [],
+            tests: [],
+            curriculums: [],
+            isFreeSession: true,
+            freeStudents: [],
+          };
+          freeSessionMap.set(key, session);
+        }
+        if (row.teacherId && !session.teacherIds.includes(row.teacherId)) {
+          session.teacherIds.push(row.teacherId);
+        }
+        session.enrolledCount += 1;
+        session.freeStudents.push({
+          registrationId: row.registrationId,
+          studentClassId: row.studentClassId,
+          studentId: row.studentId,
+          fullName: row.studentName,
+          code: row.studentCode,
+          status: row.registrationStatus,
+          teacherId: row.teacherId,
+        });
+      }
+
+      const freeSessions = Array.from(freeSessionMap.values())
+        .filter(s => !teacherId || s.teacherIds.includes(teacherId))
+        .map(s => ({
+          ...s,
+          teachers: s.teacherIds.map(id => staffMap.get(id) || "").filter(Boolean),
+        }));
+
       // Fetch test sessions in the same date range
       let testSessionQuery = `
         SELECT ts.id, ts.title, ts.location_id, ts.test_date::text AS test_date, ts.time_start, ts.time_end,
@@ -3854,7 +3989,7 @@ export function registerClassesRoutes(app: Express): void {
         };
       });
 
-      res.json([...enriched, ...testSessions]);
+      res.json([...enriched, ...freeSessions, ...testSessions]);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

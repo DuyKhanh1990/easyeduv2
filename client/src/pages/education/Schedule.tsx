@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { PageGuideButton } from "@/components/guides/PageGuideDialog";
 import { SessionDetailSheet } from "@/components/education/SessionDetailSheet";
+import { FreeScheduleDetailSheet } from "@/components/education/FreeScheduleDetailSheet";
 import { TestSessionDetailDialog } from "@/components/education/TestSessionDetailDialog";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -54,6 +55,16 @@ interface ScheduleSession {
   tests?: string[];
   curriculums?: string[];
   isTestSession?: boolean;
+  isFreeSession?: boolean;
+  freeStudents?: {
+    registrationId: string;
+    studentClassId: string;
+    studentId: string;
+    fullName: string;
+    code: string;
+    status: string;
+    teacherId?: string | null;
+  }[];
 }
 
 const CLASS_COLORS = [
@@ -81,6 +92,12 @@ function formatShiftTime(start: string, end: string) {
   return `${start?.slice(0, 5) ?? ""} – ${end?.slice(0, 5) ?? ""}`;
 }
 
+function getScheduleTimeLabel(session: Pick<ScheduleSession, "isFreeSession" | "shiftStart" | "shiftEnd">) {
+  return session.isFreeSession
+    ? "Lớp tự do"
+    : formatShiftTime(session.shiftStart, session.shiftEnd);
+}
+
 export function Schedule() {
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<ViewMode>("week");
@@ -92,6 +109,7 @@ export function Schedule() {
   const [filterTimeFrom, setFilterTimeFrom] = useState("");
   const [filterTimeTo, setFilterTimeTo] = useState("");
   const [selectedSession, setSelectedSession] = useState<{ sessionId: string; classId: string } | null>(null);
+  const [selectedFreeSession, setSelectedFreeSession] = useState<ScheduleSession | null>(null);
   const [selectedTestSessionId, setSelectedTestSessionId] = useState<string | null>(null);
 
   const [holidayUpdateOpen, setHolidayUpdateOpen] = useState(false);
@@ -189,6 +207,8 @@ export function Schedule() {
   function openSession(session: ScheduleSession) {
     if (session.isTestSession) {
       setSelectedTestSessionId(session.id);
+    } else if (session.isFreeSession) {
+      setSelectedFreeSession(session);
     } else {
       setSelectedSession({ sessionId: session.id, classId: session.classId });
     }
@@ -354,6 +374,11 @@ export function Schedule() {
         sessionId={selectedSession?.sessionId ?? null}
         classId={selectedSession?.classId ?? null}
         onClose={() => setSelectedSession(null)}
+      />
+      <FreeScheduleDetailSheet
+        session={selectedFreeSession}
+        onClose={() => setSelectedFreeSession(null)}
+        onUpdated={() => queryClient.invalidateQueries({ queryKey: ["/api/schedule"] })}
       />
 
       {/* Test session detail dialog (lớp TEST) */}
@@ -976,7 +1001,7 @@ async function exportScheduleListToExcel(sessions: ScheduleSession[]) {
         s.locationName || "",
         s.className || "",
         s.classCode || "",
-        s.shiftStart && s.shiftEnd ? `${s.shiftStart.slice(0, 5)} – ${s.shiftEnd.slice(0, 5)}` : "",
+        getScheduleTimeLabel(s),
         s.totalSessions > 0 ? `${s.sessionIndex}/${s.totalSessions}` : "",
         (s.teachers ?? []).join("\n"),
         s.enrolledCount > 0 ? s.enrolledCount : "",
@@ -1136,7 +1161,7 @@ function ListView({
                           {!s.isTestSession && (
                             <span className="text-[10px] italic text-muted-foreground px-0.5">{s.classCode}</span>
                           )}
-                          <span className="text-[10px] text-muted-foreground px-0.5">{s.shiftStart?.slice(0,5)} – {s.shiftEnd?.slice(0,5)}</span>
+                          <span className="text-[10px] text-muted-foreground px-0.5">{getScheduleTimeLabel(s)}</span>
                         </div>
                       </td>
                       <td className="px-4 py-2.5 text-xs">
@@ -1327,9 +1352,9 @@ function SessionCard({
   const customStyle = hasCustomColor ? {
     backgroundColor: s.classColor + "18",
     borderColor: s.classColor + "66",
-    color: s.classColor,
+    color: s.classColor ?? undefined,
   } : undefined;
-  const timeStr = `${s.shiftStart?.slice(0, 5) ?? ""} – ${s.shiftEnd?.slice(0, 5) ?? ""}`;
+  const timeStr = getScheduleTimeLabel(s);
   const formatLabel = s.learningFormat === "offline" ? "Offline" : s.learningFormat === "online" ? "Online" : (s.learningFormat ?? "");
   const teacherStr = s.teachers.join(", ");
 
@@ -1661,7 +1686,7 @@ function RoomView({
                                 const customStyle = hasCustomColor ? {
                                   backgroundColor: s.classColor + "18",
                                   borderColor: s.classColor + "66",
-                                  color: s.classColor,
+                                   color: s.classColor ?? undefined,
                                 } : undefined;
                                 return (
                                   <Tooltip key={s.id}>
@@ -1673,7 +1698,7 @@ function RoomView({
                                         style={customStyle}
                                       >
                                         <div className="text-[10px] font-semibold leading-tight text-muted-foreground/80">
-                                          {s.shiftStart?.slice(0, 5)} – {s.shiftEnd?.slice(0, 5)}
+                                          {getScheduleTimeLabel(s)}
                                         </div>
                                         <div className="flex items-center gap-0.5 min-w-0 mt-0.5">
                                           {s.isTestSession && <ClipboardList className="w-3 h-3 shrink-0" />}
@@ -1695,7 +1720,7 @@ function RoomView({
                                       </div>
                                       <div className="flex items-center gap-1.5 text-muted-foreground">
                                         <span>🕐</span>
-                                        <span>{s.shiftStart?.slice(0, 5)} – {s.shiftEnd?.slice(0, 5)}</span>
+                                        <span>{getScheduleTimeLabel(s)}</span>
                                         {s.shiftName && <span className="text-muted-foreground/70">({s.shiftName})</span>}
                                       </div>
                                       {s.locationName && (
@@ -1877,7 +1902,7 @@ function RoomView({
                           const customStyle = hasCustomColor ? {
                             backgroundColor: s.classColor + "18",
                             borderColor: s.classColor + "66",
-                            color: s.classColor,
+                             color: s.classColor ?? undefined,
                           } : undefined;
 
                           const { lane, laneCount } = laneMap.get(s.id) ?? { lane: 0, laneCount: 1 };
@@ -1915,7 +1940,7 @@ function RoomView({
                                   )}
                                   {cardHeight > 36 && (
                                     <div className="text-[10px] font-medium leading-tight mt-0.5">
-                                      {s.shiftStart?.slice(0, 5)} – {s.shiftEnd?.slice(0, 5)}
+                                             {getScheduleTimeLabel(s)}
                                     </div>
                                   )}
                                 </button>
@@ -1927,7 +1952,7 @@ function RoomView({
                                 </div>
                                 <div className="flex items-center gap-1.5 text-muted-foreground">
                                   <span>🕐</span>
-                                  <span>{s.shiftStart?.slice(0, 5)} – {s.shiftEnd?.slice(0, 5)}</span>
+                                  <span>{getScheduleTimeLabel(s)}</span>
                                   {s.shiftName && <span className="text-muted-foreground/70">({s.shiftName})</span>}
                                 </div>
                                 {s.locationName && (
@@ -2155,7 +2180,7 @@ function TeacherView({
                                 const customStyle = hasCustomColor ? {
                                   backgroundColor: s.classColor + "18",
                                   borderColor: s.classColor + "66",
-                                  color: s.classColor,
+                                   color: s.classColor ?? undefined,
                                 } : undefined;
                                 return (
                                   <Tooltip key={s.id}>
@@ -2168,7 +2193,7 @@ function TeacherView({
                                       >
                                         <div className="flex items-center justify-between gap-1">
                                           <span className="text-[10px] font-semibold leading-tight text-muted-foreground/80">
-                                            {s.shiftStart?.slice(0, 5)} – {s.shiftEnd?.slice(0, 5)}
+                                            {getScheduleTimeLabel(s)}
                                           </span>
                                           {s.learningFormat && (
                                             <span className="text-[9px] font-medium shrink-0 opacity-75 leading-tight whitespace-nowrap">
@@ -2201,7 +2226,7 @@ function TeacherView({
                                       </div>
                                       <div className="flex items-center gap-1.5 text-muted-foreground">
                                         <span>🕐</span>
-                                        <span>{s.shiftStart?.slice(0, 5)} – {s.shiftEnd?.slice(0, 5)}</span>
+                                        <span>{getScheduleTimeLabel(s)}</span>
                                         {s.shiftName && <span className="text-muted-foreground/70">({s.shiftName})</span>}
                                       </div>
                                       {s.locationName && (
@@ -2373,7 +2398,7 @@ function TeacherView({
                           const customStyle = hasCustomColor ? {
                             backgroundColor: s.classColor + "18",
                             borderColor: s.classColor + "66",
-                            color: s.classColor,
+                             color: s.classColor ?? undefined,
                           } : undefined;
 
                           const { lane, laneCount } = laneMap.get(s.id) ?? { lane: 0, laneCount: 1 };
@@ -2423,7 +2448,7 @@ function TeacherView({
                                   )}
                                   {cardHeight > 36 && (
                                     <div className="text-[10px] font-medium leading-tight mt-0.5">
-                                      {s.shiftStart?.slice(0, 5)} – {s.shiftEnd?.slice(0, 5)}
+                                      {getScheduleTimeLabel(s)}
                                     </div>
                                   )}
                                 </button>
@@ -2435,7 +2460,7 @@ function TeacherView({
                                 </div>
                                 <div className="flex items-center gap-1.5 text-muted-foreground">
                                   <span>🕐</span>
-                                  <span>{s.shiftStart?.slice(0, 5)} – {s.shiftEnd?.slice(0, 5)}</span>
+                                  <span>{getScheduleTimeLabel(s)}</span>
                                   {s.shiftName && <span className="text-muted-foreground/70">({s.shiftName})</span>}
                                 </div>
                                 {s.locationName && (
