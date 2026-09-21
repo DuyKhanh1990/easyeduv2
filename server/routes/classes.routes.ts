@@ -1430,6 +1430,7 @@ export function registerClassesRoutes(app: Express): void {
           registeredAt: freeClassRegistrations.registeredAt,
           attendedBy: freeClassRegistrations.attendedBy,
           attendedAt: freeClassRegistrations.attendedAt,
+          note: freeClassRegistrations.note,
         })
         .from(freeClassRegistrations)
         .where(and(
@@ -1450,7 +1451,9 @@ export function registerClassesRoutes(app: Express): void {
     const permissions = await getClassPermissions(req);
     if (!permissions.canEdit) return res.status(403).json({ message: "Bạn không có quyền cập nhật lịch lớp." });
     try {
-      const { studentClassId, date, action, value, status, teacherId } = req.body || {};
+      const requestBody = req.body || {};
+      const { studentClassId, date, action, value, status, teacherId, note } = requestBody;
+      const hasNote = Object.prototype.hasOwnProperty.call(requestBody, "note");
       if (!studentClassId || !/^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
         return res.status(400).json({ message: "Thiếu học viên hoặc ngày học hợp lệ" });
       }
@@ -1533,6 +1536,7 @@ export function registerClassesRoutes(app: Express): void {
             teacherId: teacherId || existing.teacherId || null,
             attendedBy: requestedStatus === "attended" ? actorId : null,
             attendedAt: requestedStatus === "attended" ? new Date() : null,
+            ...(hasNote ? { note: typeof note === "string" ? note.trim() || null : null } : {}),
             updatedAt: new Date(),
           }).where(eq(freeClassRegistrations.id, existing.id));
         }
@@ -2484,6 +2488,7 @@ export function registerClassesRoutes(app: Express): void {
         const rows = await db.select({
           studentName: students.fullName,
           studentCode: students.code,
+          note: freeClassRegistrations.note,
           sessionIndex: classSessions.sessionIndex,
           sessionDate: classSessions.sessionDate,
           weekday: classSessions.weekday,
@@ -3874,6 +3879,7 @@ export function registerClassesRoutes(app: Express): void {
           code: string;
           status: string;
           teacherId: string | null;
+           note: string | null;
         }[];
       }>();
       for (const row of freeRows) {
@@ -3925,6 +3931,7 @@ export function registerClassesRoutes(app: Express): void {
           code: row.studentCode,
           status: row.registrationStatus,
           teacherId: row.teacherId,
+          note: row.note,
         });
       }
 

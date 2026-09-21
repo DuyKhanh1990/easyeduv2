@@ -64,6 +64,7 @@ interface ScheduleSession {
     code: string;
     status: string;
     teacherId?: string | null;
+    note?: string | null;
   }[];
 }
 
