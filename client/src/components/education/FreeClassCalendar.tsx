@@ -343,16 +343,71 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
     });
   };
 
+  const calendarInfoDate = selectedDate ?? today;
+  const calendarInfoDateLabel = format(
+    new Date(`${calendarInfoDate}T00:00:00`),
+    "EEEE, dd/MM/yyyy",
+    { locale: vi },
+  );
+
   return (
     <div className="flex h-full min-h-[520px] flex-col rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
-        <div>
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-            <CalendarDays className="h-4 w-4 text-emerald-600" /> Lịch lớp tự do
-          </h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Tick ngày học; ngày đã đăng ký sẽ có Select trạng thái điểm danh bên dưới
-          </p>
+        <div className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-1.5">
+            <CalendarDays className="h-3.5 w-3.5 text-emerald-600" />
+            <span className="text-[11px] font-bold uppercase tracking-wide text-slate-700">
+              Chi tiết lịch học
+            </span>
+            <Badge className="h-5 border-emerald-200 bg-emerald-50 px-2 text-[10px] font-semibold text-emerald-700" variant="outline">
+              Lớp tự do
+            </Badge>
+            <span className="ml-auto text-[10px] font-medium text-slate-500">
+              {calendarInfoDateLabel}
+            </span>
+          </div>
+          <div className="grid gap-x-8 gap-y-1.5 pt-2 text-[10px] md:grid-cols-2">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <BookOpen className="h-3 w-3 shrink-0 text-slate-500" />
+              <span className="font-medium text-slate-500">Lớp:</span>
+              <span className="truncate font-semibold text-blue-600">
+                {classData?.name || "—"}{classData?.classCode ? ` (${classData.classCode})` : ""}
+              </span>
+            </div>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <MapPin className="h-3 w-3 shrink-0 text-slate-500" />
+              <span className="font-medium text-slate-500">Cơ sở:</span>
+              <span className="truncate font-semibold text-blue-600">{classLocationLabel}</span>
+            </div>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <UserRound className="h-3 w-3 shrink-0 text-slate-500" />
+              <span className="font-medium text-slate-500">GV:</span>
+              <span className="truncate font-semibold text-blue-600">{classTeacherLabel}</span>
+            </div>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <Users className="h-3 w-3 shrink-0 text-slate-500" />
+              <span className="font-medium text-slate-500">Sĩ số:</span>
+              <span className="font-semibold text-blue-600">{students.length} học viên</span>
+            </div>
+            <div className="flex min-w-0 items-center gap-1.5 md:col-span-2">
+              <Star className="h-3 w-3 shrink-0 text-slate-500" />
+              <span className="font-medium text-slate-500">Tiêu chí:</span>
+              <span className="truncate font-semibold text-blue-600">{criteriaLabel}</span>
+              {classPerm?.canEdit && (
+                <button
+                  type="button"
+                  className="text-slate-400 hover:text-indigo-500"
+                  title="Gán tiêu chí nhận xét"
+                  onClick={() => {
+                    setCriteriaDraft(evaluationCriteriaIds.map(String));
+                    setCriteriaDialogOpen(true);
+                  }}
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setMonthDate((d) => subMonths(d, 1))}><ChevronLeft className="h-4 w-4" /></Button>
@@ -362,25 +417,6 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
       </div>
       <div className="flex items-center gap-2 border-b bg-slate-50 px-4 py-2 text-xs text-muted-foreground">
         <Badge variant="outline">{students.length} học viên</Badge>
-        <span>•</span>
-        <span>Ngày chưa đăng ký chỉ có checkbox; ngày đã đăng ký có thể chọn trạng thái điểm danh.</span>
-        <span className="hidden items-center gap-1 md:flex">
-          <Star className="h-3 w-3 text-slate-500" />
-          Tiêu chí: <strong className="font-semibold text-blue-600">{criteriaLabel}</strong>
-          {classPerm?.canEdit && (
-            <button
-              type="button"
-              className="text-slate-400 hover:text-indigo-500"
-              title="Gán tiêu chí nhận xét"
-              onClick={() => {
-                setCriteriaDraft(evaluationCriteriaIds.map(String));
-                setCriteriaDialogOpen(true);
-              }}
-            >
-              <Pencil className="h-3 w-3" />
-            </button>
-          )}
-        </span>
         <div className="ml-auto flex items-center gap-2">
           {selectedDate && (
             <span className="hidden text-[11px] text-slate-500 lg:inline">
