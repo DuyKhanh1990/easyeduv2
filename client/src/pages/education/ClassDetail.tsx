@@ -390,7 +390,7 @@ export function ClassDetail() {
             // Keep the schedule shell below Radix dialogs opened from inside it.
             // DialogContent/DialogOverlay use z-50, so z-[45] lets every child
             // dialog and its dropdowns render above this full-screen shell.
-            className="fixed inset-0 z-[45] flex items-center justify-center bg-black/40 p-2 backdrop-blur-sm"
+            className="fixed inset-0 z-[45] flex items-center justify-center bg-black/40 backdrop-blur-sm"
             role="dialog"
             aria-modal="true"
             aria-label="Lịch học"

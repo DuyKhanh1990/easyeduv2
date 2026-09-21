@@ -752,10 +752,10 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                     const stats = monthlyStats.get(student.id) ?? { registered: 0, attended: 0 };
                     return (
                       <>
-                        <td className="sticky right-20 z-10 w-20 min-w-20 border-b border-l bg-white px-1 py-2 text-center text-xs font-semibold text-slate-700 shadow-[-4px_0_8px_rgba(15,23,42,0.06)]">
+                        <td className="sticky right-20 z-10 w-20 min-w-20 border-b border-l bg-slate-100 px-1 py-2 text-center text-xs font-semibold text-slate-700 shadow-[-4px_0_8px_rgba(15,23,42,0.06)]">
                           {stats.registered}
                         </td>
-                        <td className="sticky right-0 z-10 w-20 min-w-20 border-b border-l bg-white px-1 py-2 text-center text-xs font-semibold text-slate-700">
+                        <td className="sticky right-0 z-10 w-20 min-w-20 border-b border-l bg-slate-100 px-1 py-2 text-center text-xs font-semibold text-slate-700">
                           {stats.attended}/{stats.registered}
                         </td>
                       </>
