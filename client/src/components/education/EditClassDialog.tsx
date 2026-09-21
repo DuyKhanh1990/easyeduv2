@@ -147,7 +147,6 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
   const selectedCourseId = form.watch("courseId");
   const selectedLearningFormat = form.watch("learningFormat");
   const selectedWeekdays = form.watch("weekdays") || [];
-  const selectedTeacherIds = form.watch("teacherIds") || [];
   const scheduleConfig = form.watch("schedule_config") || [];
   const teachersConfig = form.watch("teachers_config") || [];
 
@@ -358,7 +357,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
     const valOrUndefined = (val: string | undefined) => (val && val.trim() !== "" ? val : undefined);
     const valOrNull = (val: string | undefined) => (val && val.trim() !== "" ? val : null);
 
-    if (scheduleGenerated) {
+    if (scheduleGenerated && !isFreeClass) {
       // Case 1: Schedule already generated — only save basic class info, do not touch sessions
       const submitData: any = {
         classCode: data.classCode,
@@ -706,7 +705,67 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                   )}
 
                   {/* STEP 2 */}
-                  {step === 2 && scheduleGenerated && (
+                  {step === 2 && isFreeClass && (
+                    <div className="space-y-6">
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+                        <h3 className="font-semibold text-emerald-900">Lớp Tự do</h3>
+                        <p className="mt-1 text-sm text-emerald-800">
+                          Lớp không có ca cố định. Nhân viên sẽ đăng ký ngày học theo tháng,
+                          sau đó giáo viên điểm danh riêng từng ngày.
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-5">
+                        <FormField control={form.control} name="startDate" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Ngày bắt đầu <span className="text-destructive">*</span></FormLabel>
+                            <FormControl><Input type="date" {...field} /></FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )} />
+                        <FormField control={form.control} name="endDate" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Ngày giới hạn <span className="text-destructive">*</span></FormLabel>
+                            <FormControl><Input type="date" {...field} /></FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )} />
+                      </div>
+                      <FormField
+                        control={form.control}
+                        name="teacherIds"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Giáo viên</FormLabel>
+                            <FormControl>
+                              <SearchableMultiSelect
+                                options={[...(staff || [])]
+                                  .sort((a: any, b: any) => {
+                                    const aActive = a.status !== "Không hoạt động";
+                                    const bActive = b.status !== "Không hoạt động";
+                                    if (aActive === bActive) return 0;
+                                    return aActive ? -1 : 1;
+                                  })
+                                  .map((teacher: any) => ({
+                                    value: String(teacher.id),
+                                    label: `${teacher.fullName}${teacher.status === "Không hoạt động" ? " (Không hoạt động)" : ""}`,
+                                    sublabel: teacher.code,
+                                    isActive: teacher.status !== "Không hoạt động",
+                                  }))}
+                                value={field.value || []}
+                                onChange={field.onChange}
+                                placeholder={effectiveLocationId ? "Chọn giáo viên..." : "Chọn cơ sở trước"}
+                                searchPlaceholder="Tìm kiếm giáo viên..."
+                                disabled={!effectiveLocationId}
+                                data-testid="select-free-class-teachers-edit"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
+                  {step === 2 && !isFreeClass && scheduleGenerated && (
                     <div className="space-y-5">
                       <div className="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
                         <Lock className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
@@ -806,7 +865,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                     </div>
                   )}
 
-                  {step === 2 && !scheduleGenerated && (
+                  {step === 2 && !scheduleGenerated && !isFreeClass && (
                     <div className="space-y-6">
                       <div className="space-y-4 pb-5 border-b">
                         <div className="grid grid-cols-2 gap-5">
