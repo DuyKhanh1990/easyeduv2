@@ -39,6 +39,7 @@ export function ClassDetail() {
   const searchParams = new URLSearchParams(search);
   const initialTab = searchParams.get("tab") || "waiting";
   const initialSessionId = searchParams.get("sessionId");
+  const initialDate = searchParams.get("date");
   const [activeTab, setActiveTab] = useState(initialTab);
   // Track last non-schedule tab so background stays meaningful when popup is open
   const [bgTab, setBgTab] = useState(initialTab === "schedule" ? "waiting" : initialTab);
@@ -366,6 +367,7 @@ export function ClassDetail() {
                   classId={id!}
                   classData={classData}
                   classPerm={classPerm}
+                  initialDate={initialDate}
                 />
               </TabsContent>
             )}
@@ -421,6 +423,7 @@ export function ClassDetail() {
                     classId={id!}
                     classData={classData}
                     classPerm={classPerm}
+                    initialDate={initialDate}
                   />
                 </div>
               </div>

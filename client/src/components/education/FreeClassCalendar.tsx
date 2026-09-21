@@ -46,6 +46,7 @@ interface FreeClassCalendarProps {
   classId: string;
   classData: any;
   classPerm?: { canEdit: boolean };
+  initialDate?: string | null;
 }
 
 type CalendarMode = "register" | "attend";
@@ -67,8 +68,15 @@ const formatStudentDate = (value: unknown) => {
   return `${Number(day)}/${Number(month)}/${year}`;
 };
 
-export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCalendarProps) {
-  const [monthDate, setMonthDate] = useState(() => startOfMonth(new Date()));
+function parseCalendarDate(value?: string | null) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function FreeClassCalendar({ classId, classData, classPerm, initialDate }: FreeClassCalendarProps) {
+  const requestedDate = parseCalendarDate(initialDate);
+  const [monthDate, setMonthDate] = useState(() => startOfMonth(requestedDate ?? new Date()));
   const [mode, setMode] = useState<CalendarMode>("register");
   const [selectedAttendDate, setSelectedAttendDate] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -218,9 +226,22 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
       );
 
   useEffect(() => {
+    if (!requestedDate) return;
+    const requestedDateValue = format(requestedDate, "yyyy-MM-dd");
+    setMonthDate(startOfMonth(requestedDate));
+    setSelectedDate(requestedDateValue);
+    setSelectedAttendDate(requestedDateValue);
+  }, [initialDate]);
+
+  useEffect(() => {
     const currentMonth = today.slice(0, 7);
     setSelectedDate((current) => {
       if (current && visibleDays.some((day) => day.value === current)) return current;
+      const requestedDateValue = requestedDate ? format(requestedDate, "yyyy-MM-dd") : null;
+      if (requestedDateValue && month === requestedDateValue.slice(0, 7)
+        && visibleDays.some((day) => day.value === requestedDateValue)) {
+        return requestedDateValue;
+      }
       return month === currentMonth && visibleDays.some((day) => day.value === today)
         ? today
         : null;

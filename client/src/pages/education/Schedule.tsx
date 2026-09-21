@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import {
   format, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
   addWeeks, subWeeks, addMonths, subMonths, addDays, subDays,
@@ -17,7 +18,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { PageGuideButton } from "@/components/guides/PageGuideDialog";
 import { SessionDetailSheet } from "@/components/education/SessionDetailSheet";
-import { FreeScheduleDetailSheet } from "@/components/education/FreeScheduleDetailSheet";
 import { TestSessionDetailDialog } from "@/components/education/TestSessionDetailDialog";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -102,6 +102,7 @@ function getScheduleTimeLabel(session: Pick<ScheduleSession, "isFreeSession" | "
 }
 
 export function Schedule() {
+  const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -112,7 +113,6 @@ export function Schedule() {
   const [filterTimeFrom, setFilterTimeFrom] = useState("");
   const [filterTimeTo, setFilterTimeTo] = useState("");
   const [selectedSession, setSelectedSession] = useState<{ sessionId: string; classId: string } | null>(null);
-  const [selectedFreeSession, setSelectedFreeSession] = useState<ScheduleSession | null>(null);
   const [selectedTestSessionId, setSelectedTestSessionId] = useState<string | null>(null);
 
   const [holidayUpdateOpen, setHolidayUpdateOpen] = useState(false);
@@ -211,7 +211,7 @@ export function Schedule() {
     if (session.isTestSession) {
       setSelectedTestSessionId(session.id);
     } else if (session.isFreeSession) {
-      setSelectedFreeSession(session);
+      navigate(`/classes/${session.classId}?tab=schedule&date=${encodeURIComponent(session.sessionDate)}`);
     } else {
       setSelectedSession({ sessionId: session.id, classId: session.classId });
     }
@@ -378,12 +378,6 @@ export function Schedule() {
         classId={selectedSession?.classId ?? null}
         onClose={() => setSelectedSession(null)}
       />
-      <FreeScheduleDetailSheet
-        session={selectedFreeSession}
-        onClose={() => setSelectedFreeSession(null)}
-        onUpdated={() => queryClient.invalidateQueries({ queryKey: ["/api/schedule"] })}
-      />
-
       {/* Test session detail dialog (lớp TEST) */}
       <TestSessionDetailDialog
         sessionId={selectedTestSessionId}
