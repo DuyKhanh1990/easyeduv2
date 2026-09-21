@@ -60,3 +60,4 @@
 - [Tuition package change offsets](tuition-package-change-offsets.md) — đổi gói theo bù trừ; giữ nguyên buổi ngoài khoảng, dùng override tuyệt đối có thứ tự và chứng từ theo chênh lệch.
 - [Free class calendar model](free-class-calendar.md) — lớp tự do dùng bản ghi theo học viên/ngày; đăng ký không trừ buổi, điểm danh mới cập nhật số đã dùng.
 - [Free class review criteria](free-class-review-criteria.md) — lớp tự do gán tiêu chí ở cấp lớp; biểu mẫu nhận xét chỉ dùng các tiêu chí đã gán.
+- [Free class attendance selection](free-class-attendance-selection.md) — checkbox đầu dòng là chọn học viên, Select mới đổi trạng thái; trạng thái Có học tự chọn học viên.
