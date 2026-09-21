@@ -88,6 +88,8 @@ export interface MyCalendarSessionLight {
     status: string;
     teacherId?: string | null;
     note?: string | null;
+    reviewData?: unknown;
+    reviewPublished?: boolean;
   }[];
 }
 

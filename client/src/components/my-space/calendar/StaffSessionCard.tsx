@@ -441,9 +441,10 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
       <>
         <div
           className={cn(
-            "bg-card rounded-2xl border border-border p-4 space-y-3 shadow-sm sm:p-5",
+            "bg-card rounded-2xl border border-border p-4 space-y-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer sm:p-5",
             highlighted && "ring-2 ring-primary/60 ring-offset-2",
           )}
+          onClick={() => detail && onViewDetail(detail)}
           data-testid={`staff-free-session-card-${session.classSessionId}`}
         >
           <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
@@ -464,7 +465,10 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
                 Lớp tự do
               </span>
               <button
-                onClick={() => setContentDialogOpen(true)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setContentDialogOpen(true);
+                }}
                 className="flex items-center justify-center gap-1.5 rounded-lg border border-primary/50 px-3 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"
                 data-testid={`btn-assign-free-content-${session.classSessionId}`}
               >
@@ -519,16 +523,19 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
                   <div className="min-w-0">
                     <button
                       className="font-medium text-primary hover:underline text-left"
-                      onClick={() => handleViewContent(
-                        content.resourceUrl || null,
-                        content.resourceUrl
-                          ? null
-                          : {
-                              title: content.title,
-                              type: content.type,
-                              content: content.description,
-                            },
-                      )}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleViewContent(
+                          content.resourceUrl || null,
+                          content.resourceUrl
+                            ? null
+                            : {
+                                title: content.title,
+                                type: content.type,
+                                content: content.description,
+                              },
+                        );
+                      }}
                       data-testid={`btn-view-free-content-${content.id}`}
                     >
                       {content.title}

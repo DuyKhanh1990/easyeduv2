@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { RichContentRenderer } from "@/components/ui/rich-content-renderer";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -119,22 +119,41 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
   const isOpen = !!session;
   const classSessionId = session?.classSessionId ?? "";
   const classId = session?.classId ?? "";
+  const isFreeSession = session?.isFreeSession === true;
+  const [freeStudentRows, setFreeStudentRows] = useState(session?.freeStudents ?? []);
+
+  useEffect(() => {
+    setFreeStudentRows(session?.freeStudents ?? []);
+  }, [session]);
 
   const studentSessionsKey = `/api/class-sessions/${classSessionId}/student-sessions`;
 
   const embeddedStudentSessions = session?.studentSessions;
   const { data: fetchedStudentSessions = [], isLoading: loadingFetchedStudents } = useQuery<any[]>({
     queryKey: [studentSessionsKey],
-    enabled: isOpen && !!classSessionId && embeddedStudentSessions === undefined,
+    enabled: isOpen && !isFreeSession && !!classSessionId && embeddedStudentSessions === undefined,
     staleTime: 0,
     refetchOnWindowFocus: true,
   });
-  const studentSessions = embeddedStudentSessions ?? fetchedStudentSessions;
-  const loadingStudents = embeddedStudentSessions === undefined && loadingFetchedStudents;
+  const freeStudentSessions = freeStudentRows.map((student) => ({
+    id: student.registrationId,
+    studentId: student.studentId,
+    studentClassId: student.studentClassId,
+    attendanceStatus: student.status,
+    attendanceNote: student.note ?? null,
+    reviewData: student.reviewData,
+    reviewPublished: student.reviewPublished ?? false,
+    student: { fullName: student.fullName, code: student.code },
+    registrationId: student.registrationId,
+  }));
+  const studentSessions = isFreeSession
+    ? freeStudentSessions
+    : (embeddedStudentSessions ?? fetchedStudentSessions);
+  const loadingStudents = !isFreeSession && embeddedStudentSessions === undefined && loadingFetchedStudents;
 
   const { data: availableStudents = [], isLoading: loadingAvailable } = useQuery<any[]>({
     queryKey: [`/api/classes/${classId}/available-students`],
-    enabled: isAddOpen && !!classId,
+    enabled: isAddOpen && !isFreeSession && !!classId,
   });
 
   const { data: allCriteria = [] } = useQuery<any[]>({
@@ -199,6 +218,49 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
     },
   });
 
+  const updateFreeAttendanceMutation = useMutation({
+    mutationFn: async ({
+      studentClassId,
+      status,
+      note,
+    }: {
+      studentClassId: string;
+      status: "registered" | "attended" | "reserved";
+      note?: string;
+    }) => {
+      if (!session?.classId) throw new Error("Không tìm thấy lớp tự do");
+      await apiRequest("PATCH", `/api/classes/${session.classId}/free-schedule`, {
+        studentClassId,
+        date: session.sessionDate,
+        action: "attend",
+        status,
+        ...(note !== undefined ? { note } : {}),
+      });
+      return { studentClassId, status, note };
+    },
+    onSuccess: ({ studentClassId, status, note }) => {
+      setFreeStudentRows((current) =>
+        current.map((student) =>
+          student.studentClassId === studentClassId
+            ? { ...student, status, ...(note !== undefined ? { note: note || null } : {}) }
+            : student,
+        ),
+      );
+      queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey[0] as string;
+          return typeof key === "string" && (
+            key === "/api/my-space/calendar/staff" ||
+            key.includes("/free-schedule")
+          );
+        },
+      });
+    },
+    onError: (err: any) => {
+      toast({ title: "Lỗi", description: err?.message || "Không thể cập nhật điểm danh", variant: "destructive" });
+    },
+  });
+
   function handleClose() {
     setSelectedStudentIds([]);
     setIsActionMenuOpen(false);
@@ -242,7 +304,9 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                   <div className="flex gap-2">
                     <span className="text-muted-foreground w-24 shrink-0">Thời gian:</span>
                     <span className="font-medium text-foreground">
-                      {session.startTime} - {session.endTime} · {weekdayLabel} {dateLabel}
+                      {isFreeSession
+                        ? `Lịch linh hoạt · ${weekdayLabel} ${dateLabel}`
+                        : `${session.startTime} - ${session.endTime} · ${weekdayLabel} ${dateLabel}`}
                     </span>
                   </div>
                   <div className="flex gap-2">
@@ -252,7 +316,11 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                   <div className="flex gap-2">
                     <span className="text-muted-foreground w-24 shrink-0">Buổi học:</span>
                     <span className="font-medium text-foreground">
-                      {session.sessionIndex != null ? `${session.sessionIndex}/${session.totalSessions ?? "?"}` : "—"}
+                      {isFreeSession
+                        ? <span className="text-emerald-700">Lớp tự do</span>
+                        : session.sessionIndex != null
+                          ? `${session.sessionIndex}/${session.totalSessions ?? "?"}`
+                          : "—"}
                     </span>
                   </div>
                   <div className="flex gap-2">
@@ -269,12 +337,12 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                     <span className="text-muted-foreground w-24 shrink-0">Học viên:</span>
                     <span className="font-medium text-foreground">{session.enrolledCount ?? 0}</span>
                   </div>
-                  <div className="flex gap-2">
+                  {!isFreeSession && <div className="flex gap-2">
                     <span className="text-muted-foreground w-24 shrink-0">Hình thức:</span>
                     <span className={cn("font-medium", (session.learningFormat === "online" || !!session.onlineLink) ? "text-blue-600" : "text-foreground")}>
                       {(session.learningFormat === "online" || !!session.onlineLink) ? "Online" : "Offline"}
                     </span>
-                  </div>
+                  </div>}
                 </div>
 
                 <div className="space-y-2">
@@ -314,94 +382,100 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                   Danh sách học viên buổi
                 </h3>
                 <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-                  <AddStudentToSessionDialog
-                    open={isAddOpen}
-                    onOpenChange={(open) => {
-                      setIsAddOpen(open);
-                      if (!open) {
-                        setAddSearchTerm("");
-                        setAddSelectedIds([]);
-                      }
-                    }}
-                    searchTerm={addSearchTerm}
-                    onSearchChange={setAddSearchTerm}
-                    selectedIds={addSelectedIds}
-                    onSelectionChange={setAddSelectedIds}
-                    filteredCandidates={filteredCandidates}
-                    allCandidates={enrolledCandidates}
-                    isLoading={loadingAvailable}
-                    classId={classId}
-                    onConfirm={(students) => {
-                      addStudentsMutation.mutate(students.map((s) => s.studentId));
-                      setAddSelectedIds([]);
-                      setAddSearchTerm("");
-                    }}
-                  />
+                  {!isFreeSession && (
+                    <>
+                      <AddStudentToSessionDialog
+                        open={isAddOpen}
+                        onOpenChange={(open) => {
+                          setIsAddOpen(open);
+                          if (!open) {
+                            setAddSearchTerm("");
+                            setAddSelectedIds([]);
+                          }
+                        }}
+                        searchTerm={addSearchTerm}
+                        onSearchChange={setAddSearchTerm}
+                        selectedIds={addSelectedIds}
+                        onSelectionChange={setAddSelectedIds}
+                        filteredCandidates={filteredCandidates}
+                        allCandidates={enrolledCandidates}
+                        isLoading={loadingAvailable}
+                        classId={classId}
+                        onConfirm={(students) => {
+                          addStudentsMutation.mutate(students.map((s) => s.studentId));
+                          setAddSelectedIds([]);
+                          setAddSearchTerm("");
+                        }}
+                      />
 
-                  <Popover open={isActionMenuOpen} onOpenChange={setIsActionMenuOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant={selectedStudentIds.length > 0 ? "default" : "outline"}
-                        size="sm"
-                        className={cn(
-                          "h-7 px-2 text-[10px] gap-1",
-                          selectedStudentIds.length > 0 && "bg-gray-700 hover:bg-gray-800 text-white"
-                        )}
-                        disabled={selectedStudentIds.length === 0}
-                      >
-                        Hành động
-                        <ChevronDown className="h-3 w-3" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-48 p-2 bg-white dark:bg-slate-950">
-                      <div className="flex flex-col gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="justify-start text-xs h-8"
-                          onClick={() => {
-                            setIsActionMenuOpen(false);
-                            setIsBulkAttendanceOpen(true);
-                          }}
-                        >
-                          Điểm danh hàng loạt
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="justify-start text-xs h-8"
-                          onClick={() => {
-                            setIsActionMenuOpen(false);
-                            setIsBulkReviewOpen(true);
-                          }}
-                        >
-                          Nhận xét hàng loạt
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="justify-start text-xs h-8 text-destructive hover:text-destructive"
-                          onClick={() => {
-                            setIsActionMenuOpen(false);
-                            setIsRemoveOpen(true);
-                          }}
-                        >
-                          Xóa học viên
-                        </Button>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
+                      <Popover open={isActionMenuOpen} onOpenChange={setIsActionMenuOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant={selectedStudentIds.length > 0 ? "default" : "outline"}
+                            size="sm"
+                            className={cn(
+                              "h-7 px-2 text-[10px] gap-1",
+                              selectedStudentIds.length > 0 && "bg-gray-700 hover:bg-gray-800 text-white"
+                            )}
+                            disabled={selectedStudentIds.length === 0}
+                          >
+                            Hành động
+                            <ChevronDown className="h-3 w-3" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-48 p-2 bg-white dark:bg-slate-950">
+                          <div className="flex flex-col gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="justify-start text-xs h-8"
+                              onClick={() => {
+                                setIsActionMenuOpen(false);
+                                setIsBulkAttendanceOpen(true);
+                              }}
+                            >
+                              Điểm danh hàng loạt
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="justify-start text-xs h-8"
+                              onClick={() => {
+                                setIsActionMenuOpen(false);
+                                setIsBulkReviewOpen(true);
+                              }}
+                            >
+                              Nhận xét hàng loạt
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="justify-start text-xs h-8 text-destructive hover:text-destructive"
+                              onClick={() => {
+                                setIsActionMenuOpen(false);
+                                setIsRemoveOpen(true);
+                              }}
+                            >
+                              Xóa học viên
+                            </Button>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    </>
+                  )}
 
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 px-2 text-[10px]"
-                    data-testid="btn-add-content-detail"
-                    onClick={() => setLibraryDialogOpen(true)}
-                  >
-                    <LibraryBig className="h-3 w-3 mr-1" />
-                    Thêm nội dung
-                  </Button>
+                  {!isFreeSession && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-[10px]"
+                      data-testid="btn-add-content-detail"
+                      onClick={() => setLibraryDialogOpen(true)}
+                    >
+                      <LibraryBig className="h-3 w-3 mr-1" />
+                      Thêm nội dung
+                    </Button>
+                  )}
 
                   <Button
                     size="sm"
@@ -453,6 +527,127 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                     </thead>
                     <tbody className="divide-y divide-border">
                       {studentSessions.map((ss: any) => {
+                        if (isFreeSession) {
+                          const freeStatus = ss.attendanceStatus === "attended" || ss.attendanceStatus === "reserved"
+                            ? ss.attendanceStatus
+                            : "registered";
+                          const freeStatusLabel = freeStatus === "attended"
+                            ? "Có học"
+                            : freeStatus === "reserved"
+                              ? "Bảo lưu"
+                              : "Chưa điểm danh";
+                          const freeStatusClass = freeStatus === "attended"
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            : freeStatus === "reserved"
+                              ? "border-amber-200 bg-amber-50 text-amber-700"
+                              : "border-border/60 text-muted-foreground";
+                          const freeStudent = freeStudentRows.find(
+                            (student) => student.registrationId === ss.registrationId,
+                          );
+                          const hasReview = ss.reviewData &&
+                            (Array.isArray(ss.reviewData)
+                              ? ss.reviewData.length > 0
+                              : Object.keys(ss.reviewData).length > 0);
+
+                          return (
+                            <tr key={ss.id} className="hover:bg-muted/20 transition-colors">
+                              <td className="px-3 py-3 text-center">
+                                <Checkbox
+                                  checked={selectedStudentIds.includes(ss.studentId)}
+                                  onCheckedChange={(checked) => {
+                                    const newIds = checked
+                                      ? [...selectedStudentIds, ss.studentId]
+                                      : selectedStudentIds.filter((id) => id !== ss.studentId);
+                                    setSelectedStudentIds(newIds);
+                                  }}
+                                  aria-label={`Chọn học viên ${ss.student?.fullName || ""}`}
+                                />
+                              </td>
+                              <td className="px-4 py-3">
+                                <div>
+                                  <p className="font-medium text-foreground">{ss.student?.fullName || "—"}</p>
+                                  <p className="text-xs text-muted-foreground">{ss.student?.code}</p>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <Select
+                                  value={freeStatus}
+                                  disabled={updateFreeAttendanceMutation.isPending}
+                                  onValueChange={(value) => {
+                                    updateFreeAttendanceMutation.mutate({
+                                      studentClassId: ss.studentClassId,
+                                      status: value as "registered" | "attended" | "reserved",
+                                      note: freeStudent?.note ?? ss.attendanceNote ?? "",
+                                    });
+                                  }}
+                                >
+                                  <SelectTrigger
+                                    className={cn("h-7 text-xs", freeStatusClass)}
+                                    data-testid={`attendance-select-${ss.id}`}
+                                  >
+                                    <SelectValue>{freeStatusLabel}</SelectValue>
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="registered">Chưa điểm danh</SelectItem>
+                                    <SelectItem value="attended">Có học</SelectItem>
+                                    <SelectItem value="reserved">Bảo lưu</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </td>
+                              <td className="px-4 py-3">
+                                <Input
+                                  className="h-7 text-xs border-border/60 bg-transparent w-full"
+                                  placeholder="Ghi chú..."
+                                  value={freeStudent?.note ?? ""}
+                                  onChange={(event) => {
+                                    setFreeStudentRows((current) =>
+                                      current.map((student) =>
+                                        student.registrationId === ss.registrationId
+                                          ? { ...student, note: event.target.value }
+                                          : student,
+                                      ),
+                                    );
+                                  }}
+                                  onBlur={() => {
+                                    const note = freeStudent?.note ?? "";
+                                    updateFreeAttendanceMutation.mutate({
+                                      studentClassId: ss.studentClassId,
+                                      status: freeStatus,
+                                      note,
+                                    });
+                                  }}
+                                  data-testid={`note-input-${ss.id}`}
+                                />
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <button
+                                  className={cn(
+                                    "ml-auto flex items-center justify-end gap-1 transition-opacity hover:opacity-80",
+                                    hasReview ? "text-amber-500" : "text-xs text-primary hover:underline",
+                                  )}
+                                  onClick={() => {
+                                    setReviewTarget(ss);
+                                    setIsReviewOpen(true);
+                                  }}
+                                  data-testid={`${hasReview ? "btn-review" : "btn-add-review"}-${ss.id}`}
+                                >
+                                  {hasReview ? (
+                                    <>
+                                      <Star className="h-3.5 w-3.5 fill-amber-400" />
+                                      <span className="text-xs font-medium">Đã nhận xét</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span className="text-base leading-none">+</span>
+                                      Thêm
+                                    </>
+                                  )}
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        }
+
                         const opt = getAttendanceOption(ss.attendanceStatus);
                         const localNote = localNotes[ss.id] ?? ss.attendanceNote ?? "";
                         const hasReview = ss.reviewData &&
@@ -623,7 +818,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
             setIsReviewOpen(open);
             if (!open) setReviewTarget(null);
           }}
-          studentSessionIds={[reviewTarget.id]}
+          studentSessionIds={isFreeSession ? [] : [reviewTarget.id]}
           studentNames={[reviewTarget.student?.fullName || "Học viên"]}
           criteria={sessionCriteria}
           teachers={sessionTeachers}
@@ -633,7 +828,21 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
               : null
           }
           existingPublished={reviewTarget.reviewPublished ?? false}
-          classSessionId={classSessionId}
+          classSessionId={isFreeSession ? "" : classSessionId}
+          freeReview={isFreeSession ? {
+            classId,
+            registrationId: reviewTarget.registrationId,
+          } : undefined}
+          onSaved={isFreeSession ? (reviewData, published) => {
+            setFreeStudentRows((current) => current.map((student) =>
+              student.registrationId === reviewTarget.registrationId
+                ? { ...student, reviewData, reviewPublished: published }
+                : student,
+            ));
+            setReviewTarget((current: any) => current
+              ? { ...current, reviewData, reviewPublished: published }
+              : current);
+          } : undefined}
         />
       )}
 
