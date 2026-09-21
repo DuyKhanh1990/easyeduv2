@@ -246,6 +246,19 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
             : student,
         ),
       );
+      queryClient.setQueryData<MyCalendarSession>(
+        ["/api/my-space/calendar/staff/session", classSessionId],
+        (cached) => cached
+          ? {
+              ...cached,
+              freeStudents: (cached.freeStudents ?? []).map((student) =>
+                student.studentClassId === studentClassId
+                  ? { ...student, status, ...(note !== undefined ? { note: note || null } : {}) }
+                  : student,
+              ),
+            }
+          : cached,
+      );
       queryClient.invalidateQueries({
         predicate: (query) => {
           const key = query.queryKey[0] as string;
@@ -254,6 +267,9 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
             key.includes("/free-schedule")
           );
         },
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/my-space/calendar/staff/session", classSessionId],
       });
     },
     onError: (err: any) => {
@@ -839,6 +855,22 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                 ? { ...student, reviewData, reviewPublished: published }
                 : student,
             ));
+            queryClient.setQueryData<MyCalendarSession>(
+              ["/api/my-space/calendar/staff/session", classSessionId],
+              (cached) => cached
+                ? {
+                    ...cached,
+                    freeStudents: (cached.freeStudents ?? []).map((student) =>
+                      student.registrationId === reviewTarget.registrationId
+                        ? { ...student, reviewData, reviewPublished: published }
+                        : student,
+                    ),
+                  }
+                : cached,
+            );
+            queryClient.invalidateQueries({
+              queryKey: ["/api/my-space/calendar/staff/session", classSessionId],
+            });
             setReviewTarget((current: any) => current
               ? { ...current, reviewData, reviewPublished: published }
               : current);

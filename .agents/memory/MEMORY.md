@@ -64,3 +64,4 @@
 - [Unified free-class calendar](unified-free-class-calendar.md) — cùng lưới tháng: checkbox đăng ký ở trên, Select điểm danh xuất hiện dưới ô đã đăng ký.
 - [Free-class session content isolation](free-class-session-content-isolation.md) — lớp tự do dùng bảng riêng theo classId + ngày; studentId null là giao cả lớp, có studentId là giao cá nhân.
 - [Free-class staff permissions](free-class-staff-permissions.md) — giáo viên được phân công phải thao tác được lớp tự do dù không có quyền quản trị /classes; khóa theo đăng ký/ngày.
+- [Free-class detail cache](free-class-detail-cache.md) — mutation lớp tự do phải refresh exact staff detail query, không chỉ lịch tháng, để tránh mất trạng thái khi mở lại.
