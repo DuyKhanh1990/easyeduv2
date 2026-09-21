@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { addMonths, format, getDaysInMonth, startOfMonth, subMonths } from "date-fns";
+import { vi } from "date-fns/locale";
 import {
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
   CalendarDays,
+  BookOpen,
+  MapPin,
+  UserRound,
+  Users,
   Star,
   HelpCircle,
   PauseCircle,
@@ -46,9 +51,11 @@ type CalendarMode = "register" | "attend";
 
 export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCalendarProps) {
   const [monthDate, setMonthDate] = useState(() => startOfMonth(new Date()));
+  const [mode, setMode] = useState<CalendarMode>("register");
+  const [selectedAttendDate, setSelectedAttendDate] = useState<string | null>(null);
   const [noteDialog, setNoteDialog] = useState<{
     studentClassId: string;
-    date: string;
+    date?: string;
     value: string;
     status: "registered" | "attended" | "reserved";
   } | null>(null);
@@ -60,6 +67,7 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
     reviewData: Record<string, any>;
     published: boolean;
   }>>({});
+  const [selectedAttendStudentIds, setSelectedAttendStudentIds] = useState<string[]>([]);
   const [criteriaDialogOpen, setCriteriaDialogOpen] = useState(false);
   const [criteriaDraft, setCriteriaDraft] = useState<string[]>([]);
   const [criteriaOverride, setCriteriaOverride] = useState<string[] | undefined>();
@@ -114,7 +122,48 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
   const students = (data?.students || []).filter((student: any) => student.status === "active");
   const classStart = String(classData?.startDate || "").slice(0, 10);
   const classEnd = String(classData?.endDate || "").slice(0, 10);
-  const visibleDays = days;
+  const visibleDays = mode === "attend"
+    ? days.filter((day) => students.some((student: any) => registrations.has(`${student.id}:${day.value}`)))
+    : days;
+
+  useEffect(() => {
+    if (mode !== "attend") return;
+    setSelectedAttendDate((current) =>
+      current && visibleDays.some((day) => day.value === current)
+        ? current
+        : visibleDays[0]?.value ?? null,
+    );
+  }, [mode, month, visibleDays]);
+
+  const selectedAttendDay = visibleDays.find((day) => day.value === selectedAttendDate) ?? null;
+  const selectedAttendStudents = selectedAttendDay
+    ? students
+        .map((student: any) => ({
+          student,
+          registration: registrations.get(`${student.id}:${selectedAttendDay.value}`),
+        }))
+        .filter(({ registration }: any) => !!registration)
+    : [];
+  const selectedAttendedCount = selectedAttendStudents.filter(
+    ({ registration }: any) => registration.status === "attended",
+  ).length;
+
+  useEffect(() => {
+    const visibleStudentIds = new Set(selectedAttendStudents.map(({ student }: any) => student.id));
+    const attendedStudentIds = selectedAttendStudents
+      .filter(({ registration }: any) => registration.status === "attended")
+      .map(({ student }: any) => student.id);
+    setSelectedAttendStudentIds((current) => {
+      const next = current.filter((id) => visibleStudentIds.has(id));
+      for (const id of attendedStudentIds) {
+        if (!next.includes(id)) next.push(id);
+      }
+      if (next.length === current.length && next.every((id, index) => id === current[index])) {
+        return current;
+      }
+      return next;
+    });
+  }, [selectedAttendDate, data?.registrations]);
 
   const classTeacherLabel = (classData?.teachers || [])
     .map((teacher: any) => teacher.fullName)
@@ -182,22 +231,37 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
           <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
             <CalendarDays className="h-4 w-4 text-emerald-600" /> Lịch lớp tự do
           </h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">Đăng ký ngày học và điểm danh tách biệt</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Tick ngày học; ngày đã đăng ký sẽ có Select trạng thái điểm danh bên dưới
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setMonthDate((d) => subMonths(d, 1))}><ChevronLeft className="h-4 w-4" /></Button>
           <span className="min-w-28 text-center text-sm font-semibold">{format(monthDate, "MM/yyyy")}</span>
           <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setMonthDate((d) => addMonths(d, 1))}><ChevronRight className="h-4 w-4" /></Button>
-          <div className="ml-2 flex rounded-lg border bg-slate-50 p-0.5">
-            <button className={cn("rounded-md px-3 py-1.5 text-xs font-medium", mode === "register" && "bg-white text-emerald-700 shadow-sm")} onClick={() => setMode("register")}>Đăng ký lịch</button>
-            <button className={cn("rounded-md px-3 py-1.5 text-xs font-medium", mode === "attend" && "bg-white text-blue-700 shadow-sm")} onClick={() => setMode("attend")}>Điểm danh</button>
-          </div>
         </div>
       </div>
       <div className="flex items-center gap-2 border-b bg-slate-50 px-4 py-2 text-xs text-muted-foreground">
         <Badge variant="outline">{students.length} học viên</Badge>
         <span>•</span>
-        <span>{mode === "register" ? "Tick ngày học viên dự kiến đến." : "Chỉ học viên đã đăng ký mới có thể điểm danh."}</span>
+        <span>Ngày chưa đăng ký chỉ có checkbox; ngày đã đăng ký có thể chọn trạng thái điểm danh.</span>
+        <span className="hidden items-center gap-1 md:flex">
+          <Star className="h-3 w-3 text-slate-500" />
+          Tiêu chí: <strong className="font-semibold text-blue-600">{criteriaLabel}</strong>
+          {classPerm?.canEdit && (
+            <button
+              type="button"
+              className="text-slate-400 hover:text-indigo-500"
+              title="Gán tiêu chí nhận xét"
+              onClick={() => {
+                setCriteriaDraft(evaluationCriteriaIds.map(String));
+                setCriteriaDialogOpen(true);
+              }}
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+          )}
+        </span>
         {classStart && classEnd && <span className="ml-auto">Thời hạn lớp: {classStart} → {classEnd}</span>}
       </div>
       <div className="flex-1 overflow-auto">
@@ -497,7 +561,7 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
             <thead className="sticky top-0 z-10 bg-slate-100">
               <tr>
                 <th className="sticky left-0 z-20 min-w-52 border-b border-r bg-slate-100 px-3 py-2 text-left font-semibold">Học viên</th>
-                {visibleDays.map((day) => <th key={day.value} className="min-w-10 border-b px-1 py-2 text-center font-medium"><div>{day.label}</div><div className="text-[10px] text-muted-foreground">{day.weekday}</div></th>)}
+                {visibleDays.map((day) => <th key={day.value} className="min-w-24 border-b px-1 py-2 text-center font-medium"><div>{day.label}</div><div className="text-[10px] text-muted-foreground">{day.weekday}</div></th>)}
               </tr>
             </thead>
             <tbody>
@@ -512,14 +576,88 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                     const outside = (classStart && day.value < classStart) || (classEnd && day.value > classEnd)
                       || (student.startDate && day.value < String(student.startDate).slice(0, 10))
                       || (student.endDate && day.value > String(student.endDate).slice(0, 10));
+                    const status = current?.status === "attended" || current?.status === "reserved"
+                      ? current.status
+                      : "registered";
+                    const statusLabel = status === "attended"
+                      ? "Có học"
+                      : status === "reserved"
+                      ? "Bảo lưu"
+                      : "Chưa điểm danh";
                     return (
-                      <td key={day.value} className={cn("border-b text-center", outside && "bg-slate-50")}>
-                        <Checkbox
-                          checked={mode === "attend" ? current?.status === "attended" : !!current}
-                          disabled={!!outside || !classPerm?.canEdit || (mode === "attend" && !current) || updateMutation.isPending}
-                          onCheckedChange={() => toggle(student, day.value, current)}
-                          aria-label={`${mode === "register" ? "Đăng ký" : "Điểm danh"} ${student.fullName} ngày ${day.label}`}
-                        />
+                      <td key={day.value} className={cn("border-b px-1 py-1.5 text-center align-top", outside && "bg-slate-50")}>
+                        <div className="flex min-h-14 flex-col items-center gap-1">
+                          <Checkbox
+                            checked={!!current}
+                            disabled={!!outside || !classPerm?.canEdit || updateMutation.isPending}
+                            onCheckedChange={() => toggle(student, day.value, current)}
+                            aria-label={`Đăng ký ${student.fullName} ngày ${day.label}`}
+                          />
+                          {current && (
+                            <>
+                              <Select
+                                value={status}
+                                disabled={!classPerm?.canEdit || updateMutation.isPending}
+                                onValueChange={(nextStatus) =>
+                                  updateMutation.mutate({
+                                    studentClassId: student.id,
+                                    date: day.value,
+                                    action: "attend",
+                                    value: nextStatus === "attended",
+                                    status: nextStatus as "registered" | "attended" | "reserved",
+                                  })
+                                }
+                              >
+                                <SelectTrigger className={cn(
+                                  "h-6 w-[86px] justify-center px-1 text-[10px]",
+                                  status === "attended" && "border-emerald-200 bg-emerald-50 text-emerald-700",
+                                  status === "reserved" && "border-amber-200 bg-amber-50 text-amber-700",
+                                  status === "registered" && "border-slate-200 bg-slate-50 text-slate-600",
+                                )}>
+                                  <SelectValue>{statusLabel}</SelectValue>
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="registered">Chưa điểm danh</SelectItem>
+                                  <SelectItem value="attended">Có học</SelectItem>
+                                  <SelectItem value="reserved">Bảo lưu</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  disabled={!classPerm?.canEdit}
+                                  className="text-slate-400 hover:text-primary disabled:cursor-default disabled:opacity-50"
+                                  title={current.note || "Ghi chú"}
+                                  onClick={() => {
+                                    if (!classPerm?.canEdit) return;
+                                    setNoteDialog({
+                                      studentClassId: student.id,
+                                      date: day.value,
+                                      value: current.note || "",
+                                      status,
+                                    });
+                                  }}
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={!classPerm?.canEdit}
+                                  className="text-slate-400 hover:text-yellow-500 disabled:cursor-default disabled:opacity-50"
+                                  title={current.reviewData ? "Xem / sửa nhận xét" : "Nhập nhận xét"}
+                                  onClick={() => {
+                                    if (!classPerm?.canEdit) return;
+                                    setReviewTarget({ student, registration: current });
+                                  }}
+                                >
+                                  {current.reviewData
+                                    ? <Star className="h-3 w-3 fill-yellow-400 text-yellow-500" />
+                                    : <Plus className="h-3 w-3" />}
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </td>
                     );
                   })}
@@ -558,11 +696,12 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
               size="sm"
               disabled={updateMutation.isPending || !noteDialog}
               onClick={() => {
-                if (!noteDialog || !selectedAttendDay) return;
+                const date = noteDialog?.date ?? selectedAttendDay?.value;
+                if (!noteDialog || !date) return;
                 updateMutation.mutate(
                   {
                     studentClassId: noteDialog.studentClassId,
-                    date: selectedAttendDay.value,
+                    date,
                     action: "attend",
                     value: noteDialog.status === "attended",
                     status: noteDialog.status,

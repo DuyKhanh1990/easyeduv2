@@ -61,3 +61,4 @@
 - [Free class calendar model](free-class-calendar.md) — lớp tự do dùng bản ghi theo học viên/ngày; đăng ký không trừ buổi, điểm danh mới cập nhật số đã dùng.
 - [Free class review criteria](free-class-review-criteria.md) — lớp tự do gán tiêu chí ở cấp lớp; biểu mẫu nhận xét chỉ dùng các tiêu chí đã gán.
 - [Free class attendance selection](free-class-attendance-selection.md) — checkbox đầu dòng là chọn học viên, Select mới đổi trạng thái; trạng thái Có học tự chọn học viên.
+- [Unified free-class calendar](unified-free-class-calendar.md) — cùng lưới tháng: checkbox đăng ký ở trên, Select điểm danh xuất hiện dưới ô đã đăng ký.
