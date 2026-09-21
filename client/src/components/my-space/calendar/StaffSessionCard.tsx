@@ -448,22 +448,39 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
           data-testid={`staff-free-session-card-${session.classSessionId}`}
         >
           <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
-            <div className="min-w-0 space-y-1">
+            <div className="space-y-1 min-w-0">
               <p className="text-sm text-muted-foreground">
                 Thời gian: <span className="font-bold text-foreground">Lịch linh hoạt</span>
               </p>
               <p className="font-bold text-foreground text-base">Lớp: {session.classCode}</p>
-              <p className="text-sm text-muted-foreground">
-                Ngày đăng ký:{" "}
-                <span className="font-medium text-foreground">
-                  {new Date(`${session.sessionDate}T00:00:00`).toLocaleDateString("vi-VN")}
-                </span>
-              </p>
+              {!isLoading && !isError && (
+                <>
+                  <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                    <span>Sĩ số: <span className="font-medium text-foreground">{enrolledCount}</span></span>
+                    <span className="text-border">·</span>
+                    <span className={cn(
+                      "font-medium",
+                      (session.learningFormat === "online" || !!session.onlineLink)
+                        ? "text-blue-600"
+                        : "text-foreground",
+                    )}>
+                      {(session.learningFormat === "online" || !!session.onlineLink) ? "Online" : "Offline"}
+                    </span>
+                  </div>
+                  {detail?.teachers && detail.teachers.length > 0 && (
+                    <p className="text-sm text-muted-foreground">
+                      Giáo viên:{" "}
+                      <span className="font-medium text-foreground">
+                        {detail.teachers.map((teacher) =>
+                          teacher.code ? `${teacher.fullName} (${teacher.code})` : teacher.fullName
+                        ).join(", ")}
+                      </span>
+                    </p>
+                  )}
+                </>
+              )}
             </div>
-            <div className="flex w-full shrink-0 flex-col items-stretch gap-2 sm:w-auto sm:items-end">
-              <span className="self-end rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                Lớp tự do
-              </span>
+            <div className="flex w-full shrink-0 flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
               <button
                 onClick={(event) => {
                   event.stopPropagation();
@@ -477,25 +494,6 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
               </button>
             </div>
           </div>
-        {!isLoading && !isError && (
-          <div className="border-t border-border/50 pt-3 text-sm">
-            <p className="text-muted-foreground">
-              Học viên: <span className="font-semibold text-foreground">{freeStudents.length}</span>
-            </p>
-            {freeStudents.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {freeStudents.map((student) => (
-                  <span
-                    key={student.registrationId}
-                    className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs text-foreground"
-                  >
-                    {student.fullName}{student.code ? ` (${student.code})` : ""}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
         {isLoading && (
           <div className="flex items-center gap-2 border-t border-border/50 pt-3 text-sm text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -547,6 +545,19 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
                 </div>
               ))}
             </div>
+          </div>
+        )}
+        {!isLoading && !isError && (
+          <div className="flex flex-wrap items-start justify-between gap-3 border-t border-border/50 pt-3 sm:items-center">
+            <AttendanceStatus
+              enrolledCount={enrolledCount}
+              pendingCount={pendingCount}
+            />
+            <ReviewStatus
+              reviewedCount={reviewedCount}
+              enrolledCount={enrolledCount}
+              reviewPublished={detail?.reviewPublished ?? false}
+            />
           </div>
         )}
         </div>
