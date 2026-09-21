@@ -98,6 +98,29 @@ export const freeClassRegistrations = pgTable("free_class_registrations", {
 }));
 
 // ==========================================
+// FREE CLASS SESSION CONTENTS
+// ==========================================
+// Flexible classes do not have class_sessions. Keep their assigned content in
+// a separate table keyed by class + registration date. A null studentId means
+// the content is assigned to everyone registered on that date.
+export const freeClassSessionContents = pgTable("free_class_session_contents", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  classId: uuid("class_id").notNull().references(() => classes.id, { onDelete: "cascade" }),
+  sessionDate: date("session_date").notNull(),
+  studentId: uuid("student_id").references(() => students.id, { onDelete: "cascade" }),
+  contentType: varchar("content_type", { length: 50 }).notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  resourceUrl: text("resource_url"),
+  displayOrder: integer("display_order").default(0),
+  dueDate: timestamp("due_date"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  classDateIdx: index("free_class_session_contents_class_date_idx").on(table.classId, table.sessionDate),
+  studentIdx: index("free_class_session_contents_student_idx").on(table.studentId),
+}));
+
+// ==========================================
 // STUDENT COMMENTS (Discussion/Notes)
 // ==========================================
 export const studentComments = pgTable("student_comments", {
@@ -933,6 +956,13 @@ export const insertFreeClassRegistrationSchema = createInsertSchema(freeClassReg
 });
 export type FreeClassRegistration = typeof freeClassRegistrations.$inferSelect;
 export type InsertFreeClassRegistration = z.infer<typeof insertFreeClassRegistrationSchema>;
+
+export const insertFreeClassSessionContentSchema = createInsertSchema(freeClassSessionContents).omit({
+  id: true,
+  createdAt: true,
+});
+export type FreeClassSessionContent = typeof freeClassSessionContents.$inferSelect;
+export type InsertFreeClassSessionContent = z.infer<typeof insertFreeClassSessionContentSchema>;
 
 export const insertClassSessionSchema = createInsertSchema(classSessions).omit({ id: true, createdAt: true, updatedAt: true });
 export type ClassSession = typeof classSessions.$inferSelect;

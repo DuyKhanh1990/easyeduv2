@@ -29,6 +29,9 @@ interface SessionContentDialogProps {
   classSessionId: string;
   programId?: string;
   students?: Array<{ id: string; name: string }>;
+  freeClassId?: string;
+  freeSessionDate?: string;
+  freeStudents?: Array<{ id: string; name: string; code?: string | null }>;
 }
 
 interface SelectedContent {
@@ -77,6 +80,11 @@ interface SessionContentRecord {
   resourceUrl?: string;
   displayOrder: number;
   dueDate?: string | null;
+}
+
+interface FreeContentResponse {
+  common: SessionContentRecord[];
+  personal: (SessionContentRecord & { studentId: string })[];
 }
 
 const CONTENT_TYPES = [
@@ -952,8 +960,15 @@ export function SessionContentDialog({
   classSessionId,
   programId,
   students: propStudents,
+  freeClassId,
+  freeSessionDate,
+  freeStudents,
 }: SessionContentDialogProps) {
   const { toast } = useToast();
+  const isFreeSession = !!freeClassId && !!freeSessionDate;
+  const freeContentPath = isFreeSession
+    ? `/api/free-class-sessions/${freeClassId}/${freeSessionDate}`
+    : "";
 
   const [selectedCommon, setSelectedCommon] = useState<SelectedContent[]>([]);
   const [selectedPersonal, setSelectedPersonal] = useState<SelectedContent[]>([]);
@@ -992,7 +1007,7 @@ export function SessionContentDialog({
       if (!res.ok) return null;
       return res.json();
     },
-    enabled: !!classSessionId && isOpen,
+    enabled: !!classSessionId && isOpen && !isFreeSession,
   });
 
   const defaultDueDate = sessionInfo
@@ -1020,17 +1035,33 @@ export function SessionContentDialog({
 
   const { data: studentSessions = [] } = useQuery<StudentSession[]>({
     queryKey: ["/api/class-sessions", classSessionId, "student-sessions"],
-    enabled: !!classSessionId && isOpen,
+    enabled: !!classSessionId && isOpen && !isFreeSession,
   });
 
-  const students = studentSessions.map((ss) => ({
-    id: ss.studentId,
-    name: ss.student?.fullName || "Không xác định",
-  }));
+  const students = freeStudents
+    ? freeStudents.map((student) => ({ id: student.id, name: student.name }))
+    : studentSessions.map((ss) => ({
+        id: ss.studentId,
+        name: ss.student?.fullName || "Không xác định",
+      }));
 
   const { data: existingContents = [], isLoading: isLoadingExisting } = useQuery<SessionContentRecord[]>({
-    queryKey: [`/api/class-sessions/${classSessionId}/contents`],
-    enabled: !!classSessionId && isOpen,
+    queryKey: [isFreeSession ? `${freeContentPath}/contents` : `/api/class-sessions/${classSessionId}/contents`],
+    queryFn: async () => {
+      if (!isFreeSession) {
+        const res = await fetch(`/api/class-sessions/${classSessionId}/contents`, {
+          credentials: "include",
+          headers: getAuthHeaders(),
+        });
+        if (!res.ok) throw new Error("Không thể tải nội dung");
+        return res.json();
+      }
+      const res = await fetch(`${freeContentPath}/contents`);
+      if (!res.ok) throw new Error("Không thể tải nội dung");
+      const data: FreeContentResponse = await res.json();
+      return data.common ?? [];
+    },
+    enabled: !!classSessionId && isOpen && (!isFreeSession || !!freeContentPath),
     staleTime: 0,
   });
 
@@ -1045,8 +1076,30 @@ export function SessionContentDialog({
   }
 
   const { data: existingPersonalContents = [], isLoading: isLoadingPersonal } = useQuery<PersonalContentRecord[]>({
-    queryKey: [`/api/class-sessions/${classSessionId}/student-contents`],
-    enabled: !!classSessionId && isOpen,
+    queryKey: [isFreeSession ? `${freeContentPath}/student-contents` : `/api/class-sessions/${classSessionId}/student-contents`],
+    queryFn: async () => {
+      if (!isFreeSession) {
+        const res = await fetch(`/api/class-sessions/${classSessionId}/student-contents`, {
+          credentials: "include",
+          headers: getAuthHeaders(),
+        });
+        if (!res.ok) throw new Error("Không thể tải nội dung cá nhân");
+        return res.json();
+      }
+      const res = await fetch(`${freeContentPath}/contents`);
+      if (!res.ok) throw new Error("Không thể tải nội dung cá nhân");
+      const data: FreeContentResponse = await res.json();
+      return (data.personal ?? []).map((item) => ({
+        studentSessionContentId: item.id,
+        sessionContentId: item.id,
+        studentId: item.studentId,
+        contentType: item.contentType,
+        title: item.title,
+        description: item.description ?? null,
+        resourceUrl: item.resourceUrl ?? null,
+      }));
+    },
+    enabled: !!classSessionId && isOpen && (!isFreeSession || !!freeContentPath),
     staleTime: 0,
   });
 
@@ -1116,6 +1169,60 @@ export function SessionContentDialog({
 
   const handleSave = async () => {
     try {
+      if (isFreeSession) {
+        const currentDbIds = new Set(selectedCommon.map((c) => c.dbId).filter(Boolean) as string[]);
+        const commonToDelete = Array.from(originalCommonDbIds).filter((id) => !currentDbIds.has(id));
+        for (const contentId of commonToDelete) {
+          await apiRequest("DELETE", `${freeContentPath}/contents/${contentId}`);
+        }
+        for (const content of selectedCommon.filter((c) => !c.dbId)) {
+          await apiRequest("POST", `${freeContentPath}/contents`, {
+            contentType: content.type,
+            title: content.title,
+            description: content.description,
+            resourceUrl: content.id,
+            dueDate: content.dueDate ?? null,
+          });
+        }
+        for (const content of selectedCommon.filter(
+          (c) => c.dbId && c.type === "Bài tập về nhà" && c.dueDate !== c.originalDueDate
+        )) {
+          await apiRequest("PATCH", `${freeContentPath}/contents/${content.dbId}`, {
+            dueDate: content.dueDate ?? null,
+          });
+        }
+
+        const currentPersonalIds = new Set(
+          selectedPersonal.map((c) => (c as any).dbId).filter(Boolean) as string[]
+        );
+        for (const contentId of Array.from(originalPersonalSessionContentIds).filter(
+          (id) => !currentPersonalIds.has(id)
+        )) {
+          await apiRequest("DELETE", `${freeContentPath}/student-contents/${contentId}`);
+        }
+        for (const content of selectedPersonal.filter((c) => !(c as any).dbId)) {
+          await apiRequest("POST", `${freeContentPath}/student-contents`, {
+            studentId: (content as any).studentId,
+            contentType: content.type,
+            title: content.title,
+            description: content.description,
+            resourceUrl: content.id,
+            dueDate: content.dueDate ?? null,
+          });
+        }
+
+        queryClient.invalidateQueries({ queryKey: [`${freeContentPath}/contents`] });
+        queryClient.invalidateQueries({ queryKey: [`${freeContentPath}/student-contents`] });
+        queryClient.invalidateQueries({ queryKey: ["/api/my-space/calendar/staff/session", classSessionId] });
+        queryClient.invalidateQueries({ queryKey: ["/api/my-space/calendar/student/session", classSessionId] });
+        toast({
+          title: "Lưu thành công",
+          description: "Nội dung buổi học đã được lưu",
+        });
+        onOpenChange(false);
+        return;
+      }
+
       const currentDbIds = new Set(
         selectedCommon.map((c) => c.dbId).filter(Boolean) as string[]
       );

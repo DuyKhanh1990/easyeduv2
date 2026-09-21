@@ -30,10 +30,11 @@ import {
   salarySheetEmployees,
   onlineLearningRules,
   freeClassRegistrations,
+  freeClassSessionContents,
   studentClasses,
 } from "@shared/schema";
 import { storage } from "../storage";
-import { eq, and, gte, lte, sql, inArray, isNotNull, or, desc } from "drizzle-orm";
+import { eq, and, gte, lte, sql, inArray, isNotNull, isNull, or, desc } from "drizzle-orm";
 import { updateStudentAttendance } from "../storage/attendance.storage";
 
 async function getStudentForUser(userId: string) {
@@ -287,6 +288,61 @@ function getFreeStaffSessionId(classId: string, sessionDate: string): string {
   return `free-${classId}__${String(sessionDate).slice(0, 10)}`;
 }
 
+async function getFreeSessionContents(classId: string, sessionDate: string, studentId?: string) {
+  const rows = await db
+    .select()
+    .from(freeClassSessionContents)
+    .where(and(
+      eq(freeClassSessionContents.classId, classId),
+      eq(freeClassSessionContents.sessionDate, sessionDate),
+      studentId
+        ? or(isNull(freeClassSessionContents.studentId), eq(freeClassSessionContents.studentId, studentId))
+        : isNull(freeClassSessionContents.studentId),
+    ))
+    .orderBy(freeClassSessionContents.displayOrder, freeClassSessionContents.createdAt);
+
+  return {
+    general: rows.filter((row) => row.studentId == null),
+    personal: studentId ? rows.filter((row) => row.studentId === studentId) : [],
+  };
+}
+
+function mapFreeContentForCalendar(row: typeof freeClassSessionContents.$inferSelect) {
+  return {
+    id: row.id,
+    type: row.contentType,
+    title: row.title,
+    description: row.description,
+    resourceUrl: row.resourceUrl ?? null,
+  };
+}
+
+async function getStaffFreeSessionRows(classId: string, sessionDate: string, staffId: string) {
+  return db
+    .select({
+      registrationId: freeClassRegistrations.id,
+      classId: classes.id,
+      studentClassId: freeClassRegistrations.studentClassId,
+      studentId: freeClassRegistrations.studentId,
+      studentName: students.fullName,
+      studentCode: students.code,
+    })
+    .from(freeClassRegistrations)
+    .innerJoin(classes, eq(freeClassRegistrations.classId, classes.id))
+    .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
+    .innerJoin(students, eq(freeClassRegistrations.studentId, students.id))
+    .where(and(
+      eq(freeClassRegistrations.classId, classId),
+      eq(freeClassRegistrations.registrationDate, sessionDate),
+      eq(classes.classType, "free"),
+      inArray(studentClasses.status, ["active", "waiting"]),
+      or(
+        eq(freeClassRegistrations.teacherId, staffId),
+        sql`${classes.teacherIds} @> ARRAY[${staffId}]::uuid[]`,
+      ),
+    ));
+}
+
 async function getStudentName(studentId: string): Promise<string> {
   const [row] = await db
     .select({ fullName: students.fullName, code: students.code })
@@ -384,6 +440,180 @@ export function registerMySpaceRoutes(app: Express): void {
     } catch (err: any) {
       console.error("My space user-type error:", err);
       res.status(500).json({ message: err.message || "Lỗi khi xác định loại tài khoản" });
+    }
+  });
+
+  // ── Flexible-class session content (kept separate from regular sessions) ───
+  app.get("/api/free-class-sessions/:classId/:sessionDate/contents", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      const staffRecord = await getStaffForUser(user.id);
+      if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
+
+      const { classId, sessionDate } = req.params;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(sessionDate)) {
+        return res.status(400).json({ message: "Ngày buổi học không hợp lệ" });
+      }
+      const rows = await getStaffFreeSessionRows(classId, sessionDate, staffRecord.id);
+      if (rows.length === 0) return res.status(404).json({ message: "Không tìm thấy buổi học tự do" });
+
+      const contents = await getFreeSessionContents(classId, sessionDate);
+      res.json({
+        common: contents.general,
+        personal: (await db
+          .select()
+          .from(freeClassSessionContents)
+          .where(and(
+            eq(freeClassSessionContents.classId, classId),
+            eq(freeClassSessionContents.sessionDate, sessionDate),
+            isNotNull(freeClassSessionContents.studentId),
+          ))
+          .orderBy(freeClassSessionContents.displayOrder, freeClassSessionContents.createdAt)),
+        students: rows.map((row) => ({
+          id: row.studentId,
+          name: row.studentName || row.studentCode || row.studentId,
+          code: row.studentCode,
+          studentClassId: row.studentClassId,
+        })),
+      });
+    } catch (err: any) {
+      console.error("GET free session contents error:", err);
+      res.status(500).json({ message: err.message || "Không thể tải nội dung lớp tự do" });
+    }
+  });
+
+  app.post("/api/free-class-sessions/:classId/:sessionDate/contents", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      const staffRecord = await getStaffForUser(user.id);
+      if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
+
+      const { classId, sessionDate } = req.params;
+      const rows = await getStaffFreeSessionRows(classId, sessionDate, staffRecord.id);
+      if (rows.length === 0) return res.status(404).json({ message: "Không tìm thấy buổi học tự do" });
+
+      const { contentType, title, description, resourceUrl, dueDate } = req.body ?? {};
+      if (!contentType || !title) return res.status(400).json({ message: "Thiếu loại hoặc tên nội dung" });
+      const [created] = await db.insert(freeClassSessionContents).values({
+        classId,
+        sessionDate,
+        studentId: null,
+        contentType,
+        title,
+        description: description || null,
+        resourceUrl: resourceUrl || null,
+        displayOrder: 0,
+        dueDate: dueDate ? new Date(dueDate) : null,
+      }).returning();
+      res.status(201).json(created);
+    } catch (err: any) {
+      console.error("Create free session content error:", err);
+      res.status(400).json({ message: err.message || "Không thể tạo nội dung lớp tự do" });
+    }
+  });
+
+  app.patch("/api/free-class-sessions/:classId/:sessionDate/contents/:contentId", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      const staffRecord = await getStaffForUser(user.id);
+      if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
+      const { classId, sessionDate, contentId } = req.params;
+      const rows = await getStaffFreeSessionRows(classId, sessionDate, staffRecord.id);
+      if (rows.length === 0) return res.status(404).json({ message: "Không tìm thấy buổi học tự do" });
+      const dueDate = req.body?.dueDate;
+      const [updated] = await db.update(freeClassSessionContents)
+        .set({ dueDate: dueDate ? new Date(dueDate) : null })
+        .where(and(
+          eq(freeClassSessionContents.id, contentId),
+          eq(freeClassSessionContents.classId, classId),
+          eq(freeClassSessionContents.sessionDate, sessionDate),
+          isNull(freeClassSessionContents.studentId),
+        ))
+        .returning();
+      if (!updated) return res.status(404).json({ message: "Không tìm thấy nội dung" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Không thể cập nhật nội dung" });
+    }
+  });
+
+  app.delete("/api/free-class-sessions/:classId/:sessionDate/contents/:contentId", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      const staffRecord = await getStaffForUser(user.id);
+      if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
+      const { classId, sessionDate, contentId } = req.params;
+      const rows = await getStaffFreeSessionRows(classId, sessionDate, staffRecord.id);
+      if (rows.length === 0) return res.status(404).json({ message: "Không tìm thấy buổi học tự do" });
+      const deleted = await db.delete(freeClassSessionContents).where(and(
+        eq(freeClassSessionContents.id, contentId),
+        eq(freeClassSessionContents.classId, classId),
+        eq(freeClassSessionContents.sessionDate, sessionDate),
+        isNull(freeClassSessionContents.studentId),
+      )).returning({ id: freeClassSessionContents.id });
+      if (deleted.length === 0) return res.status(404).json({ message: "Không tìm thấy nội dung" });
+      res.status(204).send();
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Không thể xoá nội dung" });
+    }
+  });
+
+  app.post("/api/free-class-sessions/:classId/:sessionDate/student-contents", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      const staffRecord = await getStaffForUser(user.id);
+      if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
+      const { classId, sessionDate } = req.params;
+      const rows = await getStaffFreeSessionRows(classId, sessionDate, staffRecord.id);
+      if (rows.length === 0) return res.status(404).json({ message: "Không tìm thấy buổi học tự do" });
+
+      const { studentId, contentType, title, description, resourceUrl, dueDate } = req.body ?? {};
+      if (!studentId || !contentType || !title) return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
+      if (!rows.some((row) => row.studentId === studentId)) {
+        return res.status(400).json({ message: "Học viên không đăng ký buổi học này" });
+      }
+      const [created] = await db.insert(freeClassSessionContents).values({
+        classId,
+        sessionDate,
+        studentId,
+        contentType,
+        title,
+        description: description || null,
+        resourceUrl: resourceUrl || null,
+        displayOrder: 0,
+        dueDate: dueDate ? new Date(dueDate) : null,
+      }).returning();
+      res.status(201).json(created);
+    } catch (err: any) {
+      console.error("Create free personal content error:", err);
+      res.status(400).json({ message: err.message || "Không thể giao nội dung cá nhân" });
+    }
+  });
+
+  app.delete("/api/free-class-sessions/:classId/:sessionDate/student-contents/:contentId", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      const staffRecord = await getStaffForUser(user.id);
+      if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
+      const { classId, sessionDate, contentId } = req.params;
+      const rows = await getStaffFreeSessionRows(classId, sessionDate, staffRecord.id);
+      if (rows.length === 0) return res.status(404).json({ message: "Không tìm thấy buổi học tự do" });
+      const deleted = await db.delete(freeClassSessionContents).where(and(
+        eq(freeClassSessionContents.id, contentId),
+        eq(freeClassSessionContents.classId, classId),
+        eq(freeClassSessionContents.sessionDate, sessionDate),
+        isNotNull(freeClassSessionContents.studentId),
+      )).returning({ id: freeClassSessionContents.id });
+      if (deleted.length === 0) return res.status(404).json({ message: "Không tìm thấy nội dung cá nhân" });
+      res.status(204).send();
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Không thể xoá nội dung cá nhân" });
     }
   });
 
@@ -950,6 +1180,7 @@ export function registerMySpaceRoutes(app: Express): void {
         const teacherNames = await getTeacherNames([...new Set(teacherIds)]);
         const linkedStudent = ctx.linkedStudents.find((s) => s.id === freeRow.studentId);
         const date = String(freeRow.sessionDate).slice(0, 10);
+        const freeContents = await getFreeSessionContents(freeRow.classId, date, freeRow.studentId);
 
         return res.json({
           classSessionId,
@@ -972,8 +1203,12 @@ export function registerMySpaceRoutes(app: Express): void {
           reviewData: freeRow.reviewPublished ? parseReviewData(freeRow.reviewData) : [],
           reviewPublished: freeRow.reviewPublished ?? false,
           evaluationCriteriaIds: freeRow.evaluationCriteriaIds ?? [],
-          generalContents: [],
-          personalContents: [],
+          generalContents: freeContents.general.map(mapFreeContentForCalendar),
+          personalContents: freeContents.personal.map((content) => ({
+            ...mapFreeContentForCalendar(content),
+            customTitle: null,
+            customDescription: null,
+          })),
           userType: "student",
           studentName: ctx.isParent ? (linkedStudent?.fullName ?? null) : null,
           studentCode: ctx.isParent ? (linkedStudent?.code ?? null) : null,
@@ -1569,6 +1804,7 @@ export function registerMySpaceRoutes(app: Express): void {
           ]),
         )];
         const teachers = await getTeachersWithIds(teacherIds);
+        const freeContents = await getFreeSessionContents(first.classId, freeDate);
 
         return res.json({
           classSessionId,
@@ -1594,7 +1830,7 @@ export function registerMySpaceRoutes(app: Express): void {
           attendanceNote: null,
           reviewData: [],
           reviewPublished: false,
-          generalContents: [],
+          generalContents: freeContents.general.map(mapFreeContentForCalendar),
           personalContents: [],
           userType: "staff",
           enrolledCount: freeRows.length,

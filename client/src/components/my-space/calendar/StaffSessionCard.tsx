@@ -437,30 +437,41 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
   if (session.isFreeSession) {
     const freeStudents = detail?.freeStudents ?? [];
     return (
-      <div
-        className={cn(
-          "bg-card rounded-2xl border border-border p-4 space-y-3 shadow-sm sm:p-5",
-          highlighted && "ring-2 ring-primary/60 ring-offset-2",
-        )}
-        data-testid={`staff-free-session-card-${session.classSessionId}`}
-      >
-        <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
-          <div className="min-w-0 space-y-1">
-            <p className="text-sm text-muted-foreground">
-              Thời gian: <span className="font-bold text-foreground">Lịch linh hoạt</span>
-            </p>
-            <p className="font-bold text-foreground text-base">Lớp: {session.classCode}</p>
-            <p className="text-sm text-muted-foreground">
-              Ngày đăng ký:{" "}
-              <span className="font-medium text-foreground">
-                {new Date(`${session.sessionDate}T00:00:00`).toLocaleDateString("vi-VN")}
+      <>
+        <div
+          className={cn(
+            "bg-card rounded-2xl border border-border p-4 space-y-3 shadow-sm sm:p-5",
+            highlighted && "ring-2 ring-primary/60 ring-offset-2",
+          )}
+          data-testid={`staff-free-session-card-${session.classSessionId}`}
+        >
+          <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm text-muted-foreground">
+                Thời gian: <span className="font-bold text-foreground">Lịch linh hoạt</span>
+              </p>
+              <p className="font-bold text-foreground text-base">Lớp: {session.classCode}</p>
+              <p className="text-sm text-muted-foreground">
+                Ngày đăng ký:{" "}
+                <span className="font-medium text-foreground">
+                  {new Date(`${session.sessionDate}T00:00:00`).toLocaleDateString("vi-VN")}
+                </span>
+              </p>
+            </div>
+            <div className="flex w-full shrink-0 flex-col items-stretch gap-2 sm:w-auto sm:items-end">
+              <span className="self-end rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                Lớp tự do
               </span>
-            </p>
+              <button
+                onClick={() => setContentDialogOpen(true)}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-primary/50 px-3 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"
+                data-testid={`btn-assign-free-content-${session.classSessionId}`}
+              >
+                <BookOpen className="h-4 w-4" />
+                <span>Giao nội dung</span>
+              </button>
+            </div>
           </div>
-          <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-            Lớp tự do
-          </span>
-        </div>
         {!isLoading && !isError && (
           <div className="border-t border-border/50 pt-3 text-sm">
             <p className="text-muted-foreground">
@@ -491,7 +502,20 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
             Không thể tải danh sách học viên
           </p>
         )}
-      </div>
+        </div>
+        <SessionContentDialog
+          isOpen={contentDialogOpen}
+          onOpenChange={setContentDialogOpen}
+          classSessionId={session.classSessionId}
+          freeClassId={session.classId ?? undefined}
+          freeSessionDate={session.sessionDate}
+          freeStudents={freeStudents.map((student) => ({
+            id: student.studentId,
+            name: student.fullName,
+            code: student.code,
+          }))}
+        />
+      </>
     );
   }
 

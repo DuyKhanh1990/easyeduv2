@@ -657,6 +657,15 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
         isOpen={contentDialogOpen}
         onOpenChange={setContentDialogOpen}
         classSessionId={classSessionId}
+        freeClassId={session.isFreeSession ? classId : undefined}
+        freeSessionDate={session.isFreeSession ? session.sessionDate : undefined}
+        freeStudents={session.isFreeSession
+          ? (session.freeStudents ?? []).map((student) => ({
+              id: student.studentId,
+              name: student.fullName,
+              code: student.code,
+            }))
+          : undefined}
       />
 
       <LibraryContentDialog
