@@ -13,14 +13,25 @@ import {
   Star,
   HelpCircle,
   PauseCircle,
+  Pencil,
+  Plus,
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { ReviewDialog } from "@/components/education/ReviewDialog";
 import {
   Select,
   SelectContent,
@@ -41,6 +52,19 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
   const [monthDate, setMonthDate] = useState(() => startOfMonth(new Date()));
   const [mode, setMode] = useState<CalendarMode>("register");
   const [selectedAttendDate, setSelectedAttendDate] = useState<string | null>(null);
+  const [noteDialog, setNoteDialog] = useState<{
+    studentClassId: string;
+    value: string;
+    status: "registered" | "attended" | "reserved";
+  } | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<{
+    student: any;
+    registration: any;
+  } | null>(null);
+  const [reviewOverrides, setReviewOverrides] = useState<Record<string, {
+    reviewData: Record<string, any>;
+    published: boolean;
+  }>>({});
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const month = format(monthDate, "yyyy-MM");
@@ -52,6 +76,10 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
       return res.json();
     },
   });
+  const { data: allEvaluationCriteria = [] } = useQuery<any[]>({
+    queryKey: ["/api/evaluation-criteria"],
+    enabled: mode === "attend",
+  });
 
   const updateMutation = useMutation({
     mutationFn: async (payload: {
@@ -60,6 +88,7 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
       action: CalendarMode;
       value: boolean;
       status?: "registered" | "attended" | "reserved";
+      note?: string;
     }) => {
       await apiRequest("PATCH", `/api/classes/${classId}/free-schedule`, payload);
     },
@@ -119,6 +148,16 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
     .filter(Boolean)
     .join(", ") || "Chưa gán";
   const classLocationLabel = classData?.location?.name || classData?.locationName || "—";
+  const evaluationCriteriaIds = data?.evaluationCriteriaIds ?? classData?.evaluationCriteriaIds ?? [];
+  const reviewCriteria = (allEvaluationCriteria as any[]).filter((criterion) =>
+    evaluationCriteriaIds.includes(criterion.id),
+  );
+  const reviewTeachers = (classData?.teachers || [])
+    .map((teacher: any) => ({ id: teacher.id, fullName: teacher.fullName }))
+    .filter((teacher: any) => teacher.id && teacher.fullName);
+  if (reviewTeachers.length === 0) {
+    reviewTeachers.push({ id: "free-class-teacher", fullName: classTeacherLabel });
+  }
 
   const toggle = (student: any, date: string, current: any) => {
     if (!classPerm?.canEdit || updateMutation.isPending) return;
@@ -254,10 +293,11 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                   </div>
                   <div className="overflow-x-auto border-t border-slate-100">
                     <div className="min-w-[720px]">
-                      <div className="grid grid-cols-[minmax(260px,1fr)_minmax(210px,.8fr)_minmax(180px,.7fr)] items-center gap-4 bg-slate-50/80 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      <div className="grid grid-cols-[minmax(260px,1fr)_minmax(210px,.8fr)_minmax(220px,.85fr)_minmax(180px,.7fr)] items-center gap-4 bg-slate-50/80 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                         <span>Học viên</span>
                         <span>Trạng thái điểm danh</span>
                         <span>Ghi chú</span>
+                        <span>Nhận xét</span>
                       </div>
                       {selectedAttendStudents.map(({ student, registration }: any) => {
                         const status = registration.status === "attended" || registration.status === "reserved"
@@ -271,23 +311,9 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                         return (
                           <div
                             key={registration.id}
-                            className="grid grid-cols-[minmax(260px,1fr)_minmax(210px,.8fr)_minmax(180px,.7fr)] items-center gap-4 border-t border-slate-100 px-4 py-2.5 transition-colors hover:bg-slate-50"
+                            className="grid grid-cols-[minmax(260px,1fr)_minmax(210px,.8fr)_minmax(220px,.85fr)_minmax(180px,.7fr)] items-center gap-4 border-t border-slate-100 px-4 py-2.5 transition-colors hover:bg-slate-50"
                           >
                             <div className="flex min-w-0 items-center gap-3">
-                              <Checkbox
-                                checked={status === "attended"}
-                                disabled={updateMutation.isPending}
-                                onCheckedChange={(checked) =>
-                                  updateMutation.mutate({
-                                    studentClassId: student.id,
-                                    date: selectedAttendDay.value,
-                                    action: "attend",
-                                    value: checked === true,
-                                    status: checked === true ? "attended" : "registered",
-                                  })
-                                }
-                                aria-label={`Điểm danh ${student.fullName}`}
-                              />
                               <div className="min-w-0">
                                 <div className="truncate text-sm font-medium text-slate-800">{student.fullName}</div>
                                 <div className="truncate text-xs text-muted-foreground">
@@ -337,9 +363,66 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                                 </SelectItem>
                               </SelectContent>
                             </Select>
-                            <span className="truncate text-xs text-muted-foreground">
-                              {registration.note || "—"}
-                            </span>
+                            <button
+                              type="button"
+                              disabled={!classPerm?.canEdit}
+                              className={cn(
+                                "group flex min-w-0 items-center gap-1 text-left text-xs",
+                                classPerm?.canEdit
+                                  ? "cursor-pointer hover:text-primary"
+                                  : "cursor-default",
+                              )}
+                              onClick={() => {
+                                if (!classPerm?.canEdit) return;
+                                setNoteDialog({
+                                  studentClassId: student.id,
+                                  value: registration.note || "",
+                                  status,
+                                });
+                              }}
+                              title={registration.note || "Chưa có ghi chú"}
+                            >
+                              <span className={cn(
+                                "truncate",
+                                registration.note
+                                  ? "text-slate-700"
+                                  : "italic text-muted-foreground",
+                              )}>
+                                {registration.note || "Ghi chú..."}
+                              </span>
+                              {classPerm?.canEdit && (
+                                <Pencil className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-50" />
+                              )}
+                            </button>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant={(
+                                  reviewOverrides[registration.id]?.reviewData
+                                  ?? registration.reviewData
+                                ) ? "secondary" : "outline"}
+                                size="sm"
+                                className="h-8 gap-1.5 text-xs"
+                                disabled={!classPerm?.canEdit}
+                                onClick={() => {
+                                  if (!classPerm?.canEdit) return;
+                                  setReviewTarget({ student, registration });
+                                }}
+                              >
+                                {(
+                                  reviewOverrides[registration.id]?.reviewData
+                                  ?? registration.reviewData
+                                ) ? (
+                                  <Star className="h-3.5 w-3.5 fill-yellow-400 text-yellow-500" />
+                                ) : (
+                                  <Plus className="h-3.5 w-3.5" />
+                                )}
+                                {(
+                                  reviewOverrides[registration.id]?.reviewData
+                                  ?? registration.reviewData
+                                ) ? "Xem / sửa" : "Nhập nhận xét"}
+                              </Button>
+                            </div>
                           </div>
                         );
                       })}
@@ -386,6 +469,91 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
           </table>
         )}
       </div>
+      <Dialog
+        open={!!noteDialog}
+        onOpenChange={(open) => {
+          if (!open) setNoteDialog(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Ghi chú</DialogTitle>
+          </DialogHeader>
+          <Textarea
+            autoFocus
+            className="min-h-[100px] resize-none text-sm"
+            placeholder="Nhập ghi chú..."
+            value={noteDialog?.value ?? ""}
+            onChange={(event) =>
+              setNoteDialog((current) => current
+                ? { ...current, value: event.target.value }
+                : current)
+            }
+          />
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => setNoteDialog(null)}>
+              Huỷ
+            </Button>
+            <Button
+              size="sm"
+              disabled={updateMutation.isPending || !noteDialog}
+              onClick={() => {
+                if (!noteDialog || !selectedAttendDay) return;
+                updateMutation.mutate(
+                  {
+                    studentClassId: noteDialog.studentClassId,
+                    date: selectedAttendDay.value,
+                    action: "attend",
+                    value: noteDialog.status === "attended",
+                    status: noteDialog.status,
+                    note: noteDialog.value,
+                  },
+                  {
+                    onSuccess: () => {
+                      setNoteDialog(null);
+                      toast({ title: "Đã cập nhật ghi chú" });
+                    },
+                  },
+                );
+              }}
+            >
+              Lưu
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <ReviewDialog
+        open={!!reviewTarget}
+        onOpenChange={(open) => {
+          if (!open) setReviewTarget(null);
+        }}
+        studentSessionIds={[]}
+        studentNames={reviewTarget ? [reviewTarget.student.fullName] : []}
+        criteria={reviewCriteria}
+        teachers={reviewTeachers}
+        existingReviewData={reviewTarget
+          ? reviewOverrides[reviewTarget.registration.id]?.reviewData
+            ?? reviewTarget.registration.reviewData
+            ?? null
+          : null}
+        existingPublished={reviewTarget
+          ? reviewOverrides[reviewTarget.registration.id]?.published
+            ?? reviewTarget.registration.reviewPublished
+            ?? false
+          : false}
+        classSessionId=""
+        freeReview={reviewTarget ? {
+          classId,
+          registrationId: reviewTarget.registration.id,
+        } : undefined}
+        onSaved={(reviewData, published) => {
+          if (!reviewTarget) return;
+          setReviewOverrides((current) => ({
+            ...current,
+            [reviewTarget.registration.id]: { reviewData, published },
+          }));
+        }}
+      />
     </div>
   );
 }
