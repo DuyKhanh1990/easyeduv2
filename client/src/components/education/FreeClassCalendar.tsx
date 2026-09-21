@@ -145,8 +145,9 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
         .map((student: any) => student.id)
     : [];
   const selectedDayStudentIdSet = new Set(selectedDayStudentIds);
-  const allSelectedDayStudents = selectedDayStudentIds.length > 0
-    && selectedDayStudentIds.every((studentId: string) => selectedStudentIds.includes(studentId));
+  const allSelectedDayStudents = students.length > 0
+    && selectedStudentIds.length === students.length
+    && students.every((student: any) => selectedStudentIds.includes(student.id));
   const monthlyStats = useMemo(() => {
     const stats = new Map<string, { registered: number; attended: number }>();
     for (const student of students) {
@@ -380,7 +381,31 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
             </button>
           )}
         </span>
-        {classStart && classEnd && <span className="ml-auto">Thời hạn lớp: {classStart} → {classEnd}</span>}
+        <div className="ml-auto flex items-center gap-2">
+          {selectedDate && (
+            <span className="hidden text-[11px] text-slate-500 lg:inline">
+              Đã chọn {selectedStudentIds.length} học viên
+            </span>
+          )}
+          <Button
+            size="sm"
+            className="h-7 px-2 text-xs"
+            disabled={!classPerm?.canEdit || !selectedDate || selectedStudentIds.length === 0 || bulkMutation.isPending}
+            onClick={runBulkRegistration}
+          >
+            Đăng ký
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 border-blue-200 px-2 text-xs text-blue-700 hover:bg-blue-50"
+            disabled={!classPerm?.canEdit || !selectedDate || selectedRegisteredStudentIds.length === 0 || bulkMutation.isPending}
+            onClick={openBulkAttendance}
+          >
+            Điểm danh
+          </Button>
+        </div>
+        {classStart && classEnd && <span className="hidden text-[11px] lg:inline">Thời hạn lớp: {classStart} → {classEnd}</span>}
       </div>
       <div className="flex-1 overflow-auto">
         {isLoading ? (
@@ -684,9 +709,9 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                     <Checkbox
                       className="h-3.5 w-3.5"
                       checked={allSelectedDayStudents}
-                      disabled={selectedDayStudentIds.length === 0}
+                      disabled={!selectedDate || students.length === 0}
                       onCheckedChange={(checked) =>
-                        setSelectedStudentIds(checked === true ? selectedDayStudentIds : [])
+                        setSelectedStudentIds(checked === true ? students.map((student: any) => student.id) : [])
                       }
                       aria-label="Chọn tất cả học viên trong ngày"
                     />
@@ -756,7 +781,7 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                           <Checkbox
                             className="mt-0.5 h-3.5 w-3.5 shrink-0"
                             checked={selectedStudentIds.includes(student.id)}
-                            disabled={!selectedDayStudentIdSet.has(student.id)}
+                            disabled={!selectedDate}
                             onCheckedChange={(checked) =>
                               setSelectedStudentIds((current) =>
                                 checked === true
@@ -989,6 +1014,57 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
               }}
             >
               Lưu
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={bulkAttendanceDialogOpen}
+        onOpenChange={(open) => {
+          if (!bulkMutation.isPending) setBulkAttendanceDialogOpen(open);
+        }}
+      >
+        <DialogContent className="sm:max-w-[380px]">
+          <DialogHeader>
+            <DialogTitle>Điểm danh nhanh</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              Cập nhật trạng thái cho {selectedRegisteredStudentIds.length} học viên đã chọn trong ngày{" "}
+              <strong className="text-slate-700">{selectedDate ? formatStudentDate(selectedDate) : "—"}</strong>.
+            </p>
+            <Select
+              value={bulkAttendanceStatus}
+              disabled={bulkMutation.isPending}
+              onValueChange={(value) =>
+                setBulkAttendanceStatus(value as "registered" | "attended" | "reserved")
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Chọn trạng thái" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="registered">Chưa điểm danh</SelectItem>
+                <SelectItem value="attended">Có học</SelectItem>
+                <SelectItem value="reserved">Bảo lưu</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={bulkMutation.isPending}
+              onClick={() => setBulkAttendanceDialogOpen(false)}
+            >
+              Huỷ
+            </Button>
+            <Button
+              size="sm"
+              disabled={bulkMutation.isPending || selectedRegisteredStudentIds.length === 0}
+              onClick={runBulkAttendance}
+            >
+              {bulkMutation.isPending ? "Đang lưu..." : "Lưu điểm danh"}
             </Button>
           </DialogFooter>
         </DialogContent>
