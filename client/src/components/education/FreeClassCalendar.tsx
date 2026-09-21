@@ -50,6 +50,16 @@ interface FreeClassCalendarProps {
 
 type CalendarMode = "register" | "attend";
 
+type FreeSessionContentSummary = {
+  id: string;
+  contentType: string;
+  title: string;
+  description?: string | null;
+  resourceUrl?: string | null;
+  dueDate?: string | null;
+  studentId?: string | null;
+};
+
 const formatStudentDate = (value: unknown) => {
   const normalized = String(value || "").slice(0, 10);
   const [year, month, day] = normalized.split("-");
@@ -98,6 +108,24 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
       if (!res.ok) throw new Error("Không thể tải lịch lớp tự do");
       return res.json();
     },
+  });
+  const selectedContentPath = selectedDate
+    ? `/api/free-class-sessions/${classId}/${selectedDate}/contents`
+    : "";
+  const {
+    data: selectedDateContents,
+    isLoading: isLoadingSelectedDateContents,
+  } = useQuery<{
+    common?: FreeSessionContentSummary[];
+    personal?: FreeSessionContentSummary[];
+  }>({
+    queryKey: [selectedContentPath],
+    queryFn: async () => {
+      const res = await fetch(selectedContentPath, { credentials: "include" });
+      if (!res.ok) throw new Error("Không thể tải nội dung buổi học");
+      return res.json();
+    },
+    enabled: !!selectedContentPath,
   });
   const { data: allEvaluationCriteria = [] } = useQuery<any[]>({
     queryKey: ["/api/evaluation-criteria"],
@@ -213,6 +241,12 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
   }, [mode, month, visibleDays]);
 
   const selectedAttendDay = visibleDays.find((day) => day.value === selectedAttendDate) ?? null;
+  const selectedCommonContents = selectedDateContents?.common ?? [];
+  const selectedPersonalContents = selectedDateContents?.personal ?? [];
+  const selectedContentStudentNames = useMemo(
+    () => new Map(students.map((student: any) => [student.id, student.fullName])),
+    [students],
+  );
   const selectedAttendStudents = selectedAttendDay
     ? students
         .map((student: any) => ({
@@ -488,6 +522,74 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
           </Button>
         </div>
       </div>
+      {selectedDate && (
+        <div className="border-b border-slate-200 bg-white px-4 py-3">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 shadow-sm">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <div className="h-4 w-1 rounded-full bg-gradient-to-b from-emerald-400 to-teal-500" />
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                Nội dung buổi học
+              </span>
+              <Badge variant="outline" className="bg-white text-[10px] font-medium">
+                {formatStudentDate(selectedDate)}
+              </Badge>
+            </div>
+            {isLoadingSelectedDateContents ? (
+              <p className="text-xs italic text-slate-500">Đang tải nội dung...</p>
+            ) : selectedCommonContents.length === 0 && selectedPersonalContents.length === 0 ? (
+              <p className="text-xs italic text-slate-500">Chưa có nội dung được giao trong ngày này.</p>
+            ) : (
+              <div className="grid gap-x-8 gap-y-2 md:grid-cols-2">
+                {selectedCommonContents.length > 0 && (
+                  <div className="min-w-0">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                      Nội dung chung
+                    </p>
+                    <div className="space-y-1">
+                      {selectedCommonContents.map((content) => (
+                        <div key={content.id} className="flex min-w-0 items-start gap-1.5 text-xs text-slate-700">
+                          <BookOpen className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                          <span className="min-w-0 truncate font-medium" title={content.title}>
+                            {content.title}
+                          </span>
+                          <span className="shrink-0 text-[10px] text-slate-400">
+                            ({content.contentType})
+                          </span>
+                          {content.dueDate && (
+                            <span className="shrink-0 text-[10px] text-amber-600">
+                              · Hạn {formatStudentDate(content.dueDate)}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {selectedPersonalContents.length > 0 && (
+                  <div className="min-w-0">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                      Nội dung cá nhân
+                    </p>
+                    <div className="space-y-1">
+                      {selectedPersonalContents.map((content) => (
+                        <div key={content.id} className="flex min-w-0 items-start gap-1.5 text-xs text-slate-700">
+                          <BookOpen className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600" />
+                          <span className="min-w-0 truncate font-medium" title={content.title}>
+                            {content.title}
+                          </span>
+                          <span className="shrink-0 text-[10px] text-slate-400">
+                            · {selectedContentStudentNames.get(content.studentId || "") || "Học viên"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       <div className="flex-1 overflow-auto">
         {isLoading ? (
           <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">Đang tải lịch...</div>
