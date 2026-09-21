@@ -1705,6 +1705,56 @@ export function registerMySpaceRoutes(app: Express): void {
     }
   });
 
+  // ── Staff student list for a regular class session ───────────────────────
+  // Kept separate from the calendar detail endpoint because the detail sheet
+  // also uses this list for attendance and review actions.
+  app.get("/api/class-sessions/:classSessionId/student-sessions", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+      const staffRecord = await getStaffForUser(user.id);
+      if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
+
+      const { classSessionId } = req.params;
+      if (classSessionId.startsWith("free-")) return res.json([]);
+
+      const rows = await db
+        .select({
+          id: studentSessions.id,
+          studentId: studentSessions.studentId,
+          studentClassId: studentSessions.studentClassId,
+          attendanceStatus: studentSessions.attendanceStatus,
+          attendanceNote: studentSessions.attendanceNote,
+          reviewData: studentSessions.reviewData,
+          reviewPublished: studentSessions.reviewPublished,
+          studentFullName: students.fullName,
+          studentCode: students.code,
+        })
+        .from(studentSessions)
+        .innerJoin(students, eq(studentSessions.studentId, students.id))
+        .where(eq(studentSessions.classSessionId, classSessionId))
+        .orderBy(students.fullName);
+
+      return res.json(rows.map((row) => ({
+        id: row.id,
+        studentId: row.studentId,
+        studentClassId: row.studentClassId,
+        attendanceStatus: row.attendanceStatus,
+        attendanceNote: row.attendanceNote,
+        reviewData: row.reviewData,
+        reviewPublished: row.reviewPublished,
+        student: {
+          fullName: row.studentFullName,
+          code: row.studentCode,
+        },
+      })));
+    } catch (err: any) {
+      console.error("Staff class session student list error:", err);
+      return res.status(500).json({ message: err.message || "Lỗi khi tải danh sách học viên buổi học" });
+    }
+  });
+
   // ── Student assignments ──────────────────────────────────────────────────
   app.get("/api/my-space/assignments/student", async (req, res) => {
     try {
