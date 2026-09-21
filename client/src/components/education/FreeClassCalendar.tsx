@@ -609,8 +609,49 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
           <table className="min-w-max border-collapse text-xs">
             <thead className="sticky top-0 z-10 bg-slate-100">
               <tr>
-                <th className="sticky left-0 z-20 min-w-52 border-b border-r bg-slate-100 px-3 py-2 text-left font-semibold">Học viên</th>
-                {visibleDays.map((day) => <th key={day.value} className="min-w-24 border-b px-1 py-2 text-center font-medium"><div>{day.label}</div><div className="text-[10px] text-muted-foreground">{day.weekday}</div></th>)}
+                <th className="sticky left-0 z-20 min-w-52 border-b border-r bg-slate-100 px-3 py-2 text-left font-semibold">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      className="h-3.5 w-3.5"
+                      checked={allSelectedDayStudents}
+                      disabled={selectedDayStudentIds.length === 0}
+                      onCheckedChange={(checked) =>
+                        setSelectedStudentIds(checked === true ? selectedDayStudentIds : [])
+                      }
+                      aria-label="Chọn tất cả học viên trong ngày"
+                    />
+                    <span>Học viên</span>
+                  </div>
+                </th>
+                {visibleDays.map((day) => {
+                  const isSelectedDay = selectedDate === day.value;
+                  const isTodayColumn = today === day.value;
+                  return (
+                    <th
+                      key={day.value}
+                      className={cn(
+                        "min-w-24 border-b px-1 py-1 text-center font-medium transition-colors",
+                        isSelectedDay && isTodayColumn
+                          ? "bg-violet-100 text-violet-800"
+                          : isSelectedDay
+                          ? "bg-blue-100 text-blue-800"
+                          : isTodayColumn
+                          ? "bg-violet-50 text-violet-800"
+                          : "bg-slate-100",
+                      )}
+                    >
+                      <button
+                        type="button"
+                        className="flex w-full flex-col items-center rounded-md px-1 py-1 hover:bg-blue-100/70"
+                        onClick={() => setSelectedDate(day.value)}
+                        aria-label={`Chọn ngày ${day.label}/${monthLabel}`}
+                      >
+                        <span>{day.label}</span>
+                        <span className="text-[10px] text-muted-foreground">{day.weekday}</span>
+                      </button>
+                    </th>
+                  );
+                })}
                 <th className="sticky right-20 z-20 w-20 min-w-20 border-b border-l bg-slate-100 px-1 py-2 text-center font-semibold shadow-[-4px_0_8px_rgba(15,23,42,0.06)]">
                   <div>T{monthLabel}</div>
                   <div className="text-[9px] font-normal text-muted-foreground">Đăng ký</div>
@@ -641,30 +682,45 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                         ? "Sắp hết hạn"
                         : "Đang học";
                       return (
-                        <>
-                          <div className="text-xs font-semibold leading-tight text-slate-800">
-                            {student.fullName}{" "}
-                            <span className="font-medium text-slate-500">({student.code || "—"})</span>
+                        <div className="flex items-start gap-2">
+                          <Checkbox
+                            className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                            checked={selectedStudentIds.includes(student.id)}
+                            disabled={!selectedDayStudentIdSet.has(student.id)}
+                            onCheckedChange={(checked) =>
+                              setSelectedStudentIds((current) =>
+                                checked === true
+                                  ? current.includes(student.id) ? current : [...current, student.id]
+                                  : current.filter((id) => id !== student.id),
+                              )
+                            }
+                            aria-label={`Chọn học viên ${student.fullName}`}
+                          />
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold leading-tight text-slate-800">
+                              {student.fullName}{" "}
+                              <span className="font-medium text-slate-500">({student.code || "—"})</span>
+                            </div>
+                            <div className="mt-1 text-[10px] leading-tight text-muted-foreground">
+                              {formatStudentDate(studentStart)} - {formatStudentDate(studentEnd)}
+                            </div>
+                            <div className="mt-0.5 text-[10px] leading-tight text-muted-foreground">
+                              Tổng: {totalSessions} <span className="text-slate-300">|</span>{" "}
+                              Đã học: {attendedSessions} <span className="text-slate-300">|</span>{" "}
+                              Còn lại: {remainingSessions}
+                            </div>
+                            <div className={cn(
+                              "mt-0.5 text-[10px] font-medium leading-tight",
+                              isExpired
+                                ? "text-red-600"
+                                : isExpiringSoon
+                                ? "text-amber-600"
+                                : "text-emerald-600",
+                            )}>
+                              Trạng thái: {studentStatus}
+                            </div>
                           </div>
-                          <div className="mt-1 text-[10px] leading-tight text-muted-foreground">
-                            {formatStudentDate(studentStart)} - {formatStudentDate(studentEnd)}
-                          </div>
-                          <div className="mt-0.5 text-[10px] leading-tight text-muted-foreground">
-                            Tổng: {totalSessions} <span className="text-slate-300">|</span>{" "}
-                            Đã học: {attendedSessions} <span className="text-slate-300">|</span>{" "}
-                            Còn lại: {remainingSessions}
-                          </div>
-                          <div className={cn(
-                            "mt-0.5 text-[10px] font-medium leading-tight",
-                            isExpired
-                              ? "text-red-600"
-                              : isExpiringSoon
-                              ? "text-amber-600"
-                              : "text-emerald-600",
-                          )}>
-                            Trạng thái: {studentStatus}
-                          </div>
-                        </>
+                        </div>
                       );
                     })()}
                   </td>
@@ -680,6 +736,8 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                       current
                       && (reviewOverrides[current.id]?.reviewData ?? current.reviewData)
                     );
+                    const isSelectedDay = selectedDate === day.value;
+                    const isTodayColumn = today === day.value;
                     const status = current?.status === "attended" || current?.status === "reserved"
                       ? current.status
                       : "registered";
@@ -689,7 +747,21 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                       ? "Bảo lưu"
                       : "Chưa điểm danh";
                     return (
-                      <td key={day.value} className={cn("border-b px-1 py-1.5 text-center align-top", outside && "bg-slate-50")}>
+                      <td
+                        key={day.value}
+                        className={cn(
+                          "border-b px-1 py-1.5 text-center align-top transition-colors",
+                          isSelectedDay && isTodayColumn
+                            ? "bg-violet-50"
+                            : isSelectedDay
+                            ? "bg-blue-50"
+                            : isTodayColumn
+                            ? "bg-violet-50/70"
+                            : outside
+                            ? "bg-slate-50"
+                            : "bg-white",
+                        )}
+                      >
                         <div className="flex min-h-14 flex-col items-center gap-1">
                           <Checkbox
                             className="h-3.5 w-3.5"

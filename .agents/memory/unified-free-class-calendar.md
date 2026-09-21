@@ -7,4 +7,4 @@ Lớp tự do dùng một lưới tháng duy nhất: checkbox trong ngày đăng
 
 **Why:** Tách tab đăng ký và điểm danh khiến người dùng phải chuyển ngữ cảnh và khó thấy ngày nào đã đăng ký để điểm danh.
 
-**How to apply:** Chỉ cho phép đổi trạng thái qua Select của ô đã đăng ký; ghi chú và nhận xét phải gắn với đúng studentClassId và ngày đăng ký đó.
+**How to apply:** Chỉ cho phép đổi trạng thái qua Select của ô đã đăng ký; ghi chú và nhận xét phải gắn với đúng studentClassId và ngày đăng ký đó. Khi mở tháng hiện tại, ngày hôm nay là ngày được chọn mặc định; chọn một ngày sẽ chọn sẵn các học viên đã đăng ký ngày đó, còn checkbox từng học viên cho phép điều chỉnh tập chọn hàng loạt.
