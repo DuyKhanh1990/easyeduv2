@@ -1450,7 +1450,7 @@ export function registerClassesRoutes(app: Express): void {
     const permissions = await getClassPermissions(req);
     if (!permissions.canEdit) return res.status(403).json({ message: "Bạn không có quyền cập nhật lịch lớp." });
     try {
-      const { studentClassId, date, action, value, teacherId } = req.body || {};
+      const { studentClassId, date, action, value, status, teacherId } = req.body || {};
       if (!studentClassId || !/^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
         return res.status(400).json({ message: "Thiếu học viên hoặc ngày học hợp lệ" });
       }
@@ -1511,7 +1511,12 @@ export function registerClassesRoutes(app: Express): void {
           }
         } else {
           if (!existing) throw new Error("Học viên chưa đăng ký ngày này");
-          if (value !== false && existing.status !== "attended" && Number(sc.totalSessions || 0) > 0) {
+          const requestedStatus = ["registered", "attended", "reserved"].includes(String(status))
+            ? String(status)
+            : value === false
+            ? "registered"
+            : "attended";
+          if (requestedStatus === "attended" && existing.status !== "attended" && Number(sc.totalSessions || 0) > 0) {
             const [attendedBefore] = await tx
               .select({ count: sql<number>`count(*)::int` })
               .from(freeClassRegistrations)
@@ -1524,10 +1529,10 @@ export function registerClassesRoutes(app: Express): void {
             }
           }
           await tx.update(freeClassRegistrations).set({
-            status: value === false ? "registered" : "attended",
+            status: requestedStatus,
             teacherId: teacherId || existing.teacherId || null,
-            attendedBy: value === false ? null : actorId,
-            attendedAt: value === false ? null : new Date(),
+            attendedBy: requestedStatus === "attended" ? actorId : null,
+            attendedAt: requestedStatus === "attended" ? new Date() : null,
             updatedAt: new Date(),
           }).where(eq(freeClassRegistrations.id, existing.id));
         }

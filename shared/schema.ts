@@ -80,7 +80,7 @@ export const freeClassRegistrations = pgTable("free_class_registrations", {
   studentId: uuid("student_id").notNull().references(() => students.id, { onDelete: "cascade" }),
   registrationDate: date("registration_date").notNull(),
   teacherId: uuid("teacher_id").references(() => staff.id, { onDelete: "set null" }),
-  status: varchar("status", { length: 20 }).notNull().default("registered"), // registered | attended
+  status: varchar("status", { length: 20 }).notNull().default("registered"), // registered | attended | reserved
   registeredBy: uuid("registered_by").references(() => users.id, { onDelete: "set null" }),
   registeredAt: timestamp("registered_at").defaultNow().notNull(),
   attendedBy: uuid("attended_by").references(() => users.id, { onDelete: "set null" }),

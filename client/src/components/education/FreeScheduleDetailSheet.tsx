@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CalendarDays, ClipboardCheck, PauseCircle } from "lucide-react";
+import { CalendarDays, ClipboardCheck, PauseCircle, HelpCircle } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
 import { vi } from "date-fns/locale";
@@ -11,7 +11,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -24,6 +30,8 @@ type FreeScheduleStudent = {
   status: string;
   teacherId?: string | null;
 };
+
+type AttendanceStatus = "registered" | "attended" | "reserved";
 
 type FreeScheduleSession = {
   classId: string;
@@ -54,25 +62,25 @@ export function FreeScheduleDetailSheet({
   const updateMutation = useMutation({
     mutationFn: async ({
       studentClassId,
-      attended,
+      status,
     }: {
       studentClassId: string;
-      attended: boolean;
+      status: AttendanceStatus;
     }) => {
       if (!session) throw new Error("Không tìm thấy lịch học");
       await apiRequest("PATCH", `/api/classes/${session.classId}/free-schedule`, {
         studentClassId,
         date: session.sessionDate,
         action: "attend",
-        value: attended,
+        status,
       });
-      return { studentClassId, attended };
+      return { studentClassId, status };
     },
-    onSuccess: ({ studentClassId, attended }) => {
+    onSuccess: ({ studentClassId, status }) => {
       setStudents((current) =>
         current.map((student) =>
           student.studentClassId === studentClassId
-            ? { ...student, status: attended ? "attended" : "registered" }
+            ? { ...student, status }
             : student,
         ),
       );
@@ -114,7 +122,8 @@ export function FreeScheduleDetailSheet({
               Điểm danh buổi học
             </div>
             <div className="text-xs text-muted-foreground">
-              Tick <strong>Có học</strong>; bỏ tick là <strong>Bảo lưu</strong>
+              Bỏ tick là <strong>Chưa điểm danh</strong>; tick là <strong>Có học</strong>.
+              Có thể chọn <strong>Bảo lưu</strong> trong dropdown trạng thái.
             </div>
           </div>
 
@@ -126,8 +135,17 @@ export function FreeScheduleDetailSheet({
             <div className="max-h-[55vh] overflow-y-auto rounded-lg border">
               {students.map((student) => {
                 const attended = student.status === "attended";
+                const currentStatus: AttendanceStatus =
+                  student.status === "attended" || student.status === "reserved"
+                    ? student.status
+                    : "registered";
+                const statusLabel = currentStatus === "attended"
+                  ? "Có học"
+                  : currentStatus === "reserved"
+                  ? "Bảo lưu"
+                  : "Chưa điểm danh";
                 return (
-                  <label
+                  <div
                     key={student.studentClassId}
                     className="flex cursor-pointer items-center gap-3 border-b px-4 py-3 last:border-b-0 hover:bg-slate-50"
                   >
@@ -137,7 +155,7 @@ export function FreeScheduleDetailSheet({
                       onCheckedChange={(checked) =>
                         updateMutation.mutate({
                           studentClassId: student.studentClassId,
-                          attended: checked === true,
+                          status: checked === true ? "attended" : "registered",
                         })
                       }
                       aria-label={`Điểm danh ${student.fullName}`}
@@ -148,22 +166,52 @@ export function FreeScheduleDetailSheet({
                       </div>
                       <div className="text-xs text-muted-foreground">{student.code}</div>
                     </div>
-                    <Badge
-                      variant="outline"
-                      className={
-                        attended
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : "border-amber-200 bg-amber-50 text-amber-700"
-                      }
-                    >
-                      {attended ? (
-                        <ClipboardCheck className="mr-1 h-3 w-3" />
-                      ) : (
-                        <PauseCircle className="mr-1 h-3 w-3" />
-                      )}
-                      {attended ? "Có học" : "Bảo lưu"}
-                    </Badge>
-                  </label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-muted-foreground">Trạng thái điểm danh</span>
+                      <Select
+                        value={currentStatus}
+                        disabled={updateMutation.isPending}
+                        onValueChange={(nextStatus) =>
+                          updateMutation.mutate({
+                            studentClassId: student.studentClassId,
+                            status: nextStatus as AttendanceStatus,
+                          })
+                        }
+                      >
+                        <SelectTrigger
+                          className={
+                            currentStatus === "attended"
+                              ? "h-8 w-[112px] border-emerald-200 bg-emerald-50 text-xs text-emerald-700"
+                              : currentStatus === "reserved"
+                              ? "h-8 w-[112px] border-amber-200 bg-amber-50 text-xs text-amber-700"
+                              : "h-8 w-[112px] border-slate-200 bg-slate-50 text-xs text-slate-600"
+                          }
+                        >
+                          <SelectValue>{statusLabel}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="registered">
+                            <span className="flex items-center gap-2">
+                              <HelpCircle className="h-3.5 w-3.5 text-slate-500" />
+                              Chưa điểm danh
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="attended">
+                            <span className="flex items-center gap-2">
+                              <ClipboardCheck className="h-3.5 w-3.5 text-emerald-600" />
+                              Có học
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="reserved">
+                            <span className="flex items-center gap-2">
+                              <PauseCircle className="h-3.5 w-3.5 text-amber-600" />
+                              Bảo lưu
+                            </span>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                 );
               })}
             </div>
