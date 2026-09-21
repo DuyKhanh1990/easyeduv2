@@ -49,6 +49,13 @@ interface FreeClassCalendarProps {
 
 type CalendarMode = "register" | "attend";
 
+const formatStudentDate = (value: unknown) => {
+  const normalized = String(value || "").slice(0, 10);
+  const [year, month, day] = normalized.split("-");
+  if (!year || !month || !day) return "—";
+  return `${Number(day)}/${Number(month)}/${year}`;
+};
+
 export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCalendarProps) {
   const [monthDate, setMonthDate] = useState(() => startOfMonth(new Date()));
   const [mode, setMode] = useState<CalendarMode>("register");
@@ -124,6 +131,7 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
   const students = (data?.students || []).filter((student: any) => student.status === "active");
   const classStart = String(classData?.startDate || "").slice(0, 10);
   const classEnd = String(classData?.endDate || "").slice(0, 10);
+  const today = format(new Date(), "yyyy-MM-dd");
   const visibleDays = mode === "attend"
     ? days.filter((day) => students.some((student: any) => registrations.has(`${student.id}:${day.value}`)))
     : days;
@@ -571,8 +579,48 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
               {students.map((student: any) => (
                 <tr key={student.id} className="hover:bg-slate-50">
                   <td className="sticky left-0 z-10 border-b border-r bg-white px-3 py-2">
-                    <div className="font-medium">{student.fullName}</div>
-                    <div className="text-[10px] text-muted-foreground">{student.code} · còn {student.remainingSessions ?? 0} buổi</div>
+                    {(() => {
+                      const studentStart = String(student.startDate || classStart || "").slice(0, 10);
+                      const studentEnd = String(student.endDate || classEnd || "").slice(0, 10);
+                      const totalSessions = Number(student.totalSessions ?? 0);
+                      const attendedSessions = Number(student.attendedSessions ?? 0);
+                      const remainingSessions = Number(
+                        student.remainingSessions ?? Math.max(0, totalSessions - attendedSessions),
+                      );
+                      const isExpired = remainingSessions <= 0 || (!!studentEnd && studentEnd < today);
+                      const isExpiringSoon = !isExpired && remainingSessions <= 5;
+                      const studentStatus = isExpired
+                        ? "Hết hạn"
+                        : isExpiringSoon
+                        ? "Sắp hết hạn"
+                        : "Đang học";
+                      return (
+                        <>
+                          <div className="text-xs font-semibold leading-tight text-slate-800">
+                            {student.fullName}{" "}
+                            <span className="font-medium text-slate-500">({student.code || "—"})</span>
+                          </div>
+                          <div className="mt-1 text-[10px] leading-tight text-muted-foreground">
+                            {formatStudentDate(studentStart)} - {formatStudentDate(studentEnd)}
+                          </div>
+                          <div className="mt-0.5 text-[10px] leading-tight text-muted-foreground">
+                            Tổng: {totalSessions} <span className="text-slate-300">|</span>{" "}
+                            Đã học: {attendedSessions} <span className="text-slate-300">|</span>{" "}
+                            Còn lại: {remainingSessions}
+                          </div>
+                          <div className={cn(
+                            "mt-0.5 text-[10px] font-medium leading-tight",
+                            isExpired
+                              ? "text-red-600"
+                              : isExpiringSoon
+                              ? "text-amber-600"
+                              : "text-emerald-600",
+                          )}>
+                            Trạng thái: {studentStatus}
+                          </div>
+                        </>
+                      );
+                    })()}
                   </td>
                   {visibleDays.map((day) => {
                     const current = registrations.get(`${student.id}:${day.value}`);
@@ -651,8 +699,10 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                                   }}
                                 >
                                   <Pencil className={cn(
-                                    "h-3 w-3",
-                                    note ? "text-blue-700" : "text-slate-400",
+                                    "h-3 w-3 stroke-[2.5]",
+                                    note
+                                      ? "fill-blue-800 text-blue-800"
+                                      : "text-slate-400",
                                   )} />
                                 </button>
                                 <button
