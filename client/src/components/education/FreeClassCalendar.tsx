@@ -355,42 +355,45 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
       <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
         <div className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
           <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-1.5">
-            <CalendarDays className="h-3.5 w-3.5 text-emerald-600" />
-            <span className="text-[11px] font-bold uppercase tracking-wide text-slate-700">
+            <CalendarDays className="h-4 w-4 text-emerald-600" />
+            <span className="text-sm font-bold uppercase tracking-wide text-slate-700">
               Chi tiết lịch học
             </span>
-            <Badge className="h-5 border-emerald-200 bg-emerald-50 px-2 text-[10px] font-semibold text-emerald-700" variant="outline">
+            <Badge className="h-6 border-emerald-200 bg-emerald-50 px-2.5 text-[11px] font-semibold text-emerald-700" variant="outline">
               Lớp tự do
             </Badge>
-            <span className="ml-auto text-[10px] font-medium text-slate-500">
-              {calendarInfoDateLabel}
-            </span>
+            <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-medium text-slate-500">
+              {classStart && classEnd && (
+                <span>Thời hạn lớp: {classStart} → {classEnd}</span>
+              )}
+              <span>{calendarInfoDateLabel}</span>
+            </div>
           </div>
-          <div className="grid gap-x-8 gap-y-1.5 pt-2 text-[10px] md:grid-cols-2">
+          <div className="grid gap-x-8 gap-y-2 pt-2 text-xs md:grid-cols-2">
             <div className="flex min-w-0 items-center gap-1.5">
-              <BookOpen className="h-3 w-3 shrink-0 text-slate-500" />
+              <BookOpen className="h-3.5 w-3.5 shrink-0 text-slate-500" />
               <span className="font-medium text-slate-500">Lớp:</span>
               <span className="truncate font-semibold text-blue-600">
                 {classData?.name || "—"}{classData?.classCode ? ` (${classData.classCode})` : ""}
               </span>
             </div>
             <div className="flex min-w-0 items-center gap-1.5">
-              <MapPin className="h-3 w-3 shrink-0 text-slate-500" />
+              <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-500" />
               <span className="font-medium text-slate-500">Cơ sở:</span>
               <span className="truncate font-semibold text-blue-600">{classLocationLabel}</span>
             </div>
             <div className="flex min-w-0 items-center gap-1.5">
-              <UserRound className="h-3 w-3 shrink-0 text-slate-500" />
+              <UserRound className="h-3.5 w-3.5 shrink-0 text-slate-500" />
               <span className="font-medium text-slate-500">GV:</span>
               <span className="truncate font-semibold text-blue-600">{classTeacherLabel}</span>
             </div>
             <div className="flex min-w-0 items-center gap-1.5">
-              <Users className="h-3 w-3 shrink-0 text-slate-500" />
+              <Users className="h-3.5 w-3.5 shrink-0 text-slate-500" />
               <span className="font-medium text-slate-500">Sĩ số:</span>
               <span className="font-semibold text-blue-600">{students.length} học viên</span>
             </div>
             <div className="flex min-w-0 items-center gap-1.5 md:col-span-2">
-              <Star className="h-3 w-3 shrink-0 text-slate-500" />
+              <Star className="h-3.5 w-3.5 shrink-0 text-slate-500" />
               <span className="font-medium text-slate-500">Tiêu chí:</span>
               <span className="truncate font-semibold text-blue-600">{criteriaLabel}</span>
               {classPerm?.canEdit && (
@@ -441,7 +444,6 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
             Điểm danh
           </Button>
         </div>
-        {classStart && classEnd && <span className="hidden text-[11px] lg:inline">Thời hạn lớp: {classStart} → {classEnd}</span>}
       </div>
       <div className="flex-1 overflow-auto">
         {isLoading ? (
@@ -638,7 +640,7 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                               }}
                             >
                               <SelectTrigger className={cn(
-                                "h-8 w-[140px] text-xs",
+                                "h-8 w-[140px] text-[11px]",
                                 status === "attended" && "border-emerald-200 bg-emerald-50 text-emerald-700",
                                 status === "reserved" && "border-amber-200 bg-amber-50 text-amber-700",
                                 status === "registered" && "border-slate-200 bg-slate-50 text-slate-600",
@@ -896,6 +898,7 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                         <div className="flex min-h-14 flex-col items-center gap-1">
                           <Checkbox
                             className="h-3.5 w-3.5"
+                            hideIndicator
                             checked={!!current}
                             disabled={!!outside || !classPerm?.canEdit || updateMutation.isPending}
                             onCheckedChange={() => toggle(student, day.value, current)}
@@ -917,7 +920,7 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                                 }
                               >
                                 <SelectTrigger className={cn(
-                                  "h-5 w-[76px] justify-center px-1 text-[9px]",
+                                  "h-5 w-[74px] justify-center px-1 text-[8px]",
                                   status === "attended" && "border-emerald-200 bg-emerald-50 text-emerald-700",
                                   status === "reserved" && "border-amber-200 bg-amber-50 text-amber-700",
                                   status === "registered" && "border-slate-200 bg-slate-50 text-slate-600",
