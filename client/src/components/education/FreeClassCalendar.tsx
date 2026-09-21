@@ -55,10 +55,12 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
   const [selectedAttendDate, setSelectedAttendDate] = useState<string | null>(null);
   const [noteDialog, setNoteDialog] = useState<{
     studentClassId: string;
+    registrationId?: string;
     date?: string;
     value: string;
     status: "registered" | "attended" | "reserved";
   } | null>(null);
+  const [noteOverrides, setNoteOverrides] = useState<Record<string, string>>({});
   const [reviewTarget, setReviewTarget] = useState<{
     student: any;
     registration: any;
@@ -500,6 +502,7 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                                 if (!classPerm?.canEdit) return;
                                 setNoteDialog({
                                   studentClassId: student.id,
+                                  registrationId: registration.id,
                                   value: registration.note || "",
                                   status,
                                 });
@@ -576,6 +579,13 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                     const outside = (classStart && day.value < classStart) || (classEnd && day.value > classEnd)
                       || (student.startDate && day.value < String(student.startDate).slice(0, 10))
                       || (student.endDate && day.value > String(student.endDate).slice(0, 10));
+                    const note = current
+                      ? noteOverrides[current.id] ?? current.note ?? ""
+                      : "";
+                    const hasReview = !!(
+                      current
+                      && (reviewOverrides[current.id]?.reviewData ?? current.reviewData)
+                    );
                     const status = current?.status === "attended" || current?.status === "reserved"
                       ? current.status
                       : "registered";
@@ -588,6 +598,7 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                       <td key={day.value} className={cn("border-b px-1 py-1.5 text-center align-top", outside && "bg-slate-50")}>
                         <div className="flex min-h-14 flex-col items-center gap-1">
                           <Checkbox
+                            className="h-3.5 w-3.5"
                             checked={!!current}
                             disabled={!!outside || !classPerm?.canEdit || updateMutation.isPending}
                             onCheckedChange={() => toggle(student, day.value, current)}
@@ -609,7 +620,7 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                                 }
                               >
                                 <SelectTrigger className={cn(
-                                  "h-6 w-[86px] justify-center px-1 text-[10px]",
+                                  "h-5 w-[76px] justify-center px-1 text-[9px]",
                                   status === "attended" && "border-emerald-200 bg-emerald-50 text-emerald-700",
                                   status === "reserved" && "border-amber-200 bg-amber-50 text-amber-700",
                                   status === "registered" && "border-slate-200 bg-slate-50 text-slate-600",
@@ -627,30 +638,34 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                                   type="button"
                                   disabled={!classPerm?.canEdit}
                                   className="text-slate-400 hover:text-primary disabled:cursor-default disabled:opacity-50"
-                                  title={current.note || "Ghi chú"}
+                                  title={note || "Ghi chú"}
                                   onClick={() => {
                                     if (!classPerm?.canEdit) return;
                                     setNoteDialog({
                                       studentClassId: student.id,
+                                      registrationId: current.id,
                                       date: day.value,
-                                      value: current.note || "",
+                                      value: note,
                                       status,
                                     });
                                   }}
                                 >
-                                  <Pencil className="h-3 w-3" />
+                                  <Pencil className={cn(
+                                    "h-3 w-3",
+                                    note ? "text-blue-700" : "text-slate-400",
+                                  )} />
                                 </button>
                                 <button
                                   type="button"
                                   disabled={!classPerm?.canEdit}
                                   className="text-slate-400 hover:text-yellow-500 disabled:cursor-default disabled:opacity-50"
-                                  title={current.reviewData ? "Xem / sửa nhận xét" : "Nhập nhận xét"}
+                                  title={hasReview ? "Xem / sửa nhận xét" : "Nhập nhận xét"}
                                   onClick={() => {
                                     if (!classPerm?.canEdit) return;
                                     setReviewTarget({ student, registration: current });
                                   }}
                                 >
-                                  {current.reviewData
+                                  {hasReview
                                     ? <Star className="h-3 w-3 fill-yellow-400 text-yellow-500" />
                                     : <Plus className="h-3 w-3" />}
                                 </button>
@@ -709,6 +724,12 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                   },
                   {
                     onSuccess: () => {
+                      if (noteDialog.registrationId) {
+                        setNoteOverrides((current) => ({
+                          ...current,
+                          [noteDialog.registrationId as string]: noteDialog.value,
+                        }));
+                      }
                       setNoteDialog(null);
                       toast({ title: "Đã cập nhật ghi chú" });
                     },
