@@ -60,6 +60,8 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
   const [monthDate, setMonthDate] = useState(() => startOfMonth(new Date()));
   const [mode, setMode] = useState<CalendarMode>("register");
   const [selectedAttendDate, setSelectedAttendDate] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [noteDialog, setNoteDialog] = useState<{
     studentClassId: string;
     registrationId?: string;
@@ -133,6 +135,14 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
   const classEnd = String(classData?.endDate || "").slice(0, 10);
   const today = format(new Date(), "yyyy-MM-dd");
   const monthLabel = format(monthDate, "M");
+  const selectedDayStudentIds = selectedDate
+    ? students
+        .filter((student: any) => registrations.has(`${student.id}:${selectedDate}`))
+        .map((student: any) => student.id)
+    : [];
+  const selectedDayStudentIdSet = new Set(selectedDayStudentIds);
+  const allSelectedDayStudents = selectedDayStudentIds.length > 0
+    && selectedDayStudentIds.every((studentId: string) => selectedStudentIds.includes(studentId));
   const monthlyStats = useMemo(() => {
     const stats = new Map<string, { registered: number; attended: number }>();
     for (const student of students) {
@@ -149,6 +159,20 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
   const visibleDays = mode === "attend"
     ? days.filter((day) => students.some((student: any) => registrations.has(`${student.id}:${day.value}`)))
     : days;
+
+  useEffect(() => {
+    const currentMonth = today.slice(0, 7);
+    setSelectedDate((current) => {
+      if (current && visibleDays.some((day) => day.value === current)) return current;
+      return month === currentMonth && visibleDays.some((day) => day.value === today)
+        ? today
+        : null;
+    });
+  }, [month, today, visibleDays]);
+
+  useEffect(() => {
+    setSelectedStudentIds(selectedDayStudentIds);
+  }, [selectedDate, data?.registrations]);
 
   useEffect(() => {
     if (mode !== "attend") return;
