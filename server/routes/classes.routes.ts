@@ -1288,7 +1288,14 @@ export function registerClassesRoutes(app: Express): void {
       const userId = (req.user as any)?.id;
       const classId = String(req.params.id);
       const [classRow] = await db
-        .select({ id: classes.id, classType: classes.classType, startDate: classes.startDate, endDate: classes.endDate })
+        .select({
+          id: classes.id,
+          classType: classes.classType,
+          startDate: classes.startDate,
+          endDate: classes.endDate,
+          evaluationCriteriaIds: classes.evaluationCriteriaIds,
+          teacherIds: classes.teacherIds,
+        })
         .from(classes)
         .where(eq(classes.id, classId))
         .limit(1);
@@ -1431,6 +1438,8 @@ export function registerClassesRoutes(app: Express): void {
           attendedBy: freeClassRegistrations.attendedBy,
           attendedAt: freeClassRegistrations.attendedAt,
           note: freeClassRegistrations.note,
+          reviewData: freeClassRegistrations.reviewData,
+          reviewPublished: freeClassRegistrations.reviewPublished,
         })
         .from(freeClassRegistrations)
         .where(and(
@@ -1439,7 +1448,13 @@ export function registerClassesRoutes(app: Express): void {
           sql`${freeClassRegistrations.registrationDate} < ${nextMonth}`,
         ))
         .orderBy(asc(freeClassRegistrations.registrationDate));
-      res.json({ month, students: studentsInClass, registrations });
+      res.json({
+        month,
+        students: studentsInClass,
+        registrations,
+        evaluationCriteriaIds: classRow.evaluationCriteriaIds ?? [],
+        teacherIds: classRow.teacherIds ?? [],
+      });
     } catch (err: any) {
       res.status(400).json({ message: err.message || "Không thể tải lịch lớp tự do" });
     }
@@ -1557,6 +1572,49 @@ export function registerClassesRoutes(app: Express): void {
       res.json({ success: true });
     } catch (err: any) {
       res.status(400).json({ message: err.message || "Không thể cập nhật lịch lớp tự do" });
+    }
+  });
+
+  app.post("/api/classes/:classId/free-schedule/review", async (req, res) => {
+    const classId = String(req.params.classId);
+    if (!(await assertClassReadable(req, res, classId))) return;
+    const permissions = await getClassPermissions(req);
+    if (!permissions.canEdit) return res.status(403).json({ message: "Bạn không có quyền cập nhật nhận xét." });
+
+    try {
+      const body = z.object({
+        registrationId: z.string().uuid(),
+        reviewData: z.record(z.any()),
+        published: z.boolean().optional().default(false),
+      }).parse(req.body);
+
+      const [registration] = await db
+        .select({ id: freeClassRegistrations.id })
+        .from(freeClassRegistrations)
+        .where(and(
+          eq(freeClassRegistrations.id, body.registrationId),
+          eq(freeClassRegistrations.classId, classId),
+        ))
+        .limit(1);
+      if (!registration) return res.status(404).json({ message: "Không tìm thấy đăng ký lớp tự do" });
+
+      const [updated] = await db
+        .update(freeClassRegistrations)
+        .set({
+          reviewData: body.reviewData,
+          reviewPublished: body.published,
+          updatedAt: new Date(),
+        })
+        .where(eq(freeClassRegistrations.id, body.registrationId))
+        .returning({
+          reviewData: freeClassRegistrations.reviewData,
+          reviewPublished: freeClassRegistrations.reviewPublished,
+        });
+
+      res.json({ success: true, ...updated });
+    } catch (err: any) {
+      if (err instanceof z.ZodError) return res.status(400).json(err.errors);
+      res.status(500).json({ message: err.message || "Không thể lưu nhận xét" });
     }
   });
 
@@ -3837,6 +3895,9 @@ export function registerClassesRoutes(app: Express): void {
           studentName: students.fullName,
           studentCode: students.code,
           note: freeClassRegistrations.note,
+           reviewData: freeClassRegistrations.reviewData,
+           reviewPublished: freeClassRegistrations.reviewPublished,
+           evaluationCriteriaIds: classes.evaluationCriteriaIds,
         })
         .from(freeClassRegistrations)
         .innerJoin(classes, eq(freeClassRegistrations.classId, classes.id))
@@ -3872,6 +3933,7 @@ export function registerClassesRoutes(app: Express): void {
         tests: string[];
         curriculums: string[];
         isFreeSession: true;
+         evaluationCriteriaIds: string[];
         freeStudents: {
           registrationId: string;
           studentClassId: string;
@@ -3881,6 +3943,8 @@ export function registerClassesRoutes(app: Express): void {
           status: string;
           teacherId: string | null;
            note: string | null;
+           reviewData: unknown;
+           reviewPublished: boolean;
         }[];
       }>();
       for (const row of freeRows) {
@@ -3916,6 +3980,7 @@ export function registerClassesRoutes(app: Express): void {
             tests: [],
             curriculums: [],
             isFreeSession: true,
+           evaluationCriteriaIds: row.evaluationCriteriaIds ?? [],
             freeStudents: [],
           };
           freeSessionMap.set(key, session);
@@ -3933,6 +3998,8 @@ export function registerClassesRoutes(app: Express): void {
           status: row.registrationStatus,
           teacherId: row.teacherId,
           note: row.note,
+           reviewData: row.reviewData,
+           reviewPublished: row.reviewPublished ?? false,
         });
       }
 

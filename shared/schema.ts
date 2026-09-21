@@ -86,6 +86,8 @@ export const freeClassRegistrations = pgTable("free_class_registrations", {
   attendedBy: uuid("attended_by").references(() => users.id, { onDelete: "set null" }),
   attendedAt: timestamp("attended_at"),
   note: text("note"),
+  reviewData: jsonb("review_data"),
+  reviewPublished: boolean("review_published").default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({

@@ -20,3 +20,9 @@ Mỗi đăng ký ngày của lớp tự do có thể lưu ghi chú/nhận xét r
 **Why:** Nhận xét điểm danh cần gắn đúng buổi cụ thể, không nên ghi đè lên ghi chú chung của học viên hoặc lớp.
 
 **How to apply:** Hiển thị và lưu ghi chú ngay trong popup buổi học; cập nhật ghi chú không được làm thay đổi trạng thái điểm danh hay số buổi.
+
+Nhận xét lớp tự do phải dùng cùng chuẩn nhận xét theo tiêu chí của lớp chính thức: tiêu chí, tiêu chí con, loại nhập text/checkbox, đánh giá sao và cấu trúc `reviewData`; chỉ khác bản ghi đích là đăng ký theo ngày.
+
+**Why:** Một textarea tự do làm mất cấu hình tiêu chí và tạo trải nghiệm khác với lớp chính thức.
+
+**How to apply:** Tái sử dụng form nhận xét theo tiêu chí hiện có; lưu `reviewData` trên bản ghi `free_class_registrations` tương ứng với học viên/ngày.

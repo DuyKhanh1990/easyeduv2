@@ -48,6 +48,11 @@ interface ReviewDialogProps {
   existingReviewData?: Record<string, { teacherName: string; items: { subCriteriaId?: string; subCriteriaName?: string; criteriaId: string; criteriaName: string; groupName?: string; comment: string; inputType?: "text" | "checkbox"; checked?: boolean }[]; criteriaRatings?: Record<string, number> }> | null;
   existingPublished?: boolean;
   classSessionId: string;
+  freeReview?: {
+    classId: string;
+    registrationId: string;
+  };
+  onSaved?: (reviewData: Record<string, any>, published: boolean) => void;
 }
 
 type ReviewMap = Record<string, Record<string, string>>;
@@ -133,6 +138,8 @@ export function ReviewDialog({
   existingReviewData,
   existingPublished,
   classSessionId,
+  freeReview,
+  onSaved,
 }: ReviewDialogProps) {
   const { toast } = useToast();
   const isBulk = studentSessionIds.length > 1;
@@ -222,13 +229,22 @@ export function ReviewDialog({
         });
         reviewData[t.id] = { teacherName: t.fullName, items, criteriaRatings };
       });
-      return apiRequest("POST", "/api/student-sessions/review", {
-        studentSessionIds,
-        reviewData,
-        published,
-      });
+      if (freeReview) {
+        await apiRequest("POST", `/api/classes/${freeReview.classId}/free-schedule/review`, {
+          registrationId: freeReview.registrationId,
+          reviewData,
+          published,
+        });
+      } else {
+        await apiRequest("POST", "/api/student-sessions/review", {
+          studentSessionIds,
+          reviewData,
+          published,
+        });
+      }
+      return { reviewData, published };
     },
-    onSuccess: () => {
+    onSuccess: ({ reviewData, published: savedPublished }) => {
       queryClient.invalidateQueries({
         predicate: (query) => {
           const key = query.queryKey[0] as string;
@@ -236,10 +252,12 @@ export function ReviewDialog({
             key.includes("/student-sessions") ||
             key.includes("/star-rating") ||
             key === "/api/my-space/calendar/staff" ||
-            key === "/api/schedule"
+            key === "/api/schedule" ||
+            (freeReview ? key.includes("/free-schedule") : false)
           );
         },
       });
+      onSaved?.(reviewData, savedPublished);
       toast({
         title: "Đã lưu nhận xét",
         description: published

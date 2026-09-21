@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { CalendarDays, ClipboardCheck, PauseCircle, HelpCircle } from "lucide-react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
 import { vi } from "date-fns/locale";
 import {
@@ -19,6 +19,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { ReviewDialog } from "@/components/education/ReviewDialog";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -31,6 +33,8 @@ type FreeScheduleStudent = {
   status: string;
   teacherId?: string | null;
   note?: string | null;
+  reviewData?: Record<string, any> | null;
+  reviewPublished?: boolean;
 };
 
 type AttendanceStatus = "registered" | "attended" | "reserved";
@@ -46,6 +50,9 @@ type FreeScheduleSession = {
   locationName: string;
   sessionDate: string;
   enrolledCount: number;
+  evaluationCriteriaIds?: string[];
+  teacherIds?: string[];
+  teachers?: string[];
   freeStudents?: FreeScheduleStudent[];
 };
 
@@ -61,6 +68,12 @@ export function FreeScheduleDetailSheet({
   const { toast } = useToast();
   const [students, setStudents] = useState<FreeScheduleStudent[]>([]);
   const [savedNotes, setSavedNotes] = useState<Record<string, string>>({});
+  const [reviewTarget, setReviewTarget] = useState<FreeScheduleStudent | null>(null);
+
+  const { data: allEvaluationCriteria = [] } = useQuery<any[]>({
+    queryKey: ["/api/evaluation-criteria"],
+    enabled: !!session,
+  });
 
   useEffect(() => {
     const initialStudents = session?.freeStudents ?? [];
@@ -68,6 +81,7 @@ export function FreeScheduleDetailSheet({
     setSavedNotes(Object.fromEntries(
       initialStudents.map((student) => [student.studentClassId, student.note ?? ""]),
     ));
+    setReviewTarget(null);
   }, [session]);
 
   const updateMutation = useMutation({
@@ -115,6 +129,19 @@ export function FreeScheduleDetailSheet({
   const dateLabel = session
     ? format(parseISO(session.sessionDate), "EEEE, dd/MM/yyyy", { locale: vi })
     : "";
+  const criteria = (allEvaluationCriteria as any[]).filter((criterion) =>
+    (session?.evaluationCriteriaIds ?? []).includes(criterion.id),
+  );
+  const reviewTeachers = (session?.teacherIds ?? []).map((id, index) => ({
+    id,
+    fullName: session?.teachers?.[index] || "Giáo viên",
+  }));
+  if (reviewTeachers.length === 0 && reviewTarget?.teacherId) {
+    reviewTeachers.push({ id: reviewTarget.teacherId, fullName: "Giáo viên" });
+  }
+  if (reviewTeachers.length === 0) {
+    reviewTeachers.push({ id: "free-class-teacher", fullName: "Giáo viên" });
+  }
 
   return (
     <Dialog open={!!session} onOpenChange={(open) => !open && onClose()}>
@@ -218,10 +245,10 @@ export function FreeScheduleDetailSheet({
                         </Select>
                       </div>
                     </div>
-                    <div className="mt-2 pl-7">
-                      <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                        Ghi chú và nhận xét
-                      </label>
+                     <div className="mt-2 pl-7 space-y-2">
+                       <label className="block text-xs font-medium text-muted-foreground">
+                         Ghi chú
+                       </label>
                       <Textarea
                         value={student.note ?? ""}
                         disabled={updateMutation.isPending}
@@ -243,18 +270,59 @@ export function FreeScheduleDetailSheet({
                             note,
                           });
                         }}
-                        placeholder="Nhập ghi chú hoặc nhận xét cho học viên..."
+                         placeholder="Nhập ghi chú điểm danh cho học viên..."
                         rows={2}
                         className="min-h-[56px] resize-y bg-white text-sm"
                       />
+                       <div className="flex items-center justify-between gap-2">
+                         <span className="text-xs font-medium text-muted-foreground">Nhận xét theo tiêu chí</span>
+                         <Button
+                           type="button"
+                           variant={student.reviewData ? "secondary" : "outline"}
+                           size="sm"
+                           className="h-8 gap-1.5 text-xs"
+                           onClick={() => setReviewTarget(student)}
+                         >
+                           <span className="text-yellow-500">★</span>
+                           {student.reviewData ? "Xem / sửa nhận xét" : "Nhập nhận xét"}
+                         </Button>
+                       </div>
                     </div>
                   </div>
                 );
               })}
             </div>
-          )}
-        </div>
-      </DialogContent>
+           )}
+         </div>
+         <ReviewDialog
+           open={!!reviewTarget}
+           onOpenChange={(open) => !open && setReviewTarget(null)}
+           studentSessionIds={[]}
+           studentNames={reviewTarget ? [reviewTarget.fullName] : []}
+           criteria={criteria}
+           teachers={reviewTeachers}
+           existingReviewData={reviewTarget?.reviewData ?? null}
+           existingPublished={reviewTarget?.reviewPublished ?? false}
+           classSessionId=""
+           freeReview={reviewTarget && session ? {
+             classId: session.classId,
+             registrationId: reviewTarget.registrationId,
+           } : undefined}
+           onSaved={(reviewData, published) => {
+             if (!reviewTarget) return;
+             setStudents((current) => current.map((student) =>
+               student.registrationId === reviewTarget.registrationId
+                 ? { ...student, reviewData, reviewPublished: published }
+                 : student,
+             ));
+             setReviewTarget((current) => current ? {
+               ...current,
+               reviewData,
+               reviewPublished: published,
+             } : current);
+           }}
+         />
+       </DialogContent>
     </Dialog>
   );
 }
