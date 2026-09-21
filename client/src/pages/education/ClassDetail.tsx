@@ -50,8 +50,6 @@ export function ClassDetail() {
   const handleTabChange = (val: string) => {
     if (val !== "schedule") {
       setBgTab(val);
-    } else if (isFreeClass) {
-      setBgTab("schedule");
     } else {
       // Do not show actions from a previous schedule instance while the
       // popup is getting its content ready.
@@ -80,11 +78,7 @@ export function ClassDetail() {
     staleTime: 0,
   });
   const isFreeClass = classData?.classType === "free";
-  const isScheduleOpen = activeTab === "schedule" && !!classData && !isFreeClass;
-
-  useEffect(() => {
-    if (isFreeClass && activeTab === "schedule") setBgTab("schedule");
-  }, [isFreeClass, activeTab]);
+  const isScheduleOpen = activeTab === "schedule" && !!classData;
 
   useEffect(() => {
     if (!isScheduleOpen) {
@@ -401,7 +395,37 @@ export function ClassDetail() {
             aria-modal="true"
             aria-label="Lịch học"
           >
-            <div className="w-[95vw] h-[95vh] max-w-[1800px] bg-[#ECEEF4] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+            {isFreeClass ? (
+              <div className="flex h-screen w-screen max-w-none flex-col overflow-hidden bg-[#ECEEF4]">
+                <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 py-2.5">
+                  <div className="min-w-0">
+                    <span className="text-sm font-semibold text-slate-800">
+                      {classData?.name}
+                    </span>
+                    {classData?.classCode && (
+                      <span className="ml-2 text-xs text-slate-400">{classData.classCode}</span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleTabChange(bgTab)}
+                    className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                    aria-label="Đóng lịch"
+                    title="Đóng lịch"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-hidden p-2">
+                  <FreeClassCalendar
+                    classId={id!}
+                    classData={classData}
+                    classPerm={classPerm}
+                  />
+                </div>
+              </div>
+            ) : (
+            <div className="h-screen w-screen max-w-none bg-[#ECEEF4] shadow-2xl flex flex-col overflow-hidden">
               {/* Popup header */}
               <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 border-b border-slate-200 bg-white rounded-t-2xl flex-wrap">
                 <span className="font-semibold text-sm text-slate-800 shrink-0">
@@ -494,6 +518,7 @@ export function ClassDetail() {
                 )}
               </div>
             </div>
+            )}
           </div>,
           document.body,
         )}
