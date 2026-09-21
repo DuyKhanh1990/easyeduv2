@@ -132,6 +132,20 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
   const classStart = String(classData?.startDate || "").slice(0, 10);
   const classEnd = String(classData?.endDate || "").slice(0, 10);
   const today = format(new Date(), "yyyy-MM-dd");
+  const monthLabel = format(monthDate, "M");
+  const monthlyStats = useMemo(() => {
+    const stats = new Map<string, { registered: number; attended: number }>();
+    for (const student of students) {
+      const registrationsInMonth = days
+        .map((day) => registrations.get(`${student.id}:${day.value}`))
+        .filter(Boolean);
+      stats.set(student.id, {
+        registered: registrationsInMonth.length,
+        attended: registrationsInMonth.filter((registration: any) => registration.status === "attended").length,
+      });
+    }
+    return stats;
+  }, [days, registrations, students]);
   const visibleDays = mode === "attend"
     ? days.filter((day) => students.some((student: any) => registrations.has(`${student.id}:${day.value}`)))
     : days;
@@ -573,6 +587,14 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
               <tr>
                 <th className="sticky left-0 z-20 min-w-52 border-b border-r bg-slate-100 px-3 py-2 text-left font-semibold">Học viên</th>
                 {visibleDays.map((day) => <th key={day.value} className="min-w-24 border-b px-1 py-2 text-center font-medium"><div>{day.label}</div><div className="text-[10px] text-muted-foreground">{day.weekday}</div></th>)}
+                <th className="sticky right-20 z-20 w-20 min-w-20 border-b border-l bg-slate-100 px-1 py-2 text-center font-semibold shadow-[-4px_0_8px_rgba(15,23,42,0.06)]">
+                  <div>T{monthLabel}</div>
+                  <div className="text-[9px] font-normal text-muted-foreground">Đăng ký</div>
+                </th>
+                <th className="sticky right-0 z-20 w-20 min-w-20 border-b border-l bg-slate-100 px-1 py-2 text-center font-semibold">
+                  <div>Điểm danh</div>
+                  <div className="text-[9px] font-normal text-muted-foreground">Có học</div>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -726,6 +748,19 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                       </td>
                     );
                   })}
+                  {(() => {
+                    const stats = monthlyStats.get(student.id) ?? { registered: 0, attended: 0 };
+                    return (
+                      <>
+                        <td className="sticky right-20 z-10 w-20 min-w-20 border-b border-l bg-white px-1 py-2 text-center text-xs font-semibold text-slate-700 shadow-[-4px_0_8px_rgba(15,23,42,0.06)]">
+                          {stats.registered}
+                        </td>
+                        <td className="sticky right-0 z-10 w-20 min-w-20 border-b border-l bg-white px-1 py-2 text-center text-xs font-semibold text-slate-700">
+                          {stats.attended}/{stats.registered}
+                        </td>
+                      </>
+                    );
+                  })()}
                 </tr>
               ))}
             </tbody>
