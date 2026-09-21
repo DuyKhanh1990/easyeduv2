@@ -5,7 +5,7 @@ import { getClassFormatSummary, getClassStatusSummary, getNewClassesSummary, get
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { db, pool } from "../db";
-import { classSessions, studentSessions, freeClassRegistrations, students, classes, studentClasses, staff, staffAssignments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, invoiceItems, courseFeePackages, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
+import { classSessions, studentSessions, freeClassRegistrations, students, classes, studentClasses, staff, staffAssignments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, invoiceItems, courseFeePackages, financePromotions, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
 import { eq, and, sql, inArray, avg, between, gte, lte, gt, desc, asc, or, ilike, isNotNull, isNull, ne } from "drizzle-orm";
 import { sendAttendanceNotification, sendReviewNotification, sendContentNotification } from "../lib/attendance-notification";
 import { enforceAttendanceTimeLimit, getStaffRoleIds } from "../lib/attendance-limit";
@@ -1452,6 +1452,45 @@ export function registerClassesRoutes(app: Express): void {
                 .limit(1);
               if (!pkg) throw new Error(`Không tìm thấy gói học phí của học viên ${config.fullName || studentId}`);
 
+              const promotionKeys = Array.isArray(config.promotionKeys)
+                ? config.promotionKeys.filter(Boolean).map(String)
+                : [];
+              const surchargeKeys = Array.isArray(config.surchargeKeys)
+                ? config.surchargeKeys.filter(Boolean).map(String)
+                : [];
+              const adjustmentRows = [...promotionKeys, ...surchargeKeys].length > 0
+                ? await tx
+                    .select()
+                    .from(financePromotions)
+                    .where(inArray(financePromotions.id, [...promotionKeys, ...surchargeKeys]))
+                : [];
+              const promotionRows = adjustmentRows.filter((row: any) =>
+                row.type === "promotion" && promotionKeys.includes(row.id),
+              );
+              const surchargeRows = adjustmentRows.filter((row: any) =>
+                row.type === "surcharge" && surchargeKeys.includes(row.id),
+              );
+              const fee = Number(pkg.fee || 0);
+              const packageTotal = Number(pkg.totalAmount || 0);
+              const baseAmount = pkg.type === "buổi" ? totalSessions * fee : packageTotal;
+              const totalPromotion = promotionRows.reduce((sum: number, row: any) => {
+                const value = Number(row.valueAmount || 0);
+                return sum + (row.valueType === "percent" ? Math.round(baseAmount * value / 100) : value);
+              }, 0);
+              const totalSurcharge = surchargeRows.reduce((sum: number, row: any) => {
+                const value = Number(row.valueAmount || 0);
+                return sum + (row.valueType === "percent" ? Math.round(baseAmount * value / 100) : value);
+              }, 0);
+              const grandTotal = Math.max(0, baseAmount - totalPromotion + totalSurcharge);
+              const adjustmentDescription = [
+                promotionRows.length > 0
+                  ? `Khuyến mãi: ${promotionRows.map((row: any) => row.name).join(", ")}`
+                  : null,
+                surchargeRows.length > 0
+                  ? `Phụ thu: ${surchargeRows.map((row: any) => row.name).join(", ")}`
+                  : null,
+              ].filter(Boolean).join(", ");
+
               const [existingInvoice] = await tx
                 .select({ id: invoices.id })
                 .from(invoices)
@@ -1464,11 +1503,11 @@ export function registerClassesRoutes(app: Express): void {
                 ))
                 .limit(1);
               if (!existingInvoice) {
-                const fee = Number(pkg.fee || 0);
-                const packageTotal = Number(pkg.totalAmount || 0);
-                const baseAmount = pkg.type === "buổi" ? totalSessions * fee : packageTotal;
                 const invoiceCode = await getNextLocationCode(classRow.locationId, "PT", tx);
-                const description = `Học phí lớp ${classRow.name || ""}, gói ${pkg.name}, từ ${startDate} đến ${endDate}`;
+                const description = [
+                  `Học phí lớp ${classRow.name || ""}, gói ${pkg.name}, từ ${startDate} đến ${endDate}`,
+                  adjustmentDescription || null,
+                ].filter(Boolean).join(", ");
                 const [invoice] = await tx.insert(invoices).values({
                   code: invoiceCode,
                   studentId,
@@ -1476,10 +1515,10 @@ export function registerClassesRoutes(app: Express): void {
                   locationId: classRow.locationId,
                   category: "Học phí",
                   totalAmount: String(baseAmount),
-                  totalPromotion: "0",
-                  totalSurcharge: "0",
-                  grandTotal: String(baseAmount),
-                  remainingAmount: String(baseAmount),
+                  totalPromotion: String(totalPromotion),
+                  totalSurcharge: String(totalSurcharge),
+                  grandTotal: String(grandTotal),
+                  remainingAmount: String(grandTotal),
                   paidAmount: "0",
                   status: "unpaid",
                   description,
@@ -1493,11 +1532,11 @@ export function registerClassesRoutes(app: Express): void {
                     packageType: pkg.type,
                     unitPrice: String(pkg.type === "buổi" ? fee : packageTotal),
                     quantity: pkg.type === "buổi" ? totalSessions : 1,
-                    promotionKeys: [],
-                    surchargeKeys: [],
-                    promotionAmount: "0",
-                    surchargeAmount: "0",
-                    subtotal: String(baseAmount),
+                    promotionKeys,
+                    surchargeKeys,
+                    promotionAmount: String(totalPromotion),
+                    surchargeAmount: String(totalSurcharge),
+                    subtotal: String(grandTotal),
                     sortOrder: 0,
                   });
                   autoCreatedInvoices.push({
