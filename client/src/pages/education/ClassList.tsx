@@ -526,7 +526,7 @@ export function ClassList() {
       </Dialog>
       {/* Class type selection dialog */}
       <Dialog open={showCreateTypeDialog} onOpenChange={setShowCreateTypeDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="w-[90vw] max-w-[840px]">
           <DialogHeader>
             <DialogTitle>Chọn loại lớp học</DialogTitle>
           </DialogHeader>
@@ -564,7 +564,7 @@ export function ClassList() {
               </div>
               <div>
                 <p className="font-bold text-sm">Lớp Tự do</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Đăng ký ngày học theo tháng</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Đăng ký lịch tự do và có hạn sử dụng</p>
               </div>
             </button>
           </div>
