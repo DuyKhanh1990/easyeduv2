@@ -102,7 +102,7 @@ function getScheduleTimeLabel(session: Pick<ScheduleSession, "isFreeSession" | "
 }
 
 export function Schedule() {
-  const [, navigate] = useLocation();
+  const [, navigateRoute] = useLocation();
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -201,7 +201,7 @@ export function Schedule() {
     return true;
   }), [sessions, filterTeachers, filterLocations, filterClasses, filterTimeFrom, filterTimeTo, search]);
 
-  function navigate(dir: 1 | -1) {
+  function navigateCalendar(dir: 1 | -1) {
     if (viewMode === "month") setCurrentDate(d => dir === 1 ? addMonths(d, 1) : subMonths(d, 1));
     else if (viewMode === "list-day") setCurrentDate(d => dir === 1 ? addDays(d, 1) : subDays(d, 1));
     else setCurrentDate(d => dir === 1 ? addWeeks(d, 1) : subWeeks(d, 1));
@@ -211,7 +211,7 @@ export function Schedule() {
     if (session.isTestSession) {
       setSelectedTestSessionId(session.id);
     } else if (session.isFreeSession) {
-      navigate(`/classes/${session.classId}?tab=schedule&date=${encodeURIComponent(session.sessionDate)}`);
+      navigateRoute(`/classes/${session.classId}?tab=schedule&date=${encodeURIComponent(session.sessionDate)}`);
     } else {
       setSelectedSession({ sessionId: session.id, classId: session.classId });
     }
@@ -245,14 +245,14 @@ export function Schedule() {
             </div>
 
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => navigate(-1)} data-testid="btn-prev">
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => navigateCalendar(-1)} data-testid="btn-prev">
                 <ChevronLeft className="w-4 h-4" />
               </Button>
               <div className="flex items-center gap-2 px-3 py-1.5 border rounded-md bg-white text-sm font-medium min-w-[220px] justify-center">
                 <Calendar className="w-4 h-4 text-muted-foreground" />
                 <span data-testid="date-label">{dateLabel}</span>
               </div>
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => navigate(1)} data-testid="btn-next">
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => navigateCalendar(1)} data-testid="btn-next">
                 <ChevronRight className="w-4 h-4" />
               </Button>
             </div>
