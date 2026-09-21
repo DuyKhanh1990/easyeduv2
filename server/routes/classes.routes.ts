@@ -1391,7 +1391,14 @@ export function registerClassesRoutes(app: Express): void {
     if (!(await assertClassReadable(req, res, classId))) return;
     try {
       const [classRow] = await db
-        .select({ id: classes.id, classType: classes.classType, startDate: classes.startDate, endDate: classes.endDate })
+        .select({
+          id: classes.id,
+          classType: classes.classType,
+          startDate: classes.startDate,
+          endDate: classes.endDate,
+          evaluationCriteriaIds: classes.evaluationCriteriaIds,
+          teacherIds: classes.teacherIds,
+        })
         .from(classes)
         .where(eq(classes.id, classId))
         .limit(1);
