@@ -419,7 +419,7 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
         <div className="flex flex-col items-start justify-between gap-2 sm:flex-row">
           <div className="space-y-1 min-w-0">
             <p className="text-sm text-muted-foreground">
-              Thời gian: <span className="font-bold text-foreground">{session.startTime} - {session.endTime}</span>
+              Thời gian: <span className="font-bold text-foreground">{session.isFreeSession ? "Lịch linh hoạt" : `${session.startTime} - ${session.endTime}`}</span>
             </p>
             <p className="font-bold text-foreground text-base">
               Lớp: {session.classCode === "TEST" ? session.className : session.classCode}
@@ -628,7 +628,7 @@ export function SessionCard({ session, sessionDate, onlineRule, highlighted }: S
           <div className="flex items-start justify-between gap-3 sm:gap-4">
             <div className="space-y-1 min-w-0">
               <p className="text-sm text-muted-foreground">
-                Thời gian: <span className="font-bold text-foreground">{session.startTime} - {session.endTime}</span>
+                Thời gian: <span className="font-bold text-foreground">{session.isFreeSession ? "Lịch linh hoạt" : `${session.startTime} - ${session.endTime}`}</span>
               </p>
               <p className="font-bold text-foreground text-base">Lớp: {session.classCode}</p>
             </div>
@@ -657,7 +657,7 @@ export function SessionCard({ session, sessionDate, onlineRule, highlighted }: S
           <div className="flex items-start justify-between gap-3 sm:gap-4">
             <div className="space-y-1 min-w-0">
               <p className="text-sm text-muted-foreground">
-                Thời gian: <span className="font-bold text-foreground">{session.startTime} - {session.endTime}</span>
+                Thời gian: <span className="font-bold text-foreground">{session.isFreeSession ? "Lịch linh hoạt" : `${session.startTime} - ${session.endTime}`}</span>
               </p>
               <p className="font-bold text-foreground text-base">
                 Lớp: {session.classCode === "TEST" ? session.className : session.classCode}

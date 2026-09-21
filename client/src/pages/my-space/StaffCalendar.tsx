@@ -201,7 +201,9 @@ export function StaffCalendar() {
             sessions={data?.sessions ?? []}
             selectedDate={selectedDate}
             onSelectDate={setSelectedDate}
-            onSessionClick={(session) => setMonthDetailSessionId(session.classSessionId)}
+            onSessionClick={(session) => {
+              if (!session.isFreeSession) setMonthDetailSessionId(session.classSessionId);
+            }}
             mode="staff"
           />
         ) : (

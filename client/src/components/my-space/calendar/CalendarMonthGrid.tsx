@@ -155,7 +155,9 @@ export function CalendarMonthGrid({
                         {sessionTitle(session, mode)}
                       </div>
                       <div className="truncate text-[8px] font-medium leading-tight sm:text-[9px]">
-                        {session.startTime?.slice(0, 5)} – {session.endTime?.slice(0, 5)}
+                        {session.isFreeSession
+                          ? "Lịch linh hoạt"
+                          : `${session.startTime?.slice(0, 5)} – ${session.endTime?.slice(0, 5)}`}
                       </div>
                       <div className="hidden truncate text-[9px] leading-tight opacity-75 sm:block">
                         {session.learningFormat === "online" || session.onlineLink ? "Online" : "Offline"}

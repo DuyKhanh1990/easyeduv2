@@ -29,6 +29,8 @@ import {
   salarySheets,
   salarySheetEmployees,
   onlineLearningRules,
+  freeClassRegistrations,
+  studentClasses,
 } from "@shared/schema";
 import { storage } from "../storage";
 import { eq, and, gte, lte, sql, inArray, isNotNull, or, desc } from "drizzle-orm";
@@ -236,6 +238,20 @@ function getDateRange(month?: string) {
   const dateTo = `${year}-${String(mon + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
   const monthStr = `${year}-${String(mon + 1).padStart(2, "0")}`;
   return { year, mon, dateFrom, dateTo, monthStr };
+}
+
+function mapFreeAttendanceStatus(status: string | null | undefined): string {
+  if (status === "attended") return "present";
+  if (status === "reserved") return "paused";
+  return "pending";
+}
+
+function getFreeSessionId(registrationId: string): string {
+  return `free-${registrationId}`;
+}
+
+function getFreeStaffSessionId(classId: string, sessionDate: string): string {
+  return `free-${classId}__${String(sessionDate).slice(0, 10)}`;
 }
 
 async function getStudentName(studentId: string): Promise<string> {
@@ -453,6 +469,90 @@ export function registerMySpaceRoutes(app: Express): void {
           };
         });
 
+      // Flexible classes do not have class_sessions. Each registered date is
+      // exposed as a calendar item for the student (or linked children).
+      const freeRows = await db
+        .select({
+          registrationId: freeClassRegistrations.id,
+          classId: classes.id,
+          className: classes.name,
+          classCode: classes.classCode,
+          classColor: classes.color,
+          learningFormat: classes.learningFormat,
+          onlineLink: classes.onlineLink,
+          locationId: classes.locationId,
+          classTeacherIds: classes.teacherIds,
+          evaluationCriteriaIds: classes.evaluationCriteriaIds,
+          studentClassId: freeClassRegistrations.studentClassId,
+          studentId: freeClassRegistrations.studentId,
+          sessionDate: freeClassRegistrations.registrationDate,
+          registrationStatus: freeClassRegistrations.status,
+          teacherId: freeClassRegistrations.teacherId,
+          note: freeClassRegistrations.note,
+          reviewData: freeClassRegistrations.reviewData,
+          reviewPublished: freeClassRegistrations.reviewPublished,
+          studentName: students.fullName,
+          studentCode: students.code,
+        })
+        .from(freeClassRegistrations)
+        .innerJoin(classes, eq(freeClassRegistrations.classId, classes.id))
+        .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
+        .innerJoin(students, eq(freeClassRegistrations.studentId, students.id))
+        .where(and(
+          eq(classes.classType, "free"),
+          inArray(freeClassRegistrations.studentId, ctx.studentIds),
+          inArray(studentClasses.status, ["active", "waiting"]),
+          gte(freeClassRegistrations.registrationDate, dateFrom),
+          lte(freeClassRegistrations.registrationDate, dateTo),
+        ))
+        .orderBy(freeClassRegistrations.registrationDate);
+
+      const freeTeacherIds = [...new Set(
+        freeRows.flatMap((row) => [
+          ...(row.classTeacherIds ?? []),
+          ...(row.teacherId ? [row.teacherId] : []),
+        ]),
+      )];
+      const freeTeacherRows = freeTeacherIds.length > 0
+        ? await db
+          .select({ id: staff.id, fullName: staff.fullName })
+          .from(staff)
+          .where(inArray(staff.id, freeTeacherIds))
+        : [];
+      const freeTeacherMap = new Map(freeTeacherRows.map((teacher) => [teacher.id, teacher.fullName ?? ""]));
+      for (const row of freeRows) {
+        const date = String(row.sessionDate).slice(0, 10);
+        const rowTeacherIds = [
+          ...(row.classTeacherIds ?? []),
+          ...(row.teacherId ? [row.teacherId] : []),
+        ];
+        sessions.push({
+          classSessionId: getFreeSessionId(row.registrationId),
+          studentSessionId: null,
+          classId: row.classId,
+          sessionDate: date,
+          weekday: new Date(`${date}T00:00:00`).getDay(),
+          className: row.className,
+          classCode: row.classCode,
+          classColor: row.classColor ?? null,
+          startTime: "",
+          endTime: "",
+          learningFormat: row.learningFormat ?? "offline",
+          onlineLink: row.onlineLink ?? null,
+          locationId: row.locationId ?? null,
+          locationName: null,
+          teacherNames: rowTeacherIds.map((id) => freeTeacherMap.get(id)).filter(Boolean) as string[],
+          enrolledCount: 1,
+          sessionStatus: "scheduled",
+          attendanceStatus: mapFreeAttendanceStatus(row.registrationStatus),
+          studentName: ctx.isParent ? (row.studentName ?? null) : null,
+          studentCode: ctx.isParent ? (row.studentCode ?? null) : null,
+          studentId: row.studentId,
+          isFreeSession: true,
+          freeStatus: row.registrationStatus,
+        } as any);
+      }
+
       // Merge test sessions where this student is in student_ids
       if (ctx.studentIds.length > 0) {
         const tsResult = await pool.query(
@@ -584,12 +684,48 @@ export function registerMySpaceRoutes(app: Express): void {
         .groupBy(classes.id, classes.name, classes.classCode)
         .orderBy(classes.classCode);
 
-      res.json(rows.map((r) => ({
+      const classRows = rows.map((r) => ({
         classId: r.classId,
         className: r.className ?? r.classCode ?? r.classId,
         classCode: r.classCode ?? r.classId,
         totalSessions: r.totalSessions,
-      })));
+      }));
+
+      const freeRows = await db
+        .select({
+          classId: classes.id,
+          className: classes.name,
+          classCode: classes.classCode,
+          totalSessions: sql<number>`count(${freeClassRegistrations.id})::int`,
+        })
+        .from(freeClassRegistrations)
+        .innerJoin(classes, eq(freeClassRegistrations.classId, classes.id))
+        .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
+        .where(and(
+          eq(classes.classType, "free"),
+          inArray(freeClassRegistrations.studentId, ctx.studentIds),
+          inArray(studentClasses.status, ["active", "waiting"]),
+        ))
+        .groupBy(classes.id, classes.name, classes.classCode)
+        .orderBy(classes.classCode);
+
+      const knownClassIds = new Set(classRows.map((row) => row.classId));
+      for (const row of freeRows) {
+        if (knownClassIds.has(row.classId)) {
+          const existing = classRows.find((item) => item.classId === row.classId);
+          if (existing) existing.totalSessions += Number(row.totalSessions ?? 0);
+        } else {
+          classRows.push({
+            classId: row.classId,
+            className: row.className ?? row.classCode ?? row.classId,
+            classCode: row.classCode ?? row.classId,
+            totalSessions: Number(row.totalSessions ?? 0),
+          });
+          knownClassIds.add(row.classId);
+        }
+      }
+
+      res.json(classRows);
     } catch (err: any) {
       console.error("Student classes list error:", err);
       res.status(500).json({ message: err.message || "Lỗi khi tải danh sách lớp" });
@@ -611,6 +747,60 @@ export function registerMySpaceRoutes(app: Express): void {
       const offset = (page - 1) * pageSize;
 
       if (ctx.studentIds.length === 0) return res.json({ sessions: [], total: 0, page, pageSize, totalPages: 0 });
+
+      const [classRow] = await db
+        .select({ classType: classes.classType })
+        .from(classes)
+        .where(eq(classes.id, classId))
+        .limit(1);
+
+      if (classRow?.classType === "free") {
+        const [countRow] = await db
+          .select({ total: sql<number>`count(${freeClassRegistrations.id})::int` })
+          .from(freeClassRegistrations)
+          .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
+          .where(and(
+            eq(freeClassRegistrations.classId, classId),
+            inArray(freeClassRegistrations.studentId, ctx.studentIds),
+            inArray(studentClasses.status, ["active", "waiting"]),
+          ));
+        const freeRows = await db
+          .select({
+            registrationId: freeClassRegistrations.id,
+            sessionDate: freeClassRegistrations.registrationDate,
+            status: freeClassRegistrations.status,
+            note: freeClassRegistrations.note,
+            reviewPublished: freeClassRegistrations.reviewPublished,
+          })
+          .from(freeClassRegistrations)
+          .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
+          .where(and(
+            eq(freeClassRegistrations.classId, classId),
+            inArray(freeClassRegistrations.studentId, ctx.studentIds),
+            inArray(studentClasses.status, ["active", "waiting"]),
+          ))
+          .orderBy(freeClassRegistrations.registrationDate)
+          .limit(pageSize)
+          .offset(offset);
+
+        const total = Number(countRow?.total ?? 0);
+        return res.json({
+          sessions: freeRows.map((row) => ({
+            classSessionId: getFreeSessionId(row.registrationId),
+            sessionIndex: null,
+            sessionDate: row.sessionDate,
+            startTime: "",
+            endTime: "",
+            attendanceStatus: mapFreeAttendanceStatus(row.status),
+            attendanceNote: row.note ?? null,
+            reviewPublished: row.reviewPublished ?? false,
+          })),
+          total,
+          page,
+          pageSize,
+          totalPages: Math.ceil(total / pageSize),
+        });
+      }
 
       const [countRow] = await db
         .select({ total: sql<number>`count(${studentSessions.id})::int` })
@@ -679,6 +869,88 @@ export function registerMySpaceRoutes(app: Express): void {
       const targetStudentIds = requestedStudentId && ctx.studentIds.includes(requestedStudentId)
         ? [requestedStudentId]
         : ctx.studentIds;
+
+      if (classSessionId.startsWith("free-")) {
+        const registrationId = classSessionId.slice("free-".length);
+        const [freeRow] = await db
+          .select({
+            registrationId: freeClassRegistrations.id,
+            classId: classes.id,
+            className: classes.name,
+            classCode: classes.classCode,
+            classTeacherIds: classes.teacherIds,
+            classColor: classes.color,
+            learningFormat: classes.learningFormat,
+            onlineLink: classes.onlineLink,
+            locationId: classes.locationId,
+            locationName: locations.name,
+            evaluationCriteriaIds: classes.evaluationCriteriaIds,
+            studentClassId: freeClassRegistrations.studentClassId,
+            studentId: freeClassRegistrations.studentId,
+            sessionDate: freeClassRegistrations.registrationDate,
+            status: freeClassRegistrations.status,
+            teacherId: freeClassRegistrations.teacherId,
+            note: freeClassRegistrations.note,
+            reviewData: freeClassRegistrations.reviewData,
+            reviewPublished: freeClassRegistrations.reviewPublished,
+            studentName: students.fullName,
+            studentCode: students.code,
+          })
+          .from(freeClassRegistrations)
+          .innerJoin(classes, eq(freeClassRegistrations.classId, classes.id))
+          .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
+          .innerJoin(students, eq(freeClassRegistrations.studentId, students.id))
+          .leftJoin(locations, eq(classes.locationId, locations.id))
+          .where(and(
+            eq(freeClassRegistrations.id, registrationId),
+            eq(classes.classType, "free"),
+            inArray(freeClassRegistrations.studentId, targetStudentIds),
+            inArray(studentClasses.status, ["active", "waiting"]),
+          ))
+          .limit(1);
+
+        if (!freeRow) return res.status(404).json({ message: "Không tìm thấy buổi học tự do" });
+        const teacherIds = [
+          ...(freeRow.classTeacherIds ?? []),
+          ...(freeRow.teacherId ? [freeRow.teacherId] : []),
+        ];
+        const teacherNames = await getTeacherNames([...new Set(teacherIds)]);
+        const linkedStudent = ctx.linkedStudents.find((s) => s.id === freeRow.studentId);
+        const date = String(freeRow.sessionDate).slice(0, 10);
+
+        return res.json({
+          classSessionId,
+          studentSessionId: null,
+          sessionDate: date,
+          weekday: new Date(`${date}T00:00:00`).getDay(),
+          className: freeRow.className,
+          classCode: freeRow.classCode,
+          classColor: freeRow.classColor ?? null,
+          startTime: "",
+          endTime: "",
+          learningFormat: freeRow.learningFormat ?? "offline",
+          onlineLink: freeRow.onlineLink ?? null,
+          locationId: freeRow.locationId ?? null,
+          locationName: freeRow.locationName ?? null,
+          sessionStatus: "scheduled",
+          teacherNames,
+          attendanceStatus: mapFreeAttendanceStatus(freeRow.status),
+          attendanceNote: freeRow.note ?? null,
+          reviewData: freeRow.reviewPublished ? parseReviewData(freeRow.reviewData) : [],
+          reviewPublished: freeRow.reviewPublished ?? false,
+          evaluationCriteriaIds: freeRow.evaluationCriteriaIds ?? [],
+          generalContents: [],
+          personalContents: [],
+          userType: "student",
+          studentName: ctx.isParent ? (linkedStudent?.fullName ?? null) : null,
+          studentCode: ctx.isParent ? (linkedStudent?.code ?? null) : null,
+          enrolledCount: 1,
+          onlineClickedAt: null,
+          onlineEndedAt: null,
+          isFreeSession: true,
+          freeStatus: freeRow.status,
+        });
+      }
 
       const [row] = await db
         .select({
@@ -1066,6 +1338,93 @@ export function registerMySpaceRoutes(app: Express): void {
         checkOutAt: row.check_out_at ? new Date(row.check_out_at).toISOString() : null,
       }));
 
+      // Flexible classes have no class_sessions. A staff member sees each
+      // class/date with the registered students assigned to that staff member
+      // or to the class.
+      const freeRows = await db
+        .select({
+          registrationId: freeClassRegistrations.id,
+          classId: classes.id,
+          className: classes.name,
+          classCode: classes.classCode,
+          classColor: classes.color,
+          learningFormat: classes.learningFormat,
+          onlineLink: classes.onlineLink,
+          locationId: classes.locationId,
+          classTeacherIds: classes.teacherIds,
+          registrationDate: freeClassRegistrations.registrationDate,
+          registrationStatus: freeClassRegistrations.status,
+          teacherId: freeClassRegistrations.teacherId,
+          studentClassId: freeClassRegistrations.studentClassId,
+          studentId: freeClassRegistrations.studentId,
+          studentName: students.fullName,
+          studentCode: students.code,
+          note: freeClassRegistrations.note,
+          reviewData: freeClassRegistrations.reviewData,
+          reviewPublished: freeClassRegistrations.reviewPublished,
+          evaluationCriteriaIds: classes.evaluationCriteriaIds,
+        })
+        .from(freeClassRegistrations)
+        .innerJoin(classes, eq(freeClassRegistrations.classId, classes.id))
+        .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
+        .innerJoin(students, eq(freeClassRegistrations.studentId, students.id))
+        .where(and(
+          eq(classes.classType, "free"),
+          inArray(studentClasses.status, ["active", "waiting"]),
+          gte(freeClassRegistrations.registrationDate, dateFrom),
+          lte(freeClassRegistrations.registrationDate, dateTo),
+          or(
+            eq(freeClassRegistrations.teacherId, staffRecord.id),
+            sql`${classes.teacherIds} @> ARRAY[${staffRecord.id}]::uuid[]`,
+          ),
+        ))
+        .orderBy(freeClassRegistrations.registrationDate);
+
+      const freeSessionMap = new Map<string, any>();
+      for (const row of freeRows) {
+        const date = String(row.registrationDate).slice(0, 10);
+        const key = `${row.classId}:${date}`;
+        let freeSession = freeSessionMap.get(key);
+        if (!freeSession) {
+          freeSession = {
+            classSessionId: getFreeStaffSessionId(row.classId, date),
+            studentSessionId: null,
+            classId: row.classId,
+            sessionDate: date,
+            weekday: new Date(`${date}T00:00:00`).getDay(),
+            className: row.className,
+            classCode: row.classCode,
+            classColor: row.classColor ?? null,
+            startTime: "",
+            endTime: "",
+            learningFormat: row.learningFormat ?? "offline",
+            onlineLink: row.onlineLink ?? null,
+            locationId: row.locationId ?? null,
+            sessionStatus: "scheduled",
+            attendanceStatus: null,
+            checkInAt: null,
+            checkOutAt: null,
+            isFreeSession: true,
+            freeStudents: [],
+            evaluationCriteriaIds: row.evaluationCriteriaIds ?? [],
+          };
+          freeSessionMap.set(key, freeSession);
+        }
+        freeSession.freeStudents.push({
+          registrationId: row.registrationId,
+          studentClassId: row.studentClassId,
+          studentId: row.studentId,
+          fullName: row.studentName,
+          code: row.studentCode,
+          status: row.registrationStatus,
+          teacherId: row.teacherId,
+          note: row.note ?? null,
+          reviewData: row.reviewData,
+          reviewPublished: row.reviewPublished ?? false,
+        });
+      }
+      sessions.push(...Array.from(freeSessionMap.values()));
+
       // Merge test sessions where this staff is in teacher_ids
       const tsStaffResult = await pool.query(
         `SELECT ts.id, ts.title, ts.location_id, ts.test_date::text AS test_date, ts.time_start, ts.time_end
@@ -1115,6 +1474,114 @@ export function registerMySpaceRoutes(app: Express): void {
       if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
 
       const { classSessionId } = req.params;
+
+      if (classSessionId.startsWith("free-")) {
+        const encoded = classSessionId.slice("free-".length);
+        const separatorIndex = encoded.indexOf("__");
+        const freeClassId = separatorIndex >= 0 ? encoded.slice(0, separatorIndex) : "";
+        const freeDate = separatorIndex >= 0 ? encoded.slice(separatorIndex + 2) : "";
+        if (!freeClassId || !/^\d{4}-\d{2}-\d{2}$/.test(freeDate)) {
+          return res.status(404).json({ message: "Không tìm thấy buổi học tự do" });
+        }
+
+        const freeRows = await db
+          .select({
+            registrationId: freeClassRegistrations.id,
+            classId: classes.id,
+            className: classes.name,
+            classCode: classes.classCode,
+            classTeacherIds: classes.teacherIds,
+            classColor: classes.color,
+            learningFormat: classes.learningFormat,
+            onlineLink: classes.onlineLink,
+            locationId: classes.locationId,
+            locationName: locations.name,
+            evaluationCriteriaIds: classes.evaluationCriteriaIds,
+            studentClassId: freeClassRegistrations.studentClassId,
+            studentId: freeClassRegistrations.studentId,
+            status: freeClassRegistrations.status,
+            teacherId: freeClassRegistrations.teacherId,
+            note: freeClassRegistrations.note,
+            reviewData: freeClassRegistrations.reviewData,
+            reviewPublished: freeClassRegistrations.reviewPublished,
+            studentName: students.fullName,
+            studentCode: students.code,
+          })
+          .from(freeClassRegistrations)
+          .innerJoin(classes, eq(freeClassRegistrations.classId, classes.id))
+          .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
+          .innerJoin(students, eq(freeClassRegistrations.studentId, students.id))
+          .leftJoin(locations, eq(classes.locationId, locations.id))
+          .where(and(
+            eq(freeClassRegistrations.classId, freeClassId),
+            eq(freeClassRegistrations.registrationDate, freeDate),
+            eq(classes.classType, "free"),
+            inArray(studentClasses.status, ["active", "waiting"]),
+            or(
+              eq(freeClassRegistrations.teacherId, staffRecord.id),
+              sql`${classes.teacherIds} @> ARRAY[${staffRecord.id}]::uuid[]`,
+            ),
+          ))
+          .orderBy(students.fullName);
+
+        if (freeRows.length === 0) {
+          return res.status(404).json({ message: "Không tìm thấy buổi học tự do" });
+        }
+
+        const first = freeRows[0];
+        const teacherIds = [...new Set(
+          freeRows.flatMap((row) => [
+            ...(row.classTeacherIds ?? []),
+            ...(row.teacherId ? [row.teacherId] : []),
+          ]),
+        )];
+        const teachers = await getTeachersWithIds(teacherIds);
+
+        return res.json({
+          classSessionId,
+          classId: first.classId,
+          studentSessionId: null,
+          sessionDate: freeDate,
+          weekday: new Date(`${freeDate}T00:00:00`).getDay(),
+          className: first.className,
+          classCode: first.classCode,
+          classColor: first.classColor ?? null,
+          startTime: "",
+          endTime: "",
+          learningFormat: first.learningFormat ?? "offline",
+          onlineLink: first.onlineLink ?? null,
+          locationName: first.locationName ?? null,
+          sessionStatus: "scheduled",
+          sessionIndex: null,
+          totalSessions: null,
+          teachers,
+          teacherNames: teachers.map((teacher) => teacher.fullName),
+          evaluationCriteriaIds: first.evaluationCriteriaIds ?? [],
+          attendanceStatus: null,
+          attendanceNote: null,
+          reviewData: [],
+          reviewPublished: false,
+          generalContents: [],
+          personalContents: [],
+          userType: "staff",
+          enrolledCount: freeRows.length,
+          attendancePendingCount: freeRows.filter((row) => row.status === "registered").length,
+          reviewedCount: freeRows.filter((row) => row.reviewPublished).length,
+          isFreeSession: true,
+          freeStudents: freeRows.map((row) => ({
+            registrationId: row.registrationId,
+            studentClassId: row.studentClassId,
+            studentId: row.studentId,
+            fullName: row.studentName,
+            code: row.studentCode,
+            status: row.status,
+            teacherId: row.teacherId,
+            note: row.note ?? null,
+            reviewData: row.reviewData,
+            reviewPublished: row.reviewPublished ?? false,
+          })),
+        });
+      }
 
       const [row] = await db
         .select({

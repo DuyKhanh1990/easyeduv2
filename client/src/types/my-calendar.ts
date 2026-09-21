@@ -63,6 +63,18 @@ export interface MyCalendarSessionLight {
   studentId?: string | null;
   checkInAt?: string | null;
   checkOutAt?: string | null;
+  isFreeSession?: boolean;
+  freeStatus?: string | null;
+  freeStudents?: {
+    registrationId: string;
+    studentClassId: string;
+    studentId: string;
+    fullName: string;
+    code: string;
+    status: string;
+    teacherId?: string | null;
+    note?: string | null;
+  }[];
 }
 
 // Full session detail — fetched on demand per session
@@ -83,6 +95,9 @@ export interface MyCalendarSession extends MyCalendarSessionLight {
   enrolledCount?: number;
   attendancePendingCount?: number;
   reviewedCount?: number;
+  isFreeSession?: boolean;
+  freeStatus?: string | null;
+  freeStudents?: MyCalendarSessionLight["freeStudents"];
   studentName?: string | null;
   studentCode?: string | null;
   onlineClickedAt?: string | null;

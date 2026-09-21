@@ -381,7 +381,7 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
         <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
           <div className="space-y-1 min-w-0">
             <p className="text-sm text-muted-foreground">
-              Thời gian: <span className="font-bold text-foreground">{session.startTime} - {session.endTime}</span>
+              Thời gian: <span className="font-bold text-foreground">{session.isFreeSession ? "Lịch linh hoạt" : `${session.startTime} - ${session.endTime}`}</span>
               {testEnded && (
                 <span className="ml-2 text-xs font-semibold text-red-500 bg-red-50 dark:bg-red-950/30 px-2 py-0.5 rounded-full">Đã kết thúc</span>
               )}
@@ -434,13 +434,74 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
     );
   }
 
+  if (session.isFreeSession) {
+    const freeStudents = detail?.freeStudents ?? [];
+    return (
+      <div
+        className={cn(
+          "bg-card rounded-2xl border border-border p-4 space-y-3 shadow-sm sm:p-5",
+          highlighted && "ring-2 ring-primary/60 ring-offset-2",
+        )}
+        data-testid={`staff-free-session-card-${session.classSessionId}`}
+      >
+        <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
+          <div className="min-w-0 space-y-1">
+            <p className="text-sm text-muted-foreground">
+              Thời gian: <span className="font-bold text-foreground">Lịch linh hoạt</span>
+            </p>
+            <p className="font-bold text-foreground text-base">Lớp: {session.classCode}</p>
+            <p className="text-sm text-muted-foreground">
+              Ngày đăng ký:{" "}
+              <span className="font-medium text-foreground">
+                {new Date(`${session.sessionDate}T00:00:00`).toLocaleDateString("vi-VN")}
+              </span>
+            </p>
+          </div>
+          <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+            Lớp tự do
+          </span>
+        </div>
+        {!isLoading && !isError && (
+          <div className="border-t border-border/50 pt-3 text-sm">
+            <p className="text-muted-foreground">
+              Học viên: <span className="font-semibold text-foreground">{freeStudents.length}</span>
+            </p>
+            {freeStudents.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {freeStudents.map((student) => (
+                  <span
+                    key={student.registrationId}
+                    className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs text-foreground"
+                  >
+                    {student.fullName}{student.code ? ` (${student.code})` : ""}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {isLoading && (
+          <div className="flex items-center gap-2 border-t border-border/50 pt-3 text-sm text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span>Đang tải học viên...</span>
+          </div>
+        )}
+        {isError && (
+          <p className="border-t border-border/50 pt-3 text-xs text-red-500">
+            Không thể tải danh sách học viên
+          </p>
+        )}
+      </div>
+    );
+  }
+
   // ── Regular session card layout ────────────────────────────────────────────
   const cardContent = (
     <>
       <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
         <div className="space-y-1 min-w-0">
           <p className="text-sm text-muted-foreground">
-            Thời gian: <span className="font-bold text-foreground">{session.startTime} - {session.endTime}</span>
+            Thời gian: <span className="font-bold text-foreground">{session.isFreeSession ? "Lịch linh hoạt" : `${session.startTime} - ${session.endTime}`}</span>
             {isCancelled && (
               <span className="ml-2 text-xs font-semibold text-red-500 bg-red-50 dark:bg-red-950/30 px-2 py-0.5 rounded-full">Đã huỷ</span>
             )}
