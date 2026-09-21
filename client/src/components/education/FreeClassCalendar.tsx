@@ -32,6 +32,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { ReviewDialog } from "@/components/education/ReviewDialog";
+import { SessionContentDialog } from "@/components/education/SessionContentDialog";
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import {
   Select,
@@ -79,6 +80,7 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
     published: boolean;
   }>>({});
   const [selectedAttendStudentIds, setSelectedAttendStudentIds] = useState<string[]>([]);
+  const [contentDialogDate, setContentDialogDate] = useState<string | null>(null);
   const [criteriaDialogOpen, setCriteriaDialogOpen] = useState(false);
   const [criteriaDraft, setCriteriaDraft] = useState<string[]>([]);
   const [criteriaOverride, setCriteriaOverride] = useState<string[] | undefined>();
@@ -343,6 +345,15 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
   const selectedRegisteredStudentIds = selectedStudentIds.filter((studentId) =>
     selectedDayStudentIdSet.has(studentId),
   );
+  const contentDialogStudents = contentDialogDate
+    ? students
+        .filter((student: any) => registrations.has(`${student.id}:${contentDialogDate}`))
+        .map((student: any) => ({
+          id: student.id,
+          name: student.fullName,
+          code: student.code ?? null,
+        }))
+    : [];
   const runBulkRegistration = () => {
     if (!selectedDate || selectedStudentIds.length === 0 || bulkMutation.isPending) return;
     bulkMutation.mutate({
