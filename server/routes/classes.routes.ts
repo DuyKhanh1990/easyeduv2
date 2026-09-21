@@ -3836,6 +3836,7 @@ export function registerClassesRoutes(app: Express): void {
           studentId: freeClassRegistrations.studentId,
           studentName: students.fullName,
           studentCode: students.code,
+          note: freeClassRegistrations.note,
         })
         .from(freeClassRegistrations)
         .innerJoin(classes, eq(freeClassRegistrations.classId, classes.id))

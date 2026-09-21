@@ -30,6 +30,7 @@ type FreeScheduleStudent = {
   code: string;
   status: string;
   teacherId?: string | null;
+  note?: string | null;
 };
 
 type AttendanceStatus = "registered" | "attended" | "reserved";

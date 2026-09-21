@@ -14,3 +14,9 @@ Lịch tổng `/schedule` phải chiếu mỗi cặp lớp/ngày có đăng ký 
 **Why:** Lớp tự do không có ca cố định nhưng giáo viên vẫn cần thấy đúng buổi đã đăng ký trong lịch chung và thao tác điểm danh theo từng buổi như lớp thường.
 
 **How to apply:** Không tạo `class_sessions` giả trong database; tổng hợp buổi ở API lịch và cập nhật lại bản ghi đăng ký hiện có. Checkbox chỉ chuyển giữa `registered` và `attended`; `reserved` được chọn qua dropdown trạng thái.
+
+Mỗi đăng ký ngày của lớp tự do có thể lưu ghi chú/nhận xét riêng theo học viên và ngày học.
+
+**Why:** Nhận xét điểm danh cần gắn đúng buổi cụ thể, không nên ghi đè lên ghi chú chung của học viên hoặc lớp.
+
+**How to apply:** Hiển thị và lưu ghi chú ngay trong popup buổi học; cập nhật ghi chú không được làm thay đổi trạng thái điểm danh hay số buổi.
