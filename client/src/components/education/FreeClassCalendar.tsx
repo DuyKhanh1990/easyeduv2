@@ -1,15 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { addMonths, format, getDaysInMonth, startOfMonth, subMonths } from "date-fns";
-import { vi } from "date-fns/locale";
 import {
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
   CalendarDays,
-  BookOpen,
-  MapPin,
-  UserRound,
-  Users,
   Star,
   HelpCircle,
   PauseCircle,
@@ -51,10 +46,9 @@ type CalendarMode = "register" | "attend";
 
 export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCalendarProps) {
   const [monthDate, setMonthDate] = useState(() => startOfMonth(new Date()));
-  const [mode, setMode] = useState<CalendarMode>("register");
-  const [selectedAttendDate, setSelectedAttendDate] = useState<string | null>(null);
   const [noteDialog, setNoteDialog] = useState<{
     studentClassId: string;
+    date: string;
     value: string;
     status: "registered" | "attended" | "reserved";
   } | null>(null);
@@ -66,7 +60,6 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
     reviewData: Record<string, any>;
     published: boolean;
   }>>({});
-  const [selectedAttendStudentIds, setSelectedAttendStudentIds] = useState<string[]>([]);
   const [criteriaDialogOpen, setCriteriaDialogOpen] = useState(false);
   const [criteriaDraft, setCriteriaDraft] = useState<string[]>([]);
   const [criteriaOverride, setCriteriaOverride] = useState<string[] | undefined>();
@@ -83,7 +76,6 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
   });
   const { data: allEvaluationCriteria = [] } = useQuery<any[]>({
     queryKey: ["/api/evaluation-criteria"],
-    enabled: mode === "attend" || criteriaDialogOpen,
   });
 
   const updateMutation = useMutation({
@@ -122,48 +114,7 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
   const students = (data?.students || []).filter((student: any) => student.status === "active");
   const classStart = String(classData?.startDate || "").slice(0, 10);
   const classEnd = String(classData?.endDate || "").slice(0, 10);
-  const visibleDays = mode === "attend"
-    ? days.filter((day) => students.some((student: any) => registrations.has(`${student.id}:${day.value}`)))
-    : days;
-
-  useEffect(() => {
-    if (mode !== "attend") return;
-    setSelectedAttendDate((current) =>
-      current && visibleDays.some((day) => day.value === current)
-        ? current
-        : visibleDays[0]?.value ?? null,
-    );
-  }, [mode, month, visibleDays]);
-
-  const selectedAttendDay = visibleDays.find((day) => day.value === selectedAttendDate) ?? null;
-  const selectedAttendStudents = selectedAttendDay
-    ? students
-        .map((student: any) => ({
-          student,
-          registration: registrations.get(`${student.id}:${selectedAttendDay.value}`),
-        }))
-        .filter(({ registration }: any) => !!registration)
-    : [];
-  const selectedAttendedCount = selectedAttendStudents.filter(
-    ({ registration }: any) => registration.status === "attended",
-  ).length;
-
-  useEffect(() => {
-    const visibleStudentIds = new Set(selectedAttendStudents.map(({ student }: any) => student.id));
-    const attendedStudentIds = selectedAttendStudents
-      .filter(({ registration }: any) => registration.status === "attended")
-      .map(({ student }: any) => student.id);
-    setSelectedAttendStudentIds((current) => {
-      const next = current.filter((id) => visibleStudentIds.has(id));
-      for (const id of attendedStudentIds) {
-        if (!next.includes(id)) next.push(id);
-      }
-      if (next.length === current.length && next.every((id, index) => id === current[index])) {
-        return current;
-      }
-      return next;
-    });
-  }, [selectedAttendDate, data?.registrations]);
+  const visibleDays = days;
 
   const classTeacherLabel = (classData?.teachers || [])
     .map((teacher: any) => teacher.fullName)
@@ -216,12 +167,11 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
 
   const toggle = (student: any, date: string, current: any) => {
     if (!classPerm?.canEdit || updateMutation.isPending) return;
-    if (mode === "attend" && !current) return;
     updateMutation.mutate({
       studentClassId: student.id,
       date,
-      action: mode,
-      value: mode === "register" ? !current : current.status !== "attended",
+      action: "register",
+      value: !current,
     });
   };
 
