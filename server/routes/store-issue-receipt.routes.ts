@@ -687,7 +687,15 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
           l.name AS location_name,
           w.name AS warehouse_name,
           COUNT(DISTINCT i.id)::int AS item_count,
-          COALESCE(SUM(i.quantity), 0)::int AS total_quantity
+          COALESCE(SUM(i.quantity), 0)::int AS total_quantity,
+          COALESCE(
+            ARRAY_AGG(DISTINCT i.product_code::text) FILTER (WHERE i.product_code IS NOT NULL),
+            ARRAY[]::text[]
+          ) AS product_codes,
+          COALESCE(
+            ARRAY_AGG(DISTINCT i.product_name::text) FILTER (WHERE i.product_name IS NOT NULL),
+            ARRAY[]::text[]
+          ) AS product_names
         FROM store_issue_receipts r
         LEFT JOIN locations l ON l.id = r.location_id
         LEFT JOIN store_warehouses w ON w.id = r.warehouse_id

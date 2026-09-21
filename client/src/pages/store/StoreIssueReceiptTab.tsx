@@ -19,6 +19,7 @@ import { StoreIssueReceiptHistoryTab } from "./StoreIssueReceiptHistoryTab";
 import { useLocations } from "@/hooks/use-locations";
 import { HistoryDialog } from "@/components/common/HistoryDialog";
 import { StoreIssueReceiptNotes } from "./StoreIssueReceiptNotes";
+import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 
 type IssueReceiptRow = {
   id: string;
@@ -36,6 +37,8 @@ type IssueReceiptRow = {
   created_by_name: string | null;
   item_count: number;
   total_quantity: number;
+  product_codes?: string[];
+  product_names?: string[];
   created_at: string;
 };
 
@@ -69,6 +72,8 @@ export function StoreIssueReceiptTab() {
   const [filterLocation, setFilterLocation] = useState("all");
   const [filterWarehouse, setFilterWarehouse] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [filterProductCodes, setFilterProductCodes] = useState<string[]>([]);
+  const [filterProductNames, setFilterProductNames] = useState<string[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<"list" | "history">("list");
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
@@ -95,6 +100,26 @@ export function StoreIssueReceiptTab() {
       if (r.warehouse_id && r.warehouse_name) seen.set(r.warehouse_id, r.warehouse_name);
     }
     return Array.from(seen.entries()).map(([id, name]) => ({ id, name }));
+  }, [receipts]);
+
+  const productCodeOptions = useMemo(() => {
+    const codes = new Set<string>();
+    for (const receipt of receipts) {
+      for (const code of receipt.product_codes ?? []) {
+        if (code) codes.add(code);
+      }
+    }
+    return Array.from(codes).sort((a, b) => a.localeCompare(b, "vi"));
+  }, [receipts]);
+
+  const productNameOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const receipt of receipts) {
+      for (const name of receipt.product_names ?? []) {
+        if (name) names.add(name);
+      }
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b, "vi"));
   }, [receipts]);
 
   const filtered = useMemo(() => {
@@ -126,11 +151,21 @@ export function StoreIssueReceiptTab() {
     if (filterLocation !== "all") result = result.filter(r => r.location_id === filterLocation);
     if (filterWarehouse !== "all") result = result.filter(r => r.warehouse_id === filterWarehouse);
     if (filterStatus !== "all") result = result.filter(r => r.status === filterStatus);
+    if (filterProductCodes.length > 0) {
+      result = result.filter(r =>
+        filterProductCodes.some(code => (r.product_codes ?? []).includes(code))
+      );
+    }
+    if (filterProductNames.length > 0) {
+      result = result.filter(r =>
+        filterProductNames.some(name => (r.product_names ?? []).includes(name))
+      );
+    }
 
     return result;
-  }, [receipts, search, dateRange, filterLocation, filterWarehouse, filterStatus]);
+  }, [receipts, search, dateRange, filterLocation, filterWarehouse, filterStatus, filterProductCodes, filterProductNames]);
 
-  useEffect(() => { setPage(1); }, [search, dateRange, filterLocation, filterWarehouse, filterStatus]);
+  useEffect(() => { setPage(1); }, [search, dateRange, filterLocation, filterWarehouse, filterStatus, filterProductCodes, filterProductNames]);
 
   const totalItems = filtered.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
@@ -138,7 +173,8 @@ export function StoreIssueReceiptTab() {
   const endIdx = Math.min(startIdx + pageSize, totalItems);
   const paginatedReceipts = filtered.slice(startIdx, endIdx);
 
-  const activeFilterCount = [filterLocation, filterWarehouse, filterStatus].filter(v => v !== "all").length;
+  const activeFilterCount = [filterLocation, filterWarehouse, filterStatus].filter(v => v !== "all").length
+    + filterProductCodes.length + filterProductNames.length;
   const hasActiveFilter = !!search.trim() || !!dateRange.from || activeFilterCount > 0;
 
   function handleReset() {
@@ -147,6 +183,8 @@ export function StoreIssueReceiptTab() {
     setFilterLocation("all");
     setFilterWarehouse("all");
     setFilterStatus("all");
+    setFilterProductCodes([]);
+    setFilterProductNames([]);
   }
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["/api/store/issue-receipts"] });
@@ -317,9 +355,7 @@ export function StoreIssueReceiptTab() {
             <button
               onClick={() => setActiveSubTab("list")}
               className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors ${
-                activeSubTab === "list"
-                  ? "border-orange-500 text-orange-600"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
+                "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
               <List className="h-3.5 w-3.5" /> Danh sách
@@ -419,7 +455,13 @@ export function StoreIssueReceiptTab() {
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold">Bộ lọc</span>
                 <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground px-2"
-                  onClick={() => { setFilterLocation("all"); setFilterWarehouse("all"); setFilterStatus("all"); }}>
+                   onClick={() => {
+                     setFilterLocation("all");
+                     setFilterWarehouse("all");
+                     setFilterStatus("all");
+                     setFilterProductCodes([]);
+                     setFilterProductNames([]);
+                   }}>
                   <X className="h-3 w-3 mr-1" /> Xoá bộ lọc
                 </Button>
               </div>
@@ -459,6 +501,26 @@ export function StoreIssueReceiptTab() {
                     <SelectItem value="cancelled">Đã hủy</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground font-medium">Mã sản phẩm</label>
+                <SearchableMultiSelect
+                  options={productCodeOptions.map(code => ({ value: code, label: code }))}
+                  value={filterProductCodes}
+                  onChange={setFilterProductCodes}
+                  placeholder="Tất cả mã sản phẩm"
+                  searchPlaceholder="Tìm mã sản phẩm..."
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground font-medium">Tên sản phẩm</label>
+                <SearchableMultiSelect
+                  options={productNameOptions.map(name => ({ value: name, label: name }))}
+                  value={filterProductNames}
+                  onChange={setFilterProductNames}
+                  placeholder="Tất cả tên sản phẩm"
+                  searchPlaceholder="Tìm tên sản phẩm..."
+                />
               </div>
             </PopoverContent>
           </Popover>

@@ -19,6 +19,7 @@ import { StoreReceiptHistoryTab } from "./StoreReceiptHistoryTab";
 import { useLocations } from "@/hooks/use-locations";
 import { HistoryDialog } from "@/components/common/HistoryDialog";
 import { StoreReceiptNotes } from "./StoreReceiptNotes";
+import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 
 type ReceiptRow = {
   id: string;
@@ -37,6 +38,8 @@ type ReceiptRow = {
   created_by_name: string | null;
   item_count: number;
   total_quantity: number;
+  product_codes?: string[];
+  product_names?: string[];
   created_at: string;
 };
 
@@ -77,6 +80,8 @@ export function StoreReceiptTab() {
   const [filterWarehouse, setFilterWarehouse] = useState("all");
   const [filterSupplier, setFilterSupplier] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [filterProductCodes, setFilterProductCodes] = useState<string[]>([]);
+  const [filterProductNames, setFilterProductNames] = useState<string[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
 
   const { data: receipts = [], isLoading } = useQuery<ReceiptRow[]>({
@@ -106,6 +111,26 @@ export function StoreReceiptTab() {
       if (r.supplier_id && r.supplier_name) seen.set(r.supplier_id, r.supplier_name);
     }
     return Array.from(seen.entries()).map(([id, name]) => ({ id, name }));
+  }, [receipts]);
+
+  const productCodeOptions = useMemo(() => {
+    const codes = new Set<string>();
+    for (const receipt of receipts) {
+      for (const code of receipt.product_codes ?? []) {
+        if (code) codes.add(code);
+      }
+    }
+    return Array.from(codes).sort((a, b) => a.localeCompare(b, "vi"));
+  }, [receipts]);
+
+  const productNameOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const receipt of receipts) {
+      for (const name of receipt.product_names ?? []) {
+        if (name) names.add(name);
+      }
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b, "vi"));
   }, [receipts]);
 
   const filtered = useMemo(() => {
@@ -138,11 +163,21 @@ export function StoreReceiptTab() {
     if (filterWarehouse !== "all") result = result.filter(r => r.warehouse_id === filterWarehouse);
     if (filterSupplier !== "all") result = result.filter(r => r.supplier_id === filterSupplier);
     if (filterStatus !== "all") result = result.filter(r => r.status === filterStatus);
+    if (filterProductCodes.length > 0) {
+      result = result.filter(r =>
+        filterProductCodes.some(code => (r.product_codes ?? []).includes(code))
+      );
+    }
+    if (filterProductNames.length > 0) {
+      result = result.filter(r =>
+        filterProductNames.some(name => (r.product_names ?? []).includes(name))
+      );
+    }
 
     return result;
-  }, [receipts, search, dateRange, filterLocation, filterWarehouse, filterSupplier, filterStatus]);
+  }, [receipts, search, dateRange, filterLocation, filterWarehouse, filterSupplier, filterStatus, filterProductCodes, filterProductNames]);
 
-  useEffect(() => { setPage(1); }, [search, dateRange, filterLocation, filterWarehouse, filterSupplier, filterStatus]);
+  useEffect(() => { setPage(1); }, [search, dateRange, filterLocation, filterWarehouse, filterSupplier, filterStatus, filterProductCodes, filterProductNames]);
 
   const totalItems = filtered.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
@@ -150,7 +185,8 @@ export function StoreReceiptTab() {
   const endIdx = Math.min(startIdx + pageSize, totalItems);
   const paginatedReceipts = filtered.slice(startIdx, endIdx);
 
-  const activeFilterCount = [filterLocation, filterWarehouse, filterSupplier, filterStatus].filter(v => v !== "all").length;
+  const activeFilterCount = [filterLocation, filterWarehouse, filterSupplier, filterStatus].filter(v => v !== "all").length
+    + filterProductCodes.length + filterProductNames.length;
   const hasActiveFilter = !!search.trim() || !!dateRange.from || activeFilterCount > 0;
 
   function handleReset() {
@@ -160,6 +196,8 @@ export function StoreReceiptTab() {
     setFilterWarehouse("all");
     setFilterSupplier("all");
     setFilterStatus("all");
+    setFilterProductCodes([]);
+    setFilterProductNames([]);
   }
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["/api/store/receipts"] });
@@ -376,7 +414,14 @@ export function StoreReceiptTab() {
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold">Bộ lọc</span>
                 <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground px-2"
-                  onClick={() => { setFilterLocation("all"); setFilterWarehouse("all"); setFilterSupplier("all"); setFilterStatus("all"); }}>
+                   onClick={() => {
+                     setFilterLocation("all");
+                     setFilterWarehouse("all");
+                     setFilterSupplier("all");
+                     setFilterStatus("all");
+                     setFilterProductCodes([]);
+                     setFilterProductNames([]);
+                   }}>
                   <X className="h-3 w-3 mr-1" /> Xoá bộ lọc
                 </Button>
               </div>
@@ -428,6 +473,26 @@ export function StoreReceiptTab() {
                     <SelectItem value="cancelled">Đã hủy</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground font-medium">Mã sản phẩm</label>
+                <SearchableMultiSelect
+                  options={productCodeOptions.map(code => ({ value: code, label: code }))}
+                  value={filterProductCodes}
+                  onChange={setFilterProductCodes}
+                  placeholder="Tất cả mã sản phẩm"
+                  searchPlaceholder="Tìm mã sản phẩm..."
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground font-medium">Tên sản phẩm</label>
+                <SearchableMultiSelect
+                  options={productNameOptions.map(name => ({ value: name, label: name }))}
+                  value={filterProductNames}
+                  onChange={setFilterProductNames}
+                  placeholder="Tất cả tên sản phẩm"
+                  searchPlaceholder="Tìm tên sản phẩm..."
+                />
               </div>
             </PopoverContent>
           </Popover>
