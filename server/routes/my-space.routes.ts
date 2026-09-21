@@ -343,6 +343,22 @@ async function getStaffFreeSessionRows(classId: string, sessionDate: string, sta
     ));
 }
 
+async function canManageFreeClass(classId: string, staffId: string, isSuperAdmin = false) {
+  const conditions = [
+    eq(classes.id, classId),
+    eq(classes.classType, "free"),
+  ];
+  if (!isSuperAdmin) {
+    conditions.push(sql`${classes.teacherIds} @> ARRAY[${staffId}]::uuid[]`);
+  }
+  const [row] = await db
+    .select({ id: classes.id })
+    .from(classes)
+    .where(and(...conditions))
+    .limit(1);
+  return !!row;
+}
+
 async function getStudentName(studentId: string): Promise<string> {
   const [row] = await db
     .select({ fullName: students.fullName, code: students.code })
@@ -456,7 +472,9 @@ export function registerMySpaceRoutes(app: Express): void {
         return res.status(400).json({ message: "Ngày buổi học không hợp lệ" });
       }
       const rows = await getStaffFreeSessionRows(classId, sessionDate, staffRecord.id);
-      if (rows.length === 0) return res.status(404).json({ message: "Không tìm thấy buổi học tự do" });
+      if (rows.length === 0 && !(await canManageFreeClass(classId, staffRecord.id, req.isSuperAdmin))) {
+        return res.status(404).json({ message: "Không tìm thấy lớp tự do hoặc bạn không có quyền" });
+      }
 
       const contents = await getFreeSessionContents(classId, sessionDate);
       res.json({
@@ -492,7 +510,9 @@ export function registerMySpaceRoutes(app: Express): void {
 
       const { classId, sessionDate } = req.params;
       const rows = await getStaffFreeSessionRows(classId, sessionDate, staffRecord.id);
-      if (rows.length === 0) return res.status(404).json({ message: "Không tìm thấy buổi học tự do" });
+      if (rows.length === 0 && !(await canManageFreeClass(classId, staffRecord.id, req.isSuperAdmin))) {
+        return res.status(404).json({ message: "Không tìm thấy lớp tự do hoặc bạn không có quyền" });
+      }
 
       const { contentType, title, description, resourceUrl, dueDate } = req.body ?? {};
       if (!contentType || !title) return res.status(400).json({ message: "Thiếu loại hoặc tên nội dung" });
@@ -522,7 +542,9 @@ export function registerMySpaceRoutes(app: Express): void {
       if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
       const { classId, sessionDate, contentId } = req.params;
       const rows = await getStaffFreeSessionRows(classId, sessionDate, staffRecord.id);
-      if (rows.length === 0) return res.status(404).json({ message: "Không tìm thấy buổi học tự do" });
+      if (rows.length === 0 && !(await canManageFreeClass(classId, staffRecord.id, req.isSuperAdmin))) {
+        return res.status(404).json({ message: "Không tìm thấy lớp tự do hoặc bạn không có quyền" });
+      }
       const dueDate = req.body?.dueDate;
       const [updated] = await db.update(freeClassSessionContents)
         .set({ dueDate: dueDate ? new Date(dueDate) : null })
@@ -548,7 +570,9 @@ export function registerMySpaceRoutes(app: Express): void {
       if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
       const { classId, sessionDate, contentId } = req.params;
       const rows = await getStaffFreeSessionRows(classId, sessionDate, staffRecord.id);
-      if (rows.length === 0) return res.status(404).json({ message: "Không tìm thấy buổi học tự do" });
+      if (rows.length === 0 && !(await canManageFreeClass(classId, staffRecord.id, req.isSuperAdmin))) {
+        return res.status(404).json({ message: "Không tìm thấy lớp tự do hoặc bạn không có quyền" });
+      }
       const deleted = await db.delete(freeClassSessionContents).where(and(
         eq(freeClassSessionContents.id, contentId),
         eq(freeClassSessionContents.classId, classId),
