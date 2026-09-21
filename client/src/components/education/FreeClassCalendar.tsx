@@ -61,6 +61,9 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
   const students = (data?.students || []).filter((student: any) => student.status === "active");
   const classStart = String(classData?.startDate || "").slice(0, 10);
   const classEnd = String(classData?.endDate || "").slice(0, 10);
+  const visibleDays = mode === "attend"
+    ? days.filter((day) => students.some((student: any) => registrations.has(`${student.id}:${day.value}`)))
+    : days;
 
   const toggle = (student: any, date: string, current: any) => {
     if (!classPerm?.canEdit || updateMutation.isPending) return;
@@ -106,12 +109,17 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
             <ClipboardCheck className="h-8 w-8 text-slate-300" />
             Chưa có học viên đã xếp lịch trong lớp này.
           </div>
+        ) : mode === "attend" && visibleDays.length === 0 ? (
+          <div className="flex h-64 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+            <ClipboardCheck className="h-8 w-8 text-slate-300" />
+            Chưa có ngày học nào được đăng ký trong tháng này.
+          </div>
         ) : (
           <table className="min-w-max border-collapse text-xs">
             <thead className="sticky top-0 z-10 bg-slate-100">
               <tr>
                 <th className="sticky left-0 z-20 min-w-52 border-b border-r bg-slate-100 px-3 py-2 text-left font-semibold">Học viên</th>
-                {days.map((day) => <th key={day.value} className="min-w-10 border-b px-1 py-2 text-center font-medium"><div>{day.label}</div><div className="text-[10px] text-muted-foreground">{day.weekday}</div></th>)}
+                {visibleDays.map((day) => <th key={day.value} className="min-w-10 border-b px-1 py-2 text-center font-medium"><div>{day.label}</div><div className="text-[10px] text-muted-foreground">{day.weekday}</div></th>)}
               </tr>
             </thead>
             <tbody>
@@ -121,7 +129,7 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                     <div className="font-medium">{student.fullName}</div>
                     <div className="text-[10px] text-muted-foreground">{student.code} · còn {student.remainingSessions ?? 0} buổi</div>
                   </td>
-                  {days.map((day) => {
+                  {visibleDays.map((day) => {
                     const current = registrations.get(`${student.id}:${day.value}`);
                     const outside = (classStart && day.value < classStart) || (classEnd && day.value > classEnd)
                       || (student.startDate && day.value < String(student.startDate).slice(0, 10))
