@@ -62,6 +62,7 @@ const editSchema = z.object({
   // Schedule fields — optional at schema level; validated manually when scheduleGenerated === false
   startDate: z.string().optional(),
   endDate: z.string().optional(),
+  teacherIds: z.array(z.string()).optional(),
   weekdays: z.array(z.number()).optional(),
   schedule_config: z.array(z.object({
     weekday: z.number(),
@@ -117,6 +118,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
 
   // scheduleGenerated = true → lớp đã có lịch: step 2 chỉ xem, không sửa lịch
   const scheduleGenerated: boolean = cls?.scheduleGenerated ?? false;
+  const isFreeClass = cls?.classType === "free";
 
   const { data: locations } = useQuery<any[]>({ queryKey: ["/api/locations"], enabled: isOpen });
   const { data: programs } = useQuery<any[]>({ queryKey: ["/api/course-programs"], enabled: isOpen });
@@ -135,6 +137,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
       maxStudents: 20, learningFormat: "offline", onlineLink: "", status: "planning",
       description: "",
       startDate: "", endDate: "", weekdays: [],
+       teacherIds: [],
       schedule_config: [],
       teachers_config: [],
     },
@@ -144,6 +147,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
   const selectedCourseId = form.watch("courseId");
   const selectedLearningFormat = form.watch("learningFormat");
   const selectedWeekdays = form.watch("weekdays") || [];
+  const selectedTeacherIds = form.watch("teacherIds") || [];
   const scheduleConfig = form.watch("schedule_config") || [];
   const teachersConfig = form.watch("teachers_config") || [];
 
@@ -275,6 +279,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
         description: cls.description || "",
         startDate: cls.startDate || "",
         endDate: cls.endDate || "",
+         teacherIds: teachers_config.map((teacher: any) => String(teacher.teacher_id)),
         weekdays,
         schedule_config,
         teachers_config,
@@ -306,6 +311,13 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
       if (!isValid) return toast({ title: "Thiếu thông tin", description: "Vui lòng điền đầy đủ các trường bắt buộc", variant: "destructive" });
     }
     if (step === 2 && !scheduleGenerated) {
+      if (isFreeClass) {
+        if (!form.getValues("startDate") || !form.getValues("endDate")) {
+          return toast({ title: "Thiếu thông tin", description: "Vui lòng nhập thời hạn áp dụng cho lớp tự do", variant: "destructive" });
+        }
+        setStep((s) => s + 1);
+        return;
+      }
       // Only validate schedule fields if schedule has NOT been generated yet
       if (!form.getValues("startDate")) {
         return toast({ title: "Thiếu thông tin", description: "Vui lòng nhập ngày bắt đầu", variant: "destructive" });
@@ -413,11 +425,19 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
         managerIds: data.managerIds || [],
         feePackageId: valOrNull(data.feePackageId),
         scoreSheetId: valOrNull(data.scoreSheetId),
-        teacherIds: [...new Set((data.teachers_config || []).map((t: any) => t.teacher_id).filter(Boolean))],
+        teacherIds: isFreeClass
+          ? [...new Set((data.teacherIds || []).filter(Boolean))]
+          : [...new Set((data.teachers_config || []).map((t: any) => t.teacher_id).filter(Boolean))],
         shiftTemplateIds: [...new Set((data.schedule_config || []).flatMap((c: any) => (c.shifts || []).map((s: any) => s.shift_template_id).filter(Boolean)))],
         color: selectedColor || null,
         schedule_config: data.schedule_config || [],
-        teachers_config: data.teachers_config || [],
+        teachers_config: isFreeClass
+          ? (data.teacherIds || []).map((teacher_id: string) => ({
+              teacher_id,
+              mode: "all",
+              shift_keys: [],
+            }))
+          : data.teachers_config || [],
         skipHolidays,
         regenerateSessions: true,
       };

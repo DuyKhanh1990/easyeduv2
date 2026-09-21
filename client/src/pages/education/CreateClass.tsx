@@ -73,6 +73,7 @@ export function CreateClass() {
       scoreSheetId: z.string().optional().nullable(),
       subjectId: z.string().optional().nullable(),
       evaluationCriteriaIds: z.array(z.string()).optional(),
+      teacherIds: z.array(z.string()).optional(),
       schedule_config: z.array(z.object({
         weekday: z.number(),
         shifts: z.array(z.object({
@@ -103,6 +104,7 @@ export function CreateClass() {
       status: "planning",
       subjectId: "",
       evaluationCriteriaIds: [] as string[],
+      teacherIds: [] as string[],
       weekdays: [],
       startDate: "",
       endDate: "",
@@ -334,7 +336,16 @@ export function CreateClass() {
         classType: isFreeClass ? "free" : "group",
         weekdays: (data.weekdays || []).map(Number),
         managerIds: data.managerIds || [],
-        teacherIds: [...new Set((data.teachers_config || []).map((t: any) => t.teacher_id))],
+        teacherIds: isFreeClass
+          ? [...new Set(data.teacherIds || [])]
+          : [...new Set((data.teachers_config || []).map((t: any) => t.teacher_id))],
+        teachers_config: isFreeClass
+          ? (data.teacherIds || []).map((teacher_id: string) => ({
+              teacher_id,
+              mode: "all",
+              shift_keys: [],
+            }))
+          : data.teachers_config,
         shiftTemplateId: data.schedule_config?.[0]?.shifts?.[0]?.shift_template_id || "00000000-0000-0000-0000-000000000000",
         endType,
         sessionCount: endType === "sessions" ? Number(sessionCount) : undefined,
@@ -756,6 +767,39 @@ export function CreateClass() {
                           )}
                         />
                       </div>
+                      <FormField
+                        control={form.control}
+                        name="teacherIds"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Giáo viên</FormLabel>
+                            <FormControl>
+                              <SearchableMultiSelect
+                                options={[...(staff || [])]
+                                  .sort((a: any, b: any) => {
+                                    const aActive = a.status !== "Không hoạt động";
+                                    const bActive = b.status !== "Không hoạt động";
+                                    if (aActive === bActive) return 0;
+                                    return aActive ? -1 : 1;
+                                  })
+                                  .map((teacher: any) => ({
+                                    value: String(teacher.id),
+                                    label: `${teacher.fullName}${teacher.status === "Không hoạt động" ? " (Không hoạt động)" : ""}`,
+                                    sublabel: teacher.code,
+                                    isActive: teacher.status !== "Không hoạt động",
+                                  }))}
+                                value={field.value || []}
+                                onChange={field.onChange}
+                                placeholder={selectedLocationId ? "Chọn giáo viên..." : "Chọn cơ sở trước"}
+                                searchPlaceholder="Tìm kiếm giáo viên..."
+                                disabled={!selectedLocationId}
+                                data-testid="select-free-class-teachers"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                       <p className="text-sm text-muted-foreground">
                         Số buổi trong gói học phí chỉ là tham khảo. Khi xếp học viên, bạn sẽ
                         nhập lại số buổi và khoảng thời gian áp dụng cho từng học viên.
