@@ -78,6 +78,7 @@ export function FreeScheduleDetailSheet({
   const { toast } = useToast();
   const [students, setStudents] = useState<FreeScheduleStudent[]>([]);
   const [savedNotes, setSavedNotes] = useState<Record<string, string>>({});
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [reviewTarget, setReviewTarget] = useState<FreeScheduleStudent | null>(null);
 
   const { data: allEvaluationCriteria = [] } = useQuery<any[]>({
@@ -91,6 +92,11 @@ export function FreeScheduleDetailSheet({
     setSavedNotes(Object.fromEntries(
       initialStudents.map((student) => [student.studentClassId, student.note ?? ""]),
     ));
+    setSelectedStudentIds(
+      initialStudents
+        .filter((student) => student.status === "attended")
+        .map((student) => student.studentId),
+    );
     setReviewTarget(null);
   }, [session]);
 
@@ -124,6 +130,14 @@ export function FreeScheduleDetailSheet({
       );
       if (note !== undefined) {
         setSavedNotes((current) => ({ ...current, [studentClassId]: note }));
+      }
+      if (status === "attended") {
+        const student = students.find((item) => item.studentClassId === studentClassId);
+        if (student) {
+          setSelectedStudentIds((current) =>
+            current.includes(student.studentId) ? current : [...current, student.studentId],
+          );
+        }
       }
       onUpdated?.();
     },
@@ -240,7 +254,19 @@ export function FreeScheduleDetailSheet({
               ) : (
                 <div className="overflow-x-auto border-t border-slate-100">
                   <div className="min-w-[980px]">
-                    <div className="grid grid-cols-[minmax(230px,1.1fr)_minmax(180px,.85fr)_minmax(260px,1fr)_minmax(180px,.75fr)] items-center gap-4 bg-slate-50/80 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                    <div className="grid grid-cols-[32px_minmax(230px,1.1fr)_minmax(180px,.85fr)_minmax(260px,1fr)_minmax(180px,.75fr)] items-center gap-4 bg-slate-50/80 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      <span>
+                        <Checkbox
+                          checked={
+                            students.length > 0
+                            && students.every((student) => selectedStudentIds.includes(student.studentId))
+                          }
+                          onCheckedChange={(checked) => setSelectedStudentIds(
+                            checked ? students.map((student) => student.studentId) : [],
+                          )}
+                          aria-label="Chọn tất cả học viên"
+                        />
+                      </span>
                       <span>Học viên</span>
                       <span>Trạng thái điểm danh</span>
                       <span>Ghi chú</span>
@@ -257,21 +283,22 @@ export function FreeScheduleDetailSheet({
                       return (
                         <div
                           key={student.registrationId}
-                          className="grid grid-cols-[minmax(230px,1.1fr)_minmax(180px,.85fr)_minmax(260px,1fr)_minmax(180px,.75fr)] items-center gap-4 border-t border-slate-100 px-4 py-2.5 transition-colors hover:bg-slate-50"
+                          className="grid grid-cols-[32px_minmax(230px,1.1fr)_minmax(180px,.85fr)_minmax(260px,1fr)_minmax(180px,.75fr)] items-center gap-4 border-t border-slate-100 px-4 py-2.5 transition-colors hover:bg-slate-50"
                         >
+                          <Checkbox
+                            checked={selectedStudentIds.includes(student.studentId)}
+                            onCheckedChange={(checked) =>
+                              setSelectedStudentIds((current) =>
+                                checked
+                                  ? current.includes(student.studentId)
+                                    ? current
+                                    : [...current, student.studentId]
+                                  : current.filter((id) => id !== student.studentId),
+                              )
+                            }
+                            aria-label={`Chọn học viên ${student.fullName}`}
+                          />
                           <div className="flex min-w-0 items-center gap-3">
-                            <Checkbox
-                              checked={attended}
-                              disabled={updateMutation.isPending}
-                              onCheckedChange={(checked) =>
-                                updateMutation.mutate({
-                                  studentClassId: student.studentClassId,
-                                  status: checked === true ? "attended" : "registered",
-                                  note: student.note ?? "",
-                                })
-                              }
-                              aria-label={`Điểm danh ${student.fullName}`}
-                            />
                             <div className="min-w-0">
                               <div className="truncate text-sm font-medium text-slate-800">{student.fullName}</div>
                               <div className="truncate text-xs text-muted-foreground">{student.code}</div>

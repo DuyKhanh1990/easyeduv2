@@ -66,6 +66,7 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
     reviewData: Record<string, any>;
     published: boolean;
   }>>({});
+  const [selectedAttendStudentIds, setSelectedAttendStudentIds] = useState<string[]>([]);
   const [criteriaDialogOpen, setCriteriaDialogOpen] = useState(false);
   const [criteriaDraft, setCriteriaDraft] = useState<string[]>([]);
   const [criteriaOverride, setCriteriaOverride] = useState<string[] | undefined>();
@@ -146,6 +147,23 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
   const selectedAttendedCount = selectedAttendStudents.filter(
     ({ registration }: any) => registration.status === "attended",
   ).length;
+
+  useEffect(() => {
+    const visibleStudentIds = new Set(selectedAttendStudents.map(({ student }: any) => student.id));
+    const attendedStudentIds = selectedAttendStudents
+      .filter(({ registration }: any) => registration.status === "attended")
+      .map(({ student }: any) => student.id);
+    setSelectedAttendStudentIds((current) => {
+      const next = current.filter((id) => visibleStudentIds.has(id));
+      for (const id of attendedStudentIds) {
+        if (!next.includes(id)) next.push(id);
+      }
+      if (next.length === current.length && next.every((id, index) => id === current[index])) {
+        return current;
+      }
+      return next;
+    });
+  }, [selectedAttendDate, data?.registrations]);
 
   const classTeacherLabel = (classData?.teachers || [])
     .map((teacher: any) => teacher.fullName)
@@ -347,8 +365,23 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                     <span className="text-xs font-medium text-slate-800">({selectedAttendStudents.length})</span>
                   </div>
                   <div className="overflow-x-auto border-t border-slate-100">
-                    <div className="min-w-[720px]">
-                      <div className="grid grid-cols-[minmax(260px,1fr)_minmax(210px,.8fr)_minmax(220px,.85fr)_minmax(180px,.7fr)] items-center gap-4 bg-slate-50/80 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                    <div className="min-w-[752px]">
+                      <div className="grid grid-cols-[32px_minmax(260px,1fr)_minmax(210px,.8fr)_minmax(220px,.85fr)_minmax(180px,.7fr)] items-center gap-4 bg-slate-50/80 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        <span>
+                          <Checkbox
+                            checked={
+                              selectedAttendStudents.length > 0
+                              && selectedAttendStudents.every(({ student }: any) =>
+                                selectedAttendStudentIds.includes(student.id))
+                            }
+                            onCheckedChange={(checked) => setSelectedAttendStudentIds(
+                              checked
+                                ? selectedAttendStudents.map(({ student }: any) => student.id)
+                                : [],
+                            )}
+                            aria-label="Chọn tất cả học viên"
+                          />
+                        </span>
                         <span>Học viên</span>
                         <span>Trạng thái điểm danh</span>
                         <span>Ghi chú</span>
@@ -366,8 +399,19 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                         return (
                           <div
                             key={registration.id}
-                            className="grid grid-cols-[minmax(260px,1fr)_minmax(210px,.8fr)_minmax(220px,.85fr)_minmax(180px,.7fr)] items-center gap-4 border-t border-slate-100 px-4 py-2.5 transition-colors hover:bg-slate-50"
+                            className="grid grid-cols-[32px_minmax(260px,1fr)_minmax(210px,.8fr)_minmax(220px,.85fr)_minmax(180px,.7fr)] items-center gap-4 border-t border-slate-100 px-4 py-2.5 transition-colors hover:bg-slate-50"
                           >
+                            <Checkbox
+                              checked={selectedAttendStudentIds.includes(student.id)}
+                              onCheckedChange={(checked) =>
+                                setSelectedAttendStudentIds((current) =>
+                                  checked
+                                    ? current.includes(student.id) ? current : [...current, student.id]
+                                    : current.filter((id) => id !== student.id),
+                                )
+                              }
+                              aria-label={`Chọn học viên ${student.fullName}`}
+                            />
                             <div className="flex min-w-0 items-center gap-3">
                               <div className="min-w-0">
                                 <div className="truncate text-sm font-medium text-slate-800">{student.fullName}</div>
@@ -379,15 +423,26 @@ export function FreeClassCalendar({ classId, classData, classPerm }: FreeClassCa
                             <Select
                               value={status}
                               disabled={updateMutation.isPending}
-                              onValueChange={(nextStatus) =>
-                                updateMutation.mutate({
-                                  studentClassId: student.id,
-                                  date: selectedAttendDay.value,
-                                  action: "attend",
-                                  value: nextStatus === "attended",
-                                  status: nextStatus as "registered" | "attended" | "reserved",
-                                })
-                              }
+                              onValueChange={(nextStatus) => {
+                                updateMutation.mutate(
+                                  {
+                                    studentClassId: student.id,
+                                    date: selectedAttendDay.value,
+                                    action: "attend",
+                                    value: nextStatus === "attended",
+                                    status: nextStatus as "registered" | "attended" | "reserved",
+                                  },
+                                  {
+                                    onSuccess: () => {
+                                      if (nextStatus === "attended") {
+                                        setSelectedAttendStudentIds((current) =>
+                                          current.includes(student.id) ? current : [...current, student.id],
+                                        );
+                                      }
+                                    },
+                                  },
+                                );
+                              }}
                             >
                               <SelectTrigger className={cn(
                                 "h-8 w-[140px] text-xs",
