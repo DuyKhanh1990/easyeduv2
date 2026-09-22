@@ -92,6 +92,7 @@ interface SessionDetailPanelProps {
   mode?: "info" | "students" | "all";
   classPerm?: ClassPermissions;
   showMatrix?: boolean;
+  onToggleMatrix?: () => void;
 }
 
 export function SessionDetailPanel({
@@ -148,6 +149,7 @@ export function SessionDetailPanel({
   onViewContent,
   classPerm,
   showMatrix = false,
+  onToggleMatrix,
 }: SessionDetailPanelProps) {
   const { toast } = useToast();
   const canAdd = classPerm?.canAdd ?? true;
@@ -551,6 +553,26 @@ export function SessionDetailPanel({
             </Badge>
           )}
           <div className="ml-auto flex items-center gap-1">
+              {mode === "students" && onToggleMatrix && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-[10px]"
+                  onClick={onToggleMatrix}
+                >
+                  {showMatrix ? (
+                    <>
+                      <ClipboardList className="h-3.5 w-3.5" />
+                      Danh sách cũ
+                    </>
+                  ) : (
+                    <>
+                      <Users className="h-3.5 w-3.5" />
+                      Ma trận nháp
+                    </>
+                  )}
+                </Button>
+              )}
               {canAdd && (
               <AddStudentToSessionDialog
                 open={isAddStudentToSessionOpen}

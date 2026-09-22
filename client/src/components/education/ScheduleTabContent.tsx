@@ -75,6 +75,7 @@ export function ScheduleTabContent({
   classPerm,
 }: ScheduleTabContentProps) {
   const { toast } = useToast();
+  const [showMatrixDraft, setShowMatrixDraft] = useState(false);
 
   const {
     selectedClassSessionId,
@@ -738,7 +739,7 @@ export function ScheduleTabContent({
         </div>
 
         {/* Student list spans the full available width below both top columns */}
-        <div className="col-span-1 min-w-0 lg:col-span-2">
+        <div className={`col-span-1 min-w-0 ${showMatrixDraft ? "lg:col-span-2" : ""}`}>
           <SessionDetailPanel
             mode="students"
             classData={classData}
@@ -792,7 +793,8 @@ export function ScheduleTabContent({
             setIsSessionContentDialogOpen={setIsSessionContentDialogOpen}
             onViewContent={handleViewContent}
             classPerm={classPerm}
-            showMatrix
+            showMatrix={showMatrixDraft}
+            onToggleMatrix={() => setShowMatrixDraft((value) => !value)}
           />
         </div>
       </div>
