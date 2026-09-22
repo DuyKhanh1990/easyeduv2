@@ -297,11 +297,10 @@ export function TransferClassDialog({
     enabled: !!selectedToClassId && !!student?.id,
   });
   const targetDataLoading = loadingTarget || loadingTargetStudentSessions;
-  const targetAttendedSessionIds = new Set(
+  const targetExistingSessionIds = new Set(
     targetStudentSessions
       .filter((session) =>
-        session.attendanceStatus === "present"
-        && session.status !== "transferred"
+        session.status !== "transferred"
         && session.status !== "cancelled",
       )
       .map((session) => session.classSessionId),
@@ -310,14 +309,14 @@ export function TransferClassDialog({
     session.sessionIndex != null
     && session.sessionDate
     && session.status === "scheduled"
-    && !targetAttendedSessionIds.has(session.id),
+    && !targetExistingSessionIds.has(session.id),
   );
   const targetAvailableSessions = (targetSessions ?? []).filter((session) => {
     const sessionIndex = Number(session.sessionIndex);
     return Number.isFinite(sessionIndex)
       && sessionIndex >= Number(toSessionIndex)
       && session.status === "scheduled"
-      && !targetAttendedSessionIds.has(session.id);
+      && !targetExistingSessionIds.has(session.id);
   });
   const targetAvailableCount = targetAvailableSessions.length;
   const effectiveTransferCount = selectedToClassId && !targetDataLoading
@@ -340,7 +339,7 @@ export function TransferClassDialog({
     );
     const selectedSessionIsAvailable =
       selectedSession?.status === "scheduled"
-      && !targetAttendedSessionIds.has(selectedSession.id);
+      && !targetExistingSessionIds.has(selectedSession.id);
     if (!selectedSessionIsAvailable) {
       form.setValue("toSessionIndex", Number(selectableTargetSessions[0].sessionIndex), {
         shouldValidate: false,
@@ -1098,19 +1097,19 @@ export function TransferClassDialog({
                             <SelectContent>
                               {targetSessions?.map((s) => {
                                 if (s.sessionIndex == null || !s.sessionDate || s.status !== "scheduled") return null;
-                                 const isAlreadyAttended = targetAttendedSessionIds.has(s.id);
+                                 const isAlreadyRegistered = targetExistingSessionIds.has(s.id);
                                 return (
                                    <SelectItem
                                      key={s.id}
                                      value={s.sessionIndex.toString()}
-                                     disabled={isAlreadyAttended}
+                                     disabled={isAlreadyRegistered}
                                    >
-                                     <span className={cn(isAlreadyAttended && "text-muted-foreground")}>
+                                     <span className={cn(isAlreadyRegistered && "text-muted-foreground")}>
                                        Buổi {s.sessionIndex}: {getDayName(new Date(s.sessionDate).getDay())}, {format(new Date(s.sessionDate), "dd/MM/yyyy")}
                                      </span>
-                                     {isAlreadyAttended && (
+                                     {isAlreadyRegistered && (
                                        <span className="ml-2 text-[10px] text-muted-foreground">
-                                         (Đã có mặt)
+                                         (Đã có học viên)
                                        </span>
                                      )}
                                   </SelectItem>

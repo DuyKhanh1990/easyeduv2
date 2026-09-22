@@ -560,14 +560,15 @@ export async function transferStudentClass(data: {
       }
     }
 
-    // Already-attended target sessions are not transferable. The remaining
-    // sessions stay selectable and may receive a new pending attendance row.
+    // Any active student_sessions row means the student is already listed in
+    // that target session. Do not create another row, regardless of whether
+    // attendance has been recorded yet.
     const targetSessionCandidates = targetSessionPool
-      .filter((session) => existingTargetBySessionId.get(session.id)?.attendanceStatus !== "present")
+      .filter((session) => !existingTargetBySessionId.has(session.id))
       .slice(0, data.transferCount);
 
     if (targetSessionCandidates.length === 0) {
-      throw new Error("Lớp mới không còn buổi học chưa có mặt để chuyển");
+      throw new Error("Lớp mới không còn buổi học chưa có học viên để chuyển");
     }
 
     const effectiveTransferCount = Math.min(
