@@ -387,7 +387,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
   useEffect(() => {
     const visibleStudentIds = new Set(selectedAttendStudents.map(({ student }: any) => student.id));
     const attendedStudentIds = selectedAttendStudents
-      .filter(({ registration }: any) => registration.status === "attended")
+      .filter(({ registration }: any) => registration?.status === "attended")
       .map(({ student }: any) => student.id);
     setSelectedAttendStudentIds((current) => {
       const next = current.filter((id) => visibleStudentIds.has(id));
@@ -843,19 +843,19 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                             </Select>
                             <button
                               type="button"
-                              disabled={!classPerm?.canEdit}
+                              disabled={!classPerm?.canEdit || !registration?.id}
                               className={cn(
                                 "group flex min-w-0 items-center gap-1 text-left text-xs",
-                                classPerm?.canEdit
+                                classPerm?.canEdit && registration?.id
                                   ? "cursor-pointer hover:text-primary"
                                   : "cursor-default",
                               )}
                               onClick={() => {
-                                if (!classPerm?.canEdit) return;
+                                if (!classPerm?.canEdit || !registration?.id) return;
                                 setNoteDialog({
                                   studentClassId: student.id,
                                   registrationId: registration.id,
-                                   value: registration?.note || "",
+                                  value: registration.note || "",
                                   status,
                                 });
                               }}
@@ -897,8 +897,9 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                   <Plus className="h-3.5 w-3.5" />
                                 )}
                                 {(
-                                  reviewOverrides[registration.id]?.reviewData
-                                  ?? registration.reviewData
+                                  registration?.id
+                                    ? reviewOverrides[registration.id]?.reviewData ?? registration.reviewData
+                                    : undefined
                                 ) ? "Xem / sửa" : registration?.id ? "Nhập nhận xét" : "Nhận xét sau khi học"}
                               </Button>
                             </div>
@@ -1203,11 +1204,11 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                 </button>
                                 <button
                                   type="button"
-                                  disabled={!classPerm?.canEdit}
+                                    disabled={!classPerm?.canEdit || !current?.id}
                                   className="text-slate-400 hover:text-primary disabled:cursor-default disabled:opacity-50"
                                   title={note || "Ghi chú"}
                                   onClick={() => {
-                                    if (!classPerm?.canEdit) return;
+                                      if (!classPerm?.canEdit || !current?.id) return;
                                     setNoteDialog({
                                       studentClassId: student.id,
                                       registrationId: current.id,
@@ -1226,11 +1227,11 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                 </button>
                                 <button
                                   type="button"
-                                  disabled={!classPerm?.canEdit}
+                                    disabled={!classPerm?.canEdit || !current?.id}
                                   className="text-slate-400 hover:text-yellow-500 disabled:cursor-default disabled:opacity-50"
                                   title={hasReview ? "Xem / sửa nhận xét" : "Nhập nhận xét"}
                                   onClick={() => {
-                                    if (!classPerm?.canEdit) return;
+                                      if (!classPerm?.canEdit || !current?.id) return;
                                     setReviewTarget({ student, registration: current });
                                   }}
                                 >
