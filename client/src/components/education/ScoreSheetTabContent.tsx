@@ -748,40 +748,72 @@ export function ScoreSheetTabContent({
                 </div>
               ) : (
                 <div className="h-full flex flex-col">
-                  {removedStudentIds.size > 0 && (
+                  {(removedStudents.length > 0 || newStudents.length > 0) && (
                     <div className="flex items-center gap-2 px-4 py-2 border-b border-border/40 bg-muted/30">
                       <span className="text-xs text-muted-foreground">
-                        {removedStudentIds.size} học viên đã được loại khỏi bảng điểm
+                        {removedStudents.length > 0 && `${removedStudents.length} học viên đã loại`}
+                        {removedStudents.length > 0 && newStudents.length > 0 && " · "}
+                        {newStudents.length > 0 && `${newStudents.length} học viên mới`}
                       </span>
-                      <Select onValueChange={restoreStudent}>
-                        <SelectTrigger className="h-7 w-auto min-w-[170px] text-xs">
-                          <SelectValue placeholder="Thêm lại học viên" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {allStudents
-                            .filter((student: any) =>
-                              removedStudentIds.has(
-                                student.studentId || student.student?.id || student.id
-                              )
-                            )
-                            .map((student: any) => {
-                              const restoredStudentId =
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="h-7 min-w-[190px] text-xs justify-between">
+                            Thêm học viên vào bảng
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="w-[320px] p-2">
+                          <div className="max-h-64 overflow-y-auto space-y-1">
+                            {removedStudents.length > 0 && (
+                              <p className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">
+                                Học viên đã loại
+                              </p>
+                            )}
+                            {removedStudents.map((student: any) => {
+                              const studentId =
                                 student.studentId || student.student?.id || student.id;
+                              const name =
+                                student.fullName || student.full_name || student.student?.fullName || "Học viên";
                               return (
-                                <SelectItem
-                                  key={restoredStudentId}
-                                  value={restoredStudentId}
-                                  className="text-xs"
-                                >
-                                  {student.fullName ||
-                                    student.full_name ||
-                                    student.student?.fullName ||
-                                    "Học viên"}
-                                </SelectItem>
+                                <label key={`restore-${studentId}`} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted">
+                                  <Checkbox
+                                    checked={pendingStudentIds.has(studentId)}
+                                    onCheckedChange={(checked) => togglePendingStudent(studentId, checked === true)}
+                                  />
+                                  <span>[Đã loại] {name}</span>
+                                </label>
                               );
                             })}
-                        </SelectContent>
-                      </Select>
+                            {newStudents.length > 0 && (
+                              <p className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">
+                                Học viên active mới
+                              </p>
+                            )}
+                            {newStudents.map((student: any) => {
+                              const studentId =
+                                student.studentId || student.student?.id || student.id;
+                              const name =
+                                student.fullName || student.full_name || student.student?.fullName || "Học viên";
+                              return (
+                                <label key={`new-${studentId}`} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted">
+                                  <Checkbox
+                                    checked={pendingStudentIds.has(studentId)}
+                                    onCheckedChange={(checked) => togglePendingStudent(studentId, checked === true)}
+                                  />
+                                  <span>[Mới vào lớp] {name}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                          <div className="mt-2 flex items-center justify-between border-t pt-2">
+                            <span className="text-xs text-muted-foreground">
+                              Đã chọn: {pendingStudentIds.size}
+                            </span>
+                            <Button size="sm" className="h-7 text-xs" disabled={pendingStudentIds.size === 0} onClick={addPendingStudents}>
+                              Thêm đã chọn
+                            </Button>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                   )}
                   <div className="flex-1 overflow-auto">
