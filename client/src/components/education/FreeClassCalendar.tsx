@@ -791,7 +791,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                         const studentStatus = isExpired
                           ? "Hết hạn"
                           : isExpiringSoon
-                          ? "Sắp hết hạn"
+                          ? "Sắp Hết hạn"
                           : "Còn Hạn";
                         const remainingDays = getRemainingDays(today, studentEnd);
                         return (
@@ -834,7 +834,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                   isExpired
                                     ? "text-red-600"
                                     : isExpiringSoon
-                                    ? "text-amber-600"
+                                      ? "text-orange-600"
                                     : "text-blue-600",
                                 )}>
                                   · Trạng thái: {studentStatus}
