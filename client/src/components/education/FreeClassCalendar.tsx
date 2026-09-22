@@ -102,6 +102,13 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
   const [criteriaDialogOpen, setCriteriaDialogOpen] = useState(false);
   const [criteriaDraft, setCriteriaDraft] = useState<string[]>([]);
   const [criteriaOverride, setCriteriaOverride] = useState<string[] | undefined>();
+  const [assignmentEditor, setAssignmentEditor] = useState<{
+    studentClassId: string;
+    date: string;
+    studentName: string;
+    teacherId: string;
+    shiftTemplateId: string;
+  } | null>(null);
   const [bulkAttendanceDialogOpen, setBulkAttendanceDialogOpen] = useState(false);
   const [bulkAttendanceStatus, setBulkAttendanceStatus] = useState<
     "registered" | "attended" | "reserved"
@@ -138,6 +145,15 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
   const { data: allEvaluationCriteria = [] } = useQuery<any[]>({
     queryKey: ["/api/evaluation-criteria"],
   });
+  const locationId = classData?.locationId || classData?.location?.id;
+  const { data: availableTeachers = [] } = useQuery<any[]>({
+    queryKey: [locationId ? `/api/staff?locationId=${locationId}&minimal=true` : "/api/staff?minimal=true"],
+    enabled: !!locationId,
+  });
+  const { data: availableShifts = [] } = useQuery<any[]>({
+    queryKey: [locationId ? `/api/shift-templates?locationId=${locationId}&type=class` : "/api/shift-templates?type=class"],
+    enabled: !!locationId,
+  });
 
   const updateMutation = useMutation({
     mutationFn: async (payload: {
@@ -158,6 +174,29 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
     onError: (error: any) => toast({ title: "Không thể cập nhật", description: error.message, variant: "destructive" }),
   });
 
+  const assignmentMutation = useMutation({
+    mutationFn: async (payload: {
+      scope: "day" | "student";
+      date: string;
+      studentClassId?: string;
+      teacherId: string | null;
+      shiftTemplateId: string | null;
+    }) => {
+      await apiRequest("PATCH", `/api/classes/${classId}/free-schedule/assignment`, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/free-schedule`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}`] });
+      setAssignmentEditor(null);
+      toast({ title: "Đã cập nhật phân công giáo viên" });
+    },
+    onError: (error: any) => toast({
+      title: "Không thể cập nhật phân công",
+      description: error?.message || "Vui lòng thử lại.",
+      variant: "destructive",
+    }),
+  });
+
   const days = useMemo(() => {
     const count = getDaysInMonth(monthDate);
     return Array.from({ length: count }, (_, index) => {
@@ -171,6 +210,13 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
     for (const row of data?.registrations || []) map.set(`${row.studentClassId}:${row.registrationDate}`, row);
     return map;
   }, [data?.registrations]);
+  const dayAssignments = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const row of data?.dayAssignments || []) {
+      map.set(String(row.assignmentDate).slice(0, 10), row);
+    }
+    return map;
+  }, [data?.dayAssignments]);
 
   const students = (data?.students || []).filter((student: any) => student.status === "active");
   const classStart = String(classData?.startDate || "").slice(0, 10);
@@ -925,6 +971,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                 {visibleDays.map((day) => {
                   const isSelectedDay = selectedDate === day.value;
                   const isTodayColumn = today === day.value;
+                    const dayAssignment = dayAssignments.get(day.value);
                   return (
                     <th
                       key={day.value}
@@ -948,6 +995,56 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                         <span>{day.label}</span>
                         <span className="text-[10px] text-muted-foreground">{day.weekday}</span>
                       </button>
+                      <div className="mt-1 space-y-1 px-0.5">
+                        <Select
+                          value={dayAssignment?.teacherId || "__none__"}
+                          disabled={!classPerm?.canEdit || assignmentMutation.isPending}
+                          onValueChange={(value) =>
+                            assignmentMutation.mutate({
+                              scope: "day",
+                              date: day.value,
+                              teacherId: value === "__none__" ? null : value,
+                              shiftTemplateId: dayAssignment?.shiftTemplateId || null,
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-5 w-full min-w-[92px] justify-center px-1 text-[9px]">
+                            <SelectValue placeholder="GV theo lớp" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">GV theo lớp</SelectItem>
+                            {availableTeachers.map((teacher: any) => (
+                              <SelectItem key={teacher.id} value={String(teacher.id)}>
+                                {teacher.fullName || teacher.name || teacher.code || "Giáo viên"}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Select
+                          value={dayAssignment?.shiftTemplateId || "__none__"}
+                          disabled={!classPerm?.canEdit || assignmentMutation.isPending}
+                          onValueChange={(value) =>
+                            assignmentMutation.mutate({
+                              scope: "day",
+                              date: day.value,
+                              teacherId: dayAssignment?.teacherId || null,
+                              shiftTemplateId: value === "__none__" ? null : value,
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-5 w-full min-w-[92px] justify-center px-1 text-[9px]">
+                            <SelectValue placeholder="Ca theo lớp" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">Ca theo lớp</SelectItem>
+                            {availableShifts.map((shift: any) => (
+                              <SelectItem key={shift.id} value={String(shift.id)}>
+                                {shift.name} ({String(shift.startTime || "").slice(0, 5)}–{String(shift.endTime || "").slice(0, 5)})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </th>
                   );
                 })}
@@ -1029,6 +1126,10 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                   </td>
                   {visibleDays.map((day) => {
                     const current = registrations.get(`${student.id}:${day.value}`);
+                    const dayAssignment = dayAssignments.get(day.value);
+                    const effectiveTeacherId = current?.teacherId || dayAssignment?.teacherId || null;
+                    const effectiveShiftTemplateId = current?.shiftTemplateId || dayAssignment?.shiftTemplateId || null;
+                    const hasStudentAssignment = !!current && (!!current.teacherId || !!current.shiftTemplateId);
                     const outside = (classStart && day.value < classStart) || (classEnd && day.value > classEnd)
                       || (student.startDate && day.value < String(student.startDate).slice(0, 10))
                       || (student.endDate && day.value > String(student.endDate).slice(0, 10));
@@ -1106,6 +1207,31 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                 </SelectContent>
                               </Select>
                               <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  disabled={!classPerm?.canEdit}
+                                  className={cn(
+                                    "text-slate-400 hover:text-indigo-500 disabled:cursor-default disabled:opacity-50",
+                                    hasStudentAssignment && "text-indigo-600",
+                                  )}
+                                  title={
+                                    hasStudentAssignment
+                                      ? "Đang dùng GV/ca riêng cho học viên"
+                                      : "Chọn GV/ca riêng cho học viên"
+                                  }
+                                  onClick={() => {
+                                    if (!classPerm?.canEdit) return;
+                                    setAssignmentEditor({
+                                      studentClassId: student.id,
+                                      date: day.value,
+                                      studentName: student.fullName,
+                                      teacherId: current?.teacherId || "",
+                                      shiftTemplateId: current?.shiftTemplateId || "",
+                                    });
+                                  }}
+                                >
+                                  <UserRound className="h-3 w-3" />
+                                </button>
                                 <button
                                   type="button"
                                   disabled={!classPerm?.canEdit}
@@ -1225,6 +1351,98 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
               }}
             >
               Lưu
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={!!assignmentEditor}
+        onOpenChange={(open) => {
+          if (!open && !assignmentMutation.isPending) setAssignmentEditor(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle>Phân công riêng cho học viên</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              {assignmentEditor?.studentName || "Học viên"} · {assignmentEditor?.date ? formatStudentDate(assignmentEditor.date) : "—"}
+            </p>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-600">Giáo viên riêng</label>
+              <Select
+                value={assignmentEditor?.teacherId || "__none__"}
+                disabled={assignmentMutation.isPending}
+                onValueChange={(value) =>
+                  setAssignmentEditor((current) => current
+                    ? { ...current, teacherId: value === "__none__" ? "" : value }
+                    : current)
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Theo giáo viên của ngày" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Theo giáo viên của ngày</SelectItem>
+                  {availableTeachers.map((teacher: any) => (
+                    <SelectItem key={teacher.id} value={String(teacher.id)}>
+                      {teacher.fullName || teacher.name || teacher.code || "Giáo viên"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-600">Ca dạy riêng</label>
+              <Select
+                value={assignmentEditor?.shiftTemplateId || "__none__"}
+                disabled={assignmentMutation.isPending}
+                onValueChange={(value) =>
+                  setAssignmentEditor((current) => current
+                    ? { ...current, shiftTemplateId: value === "__none__" ? "" : value }
+                    : current)
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Theo ca của ngày" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Theo ca của ngày</SelectItem>
+                  {availableShifts.map((shift: any) => (
+                    <SelectItem key={shift.id} value={String(shift.id)}>
+                      {shift.name} ({String(shift.startTime || "").slice(0, 5)}–{String(shift.endTime || "").slice(0, 5)})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={assignmentMutation.isPending}
+              onClick={() => setAssignmentEditor(null)}
+            >
+              Hủy
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={assignmentMutation.isPending || !assignmentEditor}
+              onClick={() => {
+                if (!assignmentEditor) return;
+                assignmentMutation.mutate({
+                  scope: "student",
+                  studentClassId: assignmentEditor.studentClassId,
+                  date: assignmentEditor.date,
+                  teacherId: assignmentEditor.teacherId || null,
+                  shiftTemplateId: assignmentEditor.shiftTemplateId || null,
+                });
+              }}
+            >
+              {assignmentMutation.isPending ? "Đang lưu..." : "Lưu phân công"}
             </Button>
           </DialogFooter>
         </DialogContent>

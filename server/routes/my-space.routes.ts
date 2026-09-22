@@ -30,6 +30,7 @@ import {
   salarySheetEmployees,
   onlineLearningRules,
   freeClassRegistrations,
+  freeClassDayAssignments,
   freeClassSessionContents,
   studentClasses,
 } from "@shared/schema";
@@ -331,6 +332,10 @@ async function getStaffFreeSessionRows(classId: string, sessionDate: string, sta
     .innerJoin(classes, eq(freeClassRegistrations.classId, classes.id))
     .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
     .innerJoin(students, eq(freeClassRegistrations.studentId, students.id))
+    .leftJoin(freeClassDayAssignments, and(
+      eq(freeClassDayAssignments.classId, freeClassRegistrations.classId),
+      eq(freeClassDayAssignments.assignmentDate, freeClassRegistrations.registrationDate),
+    ))
     .where(and(
       eq(freeClassRegistrations.classId, classId),
       eq(freeClassRegistrations.registrationDate, sessionDate),
@@ -338,9 +343,52 @@ async function getStaffFreeSessionRows(classId: string, sessionDate: string, sta
       inArray(studentClasses.status, ["active", "waiting"]),
       or(
         eq(freeClassRegistrations.teacherId, staffId),
-        sql`${classes.teacherIds} @> ARRAY[${staffId}]::uuid[]`,
+        eq(freeClassDayAssignments.teacherId, staffId),
+        and(
+          isNull(freeClassRegistrations.teacherId),
+          isNull(freeClassDayAssignments.teacherId),
+          sql`${classes.teacherIds} @> ARRAY[${staffId}]::uuid[]`,
+        ),
       ),
     ));
+}
+
+async function getFreeDayAssignmentMap(classIds: string[], dateFrom?: string, dateTo?: string) {
+  if (classIds.length === 0) return new Map<string, any>();
+  const conditions = [inArray(freeClassDayAssignments.classId, classIds)];
+  if (dateFrom) conditions.push(gte(freeClassDayAssignments.assignmentDate, dateFrom));
+  if (dateTo) conditions.push(lte(freeClassDayAssignments.assignmentDate, dateTo));
+  const rows = await db
+    .select({
+      classId: freeClassDayAssignments.classId,
+      assignmentDate: freeClassDayAssignments.assignmentDate,
+      teacherId: freeClassDayAssignments.teacherId,
+      shiftTemplateId: freeClassDayAssignments.shiftTemplateId,
+      shiftName: shiftTemplates.name,
+      shiftStart: shiftTemplates.startTime,
+      shiftEnd: shiftTemplates.endTime,
+    })
+    .from(freeClassDayAssignments)
+    .leftJoin(shiftTemplates, eq(shiftTemplates.id, freeClassDayAssignments.shiftTemplateId))
+    .where(and(...conditions));
+  return new Map(rows.map((row) => [
+    `${row.classId}:${String(row.assignmentDate).slice(0, 10)}`,
+    row,
+  ]));
+}
+
+async function getFreeShiftMap(shiftIds: string[]) {
+  if (shiftIds.length === 0) return new Map<string, any>();
+  const rows = await db
+    .select({
+      id: shiftTemplates.id,
+      name: shiftTemplates.name,
+      startTime: shiftTemplates.startTime,
+      endTime: shiftTemplates.endTime,
+    })
+    .from(shiftTemplates)
+    .where(inArray(shiftTemplates.id, shiftIds));
+  return new Map(rows.map((row) => [row.id, row]));
 }
 
 async function canManageFreeClass(classId: string, staffId: string, isSuperAdmin = false) {
@@ -775,6 +823,7 @@ export function registerMySpaceRoutes(app: Express): void {
           sessionDate: freeClassRegistrations.registrationDate,
           registrationStatus: freeClassRegistrations.status,
           teacherId: freeClassRegistrations.teacherId,
+           shiftTemplateId: freeClassRegistrations.shiftTemplateId,
           note: freeClassRegistrations.note,
           reviewData: freeClassRegistrations.reviewData,
           reviewPublished: freeClassRegistrations.reviewPublished,
@@ -794,11 +843,23 @@ export function registerMySpaceRoutes(app: Express): void {
         ))
         .orderBy(freeClassRegistrations.registrationDate);
 
+      const freeDayAssignmentMap = await getFreeDayAssignmentMap(
+        [...new Set(freeRows.map((row) => row.classId))],
+        dateFrom,
+        dateTo,
+      );
+      const freeOverrideShiftMap = await getFreeShiftMap(
+        [...new Set(freeRows.map((row) => row.shiftTemplateId).filter(Boolean) as string[])],
+      );
       const freeTeacherIds = [...new Set(
-        freeRows.flatMap((row) => [
-          ...(row.classTeacherIds ?? []),
-          ...(row.teacherId ? [row.teacherId] : []),
-        ]),
+        freeRows.flatMap((row) => {
+          const dayAssignment = freeDayAssignmentMap.get(`${row.classId}:${String(row.sessionDate).slice(0, 10)}`);
+          return row.teacherId
+            ? [row.teacherId]
+            : dayAssignment?.teacherId
+            ? [dayAssignment.teacherId]
+            : (row.classTeacherIds ?? []);
+        }),
       )];
       const freeTeacherRows = freeTeacherIds.length > 0
         ? await db
@@ -809,10 +870,17 @@ export function registerMySpaceRoutes(app: Express): void {
       const freeTeacherMap = new Map(freeTeacherRows.map((teacher) => [teacher.id, teacher.fullName ?? ""]));
       for (const row of freeRows) {
         const date = String(row.sessionDate).slice(0, 10);
-        const rowTeacherIds = [
-          ...(row.classTeacherIds ?? []),
-          ...(row.teacherId ? [row.teacherId] : []),
-        ];
+        const dayAssignment = freeDayAssignmentMap.get(`${row.classId}:${date}`);
+        const effectiveTeacherIds = row.teacherId
+          ? [row.teacherId]
+          : dayAssignment?.teacherId
+          ? [dayAssignment.teacherId]
+          : (row.classTeacherIds ?? []);
+        const effectiveShift = row.shiftTemplateId
+          ? freeOverrideShiftMap.get(row.shiftTemplateId)
+          : dayAssignment?.shiftTemplateId
+          ? dayAssignment
+          : null;
         sessions.push({
           classSessionId: getFreeSessionId(row.registrationId),
           studentSessionId: null,
@@ -822,13 +890,13 @@ export function registerMySpaceRoutes(app: Express): void {
           className: row.className,
           classCode: row.classCode,
           classColor: row.classColor ?? null,
-          startTime: "",
-          endTime: "",
+           startTime: effectiveShift?.shiftStart || effectiveShift?.startTime || "",
+           endTime: effectiveShift?.shiftEnd || effectiveShift?.endTime || "",
           learningFormat: row.learningFormat ?? "offline",
           onlineLink: row.onlineLink ?? null,
           locationId: row.locationId ?? null,
           locationName: null,
-          teacherNames: rowTeacherIds.map((id) => freeTeacherMap.get(id)).filter(Boolean) as string[],
+           teacherNames: effectiveTeacherIds.map((id) => freeTeacherMap.get(id)).filter(Boolean) as string[],
           enrolledCount: 1,
           sessionStatus: "scheduled",
           attendanceStatus: mapFreeAttendanceStatus(row.registrationStatus),
@@ -1176,7 +1244,8 @@ export function registerMySpaceRoutes(app: Express): void {
             studentId: freeClassRegistrations.studentId,
             sessionDate: freeClassRegistrations.registrationDate,
             status: freeClassRegistrations.status,
-            teacherId: freeClassRegistrations.teacherId,
+             teacherId: freeClassRegistrations.teacherId,
+             shiftTemplateId: freeClassRegistrations.shiftTemplateId,
             note: freeClassRegistrations.note,
             reviewData: freeClassRegistrations.reviewData,
             reviewPublished: freeClassRegistrations.reviewPublished,
@@ -1197,13 +1266,22 @@ export function registerMySpaceRoutes(app: Express): void {
           .limit(1);
 
         if (!freeRow) return res.status(404).json({ message: "Không tìm thấy buổi học tự do" });
-        const teacherIds = [
-          ...(freeRow.classTeacherIds ?? []),
-          ...(freeRow.teacherId ? [freeRow.teacherId] : []),
-        ];
+        const date = String(freeRow.sessionDate).slice(0, 10);
+        const freeDayAssignmentMap = await getFreeDayAssignmentMap([freeRow.classId], date, date);
+        const dayAssignment = freeDayAssignmentMap.get(`${freeRow.classId}:${date}`);
+        const effectiveTeacherIds = freeRow.teacherId
+          ? [freeRow.teacherId]
+          : dayAssignment?.teacherId
+          ? [dayAssignment.teacherId]
+          : (freeRow.classTeacherIds ?? []);
+        const effectiveShift = freeRow.shiftTemplateId
+          ? (await getFreeShiftMap([freeRow.shiftTemplateId])).get(freeRow.shiftTemplateId)
+          : dayAssignment?.shiftTemplateId
+          ? dayAssignment
+          : null;
+        const teacherIds = [...new Set(effectiveTeacherIds)];
         const teacherNames = await getTeacherNames([...new Set(teacherIds)]);
         const linkedStudent = ctx.linkedStudents.find((s) => s.id === freeRow.studentId);
-        const date = String(freeRow.sessionDate).slice(0, 10);
         const freeContents = await getFreeSessionContents(freeRow.classId, date, freeRow.studentId);
 
         return res.json({
@@ -1214,8 +1292,8 @@ export function registerMySpaceRoutes(app: Express): void {
           className: freeRow.className,
           classCode: freeRow.classCode,
           classColor: freeRow.classColor ?? null,
-          startTime: "",
-          endTime: "",
+          startTime: effectiveShift?.shiftStart || effectiveShift?.startTime || "",
+          endTime: effectiveShift?.shiftEnd || effectiveShift?.endTime || "",
           learningFormat: freeRow.learningFormat ?? "offline",
           onlineLink: freeRow.onlineLink ?? null,
           locationId: freeRow.locationId ?? null,
@@ -1647,6 +1725,7 @@ export function registerMySpaceRoutes(app: Express): void {
           registrationDate: freeClassRegistrations.registrationDate,
           registrationStatus: freeClassRegistrations.status,
           teacherId: freeClassRegistrations.teacherId,
+           shiftTemplateId: freeClassRegistrations.shiftTemplateId,
           studentClassId: freeClassRegistrations.studentClassId,
           studentId: freeClassRegistrations.studentId,
           studentName: students.fullName,
@@ -1665,16 +1744,31 @@ export function registerMySpaceRoutes(app: Express): void {
           inArray(studentClasses.status, ["active", "waiting"]),
           gte(freeClassRegistrations.registrationDate, dateFrom),
           lte(freeClassRegistrations.registrationDate, dateTo),
-          or(
-            eq(freeClassRegistrations.teacherId, staffRecord.id),
-            sql`${classes.teacherIds} @> ARRAY[${staffRecord.id}]::uuid[]`,
-          ),
         ))
         .orderBy(freeClassRegistrations.registrationDate);
 
+       const freeDayAssignmentMap = await getFreeDayAssignmentMap(
+         [...new Set(freeRows.map((row) => row.classId))],
+         dateFrom,
+         dateTo,
+       );
+       const freeOverrideShiftMap = await getFreeShiftMap(
+         [...new Set(freeRows.map((row) => row.shiftTemplateId).filter(Boolean) as string[])],
+       );
       const freeSessionMap = new Map<string, any>();
       for (const row of freeRows) {
         const date = String(row.registrationDate).slice(0, 10);
+         const dayAssignment = freeDayAssignmentMap.get(`${row.classId}:${date}`);
+         const effectiveTeacherId = row.teacherId || dayAssignment?.teacherId || null;
+         const visibleToStaff = effectiveTeacherId
+           ? effectiveTeacherId === staffRecord.id
+           : (row.classTeacherIds ?? []).includes(staffRecord.id);
+         if (!visibleToStaff) continue;
+         const effectiveShift = row.shiftTemplateId
+           ? freeOverrideShiftMap.get(row.shiftTemplateId)
+           : dayAssignment?.shiftTemplateId
+           ? dayAssignment
+           : null;
         const key = `${row.classId}:${date}`;
         let freeSession = freeSessionMap.get(key);
         if (!freeSession) {
@@ -1687,8 +1781,8 @@ export function registerMySpaceRoutes(app: Express): void {
             className: row.className,
             classCode: row.classCode,
             classColor: row.classColor ?? null,
-            startTime: "",
-            endTime: "",
+             startTime: effectiveShift?.shiftStart || effectiveShift?.startTime || "",
+             endTime: effectiveShift?.shiftEnd || effectiveShift?.endTime || "",
             learningFormat: row.learningFormat ?? "offline",
             onlineLink: row.onlineLink ?? null,
             locationId: row.locationId ?? null,
@@ -1709,7 +1803,10 @@ export function registerMySpaceRoutes(app: Express): void {
           fullName: row.studentName,
           code: row.studentCode,
           status: row.registrationStatus,
-          teacherId: row.teacherId,
+           teacherId: effectiveTeacherId,
+           shiftTemplateId: row.shiftTemplateId || dayAssignment?.shiftTemplateId || null,
+           shiftStart: effectiveShift?.shiftStart || effectiveShift?.startTime || null,
+           shiftEnd: effectiveShift?.shiftEnd || effectiveShift?.endTime || null,
           note: row.note ?? null,
           reviewData: row.reviewData,
           reviewPublished: row.reviewPublished ?? false,
@@ -1793,6 +1890,7 @@ export function registerMySpaceRoutes(app: Express): void {
             studentId: freeClassRegistrations.studentId,
             status: freeClassRegistrations.status,
             teacherId: freeClassRegistrations.teacherId,
+             shiftTemplateId: freeClassRegistrations.shiftTemplateId,
             note: freeClassRegistrations.note,
             reviewData: freeClassRegistrations.reviewData,
             reviewPublished: freeClassRegistrations.reviewPublished,
@@ -1809,23 +1907,43 @@ export function registerMySpaceRoutes(app: Express): void {
             eq(freeClassRegistrations.registrationDate, freeDate),
             eq(classes.classType, "free"),
             inArray(studentClasses.status, ["active", "waiting"]),
-            or(
-              eq(freeClassRegistrations.teacherId, staffRecord.id),
-              sql`${classes.teacherIds} @> ARRAY[${staffRecord.id}]::uuid[]`,
-            ),
           ))
           .orderBy(students.fullName);
 
-        if (freeRows.length === 0) {
+        const freeDayAssignmentMap = await getFreeDayAssignmentMap([freeClassId], freeDate, freeDate);
+        const dayAssignment = freeDayAssignmentMap.get(`${freeClassId}:${freeDate}`);
+        const freeOverrideShiftMap = await getFreeShiftMap(
+          [...new Set(freeRows.map((row) => row.shiftTemplateId).filter(Boolean) as string[])],
+        );
+        const visibleFreeRows = freeRows
+          .map((row) => {
+            const effectiveTeacherId = row.teacherId || dayAssignment?.teacherId || null;
+            const effectiveShift = row.shiftTemplateId
+              ? freeOverrideShiftMap.get(row.shiftTemplateId)
+              : dayAssignment?.shiftTemplateId
+              ? dayAssignment
+              : null;
+            return {
+              ...row,
+              effectiveTeacherId,
+              effectiveShift,
+            };
+          })
+          .filter((row) =>
+            row.effectiveTeacherId
+              ? row.effectiveTeacherId === staffRecord.id
+              : (row.classTeacherIds ?? []).includes(staffRecord.id),
+          );
+
+        if (visibleFreeRows.length === 0) {
           return res.status(404).json({ message: "Không tìm thấy buổi học tự do" });
         }
 
-        const first = freeRows[0];
+        const first = visibleFreeRows[0];
         const teacherIds = [...new Set(
-          freeRows.flatMap((row) => [
-            ...(row.classTeacherIds ?? []),
-            ...(row.teacherId ? [row.teacherId] : []),
-          ]),
+          visibleFreeRows.map((row) =>
+            row.effectiveTeacherId || (row.classTeacherIds ?? [])[0],
+          ).filter(Boolean),
         )];
         const teachers = await getTeachersWithIds(teacherIds);
         const freeContents = await getFreeSessionContents(first.classId, freeDate);
@@ -1839,8 +1957,8 @@ export function registerMySpaceRoutes(app: Express): void {
           className: first.className,
           classCode: first.classCode,
           classColor: first.classColor ?? null,
-          startTime: "",
-          endTime: "",
+          startTime: first.effectiveShift?.shiftStart || first.effectiveShift?.startTime || "",
+          endTime: first.effectiveShift?.shiftEnd || first.effectiveShift?.endTime || "",
           learningFormat: first.learningFormat ?? "offline",
           onlineLink: first.onlineLink ?? null,
           locationName: first.locationName ?? null,
@@ -1857,18 +1975,21 @@ export function registerMySpaceRoutes(app: Express): void {
           generalContents: freeContents.general.map(mapFreeContentForCalendar),
           personalContents: [],
           userType: "staff",
-          enrolledCount: freeRows.length,
-          attendancePendingCount: freeRows.filter((row) => row.status === "registered").length,
-          reviewedCount: freeRows.filter((row) => row.reviewPublished).length,
+          enrolledCount: visibleFreeRows.length,
+          attendancePendingCount: visibleFreeRows.filter((row) => row.status === "registered").length,
+          reviewedCount: visibleFreeRows.filter((row) => row.reviewPublished).length,
           isFreeSession: true,
-          freeStudents: freeRows.map((row) => ({
+          freeStudents: visibleFreeRows.map((row) => ({
             registrationId: row.registrationId,
             studentClassId: row.studentClassId,
             studentId: row.studentId,
             fullName: row.studentName,
             code: row.studentCode,
             status: row.status,
-            teacherId: row.teacherId,
+            teacherId: row.effectiveTeacherId,
+            shiftTemplateId: row.shiftTemplateId || dayAssignment?.shiftTemplateId || null,
+            shiftStart: row.effectiveShift?.shiftStart || row.effectiveShift?.startTime || null,
+            shiftEnd: row.effectiveShift?.shiftEnd || row.effectiveShift?.endTime || null,
             note: row.note ?? null,
             reviewData: row.reviewData,
             reviewPublished: row.reviewPublished ?? false,

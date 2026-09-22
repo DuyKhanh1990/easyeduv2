@@ -5,7 +5,7 @@ import { getClassFormatSummary, getClassStatusSummary, getNewClassesSummary, get
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { db, pool } from "../db";
-import { classSessions, studentSessions, freeClassRegistrations, students, classes, studentClasses, staff, staffAssignments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, invoiceItems, courseFeePackages, financePromotions, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
+import { classSessions, studentSessions, freeClassRegistrations, freeClassDayAssignments, students, classes, studentClasses, staff, staffAssignments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, invoiceItems, courseFeePackages, financePromotions, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
 import { eq, and, sql, inArray, avg, between, gte, lte, gt, desc, asc, or, ilike, isNotNull, isNull, ne } from "drizzle-orm";
 import { sendAttendanceNotification, sendReviewNotification, sendContentNotification } from "../lib/attendance-notification";
 import { enforceAttendanceTimeLimit, getStaffRoleIds } from "../lib/attendance-limit";
@@ -212,10 +212,26 @@ async function emitCalendarUpdateForClass(classId: string): Promise<void> {
       .from(classSessions)
       .where(and(eq(classSessions.classId, classId), sql`${classSessions.status} != 'cancelled'`))
       .limit(100);
+    const freeDayTeacherRows = await db
+      .select({ teacherId: freeClassDayAssignments.teacherId })
+      .from(freeClassDayAssignments)
+      .where(and(
+        eq(freeClassDayAssignments.classId, classId),
+        isNotNull(freeClassDayAssignments.teacherId),
+      ));
+    const freeRegistrationTeacherRows = await db
+      .select({ teacherId: freeClassRegistrations.teacherId })
+      .from(freeClassRegistrations)
+      .where(and(
+        eq(freeClassRegistrations.classId, classId),
+        isNotNull(freeClassRegistrations.teacherId),
+      ));
 
     const allStaffIds = [
       ...(classData?.teacherIds ?? []),
       ...sessionTeacherRows.flatMap(s => s.teacherIds ?? []),
+      ...freeDayTeacherRows.map(row => row.teacherId).filter(Boolean),
+      ...freeRegistrationTeacherRows.map(row => row.teacherId).filter(Boolean),
     ];
     const uniqueStaffIds = [...new Set(allStaffIds)];
 
@@ -1649,6 +1665,7 @@ export function registerClassesRoutes(app: Express): void {
           studentId: freeClassRegistrations.studentId,
           registrationDate: freeClassRegistrations.registrationDate,
           teacherId: freeClassRegistrations.teacherId,
+          shiftTemplateId: freeClassRegistrations.shiftTemplateId,
           status: freeClassRegistrations.status,
           registeredBy: freeClassRegistrations.registeredBy,
           registeredAt: freeClassRegistrations.registeredAt,
@@ -1665,10 +1682,31 @@ export function registerClassesRoutes(app: Express): void {
           sql`${freeClassRegistrations.registrationDate} < ${nextMonth}`,
         ))
         .orderBy(asc(freeClassRegistrations.registrationDate));
+      const dayAssignments = await db
+        .select({
+          id: freeClassDayAssignments.id,
+          assignmentDate: freeClassDayAssignments.assignmentDate,
+          teacherId: freeClassDayAssignments.teacherId,
+          teacherName: staff.fullName,
+          shiftTemplateId: freeClassDayAssignments.shiftTemplateId,
+          shiftName: shiftTemplates.name,
+          shiftStart: shiftTemplates.startTime,
+          shiftEnd: shiftTemplates.endTime,
+        })
+        .from(freeClassDayAssignments)
+        .leftJoin(staff, eq(staff.id, freeClassDayAssignments.teacherId))
+        .leftJoin(shiftTemplates, eq(shiftTemplates.id, freeClassDayAssignments.shiftTemplateId))
+        .where(and(
+          eq(freeClassDayAssignments.classId, classId),
+          gte(freeClassDayAssignments.assignmentDate, monthStart),
+          sql`${freeClassDayAssignments.assignmentDate} < ${nextMonth}`,
+        ))
+        .orderBy(asc(freeClassDayAssignments.assignmentDate));
       res.json({
         month,
         students: studentsInClass,
         registrations,
+        dayAssignments,
         evaluationCriteriaIds: classRow.evaluationCriteriaIds ?? [],
         teacherIds: classRow.teacherIds ?? [],
       });
@@ -1677,11 +1715,127 @@ export function registerClassesRoutes(app: Express): void {
     }
   });
 
+  app.patch("/api/classes/:classId/free-schedule/assignment", async (req, res) => {
+    const classId = String(req.params.classId);
+    const body = req.body || {};
+    const scope = body.scope === "student" ? "student" : body.scope === "day" ? "day" : null;
+    const date = String(body.date || "");
+    const teacherId = body.teacherId ? String(body.teacherId) : null;
+    const shiftTemplateId = body.shiftTemplateId ? String(body.shiftTemplateId) : null;
+    const studentClassId = body.studentClassId ? String(body.studentClassId) : null;
+    if (!scope || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ message: "Thiếu phạm vi hoặc ngày phân công hợp lệ" });
+    }
+    if (scope === "student" && !studentClassId) {
+      return res.status(400).json({ message: "Thiếu học viên cần phân công" });
+    }
+    try {
+      const [classRow] = await db
+        .select({ classType: classes.classType, locationId: classes.locationId, startDate: classes.startDate, endDate: classes.endDate })
+        .from(classes)
+        .where(eq(classes.id, classId))
+        .limit(1);
+      if (!classRow) return res.status(404).json({ message: "Không tìm thấy lớp học" });
+      if (classRow.classType !== "free") return res.status(400).json({ message: "Lớp này không phải lớp tự do" });
+      if ((classRow.startDate && date < classRow.startDate) || (classRow.endDate && date > classRow.endDate)) {
+        return res.status(400).json({ message: "Ngày phân công nằm ngoài thời hạn của lớp" });
+      }
+
+      if (scope === "student") {
+        if (!(await assertFreeClassEditable(req, res, classId, { studentClassId: studentClassId!, date }))) return;
+        const [studentClass] = await db
+          .select({ id: studentClasses.id, startDate: studentClasses.startDate, endDate: studentClasses.endDate })
+          .from(studentClasses)
+          .where(and(eq(studentClasses.id, studentClassId!), eq(studentClasses.classId, classId)))
+          .limit(1);
+        if (!studentClass) return res.status(404).json({ message: "Không tìm thấy học viên trong lớp" });
+        if ((studentClass.startDate && date < studentClass.startDate) || (studentClass.endDate && date > studentClass.endDate)) {
+          return res.status(400).json({ message: "Ngày phân công nằm ngoài khoảng thời gian của học viên" });
+        }
+        const [registration] = await db
+          .select({ id: freeClassRegistrations.id })
+          .from(freeClassRegistrations)
+          .where(and(
+            eq(freeClassRegistrations.studentClassId, studentClassId!),
+            eq(freeClassRegistrations.registrationDate, date),
+          ))
+          .limit(1);
+        if (!registration) return res.status(400).json({ message: "Học viên chưa đăng ký ngày này" });
+      } else if (!(await assertFreeClassEditable(req, res, classId))) {
+        return;
+      }
+
+      if (teacherId) {
+        const [teacher] = await db.select({ id: staff.id }).from(staff).where(eq(staff.id, teacherId)).limit(1);
+        if (!teacher) return res.status(400).json({ message: "Giáo viên không hợp lệ" });
+      }
+      if (shiftTemplateId) {
+        const [shift] = await db
+          .select({ id: shiftTemplates.id })
+          .from(shiftTemplates)
+          .where(and(
+            eq(shiftTemplates.id, shiftTemplateId),
+            eq(shiftTemplates.type, "class"),
+            classRow.locationId ? eq(shiftTemplates.locationId, classRow.locationId) : sql`true`,
+          ))
+          .limit(1);
+        if (!shift) return res.status(400).json({ message: "Ca dạy không hợp lệ với cơ sở của lớp" });
+      }
+
+      const actorId = (req.user as any)?.id || null;
+      if (scope === "day") {
+        const [existing] = await db
+          .select({ id: freeClassDayAssignments.id })
+          .from(freeClassDayAssignments)
+          .where(and(
+            eq(freeClassDayAssignments.classId, classId),
+            eq(freeClassDayAssignments.assignmentDate, date),
+          ))
+          .limit(1);
+        if (!teacherId && !shiftTemplateId) {
+          if (existing) {
+            await db.delete(freeClassDayAssignments).where(eq(freeClassDayAssignments.id, existing.id));
+          }
+        } else if (existing) {
+          await db.update(freeClassDayAssignments).set({
+            teacherId,
+            shiftTemplateId,
+            updatedBy: actorId,
+            updatedAt: new Date(),
+          }).where(eq(freeClassDayAssignments.id, existing.id));
+        } else {
+          await db.insert(freeClassDayAssignments).values({
+            classId,
+            assignmentDate: date,
+            teacherId,
+            shiftTemplateId,
+            createdBy: actorId,
+            updatedBy: actorId,
+          });
+        }
+      } else {
+        await db.update(freeClassRegistrations).set({
+          teacherId,
+          shiftTemplateId,
+          updatedAt: new Date(),
+        }).where(and(
+          eq(freeClassRegistrations.studentClassId, studentClassId!),
+          eq(freeClassRegistrations.registrationDate, date),
+        ));
+      }
+
+      await emitCalendarUpdateForClass(classId);
+      res.json({ success: true, scope, date, studentClassId, teacherId, shiftTemplateId });
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Không thể lưu phân công giáo viên" });
+    }
+  });
+
   app.patch(api.classes.updateFreeSchedule.path, async (req, res) => {
     const classId = String(req.params.id);
     try {
       const requestBody = req.body || {};
-      const { studentClassId, date, action, value, status, teacherId, note } = requestBody;
+      const { studentClassId, date, action, value, status, teacherId, shiftTemplateId, note } = requestBody;
       const hasNote = Object.prototype.hasOwnProperty.call(requestBody, "note");
       if (!studentClassId || !/^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
         return res.status(400).json({ message: "Thiếu học viên hoặc ngày học hợp lệ" });
@@ -1739,7 +1893,12 @@ export function registerClassesRoutes(app: Express): void {
           } else if (existing) {
             if (existing.status !== "attended") {
               await tx.update(freeClassRegistrations).set({
-                teacherId: teacherId || existing.teacherId || null,
+                teacherId: Object.prototype.hasOwnProperty.call(requestBody, "teacherId")
+                  ? (teacherId || null)
+                  : existing.teacherId || null,
+                shiftTemplateId: Object.prototype.hasOwnProperty.call(requestBody, "shiftTemplateId")
+                  ? (shiftTemplateId || null)
+                  : existing.shiftTemplateId || null,
                 updatedAt: new Date(),
               }).where(eq(freeClassRegistrations.id, existing.id));
             }
@@ -1750,6 +1909,7 @@ export function registerClassesRoutes(app: Express): void {
               studentId: sc.studentId,
               registrationDate: String(date),
               teacherId: teacherId || null,
+              shiftTemplateId: shiftTemplateId || null,
               status: "registered",
               registeredBy: actorId,
             });
@@ -1775,7 +1935,12 @@ export function registerClassesRoutes(app: Express): void {
           }
           await tx.update(freeClassRegistrations).set({
             status: requestedStatus,
-            teacherId: teacherId || existing.teacherId || null,
+            teacherId: Object.prototype.hasOwnProperty.call(requestBody, "teacherId")
+              ? (teacherId || null)
+              : existing.teacherId || null,
+            shiftTemplateId: Object.prototype.hasOwnProperty.call(requestBody, "shiftTemplateId")
+              ? (shiftTemplateId || null)
+              : existing.shiftTemplateId || null,
             attendedBy: requestedStatus === "attended" ? actorId : null,
             attendedAt: requestedStatus === "attended" ? new Date() : null,
             ...(hasNote ? { note: typeof note === "string" ? note.trim() || null : null } : {}),
@@ -4116,6 +4281,10 @@ export function registerClassesRoutes(app: Express): void {
           sessionDate: freeClassRegistrations.registrationDate,
           registrationStatus: freeClassRegistrations.status,
           teacherId: freeClassRegistrations.teacherId,
+          shiftTemplateId: freeClassRegistrations.shiftTemplateId,
+          registrationShiftName: shiftTemplates.name,
+          registrationShiftStart: shiftTemplates.startTime,
+          registrationShiftEnd: shiftTemplates.endTime,
           studentClassId: freeClassRegistrations.studentClassId,
           studentId: freeClassRegistrations.studentId,
           studentName: students.fullName,
@@ -4130,7 +4299,35 @@ export function registerClassesRoutes(app: Express): void {
         .innerJoin(locations, eq(classes.locationId, locations.id))
         .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
         .innerJoin(students, eq(freeClassRegistrations.studentId, students.id))
+        .leftJoin(shiftTemplates, eq(freeClassRegistrations.shiftTemplateId, shiftTemplates.id))
         .where(and(...freeLocationConditions));
+
+      const freeDayAssignmentRows = await db
+        .select({
+          classId: freeClassDayAssignments.classId,
+          assignmentDate: freeClassDayAssignments.assignmentDate,
+          teacherId: freeClassDayAssignments.teacherId,
+          shiftTemplateId: freeClassDayAssignments.shiftTemplateId,
+          shiftStart: shiftTemplates.startTime,
+          shiftEnd: shiftTemplates.endTime,
+          shiftName: shiftTemplates.name,
+        })
+        .from(freeClassDayAssignments)
+        .innerJoin(classes, eq(freeClassDayAssignments.classId, classes.id))
+        .leftJoin(shiftTemplates, eq(freeClassDayAssignments.shiftTemplateId, shiftTemplates.id))
+        .where(and(
+          eq(classes.classType, "free"),
+          gte(freeClassDayAssignments.assignmentDate, from),
+          lte(freeClassDayAssignments.assignmentDate, to),
+          ...(effectiveLocationId
+            ? [eq(classes.locationId, effectiveLocationId)]
+            : allowedLocationIds !== null && allowedLocationIds.length > 0
+            ? [inArray(classes.locationId, allowedLocationIds)]
+            : []),
+        ));
+      const freeDayAssignmentMap = new Map(
+        freeDayAssignmentRows.map((row) => [`${row.classId}:${String(row.assignmentDate).slice(0, 10)}`, row]),
+      );
 
       const freeSessionMap = new Map<string, {
         id: string;
@@ -4168,6 +4365,10 @@ export function registerClassesRoutes(app: Express): void {
           code: string;
           status: string;
           teacherId: string | null;
+           shiftTemplateId: string | null;
+           shiftStart: string | null;
+           shiftEnd: string | null;
+           shiftName: string | null;
            note: string | null;
            reviewData: unknown;
            reviewPublished: boolean;
@@ -4179,6 +4380,7 @@ export function registerClassesRoutes(app: Express): void {
         if (!session) {
           const date = String(row.sessionDate).slice(0, 10);
           const classTeacherIds = row.classTeacherIds ?? [];
+          const dayAssignment = freeDayAssignmentMap.get(`${row.classId}:${date}`);
           session = {
             id: `free-${row.classId}-${date}`,
             classId: row.classId,
@@ -4192,11 +4394,11 @@ export function registerClassesRoutes(app: Express): void {
             totalSessions: 0,
             enrolledCount: 0,
             status: "scheduled",
-            teachers: [],
-            teacherIds: [...classTeacherIds],
-            shiftStart: "",
-            shiftEnd: "",
-            shiftName: "Lớp tự do",
+             teachers: [],
+             teacherIds: [],
+             shiftStart: dayAssignment?.shiftStart || "",
+             shiftEnd: dayAssignment?.shiftEnd || "",
+             shiftName: dayAssignment?.shiftName || "Lớp tự do",
             learningFormat: "offline",
             classColor: row.classColor ?? null,
             roomId: null,
@@ -4211,8 +4413,38 @@ export function registerClassesRoutes(app: Express): void {
           };
           freeSessionMap.set(key, session);
         }
-        if (row.teacherId && !session.teacherIds.includes(row.teacherId)) {
-          session.teacherIds.push(row.teacherId);
+        const date = String(row.sessionDate).slice(0, 10);
+        const dayAssignment = freeDayAssignmentMap.get(`${row.classId}:${date}`);
+        const effectiveTeacherId = row.teacherId || dayAssignment?.teacherId || null;
+        const effectiveShiftTemplateId = row.shiftTemplateId || dayAssignment?.shiftTemplateId || null;
+        const effectiveShiftStart = row.shiftTemplateId
+          ? row.registrationShiftStart || null
+          : dayAssignment?.shiftStart || null;
+        const effectiveShiftEnd = row.shiftTemplateId
+          ? row.registrationShiftEnd || null
+          : dayAssignment?.shiftEnd || null;
+        const effectiveShiftName = row.shiftTemplateId
+          ? row.registrationShiftName || null
+          : dayAssignment?.shiftName || null;
+        if (effectiveTeacherId) {
+          if (!session.teacherIds.includes(effectiveTeacherId)) session.teacherIds.push(effectiveTeacherId);
+        } else {
+          for (const classTeacherId of row.classTeacherIds ?? []) {
+            if (!session.teacherIds.includes(classTeacherId)) session.teacherIds.push(classTeacherId);
+          }
+        }
+        if (effectiveShiftTemplateId && session.shiftName === "Lớp tự do") {
+          session.shiftStart = effectiveShiftStart || "";
+          session.shiftEnd = effectiveShiftEnd || "";
+          session.shiftName = effectiveShiftName || "Lớp tự do";
+        } else if (
+          effectiveShiftTemplateId
+          && !dayAssignment?.shiftTemplateId
+          && session.shiftName !== effectiveShiftName
+        ) {
+          session.shiftStart = "";
+          session.shiftEnd = "";
+          session.shiftName = "Nhiều ca";
         }
         session.enrolledCount += 1;
         session.freeStudents.push({
@@ -4222,7 +4454,11 @@ export function registerClassesRoutes(app: Express): void {
           fullName: row.studentName,
           code: row.studentCode,
           status: row.registrationStatus,
-          teacherId: row.teacherId,
+           teacherId: effectiveTeacherId,
+           shiftTemplateId: effectiveShiftTemplateId,
+           shiftStart: effectiveShiftStart,
+           shiftEnd: effectiveShiftEnd,
+           shiftName: effectiveShiftName,
           note: row.note,
            reviewData: row.reviewData,
            reviewPublished: row.reviewPublished ?? false,

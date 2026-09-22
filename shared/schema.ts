@@ -80,6 +80,7 @@ export const freeClassRegistrations = pgTable("free_class_registrations", {
   studentId: uuid("student_id").notNull().references(() => students.id, { onDelete: "cascade" }),
   registrationDate: date("registration_date").notNull(),
   teacherId: uuid("teacher_id").references(() => staff.id, { onDelete: "set null" }),
+  shiftTemplateId: uuid("shift_template_id").references(() => shiftTemplates.id, { onDelete: "set null" }),
   status: varchar("status", { length: 20 }).notNull().default("registered"), // registered | attended | reserved
   registeredBy: uuid("registered_by").references(() => users.id, { onDelete: "set null" }),
   registeredAt: timestamp("registered_at").defaultNow().notNull(),
@@ -95,6 +96,23 @@ export const freeClassRegistrations = pgTable("free_class_registrations", {
   studentClassDateIdx: index("free_class_registrations_student_class_date_idx").on(table.studentClassId, table.registrationDate),
   statusIdx: index("free_class_registrations_status_idx").on(table.status),
   studentClassDateUnique: unique("free_class_registrations_student_class_date_unique").on(table.studentClassId, table.registrationDate),
+}));
+
+// One default teacher/shift assignment for every registered student on a
+// specific free-class date. A registration-level assignment overrides this.
+export const freeClassDayAssignments = pgTable("free_class_day_assignments", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  classId: uuid("class_id").notNull().references(() => classes.id, { onDelete: "cascade" }),
+  assignmentDate: date("assignment_date").notNull(),
+  teacherId: uuid("teacher_id").references(() => staff.id, { onDelete: "set null" }),
+  shiftTemplateId: uuid("shift_template_id").references(() => shiftTemplates.id, { onDelete: "set null" }),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  classDateUnique: unique("free_class_day_assignments_class_date_unique").on(table.classId, table.assignmentDate),
+  classDateIdx: index("free_class_day_assignments_class_date_idx").on(table.classId, table.assignmentDate),
 }));
 
 // ==========================================
