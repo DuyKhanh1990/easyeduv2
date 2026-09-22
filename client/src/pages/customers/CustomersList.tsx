@@ -25,7 +25,8 @@ import { SortableColumnItem, type ColumnConfig } from "@/components/customers/So
 import { ImportExcelDialog } from "@/components/customers/ImportExcelDialog";
 import { BulkActionDialogs } from "@/components/customers/BulkActionDialogs";
 import { CustomersTable } from "@/components/customers/CustomersTable";
-import { ClassSessionMatrixPreview } from "@/components/customers/ClassSessionMatrixPreview";
+// Draft-only class/session matrix is kept for a later rollout.
+// import { ClassSessionMatrixPreview } from "@/components/customers/ClassSessionMatrixPreview";
 import { CustomerActivityLogDialog } from "@/components/customers/CustomerActivityLogDialog";
 import { CustomerGuideDialog } from "@/components/customers/CustomerGuideDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -118,7 +119,8 @@ export function CustomersList() {
     const params = new URLSearchParams(window.location.search);
     return params.get("classTab") === "unassigned" ? "unassigned" : params.get("classId") || "all";
   });
-  const [showClassSessionMatrix, setShowClassSessionMatrix] = useState(false);
+  // Draft-only state intentionally disabled until the matrix is ready for rollout.
+  // const [showClassSessionMatrix, setShowClassSessionMatrix] = useState(false);
   const [filters, setFilters] = useState({
     locationId: "all",
     type: "all",
@@ -899,19 +901,7 @@ export function CustomersList() {
             </div>
 
             <div className="flex items-center gap-1.5 w-full md:w-auto flex-wrap">
-              {isConcreteClassTab && (
-                <div className="mr-1 inline-flex h-8 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 shadow-sm">
-                  <span className="text-[11px] font-semibold text-slate-600">Xem theo buổi học</span>
-                  <Badge variant="outline" className="h-4 border-amber-200 bg-amber-50 px-1.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">Nháp</Badge>
-                  <Switch
-                    checked={showClassSessionMatrix}
-                    onCheckedChange={setShowClassSessionMatrix}
-                    aria-label="Xem theo buổi học"
-                    className="h-5 w-9 data-[state=checked]:bg-sky-600"
-                    thumbClassName="h-4 w-4 data-[state=checked]:translate-x-4"
-                  />
-                </div>
-              )}
+              {/* Draft class/session matrix toggle intentionally disabled for now. */}
               {crmPerms.canCreate && (
                 <Button variant="outline" size="sm" onClick={() => setIsImportOpen(true)} className="h-8 px-3 rounded-xl text-xs gap-1.5 bg-white border-slate-200 hover:bg-slate-50 shadow-sm">
                   <Upload className="w-3.5 h-3.5 text-slate-500" /><span>{t("customers.upload")}</span>
@@ -1348,14 +1338,9 @@ export function CustomersList() {
           </div>
 
           <div className="flex-1 overflow-auto">
-            {isConcreteClassTab && showClassSessionMatrix ? (
-              <ClassSessionMatrixPreview
-                classId={activeClassTab}
-                students={students}
-                learningStatuses={learningStatuses}
-              />
-            ) : (
-              <CustomersTable
+            {/* Draft class/session matrix intentionally disabled.
+                Keep CustomersTable as the only active customer view until rollout. */}
+            <CustomersTable
               students={students}
               isLoading={isLoading}
               visibleColumns={visibleColumns}
@@ -1405,8 +1390,7 @@ export function CustomersList() {
               starBalancesMap={starBalancesMap}
               endingSoonMap={endingSoonMap}
               overdueInvoicesMap={overdueInvoicesMap}
-              />
-            )}
+            />
           </div>
 
           <div className="px-4 py-2.5 border-t border-border/50 text-sm text-muted-foreground flex flex-col sm:flex-row justify-between items-center gap-3 bg-slate-50/50 flex-shrink-0">
