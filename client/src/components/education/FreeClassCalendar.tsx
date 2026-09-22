@@ -68,6 +68,28 @@ const formatStudentDate = (value: unknown) => {
   return `${Number(day)}/${Number(month)}/${year}`;
 };
 
+const formatAssignmentTime = (startTime?: string | null, endTime?: string | null) => {
+  const formatTime = (value?: string | null) => {
+    const match = String(value || "").match(/^(\d{1,2}):(\d{2})/);
+    if (!match) return "";
+    const hour = Number(match[1]);
+    const minute = match[2];
+    const period = hour >= 12 ? "pm" : "am";
+    const displayHour = hour % 12 || 12;
+    return `${String(displayHour).padStart(2, "0")}:${minute} ${period}`;
+  };
+  const start = formatTime(startTime);
+  const end = formatTime(endTime);
+  if (!start && !end) return "";
+  if (!start) return end;
+  if (!end) return start;
+  const startPeriod = start.slice(-2);
+  const endPeriod = end.slice(-2);
+  return startPeriod === endPeriod
+    ? `${start.slice(0, -3)} - ${end}`
+    : `${start} - ${end}`;
+};
+
 function parseCalendarDate(value?: string | null) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const date = new Date(`${value}T00:00:00`);
@@ -155,6 +177,24 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
     queryKey: [locationId ? `/api/shift-templates?locationId=${locationId}&type=class` : "/api/shift-templates?type=class"],
     enabled: !!locationId,
   });
+  const teachersById = useMemo(
+    () => new Map(availableTeachers.map((teacher: any) => [String(teacher.id), teacher])),
+    [availableTeachers],
+  );
+  const shiftsById = useMemo(
+    () => new Map(availableShifts.map((shift: any) => [String(shift.id), shift])),
+    [availableShifts],
+  );
+  const getAssignmentSummary = (teacherId?: string | null, shiftTemplateId?: string | null) => {
+    const teacher = teacherId ? teachersById.get(String(teacherId)) : null;
+    const shift = shiftTemplateId ? shiftsById.get(String(shiftTemplateId)) : null;
+    return {
+      teacherLabel: teacher
+        ? `${teacher.fullName || teacher.name || teacher.code || "Giáo viên"}${teacher.code ? ` (${teacher.code})` : ""}`
+        : "",
+      timeLabel: formatAssignmentTime(shift?.startTime, shift?.endTime),
+    };
+  };
 
   const updateMutation = useMutation({
     mutationFn: async (payload: {
@@ -1021,6 +1061,22 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                           <UserRound className="h-3.5 w-3.5" />
                         </button>
                       </div>
+                      {(dayAssignment?.teacherId || dayAssignment?.shiftTemplateId) && (() => {
+                        const assignment = getAssignmentSummary(
+                          dayAssignment.teacherId,
+                          dayAssignment.shiftTemplateId,
+                        );
+                        return (
+                          <div className="mt-0.5 max-w-[108px] text-[8px] font-medium leading-[10px] text-purple-600">
+                            {assignment.teacherLabel && (
+                              <div className="truncate" title={assignment.teacherLabel}>
+                                {assignment.teacherLabel}
+                              </div>
+                            )}
+                            {assignment.timeLabel && <div>{assignment.timeLabel}</div>}
+                          </div>
+                        );
+                      })()}
                     </th>
                   );
                 })}
@@ -1182,6 +1238,22 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                   <SelectItem value="reserved">Bảo lưu</SelectItem>
                                 </SelectContent>
                               </Select>
+                              {hasStudentAssignment && (() => {
+                                const assignment = getAssignmentSummary(
+                                  current?.teacherId,
+                                  current?.shiftTemplateId,
+                                );
+                                return (
+                                  <div className="max-w-[104px] text-[8px] font-medium leading-[10px] text-purple-600">
+                                    {assignment.teacherLabel && (
+                                      <div className="truncate" title={assignment.teacherLabel}>
+                                        {assignment.teacherLabel}
+                                      </div>
+                                    )}
+                                    {assignment.timeLabel && <div>{assignment.timeLabel}</div>}
+                                  </div>
+                                );
+                              })()}
                               <div className="flex items-center gap-1">
                                 <button
                                   type="button"
