@@ -292,14 +292,35 @@ export function TransferClassDialog({
     enabled: !!selectedToClassId,
   });
 
+  const { data: targetStudentSessions = [], isLoading: loadingTargetStudentSessions } = useQuery<any[]>({
+    queryKey: ["/api/classes", selectedToClassId, "student", student?.id, "sessions"],
+    enabled: !!selectedToClassId && !!student?.id,
+  });
+  const targetDataLoading = loadingTarget || loadingTargetStudentSessions;
+  const targetAttendedSessionIds = new Set(
+    targetStudentSessions
+      .filter((session) =>
+        session.attendanceStatus === "present"
+        && session.status !== "transferred"
+        && session.status !== "cancelled",
+      )
+      .map((session) => session.classSessionId),
+  );
+  const selectableTargetSessions = (targetSessions ?? []).filter((session) =>
+    session.sessionIndex != null
+    && session.sessionDate
+    && session.status === "scheduled"
+    && !targetAttendedSessionIds.has(session.id),
+  );
   const targetAvailableSessions = (targetSessions ?? []).filter((session) => {
     const sessionIndex = Number(session.sessionIndex);
     return Number.isFinite(sessionIndex)
       && sessionIndex >= Number(toSessionIndex)
-      && session.status === "scheduled";
+      && session.status === "scheduled"
+      && !targetAttendedSessionIds.has(session.id);
   });
   const targetAvailableCount = targetAvailableSessions.length;
-  const effectiveTransferCount = selectedToClassId && !loadingTarget
+  const effectiveTransferCount = selectedToClassId && !targetDataLoading
     ? Math.min(transferCount, targetAvailableCount)
     : transferCount;
   const currentAvailableSessionCount = (currentSessions ?? []).filter((session) => {
@@ -308,9 +329,31 @@ export function TransferClassDialog({
   }).length;
   const targetSessionShortfall =
     Boolean(selectedToClassId)
-    && !loadingTarget
+    && !targetDataLoading
     && targetAvailableCount > 0
     && targetAvailableCount < transferCount;
+
+  useEffect(() => {
+    if (!selectedToClassId || targetDataLoading || selectableTargetSessions.length === 0) return;
+    const selectedSession = (targetSessions ?? []).find(
+      (session) => Number(session.sessionIndex) === Number(toSessionIndex),
+    );
+    const selectedSessionIsAvailable =
+      selectedSession?.status === "scheduled"
+      && !targetAttendedSessionIds.has(selectedSession.id);
+    if (!selectedSessionIsAvailable) {
+      form.setValue("toSessionIndex", Number(selectableTargetSessions[0].sessionIndex), {
+        shouldValidate: false,
+      });
+    }
+  }, [
+    selectedToClassId,
+    targetSessions,
+    targetStudentSessions,
+    targetDataLoading,
+    toSessionIndex,
+    form,
+  ]);
 
   // Auto-calculate transferCount = number of sessions from selected index to end
   useEffect(() => {
@@ -704,15 +747,15 @@ export function TransferClassDialog({
       });
       return;
     }
-    if (selectedToClassId && !loadingTarget && targetAvailableCount <= 0) {
+    if (selectedToClassId && !targetDataLoading && targetAvailableCount <= 0) {
       toast({
         title: "Không thể chuyển lớp",
-        description: "Lớp mới không còn buổi học khả dụng từ buổi bắt đầu đã chọn.",
+        description: "Lớp mới không còn buổi chưa có mặt từ buổi bắt đầu đã chọn.",
         variant: "destructive",
       });
       return;
     }
-    if (selectedToClassId && loadingTarget) {
+    if (selectedToClassId && targetDataLoading) {
       toast({
         title: "Đang tải lịch lớp mới",
         description: "Vui lòng chờ hệ thống tải xong lịch lớp mới rồi thử lại.",
@@ -1045,7 +1088,7 @@ export function TransferClassDialog({
                           <Select
                             onValueChange={field.onChange}
                             value={field.value?.toString()}
-                            disabled={!selectedToClassId || loadingTarget}
+                            disabled={!selectedToClassId || targetDataLoading}
                           >
                             <FormControl>
                               <SelectTrigger data-testid="select-to-session">
@@ -1055,9 +1098,21 @@ export function TransferClassDialog({
                             <SelectContent>
                               {targetSessions?.map((s) => {
                                 if (s.sessionIndex == null || !s.sessionDate || s.status !== "scheduled") return null;
+                                 const isAlreadyAttended = targetAttendedSessionIds.has(s.id);
                                 return (
-                                  <SelectItem key={s.id} value={s.sessionIndex.toString()}>
-                                    Buổi {s.sessionIndex}: {getDayName(new Date(s.sessionDate).getDay())}, {format(new Date(s.sessionDate), "dd/MM/yyyy")}
+                                   <SelectItem
+                                     key={s.id}
+                                     value={s.sessionIndex.toString()}
+                                     disabled={isAlreadyAttended}
+                                   >
+                                     <span className={cn(isAlreadyAttended && "text-muted-foreground")}>
+                                       Buổi {s.sessionIndex}: {getDayName(new Date(s.sessionDate).getDay())}, {format(new Date(s.sessionDate), "dd/MM/yyyy")}
+                                     </span>
+                                     {isAlreadyAttended && (
+                                       <span className="ml-2 text-[10px] text-muted-foreground">
+                                         (Đã có mặt)
+                                       </span>
+                                     )}
                                   </SelectItem>
                                 );
                               })}
@@ -1077,9 +1132,9 @@ export function TransferClassDialog({
                       </span>
                     </div>
                   )}
-                  {selectedToClassId && !loadingTarget && targetAvailableCount === 0 && (
+                  {selectedToClassId && !targetDataLoading && targetAvailableCount === 0 && (
                     <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
-                      Lớp mới không còn buổi học khả dụng từ buổi bắt đầu đã chọn.
+                      Lớp mới không còn buổi chưa có mặt từ buổi bắt đầu đã chọn.
                     </div>
                   )}
 

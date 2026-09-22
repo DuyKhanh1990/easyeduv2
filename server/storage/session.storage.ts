@@ -524,18 +524,51 @@ export async function transferStudentClass(data: {
       );
     }
 
-    const targetSessionCandidates = await tx.select()
+    const targetSessionPool = await tx.select()
       .from(classSessions)
       .where(and(
         eq(classSessions.classId, data.toClassId),
         eq(classSessions.status, "scheduled"),
         sql`${classSessions.sessionIndex} >= ${data.toSessionIndex}`,
       ))
-      .orderBy(asc(classSessions.sessionIndex))
-      .limit(data.transferCount);
+      .orderBy(asc(classSessions.sessionIndex));
+
+    if (targetSessionPool.length === 0) {
+      throw new Error("Lớp mới không còn buổi học khả dụng từ buổi đã chọn");
+    }
+
+    const targetSessionIds = targetSessionPool.map((session) => session.id);
+    const existingTargetSessions = await tx
+      .select({
+        id: studentSessions.id,
+        classSessionId: studentSessions.classSessionId,
+        attendanceStatus: studentSessions.attendanceStatus,
+        status: studentSessions.status,
+      })
+      .from(studentSessions)
+      .where(and(
+        eq(studentSessions.studentId, data.studentId),
+        inArray(studentSessions.classSessionId, targetSessionIds),
+        sql`${studentSessions.status} NOT IN ('transferred', 'cancelled')`,
+      ));
+    const existingTargetBySessionId = new Map<string, typeof existingTargetSessions[number]>();
+    for (const session of existingTargetSessions) {
+      const current = existingTargetBySessionId.get(session.classSessionId);
+      // Prefer an already-attended row if old duplicate data exists.
+      if (!current || session.attendanceStatus === "present") {
+        existingTargetBySessionId.set(session.classSessionId, session);
+      }
+    }
+
+    // Already-attended target sessions are not transferable. The remaining
+    // sessions stay selectable and may either receive a new row or turn an
+    // existing non-attended row into "present".
+    const targetSessionCandidates = targetSessionPool
+      .filter((session) => existingTargetBySessionId.get(session.id)?.attendanceStatus !== "present")
+      .slice(0, data.transferCount);
 
     if (targetSessionCandidates.length === 0) {
-      throw new Error("Lớp mới không còn buổi học khả dụng từ buổi đã chọn");
+      throw new Error("Lớp mới không còn buổi học chưa có mặt để chuyển");
     }
 
     const effectiveTransferCount = Math.min(
@@ -546,47 +579,6 @@ export async function transferStudentClass(data: {
     const oldSessions = oldSessionCandidates.slice(0, effectiveTransferCount);
     const targetClassSessions = targetSessionCandidates.slice(0, effectiveTransferCount);
     const studentClassId = oldSessions[0].studentClassId;
-
-    // A student can already have a session in the target class (for example,
-    // they attended the first target session before this transfer was opened).
-    // Never insert a second student_sessions row for that class session.
-    const targetClassSessionIds = targetClassSessions.map((session) => session.id);
-    const existingTargetSessions = await tx
-      .select({
-        sessionIndex: classSessions.sessionIndex,
-        sessionDate: classSessions.sessionDate,
-        attendanceStatus: studentSessions.attendanceStatus,
-        status: studentSessions.status,
-      })
-      .from(studentSessions)
-      .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
-      .where(and(
-        eq(studentSessions.studentId, data.studentId),
-        inArray(studentSessions.classSessionId, targetClassSessionIds),
-        sql`${studentSessions.status} NOT IN ('transferred', 'cancelled')`,
-      ));
-
-    if (existingTargetSessions.length > 0) {
-      const statusLabels: Record<string, string> = {
-        present: "đã học",
-        absent: "nghỉ học",
-        paused: "bảo lưu",
-        pending: "chưa điểm danh",
-      };
-      const conflictLabels = existingTargetSessions
-        .map((session) => {
-          const dateLabel = session.sessionDate
-            ? format(new Date(session.sessionDate), "dd/MM/yyyy")
-            : "";
-          const statusLabel = statusLabels[session.attendanceStatus ?? ""] || "đã có dữ liệu";
-          return `buổi ${session.sessionIndex ?? "?"}${dateLabel ? ` (${dateLabel}, ${statusLabel})` : ` (${statusLabel})`}`;
-        })
-        .join(", ");
-      throw new Error(
-        `Không thể chuyển lớp vì học viên đã có dữ liệu tại lớp mới ở ${conflictLabels}. ` +
-        "Vui lòng chọn buổi bắt đầu khác hoặc xử lý buổi đã có.",
-      );
-    }
 
     let [targetStudentClass] = await tx.select()
       .from(studentClasses)
@@ -623,21 +615,42 @@ export async function transferStudentClass(data: {
     for (const row of oldCsRows) oldCsDateMap[row.id] = row.sessionDate;
 
     // FIX: Tính toán tất cả records trong JS rồi bulk insert 1 lần (thay vì N INSERT riêng lẻ)
-    const newSSRows = targetClassSessions.map((cs, i) => {
-      const oldSession = oldSessions[i];
-      const oldDate = oldCsDateMap[oldSession.classSessionId];
-      const oldDateStr = oldDate ? format(new Date(oldDate), "d/M/yyyy") : "";
-      return {
-        studentId: data.studentId,
-        classId: data.toClassId,
-        studentClassId: targetStudentClass.id,
-        classSessionId: cs.id,
-        status: "scheduled" as const,
-        attendanceStatus: "pending" as const,
-        note: `Chuyển từ lớp ${fromClass?.name || data.fromClassId}\nBuổi ${oldSession.sessionIndex} - ${oldDateStr}`,
-      };
-    });
-    await tx.insert(studentSessions).values(newSSRows);
+    const transferAttendanceAt = new Date();
+    const newSSRows = targetClassSessions
+      .filter((cs) => !existingTargetBySessionId.has(cs.id))
+      .map((cs) => {
+        const i = targetClassSessions.indexOf(cs);
+        const oldSession = oldSessions[i];
+        const oldDate = oldCsDateMap[oldSession.classSessionId];
+        const oldDateStr = oldDate ? format(new Date(oldDate), "d/M/yyyy") : "";
+        return {
+          studentId: data.studentId,
+          classId: data.toClassId,
+          studentClassId: targetStudentClass.id,
+          classSessionId: cs.id,
+          status: "scheduled" as const,
+          attendanceStatus: "present" as const,
+          attendanceAt: transferAttendanceAt,
+          note: `Chuyển từ lớp ${fromClass?.name || data.fromClassId}\nBuổi ${oldSession.sessionIndex} - ${oldDateStr}`,
+        };
+      });
+    if (newSSRows.length > 0) {
+      await tx.insert(studentSessions).values(newSSRows);
+    }
+
+    const existingRowsToMarkPresent = targetClassSessions
+      .map((cs) => existingTargetBySessionId.get(cs.id))
+      .filter((session): session is typeof existingTargetSessions[number] => Boolean(session));
+    if (existingRowsToMarkPresent.length > 0) {
+      await tx
+        .update(studentSessions)
+        .set({
+          attendanceStatus: "present",
+          attendanceAt: transferAttendanceAt,
+          updatedAt: transferAttendanceAt,
+        })
+        .where(inArray(studentSessions.id, existingRowsToMarkPresent.map((session) => session.id)));
+    }
 
     // FIX: Cập nhật tất cả old sessions thành "transferred" trong 1 CASE WHEN SQL
     // (thay vì N UPDATE riêng lẻ). Note khác nhau từng row nên cần CASE WHEN.

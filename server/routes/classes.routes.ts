@@ -2367,6 +2367,7 @@ export function registerClassesRoutes(app: Express): void {
           id: baseSs.id,
           classSessionId: baseSs.classSessionId,
           sessionOrder: baseSs.sessionOrder,
+          status: baseSs.status,
           attendanceStatus: baseSs.attendanceStatus,
           sessionDate: baseCs.sessionDate,
           weekday: baseCs.weekday,
