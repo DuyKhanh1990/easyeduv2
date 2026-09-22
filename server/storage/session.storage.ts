@@ -493,6 +493,12 @@ export async function transferStudentClass(data: {
       }
     }
 
+    // Serialize transfers for the same student and target class so two
+    // concurrent requests cannot both pass the duplicate-session check.
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${`transfer:${data.studentId}:${data.toClassId}`}))`,
+    );
+
     const oldSessionCandidates = await tx.select({
       id: studentSessions.id,
       studentClassId: studentSessions.studentClassId,
@@ -540,6 +546,47 @@ export async function transferStudentClass(data: {
     const oldSessions = oldSessionCandidates.slice(0, effectiveTransferCount);
     const targetClassSessions = targetSessionCandidates.slice(0, effectiveTransferCount);
     const studentClassId = oldSessions[0].studentClassId;
+
+    // A student can already have a session in the target class (for example,
+    // they attended the first target session before this transfer was opened).
+    // Never insert a second student_sessions row for that class session.
+    const targetClassSessionIds = targetClassSessions.map((session) => session.id);
+    const existingTargetSessions = await tx
+      .select({
+        sessionIndex: classSessions.sessionIndex,
+        sessionDate: classSessions.sessionDate,
+        attendanceStatus: studentSessions.attendanceStatus,
+        status: studentSessions.status,
+      })
+      .from(studentSessions)
+      .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
+      .where(and(
+        eq(studentSessions.studentId, data.studentId),
+        inArray(studentSessions.classSessionId, targetClassSessionIds),
+        sql`${studentSessions.status} NOT IN ('transferred', 'cancelled')`,
+      ));
+
+    if (existingTargetSessions.length > 0) {
+      const statusLabels: Record<string, string> = {
+        present: "đã học",
+        absent: "nghỉ học",
+        paused: "bảo lưu",
+        pending: "chưa điểm danh",
+      };
+      const conflictLabels = existingTargetSessions
+        .map((session) => {
+          const dateLabel = session.sessionDate
+            ? format(new Date(session.sessionDate), "dd/MM/yyyy")
+            : "";
+          const statusLabel = statusLabels[session.attendanceStatus ?? ""] || "đã có dữ liệu";
+          return `buổi ${session.sessionIndex ?? "?"}${dateLabel ? ` (${dateLabel}, ${statusLabel})` : ` (${statusLabel})`}`;
+        })
+        .join(", ");
+      throw new Error(
+        `Không thể chuyển lớp vì học viên đã có dữ liệu tại lớp mới ở ${conflictLabels}. ` +
+        "Vui lòng chọn buổi bắt đầu khác hoặc xử lý buổi đã có.",
+      );
+    }
 
     let [targetStudentClass] = await tx.select()
       .from(studentClasses)
