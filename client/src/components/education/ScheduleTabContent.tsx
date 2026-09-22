@@ -646,29 +646,31 @@ export function ScheduleTabContent({
         classSessionId={selectedClassSessionId || ""}
       />
 
-      <div className="flex gap-4 items-start">
-        {/* Left column: Action buttons + Session info + Student list stacked */}
-        <div className="flex-1 min-w-0 space-y-4">
-          {/* Action buttons — only show inline when NOT delegated to parent header */}
-          {!onActionsChange && (
-            <SessionListPanel
-              classSessions={classSessions}
-              selectedClassSessionId={selectedClassSessionId}
-              onSessionSelect={setSelectedClassSessionId}
-              onActionsChange={onActionsChange}
-              setIsSessionContentDialogOpen={setIsSessionContentDialogOpen}
-              setIsUpdateSessionOpen={setIsUpdateSessionOpen}
-              setIsChangeTeacherOpen={setIsChangeTeacherOpen}
-              setSelectedSessionId={setSelectedSessionId}
-              setIsCancelSessionsDialogOpen={setIsCancelSessionsDialogOpen}
-              setIsUpdateCycleOpen={setIsUpdateCycleOpen}
-              setIsExcludeSessionsOpen={setIsExcludeSessionsOpen}
-              setIsDeleteScheduleOpen={setIsDeleteScheduleOpen}
-              classPerm={classPerm}
-              classId={classId}
-              showGrid={false}
-            />
-          )}
+      <div className="space-y-4">
+        {/* Action buttons — only show inline when NOT delegated to parent header */}
+        {!onActionsChange && (
+          <SessionListPanel
+            classSessions={classSessions}
+            selectedClassSessionId={selectedClassSessionId}
+            onSessionSelect={setSelectedClassSessionId}
+            onActionsChange={onActionsChange}
+            setIsSessionContentDialogOpen={setIsSessionContentDialogOpen}
+            setIsUpdateSessionOpen={setIsUpdateSessionOpen}
+            setIsChangeTeacherOpen={setIsChangeTeacherOpen}
+            setSelectedSessionId={setSelectedSessionId}
+            setIsCancelSessionsDialogOpen={setIsCancelSessionsDialogOpen}
+            setIsUpdateCycleOpen={setIsUpdateCycleOpen}
+            setIsExcludeSessionsOpen={setIsExcludeSessionsOpen}
+            setIsDeleteScheduleOpen={setIsDeleteScheduleOpen}
+            classPerm={classPerm}
+            classId={classId}
+            showGrid={false}
+          />
+        )}
+
+        <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_500px]">
+          {/* Session info */}
+          <div className="min-w-0">
           {/* Session info card – directly below action buttons */}
           <SessionDetailPanel
             mode="info"
@@ -724,7 +726,19 @@ export function ScheduleTabContent({
             onViewContent={handleViewContent}
             classPerm={classPerm}
           />
-          {/* Student list - below session info */}
+          </div>
+
+        {/* Right column: session grid (6 per row) */}
+        <div className="w-full min-w-0 xl:sticky xl:top-0">
+          <VerticalSessionList
+            classSessions={classSessions}
+            selectedClassSessionId={selectedClassSessionId}
+            onSessionSelect={setSelectedClassSessionId}
+          />
+        </div>
+
+        {/* Student list spans the full available width below both top columns */}
+        <div className="col-span-1 min-w-0 xl:col-span-2">
           <SessionDetailPanel
             mode="students"
             classData={classData}
@@ -778,17 +792,10 @@ export function ScheduleTabContent({
             setIsSessionContentDialogOpen={setIsSessionContentDialogOpen}
             onViewContent={handleViewContent}
             classPerm={classPerm}
+            showMatrix
           />
         </div>
-
-        {/* Right column: session grid (6 per row) */}
-        <div className="w-[500px] shrink-0 sticky top-0">
-          <VerticalSessionList
-            classSessions={classSessions}
-            selectedClassSessionId={selectedClassSessionId}
-            onSessionSelect={setSelectedClassSessionId}
-          />
-        </div>
+      </div>
       </div>
 
       {/* === Dialogs rendered outside tab content === */}
