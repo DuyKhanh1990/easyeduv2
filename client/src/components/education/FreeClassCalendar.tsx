@@ -65,6 +65,14 @@ const formatStudentDate = (value: unknown) => {
   return `${Number(day)}/${Number(month)}/${year}`;
 };
 
+const getDateRangeDays = (start: string, end: string) => {
+  if (!start || !end) return null;
+  const startTime = new Date(`${start}T00:00:00`).getTime();
+  const endTime = new Date(`${end}T00:00:00`).getTime();
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime < startTime) return null;
+  return Math.floor((endTime - startTime) / (24 * 60 * 60 * 1000)) + 1;
+};
+
 const formatAssignmentTime = (startTime?: string | null, endTime?: string | null) => {
   const formatTime = (value?: string | null) => {
     const match = String(value || "").match(/^(\d{1,2}):(\d{2})/);
@@ -770,6 +778,21 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                           : status === "reserved"
                           ? "Bảo lưu"
                           : "Chưa điểm danh";
+                        const studentStart = String(student.startDate || classStart || "").slice(0, 10);
+                        const studentEnd = String(student.endDate || classEnd || "").slice(0, 10);
+                        const totalSessions = Number(student.totalSessions ?? 0);
+                        const attendedSessions = Number(student.attendedSessions ?? 0);
+                        const remainingSessions = Number(
+                          student.remainingSessions ?? Math.max(0, totalSessions - attendedSessions),
+                        );
+                        const isExpired = remainingSessions <= 0 || (!!studentEnd && studentEnd < today);
+                        const isExpiringSoon = !isExpired && remainingSessions <= 5;
+                        const studentStatus = isExpired
+                          ? "Hết hạn"
+                          : isExpiringSoon
+                          ? "Sắp hết hạn"
+                          : "Còn Hạn";
+                        const dateRangeDays = getDateRangeDays(studentStart, studentEnd);
                         return (
                           <div
                             key={`${student.id}:${selectedAttendDay.value}`}
@@ -786,11 +809,28 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                               }
                               aria-label={`Chọn học viên ${student.fullName}`}
                             />
-                            <div className="flex min-w-0 items-center gap-3">
+                            <div className="flex min-w-0 items-start gap-3">
                               <div className="min-w-0">
-                                <div className="truncate text-sm font-medium text-slate-800">{student.fullName}</div>
-                                <div className="truncate text-xs text-muted-foreground">
-                                  {student.code} · còn {student.remainingSessions ?? 0} buổi
+                                <div className="text-sm font-semibold leading-tight text-slate-800">
+                                  {student.fullName}{" "}
+                                  <span className="font-medium text-slate-500">({student.code || "—"})</span>
+                                </div>
+                                <div className="mt-1 text-xs leading-tight text-slate-500">
+                                  · Còn <span className="font-semibold text-red-600">{remainingSessions}</span> buổi
+                                </div>
+                                <div className="mt-0.5 text-xs leading-tight text-slate-500">
+                                  · {formatStudentDate(studentStart)} – {formatStudentDate(studentEnd)}
+                                  {dateRangeDays != null && ` (${dateRangeDays} ngày)`}
+                                </div>
+                                <div className={cn(
+                                  "mt-0.5 text-xs font-medium leading-tight",
+                                  isExpired
+                                    ? "text-red-600"
+                                    : isExpiringSoon
+                                    ? "text-amber-600"
+                                    : "text-blue-600",
+                                )}>
+                                  · Trạng thái: {studentStatus}
                                 </div>
                               </div>
                             </div>
