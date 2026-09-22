@@ -21,15 +21,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { RichEditor } from "@/components/ui/rich-editor";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Table,
   TableBody,
@@ -70,6 +65,7 @@ export function GradeBookEditDialog({
   const [scores, setScores] = useState<Record<string, Record<string, string>>>({});
   const [includedStudentIds, setIncludedStudentIds] = useState<Set<string>>(new Set());
   const [removedStudentIds, setRemovedStudentIds] = useState<Set<string>>(new Set());
+  const [pendingStudentIds, setPendingStudentIds] = useState<Set<string>>(new Set());
   const [pendingRemoval, setPendingRemoval] = useState<{ id: string; name: string } | null>(null);
   const [studentComments, setStudentComments] = useState<Record<string, string>>({});
   const [commentDialogOpen, setCommentDialogOpen] = useState(false);
@@ -132,6 +128,7 @@ export function GradeBookEditDialog({
     setPublished(book.published);
     setScores({});
     setIncludedStudentIds(new Set());
+    setPendingStudentIds(new Set());
     setStudentComments({});
     setRemovedStudentIds(new Set());
     setPendingRemoval(null);
@@ -297,25 +294,28 @@ export function GradeBookEditDialog({
     setPendingRemoval(null);
   };
 
-  const restoreStudent = (studentId: string) => {
-    setIncludedStudentIds((prev) => {
+  const togglePendingStudent = (studentId: string, checked: boolean) => {
+    setPendingStudentIds((prev) => {
       const next = new Set(prev);
-      next.add(studentId);
-      return next;
-    });
-    setRemovedStudentIds((prev) => {
-      const next = new Set(prev);
-      next.delete(studentId);
+      if (checked) next.add(studentId);
+      else next.delete(studentId);
       return next;
     });
   };
 
-  const addNewStudent = (studentId: string) => {
+  const addPendingStudents = () => {
+    if (pendingStudentIds.size === 0) return;
     setIncludedStudentIds((prev) => {
       const next = new Set(prev);
-      next.add(studentId);
+      pendingStudentIds.forEach((studentId) => next.add(studentId));
       return next;
     });
+    setRemovedStudentIds((prev) => {
+      const next = new Set(prev);
+      pendingStudentIds.forEach((studentId) => next.delete(studentId));
+      return next;
+    });
+    setPendingStudentIds(new Set());
   };
 
   const updateMutation = useMutation({
@@ -417,39 +417,65 @@ export function GradeBookEditDialog({
                       {removedStudents.length > 0 && newStudents.length > 0 && " · "}
                       {newStudents.length > 0 && `${newStudents.length} học viên mới`}
                     </span>
-                    <Select onValueChange={(studentId) => {
-                      if (removedStudents.some((student: any) =>
-                        (student.studentId || student.student?.id || student.id) === studentId
-                      )) {
-                        restoreStudent(studentId);
-                      } else {
-                        addNewStudent(studentId);
-                      }
-                    }}>
-                      <SelectTrigger className="h-7 w-auto min-w-[170px] text-xs">
-                        <SelectValue placeholder="Thêm học viên vào bảng" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {removedStudents.map((student: any) => {
-                          const studentId =
-                            student.studentId || student.student?.id || student.id;
-                          return (
-                            <SelectItem key={`restore-${studentId}`} value={studentId} className="text-xs">
-                              [Đã loại] {student.fullName || student.full_name || student.student?.fullName || "Học viên"}
-                            </SelectItem>
-                          );
-                        })}
-                        {newStudents.map((student: any) => {
-                          const studentId =
-                            student.studentId || student.student?.id || student.id;
-                          return (
-                            <SelectItem key={`new-${studentId}`} value={studentId} className="text-xs">
-                              [Mới vào lớp] {student.fullName || student.full_name || student.student?.fullName || "Học viên"}
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="h-7 min-w-[190px] text-xs justify-between">
+                          Thêm học viên vào bảng
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent align="start" className="w-[320px] p-2">
+                        <div className="max-h-64 overflow-y-auto space-y-1">
+                          {removedStudents.length > 0 && (
+                            <p className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">
+                              Học viên đã loại
+                            </p>
+                          )}
+                          {removedStudents.map((student: any) => {
+                            const studentId =
+                              student.studentId || student.student?.id || student.id;
+                            const name =
+                              student.fullName || student.full_name || student.student?.fullName || "Học viên";
+                            return (
+                              <label key={`restore-${studentId}`} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted">
+                                <Checkbox
+                                  checked={pendingStudentIds.has(studentId)}
+                                  onCheckedChange={(checked) => togglePendingStudent(studentId, checked === true)}
+                                />
+                                <span>[Đã loại] {name}</span>
+                              </label>
+                            );
+                          })}
+                          {newStudents.length > 0 && (
+                            <p className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">
+                              Học viên active mới
+                            </p>
+                          )}
+                          {newStudents.map((student: any) => {
+                            const studentId =
+                              student.studentId || student.student?.id || student.id;
+                            const name =
+                              student.fullName || student.full_name || student.student?.fullName || "Học viên";
+                            return (
+                              <label key={`new-${studentId}`} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted">
+                                <Checkbox
+                                  checked={pendingStudentIds.has(studentId)}
+                                  onCheckedChange={(checked) => togglePendingStudent(studentId, checked === true)}
+                                />
+                                <span>[Mới vào lớp] {name}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-2 flex items-center justify-between border-t pt-2">
+                          <span className="text-xs text-muted-foreground">
+                            Đã chọn: {pendingStudentIds.size}
+                          </span>
+                          <Button size="sm" className="h-7 text-xs" disabled={pendingStudentIds.size === 0} onClick={addPendingStudents}>
+                            Thêm đã chọn
+                          </Button>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 )}
                 <Table>

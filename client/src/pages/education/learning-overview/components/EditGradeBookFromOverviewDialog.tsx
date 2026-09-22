@@ -28,15 +28,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { RichEditor } from "@/components/ui/rich-editor";
 import { ClipboardList, Loader2, MessageSquarePlus, Trash2 } from "lucide-react";
@@ -64,6 +59,7 @@ export function EditGradeBookFromOverviewDialog({ book, open, onClose }: Props) 
   const [scores, setScores] = useState<Record<string, Record<string, string>>>({});
   const [includedStudentIds, setIncludedStudentIds] = useState<Set<string>>(new Set());
   const [removedStudentIds, setRemovedStudentIds] = useState<Set<string>>(new Set());
+  const [pendingStudentIds, setPendingStudentIds] = useState<Set<string>>(new Set());
   const [pendingRemoval, setPendingRemoval] = useState<{ id: string; name: string } | null>(null);
   const [published, setPublished] = useState(false);
   const [commentDialogOpen, setCommentDialogOpen] = useState(false);
@@ -147,6 +143,7 @@ export function EditGradeBookFromOverviewDialog({ book, open, onClose }: Props) 
       setPublished(book.published);
       setScores({});
        setIncludedStudentIds(new Set());
+       setPendingStudentIds(new Set());
       setRemovedStudentIds(new Set());
       setPendingRemoval(null);
       setStudentComments({});
