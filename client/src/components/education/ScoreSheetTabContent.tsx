@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -41,6 +42,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { RichEditor } from "@/components/ui/rich-editor";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ClipboardList, Plus, Trash2, MessageSquarePlus, Pencil, Eye, ChevronLeft, ChevronRight } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -66,7 +68,9 @@ export function ScoreSheetTabContent({
   const [selectedSessionId, setSelectedSessionId] = useState<string>(NONE_VALUE);
   const [selectedScoreSheetId, setSelectedScoreSheetId] = useState<string>("");
   const [scores, setScores] = useState<Record<string, Record<string, string>>>({});
+  const [includedStudentIds, setIncludedStudentIds] = useState<Set<string>>(new Set());
   const [removedStudentIds, setRemovedStudentIds] = useState<Set<string>>(new Set());
+  const [pendingStudentIds, setPendingStudentIds] = useState<Set<string>>(new Set());
   const [pendingRemoval, setPendingRemoval] = useState<{ id: string; name: string } | null>(null);
   const [published, setPublished] = useState(false);
   const [commentDialogOpen, setCommentDialogOpen] = useState(false);
@@ -117,7 +121,15 @@ export function ScoreSheetTabContent({
   const allStudents = activeStudents || [];
   const displayedStudents = allStudents.filter((s: any) => {
     const actualStudentId = s.studentId || s.student?.id || s.id;
-    return !removedStudentIds.has(actualStudentId);
+    return includedStudentIds.has(actualStudentId) && !removedStudentIds.has(actualStudentId);
+  });
+  const removedStudents = allStudents.filter((s: any) => {
+    const actualStudentId = s.studentId || s.student?.id || s.id;
+    return includedStudentIds.has(actualStudentId) && removedStudentIds.has(actualStudentId);
+  });
+  const newStudents = allStudents.filter((s: any) => {
+    const actualStudentId = s.studentId || s.student?.id || s.id;
+    return !includedStudentIds.has(actualStudentId);
   });
 
   useEffect(() => {
@@ -176,7 +188,11 @@ export function ScoreSheetTabContent({
     setSelectedSessionId(NONE_VALUE);
     setSelectedScoreSheetId(classData?.scoreSheetId || "");
     setScores({});
+    setIncludedStudentIds(new Set(
+      allStudents.map((student: any) => student.studentId || student.student?.id || student.id)
+    ));
     setRemovedStudentIds(new Set());
+    setPendingStudentIds(new Set());
     setPendingRemoval(null);
     setPublished(false);
     setStudentComments({});
@@ -189,7 +205,9 @@ export function ScoreSheetTabContent({
     setTitle(book.title);
     setSelectedSessionId(book.session_id || NONE_VALUE);
     setSelectedScoreSheetId(book.score_sheet_id);
+    setIncludedStudentIds(new Set());
     setRemovedStudentIds(new Set());
+    setPendingStudentIds(new Set());
     setPendingRemoval(null);
     setPublished(book.published || false);
     setStudentComments({});
@@ -203,6 +221,11 @@ export function ScoreSheetTabContent({
       const data = await resp.json();
       const existingScores: any[] = data.scores || [];
       const existingComments: Record<string, string> = data.studentComments || {};
+      setIncludedStudentIds(new Set(
+        Array.isArray(data.studentIds)
+          ? data.studentIds
+          : allStudents.map((s: any) => s.studentId || s.student?.id || s.id),
+      ));
       setRemovedStudentIds(new Set(data.excludedStudentIds || []));
 
       const studentIdToEnrollmentId: Record<string, string> = {};
@@ -372,12 +395,28 @@ export function ScoreSheetTabContent({
     setPendingRemoval(null);
   };
 
-  const restoreStudent = (studentId: string) => {
-    setRemovedStudentIds((prev) => {
+  const togglePendingStudent = (studentId: string, checked: boolean) => {
+    setPendingStudentIds((prev) => {
       const next = new Set(prev);
-      next.delete(studentId);
+      if (checked) next.add(studentId);
+      else next.delete(studentId);
       return next;
     });
+  };
+
+  const addPendingStudents = () => {
+    if (pendingStudentIds.size === 0) return;
+    setIncludedStudentIds((prev) => {
+      const next = new Set(prev);
+      pendingStudentIds.forEach((studentId) => next.add(studentId));
+      return next;
+    });
+    setRemovedStudentIds((prev) => {
+      const next = new Set(prev);
+      pendingStudentIds.forEach((studentId) => next.delete(studentId));
+      return next;
+    });
+    setPendingStudentIds(new Set());
   };
 
   const handleOpenComment = (studentId: string, studentName: string) => {
@@ -392,11 +431,13 @@ export function ScoreSheetTabContent({
 
   const buildScoreList = () => {
     const scoreList: { studentId: string; categoryId: string; score: string }[] = [];
-    displayedStudents.forEach((student: any) => {
-      const enrollmentId = student.id;
-      const actualStudentId = student.studentId || student.student?.id || student.id;
+    includedStudentIds.forEach((actualStudentId) => {
+      const student = allStudents.find((candidate: any) =>
+        (candidate.studentId || candidate.student?.id || candidate.id) === actualStudentId
+      );
+      const enrollmentId = student?.id || actualStudentId;
       categories.forEach((cat: any) => {
-        const score = scores[enrollmentId]?.[cat.id] || "";
+        const score = scores[enrollmentId]?.[cat.id] || scores[actualStudentId]?.[cat.id] || "";
         if (score) {
           scoreList.push({ studentId: actualStudentId, categoryId: cat.id, score });
         }
@@ -407,10 +448,12 @@ export function ScoreSheetTabContent({
 
   const buildStudentComments = () => {
     const result: Record<string, string> = {};
-    allStudents.forEach((student: any) => {
-      const enrollmentId = student.id;
-      const actualStudentId = student.studentId || student.student?.id || student.id;
-      const comment = studentComments[enrollmentId];
+    includedStudentIds.forEach((actualStudentId) => {
+      const student = allStudents.find((candidate: any) =>
+        (candidate.studentId || candidate.student?.id || candidate.id) === actualStudentId
+      );
+      const enrollmentId = student?.id || actualStudentId;
+      const comment = studentComments[enrollmentId] || studentComments[actualStudentId];
       if (comment?.trim()) {
         result[actualStudentId] = comment.trim();
       }
@@ -436,6 +479,7 @@ export function ScoreSheetTabContent({
       scores: scoreList,
       studentComments: buildStudentComments(),
       excludedStudentIds: Array.from(removedStudentIds),
+      studentIds: Array.from(includedStudentIds),
       published,
     };
 
