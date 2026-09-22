@@ -80,7 +80,7 @@ export interface MyCalendarSessionLight {
   isFreeSession?: boolean;
   freeStatus?: string | null;
   freeStudents?: {
-    registrationId: string;
+    registrationId: string | null;
     studentClassId: string;
     studentId: string;
     fullName: string;

@@ -31,6 +31,17 @@ async function checkAttendanceLimitForSession(classSessionId: string, req: any):
 
 const CLASSES_RESOURCE = "/classes";
 
+function getBangkokDateString(): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 async function getClassReadScope(req: any): Promise<{ scope: ClassViewScope; canView: boolean; canViewAll: boolean }> {
   return resolveClassViewAccess(req);
 }
@@ -1848,7 +1859,13 @@ export function registerClassesRoutes(app: Express): void {
         return res.status(400).json({ message: "Thao tác lịch không hợp lệ" });
       }
       const [classRow] = await db
-        .select({ classType: classes.classType, startDate: classes.startDate, endDate: classes.endDate })
+        .select({
+          classType: classes.classType,
+          freeClassMode: classes.freeClassMode,
+          teacherIds: classes.teacherIds,
+          startDate: classes.startDate,
+          endDate: classes.endDate,
+        })
         .from(classes)
         .where(eq(classes.id, classId))
         .limit(1);
@@ -1915,12 +1932,51 @@ export function registerClassesRoutes(app: Express): void {
             });
           }
         } else {
-          if (!existing) throw new Error("Học viên chưa đăng ký ngày này");
           const requestedStatus = ["registered", "attended", "reserved"].includes(String(status))
             ? String(status)
             : value === false
             ? "registered"
             : "attended";
+          if (!existing) {
+            const isSelfPractice =
+              classRow.freeClassMode === "self_practice"
+              || (classRow.freeClassMode == null && (classRow.teacherIds ?? []).length === 0);
+            if (!isSelfPractice) {
+              throw new Error("Học viên chưa đăng ký ngày này");
+            }
+            // A self-practice row is virtual while it is still pending. Avoid
+            // persisting a meaningless "registered" row unless the caller
+            // supplied data that must be retained.
+            if (requestedStatus === "registered" && !hasNote && !teacherId && !shiftTemplateId) {
+              return;
+            }
+            if (requestedStatus === "attended" && Number(sc.totalSessions || 0) > 0) {
+              const [attendedBefore] = await tx
+                .select({ count: sql<number>`count(*)::int` })
+                .from(freeClassRegistrations)
+                .where(and(
+                  eq(freeClassRegistrations.studentClassId, sc.id),
+                  eq(freeClassRegistrations.status, "attended"),
+                ));
+              if (Number(attendedBefore?.count || 0) >= Number(sc.totalSessions)) {
+                throw new Error("Học viên đã sử dụng hết số buổi");
+              }
+            }
+            await tx.insert(freeClassRegistrations).values({
+              classId,
+              studentClassId: sc.id,
+              studentId: sc.studentId,
+              registrationDate: String(date),
+              teacherId: teacherId || null,
+              shiftTemplateId: shiftTemplateId || null,
+              status: requestedStatus,
+              registeredBy: actorId,
+              ...(hasNote ? { note: typeof note === "string" ? note.trim() || null : null } : {}),
+              ...(requestedStatus === "attended"
+                ? { attendedBy: actorId, attendedAt: new Date() }
+                : {}),
+            });
+          } else {
           if (requestedStatus === "attended" && existing.status !== "attended" && Number(sc.totalSessions || 0) > 0) {
             const [attendedBefore] = await tx
               .select({ count: sql<number>`count(*)::int` })
@@ -1946,6 +2002,7 @@ export function registerClassesRoutes(app: Express): void {
             ...(hasNote ? { note: typeof note === "string" ? note.trim() || null : null } : {}),
             updatedAt: new Date(),
           }).where(eq(freeClassRegistrations.id, existing.id));
+          }
         }
         const [attended] = await tx
           .select({ count: sql<number>`count(*)::int` })
@@ -4140,6 +4197,7 @@ export function registerClassesRoutes(app: Express): void {
     try {
       const { from, to, teacherId, locationId } = req.query as Record<string, string>;
       if (!from || !to) return res.status(400).json({ message: "from and to are required" });
+      const todayInBangkok = getBangkokDateString();
 
       const allowedLocationIds = await getAllowedLocationIds(req);
 
@@ -4263,6 +4321,15 @@ export function registerClassesRoutes(app: Express): void {
         gte(freeClassRegistrations.registrationDate, from),
         lte(freeClassRegistrations.registrationDate, to),
         inArray(studentClasses.status, ["active", "waiting"]),
+        or(
+          ne(classes.freeClassMode, "self_practice"),
+          and(
+            isNull(classes.freeClassMode),
+            sql`coalesce(array_length(${classes.teacherIds}, 1), 0) > 0`,
+          ),
+          gte(freeClassRegistrations.registrationDate, todayInBangkok),
+          ne(freeClassRegistrations.status, "registered"),
+        ),
       ];
       if (effectiveLocationId) {
         freeLocationConditions.push(eq(classes.locationId, effectiveLocationId));
@@ -4306,6 +4373,86 @@ export function registerClassesRoutes(app: Express): void {
         .leftJoin(shiftTemplates, eq(freeClassRegistrations.shiftTemplateId, shiftTemplates.id))
         .where(and(...freeLocationConditions));
 
+      // Self-practice classes do not require a registration before the student
+      // arrives. Project today's active enrollments as virtual pending rows;
+      // the attendance endpoint materializes the row only when a real status
+      // is recorded.
+      const selfPracticeMode = or(
+        eq(classes.freeClassMode, "self_practice"),
+        and(
+          isNull(classes.freeClassMode),
+          sql`coalesce(array_length(${classes.teacherIds}, 1), 0) = 0`,
+        ),
+      );
+      const selfPracticeLocationConditions = effectiveLocationId
+        ? [eq(classes.locationId, effectiveLocationId)]
+        : allowedLocationIds !== null && allowedLocationIds.length > 0
+        ? [inArray(classes.locationId, allowedLocationIds)]
+        : [];
+      const selfPracticeRows = from <= todayInBangkok && todayInBangkok <= to
+        ? await db
+          .select({
+            registrationId: freeClassRegistrations.id,
+            classId: classes.id,
+            classCode: classes.classCode,
+            className: classes.name,
+            classColor: classes.color,
+            classTeacherIds: classes.teacherIds,
+            locationId: classes.locationId,
+            locationName: locations.name,
+            sessionDate: sql<string>`${todayInBangkok}::date`,
+            registrationStatus: sql<string>`coalesce(${freeClassRegistrations.status}, 'registered')`,
+            teacherId: freeClassRegistrations.teacherId,
+            shiftTemplateId: freeClassRegistrations.shiftTemplateId,
+            registrationShiftName: shiftTemplates.name,
+            registrationShiftStart: shiftTemplates.startTime,
+            registrationShiftEnd: shiftTemplates.endTime,
+            classShiftTemplateIds: classes.shiftTemplateIds,
+            scheduleConfig: classes.scheduleConfig,
+            teachersConfig: classes.teachersConfig,
+            studentClassId: studentClasses.id,
+            studentId: studentClasses.studentId,
+            studentName: students.fullName,
+            studentCode: students.code,
+            note: freeClassRegistrations.note,
+            reviewData: freeClassRegistrations.reviewData,
+            reviewPublished: freeClassRegistrations.reviewPublished,
+            evaluationCriteriaIds: classes.evaluationCriteriaIds,
+          })
+          .from(studentClasses)
+          .innerJoin(classes, eq(studentClasses.classId, classes.id))
+          .innerJoin(locations, eq(classes.locationId, locations.id))
+          .innerJoin(students, eq(studentClasses.studentId, students.id))
+          .leftJoin(
+            freeClassRegistrations,
+            and(
+              eq(freeClassRegistrations.studentClassId, studentClasses.id),
+              eq(freeClassRegistrations.registrationDate, todayInBangkok),
+            ),
+          )
+          .leftJoin(shiftTemplates, eq(freeClassRegistrations.shiftTemplateId, shiftTemplates.id))
+          .where(and(
+            eq(classes.classType, "free"),
+            selfPracticeMode,
+            inArray(studentClasses.status, ["active", "waiting"]),
+            or(isNull(classes.startDate), lte(classes.startDate, todayInBangkok)),
+            or(isNull(classes.endDate), gte(classes.endDate, todayInBangkok)),
+            or(isNull(studentClasses.startDate), lte(studentClasses.startDate, todayInBangkok)),
+            or(isNull(studentClasses.endDate), gte(studentClasses.endDate, todayInBangkok)),
+            ...selfPracticeLocationConditions,
+          ))
+        : [];
+
+      const freeRowKeys = new Set(
+        freeRows.map((row) => `${row.studentClassId}:${String(row.sessionDate).slice(0, 10)}`),
+      );
+      const allFreeRows = [
+        ...freeRows,
+        ...selfPracticeRows.filter((row) =>
+          !freeRowKeys.has(`${row.studentClassId}:${String(row.sessionDate).slice(0, 10)}`),
+        ),
+      ] as any[];
+
       const freeDayAssignmentRows = await db
         .select({
           classId: freeClassDayAssignments.classId,
@@ -4334,7 +4481,7 @@ export function registerClassesRoutes(app: Express): void {
       );
 
       const configuredShiftIds = new Set<string>();
-      for (const row of freeRows) {
+      for (const row of allFreeRows) {
         for (const shiftId of row.classShiftTemplateIds ?? []) {
           if (shiftId) configuredShiftIds.add(shiftId);
         }
@@ -4359,7 +4506,7 @@ export function registerClassesRoutes(app: Express): void {
         configuredShifts.forEach((shift) => configuredShiftMap.set(shift.id, shift));
       }
 
-      const getClassConfiguredShift = (row: (typeof freeRows)[number], date: string) => {
+      const getClassConfiguredShift = (row: any, date: string) => {
         const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
         const scheduleConfig = Array.isArray(row.scheduleConfig) ? row.scheduleConfig : [];
         const dayConfig = scheduleConfig.find((config: any) => {
@@ -4439,7 +4586,7 @@ export function registerClassesRoutes(app: Express): void {
            reviewPublished: boolean;
         }[];
       }>();
-      for (const row of freeRows) {
+      for (const row of allFreeRows) {
         const key = `${row.classId}:${row.sessionDate}`;
         const date = String(row.sessionDate).slice(0, 10);
         const dayAssignment = freeDayAssignmentMap.get(`${row.classId}:${date}`);

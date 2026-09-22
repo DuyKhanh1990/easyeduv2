@@ -57,7 +57,7 @@ interface ScheduleSession {
   isTestSession?: boolean;
   isFreeSession?: boolean;
   freeStudents?: {
-    registrationId: string;
+    registrationId: string | null;
     studentClassId: string;
     studentId: string;
     fullName: string;
