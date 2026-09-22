@@ -512,11 +512,11 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
   return (
     <div className="flex h-full min-h-[520px] flex-col rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-2">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px]">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
           <span className="font-semibold text-blue-600">
             {classData?.name || "—"}{classData?.classCode ? ` (${classData.classCode})` : ""}
           </span>
-          <Badge className="h-5 border-emerald-200 bg-emerald-50 px-1.5 text-[9px] font-semibold text-emerald-700" variant="outline">
+          <Badge className="h-6 border-emerald-200 bg-emerald-50 px-2.5 text-[11px] font-semibold text-emerald-700" variant="outline">
             Lớp tự do
           </Badge>
           <span className="text-slate-300">|</span>
