@@ -103,6 +103,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
   const [criteriaDraft, setCriteriaDraft] = useState<string[]>([]);
   const [criteriaOverride, setCriteriaOverride] = useState<string[] | undefined>();
   const [assignmentEditor, setAssignmentEditor] = useState<{
+    scope: "day" | "student";
     studentClassId: string;
     date: string;
     studentName: string;
@@ -996,6 +997,32 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                         <span className="text-[10px] text-muted-foreground">{day.weekday}</span>
                       </button>
                       <div className="mt-1 space-y-1 px-0.5">
+                        <div className="flex items-center justify-center gap-1">
+                          <span className="text-[9px] font-medium text-slate-500">Phân công ngày</span>
+                          <button
+                            type="button"
+                            disabled={!classPerm?.canEdit}
+                            className={cn(
+                              "inline-flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-default disabled:opacity-50",
+                              (dayAssignment?.teacherId || dayAssignment?.shiftTemplateId) && "text-indigo-600",
+                            )}
+                            title="Phân công GV/ca cho cả ngày"
+                            aria-label={`Phân công GV/ca cho ngày ${day.label}/${monthLabel}`}
+                            onClick={() => {
+                              if (!classPerm?.canEdit) return;
+                              setAssignmentEditor({
+                                scope: "day",
+                                studentClassId: "",
+                                date: day.value,
+                                studentName: "Phân công chung ngày",
+                                teacherId: dayAssignment?.teacherId || "",
+                                shiftTemplateId: dayAssignment?.shiftTemplateId || "",
+                              });
+                            }}
+                          >
+                            <UserRound className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                         <Select
                           value={dayAssignment?.teacherId || "__none__"}
                           disabled={!classPerm?.canEdit || assignmentMutation.isPending}
@@ -1222,6 +1249,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                   onClick={() => {
                                     if (!classPerm?.canEdit) return;
                                     setAssignmentEditor({
+                                      scope: "student",
                                       studentClassId: student.id,
                                       date: day.value,
                                       studentName: student.fullName,
@@ -1363,14 +1391,20 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
       >
         <DialogContent className="sm:max-w-[460px]">
           <DialogHeader>
-            <DialogTitle>Phân công riêng cho học viên</DialogTitle>
+            <DialogTitle>
+              {assignmentEditor?.scope === "day"
+                ? "Phân công chung cho ngày"
+                : "Phân công riêng cho học viên"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <p className="text-sm text-muted-foreground">
               {assignmentEditor?.studentName || "Học viên"} · {assignmentEditor?.date ? formatStudentDate(assignmentEditor.date) : "—"}
             </p>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-600">Giáo viên riêng</label>
+              <label className="text-xs font-medium text-slate-600">
+                {assignmentEditor?.scope === "day" ? "Giáo viên áp dụng cho cả ngày" : "Giáo viên riêng"}
+              </label>
               <Select
                 value={assignmentEditor?.teacherId || "__none__"}
                 disabled={assignmentMutation.isPending}
@@ -1381,10 +1415,14 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Theo giáo viên của ngày" />
+                  <SelectValue
+                    placeholder={assignmentEditor?.scope === "day" ? "Theo GV chung của lớp" : "Theo giáo viên của ngày"}
+                  />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">Theo giáo viên của ngày</SelectItem>
+                  <SelectItem value="__none__">
+                    {assignmentEditor?.scope === "day" ? "Theo GV chung của lớp" : "Theo giáo viên của ngày"}
+                  </SelectItem>
                   {availableTeachers.map((teacher: any) => (
                     <SelectItem key={teacher.id} value={String(teacher.id)}>
                       {teacher.fullName || teacher.name || teacher.code || "Giáo viên"}
@@ -1394,7 +1432,9 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
               </Select>
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-600">Ca dạy riêng</label>
+              <label className="text-xs font-medium text-slate-600">
+                {assignmentEditor?.scope === "day" ? "Ca dạy áp dụng cho cả ngày" : "Ca dạy riêng"}
+              </label>
               <Select
                 value={assignmentEditor?.shiftTemplateId || "__none__"}
                 disabled={assignmentMutation.isPending}
@@ -1405,10 +1445,14 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Theo ca của ngày" />
+                  <SelectValue
+                    placeholder={assignmentEditor?.scope === "day" ? "Theo ca của lớp" : "Theo ca của ngày"}
+                  />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">Theo ca của ngày</SelectItem>
+                  <SelectItem value="__none__">
+                    {assignmentEditor?.scope === "day" ? "Theo ca của lớp" : "Theo ca của ngày"}
+                  </SelectItem>
                   {availableShifts.map((shift: any) => (
                     <SelectItem key={shift.id} value={String(shift.id)}>
                       {shift.name} ({String(shift.startTime || "").slice(0, 5)}–{String(shift.endTime || "").slice(0, 5)})
@@ -1434,8 +1478,10 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
               onClick={() => {
                 if (!assignmentEditor) return;
                 assignmentMutation.mutate({
-                  scope: "student",
-                  studentClassId: assignmentEditor.studentClassId,
+                  scope: assignmentEditor.scope,
+                  ...(assignmentEditor.scope === "student"
+                    ? { studentClassId: assignmentEditor.studentClassId }
+                    : {}),
                   date: assignmentEditor.date,
                   teacherId: assignmentEditor.teacherId || null,
                   shiftTemplateId: assignmentEditor.shiftTemplateId || null,
