@@ -668,7 +668,7 @@ export function ScheduleTabContent({
           />
         )}
 
-        <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_500px]">
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_500px]">
           {/* Session info */}
           <div className="min-w-0">
           {/* Session info card – directly below action buttons */}
@@ -729,7 +729,7 @@ export function ScheduleTabContent({
           </div>
 
         {/* Right column: session grid (6 per row) */}
-        <div className="w-full min-w-0 xl:sticky xl:top-0">
+        <div className="w-full min-w-0 lg:sticky lg:top-0">
           <VerticalSessionList
             classSessions={classSessions}
             selectedClassSessionId={selectedClassSessionId}
@@ -738,7 +738,7 @@ export function ScheduleTabContent({
         </div>
 
         {/* Student list spans the full available width below both top columns */}
-        <div className="col-span-1 min-w-0 xl:col-span-2">
+        <div className="col-span-1 min-w-0 lg:col-span-2">
           <SessionDetailPanel
             mode="students"
             classData={classData}
