@@ -646,31 +646,29 @@ export function ScheduleTabContent({
         classSessionId={selectedClassSessionId || ""}
       />
 
-      <div className="space-y-4">
-        {/* Action buttons — only show inline when NOT delegated to parent header */}
-        {!onActionsChange && (
-          <SessionListPanel
-            classSessions={classSessions}
-            selectedClassSessionId={selectedClassSessionId}
-            onSessionSelect={setSelectedClassSessionId}
-            onActionsChange={onActionsChange}
-            setIsSessionContentDialogOpen={setIsSessionContentDialogOpen}
-            setIsUpdateSessionOpen={setIsUpdateSessionOpen}
-            setIsChangeTeacherOpen={setIsChangeTeacherOpen}
-            setSelectedSessionId={setSelectedSessionId}
-            setIsCancelSessionsDialogOpen={setIsCancelSessionsDialogOpen}
-            setIsUpdateCycleOpen={setIsUpdateCycleOpen}
-            setIsExcludeSessionsOpen={setIsExcludeSessionsOpen}
-            setIsDeleteScheduleOpen={setIsDeleteScheduleOpen}
-            classPerm={classPerm}
-            classId={classId}
-            showGrid={false}
-          />
-        )}
-
-        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_500px]">
-          {/* Session info */}
-          <div className="min-w-0">
+      <div className="flex gap-4 items-start">
+        {/* Left column: Action buttons + Session info + Student list stacked */}
+        <div className="flex-1 min-w-0 space-y-4">
+          {/* Action buttons — only show inline when NOT delegated to parent header */}
+          {!onActionsChange && (
+            <SessionListPanel
+              classSessions={classSessions}
+              selectedClassSessionId={selectedClassSessionId}
+              onSessionSelect={setSelectedClassSessionId}
+              onActionsChange={onActionsChange}
+              setIsSessionContentDialogOpen={setIsSessionContentDialogOpen}
+              setIsUpdateSessionOpen={setIsUpdateSessionOpen}
+              setIsChangeTeacherOpen={setIsChangeTeacherOpen}
+              setSelectedSessionId={setSelectedSessionId}
+              setIsCancelSessionsDialogOpen={setIsCancelSessionsDialogOpen}
+              setIsUpdateCycleOpen={setIsUpdateCycleOpen}
+              setIsExcludeSessionsOpen={setIsExcludeSessionsOpen}
+              setIsDeleteScheduleOpen={setIsDeleteScheduleOpen}
+              classPerm={classPerm}
+              classId={classId}
+              showGrid={false}
+            />
+          )}
           {/* Session info card – directly below action buttons */}
           <SessionDetailPanel
             mode="info"
@@ -726,20 +724,7 @@ export function ScheduleTabContent({
             onViewContent={handleViewContent}
             classPerm={classPerm}
           />
-          </div>
-
-        {/* Right column: session grid (6 per row) */}
-        <div className="w-full min-w-0 lg:sticky lg:top-0">
-          <VerticalSessionList
-            classSessions={classSessions}
-            selectedClassSessionId={selectedClassSessionId}
-            onSessionSelect={setSelectedClassSessionId}
-          />
-        </div>
-
-        {/* Student list — keep the original interface enabled by default.
-            The matrix draft remains in source for a later rollout. */}
-        <div className="col-span-1 min-w-0">
+          {/* Student list - below session info */}
           <SessionDetailPanel
             mode="students"
             classData={classData}
@@ -795,7 +780,15 @@ export function ScheduleTabContent({
             classPerm={classPerm}
           />
         </div>
-      </div>
+
+        {/* Right column: session grid (6 per row) */}
+        <div className="w-[500px] shrink-0 sticky top-0">
+          <VerticalSessionList
+            classSessions={classSessions}
+            selectedClassSessionId={selectedClassSessionId}
+            onSessionSelect={setSelectedClassSessionId}
+          />
+        </div>
       </div>
 
       {/* === Dialogs rendered outside tab content === */}

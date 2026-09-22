@@ -4,7 +4,6 @@ import { format } from "date-fns";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AddStudentToSessionDialog } from "./AddStudentToSessionDialog";
 import { SessionStudentTable } from "./SessionStudentTable";
-import { ClassSessionMatrixDraft } from "./ClassSessionMatrixDraft";
 import { BulkChangeCycleDialog } from "./BulkChangeCycleDialog";
 import type { ClassPermissions } from "@/pages/education/ClassDetail";
 import { useToast } from "@/hooks/use-toast";
@@ -91,8 +90,6 @@ interface SessionDetailPanelProps {
   onViewContent?: (contentId: string | null, fallback?: { title: string; type: string; content?: string | null; sessionNumber?: number | null } | null, contentType?: string) => void;
   mode?: "info" | "students" | "all";
   classPerm?: ClassPermissions;
-  showMatrix?: boolean;
-  onToggleMatrix?: () => void;
 }
 
 export function SessionDetailPanel({
@@ -148,8 +145,6 @@ export function SessionDetailPanel({
   setIsSessionContentDialogOpen,
   onViewContent,
   classPerm,
-  showMatrix = false,
-  onToggleMatrix,
 }: SessionDetailPanelProps) {
   const { toast } = useToast();
   const canAdd = classPerm?.canAdd ?? true;
@@ -545,34 +540,9 @@ export function SessionDetailPanel({
             Danh sách học viên
           </span>
           <span className="text-[10px] text-slate-800 font-medium">
-            ({showMatrix ? activeStudents?.length || 0 : currentSessionStudents?.length || 0})
+            ({currentSessionStudents?.length || 0})
           </span>
-          {showMatrix && (
-            <Badge variant="outline" className="h-5 border-amber-200 bg-amber-50 px-1.5 text-[9px] font-bold text-amber-700">
-              Nháp
-            </Badge>
-          )}
           <div className="ml-auto flex items-center gap-1">
-              {mode === "students" && onToggleMatrix && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 gap-1 px-2 text-[10px]"
-                  onClick={onToggleMatrix}
-                >
-                  {showMatrix ? (
-                    <>
-                      <ClipboardList className="h-3.5 w-3.5" />
-                      Danh sách cũ
-                    </>
-                  ) : (
-                    <>
-                      <Users className="h-3.5 w-3.5" />
-                      Ma trận nháp
-                    </>
-                  )}
-                </Button>
-              )}
               {canAdd && (
               <AddStudentToSessionDialog
                 open={isAddStudentToSessionOpen}
@@ -593,7 +563,7 @@ export function SessionDetailPanel({
               />
               )}
 
-              {!showMatrix && canEdit && (
+              {canEdit && (
               <Button
                 variant={selectedStudentIds.length > 0 ? "default" : "outline"}
                 size="sm"
@@ -611,7 +581,7 @@ export function SessionDetailPanel({
               </Button>
               )}
 
-              {!showMatrix && canEdit && (
+              {canEdit && (
               <Button
                 variant={
                   currentSessionStudents?.some(
@@ -679,7 +649,7 @@ export function SessionDetailPanel({
               </Button>
               )}
 
-              {!showMatrix && canAdd && (
+              {canAdd && (
               <Popover open={isActionMenuOpen} onOpenChange={setIsActionMenuOpen}>
                 <PopoverTrigger asChild>
                   <Button
@@ -781,36 +751,25 @@ export function SessionDetailPanel({
               )}
             </div>
           </div>
-        {showMatrix ? (
-          <ClassSessionMatrixDraft
-            classId={classData?.id}
-            classSessions={classSessions}
-            activeStudents={activeStudents}
-            currentSessionStudents={currentSessionStudents}
-            updateAttendanceMutation={updateAttendanceMutation}
-            canEdit={canEdit}
-          />
-        ) : (
-          <SessionStudentTable
-            currentSessionStudents={currentSessionStudents}
-            isLoadingSessionStudents={isLoadingSessionStudents}
-            selectedStudentIds={selectedStudentIds}
-            setSelectedStudentIds={setSelectedStudentIds}
-            setIsActionMenuOpen={setIsActionMenuOpen}
-            updateAttendanceMutation={updateAttendanceMutation}
-            classSessions={classSessions}
-            selectedClassSessionId={selectedClassSessionId}
-            classPerm={classPerm}
-            classData={classData}
-            setStudentToRemove={setStudentToRemove}
-            setIsRemoveStudentDialogOpen={setIsRemoveStudentDialogOpen}
-            setReviewTarget={setReviewTarget}
-            setIsReviewDialogOpen={setIsReviewDialogOpen}
-            setIsChangeTuitionPackageDialogOpen={setIsChangeTuitionPackageDialogOpen}
-            setSelectedStudentForTransfer={setSelectedStudentForTransfer}
-            setIsTransferOpen={setIsTransferOpen}
-          />
-        )}
+        <SessionStudentTable
+          currentSessionStudents={currentSessionStudents}
+          isLoadingSessionStudents={isLoadingSessionStudents}
+          selectedStudentIds={selectedStudentIds}
+          setSelectedStudentIds={setSelectedStudentIds}
+          setIsActionMenuOpen={setIsActionMenuOpen}
+          updateAttendanceMutation={updateAttendanceMutation}
+          classSessions={classSessions}
+          selectedClassSessionId={selectedClassSessionId}
+          classPerm={classPerm}
+          classData={classData}
+          setStudentToRemove={setStudentToRemove}
+          setIsRemoveStudentDialogOpen={setIsRemoveStudentDialogOpen}
+          setReviewTarget={setReviewTarget}
+          setIsReviewDialogOpen={setIsReviewDialogOpen}
+          setIsChangeTuitionPackageDialogOpen={setIsChangeTuitionPackageDialogOpen}
+          setSelectedStudentForTransfer={setSelectedStudentForTransfer}
+          setIsTransferOpen={setIsTransferOpen}
+        />
       </div>
   );
 

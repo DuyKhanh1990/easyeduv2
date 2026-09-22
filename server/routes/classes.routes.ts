@@ -2401,7 +2401,6 @@ export function registerClassesRoutes(app: Express): void {
           classSessionId: baseSs.classSessionId,
           studentId: baseSs.studentId,
           attendanceStatus: baseSs.attendanceStatus,
-          attendanceNote: baseSs.attendanceNote,
           studentName: baseStudents.fullName,
           studentCode: baseStudents.code,
         })

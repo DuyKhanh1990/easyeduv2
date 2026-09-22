@@ -67,4 +67,3 @@
 - [Free-class detail cache](free-class-detail-cache.md) — mutation lớp tự do phải refresh exact staff detail query, không chỉ lịch tháng, để tránh mất trạng thái khi mở lại.
 - [Free-class teacher assignment precedence](free-class-teacher-assignment.md) — override học viên/ngày thắng GV chung; lịch cá nhân chỉ gửi cho GV hiệu lực.
 - [Grade book roster snapshot](grade-book-roster-snapshot.md) — danh sách học viên được chốt lúc tạo; học viên active phát sinh sau đó chỉ được thêm thủ công.
-- [Draft matrix UI rollout](draft-ui-rollout.md) — ma trận học viên × buổi là giao diện thứ hai triển khai sau; không thay thế bảng Customer/lớp hiện tại.
