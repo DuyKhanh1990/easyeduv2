@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { addMonths, format, getDaysInMonth, startOfMonth, subMonths } from "date-fns";
-import { vi } from "date-fns/locale";
 import {
   ChevronLeft,
   ChevronRight,
@@ -360,10 +359,6 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
         }))
         .filter(({ registration }: any) => !!registration)
     : [];
-  const selectedAttendedCount = selectedAttendStudents.filter(
-    ({ registration }: any) => registration.status === "attended",
-  ).length;
-
   useEffect(() => {
     const visibleStudentIds = new Set(selectedAttendStudents.map(({ student }: any) => student.id));
     const attendedStudentIds = selectedAttendStudents
@@ -695,73 +690,6 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
 
             {selectedAttendDay && (
               <>
-                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                  <div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3">
-                    <div className="flex min-w-0 flex-1 items-center gap-2">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-700">
-                        Chi tiết lịch học
-                      </span>
-                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
-                        Lớp tự do
-                      </span>
-                    </div>
-                    <span className="text-xs font-medium text-slate-500">
-                      {format(selectedAttendDay.date, "EEEE, dd/MM/yyyy", { locale: vi })}
-                    </span>
-                  </div>
-                  <div className="grid gap-x-6 gap-y-3 px-4 py-4 md:grid-cols-2">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <BookOpen className="h-4 w-4 shrink-0 text-slate-500" />
-                      <span className="w-16 shrink-0 text-xs font-medium text-slate-600">Lớp:</span>
-                      <span className="truncate text-sm font-semibold text-blue-600">
-                        {classData?.name || "—"}{classData?.classCode ? ` (${classData.classCode})` : ""}
-                      </span>
-                    </div>
-                    <div className="flex min-w-0 items-center gap-2">
-                      <MapPin className="h-4 w-4 shrink-0 text-slate-500" />
-                      <span className="w-16 shrink-0 text-xs font-medium text-slate-600">Cơ sở:</span>
-                      <span className="truncate text-sm font-semibold text-blue-600">{classLocationLabel}</span>
-                    </div>
-                    <div className="flex min-w-0 items-center gap-2">
-                      <UserRound className="h-4 w-4 shrink-0 text-slate-500" />
-                      <span className="w-16 shrink-0 text-xs font-medium text-slate-600">GV:</span>
-                      <span className="truncate text-sm font-semibold text-blue-600">{classTeacherLabel}</span>
-                    </div>
-                    <div className="flex min-w-0 items-center gap-2">
-                      <Users className="h-4 w-4 shrink-0 text-slate-500" />
-                      <span className="w-16 shrink-0 text-xs font-medium text-slate-600">Sĩ số:</span>
-                      <span className="text-sm font-semibold text-blue-600">
-                        {selectedAttendStudents.length} học viên
-                      </span>
-                    </div>
-                    <div className="flex min-w-0 items-center gap-2 md:col-span-2">
-                      <ClipboardCheck className="h-4 w-4 shrink-0 text-slate-500" />
-                      <span className="w-16 shrink-0 text-xs font-medium text-slate-600">Đã học:</span>
-                      <span className="text-sm font-semibold text-blue-600">
-                        {selectedAttendedCount}/{selectedAttendStudents.length} học viên
-                      </span>
-                    </div>
-                    <div className="flex min-w-0 items-center gap-2 md:col-span-2">
-                      <Star className="h-4 w-4 shrink-0 text-slate-500" />
-                      <span className="w-16 shrink-0 text-xs font-medium text-slate-600">Tiêu chí:</span>
-                      <span className="min-w-0 truncate text-sm font-semibold text-blue-600">{criteriaLabel}</span>
-                      {classPerm?.canEdit && (
-                        <button
-                          type="button"
-                          className="shrink-0 text-slate-300 transition-colors hover:text-indigo-500"
-                          title="Gán tiêu chí nhận xét"
-                          onClick={() => {
-                            setCriteriaDraft(evaluationCriteriaIds.map(String));
-                            setCriteriaDialogOpen(true);
-                          }}
-                        >
-                          <Pencil className="h-3 w-3" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
                 <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                   <div className="flex items-center gap-2 px-4 pb-3 pt-4">
                     <div className="h-4 w-1 shrink-0 rounded-full bg-gradient-to-b from-emerald-400 to-teal-500" />
@@ -851,28 +779,28 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                               }}
                             >
                               <SelectTrigger className={cn(
-                                "h-8 w-[140px] text-[11px]",
+                                "h-8 w-[140px] text-[8px]",
                                 status === "attended" && "border-emerald-200 bg-emerald-50 text-emerald-700",
                                 status === "reserved" && "border-amber-200 bg-amber-50 text-amber-700",
                                 status === "registered" && "border-slate-200 bg-slate-50 text-slate-600",
                               )}>
                                 <SelectValue>{statusLabel}</SelectValue>
                               </SelectTrigger>
-                              <SelectContent>
+                              <SelectContent className="text-[8px]">
                                 <SelectItem value="registered">
-                                  <span className="flex items-center gap-2">
+                                  <span className="flex items-center gap-2 text-[8px]">
                                     <HelpCircle className="h-3.5 w-3.5 text-slate-500" />
                                     Chưa điểm danh
                                   </span>
                                 </SelectItem>
                                 <SelectItem value="attended">
-                                  <span className="flex items-center gap-2">
+                                  <span className="flex items-center gap-2 text-[8px]">
                                     <ClipboardCheck className="h-3.5 w-3.5 text-emerald-600" />
                                     Có học
                                   </span>
                                 </SelectItem>
                                 <SelectItem value="reserved">
-                                  <span className="flex items-center gap-2">
+                                  <span className="flex items-center gap-2 text-[8px]">
                                     <PauseCircle className="h-3.5 w-3.5 text-amber-600" />
                                     Bảo lưu
                                   </span>
@@ -1183,17 +1111,17 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                 }
                               >
                                 <SelectTrigger className={cn(
-                                  "h-5 w-[74px] justify-center px-1 text-[8px]",
+                                  "h-5 w-[74px] justify-center px-1 text-[6px]",
                                   status === "attended" && "border-emerald-200 bg-emerald-50 text-emerald-700",
                                   status === "reserved" && "border-amber-200 bg-amber-50 text-amber-700",
                                   status === "registered" && "border-slate-200 bg-slate-50 text-slate-600",
                                 )}>
                                   <SelectValue>{statusLabel}</SelectValue>
                                 </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="registered">Chưa điểm danh</SelectItem>
-                                  <SelectItem value="attended">Có học</SelectItem>
-                                  <SelectItem value="reserved">Bảo lưu</SelectItem>
+                                <SelectContent className="text-[6px]">
+                                  <SelectItem className="text-[6px]" value="registered">Chưa điểm danh</SelectItem>
+                                  <SelectItem className="text-[6px]" value="attended">Có học</SelectItem>
+                                  <SelectItem className="text-[6px]" value="reserved">Bảo lưu</SelectItem>
                                 </SelectContent>
                               </Select>
                               {hasStudentAssignment && (() => {
