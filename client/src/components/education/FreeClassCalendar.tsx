@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { addMonths, format, getDaysInMonth, startOfMonth, subMonths } from "date-fns";
+import { vi } from "date-fns/locale";
 import {
   ChevronLeft,
   ChevronRight,
@@ -239,7 +240,12 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
     const count = getDaysInMonth(monthDate);
     return Array.from({ length: count }, (_, index) => {
       const date = new Date(monthDate.getFullYear(), monthDate.getMonth(), index + 1);
-      return { date, value: format(date, "yyyy-MM-dd"), label: index + 1, weekday: format(date, "EE") };
+      return {
+        date,
+        value: format(date, "yyyy-MM-dd"),
+        label: index + 1,
+        weekday: format(date, "EEE", { locale: vi }),
+      };
     });
   }, [monthDate]);
 
