@@ -70,7 +70,6 @@ export function GradeBookEditDialog({
   const [scores, setScores] = useState<Record<string, Record<string, string>>>({});
   const [removedStudentIds, setRemovedStudentIds] = useState<Set<string>>(new Set());
   const [pendingRemoval, setPendingRemoval] = useState<{ id: string; name: string } | null>(null);
-  const [gradeBookStudentIds, setGradeBookStudentIds] = useState<Set<string>>(new Set());
   const [studentComments, setStudentComments] = useState<Record<string, string>>({});
   const [commentDialogOpen, setCommentDialogOpen] = useState(false);
   const [commentStudentId, setCommentStudentId] = useState("");
@@ -103,8 +102,7 @@ export function GradeBookEditDialog({
   const allStudents = activeStudents || [];
   const displayedStudents = allStudents.filter((s: any) => {
     const actualStudentId = s.studentId || s.student?.id || s.id;
-    const passesDataFilter = gradeBookStudentIds.size === 0 || gradeBookStudentIds.has(actualStudentId);
-    return passesDataFilter && !removedStudentIds.has(actualStudentId);
+    return !removedStudentIds.has(actualStudentId);
   });
 
   // Reset ref khi dialog đóng hoặc book thay đổi
@@ -127,7 +125,6 @@ export function GradeBookEditDialog({
     setStudentComments({});
     setRemovedStudentIds(new Set());
     setPendingRemoval(null);
-    setGradeBookStudentIds(new Set());
     setLoadingEdit(true);
 
     fetch(`/api/classes/${classId}/grade-books/${book.id}`, { credentials: "include" })
@@ -142,12 +139,6 @@ export function GradeBookEditDialog({
           const actualStudentId = s.studentId || s.student?.id;
           if (actualStudentId) studentIdToEnrollmentId[actualStudentId] = s.id;
         });
-
-        // Track which actual student IDs have data in this grade book
-        const idsWithData = new Set<string>();
-        existingScores.forEach((sc: any) => { if (sc.studentId) idsWithData.add(sc.studentId); });
-        Object.keys(existingComments).forEach((id) => idsWithData.add(id));
-        setGradeBookStudentIds(idsWithData);
 
         const initialScores: Record<string, Record<string, string>> = {};
         existingScores.forEach((sc: any) => {

@@ -7281,7 +7281,16 @@ export function registerClassesRoutes(app: Express): void {
       res.status(201).json(book);
 
       if (body.published) {
-        sendGradeBookPublishedNotification(classId, book.id, body.title, userId, body.scores.map(s => s.studentId))
+        const publishedStudentIds = [
+          ...new Set([
+            ...body.scores.map(s => s.studentId),
+            ...Object.entries(body.studentComments)
+              .filter(([, comment]) => comment?.trim())
+              .map(([studentId]) => studentId),
+          ]),
+        ].filter((studentId) => !body.excludedStudentIds.includes(studentId));
+
+        sendGradeBookPublishedNotification(classId, book.id, body.title, userId, publishedStudentIds)
           .catch(err => console.error("[GradeBookNotify] POST error:", err));
       }
     } catch (err: any) {
@@ -7338,6 +7347,83 @@ export function registerClassesRoutes(app: Express): void {
         .from(classGradeBooks).where(eq(classGradeBooks.id, id)).limit(1);
       const wasPublished = existing?.published ?? false;
 
+      // Keep a snapshot of the current per-student data so that a later
+      // update of an already-published book only notifies students whose
+      // score/comment data is new or changed.
+      const existingScoreRows = await db
+        .select({
+          studentId: classGradeBookScores.studentId,
+          categoryId: classGradeBookScores.categoryId,
+          score: classGradeBookScores.score,
+        })
+        .from(classGradeBookScores)
+        .where(eq(classGradeBookScores.gradeBookId, id));
+      const existingCommentRows = await db
+        .select({
+          studentId: classGradeBookStudentComments.studentId,
+          comment: classGradeBookStudentComments.comment,
+        })
+        .from(classGradeBookStudentComments)
+        .where(eq(classGradeBookStudentComments.gradeBookId, id));
+
+      type GradeBookStudentData = {
+        scores: Record<string, string>;
+        comment: string;
+      };
+      const existingStudentData = new Map<string, GradeBookStudentData>();
+      for (const row of existingScoreRows) {
+        const studentData = existingStudentData.get(row.studentId) || { scores: {}, comment: "" };
+        const score = row.score == null ? "" : String(row.score).trim();
+        if (score) studentData.scores[row.categoryId] = score;
+        existingStudentData.set(row.studentId, studentData);
+      }
+      for (const row of existingCommentRows) {
+        const studentData = existingStudentData.get(row.studentId) || { scores: {}, comment: "" };
+        studentData.comment = row.comment?.trim() || "";
+        existingStudentData.set(row.studentId, studentData);
+      }
+
+      const nextStudentData = new Map<string, GradeBookStudentData>(
+        Array.from(existingStudentData.entries()).map(([studentId, data]) => [
+          studentId,
+          { scores: { ...data.scores }, comment: data.comment },
+        ]),
+      );
+
+      if (body.scores !== undefined) {
+        for (const studentData of nextStudentData.values()) {
+          studentData.scores = {};
+        }
+        for (const scoreRow of body.scores) {
+          const score = scoreRow.score == null ? "" : String(scoreRow.score).trim();
+          if (!score) continue;
+          const studentData = nextStudentData.get(scoreRow.studentId) || { scores: {}, comment: "" };
+          studentData.scores[scoreRow.categoryId] = score;
+          nextStudentData.set(scoreRow.studentId, studentData);
+        }
+      }
+
+      if (body.studentComments !== undefined) {
+        for (const studentData of nextStudentData.values()) {
+          studentData.comment = "";
+        }
+        for (const [studentId, comment] of Object.entries(body.studentComments)) {
+          const normalizedComment = comment?.trim() || "";
+          if (!normalizedComment) continue;
+          const studentData = nextStudentData.get(studentId) || { scores: {}, comment: "" };
+          studentData.comment = normalizedComment;
+          nextStudentData.set(studentId, studentData);
+        }
+      }
+
+      const hasStudentData = (data: GradeBookStudentData | undefined) =>
+        !!data && (Object.keys(data.scores).length > 0 || !!data.comment);
+      const serializeStudentData = (data: GradeBookStudentData | undefined) =>
+        JSON.stringify([
+          Object.entries(data?.scores || {}).sort(([a], [b]) => a.localeCompare(b)),
+          data?.comment || "",
+        ]);
+
       // Validate: cannot publish if no scores and no comments
       if (body.published === true) {
         const hasScoresInPayload = body.scores && body.scores.length > 0;
@@ -7389,22 +7475,27 @@ export function registerClassesRoutes(app: Express): void {
 
       res.json(updated);
 
-      // Send notification only when transitioning from unpublished → published
+      // Notify students when publishing for the first time, or when a
+      // published book receives new/changed score or comment data.
       const nowPublished = 'published' in body ? body.published : wasPublished;
-      if (nowPublished && !wasPublished) {
+      if (nowPublished) {
         const resolvedTitle = body.title ?? existing?.title ?? "";
         const resolvedClassId = existing?.classId ?? classId;
-        // Get student IDs from the updated scores (or re-query if scores not in this request)
-        let studentIds: string[] = [];
-        if (body.scores) {
-          studentIds = [...new Set(body.scores.map(s => s.studentId))];
-        } else {
-          const scoreRows = await db.select({ studentId: classGradeBookScores.studentId })
-            .from(classGradeBookScores).where(eq(classGradeBookScores.gradeBookId, id));
-          studentIds = [...new Set(scoreRows.map(r => r.studentId))];
+        const excludedStudentIds = new Set(body.excludedStudentIds || []);
+        const studentIds = Array.from(nextStudentData.keys()).filter((studentId) => {
+          if (excludedStudentIds.has(studentId) || !hasStudentData(nextStudentData.get(studentId))) {
+            return false;
+          }
+
+          // First publication sends to every student with data. For an
+          // already-published book, only new/changed student data is sent.
+          return !wasPublished || serializeStudentData(existingStudentData.get(studentId)) !== serializeStudentData(nextStudentData.get(studentId));
+        });
+
+        if (studentIds.length > 0) {
+          sendGradeBookPublishedNotification(resolvedClassId, id, resolvedTitle, userId, studentIds)
+            .catch(err => console.error("[GradeBookNotify] PUT error:", err));
         }
-        sendGradeBookPublishedNotification(resolvedClassId, id, resolvedTitle, userId, studentIds)
-          .catch(err => console.error("[GradeBookNotify] PUT error:", err));
       }
     } catch (err: any) {
       if (err instanceof z.ZodError) return res.status(400).json(err.errors);

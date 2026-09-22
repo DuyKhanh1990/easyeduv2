@@ -64,7 +64,6 @@ export function EditGradeBookFromOverviewDialog({ book, open, onClose }: Props) 
   const [scores, setScores] = useState<Record<string, Record<string, string>>>({});
   const [removedStudentIds, setRemovedStudentIds] = useState<Set<string>>(new Set());
   const [pendingRemoval, setPendingRemoval] = useState<{ id: string; name: string } | null>(null);
-  const [gradeBookStudentIds, setGradeBookStudentIds] = useState<Set<string>>(new Set());
   const [published, setPublished] = useState(false);
   const [commentDialogOpen, setCommentDialogOpen] = useState(false);
   const [commentStudentId, setCommentStudentId] = useState<string>("");
@@ -104,10 +103,8 @@ export function EditGradeBookFromOverviewDialog({ book, open, onClose }: Props) 
   const sessionList = sessions || [];
   const allStudents = activeStudents || [];
   const displayedStudents = allStudents.filter((s: any) => {
-    const enrollmentId = s.id || s.studentId;
     const actualStudentId = s.studentId || s.student?.id || s.id;
-    const passesDataFilter = gradeBookStudentIds.size === 0 || gradeBookStudentIds.has(actualStudentId);
-    return passesDataFilter && !removedStudentIds.has(actualStudentId);
+    return !removedStudentIds.has(actualStudentId);
   });
 
   const selectedScoreSheet = allScoreSheets?.find((s: any) => s.id === selectedScoreSheetId);
@@ -142,7 +139,6 @@ export function EditGradeBookFromOverviewDialog({ book, open, onClose }: Props) 
       setScores({});
       setRemovedStudentIds(new Set());
       setPendingRemoval(null);
-      setGradeBookStudentIds(new Set());
       setStudentComments({});
       setLoadingEdit(true);
     }
@@ -173,12 +169,6 @@ export function EditGradeBookFromOverviewDialog({ book, open, onClose }: Props) 
             studentIdToEnrollmentId[actualStudentId] = s.id;
           }
         });
-
-        // Track which actual student IDs have data in this grade book
-        const idsWithData = new Set<string>();
-        existingScores.forEach((sc: any) => { if (sc.studentId) idsWithData.add(sc.studentId); });
-        Object.keys(existingComments).forEach((id) => idsWithData.add(id));
-        setGradeBookStudentIds(idsWithData);
 
         const initialScores: Record<string, Record<string, string>> = {};
         existingScores.forEach((sc: any) => {
