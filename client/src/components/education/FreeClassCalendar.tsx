@@ -5,11 +5,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
-  CalendarDays,
   BookOpen,
-  MapPin,
   UserRound,
-  Users,
   Star,
   HelpCircle,
   PauseCircle,
@@ -388,7 +385,6 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
     .map((teacher: any) => teacher.fullName)
     .filter(Boolean)
     .join(", ") || "Chưa gán";
-  const classLocationLabel = classData?.location?.name || classData?.locationName || "—";
   const evaluationCriteriaIds = criteriaOverride
     ?? data?.evaluationCriteriaIds
     ?? classData?.evaluationCriteriaIds
@@ -518,74 +514,38 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
     });
   };
 
-  const calendarInfoDate = selectedDate ?? today;
-  const calendarInfoDateLabel = format(
-    new Date(`${calendarInfoDate}T00:00:00`),
-    "EEEE, dd/MM/yyyy",
-    { locale: vi },
-  );
-
   return (
     <div className="flex h-full min-h-[520px] flex-col rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
-        <div className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-          <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-1.5">
-            <CalendarDays className="h-4 w-4 text-emerald-600" />
-            <span className="text-sm font-bold uppercase tracking-wide text-slate-700">
-              Chi tiết lịch học
-            </span>
-            <Badge className="h-6 border-emerald-200 bg-emerald-50 px-2.5 text-[11px] font-semibold text-emerald-700" variant="outline">
-              Lớp tự do
-            </Badge>
-            <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-medium text-slate-500">
-              {classStart && classEnd && (
-                <span>Thời hạn lớp: {classStart} → {classEnd}</span>
-              )}
-              <span>{calendarInfoDateLabel}</span>
-            </div>
-          </div>
-          <div className="grid gap-x-8 gap-y-2 pt-2 text-xs md:grid-cols-2">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <BookOpen className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-              <span className="font-medium text-slate-500">Lớp:</span>
-              <span className="truncate font-semibold text-blue-600">
-                {classData?.name || "—"}{classData?.classCode ? ` (${classData.classCode})` : ""}
-              </span>
-            </div>
-            <div className="flex min-w-0 items-center gap-1.5">
-              <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-              <span className="font-medium text-slate-500">Cơ sở:</span>
-              <span className="truncate font-semibold text-blue-600">{classLocationLabel}</span>
-            </div>
-            <div className="flex min-w-0 items-center gap-1.5">
-              <UserRound className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-              <span className="font-medium text-slate-500">GV:</span>
-              <span className="truncate font-semibold text-blue-600">{classTeacherLabel}</span>
-            </div>
-            <div className="flex min-w-0 items-center gap-1.5">
-              <Users className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-              <span className="font-medium text-slate-500">Sĩ số:</span>
-              <span className="font-semibold text-blue-600">{students.length} học viên</span>
-            </div>
-            <div className="flex min-w-0 items-center gap-1.5 md:col-span-2">
-              <Star className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-              <span className="font-medium text-slate-500">Tiêu chí:</span>
-              <span className="truncate font-semibold text-blue-600">{criteriaLabel}</span>
-              {classPerm?.canEdit && (
-                <button
-                  type="button"
-                  className="text-slate-400 hover:text-indigo-500"
-                  title="Gán tiêu chí nhận xét"
-                  onClick={() => {
-                    setCriteriaDraft(evaluationCriteriaIds.map(String));
-                    setCriteriaDialogOpen(true);
-                  }}
-                >
-                  <Pencil className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-          </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px]">
+          <span className="font-semibold text-blue-600">
+            {classData?.name || "—"}{classData?.classCode ? ` (${classData.classCode})` : ""}
+          </span>
+          <Badge className="h-5 border-emerald-200 bg-emerald-50 px-1.5 text-[9px] font-semibold text-emerald-700" variant="outline">
+            Lớp tự do
+          </Badge>
+          <span className="text-slate-300">|</span>
+          <span className="font-medium text-slate-500">Cơ sở:</span>
+          <span className="font-semibold text-blue-600">{classData?.location?.name || classData?.locationName || "—"}</span>
+          <span className="text-slate-300">|</span>
+          <span className="font-medium text-slate-500">GV:</span>
+          <span className="font-semibold text-blue-600">{classTeacherLabel}</span>
+          <span className="text-slate-300">|</span>
+          <span className="font-medium text-slate-500">Tiêu chí:</span>
+          <span className="font-semibold text-blue-600">{criteriaLabel}</span>
+          {classPerm?.canEdit && (
+            <button
+              type="button"
+              className="text-slate-400 hover:text-indigo-500"
+              title="Gán tiêu chí nhận xét"
+              onClick={() => {
+                setCriteriaDraft(evaluationCriteriaIds.map(String));
+                setCriteriaDialogOpen(true);
+              }}
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setMonthDate((d) => subMonths(d, 1))}><ChevronLeft className="h-4 w-4" /></Button>
@@ -630,7 +590,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
           </Button>
         </div>
       </div>
-      {selectedDate && (
+      {selectedDate && (isLoadingSelectedDateContents || selectedCommonContents.length > 0 || selectedPersonalContents.length > 0) && (
         <div className="border-b border-slate-200 bg-white px-4 py-3">
           <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 shadow-sm">
             <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -644,8 +604,6 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
             </div>
             {isLoadingSelectedDateContents ? (
               <p className="text-xs italic text-slate-500">Đang tải nội dung...</p>
-            ) : selectedCommonContents.length === 0 && selectedPersonalContents.length === 0 ? (
-              <p className="text-xs italic text-slate-500">Chưa có nội dung được giao trong ngày này.</p>
             ) : (
               <div className="grid gap-x-8 gap-y-2 md:grid-cols-2">
                 {selectedCommonContents.length > 0 && (
