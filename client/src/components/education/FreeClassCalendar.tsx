@@ -65,12 +65,13 @@ const formatStudentDate = (value: unknown) => {
   return `${Number(day)}/${Number(month)}/${year}`;
 };
 
-const getDateRangeDays = (start: string, end: string) => {
-  if (!start || !end) return null;
-  const startTime = new Date(`${start}T00:00:00`).getTime();
+const getRemainingDays = (today: string, end: string) => {
+  if (!today || !end) return null;
+  const todayTime = new Date(`${today}T00:00:00`).getTime();
   const endTime = new Date(`${end}T00:00:00`).getTime();
-  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime < startTime) return null;
-  return Math.floor((endTime - startTime) / (24 * 60 * 60 * 1000)) + 1;
+  if (!Number.isFinite(todayTime) || !Number.isFinite(endTime)) return null;
+  if (endTime < todayTime) return 0;
+  return Math.floor((endTime - todayTime) / (24 * 60 * 60 * 1000)) + 1;
 };
 
 const formatAssignmentTime = (startTime?: string | null, endTime?: string | null) => {
@@ -792,7 +793,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                           : isExpiringSoon
                           ? "Sắp hết hạn"
                           : "Còn Hạn";
-                        const dateRangeDays = getDateRangeDays(studentStart, studentEnd);
+                        const remainingDays = getRemainingDays(today, studentEnd);
                         return (
                           <div
                             key={`${student.id}:${selectedAttendDay.value}`}
@@ -820,7 +821,9 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                 </div>
                                 <div className="mt-0.5 !text-[12px] leading-4 text-slate-500">
                                   · {formatStudentDate(studentStart)} – {formatStudentDate(studentEnd)}
-                                  {dateRangeDays != null && ` (${dateRangeDays} ngày)`}
+                                  {remainingDays != null && (
+                                    <span className="font-medium text-blue-600"> ({remainingDays} ngày)</span>
+                                  )}
                                 </div>
                                 <div className={cn(
                                   "mt-0.5 !text-[12px] font-medium leading-4",
