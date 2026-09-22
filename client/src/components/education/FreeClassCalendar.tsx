@@ -815,15 +815,15 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                   {student.fullName}{" "}
                                   <span className="text-sm font-medium text-slate-500">({student.code || "—"})</span>
                                 </div>
-                                <div className="mt-1.5 text-sm leading-tight text-slate-500">
+                                <div className="mt-1.5 text-xs leading-tight text-slate-500">
                                   · Còn <span className="font-semibold text-red-600">{remainingSessions}</span> buổi
                                 </div>
-                                <div className="mt-0.5 text-sm leading-tight text-slate-500">
+                                <div className="mt-0.5 text-xs leading-tight text-slate-500">
                                   · {formatStudentDate(studentStart)} – {formatStudentDate(studentEnd)}
                                   {dateRangeDays != null && ` (${dateRangeDays} ngày)`}
                                 </div>
                                 <div className={cn(
-                                  "mt-0.5 text-sm font-medium leading-tight",
+                                  "mt-0.5 text-xs font-medium leading-tight",
                                   isExpired
                                     ? "text-red-600"
                                     : isExpiringSoon
