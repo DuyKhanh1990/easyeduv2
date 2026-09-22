@@ -779,28 +779,28 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                               }}
                             >
                               <SelectTrigger className={cn(
-                                "h-8 w-[140px] !text-[8px] leading-[10px]",
+                                "h-8 w-[140px] !text-[11px] leading-[13px]",
                                 status === "attended" && "border-emerald-200 bg-emerald-50 text-emerald-700",
                                 status === "reserved" && "border-amber-200 bg-amber-50 text-amber-700",
                                 status === "registered" && "border-slate-200 bg-slate-50 text-slate-600",
                               )}>
-                                <SelectValue className="!text-[8px] leading-[10px]">{statusLabel}</SelectValue>
+                                <SelectValue className="!text-[11px] leading-[13px]">{statusLabel}</SelectValue>
                               </SelectTrigger>
-                              <SelectContent className="text-[8px]">
+                              <SelectContent className="text-[11px]">
                                 <SelectItem value="registered">
-                                  <span className="flex items-center gap-2 text-[8px]">
+                                  <span className="flex items-center gap-2 text-[11px]">
                                     <HelpCircle className="h-3.5 w-3.5 text-slate-500" />
                                     Chưa điểm danh
                                   </span>
                                 </SelectItem>
                                 <SelectItem value="attended">
-                                  <span className="flex items-center gap-2 text-[8px]">
+                                  <span className="flex items-center gap-2 text-[11px]">
                                     <ClipboardCheck className="h-3.5 w-3.5 text-emerald-600" />
                                     Có học
                                   </span>
                                 </SelectItem>
                                 <SelectItem value="reserved">
-                                  <span className="flex items-center gap-2 text-[8px]">
+                                  <span className="flex items-center gap-2 text-[11px]">
                                     <PauseCircle className="h-3.5 w-3.5 text-amber-600" />
                                     Bảo lưu
                                   </span>
@@ -1111,17 +1111,17 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                 }
                               >
                                 <SelectTrigger className={cn(
-                                  "h-5 w-[74px] justify-center px-1 !text-[8px] leading-[9px]",
+                                  "h-5 w-[74px] justify-center px-1 !text-[11px] leading-[12px]",
                                   status === "attended" && "border-emerald-200 bg-emerald-50 text-emerald-700",
                                   status === "reserved" && "border-amber-200 bg-amber-50 text-amber-700",
                                   status === "registered" && "border-slate-200 bg-slate-50 text-slate-600",
                                 )}>
-                                  <SelectValue className="!text-[8px] leading-[9px]">{statusLabel}</SelectValue>
+                                  <SelectValue className="!text-[11px] leading-[12px]">{statusLabel}</SelectValue>
                                 </SelectTrigger>
-                                <SelectContent className="text-[6px]">
-                                  <SelectItem className="text-[6px]" value="registered">Chưa điểm danh</SelectItem>
-                                  <SelectItem className="text-[6px]" value="attended">Có học</SelectItem>
-                                  <SelectItem className="text-[6px]" value="reserved">Bảo lưu</SelectItem>
+                                <SelectContent className="text-[11px]">
+                                  <SelectItem className="text-[11px]" value="registered">Chưa điểm danh</SelectItem>
+                                  <SelectItem className="text-[11px]" value="attended">Có học</SelectItem>
+                                  <SelectItem className="text-[11px]" value="reserved">Bảo lưu</SelectItem>
                                 </SelectContent>
                               </Select>
                               {hasStudentAssignment && (() => {
