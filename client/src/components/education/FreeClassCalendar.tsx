@@ -996,81 +996,30 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                         <span>{day.label}</span>
                         <span className="text-[10px] text-muted-foreground">{day.weekday}</span>
                       </button>
-                      <div className="mt-1 space-y-1 px-0.5">
-                        <div className="flex items-center justify-center gap-1">
-                          <span className="text-[9px] font-medium text-slate-500">Phân công ngày</span>
-                          <button
-                            type="button"
-                            disabled={!classPerm?.canEdit}
-                            className={cn(
-                              "inline-flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-default disabled:opacity-50",
-                              (dayAssignment?.teacherId || dayAssignment?.shiftTemplateId) && "text-indigo-600",
-                            )}
-                            title="Phân công GV/ca cho cả ngày"
-                            aria-label={`Phân công GV/ca cho ngày ${day.label}/${monthLabel}`}
-                            onClick={() => {
-                              if (!classPerm?.canEdit) return;
-                              setAssignmentEditor({
-                                scope: "day",
-                                studentClassId: "",
-                                date: day.value,
-                                studentName: "Phân công chung ngày",
-                                teacherId: dayAssignment?.teacherId || "",
-                                shiftTemplateId: dayAssignment?.shiftTemplateId || "",
-                              });
-                            }}
-                          >
-                            <UserRound className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                        <Select
-                          value={dayAssignment?.teacherId || "__none__"}
-                          disabled={!classPerm?.canEdit || assignmentMutation.isPending}
-                          onValueChange={(value) =>
-                            assignmentMutation.mutate({
+                      <div className="mt-1 flex items-center justify-center px-0.5">
+                        <button
+                          type="button"
+                          disabled={!classPerm?.canEdit}
+                          className={cn(
+                            "inline-flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-default disabled:opacity-50",
+                            (dayAssignment?.teacherId || dayAssignment?.shiftTemplateId) && "text-indigo-600",
+                          )}
+                          title="Phân công GV/ca cho cả ngày"
+                          aria-label={`Phân công GV/ca cho ngày ${day.label}/${monthLabel}`}
+                          onClick={() => {
+                            if (!classPerm?.canEdit) return;
+                            setAssignmentEditor({
                               scope: "day",
+                              studentClassId: "",
                               date: day.value,
-                              teacherId: value === "__none__" ? null : value,
-                              shiftTemplateId: dayAssignment?.shiftTemplateId || null,
-                            })
-                          }
+                              studentName: "Phân công chung ngày",
+                              teacherId: dayAssignment?.teacherId || "",
+                              shiftTemplateId: dayAssignment?.shiftTemplateId || "",
+                            });
+                          }}
                         >
-                          <SelectTrigger className="h-5 w-full min-w-[92px] justify-center px-1 text-[9px]">
-                            <SelectValue placeholder="GV theo lớp" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">GV theo lớp</SelectItem>
-                            {availableTeachers.map((teacher: any) => (
-                              <SelectItem key={teacher.id} value={String(teacher.id)}>
-                                {teacher.fullName || teacher.name || teacher.code || "Giáo viên"}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Select
-                          value={dayAssignment?.shiftTemplateId || "__none__"}
-                          disabled={!classPerm?.canEdit || assignmentMutation.isPending}
-                          onValueChange={(value) =>
-                            assignmentMutation.mutate({
-                              scope: "day",
-                              date: day.value,
-                              teacherId: dayAssignment?.teacherId || null,
-                              shiftTemplateId: value === "__none__" ? null : value,
-                            })
-                          }
-                        >
-                          <SelectTrigger className="h-5 w-full min-w-[92px] justify-center px-1 text-[9px]">
-                            <SelectValue placeholder="Ca theo lớp" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">Ca theo lớp</SelectItem>
-                            {availableShifts.map((shift: any) => (
-                              <SelectItem key={shift.id} value={String(shift.id)}>
-                                {shift.name} ({String(shift.startTime || "").slice(0, 5)}–{String(shift.endTime || "").slice(0, 5)})
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          <UserRound className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     </th>
                   );
