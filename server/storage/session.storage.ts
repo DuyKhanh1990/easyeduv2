@@ -561,8 +561,7 @@ export async function transferStudentClass(data: {
     }
 
     // Already-attended target sessions are not transferable. The remaining
-    // sessions stay selectable and may either receive a new row or turn an
-    // existing non-attended row into "present".
+    // sessions stay selectable and may receive a new pending attendance row.
     const targetSessionCandidates = targetSessionPool
       .filter((session) => existingTargetBySessionId.get(session.id)?.attendanceStatus !== "present")
       .slice(0, data.transferCount);
@@ -615,7 +614,6 @@ export async function transferStudentClass(data: {
     for (const row of oldCsRows) oldCsDateMap[row.id] = row.sessionDate;
 
     // FIX: Tính toán tất cả records trong JS rồi bulk insert 1 lần (thay vì N INSERT riêng lẻ)
-    const transferAttendanceAt = new Date();
     const newSSRows = targetClassSessions
       .filter((cs) => !existingTargetBySessionId.has(cs.id))
       .map((cs) => {
@@ -629,27 +627,12 @@ export async function transferStudentClass(data: {
           studentClassId: targetStudentClass.id,
           classSessionId: cs.id,
           status: "scheduled" as const,
-          attendanceStatus: "present" as const,
-          attendanceAt: transferAttendanceAt,
+          attendanceStatus: "pending" as const,
           note: `Chuyển từ lớp ${fromClass?.name || data.fromClassId}\nBuổi ${oldSession.sessionIndex} - ${oldDateStr}`,
         };
       });
     if (newSSRows.length > 0) {
       await tx.insert(studentSessions).values(newSSRows);
-    }
-
-    const existingRowsToMarkPresent = targetClassSessions
-      .map((cs) => existingTargetBySessionId.get(cs.id))
-      .filter((session): session is typeof existingTargetSessions[number] => Boolean(session));
-    if (existingRowsToMarkPresent.length > 0) {
-      await tx
-        .update(studentSessions)
-        .set({
-          attendanceStatus: "present",
-          attendanceAt: transferAttendanceAt,
-          updatedAt: transferAttendanceAt,
-        })
-        .where(inArray(studentSessions.id, existingRowsToMarkPresent.map((session) => session.id)));
     }
 
     // FIX: Cập nhật tất cả old sessions thành "transferred" trong 1 CASE WHEN SQL
