@@ -1,7 +1,19 @@
 import type { Express } from "express";
 import { api } from "@shared/routes";
 import { db } from "../db";
-import { classSessions, studentSessions, students, classes, shiftTemplates, studentLocations, staff, studentAttendanceQrTokens } from "@shared/schema";
+import {
+  classSessions,
+  studentSessions,
+  students,
+  classes,
+  shiftTemplates,
+  studentLocations,
+  staff,
+  studentAttendanceQrTokens,
+  freeClassRegistrations,
+  freeClassDayAssignments,
+  studentClasses,
+} from "@shared/schema";
 import { eq, and, gte, lte, inArray, sql, isNull, ne } from "drizzle-orm";
 import { getAttendanceTimingWindow } from "../lib/attendance-limit";
 import { ensureStudentQrToken, hashQrToken } from "../lib/attendance-qr";
@@ -202,6 +214,106 @@ export function registerAttendanceRoutes(app: Express): void {
     }
   });
 
+  // Free-class attendance is intentionally isolated from student_sessions.
+  // Regular classes continue to use the existing student-session endpoint.
+  app.patch("/api/attendance/free/:registrationId", async (req, res) => {
+    try {
+      const registrationId = String(req.params.registrationId || "");
+      const requestedStatus = String(req.body?.status ?? req.body?.attendance_status ?? "");
+      const requestedNote = req.body?.note ?? req.body?.attendance_note;
+      const freeStatusByAttendanceStatus: Record<string, "registered" | "attended" | "reserved"> = {
+        pending: "registered",
+        present: "attended",
+        paused: "reserved",
+      };
+      const nextStatus = freeStatusByAttendanceStatus[requestedStatus];
+      if (!nextStatus) {
+        return res.status(400).json({ message: "Trạng thái điểm danh không hợp lệ cho lớp tự do." });
+      }
+
+      const [registration] = await db
+        .select({
+          id: freeClassRegistrations.id,
+          classId: freeClassRegistrations.classId,
+          studentClassId: freeClassRegistrations.studentClassId,
+          status: freeClassRegistrations.status,
+          studentId: freeClassRegistrations.studentId,
+          locationId: classes.locationId,
+          totalSessions: studentClasses.totalSessions,
+        })
+        .from(freeClassRegistrations)
+        .innerJoin(classes, eq(classes.id, freeClassRegistrations.classId))
+        .innerJoin(studentClasses, eq(studentClasses.id, freeClassRegistrations.studentClassId))
+        .where(eq(freeClassRegistrations.id, registrationId))
+        .limit(1);
+
+      if (!registration) return res.status(404).json({ message: "Không tìm thấy buổi học lớp tự do." });
+      if (
+        !req.isSuperAdmin
+        && Array.isArray(req.allowedLocationIds)
+        && !req.allowedLocationIds.includes(registration.locationId)
+      ) {
+        return res.status(403).json({ message: "Bạn không có quyền cập nhật buổi học này." });
+      }
+
+      const userId = req.user?.id ?? null;
+      await db.transaction(async (tx) => {
+        if (
+          nextStatus === "attended"
+          && registration.status !== "attended"
+          && Number(registration.totalSessions || 0) > 0
+        ) {
+          const [attended] = await tx
+            .select({ count: sql<number>`count(*)::int` })
+            .from(freeClassRegistrations)
+            .where(and(
+              eq(freeClassRegistrations.studentClassId, registration.studentClassId),
+              eq(freeClassRegistrations.status, "attended"),
+            ));
+          if (Number(attended?.count || 0) >= Number(registration.totalSessions)) {
+            throw new Error("Học viên đã sử dụng hết số buổi");
+          }
+        }
+
+        await tx
+          .update(freeClassRegistrations)
+          .set({
+            status: nextStatus,
+            attendedBy: nextStatus === "attended" ? userId : null,
+            attendedAt: nextStatus === "attended" ? new Date() : null,
+            ...(requestedNote !== undefined
+              ? { note: typeof requestedNote === "string" ? requestedNote.trim() || null : null }
+              : {}),
+            updatedAt: new Date(),
+          })
+          .where(eq(freeClassRegistrations.id, registration.id));
+
+        const [attended] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(freeClassRegistrations)
+          .where(and(
+            eq(freeClassRegistrations.studentClassId, registration.studentClassId),
+            eq(freeClassRegistrations.status, "attended"),
+          ));
+        await tx
+          .update(studentClasses)
+          .set({
+            attendedSessions: Number(attended?.count || 0),
+            remainingSessions: Math.max(
+              0,
+              Number(registration.totalSessions || 0) - Number(attended?.count || 0),
+            ),
+            updatedAt: new Date(),
+          })
+          .where(eq(studentClasses.id, registration.studentClassId));
+      });
+
+      res.json({ success: true, registrationId, status: nextStatus });
+    } catch (err: any) {
+      res.status(err.status ?? 400).json({ message: err.message || "Không thể cập nhật điểm danh lớp tự do." });
+    }
+  });
+
   app.get(api.attendance.list.path, async (req, res) => {
     try {
       const { classes: classesStr = "", students: studentsStr = "", shift: shiftStr = "all", dateFrom = "", dateTo = "" } = req.query;
@@ -285,6 +397,103 @@ export function registerAttendanceRoutes(app: Express): void {
         .where(conditions.length > 0 ? and(...conditions) : undefined)
         .orderBy(classes.classCode, students.code);
 
+      const freeConditions: any[] = [
+        eq(classes.classType, "free"),
+        gte(freeClassRegistrations.registrationDate, startStr),
+        lte(freeClassRegistrations.registrationDate, endStr),
+      ];
+      if (classIds.length > 0) {
+        freeConditions.push(inArray(freeClassRegistrations.classId, classIds));
+      }
+      if (studentIds.length > 0) {
+        freeConditions.push(inArray(freeClassRegistrations.studentId, studentIds));
+      }
+      if (!isSuperAdmin && allowedLocationIds && allowedLocationIds.length > 0) {
+        freeConditions.push(inArray(classes.locationId, allowedLocationIds));
+        freeConditions.push(sql`EXISTS (
+          SELECT 1
+          FROM student_locations
+          WHERE student_locations.student_id = ${students.id}
+            AND student_locations.location_id = ANY(ARRAY[${sql.raw(allowedLocationIds.map((id: string) => `'${id}'`).join(","))}]::uuid[])
+        )`);
+      }
+
+      const freeRows = await db
+        .select({
+          id: freeClassRegistrations.id,
+          studentClassId: freeClassRegistrations.studentClassId,
+          studentId: freeClassRegistrations.studentId,
+          classId: freeClassRegistrations.classId,
+          classCode: classes.classCode,
+          studentCode: students.code,
+          studentName: students.fullName,
+          sessionDate: freeClassRegistrations.registrationDate,
+          status: freeClassRegistrations.status,
+          note: freeClassRegistrations.note,
+          teacherId: freeClassRegistrations.teacherId,
+          shiftTemplateId: freeClassRegistrations.shiftTemplateId,
+          startTime: shiftTemplates.startTime,
+          endTime: shiftTemplates.endTime,
+          learningFormat: classes.learningFormat,
+          totalSessions: studentClasses.totalSessions,
+          sessionOrder: sql<number>`row_number() over (
+            partition by ${freeClassRegistrations.studentClassId}
+            order by ${freeClassRegistrations.registrationDate}, ${freeClassRegistrations.id}
+          )`,
+        })
+        .from(freeClassRegistrations)
+        .innerJoin(classes, eq(freeClassRegistrations.classId, classes.id))
+        .innerJoin(students, eq(freeClassRegistrations.studentId, students.id))
+        .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
+        .leftJoin(shiftTemplates, eq(freeClassRegistrations.shiftTemplateId, shiftTemplates.id))
+        .where(and(...freeConditions))
+        .orderBy(classes.classCode, students.code, freeClassRegistrations.registrationDate);
+
+      const freeDayAssignments = freeRows.length > 0
+        ? await db
+          .select({
+            classId: freeClassDayAssignments.classId,
+            date: freeClassDayAssignments.assignmentDate,
+            teacherId: freeClassDayAssignments.teacherId,
+            shiftTemplateId: freeClassDayAssignments.shiftTemplateId,
+            startTime: shiftTemplates.startTime,
+            endTime: shiftTemplates.endTime,
+          })
+          .from(freeClassDayAssignments)
+          .leftJoin(shiftTemplates, eq(freeClassDayAssignments.shiftTemplateId, shiftTemplates.id))
+          .where(and(
+            inArray(freeClassDayAssignments.classId, Array.from(new Set(freeRows.map((row) => row.classId)))),
+            gte(freeClassDayAssignments.assignmentDate, startStr),
+            lte(freeClassDayAssignments.assignmentDate, endStr),
+          ))
+        : [];
+      const freeDayAssignmentMap = new Map(
+        freeDayAssignments.map((assignment) => [`${assignment.classId}:${assignment.date}`, assignment]),
+      );
+      const legacyShiftMatch = shiftValue.match(/^(\d{2}:\d{2})-(\d{2}:\d{2})$/);
+      const freeAttendanceRows = freeRows
+        .map((row) => {
+          const assignment = freeDayAssignmentMap.get(`${row.classId}:${row.sessionDate}`);
+          const effectiveShiftTemplateId = row.shiftTemplateId || assignment?.shiftTemplateId || null;
+          const effectiveStartTime = row.startTime || assignment?.startTime || null;
+          const effectiveEndTime = row.endTime || assignment?.endTime || null;
+          const effectiveTeacherId = row.teacherId || assignment?.teacherId || null;
+          return {
+            ...row,
+            effectiveShiftTemplateId,
+            effectiveStartTime,
+            effectiveEndTime,
+            effectiveTeacherId,
+          };
+        })
+        .filter((row) => {
+          if (!shiftValue || shiftValue === "all") return true;
+          if (legacyShiftMatch) {
+            return row.effectiveStartTime === legacyShiftMatch[1] && row.effectiveEndTime === legacyShiftMatch[2];
+          }
+          return row.effectiveShiftTemplateId === shiftValue;
+        });
+
       const totalSessionsMap = new Map<string, number>();
       const resultClassIds = Array.from(new Set(results.map((r: any) => r.classId)));
       if (resultClassIds.length > 0) {
@@ -303,7 +512,10 @@ export function registerAttendanceRoutes(app: Express): void {
       }
 
       // Batch-lookup teacher names for all unique teacherIds across all results
-      const allTeacherIds = Array.from(new Set(results.flatMap((r: any) => r.teacherIds || [])));
+      const allTeacherIds = Array.from(new Set([
+        ...results.flatMap((r: any) => r.teacherIds || []),
+        ...freeAttendanceRows.map((row) => row.effectiveTeacherId).filter(Boolean),
+      ]));
       const staffNameMap = new Map<string, string>();
       if (allTeacherIds.length > 0) {
         const staffRows = await db
@@ -348,7 +560,44 @@ export function registerAttendanceRoutes(app: Express): void {
         };
       });
 
-      res.json(formatted);
+      const freeFormatted = freeAttendanceRows.map((row: any) => {
+        const dayOfWeek = dayNames[new Date(`${row.sessionDate}T00:00:00Z`).getUTCDay()] || "?";
+        const freeStatus =
+          row.status === "attended"
+            ? "present"
+            : row.status === "reserved"
+            ? "paused"
+            : "pending";
+        return {
+          id: row.id,
+          recordType: "free",
+          freeRegistrationId: row.id,
+          studentClassId: row.studentClassId,
+          studentId: row.studentId,
+          classId: row.classId,
+          studentCode: row.studentCode,
+          studentName: row.studentName,
+          className: row.classCode,
+          dayOfWeek,
+          sessionDate: row.sessionDate,
+          shift: row.effectiveStartTime && row.effectiveEndTime
+            ? `${row.effectiveStartTime} - ${row.effectiveEndTime}`
+            : "—",
+          sessionOrder: Number(row.sessionOrder || 1),
+          totalSessions: Number(row.totalSessions || 0),
+          attendanceStatus: freeStatus,
+          attendanceNote: row.note || "",
+          teacherName: row.effectiveTeacherId ? staffNameMap.get(row.effectiveTeacherId) || "" : "",
+          note: row.note || "",
+          onlineLink: null,
+          learningFormat: row.learningFormat ?? "offline",
+          onlineClickedAt: null,
+          onlineEndedAt: null,
+          endTime: row.effectiveEndTime ?? null,
+        };
+      });
+
+      res.json([...formatted, ...freeFormatted]);
     } catch (err: any) {
       console.error("Attendance error:", err);
       res.status(400).json({ message: err.message || "Lỗi khi tải dữ liệu" });

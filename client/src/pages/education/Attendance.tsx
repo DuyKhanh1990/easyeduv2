@@ -73,6 +73,9 @@ type ClassData = {
 
 type StudentAttendance = {
   id: string;
+  recordType?: "regular" | "free";
+  freeRegistrationId?: string;
+  studentClassId?: string;
   studentId: string;
   classId: string;
   studentCode: string;
@@ -149,8 +152,13 @@ export function Attendance() {
   const { toast } = useToast();
 
   const updateAttendanceMutation = useMutation({
-    mutationFn: async (data: { studentSessionId: string; attendanceStatus: string }) => {
-      return apiRequest("PATCH", `/api/student-sessions/${data.studentSessionId}/attendance`, {
+    mutationFn: async (data: { record: StudentAttendance; attendanceStatus: string }) => {
+      if (data.record.recordType === "free") {
+        return apiRequest("PATCH", `/api/attendance/free/${data.record.freeRegistrationId ?? data.record.id}`, {
+          attendance_status: data.attendanceStatus,
+        });
+      }
+      return apiRequest("PATCH", `/api/student-sessions/${data.record.id}/attendance`, {
         attendance_status: data.attendanceStatus,
       });
     },
@@ -163,8 +171,14 @@ export function Attendance() {
   });
 
   const updateNoteMutation = useMutation({
-    mutationFn: async (data: { studentSessionId: string; attendanceNote: string }) => {
-      return apiRequest("PATCH", `/api/student-sessions/${data.studentSessionId}/attendance`, {
+    mutationFn: async (data: { record: StudentAttendance; attendanceNote: string }) => {
+      if (data.record.recordType === "free") {
+        return apiRequest("PATCH", `/api/attendance/free/${data.record.freeRegistrationId ?? data.record.id}`, {
+          attendance_status: data.record.attendanceStatus || "pending",
+          attendance_note: data.attendanceNote,
+        });
+      }
+      return apiRequest("PATCH", `/api/student-sessions/${data.record.id}/attendance`, {
         attendance_note: data.attendanceNote,
       });
     },
@@ -746,6 +760,13 @@ export function Attendance() {
                               </TableHeader>
                               <TableBody>
                                 {(records as StudentAttendance[]).map((record, idx) => (
+                                  (() => {
+                                    const statusOptions = Object.entries(STATUS_CONFIG).filter(([val]) =>
+                                      record.recordType !== "free"
+                                        ? val !== "makeup_scheduled"
+                                        : ["pending", "present", "paused"].includes(val),
+                                    );
+                                    return (
                                   <TableRow
                                     key={`${record.id}-${idx}`}
                                     className={`transition-colors ${selectedRows.has(record.id) ? "bg-primary/5" : idx % 2 === 0 ? "bg-white" : "bg-muted/10"} hover:bg-primary/5`}
@@ -787,15 +808,13 @@ export function Attendance() {
                                       {canAttend ? (
                                         <Select
                                           value={record.attendanceStatus || "pending"}
-                                          onValueChange={(val) => updateAttendanceMutation.mutate({ studentSessionId: record.id, attendanceStatus: val })}
+                                           onValueChange={(val) => updateAttendanceMutation.mutate({ record, attendanceStatus: val })}
                                         >
                                           <SelectTrigger className="w-auto h-7 text-xs border-0 shadow-none p-0 bg-transparent focus:ring-0">
                                             <StatusBadge status={record.attendanceStatus || "pending"} />
                                           </SelectTrigger>
                                           <SelectContent className="bg-white">
-                                             {Object.entries(STATUS_CONFIG)
-                                               .filter(([val]) => val !== "makeup_scheduled")
-                                               .map(([val, cfg]) => (
+                                             {statusOptions.map(([val, cfg]) => (
                                               <SelectItem key={val} value={val}>
                                                 <span className={`flex items-center gap-1.5 ${cfg.text}`}>
                                                   <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
@@ -820,7 +839,7 @@ export function Attendance() {
                                           defaultValue={record.attendanceNote || ""}
                                           onBlur={(e) => {
                                             if (e.target.value !== record.attendanceNote) {
-                                              updateNoteMutation.mutate({ studentSessionId: record.id, attendanceNote: e.target.value });
+                                              updateNoteMutation.mutate({ record, attendanceNote: e.target.value });
                                             }
                                           }}
                                           data-testid={`input-note-${record.id}`}
@@ -867,6 +886,8 @@ export function Attendance() {
                                       )}
                                     </TableCell>
                                   </TableRow>
+                                    );
+                                  })()
                                 ))}
                               </TableBody>
                             </Table>
@@ -933,8 +954,15 @@ export function Attendance() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-2">
-             {Object.entries(STATUS_CONFIG)
-               .filter(([val]) => val !== "pending" && val !== "makeup_scheduled")
+             {(() => {
+               const selectedRecords = (attendanceData as StudentAttendance[]).filter((record) => selectedRows.has(record.id));
+               const includesFreeRecord = selectedRecords.some((record) => record.recordType === "free");
+               return Object.entries(STATUS_CONFIG)
+               .filter(([val]) =>
+                 val !== "pending"
+                 && val !== "makeup_scheduled"
+                 && (!includesFreeRecord || val === "present" || val === "paused"),
+               )
               .map(([status, cfg]) => (
                 <Button
                   key={status}
@@ -944,8 +972,8 @@ export function Attendance() {
                     setIsBulkAttendanceOpen(false);
                     try {
                       await Promise.all(
-                        Array.from(selectedRows).map(id =>
-                          updateAttendanceMutation.mutateAsync({ studentSessionId: id, attendanceStatus: status })
+                         selectedRecords.map((record) =>
+                           updateAttendanceMutation.mutateAsync({ record, attendanceStatus: status })
                         )
                       );
                     } catch {}
@@ -956,7 +984,8 @@ export function Attendance() {
                   <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />
                   {cfg.label}
                 </Button>
-              ))}
+               ))
+             })()}
           </div>
         </DialogContent>
       </Dialog>
