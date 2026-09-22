@@ -811,19 +811,19 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                             />
                             <div className="flex min-w-0 items-start gap-3">
                               <div className="min-w-0">
-                                <div className="text-sm font-semibold leading-tight text-slate-800">
+                                <div className="text-base font-semibold leading-tight text-slate-800">
                                   {student.fullName}{" "}
-                                  <span className="font-medium text-slate-500">({student.code || "—"})</span>
+                                  <span className="text-sm font-medium text-slate-500">({student.code || "—"})</span>
                                 </div>
-                                <div className="mt-1 text-xs leading-tight text-slate-500">
+                                <div className="mt-1.5 text-sm leading-tight text-slate-500">
                                   · Còn <span className="font-semibold text-red-600">{remainingSessions}</span> buổi
                                 </div>
-                                <div className="mt-0.5 text-xs leading-tight text-slate-500">
+                                <div className="mt-0.5 text-sm leading-tight text-slate-500">
                                   · {formatStudentDate(studentStart)} – {formatStudentDate(studentEnd)}
                                   {dateRangeDays != null && ` (${dateRangeDays} ngày)`}
                                 </div>
                                 <div className={cn(
-                                  "mt-0.5 text-xs font-medium leading-tight",
+                                  "mt-0.5 text-sm font-medium leading-tight",
                                   isExpired
                                     ? "text-red-600"
                                     : isExpiringSoon
