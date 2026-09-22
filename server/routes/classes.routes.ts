@@ -7245,6 +7245,15 @@ export function registerClassesRoutes(app: Express): void {
         })).optional().default([]),
       }).parse(req.body);
 
+      const initialStudentRows = await db
+        .select({ studentId: studentClasses.studentId })
+        .from(studentClasses)
+        .where(and(
+          eq(studentClasses.classId, classId),
+          eq(studentClasses.status, "active"),
+        ));
+      const initialStudentIds = [...new Set(initialStudentRows.map((row) => row.studentId))];
+
       const [book] = await db.insert(classGradeBooks).values({
         classId,
         title: body.title,
@@ -7252,6 +7261,7 @@ export function registerClassesRoutes(app: Express): void {
         sessionId: body.sessionId || null,
         published: body.published ?? false,
         excludedStudentIds: body.excludedStudentIds,
+        studentIds: initialStudentIds,
         createdBy: userId || null,
         updatedBy: userId || null,
       }).returning();
@@ -7304,7 +7314,11 @@ export function registerClassesRoutes(app: Express): void {
     try {
       const { id } = req.params;
       const [book] = await db
-        .select({ excludedStudentIds: classGradeBooks.excludedStudentIds })
+        .select({
+          excludedStudentIds: classGradeBooks.excludedStudentIds,
+          studentIds: classGradeBooks.studentIds,
+          createdAt: classGradeBooks.createdAt,
+        })
         .from(classGradeBooks)
         .where(eq(classGradeBooks.id, id))
         .limit(1);
@@ -7318,7 +7332,32 @@ export function registerClassesRoutes(app: Express): void {
         .where(eq(classGradeBookStudentComments.gradeBookId, id));
       const studentComments: Record<string, string> = {};
       commentRows.forEach(row => { studentComments[row.studentId] = row.comment; });
-      res.json({ scores, studentComments, excludedStudentIds: book?.excludedStudentIds || [] });
+
+      let studentIds = book?.studentIds ?? null;
+      if (studentIds == null && book) {
+        const legacyEnrollmentRows = await db
+          .select({ studentId: studentClasses.studentId })
+          .from(studentClasses)
+          .where(and(
+            eq(studentClasses.classId, req.params.classId),
+            lte(studentClasses.createdAt, book.createdAt),
+          ));
+        studentIds = [
+          ...new Set([
+            ...legacyEnrollmentRows.map((row) => row.studentId),
+            ...scores.map((row) => row.studentId),
+            ...Object.keys(studentComments),
+            ...(book.excludedStudentIds || []),
+          ]),
+        ];
+      }
+
+      res.json({
+        scores,
+        studentComments,
+        excludedStudentIds: book?.excludedStudentIds || [],
+        studentIds,
+      });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -7334,6 +7373,7 @@ export function registerClassesRoutes(app: Express): void {
         sessionId: z.string().uuid().nullable().optional(),
         published: z.boolean().optional(),
         excludedStudentIds: z.array(z.string().uuid()).optional(),
+        studentIds: z.array(z.string().uuid()).optional(),
         studentComments: z.record(z.string()).optional(),
         scores: z.array(z.object({
           studentId: z.string().uuid(),
@@ -7439,6 +7479,7 @@ export function registerClassesRoutes(app: Express): void {
       if ('sessionId' in body) updateData.sessionId = body.sessionId;
       if ('published' in body) updateData.published = body.published;
       if ('excludedStudentIds' in body) updateData.excludedStudentIds = body.excludedStudentIds;
+      if ('studentIds' in body) updateData.studentIds = body.studentIds;
 
       const [updated] = await db.update(classGradeBooks)
         .set(updateData)

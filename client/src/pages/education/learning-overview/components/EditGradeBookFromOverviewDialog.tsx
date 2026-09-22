@@ -62,6 +62,7 @@ export function EditGradeBookFromOverviewDialog({ book, open, onClose }: Props) 
   const [selectedSessionId, setSelectedSessionId] = useState<string>(NONE_VALUE);
   const [selectedScoreSheetId, setSelectedScoreSheetId] = useState<string>("");
   const [scores, setScores] = useState<Record<string, Record<string, string>>>({});
+  const [includedStudentIds, setIncludedStudentIds] = useState<Set<string>>(new Set());
   const [removedStudentIds, setRemovedStudentIds] = useState<Set<string>>(new Set());
   const [pendingRemoval, setPendingRemoval] = useState<{ id: string; name: string } | null>(null);
   const [published, setPublished] = useState(false);
@@ -104,7 +105,15 @@ export function EditGradeBookFromOverviewDialog({ book, open, onClose }: Props) 
   const allStudents = activeStudents || [];
   const displayedStudents = allStudents.filter((s: any) => {
     const actualStudentId = s.studentId || s.student?.id || s.id;
-    return !removedStudentIds.has(actualStudentId);
+    return includedStudentIds.has(actualStudentId) && !removedStudentIds.has(actualStudentId);
+  });
+  const removedStudents = allStudents.filter((s: any) => {
+    const actualStudentId = s.studentId || s.student?.id || s.id;
+    return includedStudentIds.has(actualStudentId) && removedStudentIds.has(actualStudentId);
+  });
+  const newStudents = allStudents.filter((s: any) => {
+    const actualStudentId = s.studentId || s.student?.id || s.id;
+    return !includedStudentIds.has(actualStudentId);
   });
 
   const selectedScoreSheet = allScoreSheets?.find((s: any) => s.id === selectedScoreSheetId);
@@ -137,6 +146,7 @@ export function EditGradeBookFromOverviewDialog({ book, open, onClose }: Props) 
       setSelectedScoreSheetId(book.scoreSheetId || "");
       setPublished(book.published);
       setScores({});
+       setIncludedStudentIds(new Set());
       setRemovedStudentIds(new Set());
       setPendingRemoval(null);
       setStudentComments({});
@@ -160,6 +170,11 @@ export function EditGradeBookFromOverviewDialog({ book, open, onClose }: Props) 
       .then((data) => {
         const existingScores: any[] = data.scores || [];
         const existingComments: Record<string, string> = data.studentComments || {};
+        setIncludedStudentIds(new Set(
+          Array.isArray(data.studentIds)
+            ? data.studentIds
+            : activeStudents.map((s: any) => s.studentId || s.student?.id || s.id),
+        ));
         setRemovedStudentIds(new Set(data.excludedStudentIds || []));
 
         const studentIdToEnrollmentId: Record<string, string> = {};
@@ -322,9 +337,22 @@ export function EditGradeBookFromOverviewDialog({ book, open, onClose }: Props) 
   };
 
   const restoreStudent = (studentId: string) => {
+    setIncludedStudentIds((prev) => {
+      const next = new Set(prev);
+      next.add(studentId);
+      return next;
+    });
     setRemovedStudentIds((prev) => {
       const next = new Set(prev);
       next.delete(studentId);
+      return next;
+    });
+  };
+
+  const addNewStudent = (studentId: string) => {
+    setIncludedStudentIds((prev) => {
+      const next = new Set(prev);
+      next.add(studentId);
       return next;
     });
   };
@@ -337,11 +365,13 @@ export function EditGradeBookFromOverviewDialog({ book, open, onClose }: Props) 
 
   const buildScoreList = () => {
     const scoreList: { studentId: string; categoryId: string; score: string }[] = [];
-    displayedStudents.forEach((student: any) => {
-      const enrollmentId = student.id;
-      const actualStudentId = student.studentId || student.student?.id || student.id;
+    includedStudentIds.forEach((actualStudentId) => {
+      const student = allStudents.find((candidate: any) =>
+        (candidate.studentId || candidate.student?.id || candidate.id) === actualStudentId
+      );
+      const enrollmentId = student?.id || actualStudentId;
       categories.forEach((cat: any) => {
-        const score = scores[enrollmentId]?.[cat.id] || "";
+        const score = scores[enrollmentId]?.[cat.id] || scores[actualStudentId]?.[cat.id] || "";
         if (score) scoreList.push({ studentId: actualStudentId, categoryId: cat.id, score });
       });
     });
@@ -350,10 +380,12 @@ export function EditGradeBookFromOverviewDialog({ book, open, onClose }: Props) 
 
   const buildStudentComments = () => {
     const result: Record<string, string> = {};
-    allStudents.forEach((student: any) => {
-      const enrollmentId = student.id;
-      const actualStudentId = student.studentId || student.student?.id || student.id;
-      const comment = studentComments[enrollmentId];
+    includedStudentIds.forEach((actualStudentId) => {
+      const student = allStudents.find((candidate: any) =>
+        (candidate.studentId || candidate.student?.id || candidate.id) === actualStudentId
+      );
+      const enrollmentId = student?.id || actualStudentId;
+      const comment = studentComments[enrollmentId] || studentComments[actualStudentId];
       if (comment?.trim()) result[actualStudentId] = comment.trim();
     });
     return result;
@@ -389,6 +421,7 @@ export function EditGradeBookFromOverviewDialog({ book, open, onClose }: Props) 
       scores: buildScoreList(),
       studentComments: buildStudentComments(),
       excludedStudentIds: Array.from(removedStudentIds),
+      studentIds: Array.from(includedStudentIds),
       published,
     });
   };
@@ -530,38 +563,44 @@ export function EditGradeBookFromOverviewDialog({ book, open, onClose }: Props) 
                 </div>
               ) : (
                 <div className="h-full">
-                  {removedStudentIds.size > 0 && (
+                  {(removedStudents.length > 0 || newStudents.length > 0) && (
                     <div className="flex items-center gap-2 px-4 py-2 border-b border-border/40 bg-muted/30">
                       <span className="text-xs text-muted-foreground">
-                        {removedStudentIds.size} học viên đã được loại khỏi bảng điểm
+                        {removedStudents.length > 0 && `${removedStudents.length} học viên đã loại`}
+                        {removedStudents.length > 0 && newStudents.length > 0 && " · "}
+                        {newStudents.length > 0 && `${newStudents.length} học viên mới`}
                       </span>
-                      <Select onValueChange={restoreStudent}>
+                      <Select onValueChange={(studentId) => {
+                        if (removedStudents.some((student: any) =>
+                          (student.studentId || student.student?.id || student.id) === studentId
+                        )) {
+                          restoreStudent(studentId);
+                        } else {
+                          addNewStudent(studentId);
+                        }
+                      }}>
                         <SelectTrigger className="h-7 w-auto min-w-[170px] text-xs">
-                          <SelectValue placeholder="Thêm lại học viên" />
+                          <SelectValue placeholder="Thêm học viên vào bảng" />
                         </SelectTrigger>
                         <SelectContent>
-                          {allStudents
-                            .filter((student: any) =>
-                              removedStudentIds.has(
-                                student.studentId || student.student?.id || student.id
-                              )
-                            )
-                            .map((student: any) => {
-                              const restoredStudentId =
-                                student.studentId || student.student?.id || student.id;
-                              return (
-                                <SelectItem
-                                  key={restoredStudentId}
-                                  value={restoredStudentId}
-                                  className="text-xs"
-                                >
-                                  {student.fullName ||
-                                    student.full_name ||
-                                    student.student?.fullName ||
-                                    "Học viên"}
-                                </SelectItem>
-                              );
-                            })}
+                          {removedStudents.map((student: any) => {
+                            const studentId =
+                              student.studentId || student.student?.id || student.id;
+                            return (
+                              <SelectItem key={`restore-${studentId}`} value={studentId} className="text-xs">
+                                [Đã loại] {student.fullName || student.full_name || student.student?.fullName || "Học viên"}
+                              </SelectItem>
+                            );
+                          })}
+                          {newStudents.map((student: any) => {
+                            const studentId =
+                              student.studentId || student.student?.id || student.id;
+                            return (
+                              <SelectItem key={`new-${studentId}`} value={studentId} className="text-xs">
+                                [Mới vào lớp] {student.fullName || student.full_name || student.student?.fullName || "Học viên"}
+                              </SelectItem>
+                            );
+                          })}
                         </SelectContent>
                       </Select>
                     </div>

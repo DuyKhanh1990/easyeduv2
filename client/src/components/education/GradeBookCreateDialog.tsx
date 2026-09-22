@@ -287,6 +287,9 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
       scores: scoreList,
       studentComments: studentCommentMap,
       excludedStudentIds: Array.from(removedStudentIds),
+      studentIds: allStudents.map((student: any) =>
+        student.studentId || student.student?.id || student.id
+      ),
       published,
     });
   };

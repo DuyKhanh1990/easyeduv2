@@ -4648,10 +4648,15 @@ export function registerMobileRoutes(app: Express) {
 
       const scores = await db.select().from(classGradeBookScores).where(eq(classGradeBookScores.gradeBookId, id));
       const commentRows = await db.select().from(classGradeBookStudentComments).where(eq(classGradeBookStudentComments.gradeBookId, id));
+      const [gradeBook] = await db
+        .select({ studentIds: classGradeBooks.studentIds })
+        .from(classGradeBooks)
+        .where(eq(classGradeBooks.id, id))
+        .limit(1);
       const studentComments: Record<string, string> = {};
       commentRows.forEach(row => { studentComments[row.studentId] = row.comment; });
 
-      return res.json({ scores, studentComments });
+      return res.json({ scores, studentComments, studentIds: gradeBook?.studentIds ?? null });
     } catch (err: any) {
       console.error("[Mobile] staff/classes/grade-books/:id GET error:", err);
       return res.status(500).json({ message: err.message || "Lỗi khi tải chi tiết bảng điểm" });
@@ -4702,12 +4707,22 @@ export function registerMobileRoutes(app: Express) {
       if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0].message });
       const body = parsed.data;
 
+      const initialStudentRows = await db
+        .select({ studentId: studentClasses.studentId })
+        .from(studentClasses)
+        .where(and(
+          eq(studentClasses.classId, classId),
+          eq(studentClasses.status, "active"),
+        ));
+      const initialStudentIds = [...new Set(initialStudentRows.map((row) => row.studentId))];
+
       const [book] = await db.insert(classGradeBooks).values({
         classId,
         title: body.title,
         scoreSheetId: body.scoreSheetId,
         sessionId: body.sessionId || null,
         published: body.published ?? false,
+        studentIds: initialStudentIds,
         createdBy: userId || null,
         updatedBy: userId || null,
       }).returning();
@@ -4770,6 +4785,7 @@ export function registerMobileRoutes(app: Express) {
         scoreSheetId: z.string().uuid().optional(),
         sessionId: z.string().uuid().nullable().optional(),
         published: z.boolean().optional(),
+        studentIds: z.array(z.string().uuid()).optional(),
         studentComments: z.record(z.string()).optional(),
         scores: z.array(z.object({
           studentId: z.string().uuid(),
@@ -4792,6 +4808,7 @@ export function registerMobileRoutes(app: Express) {
       if (body.scoreSheetId) updateData.scoreSheetId = body.scoreSheetId;
       if ("sessionId" in body) updateData.sessionId = body.sessionId;
       if ("published" in body) updateData.published = body.published;
+      if ("studentIds" in body) updateData.studentIds = body.studentIds;
 
       const [updated] = await db.update(classGradeBooks).set(updateData).where(eq(classGradeBooks.id, id)).returning();
 

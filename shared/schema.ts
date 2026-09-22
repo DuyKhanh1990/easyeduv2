@@ -1785,6 +1785,9 @@ export const classGradeBooks = pgTable("class_grade_books", {
   sessionId: uuid("session_id").references(() => classSessions.id, { onDelete: "set null" }),
   published: boolean("published").default(false).notNull(),
   excludedStudentIds: uuid("excluded_student_ids").array().notNull().default(sql`'{}'`),
+  // Snapshot of students included when the grade book was created.
+  // Nullable so legacy grade books can be recognized and backfilled lazily.
+  studentIds: uuid("student_ids").array(),
   studentComments: jsonb("student_comments").default({}).notNull(),
   createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
   updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
