@@ -289,7 +289,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
   const allSelectedDayStudents = selectableStudentsForDate.length > 0
     && selectableStudentsForDate.every((student: any) => selectedStudentIds.includes(student.id));
   const monthlyStats = useMemo(() => {
-    const stats = new Map<string, { registered: number; attended: number }>();
+    const stats = new Map<string, { registered: number; attended: number; totalSchedule: number }>();
     for (const student of students) {
       const registrationsInMonth = days
         .map((day) => registrations.get(`${student.id}:${day.value}`))
@@ -297,6 +297,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
       stats.set(student.id, {
         registered: registrationsInMonth.length,
         attended: registrationsInMonth.filter((registration: any) => registration.status === "attended").length,
+        totalSchedule: Number(student.totalSessions ?? 0),
       });
     }
     return stats;
@@ -879,9 +880,9 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
           </div>
         ) : (
           <table className="w-full min-w-max border-collapse text-xs">
-            <thead className="sticky top-0 z-10 bg-slate-100">
-              <tr>
-                <th className="sticky left-0 z-20 min-w-52 border-b border-r bg-slate-100 px-3 py-2 text-left font-semibold">
+            <thead className="sticky top-0 z-30 bg-slate-100">
+              <tr className="sticky top-0 z-30">
+                <th className="sticky left-0 top-0 z-40 min-w-52 border-b border-r bg-slate-100 px-3 py-2 text-left font-semibold">
                   <div className="flex items-center gap-2">
                     <Checkbox
                       className="h-3.5 w-3.5"
@@ -903,7 +904,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                     <th
                       key={day.value}
                       className={cn(
-                        "min-w-24 border-b px-1 py-1 text-center font-medium transition-colors",
+                        "sticky top-0 min-w-24 border-b px-1 py-1 text-center font-medium transition-colors",
                         isSelectedDay && isTodayColumn
                           ? "bg-violet-100 text-violet-800"
                           : isSelectedDay
@@ -966,11 +967,11 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                     </th>
                   );
                 })}
-                <th className="sticky right-20 z-20 w-20 min-w-20 border-b border-l bg-slate-100 px-1 py-2 text-center font-semibold shadow-[-4px_0_8px_rgba(15,23,42,0.06)]">
+                <th className="sticky right-20 top-0 z-40 w-20 min-w-20 border-b border-l bg-slate-100 px-1 py-2 text-center font-semibold shadow-[-4px_0_8px_rgba(15,23,42,0.06)]">
                   <div>T{monthLabel}</div>
                   <div className="text-[9px] font-normal text-muted-foreground">Đăng ký</div>
                 </th>
-                <th className="sticky right-0 z-20 w-20 min-w-20 border-b border-l bg-slate-100 px-1 py-2 text-center font-semibold">
+                <th className="sticky right-0 top-0 z-40 w-20 min-w-20 border-b border-l bg-slate-100 px-1 py-2 text-center font-semibold">
                   <div>Điểm danh</div>
                   <div className="text-[9px] font-normal text-muted-foreground">Có học</div>
                 </th>
@@ -1212,14 +1213,14 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                     );
                   })}
                   {(() => {
-                    const stats = monthlyStats.get(student.id) ?? { registered: 0, attended: 0 };
+                    const stats = monthlyStats.get(student.id) ?? { registered: 0, attended: 0, totalSchedule: 0 };
                     return (
                       <>
                         <td className="sticky right-20 z-10 w-20 min-w-20 border-b border-l bg-slate-100 px-1 py-2 text-center text-xs font-semibold text-slate-700 shadow-[-4px_0_8px_rgba(15,23,42,0.06)]">
                           {stats.registered}
                         </td>
                         <td className="sticky right-0 z-10 w-20 min-w-20 border-b border-l bg-slate-100 px-1 py-2 text-center text-xs font-semibold text-slate-700">
-                          {stats.attended}/{stats.registered}
+                          {stats.attended}/{stats.totalSchedule}
                         </td>
                       </>
                     );
