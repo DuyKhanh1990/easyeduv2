@@ -2635,7 +2635,10 @@ export const storeInventoryReservations = pgTable("store_inventory_reservations"
   quantity: integer("quantity").notNull().default(1),
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
-});
+}, (table) => ({
+  sessionProductWarehouseUnique: uniqueIndex("store_inventory_reservations_session_product_warehouse_uidx")
+    .on(table.sessionId, table.productId, table.warehouseId),
+}));
 
 export type StoreInventoryReservation = typeof storeInventoryReservations.$inferSelect;
 export type InsertStoreInventoryReservation = typeof storeInventoryReservations.$inferInsert;
