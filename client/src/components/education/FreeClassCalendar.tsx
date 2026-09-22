@@ -779,12 +779,12 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                               }}
                             >
                               <SelectTrigger className={cn(
-                                "h-8 w-[140px] text-[8px]",
+                                "h-8 w-[140px] !text-[8px] leading-[10px]",
                                 status === "attended" && "border-emerald-200 bg-emerald-50 text-emerald-700",
                                 status === "reserved" && "border-amber-200 bg-amber-50 text-amber-700",
                                 status === "registered" && "border-slate-200 bg-slate-50 text-slate-600",
                               )}>
-                                <SelectValue>{statusLabel}</SelectValue>
+                                <SelectValue className="!text-[8px] leading-[10px]">{statusLabel}</SelectValue>
                               </SelectTrigger>
                               <SelectContent className="text-[8px]">
                                 <SelectItem value="registered">
@@ -1111,12 +1111,12 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                 }
                               >
                                 <SelectTrigger className={cn(
-                                  "h-5 w-[74px] justify-center px-1 text-[6px]",
+                                  "h-5 w-[74px] justify-center px-1 !text-[8px] leading-[9px]",
                                   status === "attended" && "border-emerald-200 bg-emerald-50 text-emerald-700",
                                   status === "reserved" && "border-amber-200 bg-amber-50 text-amber-700",
                                   status === "registered" && "border-slate-200 bg-slate-50 text-slate-600",
                                 )}>
-                                  <SelectValue>{statusLabel}</SelectValue>
+                                  <SelectValue className="!text-[8px] leading-[9px]">{statusLabel}</SelectValue>
                                 </SelectTrigger>
                                 <SelectContent className="text-[6px]">
                                   <SelectItem className="text-[6px]" value="registered">Chưa điểm danh</SelectItem>

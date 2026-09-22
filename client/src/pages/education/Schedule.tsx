@@ -96,9 +96,11 @@ function formatShiftTime(start: string, end: string) {
 }
 
 function getScheduleTimeLabel(session: Pick<ScheduleSession, "isFreeSession" | "shiftStart" | "shiftEnd">) {
-  return session.isFreeSession
-    ? "Lớp tự do"
-    : formatShiftTime(session.shiftStart, session.shiftEnd);
+  const start = session.shiftStart?.slice(0, 5) ?? "";
+  const end = session.shiftEnd?.slice(0, 5) ?? "";
+  if (start && end) return `${start} – ${end}`;
+  if (start || end) return `${start || end}`;
+  return session.isFreeSession ? "Lớp tự do" : "—";
 }
 
 export function Schedule() {

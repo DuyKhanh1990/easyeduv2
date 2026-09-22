@@ -4285,6 +4285,9 @@ export function registerClassesRoutes(app: Express): void {
           registrationShiftName: shiftTemplates.name,
           registrationShiftStart: shiftTemplates.startTime,
           registrationShiftEnd: shiftTemplates.endTime,
+           classShiftTemplateIds: classes.shiftTemplateIds,
+           scheduleConfig: classes.scheduleConfig,
+           teachersConfig: classes.teachersConfig,
           studentClassId: freeClassRegistrations.studentClassId,
           studentId: freeClassRegistrations.studentId,
           studentName: students.fullName,
@@ -4328,6 +4331,67 @@ export function registerClassesRoutes(app: Express): void {
       const freeDayAssignmentMap = new Map(
         freeDayAssignmentRows.map((row) => [`${row.classId}:${String(row.assignmentDate).slice(0, 10)}`, row]),
       );
+
+      const configuredShiftIds = new Set<string>();
+      for (const row of freeRows) {
+        for (const shiftId of row.classShiftTemplateIds ?? []) {
+          if (shiftId) configuredShiftIds.add(shiftId);
+        }
+        for (const dayConfig of Array.isArray(row.scheduleConfig) ? row.scheduleConfig : []) {
+          for (const shift of Array.isArray(dayConfig?.shifts) ? dayConfig.shifts : []) {
+            const shiftId = shift?.shift_template_id || shift?.shiftTemplateId;
+            if (shiftId) configuredShiftIds.add(shiftId);
+          }
+        }
+      }
+      const configuredShiftMap = new Map<string, { name: string; startTime: string; endTime: string }>();
+      if (configuredShiftIds.size > 0) {
+        const configuredShifts = await db
+          .select({
+            id: shiftTemplates.id,
+            name: shiftTemplates.name,
+            startTime: shiftTemplates.startTime,
+            endTime: shiftTemplates.endTime,
+          })
+          .from(shiftTemplates)
+          .where(inArray(shiftTemplates.id, [...configuredShiftIds]));
+        configuredShifts.forEach((shift) => configuredShiftMap.set(shift.id, shift));
+      }
+
+      const getClassConfiguredShift = (row: (typeof freeRows)[number], date: string) => {
+        const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+        const scheduleConfig = Array.isArray(row.scheduleConfig) ? row.scheduleConfig : [];
+        const dayConfig = scheduleConfig.find((config: any) => {
+          const configuredWeekday = Number(config?.weekday);
+          return configuredWeekday === weekday || (weekday === 0 && configuredWeekday === 7);
+        });
+        const dayShifts = Array.isArray(dayConfig?.shifts) ? dayConfig.shifts : [];
+        if (dayShifts.length > 0) {
+          const configuredTeachers = Array.isArray(row.teachersConfig) ? row.teachersConfig : [];
+          const teacherConfig = configuredTeachers.find((config: any) => {
+            const teacherId = config?.teacher_id || config?.teacherId;
+            return teacherId && (row.classTeacherIds ?? []).includes(teacherId);
+          });
+          if (teacherConfig?.mode === "specific" && Array.isArray(teacherConfig.shift_keys)) {
+            const matchingKey = teacherConfig.shift_keys.find((key: string) =>
+              key.startsWith(`${weekday}_shift`) || (weekday === 0 && key.startsWith("7_shift"))
+            );
+            if (matchingKey) {
+              const shiftIndex = Number(matchingKey.split("_shift")[1]);
+              const shiftId = dayShifts[shiftIndex]?.shift_template_id || dayShifts[shiftIndex]?.shiftTemplateId;
+              if (shiftId && configuredShiftMap.has(shiftId)) return { id: shiftId, ...configuredShiftMap.get(shiftId)! };
+            }
+          }
+          const firstShiftId = dayShifts[0]?.shift_template_id || dayShifts[0]?.shiftTemplateId;
+          if (firstShiftId && configuredShiftMap.has(firstShiftId)) {
+            return { id: firstShiftId, ...configuredShiftMap.get(firstShiftId)! };
+          }
+        }
+        const fallbackId = (row.classShiftTemplateIds ?? []).find(Boolean);
+        return fallbackId && configuredShiftMap.has(fallbackId)
+          ? { id: fallbackId, ...configuredShiftMap.get(fallbackId)! }
+          : null;
+      };
 
       const freeSessionMap = new Map<string, {
         id: string;
@@ -4376,11 +4440,12 @@ export function registerClassesRoutes(app: Express): void {
       }>();
       for (const row of freeRows) {
         const key = `${row.classId}:${row.sessionDate}`;
+        const date = String(row.sessionDate).slice(0, 10);
+        const dayAssignment = freeDayAssignmentMap.get(`${row.classId}:${date}`);
+        const classConfiguredShift = getClassConfiguredShift(row, date);
         let session = freeSessionMap.get(key);
         if (!session) {
-          const date = String(row.sessionDate).slice(0, 10);
           const classTeacherIds = row.classTeacherIds ?? [];
-          const dayAssignment = freeDayAssignmentMap.get(`${row.classId}:${date}`);
           session = {
             id: `free-${row.classId}-${date}`,
             classId: row.classId,
@@ -4396,9 +4461,9 @@ export function registerClassesRoutes(app: Express): void {
             status: "scheduled",
              teachers: [],
              teacherIds: [],
-             shiftStart: dayAssignment?.shiftStart || "",
-             shiftEnd: dayAssignment?.shiftEnd || "",
-             shiftName: dayAssignment?.shiftName || "Lớp tự do",
+             shiftStart: dayAssignment?.shiftStart || classConfiguredShift?.startTime || "",
+             shiftEnd: dayAssignment?.shiftEnd || classConfiguredShift?.endTime || "",
+             shiftName: dayAssignment?.shiftName || classConfiguredShift?.name || "Lớp tự do",
             learningFormat: "offline",
             classColor: row.classColor ?? null,
             roomId: null,
@@ -4413,19 +4478,23 @@ export function registerClassesRoutes(app: Express): void {
           };
           freeSessionMap.set(key, session);
         }
-        const date = String(row.sessionDate).slice(0, 10);
-        const dayAssignment = freeDayAssignmentMap.get(`${row.classId}:${date}`);
         const effectiveTeacherId = row.teacherId || dayAssignment?.teacherId || null;
-        const effectiveShiftTemplateId = row.shiftTemplateId || dayAssignment?.shiftTemplateId || null;
+        const effectiveShiftTemplateId = row.shiftTemplateId || dayAssignment?.shiftTemplateId || classConfiguredShift?.id || null;
         const effectiveShiftStart = row.shiftTemplateId
           ? row.registrationShiftStart || null
-          : dayAssignment?.shiftStart || null;
+          : dayAssignment?.shiftTemplateId
+          ? dayAssignment.shiftStart || null
+          : classConfiguredShift?.startTime || null;
         const effectiveShiftEnd = row.shiftTemplateId
           ? row.registrationShiftEnd || null
-          : dayAssignment?.shiftEnd || null;
+          : dayAssignment?.shiftTemplateId
+          ? dayAssignment.shiftEnd || null
+          : classConfiguredShift?.endTime || null;
         const effectiveShiftName = row.shiftTemplateId
           ? row.registrationShiftName || null
-          : dayAssignment?.shiftName || null;
+          : dayAssignment?.shiftTemplateId
+          ? dayAssignment.shiftName || null
+          : classConfiguredShift?.name || null;
         if (effectiveTeacherId) {
           if (!session.teacherIds.includes(effectiveTeacherId)) session.teacherIds.push(effectiveTeacherId);
         } else {
