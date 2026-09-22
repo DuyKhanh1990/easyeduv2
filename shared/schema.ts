@@ -904,6 +904,7 @@ export const classes = pgTable("classes", {
   scoreSheetId: uuid("score_sheet_id").references(() => scoreSheets.id, { onDelete: "set null" }),
   scheduleGenerated: boolean("schedule_generated").notNull().default(false),
   classType: varchar("class_type", { length: 20 }).default("group"), // group, tutor, free
+  freeClassMode: varchar("free_class_mode", { length: 30 }), // self_practice, guided
   tinodeTopicId: varchar("tinode_topic_id", { length: 100 }),
   cycleHistory: jsonb("cycle_history"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

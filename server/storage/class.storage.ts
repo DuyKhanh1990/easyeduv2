@@ -909,7 +909,10 @@ export async function createClass(data: any): Promise<Class> {
       onlineLink: data.onlineLink || null,
       subjectId: data.subjectId || null,
       evaluationCriteriaIds: Array.isArray(data.evaluationCriteriaIds) && data.evaluationCriteriaIds.length > 0 ? data.evaluationCriteriaIds : null,
-      classType: data.classType || "group",
+       classType: data.classType || "group",
+       freeClassMode: data.classType === "free"
+         ? (data.freeClassMode || (Array.isArray(data.teacherIds) && data.teacherIds.length > 0 ? "guided" : "self_practice"))
+         : null,
     }).returning();
 
     if (sessions.length > 0) {
@@ -1072,7 +1075,7 @@ export async function updateClass(id: string, data: any): Promise<Class> {
         : (data.endDate || data.startDate);
 
       const updateData: any = {};
-      const allowed = ["classCode", "name", "locationId", "programId", "courseId", "managerIds", "teacherIds", "shiftTemplateIds", "feePackageId", "scoreSheetId", "maxStudents", "learningFormat", "onlineLink", "description", "status", "weekdays", "color", "subjectId", "evaluationCriteriaIds"];
+       const allowed = ["classCode", "name", "locationId", "programId", "courseId", "managerIds", "teacherIds", "shiftTemplateIds", "feePackageId", "scoreSheetId", "maxStudents", "learningFormat", "onlineLink", "description", "status", "weekdays", "color", "subjectId", "evaluationCriteriaIds", "freeClassMode"];
       for (const key of allowed) {
         if (data[key] !== undefined) updateData[key] = data[key];
       }
@@ -1105,7 +1108,7 @@ export async function updateClass(id: string, data: any): Promise<Class> {
 
   // Default: update class fields only (schedule already generated — do not touch session schedule structure)
   const updateData: any = {};
-  const allowed = ["classCode", "name", "locationId", "programId", "courseId", "managerIds", "teacherIds", "shiftTemplateIds", "feePackageId", "scoreSheetId", "maxStudents", "learningFormat", "onlineLink", "description", "status", "startDate", "endDate", "weekdays", "color", "subjectId", "evaluationCriteriaIds"];
+   const allowed = ["classCode", "name", "locationId", "programId", "courseId", "managerIds", "teacherIds", "shiftTemplateIds", "feePackageId", "scoreSheetId", "maxStudents", "learningFormat", "onlineLink", "description", "status", "startDate", "endDate", "weekdays", "color", "subjectId", "evaluationCriteriaIds", "freeClassMode"];
   for (const key of allowed) {
     if (data[key] !== undefined) updateData[key] = data[key];
   }

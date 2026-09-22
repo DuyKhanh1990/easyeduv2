@@ -43,6 +43,11 @@ const CLASS_PALETTE = [
   "#0ea5e9", "#10b981", "#f59e0b", "#a855f7", "#06b6d4",
 ];
 
+const FREE_CLASS_MODE_OPTIONS = [
+  { value: "self_practice", label: "Tự do / tự tập" },
+  { value: "guided", label: "Có giáo viên hướng dẫn" },
+] as const;
+
 const editSchema = z.object({
   classCode: z.string().min(1, "Mã lớp là bắt buộc"),
   name: z.string().min(1, "Tên lớp là bắt buộc"),
@@ -76,6 +81,7 @@ const editSchema = z.object({
     mode: z.enum(["all", "specific"]),
     shift_keys: z.array(z.string()),
   })).optional(),
+  freeClassMode: z.enum(["self_practice", "guided"]).optional(),
 });
 
 type EditFormValues = z.infer<typeof editSchema>;
@@ -146,6 +152,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
   const selectedLocationId = form.watch("locationId");
   const selectedCourseId = form.watch("courseId");
   const selectedLearningFormat = form.watch("learningFormat");
+  const selectedFreeClassMode = form.watch("freeClassMode");
   const selectedWeekdays = form.watch("weekdays") || [];
   const scheduleConfig = form.watch("schedule_config") || [];
   const teachersConfig = form.watch("teachers_config") || [];
@@ -260,7 +267,11 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
         teachers_config = allTeacherIds.map(tid => ({ teacher_id: tid, mode: "all" as const, shift_keys: [] }));
       }
 
-      form.reset({
+       const freeClassMode = cls.freeClassMode === "self_practice" || cls.freeClassMode === "guided"
+         ? cls.freeClassMode
+         : (Array.isArray(cls.teacherIds) && cls.teacherIds.length > 0 ? "guided" : "self_practice");
+
+       form.reset({
         classCode: cls.classCode || "",
         name: cls.name || "",
         locationId: String(cls.locationId || ""),
@@ -278,10 +289,13 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
         description: cls.description || "",
         startDate: cls.startDate || "",
         endDate: cls.endDate || "",
-         teacherIds: teachers_config.map((teacher: any) => String(teacher.teacher_id)),
+         teacherIds: freeClassMode === "guided"
+           ? teachers_config.map((teacher: any) => String(teacher.teacher_id))
+           : [],
         weekdays,
         schedule_config,
         teachers_config,
+         freeClassMode,
       });
       setStep(1);
       setSelectedColor(cls.color || CLASS_PALETTE[5]);
@@ -425,18 +439,21 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
         feePackageId: valOrNull(data.feePackageId),
         scoreSheetId: valOrNull(data.scoreSheetId),
         teacherIds: isFreeClass
-          ? [...new Set((data.teacherIds || []).filter(Boolean))]
+           ? data.freeClassMode === "guided"
+             ? [...new Set((data.teacherIds || []).filter(Boolean))]
+             : []
           : [...new Set((data.teachers_config || []).map((t: any) => t.teacher_id).filter(Boolean))],
         shiftTemplateIds: [...new Set((data.schedule_config || []).flatMap((c: any) => (c.shifts || []).map((s: any) => s.shift_template_id).filter(Boolean)))],
         color: selectedColor || null,
         schedule_config: data.schedule_config || [],
         teachers_config: isFreeClass
-          ? (data.teacherIds || []).map((teacher_id: string) => ({
+           ? (data.freeClassMode === "guided" ? (data.teacherIds || []) : []).map((teacher_id: string) => ({
               teacher_id,
               mode: "all",
               shift_keys: [],
             }))
           : data.teachers_config || [],
+         freeClassMode: isFreeClass ? data.freeClassMode : undefined,
         skipHolidays,
         regenerateSessions: true,
       };
@@ -730,39 +747,65 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                           </FormItem>
                         )} />
                       </div>
-                      <FormField
-                        control={form.control}
-                        name="teacherIds"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Giáo viên</FormLabel>
-                            <FormControl>
-                              <SearchableMultiSelect
-                                options={[...(staff || [])]
-                                  .sort((a: any, b: any) => {
-                                    const aActive = a.status !== "Không hoạt động";
-                                    const bActive = b.status !== "Không hoạt động";
-                                    if (aActive === bActive) return 0;
-                                    return aActive ? -1 : 1;
-                                  })
-                                  .map((teacher: any) => ({
-                                    value: String(teacher.id),
-                                    label: `${teacher.fullName}${teacher.status === "Không hoạt động" ? " (Không hoạt động)" : ""}`,
-                                    sublabel: teacher.code,
-                                    isActive: teacher.status !== "Không hoạt động",
-                                  }))}
-                                value={field.value || []}
-                                onChange={field.onChange}
-                                placeholder={effectiveLocationId ? "Chọn giáo viên..." : "Chọn cơ sở trước"}
-                                searchPlaceholder="Tìm kiếm giáo viên..."
-                                disabled={!effectiveLocationId}
-                                data-testid="select-free-class-teachers-edit"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                       <FormField control={form.control} name="freeClassMode" render={({ field }) => (
+                         <FormItem>
+                           <FormLabel>Hình thức <span className="text-destructive">*</span></FormLabel>
+                           <Select
+                             value={field.value || "guided"}
+                             onValueChange={(value) => {
+                               field.onChange(value);
+                               if (value === "self_practice") form.setValue("teacherIds", []);
+                             }}
+                           >
+                             <FormControl>
+                               <SelectTrigger data-testid="select-free-class-mode-edit">
+                                 <SelectValue placeholder="Chọn hình thức" />
+                               </SelectTrigger>
+                             </FormControl>
+                             <SelectContent>
+                               {FREE_CLASS_MODE_OPTIONS.map((option) => (
+                                 <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                               ))}
+                             </SelectContent>
+                           </Select>
+                           <FormMessage />
+                         </FormItem>
+                       )} />
+                       {selectedFreeClassMode === "guided" && (
+                         <FormField
+                           control={form.control}
+                           name="teacherIds"
+                           render={({ field }) => (
+                             <FormItem>
+                              <FormLabel>Giáo viên mặc định</FormLabel>
+                               <FormControl>
+                                 <SearchableMultiSelect
+                                   options={[...(staff || [])]
+                                     .sort((a: any, b: any) => {
+                                       const aActive = a.status !== "Không hoạt động";
+                                       const bActive = b.status !== "Không hoạt động";
+                                       if (aActive === bActive) return 0;
+                                       return aActive ? -1 : 1;
+                                     })
+                                     .map((teacher: any) => ({
+                                       value: String(teacher.id),
+                                       label: `${teacher.fullName}${teacher.status === "Không hoạt động" ? " (Không hoạt động)" : ""}`,
+                                       sublabel: teacher.code,
+                                       isActive: teacher.status !== "Không hoạt động",
+                                     }))}
+                                   value={field.value || []}
+                                   onChange={field.onChange}
+                                   placeholder={effectiveLocationId ? "Chọn giáo viên..." : "Chọn cơ sở trước"}
+                                   searchPlaceholder="Tìm kiếm giáo viên..."
+                                   disabled={!effectiveLocationId}
+                                   data-testid="select-free-class-teachers-edit"
+                                 />
+                               </FormControl>
+                               <FormMessage />
+                             </FormItem>
+                           )}
+                         />
+                       )}
                     </div>
                   )}
                   {step === 2 && !isFreeClass && scheduleGenerated && (
@@ -1183,6 +1226,14 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                             <p className="text-muted-foreground text-xs">Hình thức</p>
                             <p className="font-semibold capitalize">{form.watch("learningFormat")}</p>
                           </div>
+                          {isFreeClass && (
+                            <div className="space-y-0.5">
+                              <p className="text-muted-foreground text-xs">Hình thức lớp tự do</p>
+                              <p className="font-semibold">
+                                {FREE_CLASS_MODE_OPTIONS.find((option) => option.value === selectedFreeClassMode)?.label}
+                              </p>
+                            </div>
+                          )}
                         </div>
 
                         <div className="mt-4 pt-4 border-t border-primary/10 space-y-3">
@@ -1235,8 +1286,8 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                                 ))}
                               </div>
                             </div>
-                            <div className="space-y-1.5">
-                              <p className="text-muted-foreground text-xs font-medium">Giáo viên:</p>
+                            {(!isFreeClass || selectedFreeClassMode === "guided") && <div className="space-y-1.5">
+                              <p className="text-muted-foreground text-xs font-medium">{isFreeClass ? "Giáo viên mặc định:" : "Giáo viên:"}</p>
                               <div className="flex flex-wrap gap-2">
                                 {teachersConfig.map((t: any) => (
                                   <Badge key={t.teacher_id} variant="outline" className="bg-primary/5 py-1">
@@ -1246,7 +1297,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                                   </Badge>
                                 ))}
                               </div>
-                            </div>
+                            </div>}
                           </div>
                         )}
                       </div>
