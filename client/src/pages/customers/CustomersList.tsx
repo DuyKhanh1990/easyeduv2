@@ -527,7 +527,7 @@ export function CustomersList() {
   useEffect(() => {
     setCurrentPage(1);
     setSelectedIds([]);
-    setShowClassSessionMatrix(false);
+    // Draft class/session matrix is temporarily disabled.
   }, [viewMode, activeClassTab]);
 
   const schedule = useStudentSchedule();
