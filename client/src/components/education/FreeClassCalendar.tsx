@@ -817,7 +817,11 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                   <span className="text-sm font-medium text-slate-500">({student.code || "—"})</span>
                                 </div>
                                 <div className="mt-1.5 !text-[12px] leading-4 text-slate-500">
-                                  · Còn <span className="font-semibold text-red-600">{remainingSessions}</span> buổi
+                                  · Còn{" "}
+                                  <span className="font-semibold text-red-600">
+                                    {remainingSessions}/{totalSessions}
+                                  </span>{" "}
+                                  Buổi
                                 </div>
                                 <div className="mt-0.5 !text-[12px] leading-4 text-slate-500">
                                   · {formatStudentDate(studentStart)} – {formatStudentDate(studentEnd)}
