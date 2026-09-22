@@ -47,8 +47,3 @@ emso-build-image:
       done
       exit "$push_status"
     - echo "Build xong rồi!"
-  after_script:
-    # Dọn rác để không đầy ổ của runner
-    - docker image prune -af
-    - docker builder prune -af
-    - docker logout "$DOCKER_REGISTRY"
