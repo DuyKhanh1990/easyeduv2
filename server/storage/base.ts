@@ -17,6 +17,7 @@ export {
   staffAssignments, studentLocations,
   shiftTemplates, teacherAvailability,
   classes, classSessions, studentClasses, studentSessions,
+  freeClassRegistrations, freeClassDayAssignments,
   classSessionExclusions,
   sessionContents, studentSessionContents,
   invoices, invoiceItems, invoicePaymentSchedule, invoiceSessionAllocations, invoiceCommissions, studentComments,

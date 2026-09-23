@@ -1,7 +1,8 @@
 import {
   db,
-  eq, sql, and, or, inArray, asc, isNull,
+  eq, sql, and, or, inArray, asc, isNull, isNotNull,
   students, staff, users, classes, classSessions, studentClasses, studentSessions,
+  freeClassRegistrations, freeClassDayAssignments,
   studentLocations, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools,
   crmRequiredFields, crmCustomFields, crmRegistrationFormFields,
   courseFeePackages, shiftTemplates, studentComments,
@@ -1645,7 +1646,7 @@ export async function getStudentClasses(
   void opts; // pagination handled by dedicated endpoint; kept for API compat
 
   // ── Q1 + Q2 in parallel ─────────────────────────────────────────────────────
-  const [enrollments, sessionClassRows] = await Promise.all([
+  const [enrollments, sessionClassRows, invoiceClassRows] = await Promise.all([
     db.select()
       .from(studentClasses)
       .leftJoin(classes, eq(studentClasses.classId, classes.id))
@@ -1654,6 +1655,13 @@ export async function getStudentClasses(
     db.selectDistinct({ classId: studentSessions.classId })
       .from(studentSessions)
       .where(eq(studentSessions.studentId, studentId)),
+    db.selectDistinct({ classId: invoices.classId })
+      .from(invoices)
+      .where(and(
+        eq(invoices.studentId, studentId),
+        eq(invoices.type, "Thu"),
+        isNotNull(invoices.classId),
+      )),
   ]);
 
   const enrolledClassIds = new Set(
@@ -1662,7 +1670,9 @@ export async function getStudentClasses(
 
   const extraClassIds = sessionClassRows
     .map(r => r.classId)
-    .filter((id): id is string => !!id && !enrolledClassIds.has(id));
+    .concat(invoiceClassRows.map(r => r.classId))
+    .filter((id): id is string => !!id && !enrolledClassIds.has(id))
+    .filter((id, index, ids) => ids.indexOf(id) === index);
 
   // ── Q3: details for extra classes (conditional, single batch) ───────────────
   if (extraClassIds.length > 0) {
@@ -1722,9 +1732,28 @@ export async function getStudentClasses(
   `;
 
   // ── Q5: invoice paid totals per class ──────────────────────────────────────
-  const [statsResult, allInvoices] = await Promise.all([
+  const [statsResult, freeStatsResult, allInvoices] = await Promise.all([
     db.execute(sql.raw(statsQueryStr)),
-    db.select({ classId: invoices.classId, paidAmount: invoices.paidAmount })
+    db.execute(sql.raw(`
+      SELECT
+        fcr.class_id,
+        COUNT(*)::int AS total_sessions,
+        COUNT(*) FILTER (WHERE fcr.status = 'attended')::int AS attended_sessions,
+        COUNT(*) FILTER (WHERE fcr.status IN ('registered', 'reserved'))::int AS not_attended_count
+      FROM free_class_registrations fcr
+      WHERE fcr.student_id = '${escapedStudentId}'
+        AND fcr.class_id IN (${classIdList})
+      GROUP BY fcr.class_id
+    `)),
+    db.select({
+      id: invoices.id,
+      code: invoices.code,
+      classId: invoices.classId,
+      grandTotal: invoices.grandTotal,
+      paidAmount: invoices.paidAmount,
+      remainingAmount: invoices.remainingAmount,
+      status: invoices.status,
+    })
       .from(invoices)
       .where(and(
         eq(invoices.studentId, studentId),
@@ -1733,22 +1762,55 @@ export async function getStudentClasses(
       )),
   ]);
 
-  const statsByClassId = new Map<string, { totalSessions: number; notAttendedCount: number; attendedFeeTotal: number }>();
+  const statsByClassId = new Map<string, { totalSessions: number; attendedSessions: number; notAttendedCount: number; attendedFeeTotal: number }>();
   for (const row of statsResult.rows as any[]) {
     statsByClassId.set(row.class_id, {
       totalSessions:    Number(row.total_sessions    || 0),
+      attendedSessions: Number(row.total_sessions || 0) - Number(row.not_attended_count || 0),
       notAttendedCount: Number(row.not_attended_count || 0),
       attendedFeeTotal: Number(row.attended_fee_total || 0),
     });
   }
 
+  const freeStatsByClassId = new Map<string, { totalSessions: number; attendedSessions: number; notAttendedCount: number }>();
+  for (const row of freeStatsResult.rows as any[]) {
+    freeStatsByClassId.set(row.class_id, {
+      totalSessions: Number(row.total_sessions || 0),
+      attendedSessions: Number(row.attended_sessions || 0),
+      notAttendedCount: Number(row.not_attended_count || 0),
+    });
+  }
+
   const invoicePaidByClassId = new Map<string, number>();
+  const invoiceSummaryByClassId = new Map<string, {
+    count: number;
+    codes: string[];
+    grandTotal: number;
+    paidAmount: number;
+    remainingAmount: number;
+    statuses: string[];
+  }>();
   for (const inv of allInvoices) {
     if (!inv.classId) continue;
     invoicePaidByClassId.set(
       inv.classId,
       (invoicePaidByClassId.get(inv.classId) ?? 0) + Number(inv.paidAmount || 0)
     );
+    const current = invoiceSummaryByClassId.get(inv.classId) ?? {
+      count: 0,
+      codes: [],
+      grandTotal: 0,
+      paidAmount: 0,
+      remainingAmount: 0,
+      statuses: [],
+    };
+    current.count += 1;
+    if (inv.code) current.codes.push(inv.code);
+    current.grandTotal += Number(inv.grandTotal || 0);
+    current.paidAmount += Number(inv.paidAmount || 0);
+    current.remainingAmount += Number(inv.remainingAmount || 0);
+    if (inv.status && !current.statuses.includes(inv.status)) current.statuses.push(inv.status);
+    invoiceSummaryByClassId.set(inv.classId, current);
   }
 
   // ── Build result (no sessions array — sessions fetched on-demand per class) ──
@@ -1756,15 +1818,38 @@ export async function getStudentClasses(
   for (const enrollment of enrollments) {
     const classRec = enrollment.classes;
     if (!classRec) continue;
-    const stats = statsByClassId.get(classRec.id) ?? { totalSessions: 0, notAttendedCount: 0, attendedFeeTotal: 0 };
+    const stats = statsByClassId.get(classRec.id) ?? {
+      totalSessions: 0,
+      attendedSessions: 0,
+      notAttendedCount: 0,
+      attendedFeeTotal: 0,
+    };
+    const freeStats = freeStatsByClassId.get(classRec.id);
+    const invoiceSummary = invoiceSummaryByClassId.get(classRec.id);
+    const isFreeClass = classRec.classType === "free";
+    const totalSessions = isFreeClass ? (freeStats?.totalSessions ?? 0) : stats.totalSessions;
+    const attendedSessions = isFreeClass ? (freeStats?.attendedSessions ?? 0) : stats.attendedSessions;
+    const notAttendedCount = isFreeClass ? (freeStats?.notAttendedCount ?? 0) : stats.notAttendedCount;
+    const freeSessionFee = isFreeClass && enrollment.student_classes?.totalSessions
+      ? Number(invoiceSummary?.grandTotal || 0) / Math.max(1, Number(enrollment.student_classes.totalSessions))
+      : 0;
     result.push({
       studentClass:     enrollment.student_classes,
       class:            classRec,
       feePackage:       enrollment.course_fee_packages,
       invoicePaidTotal: invoicePaidByClassId.get(classRec.id) ?? 0,
-      totalSessions:    stats.totalSessions,
-      notAttendedCount: stats.notAttendedCount,
-      attendedFeeTotal: stats.attendedFeeTotal,
+      totalSessions,
+      attendedSessions,
+      notAttendedCount,
+      attendedFeeTotal: isFreeClass ? attendedSessions * freeSessionFee : stats.attendedFeeTotal,
+      invoiceSummary: invoiceSummary ? {
+        count: invoiceSummary.count,
+        codes: invoiceSummary.codes,
+        grandTotal: invoiceSummary.grandTotal,
+        paidAmount: invoiceSummary.paidAmount,
+        remainingAmount: invoiceSummary.remainingAmount,
+        status: invoiceSummary.statuses.join(", "),
+      } : null,
     });
   }
   return result;
@@ -1779,6 +1864,105 @@ export async function getStudentClassSessions(params: {
 }): Promise<{ sessions: any[]; total: number; page: number; limit: number; totalPages: number }> {
   const { studentId, classId, page, limit } = params;
   const offset = (page - 1) * limit;
+
+  const [classRow] = await db.select({
+    classType: classes.classType,
+    feePackageId: classes.feePackageId,
+  }).from(classes).where(eq(classes.id, classId)).limit(1);
+
+  if (classRow?.classType === "free") {
+    const [registrations, dayAssignments, invoiceItemsForClass] = await Promise.all([
+      db.select()
+        .from(freeClassRegistrations)
+        .where(and(
+          eq(freeClassRegistrations.studentId, studentId),
+          eq(freeClassRegistrations.classId, classId),
+        ))
+        .orderBy(asc(freeClassRegistrations.registrationDate)),
+      db.select()
+        .from(freeClassDayAssignments)
+        .where(eq(freeClassDayAssignments.classId, classId)),
+      db.select({
+        invoiceId: invoices.id,
+        grandTotal: invoices.grandTotal,
+        code: invoices.code,
+        packageId: invoiceItems.packageId,
+        packageName: invoiceItems.packageName,
+        packageType: invoiceItems.packageType,
+        unitPrice: invoiceItems.unitPrice,
+        quantity: invoiceItems.quantity,
+      })
+        .from(invoices)
+        .leftJoin(invoiceItems, eq(invoiceItems.invoiceId, invoices.id))
+        .where(and(
+          eq(invoices.studentId, studentId),
+          eq(invoices.classId, classId),
+          eq(invoices.type, "Thu"),
+        )),
+    ]);
+
+    const shiftIds = Array.from(new Set([
+      ...registrations.map((registration) => registration.shiftTemplateId),
+      ...dayAssignments.map((assignment) => assignment.shiftTemplateId),
+    ].filter((id): id is string => !!id)));
+    const shiftRows = shiftIds.length > 0
+      ? await db.select().from(shiftTemplates).where(inArray(shiftTemplates.id, shiftIds))
+      : [];
+    const shiftById = new Map(shiftRows.map((shift) => [shift.id, shift]));
+    const assignmentByDate = new Map(dayAssignments.map((assignment) => [String(assignment.assignmentDate).slice(0, 10), assignment]));
+
+    const packageIds = Array.from(new Set([
+      classRow.feePackageId,
+      ...invoiceItemsForClass.map((item) => item.packageId),
+    ].filter((id): id is string => !!id)));
+    const packageRows = packageIds.length > 0
+      ? await db.select().from(courseFeePackages).where(inArray(courseFeePackages.id, packageIds))
+      : [];
+    const packageById = new Map(packageRows.map((pkg) => [pkg.id, pkg]));
+    const invoiceItem = invoiceItemsForClass.find((item) => item.packageId) ?? invoiceItemsForClass[0];
+    const classPackage = classRow.feePackageId ? packageById.get(classRow.feePackageId) : undefined;
+    const freeAllowance = Math.max(1, registrations.length);
+    const courseFee = Number(invoiceItem?.grandTotal || 0) / freeAllowance;
+
+    const total = registrations.length;
+    const pageRows = registrations.slice(offset, offset + limit);
+    return {
+      sessions: pageRows.map((registration, index) => {
+        const dateKey = String(registration.registrationDate).slice(0, 10);
+        const dayAssignment = assignmentByDate.get(dateKey);
+        const shiftTemplateId = registration.shiftTemplateId ?? dayAssignment?.shiftTemplateId ?? null;
+        const shiftTemplate = shiftTemplateId ? shiftById.get(shiftTemplateId) ?? null : null;
+        const isAttended = registration.status === "attended";
+        const packageType = invoiceItem?.packageType ?? classPackage?.type ?? "buổi";
+        const sessionPrice = packageType === "buổi"
+          ? Number(invoiceItem?.unitPrice || classPackage?.fee || 0)
+          : courseFee;
+        return {
+          studentSession: {
+            id: registration.id,
+            attendanceStatus: isAttended ? "present" : registration.status === "reserved" ? "scheduled" : "pending",
+            sessionOrder: offset + index + 1,
+            packageType,
+            sessionPrice,
+          },
+          classSession: {
+            id: null,
+            sessionDate: registration.registrationDate,
+          },
+          shiftTemplate,
+          feePackage: invoiceItem?.packageId
+            ? (packageById.get(invoiceItem.packageId) ?? { id: invoiceItem.packageId, name: invoiceItem.packageName })
+            : classPackage ?? null,
+          allocatedFee: sessionPrice,
+          freeClassRegistration: registration,
+        };
+      }),
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    };
+  }
 
   const rows = await db.select()
     .from(studentSessions)

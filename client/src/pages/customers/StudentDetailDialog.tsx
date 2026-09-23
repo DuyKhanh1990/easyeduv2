@@ -695,23 +695,34 @@ export function StudentDetailDialog({
                             const notAttended = Number(cls.notAttendedCount || 0);
                             const total       = Number(cls.totalSessions    || 0);
                             return (
-                              <div className="p-3 border-b grid grid-cols-4 gap-2">
-                                <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3">
-                                  <p className="text-xs text-blue-600 font-semibold mb-1">Đã thanh toán</p>
-                                  <p className="text-lg font-bold text-blue-700">{paid.toLocaleString('vi-VN')} VND</p>
+                              <div className="p-3 border-b">
+                                <div className="grid grid-cols-4 gap-2">
+                                  <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3">
+                                    <p className="text-xs text-blue-600 font-semibold mb-1">Đã thanh toán</p>
+                                    <p className="text-lg font-bold text-blue-700">{paid.toLocaleString('vi-VN')} VND</p>
+                                  </div>
+                                  <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3">
+                                    <p className="text-xs text-green-600 font-semibold mb-1">Đã học</p>
+                                    <p className="text-lg font-bold text-green-700">{attended.toLocaleString('vi-VN')} VND</p>
+                                  </div>
+                                  <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3">
+                                    <p className="text-xs text-orange-600 font-semibold mb-1">Còn lại</p>
+                                    <p className="text-lg font-bold text-orange-700">{remaining.toLocaleString('vi-VN')} VND</p>
+                                  </div>
+                                  <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-3">
+                                    <p className="text-xs text-gray-600 font-semibold mb-1">Chưa điểm danh</p>
+                                    <p className="text-lg font-bold text-gray-700">{notAttended}/{total}</p>
+                                  </div>
                                 </div>
-                                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3">
-                                  <p className="text-xs text-green-600 font-semibold mb-1">Đã học</p>
-                                  <p className="text-lg font-bold text-green-700">{attended.toLocaleString('vi-VN')} VND</p>
-                                </div>
-                                <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3">
-                                  <p className="text-xs text-orange-600 font-semibold mb-1">Còn lại</p>
-                                  <p className="text-lg font-bold text-orange-700">{remaining.toLocaleString('vi-VN')} VND</p>
-                                </div>
-                                <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-3">
-                                  <p className="text-xs text-gray-600 font-semibold mb-1">Chưa điểm danh</p>
-                                  <p className="text-lg font-bold text-gray-700">{notAttended}/{total}</p>
-                                </div>
+                                {cls.invoiceSummary?.count > 0 && (
+                                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                                    <span className="font-semibold">Hóa đơn lớp:</span>
+                                    <span>{cls.invoiceSummary.codes?.join(", ") || `${cls.invoiceSummary.count} hóa đơn`}</span>
+                                    <span>Tổng: {Number(cls.invoiceSummary.grandTotal || 0).toLocaleString('vi-VN')} VND</span>
+                                    <span>Đã thu: {Number(cls.invoiceSummary.paidAmount || 0).toLocaleString('vi-VN')} VND</span>
+                                    <span>Còn nợ: {Number(cls.invoiceSummary.remainingAmount || 0).toLocaleString('vi-VN')} VND</span>
+                                  </div>
+                                )}
                               </div>
                             );
                           })()}
