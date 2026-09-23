@@ -328,7 +328,11 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
   const canRegisterStudentForDate = (student: any, date: string) => {
     const studentStart = String(student.startDate || classStart || "").slice(0, 10);
     const studentEnd = String(student.endDate || classEnd || "").slice(0, 10);
-    if ((classStart && date < classStart) || (classEnd && date > classEnd)) return false;
+    if (
+      date < today
+      || (classStart && date < classStart)
+      || (classEnd && date > classEnd)
+    ) return false;
     if ((studentStart && date < studentStart) || (studentEnd && date > studentEnd)) return false;
     const totalSessions = Number(student.totalSessions ?? 0);
     if (totalSessions <= 0) return true;
@@ -1148,7 +1152,34 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                   <Dialog open={registrationPlannerOpen} onOpenChange={setRegistrationPlannerOpen}>
                     <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                       <DialogHeader>
-                        <DialogTitle>Đăng ký lịch học</DialogTitle>
+                        <div className="flex flex-wrap items-center justify-between gap-3 pr-8">
+                          <DialogTitle>Đăng ký lịch học</DialogTitle>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => setMonthDate((date) => subMonths(date, 1))}
+                              aria-label="Tháng trước"
+                            >
+                              <ChevronLeft className="h-4 w-4" />
+                            </Button>
+                            <span className="min-w-28 text-center text-sm font-semibold capitalize text-slate-800">
+                              {format(monthDate, "'Tháng' M/yyyy", { locale: vi })}
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => setMonthDate((date) => addMonths(date, 1))}
+                              aria-label="Tháng sau"
+                            >
+                              <ChevronRight className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
                       </DialogHeader>
                       <div className="border-t border-slate-100 bg-slate-50/70 px-1 py-2 sm:px-2">
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">

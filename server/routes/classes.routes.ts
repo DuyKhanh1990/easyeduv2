@@ -1998,6 +1998,7 @@ export function registerClassesRoutes(app: Express): void {
       }
 
       const actorId = (req.user as any)?.id || null;
+      const today = getBangkokDateString();
       const result = await db.transaction(async (tx) => {
         const existingRows = await tx
           .select({
@@ -2049,6 +2050,7 @@ export function registerClassesRoutes(app: Express): void {
               || (classRow.endDate && date > classRow.endDate)
               || (student.startDate && date < student.startDate)
               || (student.endDate && date > student.endDate)
+              || date < today
               || (totalSessions > 0 && attendedSessions >= totalSessions)
             ) {
               skippedCount += 1;
