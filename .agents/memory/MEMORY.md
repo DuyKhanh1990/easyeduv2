@@ -16,7 +16,8 @@
 - [Facebook Gateway routing](facebook-gateway-routing.md) — Facebook routing tập trung ở Gateway; pageId → centerId, còn locationId chỉ có ý nghĩa trong DB trung tâm.
 - [BIDV QR visibility](bidv-qr-visibility.md) — cờ hiển thị QR theo cơ sở độc lập với bật/tắt thanh toán BIDV và chỉ ẩn tab QR BIDV.
 - [BIDV Production endpoint and encryption](bidv-production-endpoint-encryption.md) — Production dùng `/bidv/service`; BIDV encrypted settings cần đọc AI_ENCRYPT_SECRET và giữ fallback khóa cũ.
-- [Invoice summary cards](invoice-summary-cards.md) — thẻ thu-chi độc lập tab trạng thái, bám bộ lọc và loại hóa đơn hủy khỏi dự thu/chi.
+ - [Invoice summary cards](invoice-summary-cards.md) — thẻ thu-chi độc lập tab trạng thái, bám bộ lọc và loại hóa đơn hủy khỏi dự thu/chi.
+ - [Invoice Excel parent rows](invoice-excel-parent-rows.md) — file Excel phải giữ dòng hóa đơn cha trước các đợt con để không mất khuyến mãi/phụ thu cấp hóa đơn.
 - [Omicall caller routing](omicall-caller-routing.md) — gọi ra phải ghép cấu hình tenant theo cơ sở với máy lẻ của nhân sự đăng nhập ở server.
 - [Imported encrypted provider settings](imported-encrypted-provider-settings.md) — sau khi import, secret mã hóa có thể khác; giữ cấu hình đọc được để admin thay credential thay vì trả 500.
 - [Page guide edit permissions](page-guide-edit-permissions.md) — tài liệu riêng theo từng trang; chỉ host gốc và Super Admin được sửa, host khác chỉ đọc.
