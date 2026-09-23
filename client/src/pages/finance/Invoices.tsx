@@ -64,7 +64,6 @@ import { InvoiceHistoryTab } from "./components/InvoiceHistoryTab";
 import { HistoryDialog } from "@/components/common/HistoryDialog";
 import { useLocations } from "@/hooks/use-locations";
 import type { SortKey } from "@/hooks/use-invoice-filters";
-import { downloadXlsx } from "@/lib/excel-utils";
 
 type TabKey = "all" | "unpaid" | "paid" | "confirmed" | "debt" | "history" | "print-template";
 type DebtCondition = "all" | "overdue" | "today" | "soon" | "upcoming" | "no-due-date";
@@ -516,7 +515,7 @@ function flattenInvoiceRows(invoices: InvoiceRow[]): InvoiceRow[] {
   });
 }
 
-function downloadInvoiceListExcel(rows: InvoiceRow[], tabLabel: string, page: number) {
+async function downloadInvoiceListExcel(rows: InvoiceRow[], tabLabel: string, page: number) {
   const columns = [
     { header: "Học viên", width: 28 },
     { header: "Mã học viên", width: 16 },
@@ -585,40 +584,98 @@ function downloadInvoiceListExcel(rows: InvoiceRow[], tabLabel: string, page: nu
     }
   }
 
-  const exportRows = exportInvoices.map((invoice) => [
-    invoice.name ?? "",
-    invoice.studentCode ?? "",
-    invoice.code ?? "",
-    invoice.scheduleLabel ?? "",
-    invoice.branch ?? "",
-    invoice.type ?? "",
-    invoice.category ?? "",
-    invoice.className ?? "",
-    parseNum(invoice.totalAmount),
-    parseNum(invoice.totalPromotion),
-    parseNum(invoice.totalSurcharge),
-    parseNum(invoice.deduction),
-    parseNum(invoice.grandTotal),
-    parseNum(invoice.paidAmount),
-    parseNum(invoice.remainingAmount),
-    STATUS_CONFIG[invoice.status]?.label ?? invoice.status,
-    invoice.dueDate ? fmtDate(invoice.dueDate) : "",
-    invoice.paymentMethod ? (paymentMethodLabels[invoice.paymentMethod] ?? invoice.paymentMethod) : "",
-    invoice.creatorName ?? "",
-    fmtDate(invoice.createdAt),
-    invoice.paidByName ?? "",
-    invoice.paidAt ? fmtDate(invoice.paidAt) : "",
-    invoice.note?.trim() || invoice.description?.trim() || invoice.paymentNote?.trim() || "",
-  ]);
+  const ExcelJS = (await import("exceljs")).default;
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet("Hóa đơn");
+  const subtitle = `Tab: ${tabLabel} · Trang ${page} · ${exportInvoices.length} dòng · Dòng hóa đơn cha và các đợt con được xuất riêng; không cộng trùng hai cấp · Xuất theo bộ lọc hiện tại`;
+  const lastColumn = columns.length;
 
-  downloadXlsx({
-    filename: `danh_sach_hoa_don_trang_${page}_${format(new Date(), "yyyyMMdd_HHmm")}`,
-    sheetName: "Hóa đơn",
-    title: "Danh sách hóa đơn",
-    subtitle: `Tab: ${tabLabel} · Trang ${page} · ${exportInvoices.length} dòng · Dòng hóa đơn cha và các đợt con được xuất riêng; không cộng trùng hai cấp · Xuất theo bộ lọc hiện tại`,
-    columns,
-    rows: exportRows,
+  worksheet.mergeCells(1, 1, 1, lastColumn);
+  worksheet.getCell(1, 1).value = "Danh sách hóa đơn";
+  worksheet.getCell(1, 1).font = { bold: true, size: 14 };
+  worksheet.getCell(1, 1).alignment = { vertical: "middle" };
+  worksheet.getRow(1).height = 24;
+
+  worksheet.mergeCells(2, 1, 2, lastColumn);
+  worksheet.getCell(2, 1).value = subtitle;
+  worksheet.getCell(2, 1).font = { italic: true, color: { argb: "FF64748B" } };
+
+  const headerRow = worksheet.addRow(columns.map((column) => column.header));
+  headerRow.font = { bold: true, color: { argb: "FF1E293B" } };
+  headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+  headerRow.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+  headerRow.height = 30;
+
+  const numericColumnIndexes = new Set([9, 10, 11, 12, 13, 14, 15]);
+  const parentFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFD9EAF7" } };
+  const parentBorder = {
+    top: { style: "thin" as const, color: { argb: "FF93C5FD" } },
+    bottom: { style: "thin" as const, color: { argb: "FF93C5FD" } },
+  };
+
+  for (const invoice of exportInvoices) {
+    const row = worksheet.addRow([
+      invoice.name ?? "",
+      invoice.studentCode ?? "",
+      invoice.code ?? "",
+      invoice.scheduleLabel ?? "",
+      invoice.branch ?? "",
+      invoice.type ?? "",
+      invoice.category ?? "",
+      invoice.className ?? "",
+      // Installment amounts already include the parent-level adjustments.
+      // Keep them only in "Tổng tiền"; the parent row carries "Số tiền".
+      invoice.isScheduleRow ? "" : parseNum(invoice.totalAmount),
+      parseNum(invoice.totalPromotion),
+      parseNum(invoice.totalSurcharge),
+      parseNum(invoice.deduction),
+      parseNum(invoice.grandTotal),
+      parseNum(invoice.paidAmount),
+      parseNum(invoice.remainingAmount),
+      STATUS_CONFIG[invoice.status]?.label ?? invoice.status,
+      invoice.dueDate ? fmtDate(invoice.dueDate) : "",
+      invoice.paymentMethod ? (paymentMethodLabels[invoice.paymentMethod] ?? invoice.paymentMethod) : "",
+      invoice.creatorName ?? "",
+      fmtDate(invoice.createdAt),
+      invoice.paidByName ?? "",
+      invoice.paidAt ? fmtDate(invoice.paidAt) : "",
+      invoice.note?.trim() || invoice.description?.trim() || invoice.paymentNote?.trim() || "",
+    ]);
+
+    row.alignment = { vertical: "middle" };
+    row.eachCell((cell, columnNumber) => {
+      if (numericColumnIndexes.has(columnNumber)) {
+        cell.numFmt = "#,##0";
+        cell.alignment = { horizontal: "right", vertical: "middle" };
+      }
+    });
+
+    if (invoice.scheduleLabel === "Hóa đơn cha" && !invoice.isScheduleRow) {
+      row.font = { bold: true, color: { argb: "FF0F172A" } };
+      row.fill = parentFill;
+      row.border = parentBorder;
+    }
+  }
+
+  columns.forEach((column, index) => {
+    worksheet.getColumn(index + 1).width = column.width;
   });
+  worksheet.views = [{ state: "frozen", ySplit: 3 }];
+  worksheet.autoFilter = {
+    from: { row: 3, column: 1 },
+    to: { row: 3, column: lastColumn },
+  };
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `danh_sach_hoa_don_trang_${page}_${format(new Date(), "yyyyMMdd_HHmm")}.xlsx`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function getScheduleForRow(inv: InvoiceRow): ScheduleItem | undefined {
@@ -2161,7 +2218,7 @@ export default function Invoices() {
               className="h-9 gap-1.5 rounded-lg border-slate-200 bg-white text-slate-600 shadow-sm font-medium hover:bg-slate-50 hover:border-slate-300 transition-all"
               onClick={() => {
                 const tabLabel = TABS.find(tab => tab.key === activeTab)?.label ?? "Tất cả";
-                downloadInvoiceListExcel(displayInvoices, tabLabel, page);
+                 void downloadInvoiceListExcel(displayInvoices, tabLabel, page);
               }}
               disabled={isLoading || displayInvoices.length === 0}
               data-testid="button-download-invoices-excel"
