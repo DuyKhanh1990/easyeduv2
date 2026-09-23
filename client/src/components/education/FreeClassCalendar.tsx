@@ -407,7 +407,6 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
     if (isSelfPractice) return;
     setRegistrationTab("all");
     setBulkRegisterDates([]);
-    setRegistrationPlannerOpen(false);
   }, [isSelfPractice, month]);
   useEffect(() => {
     if (bulkRegisterStudentIds.length === 0) {
