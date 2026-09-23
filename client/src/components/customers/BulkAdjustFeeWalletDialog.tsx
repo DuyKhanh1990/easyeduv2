@@ -13,7 +13,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 
@@ -208,6 +207,7 @@ export function BulkAdjustFeeWalletDialog({
     },
     onError: (error: any) => {
       toast({ title: "Không thể cân bằng tài khoản", description: error.message, variant: "destructive" });
+      close();
     },
   });
 
@@ -225,7 +225,7 @@ export function BulkAdjustFeeWalletDialog({
 
   return (
     <Dialog open={open} onOpenChange={value => { if (!value) close(); }}>
-      <DialogContent className="max-w-6xl w-[calc(100vw-2rem)] max-h-[92vh] overflow-hidden flex flex-col z-[301]" overlayClassName="z-[300]">
+      <DialogContent className="w-[99vw] max-w-[99vw] max-h-[92vh] overflow-hidden flex flex-col z-[301]" overlayClassName="z-[300]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Scale className="h-5 w-5 text-primary" />
@@ -236,19 +236,24 @@ export function BulkAdjustFeeWalletDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-3 md:grid-cols-[1fr_1fr]">
-          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
-            <div className="flex items-center gap-2 text-sm font-medium"><Users className="h-4 w-4 text-primary" /> Thêm theo lớp</div>
-            <Popover open={classPickerOpen} onOpenChange={setClassPickerOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="outline" className="w-full justify-between font-normal">
-                  {selectedClassIds.length > 0 ? `Đã chọn ${selectedClassIds.length} lớp` : "Chọn một hoặc nhiều lớp"}
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[min(420px,calc(100vw-3rem))] p-3" align="start">
-                <Input value={classSearch} onChange={event => setClassSearch(event.target.value)} placeholder="Tìm lớp..." className="mb-2" />
-                <div className="max-h-52 overflow-y-auto space-y-1">
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-start">
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+              <Users className="h-3.5 w-3.5 text-primary" /> Thêm theo lớp
+            </label>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full justify-between font-normal"
+              onClick={() => setClassPickerOpen(current => !current)}
+            >
+              {selectedClassIds.length > 0 ? `Đã chọn ${selectedClassIds.length} lớp` : "Chọn một hoặc nhiều lớp"}
+              <Plus className={cn("h-4 w-4 transition-transform", classPickerOpen && "rotate-45")} />
+            </Button>
+            {classPickerOpen && (
+              <div className="rounded-md border bg-background p-2">
+                <Input value={classSearch} onChange={event => setClassSearch(event.target.value)} placeholder="Tìm lớp..." className="mb-2 h-8 text-xs" />
+                <div className="max-h-40 overflow-y-auto space-y-1">
                   {filteredClasses.map(classItem => (
                     <label key={classItem.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted cursor-pointer text-sm">
                       <Checkbox
@@ -262,15 +267,17 @@ export function BulkAdjustFeeWalletDialog({
                   ))}
                   {filteredClasses.length === 0 && <p className="py-3 text-center text-xs text-muted-foreground">Không tìm thấy lớp</p>}
                 </div>
-                <Button className="mt-3 w-full" onClick={addStudentsFromClasses} disabled={selectedClassIds.length === 0}>
+                <Button type="button" size="sm" className="mt-2 w-full" onClick={addStudentsFromClasses} disabled={selectedClassIds.length === 0}>
                   Thêm học viên đang học
                 </Button>
-              </PopoverContent>
-            </Popover>
+              </div>
+            )}
           </div>
 
-          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
-            <div className="flex items-center gap-2 text-sm font-medium"><Search className="h-4 w-4 text-primary" /> Thêm học viên lẻ</div>
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+              <Search className="h-3.5 w-3.5 text-primary" /> Thêm học viên lẻ
+            </label>
             <Input value={individualSearch} onChange={event => setIndividualSearch(event.target.value)} placeholder="Tìm theo tên, mã hoặc số điện thoại..." />
             {individualSearch.trim().length >= 2 && (
               <div className="max-h-40 overflow-y-auto rounded-md border bg-background">
