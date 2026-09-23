@@ -85,6 +85,62 @@ export async function getNetWalletAmountByInvoiceAndCategory(invoiceId: string, 
   }, 0);
 }
 
+export type WalletAdjustmentInput = {
+  studentId: string;
+  hocPhiAmount: number;
+  datCocAmount: number;
+  createdBy?: string | null;
+  createdByName?: string | null;
+};
+
+/**
+ * Adds manual wallet adjustments as immutable ledger entries.
+ * Positive values create credits and negative values create debits.
+ */
+export async function adjustStudentWallet(input: WalletAdjustmentInput) {
+  const adjustments: Array<{ category: "Học phí" | "Đặt cọc"; amount: number }> = [
+    { category: "Học phí", amount: Number(input.hocPhiAmount) },
+    { category: "Đặt cọc", amount: Number(input.datCocAmount) },
+  ];
+
+  if (adjustments.some(({ amount }) =>
+    !Number.isSafeInteger(amount) || Math.abs(amount) > 9_999_999_999_999
+  )) {
+    throw new Error("Số tiền cân bằng không hợp lệ");
+  }
+  if (adjustments.every(({ amount }) => amount === 0)) {
+    throw new Error("Vui lòng nhập ít nhất một khoản cần cân bằng");
+  }
+
+  return db.transaction(async tx => {
+    // Serialize adjustments for the same student so concurrent operators do not
+    // both make decisions from the same displayed balance.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${input.studentId}))`);
+
+    const rowsToInsert = adjustments
+      .filter(({ amount }) => amount !== 0)
+      .map(({ category, amount }) => {
+        const absoluteAmount = Math.abs(amount);
+        const direction = amount > 0 ? "credit" as const : "debit" as const;
+        const sign = amount > 0 ? "+" : "−";
+        return {
+          studentId: input.studentId,
+          type: direction,
+          amount: absoluteAmount.toFixed(2),
+          category,
+          action: `Cân bằng tài khoản ${category} (${sign}${absoluteAmount.toLocaleString("vi-VN")} đ)`,
+          invoiceId: null,
+          invoiceCode: null,
+          invoiceDescription: "Điều chỉnh thủ công ví, không qua hóa đơn",
+          createdBy: input.createdBy ?? null,
+          createdByName: input.createdByName ?? null,
+        };
+      });
+
+    return tx.insert(studentWalletTransactions).values(rowsToInsert).returning();
+  });
+}
+
 export type WalletTransferInput = {
   fromStudentId: string;
   toStudentId: string;

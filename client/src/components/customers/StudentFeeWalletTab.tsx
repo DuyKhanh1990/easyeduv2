@@ -1,12 +1,14 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Wallet, BookOpen, Banknote, ArrowRightLeft,
+  Wallet, BookOpen, Banknote, ArrowRightLeft, Scale,
   Loader2, Receipt, User, Clock, RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { TransferFeeWalletDialog } from "./TransferFeeWalletDialog";
+import { AdjustFeeWalletDialog } from "./AdjustFeeWalletDialog";
+import { useMyPermissions } from "@/hooks/use-my-permissions";
 
 interface FeeWalletSummary {
   hocPhi: number;
@@ -87,6 +89,10 @@ export function StudentFeeWalletTab({ studentId, open }: Props) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [transferOpen, setTransferOpen] = useState(false);
+  const [adjustmentOpen, setAdjustmentOpen] = useState(false);
+  const { data: myPermissions } = useMyPermissions();
+  const canAdjustWallet = myPermissions?.isSuperAdmin === true
+    || myPermissions?.permissions?.["/customers"]?.canEdit === true;
 
   const { data, isLoading, isError, isFetching, refetch } = useQuery<FeeWalletData>({
     queryKey: ["/api/students", studentId, "fee-wallet"],
@@ -126,6 +132,18 @@ export function StudentFeeWalletTab({ studentId, open }: Props) {
               <RefreshCw className={`h-3 w-3 ${isFetching ? "animate-spin" : ""}`} />
               Làm mới
             </button>
+            {canAdjustWallet && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="px-3 py-1 rounded-md text-xs font-medium transition-all gap-2"
+                data-testid="btn-can-bang-tai-khoan"
+                onClick={() => setAdjustmentOpen(true)}
+              >
+                <Scale className="h-3.5 w-3.5" />
+                Cân bằng tài khoản
+              </Button>
+            )}
             <Button
               size="sm"
               className="px-3 py-1 rounded-md border text-xs font-medium transition-all gap-2"
@@ -296,6 +314,14 @@ export function StudentFeeWalletTab({ studentId, open }: Props) {
         studentId={studentId}
         summary={summary}
       />
+      {canAdjustWallet && (
+        <AdjustFeeWalletDialog
+          open={adjustmentOpen}
+          onClose={() => setAdjustmentOpen(false)}
+          studentId={studentId}
+          summary={summary}
+        />
+      )}
     </div>
   );
 }

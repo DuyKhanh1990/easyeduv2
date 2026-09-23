@@ -2104,6 +2104,49 @@ export function registerStudentsRoutes(app: Express): void {
     }
   });
 
+  // POST /api/students/:id/fee-wallet-adjustment – cân bằng thủ công Học phí/Đặt cọc
+  // bằng các ledger entries bất biến, không tạo hóa đơn.
+  app.post("/api/students/:id/fee-wallet-adjustment", async (req, res) => {
+    try {
+      const crmPerms = await getCrmPermissions(req);
+      if (!crmPerms.canEdit) {
+        return res.status(403).json({ message: "Bạn không có quyền cân bằng ví học phí." });
+      }
+
+      const { id: studentId } = req.params;
+      const hocPhiAmount = Number(req.body?.hocPhiAmount ?? 0);
+      const datCocAmount = Number(req.body?.datCocAmount ?? 0);
+      if (
+        ![hocPhiAmount, datCocAmount].every(amount =>
+          Number.isSafeInteger(amount) && Math.abs(amount) <= 9_999_999_999_999
+        ) ||
+        (hocPhiAmount === 0 && datCocAmount === 0)
+      ) {
+        return res.status(400).json({ message: "Vui lòng nhập ít nhất một khoản cân bằng hợp lệ" });
+      }
+
+      const student = await storage.getStudent(studentId, req.allowedLocationIds, req.isSuperAdmin);
+      if (!student) {
+        return res.status(404).json({ message: "Không tìm thấy học viên hoặc bạn không có quyền truy cập" });
+      }
+
+      const { adjustStudentWallet } = await import("../storage/wallet.storage");
+      const actorId = (req.user as any)?.id ?? null;
+      const actorName = actorId ? await getActorName(actorId) : "Hệ thống";
+      const entries = await adjustStudentWallet({
+        studentId,
+        hocPhiAmount,
+        datCocAmount,
+        createdBy: actorId,
+        createdByName: actorName,
+      });
+
+      res.status(201).json({ message: "Đã cân bằng tài khoản thành công", entries });
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Không thể cân bằng tài khoản" });
+    }
+  });
+
   // POST /api/students/fee-wallet-transfer – chuyển đồng thời Học phí/Đặt cọc
   // giữa hai tài khoản khách hàng bằng các ledger entries bất biến.
   app.post("/api/students/fee-wallet-transfer", async (req, res) => {
