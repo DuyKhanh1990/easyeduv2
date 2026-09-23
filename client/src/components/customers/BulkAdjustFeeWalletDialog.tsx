@@ -226,82 +226,84 @@ export function BulkAdjustFeeWalletDialog({
   return (
     <Dialog open={open} onOpenChange={value => { if (!value) close(); }}>
       <DialogContent className="w-[99vw] max-w-[99vw] max-h-[92vh] overflow-hidden flex flex-col z-[301]" overlayClassName="z-[300]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Scale className="h-5 w-5 text-primary" />
-            Cân bằng tài khoản nhiều học viên
-          </DialogTitle>
-          <DialogDescription>
-            Chọn nhanh theo lớp hoặc tìm từng học viên. Số dương để cộng, số âm để trừ; mỗi học viên là một dòng riêng.
-          </DialogDescription>
-        </DialogHeader>
+        <DialogHeader className="grid items-start gap-4 text-left md:grid-cols-[minmax(240px,0.55fr)_minmax(0,1.45fr)]">
+          <div>
+            <DialogTitle className="flex items-center gap-2">
+              <Scale className="h-5 w-5 text-primary" />
+              Cân bằng tài khoản nhiều học viên
+            </DialogTitle>
+            <DialogDescription>
+              Chọn nhanh theo lớp hoặc tìm từng học viên. Số dương để cộng, số âm để trừ; mỗi học viên là một dòng riêng.
+            </DialogDescription>
+          </div>
 
-        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-start">
-          <div className="space-y-1.5">
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-              <Users className="h-3.5 w-3.5 text-primary" /> Thêm theo lớp
-            </label>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full justify-between font-normal"
-              onClick={() => setClassPickerOpen(current => !current)}
-            >
-              {selectedClassIds.length > 0 ? `Đã chọn ${selectedClassIds.length} lớp` : "Chọn một hoặc nhiều lớp"}
-              <Plus className={cn("h-4 w-4 transition-transform", classPickerOpen && "rotate-45")} />
-            </Button>
-            {classPickerOpen && (
-              <div className="rounded-md border bg-background p-2">
-                <Input value={classSearch} onChange={event => setClassSearch(event.target.value)} placeholder="Tìm lớp..." className="mb-2 h-8 text-xs" />
-                <div className="max-h-40 overflow-y-auto space-y-1">
-                  {filteredClasses.map(classItem => (
-                    <label key={classItem.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted cursor-pointer text-sm">
-                      <Checkbox
-                        checked={selectedClassIds.includes(classItem.id)}
-                        onCheckedChange={checked => setSelectedClassIds(current => checked
-                          ? [...current, classItem.id]
-                          : current.filter(id => id !== classItem.id))}
-                      />
-                      <span className="truncate">{classItem.name}</span>
-                    </label>
-                  ))}
-                  {filteredClasses.length === 0 && <p className="py-3 text-center text-xs text-muted-foreground">Không tìm thấy lớp</p>}
+          <div className="grid items-start gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                <Users className="h-3.5 w-3.5 text-primary" /> Thêm theo lớp
+              </label>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-between font-normal"
+                onClick={() => setClassPickerOpen(current => !current)}
+              >
+                {selectedClassIds.length > 0 ? `Đã chọn ${selectedClassIds.length} lớp` : "Chọn một hoặc nhiều lớp"}
+                <Plus className={cn("h-4 w-4 transition-transform", classPickerOpen && "rotate-45")} />
+              </Button>
+              {classPickerOpen && (
+                <div className="rounded-md border bg-background p-2">
+                  <Input value={classSearch} onChange={event => setClassSearch(event.target.value)} placeholder="Tìm lớp..." className="mb-2 h-8 text-xs" />
+                  <div className="max-h-40 overflow-y-auto space-y-1">
+                    {filteredClasses.map(classItem => (
+                      <label key={classItem.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted cursor-pointer text-sm">
+                        <Checkbox
+                          checked={selectedClassIds.includes(classItem.id)}
+                          onCheckedChange={checked => setSelectedClassIds(current => checked
+                            ? [...current, classItem.id]
+                            : current.filter(id => id !== classItem.id))}
+                        />
+                        <span className="truncate">{classItem.name}</span>
+                      </label>
+                    ))}
+                    {filteredClasses.length === 0 && <p className="py-3 text-center text-xs text-muted-foreground">Không tìm thấy lớp</p>}
+                  </div>
+                  <Button type="button" size="sm" className="mt-2 w-full" onClick={addStudentsFromClasses} disabled={selectedClassIds.length === 0}>
+                    Thêm học viên đang học
+                  </Button>
                 </div>
-                <Button type="button" size="sm" className="mt-2 w-full" onClick={addStudentsFromClasses} disabled={selectedClassIds.length === 0}>
-                  Thêm học viên đang học
-                </Button>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
 
-          <div className="space-y-1.5">
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-              <Search className="h-3.5 w-3.5 text-primary" /> Thêm học viên lẻ
-            </label>
-            <Input value={individualSearch} onChange={event => setIndividualSearch(event.target.value)} placeholder="Tìm theo tên, mã hoặc số điện thoại..." />
-            {individualSearch.trim().length >= 2 && (
-              <div className="max-h-40 overflow-y-auto rounded-md border bg-background">
-                {isSearching && <p className="p-3 text-xs text-muted-foreground">Đang tìm...</p>}
-                {!isSearching && individualResults.map(student => {
-                  const added = rows.some(row => row.id === student.id);
-                  return (
-                    <button
-                      type="button"
-                      key={student.id}
-                      disabled={added}
-                      onClick={() => addStudents([student])}
-                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted disabled:opacity-50"
-                    >
-                      <span className="truncate">{student.fullName} {student.code && <span className="text-xs text-muted-foreground">({student.code})</span>}</span>
-                      <Plus className="h-4 w-4 shrink-0" />
-                    </button>
-                  );
-                })}
-                {!isSearching && individualResults.length === 0 && <p className="p-3 text-xs text-muted-foreground">Không tìm thấy học viên</p>}
-              </div>
-            )}
+            <div className="space-y-1.5">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                <Search className="h-3.5 w-3.5 text-primary" /> Thêm học viên lẻ
+              </label>
+              <Input value={individualSearch} onChange={event => setIndividualSearch(event.target.value)} placeholder="Tìm theo tên, mã hoặc số điện thoại..." />
+              {individualSearch.trim().length >= 2 && (
+                <div className="max-h-40 overflow-y-auto rounded-md border bg-background">
+                  {isSearching && <p className="p-3 text-xs text-muted-foreground">Đang tìm...</p>}
+                  {!isSearching && individualResults.map(student => {
+                    const added = rows.some(row => row.id === student.id);
+                    return (
+                      <button
+                        type="button"
+                        key={student.id}
+                        disabled={added}
+                        onClick={() => addStudents([student])}
+                        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted disabled:opacity-50"
+                      >
+                        <span className="truncate">{student.fullName} {student.code && <span className="text-xs text-muted-foreground">({student.code})</span>}</span>
+                        <Plus className="h-4 w-4 shrink-0" />
+                      </button>
+                    );
+                  })}
+                  {!isSearching && individualResults.length === 0 && <p className="p-3 text-xs text-muted-foreground">Không tìm thấy học viên</p>}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </DialogHeader>
 
         <div className="min-h-0 flex-1 overflow-auto rounded-lg border">
           <div className="min-w-[860px]">
@@ -346,19 +348,21 @@ export function BulkAdjustFeeWalletDialog({
           </div>
         </div>
 
-        <div className="grid gap-2 rounded-lg bg-primary/5 px-4 py-3 sm:grid-cols-3">
-          <div><p className="text-xs text-muted-foreground">Số học viên</p><p className="font-semibold">{rows.length}</p></div>
-          <div><p className="text-xs text-muted-foreground">Tổng hiện tại</p><p className="font-semibold">{formatCurrency(totalCurrent)}</p></div>
-          <div><p className="text-xs text-muted-foreground">Tổng sau cân bằng</p><p className={cn("font-semibold", totalAfter < 0 ? "text-red-600" : "text-primary")}>{formatCurrency(totalAfter)} <span className="text-xs font-normal text-muted-foreground">({formatSignedCurrency(totalAfter - totalCurrent)})</span></p></div>
-        </div>
+        <div className="flex flex-col gap-3 rounded-lg bg-primary/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="grid flex-1 gap-2 sm:grid-cols-3">
+            <div><p className="text-xs text-muted-foreground">Số học viên</p><p className="font-semibold">{rows.length}</p></div>
+            <div><p className="text-xs text-muted-foreground">Tổng hiện tại</p><p className="font-semibold">{formatCurrency(totalCurrent)}</p></div>
+            <div><p className="text-xs text-muted-foreground">Tổng sau cân bằng</p><p className={cn("font-semibold", totalAfter < 0 ? "text-red-600" : "text-primary")}>{formatCurrency(totalAfter)} <span className="text-xs font-normal text-muted-foreground">({formatSignedCurrency(totalAfter - totalCurrent)})</span></p></div>
+          </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={close} disabled={adjustmentMutation.isPending}>Huỷ</Button>
-          <Button onClick={() => adjustmentMutation.mutate()} disabled={adjustmentMutation.isPending || rows.length === 0 || !hasAdjustment}>
-            {adjustmentMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Lưu cân bằng
-          </Button>
-        </DialogFooter>
+          <DialogFooter className="shrink-0 sm:ml-4">
+            <Button variant="outline" onClick={close} disabled={adjustmentMutation.isPending}>Huỷ</Button>
+            <Button onClick={() => adjustmentMutation.mutate()} disabled={adjustmentMutation.isPending || rows.length === 0 || !hasAdjustment}>
+              {adjustmentMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Lưu cân bằng
+            </Button>
+          </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );
