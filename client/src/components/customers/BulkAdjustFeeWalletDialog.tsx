@@ -203,16 +203,16 @@ export function BulkAdjustFeeWalletDialog({
         queryClient.invalidateQueries({ queryKey: ["/api/students", row.id, "fee-wallet"] }),
       ));
       toast({ title: "Đã cân bằng tài khoản thành công", description: `Đã cập nhật ${adjustmentRows.filter(row => row.hocPhiAdjustment !== 0 || row.datCocAdjustment !== 0).length} học viên.` });
-      close();
+      close(true);
     },
     onError: (error: any) => {
       toast({ title: "Không thể cân bằng tài khoản", description: error.message, variant: "destructive" });
-      close();
+      close(true);
     },
   });
 
-  const close = () => {
-    if (adjustmentMutation.isPending) return;
+  const close = (force = false) => {
+    if (!force && adjustmentMutation.isPending) return;
     setRows([]);
     setSelectedClassIds([]);
     setIndividualSearch("");
