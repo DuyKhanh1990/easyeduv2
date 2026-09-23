@@ -9,3 +9,5 @@ The student detail “Lớp học” view must not infer all activity from `stud
 **Why:** Free classes intentionally have no fixed `class_sessions` or regular `student_sessions`; relying only on those tables makes a registered/attended free-class student appear to have zero sessions. Filtering classes only from enrollments/sessions also hides class-linked invoices.
 
 **How to apply:** Keep regular and free-class session reads separate, then merge their results at the student-class response boundary. Union class IDs from student enrollments, regular student sessions, and class-linked tuition invoices before building the response.
+
+Runtime validation is required after changing this path: the production build does not type-check every server reference, so a missing import can compile successfully and still make the sessions endpoint return 500.
