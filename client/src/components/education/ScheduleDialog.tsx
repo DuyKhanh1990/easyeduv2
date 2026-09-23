@@ -367,9 +367,22 @@ export function ScheduleDialog({
   }, [sessionsBatch]);
 
   // ── Queries for add-student dialogs ─────────────────────────────────────────
+  const normalizedAddSearchTerm = addSearchTerm.trim();
   const { data: waitingStudentsList = [] } = useQuery<any[]>({
-    queryKey: [`/api/classes/${classData?.id}/available-students`],
+    queryKey: [`/api/classes/${classData?.id}/available-students`, normalizedAddSearchTerm],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (normalizedAddSearchTerm) {
+        params.set("searchTerm", normalizedAddSearchTerm);
+      }
+      const query = params.toString();
+      const url = `/api/classes/${classData.id}/available-students${query ? `?${query}` : ""}`;
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Không thể tải danh sách học viên");
+      return res.json();
+    },
     enabled: isAddDialogOpen && !!classData?.id,
+    staleTime: 0,
   });
 
   const { data: locationsList = [] } = useQuery<any[]>({

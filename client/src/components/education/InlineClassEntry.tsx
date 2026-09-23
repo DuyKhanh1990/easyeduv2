@@ -50,6 +50,7 @@ interface InlineRow {
 interface StudentMinimal {
   id: string;
   fullName: string;
+  code: string;
   type: string | null;
   locations: { locationId: string }[];
 }
@@ -589,21 +590,52 @@ function StudentSelectCell({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
+  const normalizedSearch = search.trim();
+  const { data: searchedStudentsResponse, isFetching: isSearchingStudents } = useQuery<{
+    students: StudentMinimal[];
+    total: number;
+  }>({
+    queryKey: ["/api/students", "inline-class-entry-search", locationId, normalizedSearch],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        minimal: "true",
+        limit: "50",
+        locationId: locationId || "",
+        searchTerm: normalizedSearch,
+      });
+      const res = await fetch(`/api/students?${params.toString()}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Không thể tìm học viên");
+      return res.json();
+    },
+    enabled: open && !!locationId && normalizedSearch.length > 0,
+    staleTime: 30_000,
+  });
+
+  const studentPool = useMemo(() => {
+    const byId = new Map<string, StudentMinimal>();
+    for (const student of allStudents) byId.set(student.id, student);
+    for (const student of searchedStudentsResponse?.students ?? []) byId.set(student.id, student);
+    return Array.from(byId.values());
+  }, [allStudents, searchedStudentsResponse?.students]);
+
   const available = useMemo(() => {
     if (!locationId) return [] as StudentMinimal[];
-    return allStudents.filter(s =>
+    return studentPool.filter(s =>
       !s.locations?.length || s.locations.some(l => l.locationId === locationId),
     );
-  }, [allStudents, locationId]);
+  }, [studentPool, locationId]);
 
-  const studentMap = useMemo(() => new Map(allStudents.map(s => [s.id, s])), [allStudents]);
+  const studentMap = useMemo(() => new Map(studentPool.map(s => [s.id, s])), [studentPool]);
   const selectedStudents = value.map(id => studentMap.get(id)).filter(Boolean) as StudentMinimal[];
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = normalizedSearch.toLowerCase();
     if (!q) return available;
-    return available.filter(s => s.fullName.toLowerCase().includes(q));
-  }, [available, search]);
+    return available.filter(s =>
+      s.fullName.toLowerCase().includes(q) ||
+      s.code.toLowerCase().includes(q),
+    );
+  }, [available, normalizedSearch]);
 
   const toggle = (id: string) => {
     if (value.includes(id)) onChange(value.filter(v => v !== id));
@@ -651,7 +683,7 @@ function StudentSelectCell({
           <div className="flex items-center justify-between text-xs">
             <span className="font-medium">Chọn học viên</span>
             <span className="text-muted-foreground">
-              Đã chọn <span className="font-semibold text-foreground">{value.length}</span>/{available.length}
+              Đã chọn <span className="font-semibold text-foreground">{value.length}</span>
             </span>
           </div>
           <Input
@@ -679,6 +711,8 @@ function StudentSelectCell({
         <div className="max-h-[280px] overflow-y-auto py-1">
           {!locationId ? (
             <p className="text-xs text-muted-foreground text-center py-6">Chọn cơ sở trước để xem học viên.</p>
+          ) : isSearchingStudents ? (
+            <p className="text-xs text-muted-foreground text-center py-6">Đang tìm học viên...</p>
           ) : filtered.length === 0 ? (
             <p className="text-xs text-muted-foreground text-center py-6">
               {available.length === 0 ? "Chưa có học viên ở cơ sở này." : "Không khớp."}
