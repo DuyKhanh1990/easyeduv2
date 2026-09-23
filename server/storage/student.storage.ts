@@ -1732,7 +1732,7 @@ export async function getStudentClasses(
   `;
 
   // ── Q5: invoice paid totals per class ──────────────────────────────────────
-  const [statsResult, freeStatsResult, allInvoices] = await Promise.all([
+  const [statsResult, freeStatsResult, freeInvoiceItemRows, allInvoices] = await Promise.all([
     db.execute(sql.raw(statsQueryStr)),
     db.execute(sql.raw(`
       SELECT
@@ -1745,6 +1745,22 @@ export async function getStudentClasses(
         AND fcr.class_id IN (${classIdList})
       GROUP BY fcr.class_id
     `)),
+    db.select({
+      classId: invoices.classId,
+      invoiceId: invoices.id,
+      grandTotal: invoices.grandTotal,
+      packageId: invoiceItems.packageId,
+      packageName: invoiceItems.packageName,
+      packageType: invoiceItems.packageType,
+      unitPrice: invoiceItems.unitPrice,
+    })
+      .from(invoices)
+      .leftJoin(invoiceItems, eq(invoiceItems.invoiceId, invoices.id))
+      .where(and(
+        eq(invoices.studentId, studentId),
+        inArray(invoices.classId, allClassIds),
+        eq(invoices.type, "Thu"),
+      )),
     db.select({
       id: invoices.id,
       code: invoices.code,
@@ -1779,6 +1795,14 @@ export async function getStudentClasses(
       attendedSessions: Number(row.attended_sessions || 0),
       notAttendedCount: Number(row.not_attended_count || 0),
     });
+  }
+
+  const freeInvoiceItemsByClassId = new Map<string, any[]>();
+  for (const item of freeInvoiceItemRows) {
+    if (!item.classId) continue;
+    const items = freeInvoiceItemsByClassId.get(item.classId) ?? [];
+    items.push(item);
+    freeInvoiceItemsByClassId.set(item.classId, items);
   }
 
   const invoicePaidByClassId = new Map<string, number>();
@@ -1830,8 +1854,13 @@ export async function getStudentClasses(
     const totalSessions = isFreeClass ? (freeStats?.totalSessions ?? 0) : stats.totalSessions;
     const attendedSessions = isFreeClass ? (freeStats?.attendedSessions ?? 0) : stats.attendedSessions;
     const notAttendedCount = isFreeClass ? (freeStats?.notAttendedCount ?? 0) : stats.notAttendedCount;
-    const freeSessionFee = isFreeClass && enrollment.student_classes?.totalSessions
-      ? Number(invoiceSummary?.grandTotal || 0) / Math.max(1, Number(enrollment.student_classes.totalSessions))
+    const freeInvoiceItems = freeInvoiceItemsByClassId.get(classRec.id) ?? [];
+    const freeInvoiceItem = freeInvoiceItems.find((item) => item.packageId) ?? freeInvoiceItems[0];
+    const freePackageType = freeInvoiceItem?.packageType ?? enrollment.course_fee_packages?.type ?? "buổi";
+    const freeSessionFee = isFreeClass
+      ? freePackageType === "buổi"
+        ? Number(freeInvoiceItem?.unitPrice || enrollment.course_fee_packages?.fee || 0)
+        : Number(freeInvoiceItem?.grandTotal || 0) / Math.max(1, totalSessions)
       : 0;
     result.push({
       studentClass:     enrollment.student_classes,

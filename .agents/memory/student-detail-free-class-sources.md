@@ -11,3 +11,5 @@ The student detail “Lớp học” view must not infer all activity from `stud
 **How to apply:** Keep regular and free-class session reads separate, then merge their results at the student-class response boundary. Union class IDs from student enrollments, regular student sessions, and class-linked tuition invoices before building the response.
 
 Runtime validation is required after changing this path: the production build does not type-check every server reference, so a missing import can compile successfully and still make the sessions endpoint return 500.
+
+The summary card’s “Đã học” must use the same applied per-session fee selection as the detail rows; do not estimate it from invoice grand total divided by enrollment allowance when invoice item pricing is available.
