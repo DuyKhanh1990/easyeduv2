@@ -250,7 +250,14 @@ export const invoicePaymentSchedule = pgTable("invoice_payment_schedule", {
   invoiceId: uuid("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
   label: varchar("label", { length: 50 }).notNull(),          // ĐỢT 1, ĐỢT 2...
   code: varchar("code", { length: 100 }),                     // PT202603001-1
+  // Số tiền trước khuyến mãi/phụ thu riêng của đợt. Null trên dữ liệu cũ
+  // để giữ nguyên amount hiện tại làm số tiền cơ sở khi chưa có điều chỉnh.
+  baseAmount: decimal("base_amount", { precision: 15, scale: 2 }),
   amount: decimal("amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  promotionKeys: text("promotion_keys").array().default(sql`'{}'::text[]`),
+  surchargeKeys: text("surcharge_keys").array().default(sql`'{}'::text[]`),
+  promotionAmount: decimal("promotion_amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  surchargeAmount: decimal("surcharge_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   dueDate: date("due_date"),                                  // Hạn thanh toán đợt này
   status: varchar("status", { length: 20 }).notNull().default("unpaid"), // unpaid | paid
   paidAt: timestamp("paid_at"),

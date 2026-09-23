@@ -20,7 +20,10 @@ export function EditScheduleDialog({
   invoiceId: string;
   onClose: () => void;
 }) {
-  const [amount, setAmount] = useState<number>(parseFloat(schedule.amount ?? "0"));
+  const [amount, setAmount] = useState<number>(parseFloat(schedule.baseAmount ?? schedule.amount ?? "0"));
+  const hasAdjustment = (schedule.baseAmount !== null && schedule.baseAmount !== undefined)
+    || (schedule.promotionKeys?.length ?? 0) > 0
+    || (schedule.surchargeKeys?.length ?? 0) > 0;
   const [dueDate, setDueDate] = useState<Date | undefined>(
     schedule.dueDate ? new Date(schedule.dueDate) : undefined
   );
@@ -44,7 +47,7 @@ export function EditScheduleDialog({
           </div>
 
           <div className="space-y-1">
-            <label className="text-sm font-medium">Số tiền</label>
+            <label className="text-sm font-medium">{hasAdjustment ? "Số tiền cơ sở" : "Số tiền"}</label>
             <Input
               type="number"
               value={amount}
@@ -52,6 +55,11 @@ export function EditScheduleDialog({
               className="text-right"
               data-testid="input-edit-amount"
             />
+            {hasAdjustment && (
+              <p className="text-[11px] text-muted-foreground">
+                Thành tiền hiện tại sau khuyến mãi/phụ thu: {parseFloat(schedule.amount ?? "0").toLocaleString("vi-VN")} ₫
+              </p>
+            )}
           </div>
 
           <div className="space-y-1">

@@ -71,3 +71,4 @@
 - [Student detail free-class sources](student-detail-free-class-sources.md) — tab Lớp học phải đọc free_class_registrations và union class IDs từ hóa đơn gắn học viên.
 - [Free-class teacher assignment precedence](free-class-teacher-assignment.md) — override học viên/ngày thắng GV chung; lịch cá nhân chỉ gửi cho GV hiệu lực.
 - [Grade book roster snapshot](grade-book-roster-snapshot.md) — danh sách học viên được chốt lúc tạo; học viên active phát sinh sau đó chỉ được thêm thủ công.
+- [Invoice installment adjustments](invoice-schedule-adjustments.md) — đợt chưa thanh toán tính từ tiền cơ sở; server khóa đợt đã thu và đồng bộ tổng hóa đơn cha.

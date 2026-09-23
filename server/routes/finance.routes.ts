@@ -219,6 +219,9 @@ const updateInvoiceBodySchema = insertInvoiceSchema.partial().extend({
 
 const updateScheduleBodySchema = z.object({
   amount: z.union([z.number(), z.string().transform(v => Number(v))]).optional(),
+  baseAmount: z.union([z.number(), z.string().transform(v => Number(v))]).optional(),
+  promotionKeys: z.array(z.string()).optional(),
+  surchargeKeys: z.array(z.string()).optional(),
   dueDate: z.string().nullable().optional(),
   createdAt: z.coerce.date().optional(),
   paidAt: z.coerce.date().nullable().optional(),
@@ -1514,9 +1517,30 @@ export function registerFinanceRoutes(app: Express): void {
         return res.status(400).json({ message: "Ngày thanh toán không được trước ngày tạo." });
       }
 
-      const { amount, dueDate, createdAt, paidAt } = parsed.data;
+      const {
+        amount,
+        baseAmount,
+        promotionKeys,
+        surchargeKeys,
+        dueDate,
+        createdAt,
+        paidAt,
+      } = parsed.data;
       const data: Record<string, unknown> = {};
-      if (amount !== undefined) data.amount = Number(amount);
+      if (amount !== undefined) {
+        if (!Number.isFinite(Number(amount)) || Number(amount) < 0) {
+          return res.status(400).json({ message: "Số tiền đợt không được âm." });
+        }
+        data.amount = Number(amount);
+      }
+      if (baseAmount !== undefined) {
+        if (!Number.isFinite(Number(baseAmount)) || Number(baseAmount) < 0) {
+          return res.status(400).json({ message: "Số tiền cơ sở không được âm." });
+        }
+        data.baseAmount = Number(baseAmount);
+      }
+      if (promotionKeys !== undefined) data.promotionKeys = promotionKeys;
+      if (surchargeKeys !== undefined) data.surchargeKeys = surchargeKeys;
       if (dueDate !== undefined) data.dueDate = dueDate;
       if (createdAt !== undefined) data.createdAt = createdAt;
       if (paidAt !== undefined) data.paidAt = paidAt;
@@ -1561,7 +1585,7 @@ export function registerFinanceRoutes(app: Express): void {
         }
       }
 
-      if (createdAt !== undefined || paidAt !== undefined) {
+      if (createdAt !== undefined || paidAt !== undefined || baseAmount !== undefined || promotionKeys !== undefined || surchargeKeys !== undefined) {
         const parent = await storage.getInvoice(before.invoiceId);
         const oldContent: Record<string, unknown> = { scheduleLabel: before.label };
         const newContent: Record<string, unknown> = { scheduleLabel: before.label };
@@ -1573,13 +1597,29 @@ export function registerFinanceRoutes(app: Express): void {
           oldContent.paidAt = before.paidAt;
           newContent.paidAt = updated.paidAt;
         }
+        if (baseAmount !== undefined || promotionKeys !== undefined || surchargeKeys !== undefined) {
+          oldContent.baseAmount = before.baseAmount ?? before.amount;
+          oldContent.amount = before.amount;
+          oldContent.promotionKeys = before.promotionKeys ?? [];
+          oldContent.surchargeKeys = before.surchargeKeys ?? [];
+          oldContent.promotionAmount = before.promotionAmount ?? "0";
+          oldContent.surchargeAmount = before.surchargeAmount ?? "0";
+          newContent.baseAmount = updated.baseAmount ?? updated.amount;
+          newContent.amount = updated.amount;
+          newContent.promotionKeys = updated.promotionKeys ?? [];
+          newContent.surchargeKeys = updated.surchargeKeys ?? [];
+          newContent.promotionAmount = updated.promotionAmount ?? "0";
+          newContent.surchargeAmount = updated.surchargeAmount ?? "0";
+        }
         createInvoiceAuditLog({
           invoiceId: before.invoiceId,
           invoiceCode: parent?.code ?? null,
           invoiceType: parent?.type ?? null,
           subjectName: parent?.subjectName ?? null,
           grandTotal: parent?.grandTotal ?? null,
-          action: "Sửa đợt thanh toán",
+          action: baseAmount !== undefined || promotionKeys !== undefined || surchargeKeys !== undefined
+            ? "Sửa khuyến mãi/phụ thu đợt thanh toán"
+            : "Sửa đợt thanh toán",
           userId,
           locationId: parent?.locationId ?? null,
           oldContent,

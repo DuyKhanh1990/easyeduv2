@@ -62,7 +62,12 @@ export interface ScheduleItem {
   id: string;
   label: string;
   code?: string | null;
+  baseAmount?: string | null;
   amount: string;
+  promotionKeys?: string[] | null;
+  surchargeKeys?: string[] | null;
+  promotionAmount?: string | null;
+  surchargeAmount?: string | null;
   status: string;
   dueDate: string | null;
   sortOrder: number;

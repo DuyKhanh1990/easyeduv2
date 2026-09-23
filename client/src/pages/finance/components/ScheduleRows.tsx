@@ -14,10 +14,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Eye, Scissors, Pencil, Trash2, QrCode, Copy, FileText, Download, Landmark } from "lucide-react";
+import { MoreHorizontal, Eye, Scissors, Pencil, Trash2, QrCode, Copy, FileText, Download, Landmark, SlidersHorizontal } from "lucide-react";
 import { ScheduleStatusDropdown } from "./ScheduleStatusDropdown";
 import { EditScheduleDialog } from "./EditScheduleDialog";
-import { parseNum, fmtMoney, fmtDate, type ScheduleItem, STATUS_CONFIG, EINVOICE_STATUS_CONFIG } from "@/types/invoice-types";
+import { ScheduleAdjustmentDialog } from "./ScheduleAdjustmentDialog";
+import { parseNum, fmtMoney, fmtDate, type ScheduleItem, STATUS_CONFIG, EINVOICE_STATUS_CONFIG, isInvoicePaidLike } from "@/types/invoice-types";
 import { getBankCode, sanitizeForBank } from "./qr-utils";
 
 interface ParentInvoice {
@@ -58,6 +59,7 @@ export function ScheduleRows({
   const [deleteTarget, setDeleteTarget] = useState<ScheduleItem | null>(null);
   const [viewTarget, setViewTarget] = useState<ScheduleItem | null>(null);
   const [qrTarget, setQrTarget] = useState<ScheduleItem | null>(null);
+  const [adjustmentTarget, setAdjustmentTarget] = useState<ScheduleItem | null>(null);
 
   const { schedules, isLoading, deleteMutation, updateStatusMutation } = useInvoiceSchedules(invoiceId);
 
@@ -121,6 +123,12 @@ export function ScheduleRows({
         return (
           <td key="total" className="py-2 px-3 text-right whitespace-nowrap">
             <span className="text-xs font-semibold">{fmtMoney(parseNum(s.amount))}</span>
+            {(parseNum(s.promotionAmount) > 0 || parseNum(s.surchargeAmount) > 0) && (
+              <div className="mt-0.5 text-[10px] leading-tight">
+                {parseNum(s.promotionAmount) > 0 && <span className="mr-1 text-green-600">KM -{fmtMoney(parseNum(s.promotionAmount))}</span>}
+                {parseNum(s.surchargeAmount) > 0 && <span className="text-orange-600">PT +{fmtMoney(parseNum(s.surchargeAmount))}</span>}
+              </div>
+            )}
           </td>
         );
       case "status":
@@ -176,7 +184,10 @@ export function ScheduleRows({
   return (
     <>
       {visibleSchedules.map((s) => {
-        const isPaid = s.status === "paid";
+        const isPaid = isInvoicePaidLike(s.status);
+        const hasAdjustment = s.baseAmount !== null && s.baseAmount !== undefined
+          || (s.promotionKeys?.length ?? 0) > 0
+          || (s.surchargeKeys?.length ?? 0) > 0;
         const canDelete = !isPaid && totalSchedules > 1;
         const isSelected = selectedScheduleIds?.has(s.id) ?? false;
         const canSign = isPaid && s.einvoiceStatus !== "published";
@@ -214,7 +225,7 @@ export function ScheduleRows({
                     <Eye className="h-3.5 w-3.5 mr-2 text-blue-600" />
                     Xem
                   </DropdownMenuItem>
-                  {!isPaid && (
+                  {!isPaid && !hasAdjustment && (
                     <DropdownMenuItem onClick={() => onSplit(s)} data-testid={`menu-split-schedule-${s.id}`}>
                       <Scissors className="h-3.5 w-3.5 mr-2 text-blue-600" />
                       Tách
@@ -224,6 +235,12 @@ export function ScheduleRows({
                     <DropdownMenuItem onClick={() => setEditTarget(s)} data-testid={`menu-edit-schedule-${s.id}`}>
                       <Pencil className="h-3.5 w-3.5 mr-2 text-gray-600" />
                       Sửa
+                    </DropdownMenuItem>
+                  )}
+                  {!isPaid && (
+                    <DropdownMenuItem onClick={() => setAdjustmentTarget(s)} data-testid={`menu-adjust-schedule-${s.id}`}>
+                      <SlidersHorizontal className="h-3.5 w-3.5 mr-2 text-purple-600" />
+                      Khuyến mãi/phụ thu
                     </DropdownMenuItem>
                   )}
                   {s.einvoiceStatus === "draft" && (
@@ -294,6 +311,14 @@ export function ScheduleRows({
           schedule={editTarget}
           invoiceId={invoiceId}
           onClose={() => setEditTarget(null)}
+        />
+      )}
+
+      {adjustmentTarget && (
+        <ScheduleAdjustmentDialog
+          schedule={adjustmentTarget}
+          invoiceId={invoiceId}
+          onClose={() => setAdjustmentTarget(null)}
         />
       )}
 
@@ -384,9 +409,29 @@ function ScheduleViewDialog({
             <span className="font-medium">{schedule.label}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Số tiền</span>
+            <span className="text-muted-foreground">Thành tiền</span>
             <span className="font-bold text-base">{fmtMoney(parseNum(schedule.amount))}</span>
           </div>
+          {(parseNum(schedule.baseAmount) > 0 || parseNum(schedule.promotionAmount) > 0 || parseNum(schedule.surchargeAmount) > 0) && (
+            <div className="space-y-1 border-t pt-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Tiền cơ sở</span>
+                <span>{fmtMoney(parseNum(schedule.baseAmount ?? schedule.amount))}</span>
+              </div>
+              {parseNum(schedule.promotionAmount) > 0 && (
+                <div className="flex justify-between text-green-600">
+                  <span>Khuyến mãi riêng</span>
+                  <span>-{fmtMoney(parseNum(schedule.promotionAmount))}</span>
+                </div>
+              )}
+              {parseNum(schedule.surchargeAmount) > 0 && (
+                <div className="flex justify-between text-orange-600">
+                  <span>Phụ thu riêng</span>
+                  <span>+{fmtMoney(parseNum(schedule.surchargeAmount))}</span>
+                </div>
+              )}
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-muted-foreground">Hạn thanh toán</span>
             <span>{fmtDate(schedule.dueDate)}</span>

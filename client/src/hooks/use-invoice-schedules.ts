@@ -25,15 +25,24 @@ export function useInvoiceSchedules(invoiceId: string) {
     mutationFn: ({
       scheduleId,
       amount,
+        baseAmount,
+        promotionKeys,
+        surchargeKeys,
       dueDate,
     }: {
       scheduleId: string;
       amount?: number;
+        baseAmount?: number;
+        promotionKeys?: string[];
+        surchargeKeys?: string[];
       dueDate?: string | null;
     }) =>
       apiRequest("PATCH", `/api/finance/invoice-schedules/${scheduleId}`, {
-        amount,
-        dueDate,
+          amount,
+          baseAmount,
+          promotionKeys,
+          surchargeKeys,
+          dueDate,
       }),
     onSuccess: invalidate,
   });

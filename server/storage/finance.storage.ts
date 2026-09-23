@@ -32,6 +32,80 @@ const isPaidInvoiceStatus = (status: string | null | undefined): boolean =>
 const isPaidScheduleStatus = (status: string | null | undefined): boolean =>
   status === "paid" || status === "confirmed";
 
+function calculateScheduleAdjustments(
+  baseAmount: number,
+  promotionKeys: string[] = [],
+  surchargeKeys: string[] = [],
+  options: Array<{ id: string; type?: string | null; valueType?: string | null; valueAmount?: string | number | null }> = [],
+) {
+  const safeBase = Math.max(0, Number(baseAmount) || 0);
+  const byId = new Map(options.map(option => [option.id, option]));
+  const calculate = (keys: string[], expectedType: "promotion" | "surcharge") =>
+    keys.reduce((sum, key) => {
+      const option = byId.get(key);
+      if (!option || option.type !== expectedType) return sum;
+      const value = Math.max(0, Number(option.valueAmount ?? 0) || 0);
+      return sum + (option.valueType === "percent" ? Math.round(safeBase * value / 100) : value);
+    }, 0);
+  const promotionAmount = calculate(promotionKeys, "promotion");
+  const surchargeAmount = calculate(surchargeKeys, "surcharge");
+  return {
+    promotionAmount,
+    surchargeAmount,
+    amount: Math.max(0, safeBase - promotionAmount + surchargeAmount),
+  };
+}
+
+async function loadScheduleAdjustmentOptions(tx: any, promotionKeys: string[], surchargeKeys: string[]) {
+  const keys = [...new Set([...promotionKeys, ...surchargeKeys])];
+  if (keys.length === 0) return [];
+  return tx
+    .select({
+      id: financePromotions.id,
+      type: financePromotions.type,
+      valueType: financePromotions.valueType,
+      valueAmount: financePromotions.valueAmount,
+    })
+    .from(financePromotions)
+    .where(inArray(financePromotions.id, keys));
+}
+
+async function syncInvoiceScheduleSummaryTx(tx: any, invoiceId: string, userId?: string | null) {
+  const schedules = await tx
+    .select({
+      status: invoicePaymentSchedule.status,
+      amount: invoicePaymentSchedule.amount,
+    })
+    .from(invoicePaymentSchedule)
+    .where(eq(invoicePaymentSchedule.invoiceId, invoiceId));
+  if (schedules.length === 0) return null;
+
+  const grandTotal = schedules.reduce((sum: number, schedule: any) => sum + (parseFloat(schedule.amount ?? "0") || 0), 0);
+  const paidAmount = schedules
+    .filter((schedule: any) => isPaidScheduleStatus(schedule.status))
+    .reduce((sum: number, schedule: any) => sum + (parseFloat(schedule.amount ?? "0") || 0), 0);
+  const remainingAmount = Math.max(0, grandTotal - paidAmount);
+  const status = paidAmount >= grandTotal && grandTotal > 0
+    ? "paid"
+    : paidAmount > 0
+      ? "partial"
+      : "unpaid";
+
+  const [updated] = await tx
+    .update(invoices)
+    .set({
+      grandTotal: grandTotal.toFixed(2),
+      paidAmount: paidAmount.toFixed(2),
+      remainingAmount: remainingAmount.toFixed(2),
+      status,
+      updatedAt: new Date(),
+      ...(userId !== undefined ? { updatedBy: userId } : {}),
+    })
+    .where(eq(invoices.id, invoiceId))
+    .returning();
+  return updated;
+}
+
 // ==========================================
 // FINANCE - TRANSACTION CATEGORIES
 // ==========================================
@@ -1575,7 +1649,14 @@ export async function createInvoice(data: any): Promise<any> {
             invoiceId: inv.id,
             label: s.label,
             code: `${invoiceCode}-${idx + 1}`,
+            baseAmount: s.baseAmount !== undefined && s.baseAmount !== null
+              ? s.baseAmount.toString()
+              : null,
             amount: s.amount?.toString() ?? "0",
+            promotionKeys: s.promotionKeys ?? [],
+            surchargeKeys: s.surchargeKeys ?? [],
+            promotionAmount: s.promotionAmount?.toString() ?? "0",
+            surchargeAmount: s.surchargeAmount?.toString() ?? "0",
             dueDate: s.dueDate || defaultDueDate,
             status: s.status ?? "unpaid",
              createdAt: s.createdAt || undefined,
@@ -1746,27 +1827,40 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
         return {
           id: previous?.id,
           invoiceId: id,
-          label: wasPaid ? previous.label : (s.label ?? previous?.label ?? `ĐỢT ${idx + 1}`),
+          label: wasPaid ? previous!.label : (s.label ?? previous?.label ?? `ĐỢT ${idx + 1}`),
           code: previous?.code ?? `${inv.code}-${idx + 1}`,
+          baseAmount: wasPaid
+            ? previous!.baseAmount
+            : s.baseAmount !== undefined
+              ? (s.baseAmount === null ? null : s.baseAmount.toString())
+              : (previous?.baseAmount ?? null),
           // A paid installment is immutable. Never trust an edited form value
           // for its amount or payment metadata.
-          amount: wasPaid ? previous.amount : (s.amount?.toString() ?? previous?.amount ?? "0"),
+          amount: wasPaid ? previous!.amount : (s.amount?.toString() ?? previous?.amount ?? "0"),
+          promotionKeys: wasPaid ? previous!.promotionKeys : (s.promotionKeys ?? previous?.promotionKeys ?? []),
+          surchargeKeys: wasPaid ? previous!.surchargeKeys : (s.surchargeKeys ?? previous?.surchargeKeys ?? []),
+          promotionAmount: wasPaid
+            ? previous!.promotionAmount
+            : (s.promotionAmount?.toString() ?? previous?.promotionAmount ?? "0"),
+          surchargeAmount: wasPaid
+            ? previous!.surchargeAmount
+            : (s.surchargeAmount?.toString() ?? previous?.surchargeAmount ?? "0"),
           dueDate: wasPaid
-            ? previous.dueDate
+            ? previous!.dueDate
             : (s.dueDate || previous?.dueDate || defaultDueDate),
           status: nextStatus,
           sortOrder: previous?.sortOrder ?? idx,
-          paymentMethod: wasPaid ? previous.paymentMethod : (s.paymentMethod ?? previous?.paymentMethod ?? null),
-          appliedBankAccount: wasPaid ? previous.appliedBankAccount : (s.appliedBankAccount ?? previous?.appliedBankAccount ?? null),
+          paymentMethod: wasPaid ? previous!.paymentMethod : (s.paymentMethod ?? previous?.paymentMethod ?? null),
+          appliedBankAccount: wasPaid ? previous!.appliedBankAccount : (s.appliedBankAccount ?? previous?.appliedBankAccount ?? null),
           createdAt: previous?.createdAt ?? now,
           createdBy: previous?.createdBy ?? inv.createdBy ?? invoiceData.updatedBy ?? null,
           paidAt: wasPaid
-            ? previous.paidAt
+            ? previous!.paidAt
             : nextStatus === "paid"
               ? (previous?.paidAt ?? s.paidAt ?? now)
               : null,
           paidBy: wasPaid
-            ? previous.paidBy
+            ? previous!.paidBy
             : nextStatus === "paid"
               ? (previous?.paidBy ?? s.paidBy ?? invoiceData.updatedBy ?? null)
               : null,
@@ -1856,6 +1950,15 @@ export async function splitInvoiceSchedule(scheduleId: string, splitAmount: numb
     const [schedule] = await tx.select().from(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.id, scheduleId));
     if (!schedule) throw new Error("Không tìm thấy đợt thanh toán");
     if (isPaidScheduleStatus(schedule.status)) throw new Error("Không thể tách đợt đã thanh toán");
+    if (
+      schedule.baseAmount !== null ||
+      (schedule.promotionKeys?.length ?? 0) > 0 ||
+      (schedule.surchargeKeys?.length ?? 0) > 0 ||
+      parseFloat(schedule.promotionAmount ?? "0") > 0 ||
+      parseFloat(schedule.surchargeAmount ?? "0") > 0
+    ) {
+      throw new Error("Vui lòng bỏ khuyến mãi/phụ thu riêng trước khi tách đợt");
+    }
 
     const originalAmount = parseFloat(schedule.amount ?? "0");
     if (splitAmount <= 0 || splitAmount >= originalAmount) {
@@ -1934,29 +2037,75 @@ export async function splitInvoiceSchedule(scheduleId: string, splitAmount: numb
 
 export async function updateInvoiceSchedule(scheduleId: string, data: {
   amount?: number;
+  baseAmount?: number;
+  promotionKeys?: string[];
+  surchargeKeys?: string[];
   dueDate?: string | null;
   createdAt?: Date;
   paidAt?: Date | null;
   updatedBy?: string | null;
 }): Promise<any> {
-  const [schedule] = await db.select().from(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.id, scheduleId));
-  if (!schedule) throw new Error("Không tìm thấy đợt thanh toán");
-  if (isPaidScheduleStatus(schedule.status) && (data.amount !== undefined || data.dueDate !== undefined)) {
-    throw new Error("Không thể sửa số tiền hoặc hạn thanh toán của đợt đã thanh toán");
-  }
-  const updateData: any = {};
-  if (data.amount !== undefined) updateData.amount = data.amount.toFixed(2);
-  if (data.dueDate !== undefined) updateData.dueDate = data.dueDate;
-  if (data.createdAt !== undefined) updateData.createdAt = data.createdAt;
-  if (data.paidAt !== undefined) updateData.paidAt = data.paidAt;
-  updateData.updatedAt = new Date();
-  if (data.updatedBy !== undefined) updateData.updatedBy = data.updatedBy;
-  const [updated] = await db
-    .update(invoicePaymentSchedule)
-    .set(updateData)
-    .where(eq(invoicePaymentSchedule.id, scheduleId))
-    .returning();
-  return updated;
+  return db.transaction(async (tx) => {
+    const [schedule] = await tx
+      .select()
+      .from(invoicePaymentSchedule)
+      .where(eq(invoicePaymentSchedule.id, scheduleId));
+    if (!schedule) throw new Error("Không tìm thấy đợt thanh toán");
+
+    const hasExistingAdjustments =
+      schedule.baseAmount !== null ||
+      (schedule.promotionKeys?.length ?? 0) > 0 ||
+      (schedule.surchargeKeys?.length ?? 0) > 0;
+    const changesAdjustment =
+      data.baseAmount !== undefined ||
+      data.promotionKeys !== undefined ||
+      data.surchargeKeys !== undefined ||
+      (hasExistingAdjustments && data.amount !== undefined);
+    const changesMoney = data.amount !== undefined || data.baseAmount !== undefined || data.promotionKeys !== undefined || data.surchargeKeys !== undefined;
+
+    if (isPaidScheduleStatus(schedule.status) && (changesMoney || data.dueDate !== undefined)) {
+      throw new Error("Không thể sửa số tiền, khuyến mãi/phụ thu hoặc hạn thanh toán của đợt đã thanh toán");
+    }
+
+    const updateData: any = {};
+    if (changesAdjustment) {
+      const baseAmount = Math.max(
+        0,
+        Number(
+          data.baseAmount ??
+          (hasExistingAdjustments && data.amount !== undefined ? data.amount : schedule.baseAmount ?? schedule.amount)
+        ) || 0,
+      );
+      const promotionKeys = data.promotionKeys ?? schedule.promotionKeys ?? [];
+      const surchargeKeys = data.surchargeKeys ?? schedule.surchargeKeys ?? [];
+      const options = await loadScheduleAdjustmentOptions(tx, promotionKeys, surchargeKeys);
+      const calculated = calculateScheduleAdjustments(baseAmount, promotionKeys, surchargeKeys, options);
+      updateData.baseAmount = baseAmount.toFixed(2);
+      updateData.amount = calculated.amount.toFixed(2);
+      updateData.promotionKeys = promotionKeys;
+      updateData.surchargeKeys = surchargeKeys;
+      updateData.promotionAmount = calculated.promotionAmount.toFixed(2);
+      updateData.surchargeAmount = calculated.surchargeAmount.toFixed(2);
+    } else if (data.amount !== undefined) {
+      updateData.amount = Math.max(0, data.amount).toFixed(2);
+    }
+    if (data.dueDate !== undefined) updateData.dueDate = data.dueDate;
+    if (data.createdAt !== undefined) updateData.createdAt = data.createdAt;
+    if (data.paidAt !== undefined) updateData.paidAt = data.paidAt;
+    updateData.updatedAt = new Date();
+    if (data.updatedBy !== undefined) updateData.updatedBy = data.updatedBy;
+
+    const [updated] = await tx
+      .update(invoicePaymentSchedule)
+      .set(updateData)
+      .where(eq(invoicePaymentSchedule.id, scheduleId))
+      .returning();
+
+    if (changesAdjustment) {
+      await syncInvoiceScheduleSummaryTx(tx, schedule.invoiceId, data.updatedBy);
+    }
+    return updated;
+  });
 }
 
 export async function updateInvoiceScheduleStatus(scheduleId: string, status: string, userId?: string | null): Promise<any> {
@@ -2177,12 +2326,37 @@ export async function deleteInvoiceSchedule(id: string): Promise<void> {
 
     const deletedAmount = parseFloat(schedule.amount ?? "0");
     const lastAmount = parseFloat(lastSchedule.amount ?? "0");
-    await tx
-      .update(invoicePaymentSchedule)
-      .set({ amount: (lastAmount + deletedAmount).toFixed(2) })
-      .where(eq(invoicePaymentSchedule.id, lastSchedule.id));
+    const lastHasAdjustments =
+      lastSchedule.baseAmount !== null ||
+      (lastSchedule.promotionKeys?.length ?? 0) > 0 ||
+      (lastSchedule.surchargeKeys?.length ?? 0) > 0;
+    if (lastHasAdjustments) {
+      const promotionKeys = lastSchedule.promotionKeys ?? [];
+      const surchargeKeys = lastSchedule.surchargeKeys ?? [];
+      const options = await loadScheduleAdjustmentOptions(tx, promotionKeys, surchargeKeys);
+      const nextBaseAmount = parseFloat(lastSchedule.baseAmount ?? lastSchedule.amount ?? "0") + deletedAmount;
+      const calculated = calculateScheduleAdjustments(nextBaseAmount, promotionKeys, surchargeKeys, options);
+      await tx
+        .update(invoicePaymentSchedule)
+        .set({
+          baseAmount: nextBaseAmount.toFixed(2),
+          amount: calculated.amount.toFixed(2),
+          promotionAmount: calculated.promotionAmount.toFixed(2),
+          surchargeAmount: calculated.surchargeAmount.toFixed(2),
+          updatedAt: new Date(),
+        })
+        .where(eq(invoicePaymentSchedule.id, lastSchedule.id));
+    } else {
+      await tx
+        .update(invoicePaymentSchedule)
+        .set({ amount: (lastAmount + deletedAmount).toFixed(2) })
+        .where(eq(invoicePaymentSchedule.id, lastSchedule.id));
+    }
 
     await tx.delete(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.id, id));
+    if (lastHasAdjustments) {
+      await syncInvoiceScheduleSummaryTx(tx, schedule.invoiceId);
+    }
   });
 }
 
