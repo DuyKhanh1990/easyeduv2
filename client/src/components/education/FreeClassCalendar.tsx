@@ -1591,12 +1591,39 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                   <span className="text-xs font-medium text-slate-800">
                     ({selectedRegistrationStudents.length})
                   </span>
+                   {(() => {
+                     const dayAssignment = dayAssignments.get(selectedRegistrationDay.value);
+                     return (
+                       <Button
+                         type="button"
+                         variant="outline"
+                         size="sm"
+                         className="ml-auto h-8 gap-1.5 text-xs"
+                         disabled={!classPerm?.canEdit}
+                         onClick={() => {
+                           if (!classPerm?.canEdit) return;
+                           setAssignmentEditor({
+                             scope: "day",
+                             studentClassId: "",
+                             date: selectedRegistrationDay.value,
+                             studentName: "Phân công chung ngày",
+                             teacherId: dayAssignment?.teacherId || "",
+                             shiftTemplateId: dayAssignment?.shiftTemplateId || "",
+                           });
+                         }}
+                       >
+                         <UserRound className="h-3.5 w-3.5 text-indigo-600" />
+                         GV/ca cả ngày
+                       </Button>
+                     );
+                   })()}
                 </div>
                 <div className="overflow-x-auto border-t border-slate-100">
-                  <table className="w-full min-w-[760px] border-collapse text-xs">
+                   <table className="w-full min-w-[900px] border-collapse text-xs">
                     <thead className="bg-slate-50/80 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                       <tr>
                         <th className="px-4 py-2.5 text-left">Học viên</th>
+                         <th className="px-3 py-2.5 text-left">Giáo viên / ca</th>
                         <th className="px-3 py-2.5 text-left">Trạng thái điểm danh</th>
                         <th className="px-3 py-2.5 text-left">Ghi chú</th>
                         <th className="px-4 py-2.5 text-left">Nhận xét</th>
@@ -1616,6 +1643,11 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                         const hasReview = !!(
                           reviewOverrides[registration.id]?.reviewData ?? registration.reviewData
                         );
+                         const dayAssignment = dayAssignments.get(selectedRegistrationDay.value);
+                         const effectiveTeacherId = registration.teacherId || dayAssignment?.teacherId || null;
+                         const effectiveShiftTemplateId = registration.shiftTemplateId || dayAssignment?.shiftTemplateId || null;
+                         const hasStudentAssignment = !!registration.teacherId || !!registration.shiftTemplateId;
+                         const assignment = getAssignmentSummary(effectiveTeacherId, effectiveShiftTemplateId);
                         return (
                           <tr key={student.id} className="border-t border-slate-100 hover:bg-slate-50">
                             <td className="px-4 py-3">
@@ -1624,6 +1656,47 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                 <span className="font-medium text-slate-500">({student.code || "—"})</span>
                               </div>
                             </td>
+                             <td className="px-3 py-3">
+                               <div className="flex items-center gap-2">
+                                 <div className="min-w-0 max-w-[190px] text-[10px] font-medium leading-4 text-purple-600">
+                                   {assignment.teacherLabel && (
+                                     <div className="truncate" title={assignment.teacherLabel}>
+                                       {assignment.teacherLabel}
+                                     </div>
+                                   )}
+                                   {assignment.timeLabel && <div>{assignment.timeLabel}</div>}
+                                   {!assignment.teacherLabel && !assignment.timeLabel && (
+                                     <span className="italic text-slate-400">Theo lớp</span>
+                                   )}
+                                 </div>
+                                 <button
+                                   type="button"
+                                   disabled={!classPerm?.canEdit || !registration.id}
+                                   className={cn(
+                                     "shrink-0 text-slate-400 hover:text-indigo-500 disabled:cursor-default disabled:opacity-50",
+                                     hasStudentAssignment && "text-indigo-600",
+                                   )}
+                                   title={
+                                     hasStudentAssignment
+                                       ? "Đang dùng GV/ca riêng cho học viên"
+                                       : "Chọn GV/ca riêng cho học viên"
+                                   }
+                                   onClick={() => {
+                                     if (!classPerm?.canEdit || !registration.id) return;
+                                     setAssignmentEditor({
+                                       scope: "student",
+                                       studentClassId: student.id,
+                                       date: selectedRegistrationDay.value,
+                                       studentName: student.fullName,
+                                       teacherId: registration.teacherId || "",
+                                       shiftTemplateId: registration.shiftTemplateId || "",
+                                     });
+                                   }}
+                                 >
+                                   <UserRound className="h-3.5 w-3.5" />
+                                 </button>
+                               </div>
+                             </td>
                             <td className="px-3 py-3">
                               <Select
                                 value={status}
