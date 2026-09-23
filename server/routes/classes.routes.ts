@@ -1932,6 +1932,155 @@ export function registerClassesRoutes(app: Express): void {
     }
   });
 
+  app.post("/api/classes/:classId/free-schedule/bulk-register", async (req, res) => {
+    const classId = String(req.params.classId);
+    const body = req.body || {};
+    const studentClassIds = Array.from(new Set(
+      (Array.isArray(body.studentClassIds) ? body.studentClassIds : [])
+        .map((value: unknown) => String(value || "").trim())
+        .filter(Boolean),
+    ));
+    const dates = Array.from(new Set(
+      (Array.isArray(body.dates) ? body.dates : [])
+        .map((value: unknown) => String(value || "").trim())
+        .filter(Boolean),
+    ));
+    if (studentClassIds.length === 0 || dates.length === 0) {
+      return res.status(400).json({ message: "Cần chọn ít nhất một học viên và một ngày đăng ký" });
+    }
+    if (studentClassIds.length * dates.length > 2000) {
+      return res.status(400).json({ message: "Số lượt đăng ký trong một lần quá lớn" });
+    }
+    if (dates.some((date) => !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
+      return res.status(400).json({ message: "Có ngày đăng ký không hợp lệ" });
+    }
+    if (!(await assertFreeClassEditable(req, res, classId))) return;
+
+    try {
+      const [classRow] = await db
+        .select({
+          classType: classes.classType,
+          freeClassMode: classes.freeClassMode,
+          teacherIds: classes.teacherIds,
+          startDate: classes.startDate,
+          endDate: classes.endDate,
+        })
+        .from(classes)
+        .where(eq(classes.id, classId))
+        .limit(1);
+      if (!classRow) return res.status(404).json({ message: "Không tìm thấy lớp học" });
+      if (classRow.classType !== "free") {
+        return res.status(400).json({ message: "Lớp này không phải lớp tự do" });
+      }
+      const isSelfPractice =
+        classRow.freeClassMode === "self_practice"
+        || (classRow.freeClassMode == null && (classRow.teacherIds ?? []).length === 0);
+      if (isSelfPractice) {
+        return res.status(400).json({ message: "Lớp tự tập không cần đăng ký trước" });
+      }
+
+      const studentRows = await db
+        .select({
+          id: studentClasses.id,
+          studentId: studentClasses.studentId,
+          totalSessions: studentClasses.totalSessions,
+          startDate: studentClasses.startDate,
+          endDate: studentClasses.endDate,
+        })
+        .from(studentClasses)
+        .where(and(
+          eq(studentClasses.classId, classId),
+          inArray(studentClasses.id, studentClassIds),
+          inArray(studentClasses.status, ["active", "waiting"]),
+        ));
+      if (studentRows.length !== studentClassIds.length) {
+        return res.status(400).json({ message: "Có học viên không còn thuộc lớp hoặc không ở trạng thái hợp lệ" });
+      }
+
+      const actorId = (req.user as any)?.id || null;
+      const result = await db.transaction(async (tx) => {
+        const existingRows = await tx
+          .select({
+            studentClassId: freeClassRegistrations.studentClassId,
+            registrationDate: freeClassRegistrations.registrationDate,
+          })
+          .from(freeClassRegistrations)
+          .where(and(
+            eq(freeClassRegistrations.classId, classId),
+            inArray(freeClassRegistrations.studentClassId, studentClassIds),
+            inArray(freeClassRegistrations.registrationDate, dates),
+          ));
+        const existingKeys = new Set(
+          existingRows.map((row) => `${row.studentClassId}:${String(row.registrationDate).slice(0, 10)}`),
+        );
+
+        const attendedRows = await tx
+          .select({
+            studentClassId: freeClassRegistrations.studentClassId,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(freeClassRegistrations)
+          .where(and(
+            eq(freeClassRegistrations.classId, classId),
+            inArray(freeClassRegistrations.studentClassId, studentClassIds),
+            eq(freeClassRegistrations.status, "attended"),
+          ))
+          .groupBy(freeClassRegistrations.studentClassId);
+        const attendedByStudent = new Map(
+          attendedRows.map((row) => [row.studentClassId, Number(row.count || 0)]),
+        );
+        const studentById = new Map(studentRows.map((row) => [row.id, row]));
+        const rowsToInsert: Array<typeof freeClassRegistrations.$inferInsert> = [];
+        let alreadyRegisteredCount = 0;
+        let skippedCount = 0;
+
+        for (const studentClassId of studentClassIds) {
+          const student = studentById.get(studentClassId)!;
+          const totalSessions = Number(student.totalSessions || 0);
+          const attendedSessions = attendedByStudent.get(studentClassId) || 0;
+          for (const date of dates) {
+            const key = `${studentClassId}:${date}`;
+            if (existingKeys.has(key)) {
+              alreadyRegisteredCount += 1;
+              continue;
+            }
+            if (
+              (classRow.startDate && date < classRow.startDate)
+              || (classRow.endDate && date > classRow.endDate)
+              || (student.startDate && date < student.startDate)
+              || (student.endDate && date > student.endDate)
+              || (totalSessions > 0 && attendedSessions >= totalSessions)
+            ) {
+              skippedCount += 1;
+              continue;
+            }
+            rowsToInsert.push({
+              classId,
+              studentClassId,
+              studentId: student.studentId,
+              registrationDate: date,
+              status: "registered",
+              registeredBy: actorId,
+            });
+            existingKeys.add(key);
+          }
+        }
+
+        if (rowsToInsert.length > 0) {
+          await tx.insert(freeClassRegistrations).values(rowsToInsert);
+        }
+        return {
+          createdCount: rowsToInsert.length,
+          alreadyRegisteredCount,
+          skippedCount,
+        };
+      });
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Không thể đăng ký lịch hàng loạt" });
+    }
+  });
+
   app.patch(api.classes.updateFreeSchedule.path, async (req, res) => {
     const classId = String(req.params.id);
     try {

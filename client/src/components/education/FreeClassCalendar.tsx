@@ -113,7 +113,9 @@ function parseCalendarDate(value?: string | null) {
 export function FreeClassCalendar({ classId, classData, classPerm, initialDate }: FreeClassCalendarProps) {
   const requestedDate = parseCalendarDate(initialDate);
   const [monthDate, setMonthDate] = useState(() => startOfMonth(requestedDate ?? new Date()));
-  const [mode, setMode] = useState<CalendarMode>("register");
+  const [mode, setMode] = useState<CalendarMode>(() =>
+    classData?.freeClassMode === "self_practice" ? "attend" : "register",
+  );
   const [selectedAttendDate, setSelectedAttendDate] = useState<string | null>(null);
   const [selectedAttendTab, setSelectedAttendTab] = useState<string>("all");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -154,6 +156,9 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
   const [historyStudent, setHistoryStudent] = useState<any | null>(null);
   const [allStudentsSearch, setAllStudentsSearch] = useState("");
   const [allStudentsPage, setAllStudentsPage] = useState(1);
+  const [registrationTab, setRegistrationTab] = useState("all");
+  const [bulkRegisterStudentIds, setBulkRegisterStudentIds] = useState<string[]>([]);
+  const [bulkRegisterDates, setBulkRegisterDates] = useState<string[]>([]);
   const isSelfPractice = classData?.freeClassMode === "self_practice";
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -393,6 +398,11 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
   useEffect(() => {
     setAllStudentsPage((current) => Math.min(current, allStudentsPageCount));
   }, [allStudentsPageCount]);
+  useEffect(() => {
+    if (isSelfPractice) return;
+    setRegistrationTab("all");
+    setBulkRegisterDates([]);
+  }, [isSelfPractice, month]);
   const visibleDays = mode === "attend"
     ? days.filter((day) => isSelfPractice
       ? (
@@ -410,6 +420,46 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
         (!scheduleWindow.start || day.value >= scheduleWindow.start)
         && (!scheduleWindow.end || day.value <= scheduleWindow.end),
       );
+  const registrationDays = useMemo(
+    () => days.filter((day) =>
+      students.some((student: any) => registrations.has(`${student.id}:${day.value}`)),
+    ),
+    [days, registrations, students],
+  );
+  const selectedRegistrationDay = registrationTab === "all"
+    ? null
+    : registrationDays.find((day) => day.value === registrationTab) ?? null;
+  const selectedRegistrationStudents = selectedRegistrationDay
+    ? students
+        .map((student: any) => ({
+          student,
+          registration: registrations.get(`${student.id}:${selectedRegistrationDay.value}`),
+        }))
+        .filter(({ registration }: any) => !!registration)
+    : [];
+  const isSummaryTab =
+    (isSelfPractice && selectedAttendTab === "all")
+    || (!isSelfPractice && registrationTab === "all");
+  const registerableStudentsOnPage = allStudentsPageRows.filter((student: any) =>
+    days.some((day) => canRegisterStudentForDate(student, day.value)),
+  );
+  const allRegisterableStudentsOnPageSelected = registerableStudentsOnPage.length > 0
+    && registerableStudentsOnPage.every((student: any) => bulkRegisterStudentIds.includes(student.id));
+  const selectedRegistrationPairs = bulkRegisterStudentIds.flatMap((studentClassId) => {
+    const student = students.find((candidate: any) => candidate.id === studentClassId);
+    if (!student) return [];
+    return bulkRegisterDates
+      .filter((date) => canRegisterStudentForDate(student, date))
+      .map((date) => ({ studentClassId, date }));
+  });
+  const canSelectRegistrationDate = (date: string) =>
+    (!classStart || date >= classStart)
+    && (!classEnd || date <= classEnd)
+    && (bulkRegisterStudentIds.length === 0
+      || bulkRegisterStudentIds.some((studentClassId) => {
+        const student = students.find((candidate: any) => candidate.id === studentClassId);
+        return student && canRegisterStudentForDate(student, date);
+      }));
 
   useEffect(() => {
     if (isSelfPractice) setMode("attend");
@@ -588,6 +638,44 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
     },
   });
 
+  const bulkRegisterMutation = useMutation({
+    mutationFn: async (payload: { studentClassIds: string[]; dates: string[] }) => {
+      const response = await apiRequest(
+        "POST",
+        `/api/classes/${classId}/free-schedule/bulk-register`,
+        payload,
+      );
+      return response.json();
+    },
+    onSuccess: (result: {
+      createdCount?: number;
+      alreadyRegisteredCount?: number;
+      skippedCount?: number;
+    }) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/free-schedule`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/active-students`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}`] });
+      setBulkRegisterDates([]);
+      setBulkRegisterStudentIds([]);
+      toast({
+        title: `Đã đăng ký ${Number(result?.createdCount || 0)} lượt`,
+        description: [
+          Number(result?.alreadyRegisteredCount || 0) > 0
+            ? `${result.alreadyRegisteredCount} lượt đã có sẵn`
+            : "",
+          Number(result?.skippedCount || 0) > 0
+            ? `${result.skippedCount} lượt không hợp lệ hoặc hết buổi`
+            : "",
+        ].filter(Boolean).join(" · ") || undefined,
+      });
+    },
+    onError: (error: any) => toast({
+      title: "Không thể đăng ký lịch hàng loạt",
+      description: error?.message || "Vui lòng thử lại.",
+      variant: "destructive",
+    }),
+  });
+
   const toggle = (student: any, date: string, current: any) => {
     if (!classPerm?.canEdit || updateMutation.isPending) return;
     updateMutation.mutate({
@@ -601,13 +689,6 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
   const selectedRegisteredStudentIds = selectedStudentIds.filter((studentId) =>
     selectedDayStudentIdSet.has(studentId),
   );
-  const registerableSelectedStudentIds = selectedDate
-    ? selectedStudentIds.filter((studentClassId) => {
-        const student = students.find((candidate: any) => candidate.id === studentClassId);
-        const current = registrations.get(`${studentClassId}:${selectedDate}`);
-        return !!student && (!!current || canRegisterStudentForDate(student, selectedDate));
-      })
-    : [];
   const contentDialogStudents = contentDialogDate
     ? students
         .filter((student: any) =>
@@ -622,14 +703,6 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
           code: student.code ?? null,
         }))
     : [];
-  const runBulkRegistration = () => {
-    if (!selectedDate || registerableSelectedStudentIds.length === 0 || bulkMutation.isPending) return;
-    bulkMutation.mutate({
-      studentClassIds: registerableSelectedStudentIds,
-      date: selectedDate,
-      action: "register",
-    });
-  };
   const openBulkAttendance = () => {
     if (!selectedDate || selectedRegisteredStudentIds.length === 0 || bulkMutation.isPending) return;
     setBulkAttendanceDialogOpen(true);
@@ -686,26 +759,13 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
       <div className="flex items-center gap-2 border-b bg-slate-50 px-4 py-2 text-xs text-muted-foreground">
         <Badge variant="outline">{students.length} học viên</Badge>
         <div className="ml-auto flex items-center gap-2">
-          {selectedDate && (
+          {selectedDate && !isSummaryTab && (
             <span className="hidden text-[11px] text-slate-500 lg:inline">
               Đã chọn {selectedStudentIds.length} học viên
             </span>
           )}
-          {!isSelfPractice && (
+          {!isSelfPractice && !isSummaryTab && (
             <>
-              <Button
-                size="sm"
-                className="h-7 px-2 text-xs"
-                disabled={
-                  !classPerm?.canEdit
-                  || !selectedDate
-                  || registerableSelectedStudentIds.length === 0
-                  || bulkMutation.isPending
-                }
-                onClick={runBulkRegistration}
-              >
-                Đăng ký
-              </Button>
               <Button
                 size="sm"
                 variant="outline"
@@ -721,7 +781,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
             size="sm"
             variant="outline"
             className="h-7 gap-1 border-emerald-200 px-2 text-xs text-emerald-700 hover:bg-emerald-50"
-            disabled={!classPerm?.canEdit || !selectedDate}
+            disabled={!classPerm?.canEdit || !selectedDate || isSummaryTab}
             onClick={() => selectedDate && setContentDialogDate(selectedDate)}
           >
             <BookOpen className="h-3.5 w-3.5" />
@@ -811,12 +871,30 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
             <ClipboardCheck className="h-8 w-8 text-slate-300" />
             Chưa có ngày học nào được đăng ký trong tháng này.
           </div>
-        ) : mode === "attend" ? (
+        ) : (mode === "attend" || !isSelfPractice) ? (
           <div className="space-y-4 bg-[#ECEEF4] p-4">
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
               <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Ngày điểm danh
+                {isSelfPractice ? "Ngày điểm danh" : "Ngày đã đăng ký"}
               </span>
+              {!isSelfPractice && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRegistrationTab("all");
+                    setSelectedDate(null);
+                  }}
+                  className={cn(
+                    "rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
+                    registrationTab === "all"
+                      ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                  )}
+                >
+                  <span className="block">Tất cả</span>
+                  <span className="text-[10px] text-muted-foreground">{students.length} học viên</span>
+                </button>
+              )}
               {isSelfPractice && (
                 <button
                   type="button"
@@ -832,17 +910,22 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                   <span className="text-[10px] text-muted-foreground">{students.length} học viên</span>
                 </button>
               )}
-              {visibleDays.map((day) => (
+              {(isSelfPractice ? visibleDays : registrationDays).map((day) => (
                 <button
                   key={day.value}
                   type="button"
                   onClick={() => {
-                    setSelectedAttendTab(day.value);
-                    setSelectedAttendDate(day.value);
+                    if (isSelfPractice) {
+                      setSelectedAttendTab(day.value);
+                      setSelectedAttendDate(day.value);
+                    } else {
+                      setRegistrationTab(day.value);
+                      setSelectedDate(day.value);
+                    }
                   }}
                   className={cn(
                     "rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
-                    (selectedAttendTab === day.value)
+                    (isSelfPractice ? selectedAttendTab : registrationTab) === day.value
                       ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm"
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
                   )}
@@ -853,7 +936,8 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
               ))}
             </div>
 
-            {isSelfPractice && selectedAttendTab === "all" ? (
+            {(isSelfPractice && selectedAttendTab === "all")
+              || (!isSelfPractice && registrationTab === "all") ? (
               <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3 px-4 pb-3 pt-4">
                   <div className="flex items-center gap-2">
@@ -878,22 +962,42 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                   </div>
                 </div>
                 <div className="overflow-x-auto border-t border-slate-100">
-                  <table className="w-full min-w-[900px] border-collapse text-xs">
+                  <table className={cn(
+                    "w-full border-collapse text-xs",
+                    isSelfPractice ? "min-w-[900px]" : "min-w-[1020px]",
+                  )}>
                     <thead className="bg-slate-50/80 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                       <tr>
+                        {!isSelfPractice && (
+                          <th className="w-12 px-2 py-2.5 text-center">
+                            <Checkbox
+                              checked={allRegisterableStudentsOnPageSelected}
+                              disabled={registerableStudentsOnPage.length === 0}
+                              onCheckedChange={(checked) => {
+                                const pageIds = registerableStudentsOnPage.map((student: any) => student.id);
+                                setBulkRegisterStudentIds((current) =>
+                                  checked === true
+                                    ? Array.from(new Set([...current, ...pageIds]))
+                                    : current.filter((id) => !pageIds.includes(id)),
+                                );
+                              }}
+                              aria-label="Chọn học viên có thể đăng ký trong trang này"
+                            />
+                          </th>
+                        )}
                         <th className="px-4 py-2.5 text-left">Học viên</th>
                         <th className="px-3 py-2.5 text-center">Tổng</th>
                         <th className="px-3 py-2.5 text-center">Đã học</th>
                         <th className="px-3 py-2.5 text-center">Còn lại</th>
                         <th className="px-3 py-2.5 text-left">Hạn sử dụng</th>
                         <th className="px-3 py-2.5 text-left">Trạng thái</th>
-                        <th className="px-4 py-2.5 text-center">Lịch</th>
+                        <th className="px-4 py-2.5 text-center">{isSelfPractice ? "Lịch" : "Đã đăng ký"}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {allStudentsPageRows.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                          <td colSpan={isSelfPractice ? 7 : 8} className="px-4 py-12 text-center text-sm text-muted-foreground">
                             Không tìm thấy học viên phù hợp.
                           </td>
                         </tr>
@@ -921,8 +1025,30 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                             : statusLabel === "Sắp hết buổi"
                             ? "border-amber-200 bg-amber-50 text-amber-700"
                             : "border-red-200 bg-red-50 text-red-700";
+                          const canSelectStudent = days.some((day) =>
+                            canRegisterStudentForDate(student, day.value),
+                          );
+                          const registeredDayCount = days.filter((day) =>
+                            registrations.has(`${student.id}:${day.value}`),
+                          ).length;
                           return (
                             <tr key={student.id} className="border-t border-slate-100 transition-colors hover:bg-slate-50">
+                              {!isSelfPractice && (
+                                <td className="px-2 py-3 text-center">
+                                  <Checkbox
+                                    checked={bulkRegisterStudentIds.includes(student.id)}
+                                    disabled={!canSelectStudent}
+                                    onCheckedChange={(checked) =>
+                                      setBulkRegisterStudentIds((current) =>
+                                        checked === true
+                                          ? current.includes(student.id) ? current : [...current, student.id]
+                                          : current.filter((id) => id !== student.id),
+                                      )
+                                    }
+                                    aria-label={`Chọn học viên ${student.fullName} để đăng ký`}
+                                  />
+                                </td>
+                              )}
                               <td className="px-4 py-3">
                                 <div className="font-semibold text-slate-800">{student.fullName}</div>
                                 <div className="mt-0.5 text-[11px] text-slate-500">{student.code || "—"}</div>
@@ -939,16 +1065,22 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                 </Badge>
                               </td>
                               <td className="px-4 py-3 text-center">
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-8 gap-1.5 text-xs"
-                                  onClick={() => setHistoryStudent(student)}
-                                >
-                                  <CalendarDays className="h-3.5 w-3.5 text-blue-600" />
-                                  Lịch
-                                </Button>
+                                {isSelfPractice ? (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 gap-1.5 text-xs"
+                                    onClick={() => setHistoryStudent(student)}
+                                  >
+                                    <CalendarDays className="h-3.5 w-3.5 text-blue-600" />
+                                    Lịch
+                                  </Button>
+                                ) : (
+                                  <span className="text-xs font-medium text-slate-600">
+                                    {registeredDayCount} ngày
+                                  </span>
+                                )}
                               </td>
                             </tr>
                           );
@@ -989,6 +1121,82 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                     </Button>
                   </div>
                 </div>
+                {!isSelfPractice && (
+                  <div className="border-t border-slate-100 bg-slate-50/70 px-4 py-4">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="text-xs font-bold uppercase tracking-wide text-slate-700">
+                          Chọn ngày đăng ký
+                        </div>
+                        <div className="mt-0.5 text-[11px] text-slate-500">
+                          Có thể chọn nhiều ngày cho nhiều học viên cùng lúc.
+                        </div>
+                      </div>
+                      <span className="text-[11px] font-medium text-blue-700">
+                        Đã chọn {bulkRegisterStudentIds.length} học viên · {bulkRegisterDates.length} ngày
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-7 gap-1.5 sm:grid-cols-10 md:grid-cols-14">
+                      {days.map((day) => {
+                        const selected = bulkRegisterDates.includes(day.value);
+                        const canSelect = canSelectRegistrationDate(day.value);
+                        const registeredCount = students.filter((student: any) =>
+                          registrations.has(`${student.id}:${day.value}`),
+                        ).length;
+                        return (
+                          <button
+                            key={day.value}
+                            type="button"
+                            disabled={!canSelect || bulkRegisterMutation.isPending}
+                            onClick={() => setBulkRegisterDates((current) =>
+                              selected
+                                ? current.filter((value) => value !== day.value)
+                                : [...current, day.value].sort(),
+                            )}
+                            className={cn(
+                              "relative rounded-md border px-1 py-1.5 text-center text-xs transition-colors",
+                              selected
+                                ? "border-blue-500 bg-blue-100 text-blue-800 shadow-sm"
+                                : canSelect
+                                ? "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50"
+                                : "cursor-not-allowed border-slate-100 bg-slate-100 text-slate-300",
+                            )}
+                            title={registeredCount > 0 ? `${registeredCount} học viên đã đăng ký` : undefined}
+                          >
+                            <span className="block font-semibold">{day.label}</span>
+                            <span className="block text-[9px]">{day.weekday}</span>
+                            {registeredCount > 0 && (
+                              <span className="mt-0.5 block text-[9px] text-emerald-600">
+                                {registeredCount} đã đăng ký
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11px] text-slate-500">
+                        Số lượt hợp lệ: <strong className="text-slate-700">{selectedRegistrationPairs.length}</strong>
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 gap-1.5 text-xs"
+                        disabled={
+                          !classPerm?.canEdit
+                          || selectedRegistrationPairs.length === 0
+                          || bulkRegisterMutation.isPending
+                        }
+                        onClick={() => bulkRegisterMutation.mutate({
+                          studentClassIds: bulkRegisterStudentIds,
+                          dates: bulkRegisterDates,
+                        })}
+                      >
+                        {bulkRegisterMutation.isPending ? "Đang đăng ký..." : "Đăng ký các ngày đã chọn"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : selectedAttendDay ? (
               <>
@@ -1239,6 +1447,131 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                   </div>
                 </div>
               </>
+            ) : !isSelfPractice && selectedRegistrationDay ? (
+              <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="flex items-center gap-2 px-4 pb-3 pt-4">
+                  <div className="h-4 w-1 shrink-0 rounded-full bg-gradient-to-b from-emerald-400 to-teal-500" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                    Danh sách học viên
+                  </span>
+                  <Badge variant="outline" className="bg-white text-[10px]">
+                    {selectedRegistrationDay.label}/{monthLabel}
+                  </Badge>
+                  <span className="text-xs font-medium text-slate-800">
+                    ({selectedRegistrationStudents.length})
+                  </span>
+                </div>
+                <div className="overflow-x-auto border-t border-slate-100">
+                  <table className="w-full min-w-[760px] border-collapse text-xs">
+                    <thead className="bg-slate-50/80 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      <tr>
+                        <th className="px-4 py-2.5 text-left">Học viên</th>
+                        <th className="px-3 py-2.5 text-left">Trạng thái điểm danh</th>
+                        <th className="px-3 py-2.5 text-left">Ghi chú</th>
+                        <th className="px-4 py-2.5 text-left">Nhận xét</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedRegistrationStudents.map(({ student, registration }: any) => {
+                        const status = registration.status === "attended" || registration.status === "reserved"
+                          ? registration.status
+                          : "registered";
+                        const statusLabel = status === "attended"
+                          ? "Có học"
+                          : status === "reserved"
+                          ? "Bảo lưu"
+                          : "Chưa điểm danh";
+                        const note = noteOverrides[registration.id] ?? registration.note ?? "";
+                        const hasReview = !!(
+                          reviewOverrides[registration.id]?.reviewData ?? registration.reviewData
+                        );
+                        return (
+                          <tr key={student.id} className="border-t border-slate-100 hover:bg-slate-50">
+                            <td className="px-4 py-3">
+                              <div className="font-semibold text-slate-800">
+                                {student.fullName}{" "}
+                                <span className="font-medium text-slate-500">({student.code || "—"})</span>
+                              </div>
+                            </td>
+                            <td className="px-3 py-3">
+                              <Select
+                                value={status}
+                                disabled={updateMutation.isPending}
+                                onValueChange={(nextStatus) => updateMutation.mutate({
+                                  studentClassId: student.id,
+                                  date: selectedRegistrationDay.value,
+                                  action: "attend",
+                                  value: nextStatus === "attended",
+                                  status: nextStatus as "registered" | "attended" | "reserved",
+                                })}
+                              >
+                                <SelectTrigger className={cn(
+                                  "h-8 w-[150px] !text-[11px] leading-[13px]",
+                                  status === "attended" && "border-emerald-200 bg-emerald-50 text-emerald-700",
+                                  status === "reserved" && "border-amber-200 bg-amber-50 text-amber-700",
+                                  status === "registered" && "border-slate-200 bg-slate-50 text-slate-600",
+                                )}>
+                                  <SelectValue className="!text-[11px] leading-[13px]">{statusLabel}</SelectValue>
+                                </SelectTrigger>
+                                <SelectContent className="text-[11px]">
+                                  <SelectItem value="registered">Chưa điểm danh</SelectItem>
+                                  <SelectItem value="attended">Có học</SelectItem>
+                                  <SelectItem value="reserved">Bảo lưu</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </td>
+                            <td className="px-3 py-3">
+                              <button
+                                type="button"
+                                disabled={!classPerm?.canEdit || !registration.id}
+                                className={cn(
+                                  "group flex max-w-[260px] items-center gap-1 text-left text-xs",
+                                  classPerm?.canEdit && registration.id
+                                    ? "cursor-pointer hover:text-primary"
+                                    : "cursor-default",
+                                )}
+                                onClick={() => {
+                                  if (!classPerm?.canEdit || !registration.id) return;
+                                  setNoteDialog({
+                                    studentClassId: student.id,
+                                    registrationId: registration.id,
+                                    date: selectedRegistrationDay.value,
+                                    value: note,
+                                    status,
+                                  });
+                                }}
+                              >
+                                <span className={cn(
+                                  "truncate",
+                                  note ? "text-slate-700" : "italic text-muted-foreground",
+                                )}>
+                                  {note || "Ghi chú..."}
+                                </span>
+                                {classPerm?.canEdit && <Pencil className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-50" />}
+                              </button>
+                            </td>
+                            <td className="px-4 py-3">
+                              <Button
+                                type="button"
+                                variant={hasReview ? "secondary" : "outline"}
+                                size="sm"
+                                className="h-8 gap-1.5 text-xs"
+                                disabled={!classPerm?.canEdit || !registration.id}
+                                onClick={() => setReviewTarget({ student, registration })}
+                              >
+                                {hasReview
+                                  ? <Star className="h-3.5 w-3.5 fill-yellow-400 text-yellow-500" />
+                                  : <Plus className="h-3.5 w-3.5" />}
+                                {hasReview ? "Xem / sửa" : "Nhập nhận xét"}
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             ) : null}
           </div>
         ) : (
