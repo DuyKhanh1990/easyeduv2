@@ -548,7 +548,44 @@ function downloadInvoiceListExcel(rows: InvoiceRow[], tabLabel: string, page: nu
     transfer: "Chuyển khoản",
   };
 
-  const exportRows = rows.map((invoice) => [
+  // Keep each parent invoice immediately above its visible installment rows.
+  // The parent row preserves invoice-level promotion/surcharge values that
+  // are intentionally zeroed on installment rows.
+  const groupedRows = new Map<string, { parent?: InvoiceRow; children: InvoiceRow[]; standalone?: InvoiceRow }>();
+  for (const row of rows) {
+    const parent = row.isScheduleRow ? row.parentInvoice : undefined;
+    const groupId = parent?.id ?? row.id;
+    const group = groupedRows.get(groupId) ?? { children: [] };
+    if (parent) {
+      group.parent = parent;
+      group.children.push(row);
+    } else {
+      group.standalone = row;
+    }
+    groupedRows.set(groupId, group);
+  }
+
+  const exportInvoices: InvoiceRow[] = [];
+  for (const group of groupedRows.values()) {
+    if (group.parent) {
+      exportInvoices.push({
+        ...group.parent,
+        scheduleLabel: "Hóa đơn cha",
+        scheduleId: undefined,
+        isScheduleRow: false,
+        parentInvoice: undefined,
+      });
+      exportInvoices.push(
+        ...group.children.sort(
+          (a, b) => (a.scheduleSortOrder ?? Number.MAX_SAFE_INTEGER) - (b.scheduleSortOrder ?? Number.MAX_SAFE_INTEGER),
+        ),
+      );
+    } else if (group.standalone) {
+      exportInvoices.push(group.standalone);
+    }
+  }
+
+  const exportRows = exportInvoices.map((invoice) => [
     invoice.name ?? "",
     invoice.studentCode ?? "",
     invoice.code ?? "",
@@ -578,7 +615,7 @@ function downloadInvoiceListExcel(rows: InvoiceRow[], tabLabel: string, page: nu
     filename: `danh_sach_hoa_don_trang_${page}_${format(new Date(), "yyyyMMdd_HHmm")}`,
     sheetName: "Hóa đơn",
     title: "Danh sách hóa đơn",
-    subtitle: `Tab: ${tabLabel} · Trang ${page} · ${rows.length} dòng · Xuất theo bộ lọc hiện tại`,
+    subtitle: `Tab: ${tabLabel} · Trang ${page} · ${exportInvoices.length} dòng · Dòng hóa đơn cha và các đợt con được xuất riêng; không cộng trùng hai cấp · Xuất theo bộ lọc hiện tại`,
     columns,
     rows: exportRows,
   });
