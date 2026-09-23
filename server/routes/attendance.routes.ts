@@ -15,7 +15,7 @@ import {
   freeClassDayAssignments,
   studentClasses,
 } from "@shared/schema";
-import { eq, and, gte, lte, inArray, sql, isNull, ne } from "drizzle-orm";
+import { eq, and, gte, lte, inArray, sql, isNull, ne, or } from "drizzle-orm";
 import { getAttendanceTimingWindow } from "../lib/attendance-limit";
 import { ensureStudentQrToken, hashQrToken } from "../lib/attendance-qr";
 
@@ -232,7 +232,7 @@ export function registerAttendanceRoutes(app: Express): void {
         return res.status(400).json({ message: "Trạng thái điểm danh không hợp lệ cho lớp tự do." });
       }
 
-      const [registration] = await db
+      const [registrationRow] = await db
         .select({
           id: freeClassRegistrations.id,
           classId: freeClassRegistrations.classId,
@@ -249,7 +249,60 @@ export function registerAttendanceRoutes(app: Express): void {
         .where(eq(freeClassRegistrations.id, registrationId))
         .limit(1);
 
-      if (!registration) return res.status(404).json({ message: "Không tìm thấy buổi học lớp tự do." });
+      const virtualMatch = registrationId.match(/^virtual-free:([^:]+):(\d{4}-\d{2}-\d{2})$/);
+      const [virtualEnrollment] = !registrationRow && virtualMatch
+        ? await db
+          .select({
+            id: studentClasses.id,
+            classId: classes.id,
+            studentId: studentClasses.studentId,
+            totalSessions: studentClasses.totalSessions,
+            locationId: classes.locationId,
+            classType: classes.classType,
+            freeClassMode: classes.freeClassMode,
+            teacherIds: classes.teacherIds,
+            classStartDate: classes.startDate,
+            classEndDate: classes.endDate,
+            studentStartDate: studentClasses.startDate,
+            studentEndDate: studentClasses.endDate,
+            studentStatus: studentClasses.status,
+          })
+          .from(studentClasses)
+          .innerJoin(classes, eq(classes.id, studentClasses.classId))
+          .where(and(
+            eq(studentClasses.id, virtualMatch[1]),
+            eq(classes.classType, "free"),
+            or(
+              eq(classes.freeClassMode, "self_practice"),
+              and(
+                isNull(classes.freeClassMode),
+                sql`coalesce(array_length(${classes.teacherIds}, 1), 0) = 0`,
+              ),
+            ),
+          ))
+          .limit(1)
+        : [];
+
+      const isVirtual = !registrationRow && !!virtualEnrollment && !!virtualMatch;
+      if (!registrationRow && !isVirtual) {
+        return res.status(404).json({ message: "Không tìm thấy buổi học lớp tự do." });
+      }
+
+      const today = getBangkokDateKey();
+      if (isVirtual && virtualMatch![2] !== today) {
+        return res.status(400).json({ message: "Chỉ có thể điểm danh dòng tự tập của ngày hiện tại." });
+      }
+
+      const registration = registrationRow ?? {
+        id: null,
+        classId: virtualEnrollment!.classId,
+        studentClassId: virtualEnrollment!.id,
+        status: "registered",
+        studentId: virtualEnrollment!.studentId,
+        registrationDate: virtualMatch![2],
+        locationId: virtualEnrollment!.locationId,
+        totalSessions: virtualEnrollment!.totalSessions,
+      };
       if (
         !req.isSuperAdmin
         && Array.isArray(req.allowedLocationIds)
@@ -260,6 +313,43 @@ export function registerAttendanceRoutes(app: Express): void {
 
       const userId = req.user?.id ?? null;
       await db.transaction(async (tx) => {
+        if (isVirtual) {
+          if (requestedStatus === "pending" && requestedNote === undefined) {
+            return;
+          }
+
+          if (nextStatus === "attended" && Number(registration.totalSessions || 0) > 0) {
+            const [attended] = await tx
+              .select({ count: sql<number>`count(*)::int` })
+              .from(freeClassRegistrations)
+              .where(and(
+                eq(freeClassRegistrations.studentClassId, registration.studentClassId),
+                eq(freeClassRegistrations.status, "attended"),
+              ));
+            if (Number(attended?.count || 0) >= Number(registration.totalSessions)) {
+              throw new Error("Học viên đã sử dụng hết số buổi");
+            }
+          }
+
+          const [created] = await tx
+            .insert(freeClassRegistrations)
+            .values({
+              classId: registration.classId,
+              studentClassId: registration.studentClassId,
+              studentId: registration.studentId,
+              registrationDate: registration.registrationDate,
+              status: "registered",
+              registeredBy: userId,
+              ...(requestedNote !== undefined
+                ? { note: typeof requestedNote === "string" ? requestedNote.trim() || null : null }
+                : {}),
+            })
+            .returning({ id: freeClassRegistrations.id });
+
+          registration.id = created.id;
+          registration.status = "registered";
+        }
+
         if (
           nextStatus === "attended"
           && registration.status !== "attended"
@@ -288,7 +378,7 @@ export function registerAttendanceRoutes(app: Express): void {
               : {}),
             updatedAt: new Date(),
           })
-          .where(eq(freeClassRegistrations.id, registration.id));
+          .where(eq(freeClassRegistrations.id, registration.id!));
 
         await recordFreeClassWalletTransition(tx, {
           studentId: registration.studentId,
@@ -462,7 +552,70 @@ export function registerAttendanceRoutes(app: Express): void {
         .where(and(...freeConditions))
         .orderBy(classes.classCode, students.code, freeClassRegistrations.registrationDate);
 
-      const freeDayAssignments = freeRows.length > 0
+      const selfPracticeMode = or(
+        eq(classes.freeClassMode, "self_practice"),
+        and(
+          isNull(classes.freeClassMode),
+          sql`coalesce(array_length(${classes.teacherIds}, 1), 0) = 0`,
+        ),
+      );
+      const selfPracticeRows = startStr <= getBangkokDateKey() && getBangkokDateKey() <= endStr
+        ? await db
+          .select({
+            id: sql<string>`'virtual-free:' || ${studentClasses.id} || ':' || ${getBangkokDateKey()}`,
+            studentClassId: studentClasses.id,
+            studentId: studentClasses.studentId,
+            classId: classes.id,
+            classCode: classes.classCode,
+            studentCode: students.code,
+            studentName: students.fullName,
+            sessionDate: sql<string>`${getBangkokDateKey()}::date`,
+            status: sql<string>`coalesce(${freeClassRegistrations.status}, 'registered')`,
+            note: freeClassRegistrations.note,
+            teacherId: freeClassRegistrations.teacherId,
+            shiftTemplateId: freeClassRegistrations.shiftTemplateId,
+            startTime: shiftTemplates.startTime,
+            endTime: shiftTemplates.endTime,
+            totalSessions: studentClasses.totalSessions,
+          })
+          .from(studentClasses)
+          .innerJoin(classes, eq(studentClasses.classId, classes.id))
+          .innerJoin(students, eq(studentClasses.studentId, students.id))
+          .leftJoin(
+            freeClassRegistrations,
+            and(
+              eq(freeClassRegistrations.studentClassId, studentClasses.id),
+              eq(freeClassRegistrations.registrationDate, getBangkokDateKey()),
+            ),
+          )
+          .leftJoin(shiftTemplates, eq(freeClassRegistrations.shiftTemplateId, shiftTemplates.id))
+          .where(and(
+            eq(classes.classType, "free"),
+            selfPracticeMode,
+            inArray(studentClasses.status, ["active", "waiting"]),
+            or(isNull(classes.startDate), lte(classes.startDate, getBangkokDateKey())),
+            or(isNull(classes.endDate), gte(classes.endDate, getBangkokDateKey())),
+            or(isNull(studentClasses.startDate), lte(studentClasses.startDate, getBangkokDateKey())),
+            or(isNull(studentClasses.endDate), gte(studentClasses.endDate, getBangkokDateKey())),
+            ...(isSuperAdmin
+              ? []
+              : allowedLocationIds && allowedLocationIds.length > 0
+              ? [inArray(classes.locationId, allowedLocationIds)]
+              : []),
+          ))
+        : [];
+
+      const freeRowKeys = new Set(
+        freeRows.map((row) => `${row.studentClassId}:${String(row.sessionDate).slice(0, 10)}`),
+      );
+      const allFreeRows = [
+        ...freeRows,
+        ...selfPracticeRows.filter((row) =>
+          !freeRowKeys.has(`${row.studentClassId}:${String(row.sessionDate).slice(0, 10)}`),
+        ),
+      ];
+
+      const freeDayAssignments = allFreeRows.length > 0
         ? await db
           .select({
             classId: freeClassDayAssignments.classId,
@@ -475,7 +628,7 @@ export function registerAttendanceRoutes(app: Express): void {
           .from(freeClassDayAssignments)
           .leftJoin(shiftTemplates, eq(freeClassDayAssignments.shiftTemplateId, shiftTemplates.id))
           .where(and(
-            inArray(freeClassDayAssignments.classId, Array.from(new Set(freeRows.map((row) => row.classId)))),
+            inArray(freeClassDayAssignments.classId, Array.from(new Set(allFreeRows.map((row) => row.classId)))),
             gte(freeClassDayAssignments.assignmentDate, startStr),
             lte(freeClassDayAssignments.assignmentDate, endStr),
           ))
@@ -485,6 +638,9 @@ export function registerAttendanceRoutes(app: Express): void {
       );
       const legacyShiftMatch = shiftValue.match(/^(\d{2}:\d{2})-(\d{2}:\d{2})$/);
       const freeAttendanceRows = freeRows
+        .concat(selfPracticeRows.filter((row) =>
+          !freeRowKeys.has(`${row.studentClassId}:${String(row.sessionDate).slice(0, 10)}`),
+        ))
         .map((row) => {
           const assignment = freeDayAssignmentMap.get(`${row.classId}:${row.sessionDate}`);
           const effectiveShiftTemplateId = row.shiftTemplateId || assignment?.shiftTemplateId || null;
