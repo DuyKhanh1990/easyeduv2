@@ -65,6 +65,7 @@
 - [Free-class session content isolation](free-class-session-content-isolation.md) — lớp tự do dùng bảng riêng theo classId + ngày; studentId null là giao cả lớp, có studentId là giao cá nhân.
 - [Free-class staff permissions](free-class-staff-permissions.md) — giáo viên được phân công phải thao tác được lớp tự do dù không có quyền quản trị /classes; khóa theo đăng ký/ngày.
 - [Free-class detail cache](free-class-detail-cache.md) — mutation lớp tự do phải refresh exact staff detail query, không chỉ lịch tháng, để tránh mất trạng thái khi mở lại.
+- [Free-class wallet ledger](free-class-wallet-ledger.md) — trạng thái attended của free class phải debit/credit ví Học phí theo invoice item và ghi class/date history.
 - [Student detail free-class sources](student-detail-free-class-sources.md) — tab Lớp học phải đọc free_class_registrations và union class IDs từ hóa đơn gắn học viên.
 - [Free-class teacher assignment precedence](free-class-teacher-assignment.md) — override học viên/ngày thắng GV chung; lịch cá nhân chỉ gửi cho GV hiệu lực.
 - [Grade book roster snapshot](grade-book-roster-snapshot.md) — danh sách học viên được chốt lúc tạo; học viên active phát sinh sau đó chỉ được thêm thủ công.

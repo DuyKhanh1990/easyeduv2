@@ -16,6 +16,7 @@ import { notificationService } from "../application/notification/services/Notifi
 import { buildClassVisibilitySql, canViewClass, resolveClassViewAccess, type ClassViewScope } from "../lib/class-access";
 import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 import { getNextLocationCode } from "../storage/finance.storage";
+import { recordFreeClassWalletTransition } from "../storage/free-class-wallet.storage";
 
 async function resolveStaffFullName(userId: string | undefined | null): Promise<string | null> {
   if (!userId) return null;
@@ -1901,6 +1902,8 @@ export function registerClassesRoutes(app: Express): void {
             eq(freeClassRegistrations.registrationDate, String(date)),
           ))
           .limit(1);
+        const oldWalletStatus = existing?.status ?? "registered";
+        let newWalletStatus = oldWalletStatus;
         if (action === "register") {
           if (value === false) {
             if (existing?.status === "attended") {
@@ -1937,6 +1940,7 @@ export function registerClassesRoutes(app: Express): void {
             : value === false
             ? "registered"
             : "attended";
+          newWalletStatus = requestedStatus;
           if (!existing) {
             const isSelfPractice =
               classRow.freeClassMode === "self_practice"
@@ -2004,6 +2008,16 @@ export function registerClassesRoutes(app: Express): void {
           }).where(eq(freeClassRegistrations.id, existing.id));
           }
         }
+        await recordFreeClassWalletTransition(tx, {
+          studentId: sc.studentId,
+          classId,
+          registrationDate: requestedDate,
+          totalSessions: sc.totalSessions,
+          oldStatus: oldWalletStatus,
+          newStatus: newWalletStatus,
+          createdBy: actorId,
+          createdByName: (req.user as any)?.fullName ?? (req.user as any)?.username ?? null,
+        });
         const [attended] = await tx
           .select({ count: sql<number>`count(*)::int` })
           .from(freeClassRegistrations)

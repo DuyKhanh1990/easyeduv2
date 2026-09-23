@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { api } from "@shared/routes";
 import { db } from "../db";
+import { recordFreeClassWalletTransition } from "../storage/free-class-wallet.storage";
 import {
   classSessions,
   studentSessions,
@@ -238,6 +239,7 @@ export function registerAttendanceRoutes(app: Express): void {
           studentClassId: freeClassRegistrations.studentClassId,
           status: freeClassRegistrations.status,
           studentId: freeClassRegistrations.studentId,
+          registrationDate: freeClassRegistrations.registrationDate,
           locationId: classes.locationId,
           totalSessions: studentClasses.totalSessions,
         })
@@ -287,6 +289,17 @@ export function registerAttendanceRoutes(app: Express): void {
             updatedAt: new Date(),
           })
           .where(eq(freeClassRegistrations.id, registration.id));
+
+        await recordFreeClassWalletTransition(tx, {
+          studentId: registration.studentId,
+          classId: registration.classId,
+          registrationDate: String(registration.registrationDate ?? ""),
+          totalSessions: registration.totalSessions,
+          oldStatus: registration.status,
+          newStatus: nextStatus,
+          createdBy: userId,
+          createdByName: (req.user as any)?.fullName ?? (req.user as any)?.username ?? null,
+        });
 
         const [attended] = await tx
           .select({ count: sql<number>`count(*)::int` })
