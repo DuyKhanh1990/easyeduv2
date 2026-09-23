@@ -33,6 +33,7 @@ type Props = {
 export function TransferFeeWalletDialog({ open, onClose, studentId, summary }: Props) {
   const { toast } = useToast();
   const [recipientId, setRecipientId] = useState("");
+  const [selectedRecipient, setSelectedRecipient] = useState<Recipient | null>(null);
   const [recipientPickerOpen, setRecipientPickerOpen] = useState(false);
   const [recipientSearch, setRecipientSearch] = useState("");
   const [hocPhiAmount, setHocPhiAmount] = useState("");
@@ -40,8 +41,14 @@ export function TransferFeeWalletDialog({ open, onClose, studentId, summary }: P
   const [description, setDescription] = useState("");
 
   const { data: recipientsData, isLoading: recipientsLoading } = useQuery<{ students: Recipient[] }>({
-    queryKey: ["/api/students", "wallet-transfer-recipients"],
-    queryFn: () => apiRequest("GET", "/api/students?minimal=true&limit=500").then(res => res.json()),
+    queryKey: ["/api/students", "wallet-transfer-recipients", recipientSearch.trim()],
+    queryFn: () => {
+      const params = new URLSearchParams({ limit: "100" });
+      const searchTerm = recipientSearch.trim();
+      if (searchTerm) params.set("searchTerm", searchTerm);
+      return apiRequest("GET", `/api/students/wallet-transfer-recipients?${params.toString()}`)
+        .then(res => res.json());
+    },
     enabled: open,
     staleTime: 30_000,
   });
@@ -50,21 +57,6 @@ export function TransferFeeWalletDialog({ open, onClose, studentId, summary }: P
     () => (recipientsData?.students ?? []).filter(recipient => recipient.id !== studentId),
     [recipientsData, studentId],
   );
-  const selectedRecipient = useMemo(
-    () => recipients.find(recipient => recipient.id === recipientId),
-    [recipients, recipientId],
-  );
-  const filteredRecipients = useMemo(() => {
-    const search = recipientSearch.trim().toLocaleLowerCase("vi-VN");
-    if (!search) return recipients;
-    return recipients.filter(recipient =>
-      [recipient.fullName, recipient.code, recipient.type ?? ""]
-        .join(" ")
-        .toLocaleLowerCase("vi-VN")
-        .includes(search),
-    );
-  }, [recipients, recipientSearch]);
-
   const availableHocPhi = Math.max(0, Number(summary.hocPhi) || 0);
   const availableDatCoc = Math.max(0, Number(summary.datCoc) || 0);
   const availableTotal = availableHocPhi + availableDatCoc;
@@ -105,6 +97,7 @@ export function TransferFeeWalletDialog({ open, onClose, studentId, summary }: P
       queryClient.invalidateQueries({ queryKey: ["/api/students", "wallet-transfer-recipients"] });
       toast({ title: "Đã chuyển tiền thành công" });
       setRecipientId("");
+      setSelectedRecipient(null);
       setHocPhiAmount("");
       setDatCocAmount("");
       setDescription("");
@@ -118,6 +111,7 @@ export function TransferFeeWalletDialog({ open, onClose, studentId, summary }: P
   const close = () => {
     if (transferMutation.isPending) return;
     setRecipientId("");
+    setSelectedRecipient(null);
     setRecipientPickerOpen(false);
     setRecipientSearch("");
     setHocPhiAmount("");
@@ -182,12 +176,19 @@ export function TransferFeeWalletDialog({ open, onClose, studentId, summary }: P
                   />
                 </div>
                 <div className="max-h-64 overflow-y-auto p-1">
-                  {!recipientsLoading && filteredRecipients.length === 0 && (
+                  {!recipientsLoading && recipients.length === 0 && (
                     <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-                      {recipients.length === 0 ? "Không có người nhận phù hợp" : "Không tìm thấy người nhận"}
+                      {recipientSearch.trim()
+                        ? "Không tìm thấy người nhận"
+                        : "Không có người nhận phù hợp"}
                     </p>
                   )}
-                  {filteredRecipients.map(recipient => {
+                  {recipientsLoading && (
+                    <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                      Đang tìm người nhận...
+                    </p>
+                  )}
+                  {recipients.map(recipient => {
                     const isSelected = recipient.id === recipientId;
                     return (
                       <button
@@ -195,6 +196,7 @@ export function TransferFeeWalletDialog({ open, onClose, studentId, summary }: P
                         key={recipient.id}
                         onClick={() => {
                           setRecipientId(recipient.id);
+                          setSelectedRecipient(recipient);
                           setRecipientPickerOpen(false);
                           setRecipientSearch("");
                         }}

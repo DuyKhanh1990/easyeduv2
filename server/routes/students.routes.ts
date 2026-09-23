@@ -336,6 +336,35 @@ export function registerStudentsRoutes(app: Express): void {
     }
   });
 
+  // Server-side recipient search for fee-wallet transfers.
+  // Do not preload a capped customer list: customers beyond that cap must
+  // still be searchable, while the same location scope must apply at read
+  // time and again when the transfer is submitted.
+  app.get("/api/students/wallet-transfer-recipients", async (req, res) => {
+    try {
+      if (!req.isSuperAdmin && (!req.allowedLocationIds || req.allowedLocationIds.length === 0)) {
+        return res.status(403).json({ message: "Bạn không có quyền truy cập." });
+      }
+
+      const requestedLimit = Number.parseInt(String(req.query.limit ?? "50"), 10);
+      const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 50, 1), 100);
+      const searchTerm = typeof req.query.searchTerm === "string"
+        ? req.query.searchTerm.trim()
+        : undefined;
+      const students = await storage.getStudentsMinimal({
+        allowedLocationIds: req.allowedLocationIds ?? [],
+        isSuperAdmin: req.isSuperAdmin,
+        limit,
+        searchTerm,
+      });
+
+      return res.json({ students, total: students.length });
+    } catch (err: any) {
+      console.error("Wallet transfer recipient search error:", err);
+      return res.status(500).json({ message: err.message || "Không thể tìm người nhận" });
+    }
+  });
+
   app.get("/api/students/class-tabs", async (req, res) => {
     try {
       const crmPerms = await getCrmPermissions(req);
