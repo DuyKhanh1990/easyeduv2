@@ -232,24 +232,26 @@ export function registerAttendanceRoutes(app: Express): void {
         return res.status(400).json({ message: "Trạng thái điểm danh không hợp lệ cho lớp tự do." });
       }
 
-      const [registrationRow] = await db
-        .select({
-          id: freeClassRegistrations.id,
-          classId: freeClassRegistrations.classId,
-          studentClassId: freeClassRegistrations.studentClassId,
-          status: freeClassRegistrations.status,
-          studentId: freeClassRegistrations.studentId,
-          registrationDate: freeClassRegistrations.registrationDate,
-          locationId: classes.locationId,
-          totalSessions: studentClasses.totalSessions,
-        })
-        .from(freeClassRegistrations)
-        .innerJoin(classes, eq(classes.id, freeClassRegistrations.classId))
-        .innerJoin(studentClasses, eq(studentClasses.id, freeClassRegistrations.studentClassId))
-        .where(eq(freeClassRegistrations.id, registrationId))
-        .limit(1);
-
       const virtualMatch = registrationId.match(/^virtual-free:([^:]+):(\d{4}-\d{2}-\d{2})$/);
+      const [registrationRow] = !virtualMatch
+        ? await db
+          .select({
+            id: freeClassRegistrations.id,
+            classId: freeClassRegistrations.classId,
+            studentClassId: freeClassRegistrations.studentClassId,
+            status: freeClassRegistrations.status,
+            studentId: freeClassRegistrations.studentId,
+            registrationDate: freeClassRegistrations.registrationDate,
+            locationId: classes.locationId,
+            totalSessions: studentClasses.totalSessions,
+          })
+          .from(freeClassRegistrations)
+          .innerJoin(classes, eq(classes.id, freeClassRegistrations.classId))
+          .innerJoin(studentClasses, eq(studentClasses.id, freeClassRegistrations.studentClassId))
+          .where(eq(freeClassRegistrations.id, registrationId))
+          .limit(1)
+        : [];
+
       const [virtualEnrollment] = !registrationRow && virtualMatch
         ? await db
           .select({
