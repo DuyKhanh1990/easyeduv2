@@ -637,10 +637,12 @@ export function registerAttendanceRoutes(app: Express): void {
         freeDayAssignments.map((assignment) => [`${assignment.classId}:${assignment.date}`, assignment]),
       );
       const legacyShiftMatch = shiftValue.match(/^(\d{2}:\d{2})-(\d{2}:\d{2})$/);
-      const freeAttendanceRows = freeRows
-        .concat(selfPracticeRows.filter((row) =>
+      const freeAttendanceRows = [
+        ...freeRows,
+        ...selfPracticeRows.filter((row) =>
           !freeRowKeys.has(`${row.studentClassId}:${String(row.sessionDate).slice(0, 10)}`),
-        ))
+        ),
+      ]
         .map((row) => {
           const assignment = freeDayAssignmentMap.get(`${row.classId}:${row.sessionDate}`);
           const effectiveShiftTemplateId = row.shiftTemplateId || assignment?.shiftTemplateId || null;
