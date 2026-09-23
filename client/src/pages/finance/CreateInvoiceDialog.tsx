@@ -26,7 +26,7 @@ import { useClasses } from "@/hooks/use-classes";
 import { useStaff } from "@/hooks/use-staff";
 import { useAuth } from "@/hooks/use-auth";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
-import { fmtMoney } from "@/types/invoice-types";
+import { fmtMoney, isInvoicePaidLike } from "@/types/invoice-types";
 import { FinancePromotionDialog, type FinancePromotionType } from "./components/FinancePromotionDialog";
 
 interface Product {
@@ -63,6 +63,8 @@ type PaymentScheduleEntry = {
   baseAmount?: number | null;
   promotionKeys?: string[];
   surchargeKeys?: string[];
+  promotionRows?: ManualAdjustment[];
+  surchargeRows?: ManualAdjustment[];
   promotionAmount?: number;
   surchargeAmount?: number;
   due: Date | undefined;
@@ -139,6 +141,178 @@ const formatPromotionLabel = (option: any) =>
 const normalizeSearchText = (value: unknown) =>
   String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
+const getInitialAdjustmentRows = (
+  keys: string[],
+  amount: number,
+  prefix: string,
+): ManualAdjustment[] =>
+  keys.length > 0
+    ? keys.map((key, index) => ({
+        id: `${prefix}-option-${index}-${key}`,
+        optionKey: key,
+        valueType: "amount",
+        value: 0,
+      }))
+    : amount > 0
+      ? [{ id: `${prefix}-manual`, valueType: "amount", value: amount }]
+      : [];
+
+function AdjustmentRowsEditor({
+  kind,
+  rows,
+  options,
+  filteredOptions,
+  search,
+  onSearchChange,
+  openPicker,
+  onOpenPickerChange,
+  total,
+  onAdd,
+  onUpdate,
+  onSelect,
+  onRemove,
+}: {
+  kind: "promotion" | "surcharge";
+  rows: ManualAdjustment[];
+  options: any[];
+  filteredOptions: any[];
+  search: string;
+  onSearchChange: (value: string) => void;
+  openPicker: string | null;
+  onOpenPickerChange: (value: string | null) => void;
+  total: number;
+  onAdd: () => void;
+  onUpdate: (rowId: string, patch: Partial<ManualAdjustment>) => void;
+  onSelect: (rowId: string, optionKey: string) => void;
+  onRemove: (rowId: string) => void;
+}) {
+  const isPromotion = kind === "promotion";
+
+  return (
+    <div className="mt-3 space-y-4">
+      {rows.map(row => {
+        const selectedOption = options.find((o: any) => o.id === row.optionKey);
+        return (
+          <div key={row.id} className="space-y-2 rounded-lg border border-muted p-2">
+            <Popover open={openPicker === row.id} onOpenChange={v => {
+              onOpenPickerChange(v ? row.id : null);
+              if (v) onSearchChange("");
+            }}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="w-full min-h-9 flex items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-1.5 text-left text-xs hover:border-purple-400"
+                >
+                  <span className={selectedOption ? "truncate" : "text-muted-foreground"}>
+                    {selectedOption
+                      ? (isPromotion ? formatPromotionLabel(selectedOption) : selectedOption.name)
+                      : `Chọn ${isPromotion ? "khuyến mãi" : "phụ thu"}...`}
+                  </span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[28rem] max-w-[calc(100vw-2rem)] p-3" align="start">
+                <div className="mb-2 relative">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    value={search}
+                    onChange={e => onSearchChange(e.target.value)}
+                    placeholder={`Tìm theo tên hoặc mã ${isPromotion ? "khuyến mãi" : "phụ thu"}...`}
+                    className="h-8 pl-7 text-xs"
+                    autoFocus
+                    onKeyDown={e => e.stopPropagation()}
+                  />
+                </div>
+                <div className="max-h-64 overflow-y-auto space-y-1">
+                  {options.length === 0 ? (
+                    <p className="py-3 text-center text-xs text-muted-foreground">
+                      Chưa có {isPromotion ? "khuyến mãi" : "phụ thu"}
+                    </p>
+                  ) : filteredOptions.length === 0 ? (
+                    <p className="py-3 text-center text-xs text-muted-foreground">
+                      Không tìm thấy {isPromotion ? "khuyến mãi" : "phụ thu"} phù hợp
+                    </p>
+                  ) : filteredOptions.map((o: any) => {
+                    const val = parseFloat(o.valueAmount || "0");
+                    return (
+                      <button
+                        key={o.id}
+                        type="button"
+                        className="w-full flex items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-muted/60"
+                        onClick={() => {
+                          onSelect(row.id, o.id);
+                          onOpenPickerChange(null);
+                        }}
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-1 text-xs font-medium">
+                            {isPromotion && o.kind === "voucher" && (
+                              <span className="shrink-0 rounded bg-red-100 px-1 text-[9px] font-semibold text-red-600">Voucher</span>
+                            )}
+                            <span className="truncate">{o.name}</span>
+                          </span>
+                          <span className="block text-xs text-muted-foreground">
+                            {isPromotion ? "-" : "+"}{o.valueType === "percent" ? `${val}%` : fmtMoney(val)}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            <div className="flex items-center gap-1.5">
+              <select
+                value={row.valueType}
+                onChange={e => onUpdate(row.id, { valueType: e.target.value as ManualAdjustment["valueType"] })}
+                className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
+              >
+                <option value="amount">Số tiền</option>
+                <option value="percent">Phần trăm</option>
+              </select>
+              <div className="relative min-w-0 flex-1">
+                <Input
+                  type="number"
+                  min={0}
+                  value={row.value || ""}
+                  onChange={e => onUpdate(row.id, { value: Math.max(0, Number(e.target.value) || 0) })}
+                  placeholder="Nhập nhanh..."
+                  className="h-8 pr-8 text-xs"
+                />
+                <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
+                  {row.valueType === "percent" ? "%" : "₫"}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
+                onClick={() => onRemove(row.id)}
+                aria-label={`Xóa dòng ${isPromotion ? "khuyến mãi" : "phụ thu"}`}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        className="text-xs font-medium text-purple-600 hover:text-purple-700"
+        onClick={onAdd}
+      >
+        + Thêm
+      </button>
+      <div className="flex justify-between border-t pt-3 text-xs font-semibold">
+        <span>Tổng {isPromotion ? "khuyến mãi" : "phụ thu"} toàn đơn</span>
+        <span className={isPromotion ? "text-green-600" : "text-orange-600"}>
+          {isPromotion ? "-" : "+"}{fmtMoney(total)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }: { open: boolean; onClose: () => void; invoiceId?: string | null; defaultStudent?: { id: string; fullName: string; code: string } | null }) {
   const isEdit = Boolean(invoiceId);
 
@@ -172,9 +346,16 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const [openInvoiceSurcharge, setOpenInvoiceSurcharge] = useState(false);
   const [openInvoicePromoPicker, setOpenInvoicePromoPicker] = useState<string | null>(null);
   const [openInvoiceSurchargePicker, setOpenInvoiceSurchargePicker] = useState<string | null>(null);
+  const [openSchedulePromo, setOpenSchedulePromo] = useState<string | null>(null);
+  const [openScheduleSurcharge, setOpenScheduleSurcharge] = useState<string | null>(null);
+  const [openSchedulePromoPicker, setOpenSchedulePromoPicker] = useState<string | null>(null);
+  const [openScheduleSurchargePicker, setOpenScheduleSurchargePicker] = useState<string | null>(null);
   const [quickCreateType, setQuickCreateType] = useState<FinancePromotionType | null>(null);
   const [quickCreateTarget, setQuickCreateTarget] = useState<
-    { scope: "product"; productId: string } | { scope: "invoice" } | null
+    { scope: "product"; productId: string }
+    | { scope: "invoice" }
+    | { scope: "schedule"; scheduleId: string }
+    | null
   >(null);
   const [paymentSchedule, setPaymentSchedule] = useState<PaymentScheduleEntry[]>([]);
   const [scheduleAdjustmentDelta, setScheduleAdjustmentDelta] = useState(0);
@@ -229,6 +410,10 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         setInvoiceSurchargeRows([]);
         setPaymentSchedule([]);
         setScheduleAdjustmentDelta(0);
+        setOpenSchedulePromo(null);
+        setOpenScheduleSurcharge(null);
+        setOpenSchedulePromoPicker(null);
+        setOpenScheduleSurchargePicker(null);
         setSplitPaymentId(null);
         setSplitAmount(0);
         setSplitDueDate("");
@@ -351,6 +536,16 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         baseAmount: s.baseAmount === null || s.baseAmount === undefined ? null : parseFloat(s.baseAmount) || 0,
         promotionKeys: Array.isArray(s.promotionKeys) ? s.promotionKeys : [],
         surchargeKeys: Array.isArray(s.surchargeKeys) ? s.surchargeKeys : [],
+        promotionRows: getInitialAdjustmentRows(
+          Array.isArray(s.promotionKeys) ? s.promotionKeys : [],
+          parseFloat(s.promotionAmount) || 0,
+          `schedule-promo-${s.id ?? i}`,
+        ),
+        surchargeRows: getInitialAdjustmentRows(
+          Array.isArray(s.surchargeKeys) ? s.surchargeKeys : [],
+          parseFloat(s.surchargeAmount) || 0,
+          `schedule-surcharge-${s.id ?? i}`,
+        ),
         promotionAmount: parseFloat(s.promotionAmount) || 0,
         surchargeAmount: parseFloat(s.surchargeAmount) || 0,
         due: s.dueDate ? new Date(s.dueDate) : undefined,
@@ -457,6 +652,42 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     return `${o.name ?? ""} ${o.code ?? ""}`.toLowerCase().includes(normalizedSurchargeSearch);
   });
 
+  const recalculateScheduleAdjustment = (
+    entry: PaymentScheduleEntry,
+    kind: "promotion" | "surcharge",
+    rows: ManualAdjustment[],
+    keys: string[],
+  ): PaymentScheduleEntry => {
+    const nextEntry = {
+      ...entry,
+      ...(kind === "promotion"
+        ? { promotionRows: rows, promotionKeys: keys }
+        : { surchargeRows: rows, surchargeKeys: keys }),
+    };
+    const baseAmount = Math.max(0, Number(nextEntry.baseAmount ?? nextEntry.amount) || 0);
+    const promotionResult = applySequentialAdjustments(
+      baseAmount,
+      nextEntry.promotionKeys ?? [],
+      nextEntry.promotionRows ?? [],
+      promotionOptionsWithVouchers,
+      "promotion",
+    );
+    const surchargeResult = applySequentialAdjustments(
+      promotionResult.finalAmount,
+      nextEntry.surchargeKeys ?? [],
+      nextEntry.surchargeRows ?? [],
+      surchargeOptions,
+      "surcharge",
+    );
+    return {
+      ...nextEntry,
+      baseAmount,
+      amount: surchargeResult.finalAmount,
+      promotionAmount: promotionResult.adjustmentAmount,
+      surchargeAmount: surchargeResult.adjustmentAmount,
+    };
+  };
+
   const createPromotionMutation = useMutation({
     mutationFn: async ({ type, data }: {
       type: FinancePromotionType;
@@ -486,6 +717,30 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
               [keyName]: [...new Set([...product[keyName], createdId])],
             };
           }));
+        } else if (quickCreateTarget.scope === "schedule") {
+          const nextEntries = paymentSchedule.map(entry => {
+            if (entry.id !== quickCreateTarget?.scheduleId) return entry;
+            const isPromotion = quickCreateType === "promotion";
+            const rowsKey = isPromotion ? "promotionRows" : "surchargeRows";
+            const keysKey = isPromotion ? "promotionKeys" : "surchargeKeys";
+            const rows = [
+              ...(entry[rowsKey] ?? []),
+              {
+                id: `schedule-${isPromotion ? "promo" : "surcharge"}-created-${createdId}`,
+                optionKey: createdId,
+                valueType: "amount" as const,
+                value: 0,
+              },
+            ];
+            const keys = Array.from(new Set([...(entry[keysKey] ?? []), createdId]));
+            return recalculateScheduleAdjustment(entry, isPromotion ? "promotion" : "surcharge", rows, keys);
+          });
+          const previousTotal = paymentSchedule.reduce((sum, entry) => sum + entry.amount, 0);
+          const nextTotal = nextEntries.reduce((sum, entry) => sum + entry.amount, 0);
+          setPaymentSchedule(nextEntries);
+          if (Math.abs(nextTotal - previousTotal) > 0.01) {
+            setScheduleAdjustmentDelta(delta => delta + nextTotal - previousTotal);
+          }
         } else if (quickCreateType === "promotion") {
           setInvoicePromoKeys(prev => [...new Set([...prev, createdId])]);
           setInvoicePromotionRows(prev => [...prev, {
@@ -515,7 +770,10 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
 
   const openQuickCreate = (
     type: FinancePromotionType,
-    target: { scope: "product"; productId: string } | { scope: "invoice" },
+    target:
+      | { scope: "product"; productId: string }
+      | { scope: "invoice" }
+      | { scope: "schedule"; scheduleId: string },
   ) => {
     setQuickCreateType(type);
     setQuickCreateTarget(target);
@@ -836,6 +1094,84 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       setInvoiceSurchargeKeys(selectedKeys);
     }
   };
+
+  const applyScheduleAdjustmentUpdate = (
+    updater: (entries: PaymentScheduleEntry[]) => PaymentScheduleEntry[],
+  ) => {
+    const nextEntries = updater(paymentSchedule);
+    const previousTotal = paymentSchedule.reduce((sum, entry) => sum + entry.amount, 0);
+    const nextTotal = nextEntries.reduce((sum, entry) => sum + entry.amount, 0);
+    setPaymentSchedule(nextEntries);
+    if (Math.abs(nextTotal - previousTotal) > 0.01) {
+      setScheduleAdjustmentDelta(delta => delta + nextTotal - previousTotal);
+    }
+  };
+
+  const updateScheduleAdjustmentRows = (
+    scheduleId: string,
+    kind: "promotion" | "surcharge",
+    updateRows: (rows: ManualAdjustment[]) => ManualAdjustment[],
+  ) => {
+    applyScheduleAdjustmentUpdate(entries => entries.map(entry => {
+      if (entry.id !== scheduleId) return entry;
+      const rowsKey = kind === "promotion" ? "promotionRows" : "surchargeRows";
+      const keysKey = kind === "promotion" ? "promotionKeys" : "surchargeKeys";
+      const rows = updateRows(entry[rowsKey] ?? []);
+      const keys = Array.from(new Set(rows.map(row => row.optionKey).filter((key): key is string => Boolean(key))));
+      return recalculateScheduleAdjustment(entry, kind, rows, keys);
+    }));
+  };
+
+  const openScheduleAdjustment = (kind: "promotion" | "surcharge", entry: PaymentScheduleEntry) => {
+    const rowsKey = kind === "promotion" ? "promotionRows" : "surchargeRows";
+    const keys = kind === "promotion" ? (entry.promotionKeys ?? []) : (entry.surchargeKeys ?? []);
+    const rows = entry[rowsKey] ?? [];
+    const ensuredRows = ensureAdjustmentRows(keys, rows, `schedule-${kind === "promotion" ? "promo" : "surcharge"}-${entry.id}`);
+    setPaymentSchedule(prev => prev.map(item => item.id === entry.id ? { ...item, [rowsKey]: ensuredRows } : item));
+    setPromotionSearch("");
+    setSurchargeSearch("");
+    if (kind === "promotion") {
+      setOpenSchedulePromo(entry.id);
+    } else {
+      setOpenScheduleSurcharge(entry.id);
+    }
+  };
+
+  const addScheduleAdjustmentRow = (scheduleId: string, kind: "promotion" | "surcharge") => {
+    const row: ManualAdjustment = {
+      id: `schedule-${kind}-${scheduleId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      valueType: "amount",
+      value: 0,
+    };
+    updateScheduleAdjustmentRows(scheduleId, kind, rows => [...rows, row]);
+  };
+
+  const updateScheduleAdjustmentRow = (
+    scheduleId: string,
+    kind: "promotion" | "surcharge",
+    rowId: string,
+    patch: Partial<ManualAdjustment>,
+  ) => {
+    updateScheduleAdjustmentRows(scheduleId, kind, rows => rows.map(row => row.id === rowId ? { ...row, ...patch } : row));
+  };
+
+  const selectScheduleAdjustmentOption = (
+    scheduleId: string,
+    kind: "promotion" | "surcharge",
+    rowId: string,
+    optionKey: string,
+  ) => {
+    updateScheduleAdjustmentRows(scheduleId, kind, rows => rows.map(row => row.id === rowId ? { ...row, optionKey } : row));
+  };
+
+  const removeScheduleAdjustmentRow = (
+    scheduleId: string,
+    kind: "promotion" | "surcharge",
+    rowId: string,
+  ) => {
+    updateScheduleAdjustmentRows(scheduleId, kind, rows => rows.filter(row => row.id !== rowId));
+  };
+
   // Remaining = total minus what's already paid directly AND what's allocated in schedule
   const scheduleRemaining = finalTotal - directPaidAmount - scheduleAllocated;
   const canAddSchedule = scheduleRemaining > 0;
@@ -2321,14 +2657,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       || (p.surchargeKeys?.length ?? 0) > 0
                       || promotionAmount > 0
                       || surchargeAmount > 0;
-                    const promotionNames = (p.promotionKeys ?? [])
-                      .map(key => promotionOptionsWithVouchers.find((option: any) => option.id === key))
-                      .filter(Boolean)
-                      .map((option: any) => formatPromotionLabel(option));
-                    const surchargeNames = (p.surchargeKeys ?? [])
-                      .map(key => surchargeOptions.find((option: any) => option.id === key))
-                      .filter(Boolean)
-                      .map((option: any) => option.name);
+                    const isSchedulePaid = isInvoicePaidLike(p.status);
 
                     return (
                   <div key={p.id} className={`rounded-lg border bg-card p-3 space-y-2 shadow-sm ${p.status === "paid" ? "border-green-200 bg-green-50/30" : ""}`}>
@@ -2351,7 +2680,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         <button
                           type="button"
                           onClick={() => removePayment(p.id)}
-                          disabled={p.status === "paid"}
+                          disabled={isSchedulePaid}
                           className={`text-muted-foreground transition-colors ml-1 ${p.status === "paid" ? "opacity-30 cursor-not-allowed" : "hover:text-red-500"}`}
                           data-testid={`button-delete-payment-${p.id}`}
                         >
@@ -2445,33 +2774,119 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         </div>
                       )}
                     </div>
-                    {hasScheduleAdjustment && (
-                      <div className="rounded-md border border-purple-100 bg-purple-50/60 px-2.5 py-2 text-[11px]">
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground">Tiền cơ sở</span>
-                          <span className="font-medium">{fmtMoney(p.baseAmount ?? p.amount)}</span>
+                    <Dialog open={openSchedulePromo === p.id} onOpenChange={v => {
+                      setOpenSchedulePromo(v ? p.id : null);
+                      if (v) {
+                        openScheduleAdjustment("promotion", p);
+                      } else {
+                        setOpenSchedulePromoPicker(null);
+                      }
+                    }}>
+                      <DialogTrigger asChild>
+                        <button
+                          type="button"
+                          disabled={isSchedulePaid}
+                          className="w-full flex justify-between items-center text-green-600 hover:bg-green-50 rounded px-1 -mx-1 py-0.5 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                          data-testid={`button-schedule-promo-${p.id}`}
+                        >
+                          <span className="flex items-center gap-1">
+                            Khuyến mãi:
+                            <ChevronDown className="h-3 w-3 opacity-60" />
+                          </span>
+                          <span>{promotionAmount > 0 ? `-${fmtMoney(promotionAmount)}` : "0 ₫"}</span>
+                        </button>
+                      </DialogTrigger>
+                      <DialogContent
+                        className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
+                        overlayClassName="bg-black/30 backdrop-blur-[1px]"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <DialogTitle className="text-xl font-semibold">Chọn khuyến mãi</DialogTitle>
+                          {canCreatePromotion && (
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-0.5 text-[11px] font-medium text-purple-600 hover:text-purple-700"
+                              onClick={() => openQuickCreate("promotion", { scope: "schedule", scheduleId: p.id })}
+                              data-testid={`button-quick-add-schedule-promotion-${p.id}`}
+                            >
+                              <Plus className="h-3 w-3" /> Thêm mới
+                            </button>
+                          )}
                         </div>
-                        {(promotionAmount > 0 || promotionNames.length > 0) && (
-                          <div className="flex items-start justify-between gap-2 text-green-700">
-                            <span>Khuyến mãi{promotionNames.length > 0 ? `: ${promotionNames.join(", ")}` : ""}</span>
-                            <span className="shrink-0">- {fmtMoney(promotionAmount)}</span>
-                          </div>
-                        )}
-                        {(surchargeAmount > 0 || surchargeNames.length > 0) && (
-                          <div className="flex items-start justify-between gap-2 text-orange-700">
-                            <span>Phụ thu{surchargeNames.length > 0 ? `: ${surchargeNames.join(", ")}` : ""}</span>
-                            <span className="shrink-0">+ {fmtMoney(surchargeAmount)}</span>
-                          </div>
-                        )}
-                        <div className="mt-1 flex items-center justify-between border-t border-purple-200 pt-1 font-semibold text-purple-800">
-                          <span>Thành tiền sau điều chỉnh</span>
-                          <span>{fmtMoney(p.amount)}</span>
+                        <AdjustmentRowsEditor
+                          kind="promotion"
+                          rows={p.promotionRows ?? []}
+                          options={promotionOptionsWithVouchers}
+                          filteredOptions={filteredPromotionOptionsWithVouchers}
+                          search={promotionSearch}
+                          onSearchChange={setPromotionSearch}
+                          openPicker={openSchedulePromoPicker}
+                          onOpenPickerChange={setOpenSchedulePromoPicker}
+                          total={promotionAmount}
+                          onAdd={() => addScheduleAdjustmentRow(p.id, "promotion")}
+                          onUpdate={(rowId, patch) => updateScheduleAdjustmentRow(p.id, "promotion", rowId, patch)}
+                          onSelect={(rowId, optionKey) => selectScheduleAdjustmentOption(p.id, "promotion", rowId, optionKey)}
+                          onRemove={rowId => removeScheduleAdjustmentRow(p.id, "promotion", rowId)}
+                        />
+                      </DialogContent>
+                    </Dialog>
+
+                    <Dialog open={openScheduleSurcharge === p.id} onOpenChange={v => {
+                      setOpenScheduleSurcharge(v ? p.id : null);
+                      if (v) {
+                        openScheduleAdjustment("surcharge", p);
+                      } else {
+                        setOpenScheduleSurchargePicker(null);
+                      }
+                    }}>
+                      <DialogTrigger asChild>
+                        <button
+                          type="button"
+                          disabled={p.status === "paid"}
+                          className="w-full flex justify-between items-center text-orange-500 hover:bg-orange-50 rounded px-1 -mx-1 py-0.5 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                          data-testid={`button-schedule-surcharge-${p.id}`}
+                        >
+                          <span className="flex items-center gap-1">
+                            Phụ thu:
+                            <ChevronDown className="h-3 w-3 opacity-60" />
+                          </span>
+                          <span>{surchargeAmount > 0 ? `+${fmtMoney(surchargeAmount)}` : "0 ₫"}</span>
+                        </button>
+                      </DialogTrigger>
+                      <DialogContent
+                        className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
+                        overlayClassName="bg-black/30 backdrop-blur-[1px]"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <DialogTitle className="text-xl font-semibold">Chọn phụ thu</DialogTitle>
+                          {canCreatePromotion && (
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-0.5 text-[11px] font-medium text-purple-600 hover:text-purple-700"
+                              onClick={() => openQuickCreate("surcharge", { scope: "schedule", scheduleId: p.id })}
+                              data-testid={`button-quick-add-schedule-surcharge-${p.id}`}
+                            >
+                              <Plus className="h-3 w-3" /> Thêm mới
+                            </button>
+                          )}
                         </div>
-                        <p className="mt-1 text-[10px] text-purple-700/80">
-                          Chỉnh tại menu “Khuyến mãi/phụ thu” ngoài danh sách hóa đơn.
-                        </p>
-                      </div>
-                    )}
+                        <AdjustmentRowsEditor
+                          kind="surcharge"
+                          rows={p.surchargeRows ?? []}
+                          options={surchargeOptions}
+                          filteredOptions={filteredSurchargeOptions}
+                          search={surchargeSearch}
+                          onSearchChange={setSurchargeSearch}
+                          openPicker={openScheduleSurchargePicker}
+                          onOpenPickerChange={setOpenScheduleSurchargePicker}
+                          total={surchargeAmount}
+                          onAdd={() => addScheduleAdjustmentRow(p.id, "surcharge")}
+                          onUpdate={(rowId, patch) => updateScheduleAdjustmentRow(p.id, "surcharge", rowId, patch)}
+                          onSelect={(rowId, optionKey) => selectScheduleAdjustmentOption(p.id, "surcharge", rowId, optionKey)}
+                          onRemove={rowId => removeScheduleAdjustmentRow(p.id, "surcharge", rowId)}
+                        />
+                      </DialogContent>
+                    </Dialog>
                     {p.status !== "paid" && (
                       <div className="flex justify-end border-t border-dashed pt-2">
                         <Button
