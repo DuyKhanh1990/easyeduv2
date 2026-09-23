@@ -38,3 +38,10 @@ After consolidation, the only inline DDL remaining in server/index.ts is:
 
 ## Dual definition eliminated
 shared/models/chat.ts now re-exports from shared/schema.ts (was a separate pgTable definition for conversations/messages).
+
+## Gateway exception to watch
+`gateway/src/bidv-schema.ts` and `gateway/src/bidv-db.ts` still contain a separate legacy `gateway_registry` definition/DDL that conflicts with the canonical definition in `shared/schema.ts`.
+
+**Why:** A schema-name comparison can pass while the same table still has incompatible id, center_id, length, and nullability definitions across the app and gateway database paths.
+
+**How to apply:** Before changing `gateway_registry`, choose one canonical shape and plan a data-safe migration for existing rows; do not silently overwrite the current table's integer key or rely on `CREATE TABLE IF NOT EXISTS` to reconcile it.
