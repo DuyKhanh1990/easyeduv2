@@ -6,7 +6,7 @@ import {
   studentLocations, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools,
   crmRequiredFields, crmCustomFields, crmRegistrationFormFields,
   courseFeePackages, shiftTemplates, studentComments,
-  staffAssignments, locations, invoices, invoiceSessionAllocations, tuitionPackageSessionAdjustments, departments, roles,
+  staffAssignments, locations, invoices, invoiceItems, invoiceSessionAllocations, tuitionPackageSessionAdjustments, departments, roles,
   studentRelationshipHistory, studentNotificationChannels,
 } from "./base";
 import { hashPassword } from "../auth";
