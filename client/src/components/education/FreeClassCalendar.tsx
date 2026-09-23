@@ -963,12 +963,12 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                       <Button
                         type="button"
                         size="sm"
-                        variant={registrationPlannerOpen ? "outline" : "default"}
+                        variant="default"
                         className="h-8 gap-1.5 text-xs"
                         disabled={!classPerm?.canEdit || bulkRegisterStudentIds.length === 0}
-                        onClick={() => setRegistrationPlannerOpen((open) => !open)}
+                        onClick={() => setRegistrationPlannerOpen(true)}
                       >
-                        {registrationPlannerOpen ? "Ẩn lịch" : "Đăng ký"}
+                        Đăng ký
                       </Button>
                     )}
                     <div className="relative w-full sm:w-72">
@@ -1144,8 +1144,13 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                     </Button>
                   </div>
                 </div>
-                {!isSelfPractice && registrationPlannerOpen && (
-                  <div className="border-t border-slate-100 bg-slate-50/70 px-4 py-4">
+                {!isSelfPractice && (
+                  <Dialog open={registrationPlannerOpen} onOpenChange={setRegistrationPlannerOpen}>
+                    <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle>Đăng ký lịch học</DialogTitle>
+                      </DialogHeader>
+                      <div className="border-t border-slate-100 bg-slate-50/70 px-1 py-2 sm:px-2">
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <div className="text-xs font-bold uppercase tracking-wide text-slate-700">
@@ -1219,6 +1224,8 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                       </Button>
                     </div>
                   </div>
+                    </DialogContent>
+                  </Dialog>
                 )}
               </div>
             ) : selectedAttendDay ? (
