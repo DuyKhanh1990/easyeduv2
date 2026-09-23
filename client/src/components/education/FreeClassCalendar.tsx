@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
+  CalendarDays,
   BookOpen,
   UserRound,
   Star,
@@ -142,6 +143,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
   const [bulkAttendanceStatus, setBulkAttendanceStatus] = useState<
     "registered" | "attended" | "reserved"
   >("attended");
+  const [historyStudent, setHistoryStudent] = useState<any | null>(null);
   const isSelfPractice = classData?.freeClassMode === "self_practice";
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -171,6 +173,37 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
       return res.json();
     },
     enabled: !!selectedContentPath,
+  });
+  const {
+    data: studentHistory,
+    isLoading: isLoadingStudentHistory,
+  } = useQuery<{
+    student?: {
+      fullName?: string;
+      code?: string | null;
+    };
+    sessions?: Array<{
+      id: string;
+      sessionIndex: number;
+      sessionDate: string;
+      status: "attended" | "reserved";
+      note?: string | null;
+      shiftName?: string | null;
+      shiftStart?: string | null;
+      shiftEnd?: string | null;
+    }>;
+  }>({
+    queryKey: [
+      `/api/classes/${classId}/free-schedule/student-history`,
+      historyStudent?.id,
+    ],
+    queryFn: async () => {
+      const path = `/api/classes/${classId}/free-schedule/student-history?studentClassId=${encodeURIComponent(historyStudent!.id)}`;
+      const response = await fetch(path, { credentials: "include" });
+      if (!response.ok) throw new Error("Không thể tải lịch học của học viên");
+      return response.json();
+    },
+    enabled: isSelfPractice && !!historyStudent?.id,
   });
   const { data: allEvaluationCriteria = [] } = useQuery<any[]>({
     queryKey: ["/api/evaluation-criteria"],
@@ -748,8 +781,13 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                     <span className="text-xs font-medium text-slate-800">({selectedAttendStudents.length})</span>
                   </div>
                   <div className="overflow-x-auto border-t border-slate-100">
-                    <div className="min-w-[752px]">
-                      <div className="grid grid-cols-[32px_minmax(260px,1fr)_minmax(210px,.8fr)_minmax(220px,.85fr)_minmax(180px,.7fr)] items-center gap-4 bg-slate-50/80 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                     <div className={isSelfPractice ? "min-w-[880px]" : "min-w-[752px]"}>
+                       <div className={cn(
+                         "grid items-center gap-4 bg-slate-50/80 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500",
+                         isSelfPractice
+                           ? "grid-cols-[32px_minmax(260px,1fr)_minmax(210px,.8fr)_minmax(220px,.85fr)_minmax(180px,.7fr)_minmax(110px,.35fr)]"
+                           : "grid-cols-[32px_minmax(260px,1fr)_minmax(210px,.8fr)_minmax(220px,.85fr)_minmax(180px,.7fr)]",
+                       )}>
                         <span>
                           <Checkbox
                             checked={
@@ -769,6 +807,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                         <span>Trạng thái điểm danh</span>
                         <span>Ghi chú</span>
                         <span>Nhận xét</span>
+                          {isSelfPractice && <span>Lịch</span>}
                       </div>
                       {selectedAttendStudents.map(({ student, registration }: any) => {
                         const status = registration?.status === "attended" || registration?.status === "reserved"
@@ -797,7 +836,12 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                         return (
                           <div
                             key={`${student.id}:${selectedAttendDay.value}`}
-                            className="grid grid-cols-[32px_minmax(260px,1fr)_minmax(210px,.8fr)_minmax(220px,.85fr)_minmax(180px,.7fr)] items-center gap-4 border-t border-slate-100 px-4 py-2.5 transition-colors hover:bg-slate-50"
+                            className={cn(
+                              "grid items-center gap-4 border-t border-slate-100 px-4 py-2.5 transition-colors hover:bg-slate-50",
+                              isSelfPractice
+                                ? "grid-cols-[32px_minmax(260px,1fr)_minmax(210px,.8fr)_minmax(220px,.85fr)_minmax(180px,.7fr)_minmax(110px,.35fr)]"
+                                : "grid-cols-[32px_minmax(260px,1fr)_minmax(210px,.8fr)_minmax(220px,.85fr)_minmax(180px,.7fr)]",
+                            )}
                           >
                             <Checkbox
                               checked={selectedAttendStudentIds.includes(student.id)}
@@ -956,6 +1000,18 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                 ) ? "Xem / sửa" : registration?.id ? "Nhập nhận xét" : "Nhận xét sau khi học"}
                               </Button>
                             </div>
+                             {isSelfPractice && (
+                               <Button
+                                 type="button"
+                                 variant="outline"
+                                 size="sm"
+                                 className="h-8 w-fit gap-1.5 text-xs"
+                                 onClick={() => setHistoryStudent(student)}
+                               >
+                                 <CalendarDays className="h-3.5 w-3.5 text-blue-600" />
+                                 Lịch
+                               </Button>
+                             )}
                           </div>
                         );
                       })}
@@ -1629,6 +1685,83 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
           }));
         }}
       />
+      <Dialog
+        open={!!historyStudent}
+        onOpenChange={(open) => {
+          if (!open) setHistoryStudent(null);
+        }}
+      >
+        <DialogContent className="w-[95vw] max-w-[1120px] max-h-[88vh] overflow-hidden p-0">
+          <DialogHeader className="border-b bg-white px-6 py-4">
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <CalendarDays className="h-5 w-5 text-blue-600" />
+              Lịch học: {historyStudent?.fullName || studentHistory?.student?.fullName || "Học viên"}
+              {(historyStudent?.code || studentHistory?.student?.code) && (
+                <span className="text-sm font-normal text-muted-foreground">
+                  ({historyStudent?.code || studentHistory?.student?.code})
+                </span>
+              )}
+            </DialogTitle>
+            <p className="text-xs text-muted-foreground">
+              Chỉ hiển thị các buổi đã được điểm danh: Có học hoặc Bảo lưu.
+            </p>
+          </DialogHeader>
+          <div className="max-h-[calc(88vh-96px)] overflow-y-auto bg-[#ECEEF4] p-5">
+            {isLoadingStudentHistory ? (
+              <div className="flex min-h-[180px] items-center justify-center text-sm text-muted-foreground">
+                Đang tải lịch học...
+              </div>
+            ) : (studentHistory?.sessions?.length ?? 0) === 0 ? (
+              <div className="flex min-h-[180px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white text-sm text-muted-foreground">
+                <CalendarDays className="h-8 w-8 text-slate-300" />
+                Chưa có buổi nào được điểm danh.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {studentHistory?.sessions?.map((session) => (
+                  <div
+                    key={session.id}
+                    className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        Buổi {session.sessionIndex}
+                      </span>
+                      <span className={cn(
+                        "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                        session.status === "attended"
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-amber-50 text-amber-700",
+                      )}>
+                        {session.status === "attended" ? "Có học" : "Bảo lưu"}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-base font-bold text-slate-800">
+                      {formatStudentDate(session.sessionDate)}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {(() => {
+                        const date = parseCalendarDate(String(session.sessionDate).slice(0, 10));
+                        return date ? format(date, "EEEE", { locale: vi }) : "—";
+                      })()}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {session.shiftStart || session.shiftEnd
+                        ? `${String(session.shiftStart || "").slice(0, 5)} - ${String(session.shiftEnd || "").slice(0, 5)}`
+                        : session.shiftName || "Chưa có ca học"}
+                    </div>
+                    {session.note && (
+                      <div className="mt-2 border-t border-slate-100 pt-2 text-xs text-slate-500">
+                        {session.note}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

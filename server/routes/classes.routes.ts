@@ -1727,6 +1727,95 @@ export function registerClassesRoutes(app: Express): void {
     }
   });
 
+  app.get("/api/classes/:classId/free-schedule/student-history", async (req, res) => {
+    const classId = String(req.params.classId);
+    const studentClassId = String(req.query.studentClassId || "");
+    if (!studentClassId) {
+      return res.status(400).json({ message: "Thiếu học viên cần xem lịch" });
+    }
+    if (!(await assertFreeClassReadable(req, res, classId, { studentClassId }))) return;
+
+    try {
+      const [studentClass] = await db
+        .select({
+          id: studentClasses.id,
+          studentId: studentClasses.studentId,
+          fullName: students.fullName,
+          code: students.code,
+          totalSessions: studentClasses.totalSessions,
+          attendedSessions: studentClasses.attendedSessions,
+        })
+        .from(studentClasses)
+        .innerJoin(students, eq(students.id, studentClasses.studentId))
+        .where(and(
+          eq(studentClasses.id, studentClassId),
+          eq(studentClasses.classId, classId),
+        ))
+        .limit(1);
+      if (!studentClass) {
+        return res.status(404).json({ message: "Không tìm thấy học viên trong lớp" });
+      }
+
+      const registrations = await db
+        .select({
+          id: freeClassRegistrations.id,
+          sessionDate: freeClassRegistrations.registrationDate,
+          status: freeClassRegistrations.status,
+          note: freeClassRegistrations.note,
+          shiftTemplateId: freeClassRegistrations.shiftTemplateId,
+          shiftName: shiftTemplates.name,
+          shiftStart: shiftTemplates.startTime,
+          shiftEnd: shiftTemplates.endTime,
+        })
+        .from(freeClassRegistrations)
+        .leftJoin(shiftTemplates, eq(shiftTemplates.id, freeClassRegistrations.shiftTemplateId))
+        .where(and(
+          eq(freeClassRegistrations.classId, classId),
+          eq(freeClassRegistrations.studentClassId, studentClassId),
+          or(
+            eq(freeClassRegistrations.status, "attended"),
+            eq(freeClassRegistrations.status, "reserved"),
+          ),
+        ))
+        .orderBy(asc(freeClassRegistrations.registrationDate));
+
+      const assignments = await db
+        .select({
+          sessionDate: freeClassDayAssignments.assignmentDate,
+          shiftTemplateId: freeClassDayAssignments.shiftTemplateId,
+          shiftName: shiftTemplates.name,
+          shiftStart: shiftTemplates.startTime,
+          shiftEnd: shiftTemplates.endTime,
+        })
+        .from(freeClassDayAssignments)
+        .leftJoin(shiftTemplates, eq(shiftTemplates.id, freeClassDayAssignments.shiftTemplateId))
+        .where(eq(freeClassDayAssignments.classId, classId));
+      const assignmentByDate = new Map(
+        assignments.map((assignment) => [String(assignment.sessionDate).slice(0, 10), assignment]),
+      );
+
+      res.json({
+        student: studentClass,
+        sessions: registrations.map((registration, index) => {
+          const assignment = assignmentByDate.get(String(registration.sessionDate).slice(0, 10));
+          return {
+            id: registration.id,
+            sessionIndex: index + 1,
+            sessionDate: registration.sessionDate,
+            status: registration.status,
+            note: registration.note,
+            shiftTemplateId: registration.shiftTemplateId || assignment?.shiftTemplateId || null,
+            shiftName: registration.shiftName || assignment?.shiftName || null,
+            shiftStart: registration.shiftStart || assignment?.shiftStart || null,
+            shiftEnd: registration.shiftEnd || assignment?.shiftEnd || null,
+          };
+        }),
+      });
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Không thể tải lịch học của học viên" });
+    }
+  });
+
   app.patch("/api/classes/:classId/free-schedule/assignment", async (req, res) => {
     const classId = String(req.params.classId);
     const body = req.body || {};
