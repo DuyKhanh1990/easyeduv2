@@ -160,6 +160,9 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
   const [bulkRegisterStudentIds, setBulkRegisterStudentIds] = useState<string[]>([]);
   const [bulkRegisterDates, setBulkRegisterDates] = useState<string[]>([]);
   const [registrationPlannerOpen, setRegistrationPlannerOpen] = useState(false);
+  const [registrationPlannerMonthDate, setRegistrationPlannerMonthDate] = useState(() =>
+    startOfMonth(requestedDate ?? new Date()),
+  );
   const isSelfPractice = classData?.freeClassMode === "self_practice";
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -171,6 +174,19 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
       if (!res.ok) throw new Error("Không thể tải lịch lớp tự do");
       return res.json();
     },
+  });
+  const registrationPlannerMonth = format(registrationPlannerMonthDate, "yyyy-MM");
+  const { data: registrationPlannerData } = useQuery<any>({
+    queryKey: ["free-class-registration-planner", classId, registrationPlannerMonth],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/classes/${classId}/free-schedule?month=${registrationPlannerMonth}`,
+        { credentials: "include" },
+      );
+      if (!res.ok) throw new Error("Không thể tải lịch đăng ký");
+      return res.json();
+    },
+    enabled: !isSelfPractice && registrationPlannerOpen,
   });
   const selectedContentPath = selectedDate
     ? `/api/free-class-sessions/${classId}/${selectedDate}/contents`
@@ -306,12 +322,38 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
       };
     });
   }, [monthDate]);
+  const registrationPlannerDays = useMemo(() => {
+    const count = getDaysInMonth(registrationPlannerMonthDate);
+    return Array.from({ length: count }, (_, index) => {
+      const date = new Date(
+        registrationPlannerMonthDate.getFullYear(),
+        registrationPlannerMonthDate.getMonth(),
+        index + 1,
+      );
+      return {
+        date,
+        value: format(date, "yyyy-MM-dd"),
+        label: index + 1,
+        weekday: format(date, "EEE", { locale: vi }),
+      };
+    });
+  }, [registrationPlannerMonthDate]);
 
   const registrations = useMemo(() => {
     const map = new Map<string, any>();
     for (const row of data?.registrations || []) map.set(`${row.studentClassId}:${row.registrationDate}`, row);
     return map;
   }, [data?.registrations]);
+  const registrationPlannerRegistrations = useMemo(() => {
+    const map = new Map<string, any>();
+    const rows = registrationPlannerMonth === month
+      ? data?.registrations || []
+      : registrationPlannerData?.registrations || [];
+    for (const row of rows) {
+      map.set(`${row.studentClassId}:${row.registrationDate}`, row);
+    }
+    return map;
+  }, [data?.registrations, month, registrationPlannerData?.registrations, registrationPlannerMonth]);
   const dayAssignments = useMemo(() => {
     const map = new Map<string, any>();
     for (const row of data?.dayAssignments || []) {
