@@ -60,6 +60,11 @@ type PaymentScheduleEntry = {
   label: string;
   code: string;
   amount: number;
+  baseAmount?: number | null;
+  promotionKeys?: string[];
+  surchargeKeys?: string[];
+  promotionAmount?: number;
+  surchargeAmount?: number;
   due: Date | undefined;
   status: string;
   paymentMethod: string;
@@ -172,6 +177,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     { scope: "product"; productId: string } | { scope: "invoice" } | null
   >(null);
   const [paymentSchedule, setPaymentSchedule] = useState<PaymentScheduleEntry[]>([]);
+  const [scheduleAdjustmentDelta, setScheduleAdjustmentDelta] = useState(0);
   const [openDuePicker, setOpenDuePicker] = useState<string | null>(null);
   const [splitPaymentId, setSplitPaymentId] = useState<string | null>(null);
   const [splitAmount, setSplitAmount] = useState<number>(0);
@@ -222,6 +228,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         setInvoicePromotionRows([]);
         setInvoiceSurchargeRows([]);
         setPaymentSchedule([]);
+        setScheduleAdjustmentDelta(0);
         setSplitPaymentId(null);
         setSplitAmount(0);
         setSplitDueDate("");
@@ -258,6 +265,16 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     // When a payment schedule exists, paid info is captured per-installment — don't double-count paidAmount
     const hasSchedule = Array.isArray(inv.paymentSchedule) && inv.paymentSchedule.length > 0;
     setDirectPaidAmount(hasSchedule ? 0 : (parseFloat(inv.paidAmount) || 0));
+    const storedInvoiceBaseTotal = Math.max(
+      0,
+      (parseFloat(inv.totalAmount) || 0)
+        - (parseFloat(inv.totalPromotion) || 0)
+        + (parseFloat(inv.totalSurcharge) || 0)
+        - (parseFloat(inv.deduction) || 0),
+    );
+    setScheduleAdjustmentDelta(
+      hasSchedule ? (parseFloat(inv.grandTotal) || 0) - storedInvoiceBaseTotal : 0,
+    );
     setDirectPaymentMethod(inv.paymentMethod ?? "cash");
     setDirectBank(inv.appliedBankAccount?.bankAccount ?? "");
     setDeduction(parseFloat(inv.deduction) || 0);
@@ -331,6 +348,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         label: s.label ?? `Đợt ${i + 1}`,
         code: s.code ?? "",
         amount: parseFloat(s.amount) || 0,
+        baseAmount: s.baseAmount === null || s.baseAmount === undefined ? null : parseFloat(s.baseAmount) || 0,
+        promotionKeys: Array.isArray(s.promotionKeys) ? s.promotionKeys : [],
+        surchargeKeys: Array.isArray(s.surchargeKeys) ? s.surchargeKeys : [],
+        promotionAmount: parseFloat(s.promotionAmount) || 0,
+        surchargeAmount: parseFloat(s.surchargeAmount) || 0,
         due: s.dueDate ? new Date(s.dueDate) : undefined,
         status: s.status ?? "unpaid",
         paymentMethod: s.paymentMethod ?? "cash",
@@ -612,7 +634,14 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const totalPromo     = itemPromo + invoicePromoAmt;
   const totalSurcharge = itemSurcharge + invoiceSurchargeAmt;
   const subTotal = invoiceSurchargeResult.finalAmount;
-  const finalTotal   = Math.max(0, subTotal - deduction);           // Tổng tiền (sau khấu trừ)
+  const calculatedFinalTotal = Math.max(0, subTotal - deduction);
+  // Installment-level adjustments are stored on child schedules and are
+  // already included in the persisted parent grand total. Preserve that
+  // delta while editing the invoice so the reconciliation effect does not
+  // erase a child promotion/surcharge.
+  const finalTotal = paymentSchedule.length > 0
+    ? Math.max(0, calculatedFinalTotal + scheduleAdjustmentDelta)
+    : calculatedFinalTotal;                                           // Tổng tiền (sau khấu trừ)
   const grandTotal   = finalTotal;                                   // alias dùng trong submit
   // Always include directPaidAmount in paid total; paid schedule entries add on top
   const paid = directPaidAmount + paymentSchedule.filter(p => p.status === "paid").reduce((s, p) => s + p.amount, 0);
@@ -1018,6 +1047,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       label: s.label,
       code: s.code,
       amount: String(s.amount),
+      baseAmount: s.baseAmount === null || s.baseAmount === undefined ? undefined : String(s.baseAmount),
+      promotionKeys: s.promotionKeys ?? [],
+      surchargeKeys: s.surchargeKeys ?? [],
+      promotionAmount: String(s.promotionAmount ?? 0),
+      surchargeAmount: String(s.surchargeAmount ?? 0),
       dueDate: s.due ? s.due.toISOString().split("T")[0] : null,
       status: s.status,
       paymentMethod: s.paymentMethod || null,
@@ -2278,6 +2312,25 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
               )}
               <div className="space-y-2">
                 {paymentSchedule.map(p => (
+                  (() => {
+                    const promotionAmount = p.promotionAmount ?? 0;
+                    const surchargeAmount = p.surchargeAmount ?? 0;
+                    const hasScheduleAdjustment =
+                      p.baseAmount !== null && p.baseAmount !== undefined
+                      || (p.promotionKeys?.length ?? 0) > 0
+                      || (p.surchargeKeys?.length ?? 0) > 0
+                      || promotionAmount > 0
+                      || surchargeAmount > 0;
+                    const promotionNames = (p.promotionKeys ?? [])
+                      .map(key => promotionOptionsWithVouchers.find((option: any) => option.id === key))
+                      .filter(Boolean)
+                      .map((option: any) => formatPromotionLabel(option));
+                    const surchargeNames = (p.surchargeKeys ?? [])
+                      .map(key => surchargeOptions.find((option: any) => option.id === key))
+                      .filter(Boolean)
+                      .map((option: any) => option.name);
+
+                    return (
                   <div key={p.id} className={`rounded-lg border bg-card p-3 space-y-2 shadow-sm ${p.status === "paid" ? "border-green-200 bg-green-50/30" : ""}`}>
                     {/* Header: label + status + delete */}
                     <div className="flex items-center justify-between">
@@ -2315,13 +2368,15 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                           value={p.amount}
                           onChange={e => updatePaymentAmount(p.id, Number(e.target.value))}
                           onFocus={e => e.target.select()}
-                          readOnly={!canEditPaymentAmount(p)}
-                          title={!canEditPaymentAmount(p)
+                          readOnly={!canEditPaymentAmount(p) || hasScheduleAdjustment}
+                          title={hasScheduleAdjustment
+                            ? "Đợt có khuyến mãi/phụ thu riêng. Hãy chỉnh tại thao tác Khuyến mãi/phụ thu."
+                            : !canEditPaymentAmount(p)
                             ? p.status === "paid"
                               ? "Đợt đã thanh toán không thể sửa"
                               : "Chỉ còn một đợt chưa thanh toán. Hãy dùng Tách đợt để thay đổi cách phân bổ."
                             : "Số tiền chênh lệch sẽ tự phân bổ sang đợt chưa thanh toán khác"}
-                          className={`h-8 text-xs text-right font-semibold ${!canEditPaymentAmount(p) ? "bg-muted/40 cursor-not-allowed" : ""} ${p.status === "paid" ? "bg-green-50 text-green-700" : ""}`}
+                          className={`h-8 text-xs text-right font-semibold ${(!canEditPaymentAmount(p) || hasScheduleAdjustment) ? "bg-muted/40 cursor-not-allowed" : ""} ${p.status === "paid" ? "bg-green-50 text-green-700" : ""}`}
                           data-testid={`input-payment-amount-${p.id}`}
                         />
                       </div>
@@ -2390,6 +2445,33 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         </div>
                       )}
                     </div>
+                    {hasScheduleAdjustment && (
+                      <div className="rounded-md border border-purple-100 bg-purple-50/60 px-2.5 py-2 text-[11px]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground">Tiền cơ sở</span>
+                          <span className="font-medium">{fmtMoney(p.baseAmount ?? p.amount)}</span>
+                        </div>
+                        {(promotionAmount > 0 || promotionNames.length > 0) && (
+                          <div className="flex items-start justify-between gap-2 text-green-700">
+                            <span>Khuyến mãi{promotionNames.length > 0 ? `: ${promotionNames.join(", ")}` : ""}</span>
+                            <span className="shrink-0">- {fmtMoney(promotionAmount)}</span>
+                          </div>
+                        )}
+                        {(surchargeAmount > 0 || surchargeNames.length > 0) && (
+                          <div className="flex items-start justify-between gap-2 text-orange-700">
+                            <span>Phụ thu{surchargeNames.length > 0 ? `: ${surchargeNames.join(", ")}` : ""}</span>
+                            <span className="shrink-0">+ {fmtMoney(surchargeAmount)}</span>
+                          </div>
+                        )}
+                        <div className="mt-1 flex items-center justify-between border-t border-purple-200 pt-1 font-semibold text-purple-800">
+                          <span>Thành tiền sau điều chỉnh</span>
+                          <span>{fmtMoney(p.amount)}</span>
+                        </div>
+                        <p className="mt-1 text-[10px] text-purple-700/80">
+                          Chỉnh tại menu “Khuyến mãi/phụ thu” ngoài danh sách hóa đơn.
+                        </p>
+                      </div>
+                    )}
                     {p.status !== "paid" && (
                       <div className="flex justify-end border-t border-dashed pt-2">
                         <Button
@@ -2407,6 +2489,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       </div>
                     )}
                   </div>
+                    );
+                  })()
                 ))}
               </div>
             </div>
