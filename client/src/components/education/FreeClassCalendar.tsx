@@ -319,6 +319,19 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
   const classEnd = String(classData?.endDate || "").slice(0, 10);
   const today = format(new Date(), "yyyy-MM-dd");
   const monthLabel = format(monthDate, "M");
+  const canRegisterStudentForDate = (student: any, date: string) => {
+    const studentStart = String(student.startDate || classStart || "").slice(0, 10);
+    const studentEnd = String(student.endDate || classEnd || "").slice(0, 10);
+    if ((classStart && date < classStart) || (classEnd && date > classEnd)) return false;
+    if ((studentStart && date < studentStart) || (studentEnd && date > studentEnd)) return false;
+    const totalSessions = Number(student.totalSessions ?? 0);
+    if (totalSessions <= 0) return true;
+    const attendedSessions = Number(student.attendedSessions ?? 0);
+    const remainingSessions = Number(
+      student.remainingSessions ?? Math.max(0, totalSessions - attendedSessions),
+    );
+    return remainingSessions > 0;
+  };
   const scheduleWindow = useMemo(() => {
     const starts = students
       .map((student: any) => String(student.startDate || classStart || "").slice(0, 10))
@@ -588,6 +601,13 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
   const selectedRegisteredStudentIds = selectedStudentIds.filter((studentId) =>
     selectedDayStudentIdSet.has(studentId),
   );
+  const registerableSelectedStudentIds = selectedDate
+    ? selectedStudentIds.filter((studentClassId) => {
+        const student = students.find((candidate: any) => candidate.id === studentClassId);
+        const current = registrations.get(`${studentClassId}:${selectedDate}`);
+        return !!student && (!!current || canRegisterStudentForDate(student, selectedDate));
+      })
+    : [];
   const contentDialogStudents = contentDialogDate
     ? students
         .filter((student: any) =>
@@ -603,9 +623,9 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
         }))
     : [];
   const runBulkRegistration = () => {
-    if (!selectedDate || selectedStudentIds.length === 0 || bulkMutation.isPending) return;
+    if (!selectedDate || registerableSelectedStudentIds.length === 0 || bulkMutation.isPending) return;
     bulkMutation.mutate({
-      studentClassIds: selectedStudentIds,
+      studentClassIds: registerableSelectedStudentIds,
       date: selectedDate,
       action: "register",
     });
@@ -676,7 +696,12 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
               <Button
                 size="sm"
                 className="h-7 px-2 text-xs"
-                disabled={!classPerm?.canEdit || !selectedDate || selectedStudentIds.length === 0 || bulkMutation.isPending}
+                disabled={
+                  !classPerm?.canEdit
+                  || !selectedDate
+                  || registerableSelectedStudentIds.length === 0
+                  || bulkMutation.isPending
+                }
                 onClick={runBulkRegistration}
               >
                 Đăng ký
@@ -1341,8 +1366,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                             checked={selectedStudentIds.includes(student.id)}
                             disabled={
                               !selectedDate
-                              || (!!student.startDate && selectedDate < String(student.startDate).slice(0, 10))
-                              || (!!student.endDate && selectedDate > String(student.endDate).slice(0, 10))
+                              || !canRegisterStudentForDate(student, selectedDate)
                             }
                             onCheckedChange={(checked) =>
                               setSelectedStudentIds((current) =>
@@ -1390,6 +1414,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                     const outside = (classStart && day.value < classStart) || (classEnd && day.value > classEnd)
                       || (student.startDate && day.value < String(student.startDate).slice(0, 10))
                       || (student.endDate && day.value > String(student.endDate).slice(0, 10));
+                    const registrationBlocked = !current && !canRegisterStudentForDate(student, day.value);
                     const note = current
                       ? noteOverrides[current.id] ?? current.note ?? ""
                       : "";
@@ -1420,6 +1445,8 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                             ? "bg-violet-50/70"
                             : outside
                             ? "bg-slate-50"
+                            : registrationBlocked
+                            ? "bg-slate-50/70"
                             : "bg-white",
                         )}
                       >
@@ -1429,7 +1456,11 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                               className="h-3.5 w-3.5"
                               hideIndicator
                               checked={!!current}
-                              disabled={!classPerm?.canEdit || updateMutation.isPending}
+                                disabled={
+                                  !classPerm?.canEdit
+                                  || updateMutation.isPending
+                                  || registrationBlocked
+                                }
                               onCheckedChange={() => toggle(student, day.value, current)}
                               aria-label={`Đăng ký ${student.fullName} ngày ${day.label}`}
                             />

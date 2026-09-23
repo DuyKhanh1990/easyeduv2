@@ -1994,6 +1994,21 @@ export function registerClassesRoutes(app: Express): void {
         const oldWalletStatus = existing?.status ?? "registered";
         let newWalletStatus = oldWalletStatus;
         if (action === "register") {
+          const isSelfPractice =
+            classRow.freeClassMode === "self_practice"
+            || (classRow.freeClassMode == null && (classRow.teacherIds ?? []).length === 0);
+          if (value !== false && !existing && !isSelfPractice && Number(sc.totalSessions || 0) > 0) {
+            const [attendedBefore] = await tx
+              .select({ count: sql<number>`count(*)::int` })
+              .from(freeClassRegistrations)
+              .where(and(
+                eq(freeClassRegistrations.studentClassId, sc.id),
+                eq(freeClassRegistrations.status, "attended"),
+              ));
+            if (Number(attendedBefore?.count || 0) >= Number(sc.totalSessions)) {
+              throw new Error("Học viên đã sử dụng hết số buổi, không thể đăng ký thêm");
+            }
+          }
           if (value === false) {
             if (existing?.status === "attended") {
               throw new Error("Ngày đã điểm danh không thể hủy đăng ký");
