@@ -13,6 +13,7 @@ import {
   PauseCircle,
   Pencil,
   Plus,
+  Search,
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -75,6 +76,12 @@ const getRemainingDays = (today: string, end: string) => {
   return Math.floor((endTime - todayTime) / (24 * 60 * 60 * 1000)) + 1;
 };
 
+const normalizeSearchText = (value: unknown) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("vi");
+
 const formatAssignmentTime = (startTime?: string | null, endTime?: string | null) => {
   const formatTime = (value?: string | null) => {
     const match = String(value || "").match(/^(\d{1,2}):(\d{2})/);
@@ -108,6 +115,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
   const [monthDate, setMonthDate] = useState(() => startOfMonth(requestedDate ?? new Date()));
   const [mode, setMode] = useState<CalendarMode>("register");
   const [selectedAttendDate, setSelectedAttendDate] = useState<string | null>(null);
+  const [selectedAttendTab, setSelectedAttendTab] = useState<string>("all");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [noteDialog, setNoteDialog] = useState<{
@@ -144,6 +152,8 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
     "registered" | "attended" | "reserved"
   >("attended");
   const [historyStudent, setHistoryStudent] = useState<any | null>(null);
+  const [allStudentsSearch, setAllStudentsSearch] = useState("");
+  const [allStudentsPage, setAllStudentsPage] = useState(1);
   const isSelfPractice = classData?.freeClassMode === "self_practice";
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -351,6 +361,25 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
     }
     return stats;
   }, [days, registrations, students]);
+  const allStudentsFiltered = useMemo(() => {
+    const keyword = normalizeSearchText(allStudentsSearch.trim());
+    if (!keyword) return students;
+    return students.filter((student: any) =>
+      [student.fullName, student.code]
+        .some((value) => normalizeSearchText(value).includes(keyword)),
+    );
+  }, [allStudentsSearch, students]);
+  const allStudentsPageCount = Math.max(1, Math.ceil(allStudentsFiltered.length / 20));
+  const allStudentsPageRows = allStudentsFiltered.slice(
+    (allStudentsPage - 1) * 20,
+    allStudentsPage * 20,
+  );
+  useEffect(() => {
+    setAllStudentsPage(1);
+  }, [allStudentsSearch]);
+  useEffect(() => {
+    setAllStudentsPage((current) => Math.min(current, allStudentsPageCount));
+  }, [allStudentsPageCount]);
   const visibleDays = mode === "attend"
     ? days.filter((day) => isSelfPractice
       ? (
@@ -379,7 +408,8 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
     setMonthDate(startOfMonth(requestedDate));
     setSelectedDate(requestedDateValue);
     setSelectedAttendDate(requestedDateValue);
-  }, [initialDate]);
+    if (isSelfPractice) setSelectedAttendTab(requestedDateValue);
+  }, [initialDate, isSelfPractice]);
 
   useEffect(() => {
     const currentMonth = today.slice(0, 7);
@@ -407,9 +437,16 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
         ? current
         : visibleDays[0]?.value ?? null,
     );
-  }, [mode, month, visibleDays]);
+    setSelectedAttendTab((current) => {
+      if (!isSelfPractice) return visibleDays[0]?.value ?? "all";
+      if (current === "all" || visibleDays.some((day) => day.value === current)) return current;
+      return visibleDays[0]?.value ?? "all";
+    });
+  }, [isSelfPractice, mode, month, visibleDays]);
 
-  const selectedAttendDay = visibleDays.find((day) => day.value === selectedAttendDate) ?? null;
+  const selectedAttendDay = isSelfPractice && selectedAttendTab === "all"
+    ? null
+    : visibleDays.find((day) => day.value === selectedAttendDate) ?? null;
   const selectedCommonContents = selectedDateContents?.common ?? [];
   const selectedPersonalContents = selectedDateContents?.personal ?? [];
   const selectedContentStudentNames = useMemo(
@@ -667,7 +704,10 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
           </Button>
         </div>
       </div>
-      {selectedDate && (isLoadingSelectedDateContents || selectedCommonContents.length > 0 || selectedPersonalContents.length > 0) && (
+      {selectedDate
+        && !(isSelfPractice && selectedAttendTab === "all")
+        && (isLoadingSelectedDateContents || selectedCommonContents.length > 0 || selectedPersonalContents.length > 0)
+        && (
         <div className="border-b border-slate-200 bg-white px-4 py-3">
           <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 shadow-sm">
             <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -741,7 +781,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
             <ClipboardCheck className="h-8 w-8 text-slate-300" />
             Chưa có học viên đã xếp lịch trong lớp này.
           </div>
-        ) : mode === "attend" && visibleDays.length === 0 ? (
+        ) : mode === "attend" && visibleDays.length === 0 && !isSelfPractice ? (
           <div className="flex h-64 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
             <ClipboardCheck className="h-8 w-8 text-slate-300" />
             Chưa có ngày học nào được đăng ký trong tháng này.
@@ -752,14 +792,32 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
               <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
                 Ngày điểm danh
               </span>
+              {isSelfPractice && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedAttendTab("all")}
+                  className={cn(
+                    "rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
+                    selectedAttendTab === "all"
+                      ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                  )}
+                >
+                  <span className="block">Tất cả</span>
+                  <span className="text-[10px] text-muted-foreground">{students.length} học viên</span>
+                </button>
+              )}
               {visibleDays.map((day) => (
                 <button
                   key={day.value}
                   type="button"
-                  onClick={() => setSelectedAttendDate(day.value)}
+                  onClick={() => {
+                    setSelectedAttendTab(day.value);
+                    setSelectedAttendDate(day.value);
+                  }}
                   className={cn(
                     "rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
-                    selectedAttendDate === day.value
+                    (selectedAttendTab === day.value)
                       ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm"
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
                   )}
@@ -770,7 +828,144 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
               ))}
             </div>
 
-            {selectedAttendDay && (
+            {isSelfPractice && selectedAttendTab === "all" ? (
+              <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3 px-4 pb-3 pt-4">
+                  <div className="flex items-center gap-2">
+                    <div className="h-4 w-1 shrink-0 rounded-full bg-gradient-to-b from-blue-400 to-indigo-500" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Tổng hợp học viên
+                    </span>
+                    <span className="text-xs font-medium text-slate-800">
+                      ({allStudentsFiltered.length})
+                    </span>
+                  </div>
+                  <div className="relative w-full sm:w-72">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="search"
+                      value={allStudentsSearch}
+                      onChange={(event) => setAllStudentsSearch(event.target.value)}
+                      placeholder="Tìm tên hoặc mã học viên..."
+                      aria-label="Tìm học viên"
+                      className="h-8 w-full rounded-md border border-slate-200 bg-white pl-8 pr-3 text-xs outline-none transition-colors placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                    />
+                  </div>
+                </div>
+                <div className="overflow-x-auto border-t border-slate-100">
+                  <table className="w-full min-w-[900px] border-collapse text-xs">
+                    <thead className="bg-slate-50/80 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      <tr>
+                        <th className="px-4 py-2.5 text-left">Học viên</th>
+                        <th className="px-3 py-2.5 text-center">Tổng</th>
+                        <th className="px-3 py-2.5 text-center">Đã học</th>
+                        <th className="px-3 py-2.5 text-center">Còn lại</th>
+                        <th className="px-3 py-2.5 text-left">Hạn sử dụng</th>
+                        <th className="px-3 py-2.5 text-left">Trạng thái</th>
+                        <th className="px-4 py-2.5 text-center">Lịch</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allStudentsPageRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                            Không tìm thấy học viên phù hợp.
+                          </td>
+                        </tr>
+                      ) : (
+                        allStudentsPageRows.map((student: any) => {
+                          const studentStart = String(student.startDate || classStart || "").slice(0, 10);
+                          const studentEnd = String(student.endDate || classEnd || "").slice(0, 10);
+                          const totalSessions = Number(student.totalSessions ?? 0);
+                          const attendedSessions = Number(student.attendedSessions ?? 0);
+                          const remainingSessions = Number(
+                            student.remainingSessions ?? Math.max(0, totalSessions - attendedSessions),
+                          );
+                          const isExpired = !!studentEnd && studentEnd < today;
+                          const statusLabel = totalSessions <= 0
+                            ? "Chưa cấp buổi"
+                            : isExpired
+                            ? "Hết hạn"
+                            : remainingSessions <= 0
+                            ? "Hết buổi"
+                            : remainingSessions <= 5
+                            ? "Sắp hết buổi"
+                            : "Còn hạn";
+                          const statusClass = statusLabel === "Còn hạn"
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            : statusLabel === "Sắp hết buổi"
+                            ? "border-amber-200 bg-amber-50 text-amber-700"
+                            : "border-red-200 bg-red-50 text-red-700";
+                          return (
+                            <tr key={student.id} className="border-t border-slate-100 transition-colors hover:bg-slate-50">
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-800">{student.fullName}</div>
+                                <div className="mt-0.5 text-[11px] text-slate-500">{student.code || "—"}</div>
+                              </td>
+                              <td className="px-3 py-3 text-center font-medium text-slate-700">{totalSessions}</td>
+                              <td className="px-3 py-3 text-center font-medium text-emerald-700">{attendedSessions}</td>
+                              <td className="px-3 py-3 text-center font-semibold text-blue-700">{remainingSessions}</td>
+                              <td className="whitespace-nowrap px-3 py-3 text-slate-600">
+                                {formatStudentDate(studentStart)} – {formatStudentDate(studentEnd)}
+                              </td>
+                              <td className="px-3 py-3">
+                                <Badge variant="outline" className={cn("whitespace-nowrap text-[10px]", statusClass)}>
+                                  {statusLabel}
+                                </Badge>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 gap-1.5 text-xs"
+                                  onClick={() => setHistoryStudent(student)}
+                                >
+                                  <CalendarDays className="h-3.5 w-3.5 text-blue-600" />
+                                  Lịch
+                                </Button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
+                  <span>
+                    {allStudentsFiltered.length === 0
+                      ? "0 học viên"
+                      : `Hiển thị ${(allStudentsPage - 1) * 20 + 1}–${Math.min(allStudentsPage * 20, allStudentsFiltered.length)} / ${allStudentsFiltered.length} học viên`}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      disabled={allStudentsPage <= 1}
+                      onClick={() => setAllStudentsPage((page) => Math.max(1, page - 1))}
+                    >
+                      Trước
+                    </Button>
+                    <span className="min-w-20 text-center">
+                      Trang {allStudentsPage}/{allStudentsPageCount}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      disabled={allStudentsPage >= allStudentsPageCount}
+                      onClick={() => setAllStudentsPage((page) => Math.min(allStudentsPageCount, page + 1))}
+                    >
+                      Sau
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : selectedAttendDay ? (
               <>
                 <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                   <div className="flex items-center gap-2 px-4 pb-3 pt-4">
@@ -1019,7 +1214,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                   </div>
                 </div>
               </>
-            )}
+            ) : null}
           </div>
         ) : (
           <table className="w-full min-w-max border-collapse text-xs">
