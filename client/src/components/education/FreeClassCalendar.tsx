@@ -218,7 +218,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
       id: string;
       sessionIndex: number;
       sessionDate: string;
-      status: "attended" | "reserved";
+       status: "registered" | "attended" | "reserved";
       note?: string | null;
       shiftName?: string | null;
       shiftStart?: string | null;
@@ -230,12 +230,12 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
       historyStudent?.id,
     ],
     queryFn: async () => {
-      const path = `/api/classes/${classId}/free-schedule/student-history?studentClassId=${encodeURIComponent(historyStudent!.id)}`;
+       const path = `/api/classes/${classId}/free-schedule/student-history?studentClassId=${encodeURIComponent(historyStudent!.id)}${isSelfPractice ? "" : "&includeRegistered=true"}`;
       const response = await fetch(path, { credentials: "include" });
       if (!response.ok) throw new Error("Không thể tải lịch học của học viên");
       return response.json();
     },
-    enabled: isSelfPractice && !!historyStudent?.id,
+     enabled: !!historyStudent?.id,
   });
   const { data: allEvaluationCriteria = [] } = useQuery<any[]>({
     queryKey: ["/api/evaluation-criteria"],
@@ -512,6 +512,17 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
         const student = students.find((candidate: any) => candidate.id === studentClassId);
         return student && canRegisterStudentForDate(student, date);
       }));
+  const historySessionsByMonth = useMemo(() => {
+    const groups = new Map<string, { label: string; sessions: any[] }>();
+    for (const session of studentHistory?.sessions ?? []) {
+      const date = parseCalendarDate(String(session.sessionDate).slice(0, 10));
+      const key = date ? format(date, "yyyy-MM") : "unknown";
+      const label = date ? `Tháng ${format(date, "M")}` : "Khác";
+      if (!groups.has(key)) groups.set(key, { label, sessions: [] });
+      groups.get(key)!.sessions.push(session);
+    }
+    return Array.from(groups.values());
+  }, [studentHistory?.sessions]);
 
   useEffect(() => {
     if (isSelfPractice) setMode("attend");
@@ -1150,9 +1161,16 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                     Lịch
                                   </Button>
                                 ) : (
-                                  <span className="text-xs font-medium text-slate-600">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 gap-1.5 text-xs"
+                                    onClick={() => setHistoryStudent(student)}
+                                  >
+                                    <CalendarDays className="h-3.5 w-3.5 text-blue-600" />
                                     {registeredDayCount} ngày
-                                  </span>
+                                  </Button>
                                 )}
                               </td>
                             </tr>
@@ -2375,7 +2393,9 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
               )}
             </DialogTitle>
             <p className="text-xs text-muted-foreground">
-              Chỉ hiển thị các buổi đã được điểm danh: Có học hoặc Bảo lưu.
+              {isSelfPractice
+                ? "Chỉ hiển thị các buổi đã được điểm danh: Có học hoặc Bảo lưu."
+                : "Danh sách các buổi đã đăng ký và trạng thái điểm danh."}
             </p>
           </DialogHeader>
           <div className="max-h-[calc(88vh-96px)] overflow-y-auto bg-[#ECEEF4] p-5">
@@ -2386,48 +2406,63 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
             ) : (studentHistory?.sessions?.length ?? 0) === 0 ? (
               <div className="flex min-h-[180px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white text-sm text-muted-foreground">
                 <CalendarDays className="h-8 w-8 text-slate-300" />
-                Chưa có buổi nào được điểm danh.
+                {isSelfPractice ? "Chưa có buổi nào được điểm danh." : "Chưa có buổi nào được đăng ký."}
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {studentHistory?.sessions?.map((session) => (
-                  <div
-                    key={session.id}
-                    className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                        Buổi {session.sessionIndex}
-                      </span>
-                      <span className={cn(
-                        "rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                        session.status === "attended"
-                          ? "bg-emerald-50 text-emerald-700"
-                          : "bg-amber-50 text-amber-700",
-                      )}>
-                        {session.status === "attended" ? "Có học" : "Bảo lưu"}
-                      </span>
+              <div className="space-y-5">
+                {historySessionsByMonth.map((monthGroup) => (
+                  <section key={monthGroup.label} className="space-y-2">
+                    <h3 className="border-l-4 border-blue-500 pl-3 text-sm font-bold text-slate-700">
+                      {monthGroup.label}
+                    </h3>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      {monthGroup.sessions.map((session) => (
+                        <div
+                          key={session.id}
+                          className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                              Buổi {session.sessionIndex}
+                            </span>
+                            <span className={cn(
+                              "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                              session.status === "attended"
+                                ? "bg-emerald-50 text-emerald-700"
+                                : session.status === "reserved"
+                                ? "bg-amber-50 text-amber-700"
+                                : "bg-slate-100 text-slate-600",
+                            )}>
+                              {session.status === "attended"
+                                ? "Có học"
+                                : session.status === "reserved"
+                                ? "Bảo lưu"
+                                : "Chưa điểm danh"}
+                            </span>
+                          </div>
+                          <div className="mt-2 text-base font-bold text-slate-800">
+                            {formatStudentDate(session.sessionDate)}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {(() => {
+                              const date = parseCalendarDate(String(session.sessionDate).slice(0, 10));
+                              return date ? format(date, "EEEE", { locale: vi }) : "—";
+                            })()}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {session.shiftStart || session.shiftEnd
+                              ? `${String(session.shiftStart || "").slice(0, 5)} - ${String(session.shiftEnd || "").slice(0, 5)}`
+                              : session.shiftName || "Chưa có ca học"}
+                          </div>
+                          {session.note && (
+                            <div className="mt-2 border-t border-slate-100 pt-2 text-xs text-slate-500">
+                              {session.note}
+                            </div>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                    <div className="mt-2 text-base font-bold text-slate-800">
-                      {formatStudentDate(session.sessionDate)}
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      {(() => {
-                        const date = parseCalendarDate(String(session.sessionDate).slice(0, 10));
-                        return date ? format(date, "EEEE", { locale: vi }) : "—";
-                      })()}
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      {session.shiftStart || session.shiftEnd
-                        ? `${String(session.shiftStart || "").slice(0, 5)} - ${String(session.shiftEnd || "").slice(0, 5)}`
-                        : session.shiftName || "Chưa có ca học"}
-                    </div>
-                    {session.note && (
-                      <div className="mt-2 border-t border-slate-100 pt-2 text-xs text-slate-500">
-                        {session.note}
-                      </div>
-                    )}
-                  </div>
+                  </section>
                 ))}
               </div>
             )}

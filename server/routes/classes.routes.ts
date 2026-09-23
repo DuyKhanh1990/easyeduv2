@@ -1730,6 +1730,7 @@ export function registerClassesRoutes(app: Express): void {
   app.get("/api/classes/:classId/free-schedule/student-history", async (req, res) => {
     const classId = String(req.params.classId);
     const studentClassId = String(req.query.studentClassId || "");
+    const includeRegistered = String(req.query.includeRegistered || "") === "true";
     if (!studentClassId) {
       return res.status(400).json({ message: "Thiếu học viên cần xem lịch" });
     }
@@ -1756,6 +1757,16 @@ export function registerClassesRoutes(app: Express): void {
         return res.status(404).json({ message: "Không tìm thấy học viên trong lớp" });
       }
 
+      const registrationConditions = [
+        eq(freeClassRegistrations.classId, classId),
+        eq(freeClassRegistrations.studentClassId, studentClassId),
+      ];
+      if (!includeRegistered) {
+        registrationConditions.push(or(
+          eq(freeClassRegistrations.status, "attended"),
+          eq(freeClassRegistrations.status, "reserved"),
+        ));
+      }
       const registrations = await db
         .select({
           id: freeClassRegistrations.id,
@@ -1769,14 +1780,7 @@ export function registerClassesRoutes(app: Express): void {
         })
         .from(freeClassRegistrations)
         .leftJoin(shiftTemplates, eq(shiftTemplates.id, freeClassRegistrations.shiftTemplateId))
-        .where(and(
-          eq(freeClassRegistrations.classId, classId),
-          eq(freeClassRegistrations.studentClassId, studentClassId),
-          or(
-            eq(freeClassRegistrations.status, "attended"),
-            eq(freeClassRegistrations.status, "reserved"),
-          ),
-        ))
+        .where(and(...registrationConditions))
         .orderBy(asc(freeClassRegistrations.registrationDate));
 
       const assignments = await db
