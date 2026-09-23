@@ -159,6 +159,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
   const [registrationTab, setRegistrationTab] = useState("all");
   const [bulkRegisterStudentIds, setBulkRegisterStudentIds] = useState<string[]>([]);
   const [bulkRegisterDates, setBulkRegisterDates] = useState<string[]>([]);
+  const [registrationPlannerOpen, setRegistrationPlannerOpen] = useState(false);
   const isSelfPractice = classData?.freeClassMode === "self_practice";
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -402,7 +403,14 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
     if (isSelfPractice) return;
     setRegistrationTab("all");
     setBulkRegisterDates([]);
+    setRegistrationPlannerOpen(false);
   }, [isSelfPractice, month]);
+  useEffect(() => {
+    if (bulkRegisterStudentIds.length === 0) {
+      setRegistrationPlannerOpen(false);
+      setBulkRegisterDates([]);
+    }
+  }, [bulkRegisterStudentIds.length]);
   const visibleDays = mode === "attend"
     ? days.filter((day) => isSelfPractice
       ? (
@@ -657,6 +665,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}`] });
       setBulkRegisterDates([]);
       setBulkRegisterStudentIds([]);
+      setRegistrationPlannerOpen(false);
       toast({
         title: `Đã đăng ký ${Number(result?.createdCount || 0)} lượt`,
         description: [
@@ -949,7 +958,20 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                       ({allStudentsFiltered.length})
                     </span>
                   </div>
-                  <div className="relative w-full sm:w-72">
+                  <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+                    {!isSelfPractice && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={registrationPlannerOpen ? "outline" : "default"}
+                        className="h-8 gap-1.5 text-xs"
+                        disabled={!classPerm?.canEdit || bulkRegisterStudentIds.length === 0}
+                        onClick={() => setRegistrationPlannerOpen((open) => !open)}
+                      >
+                        {registrationPlannerOpen ? "Ẩn lịch" : "Đăng ký"}
+                      </Button>
+                    )}
+                    <div className="relative w-full sm:w-72">
                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                     <input
                       type="search"
@@ -959,6 +981,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                       aria-label="Tìm học viên"
                       className="h-8 w-full rounded-md border border-slate-200 bg-white pl-8 pr-3 text-xs outline-none transition-colors placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                     />
+                    </div>
                   </div>
                 </div>
                 <div className="overflow-x-auto border-t border-slate-100">
@@ -1121,7 +1144,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                     </Button>
                   </div>
                 </div>
-                {!isSelfPractice && (
+                {!isSelfPractice && registrationPlannerOpen && (
                   <div className="border-t border-slate-100 bg-slate-50/70 px-4 py-4">
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                       <div>
