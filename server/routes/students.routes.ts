@@ -2147,6 +2147,62 @@ export function registerStudentsRoutes(app: Express): void {
     }
   });
 
+  // POST /api/students/fee-wallet-adjustments – cân bằng nhiều ví atomically
+  app.post("/api/students/fee-wallet-adjustments", async (req, res) => {
+    try {
+      const crmPerms = await getCrmPermissions(req);
+      if (!crmPerms.canEdit) {
+        return res.status(403).json({ message: "Bạn không có quyền cân bằng ví học phí." });
+      }
+
+      const adjustments = req.body?.adjustments;
+      if (!Array.isArray(adjustments) || adjustments.length === 0 || adjustments.length > 500) {
+        return res.status(400).json({ message: "Danh sách học viên cân bằng không hợp lệ" });
+      }
+
+      const normalized = adjustments.map((item: any) => ({
+        studentId: String(item?.studentId ?? ""),
+        hocPhiAmount: Number(item?.hocPhiAmount ?? 0),
+        datCocAmount: Number(item?.datCocAmount ?? 0),
+      }));
+      if (normalized.some((item) =>
+        !item.studentId ||
+        ![item.hocPhiAmount, item.datCocAmount].every(amount =>
+          Number.isSafeInteger(amount) && Math.abs(amount) <= 9_999_999_999_999
+        )
+      )) {
+        return res.status(400).json({ message: "Số tiền cân bằng không hợp lệ" });
+      }
+
+      const uniqueStudentIds = [...new Set(normalized.map(item => item.studentId))];
+      const students = await Promise.all(
+        uniqueStudentIds.map(studentId =>
+          storage.getStudent(studentId, req.allowedLocationIds, req.isSuperAdmin)
+        )
+      );
+      if (students.some(student => !student || student.type !== "Học viên")) {
+        return res.status(404).json({ message: "Không tìm thấy học viên hoặc bạn không có quyền truy cập" });
+      }
+
+      const { adjustStudentsWallet } = await import("../storage/wallet.storage");
+      const actorId = (req.user as any)?.id ?? null;
+      const actorName = actorId ? await getActorName(actorId) : "Hệ thống";
+      const entries = await adjustStudentsWallet(normalized.map(item => ({
+        ...item,
+        createdBy: actorId,
+        createdByName: actorName,
+      })));
+
+      res.status(201).json({
+        message: "Đã cân bằng tài khoản thành công",
+        studentCount: uniqueStudentIds.length,
+        entries,
+      });
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Không thể cân bằng tài khoản" });
+    }
+  });
+
   // POST /api/students/fee-wallet-transfer – chuyển đồng thời Học phí/Đặt cọc
   // giữa hai tài khoản khách hàng bằng các ledger entries bất biến.
   app.post("/api/students/fee-wallet-transfer", async (req, res) => {

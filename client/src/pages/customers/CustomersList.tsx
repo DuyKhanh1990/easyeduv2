@@ -24,13 +24,14 @@ import { SearchableMultiSelect } from "@/components/customers/SearchableMultiSel
 import { SortableColumnItem, type ColumnConfig } from "@/components/customers/SortableColumnItem";
 import { ImportExcelDialog } from "@/components/customers/ImportExcelDialog";
 import { BulkActionDialogs } from "@/components/customers/BulkActionDialogs";
+import { BulkAdjustFeeWalletDialog } from "@/components/customers/BulkAdjustFeeWalletDialog";
 import { CustomersTable } from "@/components/customers/CustomersTable";
 import { CustomerActivityLogDialog } from "@/components/customers/CustomerActivityLogDialog";
 import { CustomerGuideDialog } from "@/components/customers/CustomerGuideDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Filter, Settings2, GripVertical, Download, Upload, ChevronLeft, ChevronRight, Users, Building2, UserCog, GraduationCap, UserCircle, Tablet, BookOpen, Trash, ChevronDown, UserPlus, ScrollText, UserCheck, SlidersHorizontal } from "lucide-react";
+import { Plus, Search, Filter, Settings2, GripVertical, Download, Upload, ChevronLeft, ChevronRight, Users, Building2, UserCog, GraduationCap, UserCircle, Tablet, BookOpen, Trash, ChevronDown, UserPlus, ScrollText, UserCheck, SlidersHorizontal, Scale } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -287,6 +288,7 @@ export function CustomersList() {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [isBulkWalletOpen, setIsBulkWalletOpen] = useState(false);
 
   const { data: parentsData } = useStudents({ type: "Phụ huynh", limit: 1000, enabled: isAddOpen || isEditOpen });
 
@@ -1030,6 +1032,17 @@ export function CustomersList() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
+              {crmPerms.canEdit && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsBulkWalletOpen(true)}
+                  className="h-8 px-3 rounded-xl text-xs gap-1.5 bg-white border-slate-200 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 shadow-sm"
+                  data-testid="button-bulk-adjust-fee-wallet"
+                >
+                  <Scale className="w-3.5 h-3.5" /><span>Cân bằng ví</span>
+                </Button>
+              )}
               {/* ── Nút Bộ lọc ── */}
               <Button
                 variant="outline"
@@ -1440,6 +1453,14 @@ export function CustomersList() {
       />
 
       <CustomerGuideDialog open={isGuideOpen} onOpenChange={setIsGuideOpen} />
+
+      <BulkAdjustFeeWalletDialog
+        open={isBulkWalletOpen}
+        onClose={() => setIsBulkWalletOpen(false)}
+        initialStudentIds={selectedIds}
+        students={students}
+        classes={classes}
+      />
 
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
         <DialogContent className="max-w-none w-screen h-screen m-0 p-0 overflow-hidden bg-slate-100 border-none shadow-2xl rounded-none">

@@ -141,6 +141,77 @@ export async function adjustStudentWallet(input: WalletAdjustmentInput) {
   });
 }
 
+export async function adjustStudentsWallet(inputs: WalletAdjustmentInput[]) {
+  if (!Array.isArray(inputs) || inputs.length === 0) {
+    throw new Error("Vui lòng chọn ít nhất một học viên");
+  }
+
+  const uniqueInputs = new Map<string, WalletAdjustmentInput>();
+  for (const input of inputs) {
+    const studentId = String(input.studentId || "");
+    const hocPhiAmount = Number(input.hocPhiAmount);
+    const datCocAmount = Number(input.datCocAmount);
+    if (!studentId) throw new Error("Học viên không hợp lệ");
+    if (
+      ![hocPhiAmount, datCocAmount].every(amount =>
+        Number.isSafeInteger(amount) && Math.abs(amount) <= 9_999_999_999_999
+      )
+    ) {
+      throw new Error("Số tiền cân bằng không hợp lệ");
+    }
+    if (hocPhiAmount === 0 && datCocAmount === 0) {
+      continue;
+    }
+    uniqueInputs.set(studentId, {
+      ...input,
+      studentId,
+      hocPhiAmount,
+      datCocAmount,
+    });
+  }
+
+  if (uniqueInputs.size === 0) {
+    throw new Error("Vui lòng nhập ít nhất một khoản cần cân bằng");
+  }
+
+  return db.transaction(async tx => {
+    // Lock every wallet in a stable order so concurrent bulk operations
+    // cannot interleave with another adjustment for the same student.
+    for (const studentId of [...uniqueInputs.keys()].sort()) {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${studentId}))`);
+    }
+
+    const rowsToInsert = [...uniqueInputs.values()].flatMap(input => {
+      const adjustments: Array<{ category: "Học phí" | "Đặt cọc"; amount: number }> = [
+        { category: "Học phí", amount: input.hocPhiAmount },
+        { category: "Đặt cọc", amount: input.datCocAmount },
+      ];
+
+      return adjustments
+        .filter(({ amount }) => amount !== 0)
+        .map(({ category, amount }) => {
+          const absoluteAmount = Math.abs(amount);
+          const direction = amount > 0 ? "credit" as const : "debit" as const;
+          const sign = amount > 0 ? "+" : "−";
+          return {
+            studentId: input.studentId,
+            type: direction,
+            amount: absoluteAmount.toFixed(2),
+            category,
+            action: `Cân bằng tài khoản ${category} (${sign}${absoluteAmount.toLocaleString("vi-VN")} đ)`,
+            invoiceId: null,
+            invoiceCode: null,
+            invoiceDescription: "Điều chỉnh thủ công ví, không qua hóa đơn",
+            createdBy: input.createdBy ?? null,
+            createdByName: input.createdByName ?? null,
+          };
+        });
+    });
+
+    return tx.insert(studentWalletTransactions).values(rowsToInsert).returning();
+  });
+}
+
 export type WalletTransferInput = {
   fromStudentId: string;
   toStudentId: string;
