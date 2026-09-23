@@ -56,6 +56,7 @@ import { StudentNameLink } from "@/components/ui/StudentNameLink";
 import { ScheduleRows } from "./components/ScheduleRows";
 import { ScheduleStatusDropdown } from "./components/ScheduleStatusDropdown";
 import { SplitScheduleDialog } from "./components/SplitScheduleDialog";
+import { ScheduleAdjustmentDialog } from "./components/ScheduleAdjustmentDialog";
 import { InvoiceTemplateList } from "./InvoiceTemplateList";
 import { InvoicePrintPreview } from "./InvoicePrintPreview";
 import { InvoiceQRDialog } from "./components/InvoiceQRDialog";
@@ -1529,6 +1530,7 @@ export default function Invoices() {
   const [deleteInvoiceTarget, setDeleteInvoiceTarget] = useState<InvoiceRow | null>(null);
   const [printPreviewInvoice, setPrintPreviewInvoice] = useState<InvoiceRow | null>(null);
   const [printPreviewSchedule, setPrintPreviewSchedule] = useState<{ schedule: ScheduleItem; invoice: InvoiceRow } | null>(null);
+  const [adjustmentTarget, setAdjustmentTarget] = useState<{ schedule: ScheduleItem; invoiceId: string } | null>(null);
   const [printTemplateOpen, setPrintTemplateOpen] = useState(false);
   const [qrInvoice, setQrInvoice] = useState<InvoiceRow | null>(null);
   const [signDialogOpen, setSignDialogOpen] = useState(false);
@@ -2633,6 +2635,16 @@ export default function Invoices() {
                                 Sửa
                               </ActionMenuItem>
                             )}
+                            {invPerm.canEdit && isScheduleRow && schedule && !isInvoicePaidLike(schedule.status) && (
+                              <ActionMenuItem
+                                className="gap-2 cursor-pointer"
+                                data-testid={`menuitem-adjust-schedule-${schedule.id}`}
+                                onClick={() => setAdjustmentTarget({ schedule, invoiceId: parentInvoice.id })}
+                              >
+                                <Percent className="h-3.5 w-3.5 text-purple-600" />
+                                Khuyến mãi/phụ thu
+                              </ActionMenuItem>
+                            )}
                             {(inv.status === "unpaid" || inv.status === "debt") && (
                               <>
                                 <ActionMenuSeparator />
@@ -3081,6 +3093,14 @@ export default function Invoices() {
           amount={splitDialog.amount}
           invoiceId={splitDialog.invoiceId}
           onClose={() => setSplitDialog(null)}
+        />
+      )}
+
+      {adjustmentTarget && (
+        <ScheduleAdjustmentDialog
+          schedule={adjustmentTarget.schedule}
+          invoiceId={adjustmentTarget.invoiceId}
+          onClose={() => setAdjustmentTarget(null)}
         />
       )}
 
