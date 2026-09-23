@@ -134,12 +134,13 @@ export function BulkAdjustFeeWalletDialog({
   const addStudents = (newStudents: StudentOption[]) => {
     setRows(current => {
       const existing = new Set(current.map(row => row.id));
-      return [
-        ...current,
-        ...newStudents
-          .filter(student => student.type !== "Phụ huynh" && !existing.has(student.id))
-          .map(student => toRow(student)),
-      ];
+      const additions: WalletRow[] = [];
+      for (const student of newStudents) {
+        if (student.type === "Phụ huynh" || existing.has(student.id)) continue;
+        existing.add(student.id);
+        additions.push(toRow(student));
+      }
+      return [...current, ...additions];
     });
   };
 
@@ -291,10 +292,15 @@ export function BulkAdjustFeeWalletDialog({
                         key={student.id}
                         disabled={added}
                         onClick={() => addStudents([student])}
-                        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted disabled:opacity-50"
+                        className={cn(
+                          "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm",
+                          added
+                            ? "cursor-not-allowed bg-muted/60 text-muted-foreground opacity-60"
+                            : "hover:bg-muted",
+                        )}
                       >
                         <span className="truncate">{student.fullName} {student.code && <span className="text-xs text-muted-foreground">({student.code})</span>}</span>
-                        <Plus className="h-4 w-4 shrink-0" />
+                        <span className="shrink-0 text-xs">{added ? "Đã thêm" : <Plus className="h-4 w-4" />}</span>
                       </button>
                     );
                   })}
