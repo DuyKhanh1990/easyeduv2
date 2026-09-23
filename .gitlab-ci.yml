@@ -21,7 +21,7 @@ variables:
   REGISTRY_PROJECT: emso-common
   REGISTRY_IMAGE: new-easyedu
   DOCKER_IMAGE: "$DOCKER_REGISTRY/$REGISTRY_PROJECT/$REGISTRY_IMAGE"
-  REGISTRY_TAG: "0.2.44"
+  REGISTRY_TAG: "0.2.45"
 
 emso-build-image:
   stage: build_images
