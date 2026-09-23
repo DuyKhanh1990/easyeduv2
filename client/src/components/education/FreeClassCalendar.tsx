@@ -448,7 +448,6 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
   useEffect(() => {
     if (isSelfPractice) return;
     setRegistrationTab("all");
-    setBulkRegisterDates([]);
   }, [isSelfPractice, month]);
   useEffect(() => {
     if (bulkRegisterStudentIds.length === 0) {
@@ -706,8 +705,10 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
       skippedCount?: number;
     }) => {
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/free-schedule`] });
+      queryClient.invalidateQueries({ queryKey: ["free-class-registration-planner", classId] });
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/active-students`] });
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}`] });
+      setMonthDate(startOfMonth(registrationPlannerMonthDate));
       setBulkRegisterDates([]);
       setBulkRegisterStudentIds([]);
       setRegistrationPlannerOpen(false);
@@ -1011,7 +1012,11 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                         variant="default"
                         className="h-8 gap-1.5 text-xs"
                         disabled={!classPerm?.canEdit || bulkRegisterStudentIds.length === 0}
-                        onClick={() => setRegistrationPlannerOpen(true)}
+                        onClick={() => {
+                          setRegistrationPlannerMonthDate(startOfMonth(monthDate));
+                          setBulkRegisterDates([]);
+                          setRegistrationPlannerOpen(true);
+                        }}
                       >
                         Đăng ký
                       </Button>
@@ -1201,20 +1206,26 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                               variant="outline"
                               size="icon"
                               className="h-8 w-8"
-                              onClick={() => setMonthDate((date) => subMonths(date, 1))}
+                              onClick={() => {
+                                setRegistrationPlannerMonthDate((date) => subMonths(date, 1));
+                                setBulkRegisterDates([]);
+                              }}
                               aria-label="Tháng trước"
                             >
                               <ChevronLeft className="h-4 w-4" />
                             </Button>
                             <span className="min-w-28 text-center text-sm font-semibold capitalize text-slate-800">
-                              {format(monthDate, "'Tháng' M/yyyy", { locale: vi })}
+                              {format(registrationPlannerMonthDate, "'Tháng' M/yyyy", { locale: vi })}
                             </span>
                             <Button
                               type="button"
                               variant="outline"
                               size="icon"
                               className="h-8 w-8"
-                              onClick={() => setMonthDate((date) => addMonths(date, 1))}
+                              onClick={() => {
+                                setRegistrationPlannerMonthDate((date) => addMonths(date, 1));
+                                setBulkRegisterDates([]);
+                              }}
                               aria-label="Tháng sau"
                             >
                               <ChevronRight className="h-4 w-4" />
@@ -1237,11 +1248,11 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                       </span>
                     </div>
                     <div className="grid grid-cols-7 gap-1.5 sm:grid-cols-10 md:grid-cols-14">
-                      {days.map((day) => {
+                      {registrationPlannerDays.map((day) => {
                         const selected = bulkRegisterDates.includes(day.value);
                         const canSelect = canSelectRegistrationDate(day.value);
                         const registeredCount = students.filter((student: any) =>
-                          registrations.has(`${student.id}:${day.value}`),
+                          registrationPlannerRegistrations.has(`${student.id}:${day.value}`),
                         ).length;
                         return (
                           <button
