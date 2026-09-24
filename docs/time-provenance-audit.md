@@ -48,10 +48,11 @@ Phiên DB hiện dùng `Asia/Ho_Chi_Minh`: `now()::timestamp` cho thành phần 
 | `created_at` của `finance_transaction_categories`, `staff_rewards`, `staff_advances`, `staff_hr_salary_configs` | `Asia/Ho_Chi_Minh` (insert schema/writer bỏ qua trường, DB default `now()`) | Migration `0046` sao lưu tổng cộng 19 dòng theo ID; đối chiếu **0 lệch**. Số dòng theo thứ tự bảng: 14/2/1/2. |
 | `tasks.created_at`, `task_comments.created_at` | `Asia/Ho_Chi_Minh` (cả hai insert bỏ qua trường và dùng DB default `now()`) | Migration `0047` sao lưu 19/9 dòng theo ID; so lại với giờ tường gốc **0 lệch**. Giao diện chi tiết công việc chuyển sang format instant theo timezone của Center; `updated_at` và `due_date` không đổi. |
 | `created_at` của 67 bảng cùng nguồn DB (`0048`) | `Asia/Ho_Chi_Minh` (66 khai báo Drizzle và bảng raw-DDL `center_notification_templates`; writer ứng dụng bỏ qua trường, riêng `exam_sessions` dùng SQL `NOW()`) | Chỉ development: sao lưu tổng cộng **5.761 dòng**, đối chiếu khóa và giờ tường **0 lệch**. Backup dùng PK `id`, riêng `short_links` dùng PK `code`; giữ lại tới khi audit hoàn tất. |
+| `center_registry.registered_at`, `database_backups.requested_at`, `free_class_registrations.registered_at`, `teacher_salary_published_rows.published_at` (`0049`) | `Asia/Ho_Chi_Minh` (các INSERT hiện tại bỏ qua giá trị và dùng DB `now()`) | Chỉ development: sao lưu/đối chiếu **142 dòng** theo PK `center_id` hoặc `id`; **0 lệch** sau round-trip. |
 
-Các migration có điều kiện chặn chạy lặp và hướng dẫn hoàn nguyên: `migrations/0033_student_session_attendance_at_utc.sql` đến `migrations/0048_db_default_created_at_batch_utc.sql`. Sau khi xác minh migration `0048` trên development, còn **155/301 cột** chưa chuyển: 6 `created_at`, 103 `updated_at`, 46 trường tên khác. Không thay đổi production.
+Các migration có điều kiện chặn chạy lặp và hướng dẫn hoàn nguyên: `migrations/0033_student_session_attendance_at_utc.sql` đến `migrations/0049_db_default_named_instants_utc.sql`. Sau khi xác minh `0049` trên development, đã chuyển **71 cột / 5.903 dòng**; còn **151/301 cột** trong inventory chưa chuyển: 6 `created_at`, 103 `updated_at`, 42 trường tên khác. Không thay đổi production.
 
-## Cohort còn lại sau migration 0048
+## Cohort còn lại sau migration 0049
 
 | Nhóm | Số cột | Diễn giải và cách xử lý |
 | --- | ---: | --- |
@@ -60,7 +61,7 @@ Các migration có điều kiện chặn chạy lặp và hướng dẫn hoàn n
 | `updated_at` có writer ứng dụng `new Date()` và DB default lúc insert | 87 | Nguồn có thể khác nhau giữa insert và update; không suy nguồn của mọi dòng lịch sử từ writer hiện tại. Chỉ chuyển sau khi phân loại giá trị cũ hoặc áp dụng rõ ngoại lệ dữ liệu test có backup. |
 | `updated_at` có writer SQL và JS | 11 | Có thể trộn `NOW()`/`transaction_timestamp()` và `new Date()` trong cùng cột; không chuyển theo một timezone chung. |
 | `updated_at` dịch vụ/nguồn ngoài | 5 | Vòng đời backup/restore và callback BIDV, Facebook, Omicall; cần giữ nguồn riêng. |
-| Trường tên khác: DB default | 10 | Writer DB `now()`; riêng `student_relationship_history.changed_at` chưa có bằng chứng đầy đủ cho mọi đường ghi. |
+| Trường tên khác: DB default | 6 | Bốn trường đã chuyển trong `0049`; còn `student_relationship_history.changed_at` có writer cập nhật rõ ràng và các trường khác có override/ngữ nghĩa riêng. |
 | Trường tên khác: server `Date` | 11 | Instant do server tạo; lịch sử cần loại trừ import/default/caller ghi đè. |
 | Trường tên khác: caller hoặc giờ lịch/điểm danh | 7 | Bảo toàn ý nghĩa ngày/giờ địa phương của task, bài thi, nội dung và điểm danh. |
 | Trường tên khác: nhà cung cấp | 3 | Giữ hợp đồng timezone/offset của BIDV và Zalo; không dùng timezone phiên DB thay thế. |
@@ -72,9 +73,10 @@ Các migration có điều kiện chặn chạy lặp và hướng dẫn hoàn n
 - Dữ liệu `database_backups` thực tế cho thấy `requested_at` là giờ DB (ví dụ `2026-09-24 00:29:59.997471`) còn `started_at` là giờ UTC-naive (ví dụ `2026-09-23 17:30:00.007`). Diễn giải đúng cho từng nguồn đưa về gần cùng thời điểm; formatter legacy hiện tại không dùng chung an toàn cho cả hai.
 - `tasks` có 19 dòng và `task_comments` có 9 dòng; hai insert hiện tại bỏ qua `created_at`. Test dùng mẫu thực tế, xác nhận hiển thị trước và sau chuyển đổi giữ nguyên giờ Center. Migration `0047` đã sao lưu/đối chiếu từng ID, **0 lệch**.
 - Mẫu task thử trên development: `created_at` hiển thị đúng 15:34 Asia/Bangkok; `updated_at` thô là 08:34 không múi giờ, tương ứng 15:34 nếu diễn giải là UTC. Hạn nhập 29/09/2026 08:00 được lưu thành 29/09/2026 01:00 không múi giờ. Mẫu này xác nhận đường update hiện tại và cách caller mã hóa hạn; không chứng minh nguồn của các dòng lịch sử.
-- `npx vitest run tests/time/center-time.test.ts tests/time/center-date-range.test.ts`: **9/9 đạt**. `npm run build`: đạt. `npm run check` vẫn báo 271 lỗi, bằng baseline đã ghi nhận trước đợt này.
+- Migration `0049` đổi bốn instant DB-default sang `timestamptz`; kiểm tra live catalog: **3 + 5 + 39 + 95 dòng**, backup từng PK, **0 sai khác**, giữ `DEFAULT now()`.
+- `npx vitest run tests/time/center-time.test.ts tests/time/center-date-range.test.ts`: **9/9 đạt**. `npm run build`: đạt (chỉ cảnh báo baseline). `npm run check` vẫn báo 271 lỗi, bằng baseline đã ghi nhận trước đợt này.
 
-Chưa chuyển các `updated_at`, trường lịch/giờ địa phương, provider hoặc mixed-source trong đợt này. Các cohort còn lại cần được thử writer/reader riêng; giữ nguyên các bảng backup trong `time_migration` cho tới khi hoàn tất audit.
+Inventory 151 cột còn lại không phải một batch cùng nguồn: 109 `created_at`/`updated_at` có writer pha trộn, cùng 42 trường khác gồm lịch/caller, provider, server-Date và DB-default có override. Chúng được giữ nguyên cho tới khi có provenance phù hợp; không cần yêu cầu test thủ công từng cột. Giữ các bảng backup trong `time_migration` cho tới khi hoàn tất audit.
 
 Chưa được mặc định rằng các cột còn lại đều là instant: ngày lịch, giờ lặp và cột trộn nguồn cần xử lý riêng. Bộ lọc nhật ký dùng khoảng `[đầu ngày, đầu ngày tiếp theo)` theo IANA timezone của Center; màn hình lịch sử hóa đơn cũng dùng timezone của Center. Thử biên ngày khi đổi giờ mùa hè ở `Europe/Berlin` xác nhận một ngày có thể dài 23 giờ, không được cộng cố định 24 giờ vào UTC.
 
