@@ -9,9 +9,6 @@ import {
 import { saveInvoiceCommissions, getInvoiceFilterOptions, getThuChiReportEntries, getNextLocationCode, getAvailableFinanceVouchers } from "../storage/finance.storage";
 import { createInvoiceAuditLog } from "../storage/invoice-audit-log.storage";
 import { createIssueReceiptsForInvoice, cancelIssueReceiptForInvoice } from "./store-issue-receipt.routes";
-import { centerDateRangeConditions, InvalidCenterDateKeyError, loadCenterTimeZone } from "../lib/center-date-range";
-import { validateCenterTimeZone } from "@shared/center-time";
-import { invoiceBusinessDateOnly, normalizeInvoiceInstant } from "../lib/invoice-time";
 
 import { z } from "zod";
 import {
@@ -21,7 +18,7 @@ import {
   insertFinanceVoucherSchema,
 } from "@shared/schema";
 import { db, pool } from "../db";
-import { staff, classes, invoices, invoicePaymentSchedule, students, classSessions, centerConfig } from "@shared/schema";
+import { staff, classes, invoices, invoicePaymentSchedule, students, classSessions } from "@shared/schema";
 import { eq, asc, sql, and, isNotNull, gte, lte, inArray } from "drizzle-orm";
 import { ensureVirtualAccount } from "../services/bidv/bidv-virtual-account.service";
 import { resolveInvoiceRecipientUserIds, sendInvoiceCreatedNotification, sendInvoicePaidNotification } from "../lib/invoice-notification";
@@ -230,30 +227,19 @@ const updateScheduleBodySchema = z.object({
   paidAt: z.coerce.date().nullable().optional(),
 });
 
-function normalizeInvoicePayloadTimes(data: any, rawData: any, timeZone: string): void {
-  if (data.createdAt !== undefined) {
-    data.createdAt = normalizeInvoiceInstant(data.createdAt, rawData?.createdAt, timeZone) as Date;
-  }
-  if (data.paidAt !== undefined) {
-    data.paidAt = normalizeInvoiceInstant(data.paidAt, rawData?.paidAt, timeZone);
-  }
-  if (data.paymentSchedule) {
-    data.paymentSchedule = data.paymentSchedule.map((
-      schedule: { createdAt?: Date; paidAt?: Date | null; [key: string]: unknown },
-      index: number,
-    ) => {
-      const rawSchedule = rawData?.paymentSchedule?.[index];
-      return {
-        ...schedule,
-        ...(schedule.createdAt !== undefined
-          ? { createdAt: normalizeInvoiceInstant(schedule.createdAt, rawSchedule?.createdAt, timeZone) as Date }
-          : {}),
-        ...(schedule.paidAt !== undefined
-          ? { paidAt: normalizeInvoiceInstant(schedule.paidAt, rawSchedule?.paidAt, timeZone) }
-          : {}),
-      };
-    });
-  }
+function invoiceBusinessDateOnly(value: unknown, rawValue?: unknown): string | null {
+  if (typeof rawValue === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawValue)) return rawValue;
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 const splitScheduleBodySchema = z.object({
@@ -699,9 +685,6 @@ export function registerFinanceRoutes(app: Express): void {
   app.get("/api/finance/invoices/history", async (req, res) => {
     try {
       const q = req.query as Record<string, string>;
-      const [center] = await db.select({ timeZone: centerConfig.timezone }).from(centerConfig).limit(1);
-      if (!center) return res.status(503).json({ message: "Chưa cấu hình trung tâm" });
-      const timeZone = validateCenterTimeZone(center.timeZone);
       const dateFrom   = q.dateFrom   || null;
       const dateTo     = q.dateTo     || null;
       const locationId = q.locationId || null;
@@ -724,29 +707,27 @@ export function registerFinanceRoutes(app: Express): void {
         return parts.length ? "AND " + parts.join(" AND ") : "";
       })();
 
-      // Legacy finance timestamps are converted to instants in each UNION
-      // branch. Filter the combined timeline by the center's business-day zone.
-      centerDateRangeConditions(sql`ev_time`, dateFrom, dateTo, timeZone);
+      // Timestamps in the finance tables are TIMESTAMP WITHOUT TIME ZONE values
+      // stored as UTC (see server/db.ts). Convert them to Vietnam time before
+      // applying calendar-date filters, otherwise "Hôm nay" changes with the
+      // database/server timezone and events around midnight land on the wrong day.
       const dateFilter = (() => {
         const parts: string[] = [];
         const isDateOnly = (value: string | null): value is string =>
           Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
-        const dateParams: unknown[] = [];
         if (dateFrom && isDateOnly(dateFrom)) {
-          dateParams.push(dateFrom, timeZone);
-          parts.push(`ev_time >= ($${dateParams.length - 1}::date::timestamp AT TIME ZONE $${dateParams.length})`);
+          parts.push(`(ev_time AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Ho_Chi_Minh') >= '${dateFrom}'::date`);
         }
         if (dateTo && isDateOnly(dateTo)) {
-          dateParams.push(dateTo, timeZone);
-          parts.push(`ev_time < (($${dateParams.length - 1}::date + INTERVAL '1 day')::timestamp AT TIME ZONE $${dateParams.length})`);
+          parts.push(`(ev_time AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Ho_Chi_Minh') < ('${dateTo}'::date + INTERVAL '1 day')`);
         }
-        return { clause: parts.length ? "WHERE " + parts.join(" AND ") : "", params: dateParams };
+        return parts.length ? "WHERE " + parts.join(" AND ") : "";
       })();
 
       const baseUnion = `
         SELECT
           'created'::text   AS ev_type,
-          i.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh' AS ev_time,
+          i.created_at      AS ev_time,
           i.id::text        AS invoice_id,
           i.code            AS invoice_code,
           i.type            AS invoice_type,
@@ -772,7 +753,7 @@ export function registerFinanceRoutes(app: Express): void {
 
         SELECT
           'paid'::text      AS ev_type,
-          i.paid_at AT TIME ZONE 'Asia/Ho_Chi_Minh' AS ev_time,
+          i.paid_at         AS ev_time,
           i.id::text, i.code, i.type,
           COALESCE(s.full_name, i.subject_name),
           i.grand_total::text,
@@ -793,7 +774,7 @@ export function registerFinanceRoutes(app: Express): void {
 
         SELECT
           'schedule_paid'::text AS ev_type,
-          ps.paid_at AT TIME ZONE 'Asia/Ho_Chi_Minh' AS ev_time,
+          ps.paid_at         AS ev_time,
           i.id::text, i.code, i.type,
           COALESCE(s.full_name, i.subject_name),
           i.grand_total::text,
@@ -815,7 +796,7 @@ export function registerFinanceRoutes(app: Express): void {
 
         SELECT
           al.action                    AS ev_type,
-          al.created_at AS ev_time,
+          al.created_at                AS ev_time,
           al.invoice_id::text          AS invoice_id,
           al.invoice_code              AS invoice_code,
           al.invoice_type              AS invoice_type,
@@ -839,10 +820,10 @@ export function registerFinanceRoutes(app: Express): void {
       `;
 
       const [countResult, dataResult] = await Promise.all([
-        pool.query(`SELECT COUNT(*) AS cnt FROM (${baseUnion}) base ${dateFilter.clause}`, dateFilter.params),
+        pool.query(`SELECT COUNT(*) AS cnt FROM (${baseUnion}) base ${dateFilter}`),
         pool.query(
-          `SELECT * FROM (${baseUnion}) base ${dateFilter.clause} ORDER BY ev_time DESC LIMIT $${dateFilter.params.length + 1} OFFSET $${dateFilter.params.length + 2}`,
-          [...dateFilter.params, limit, offset]
+          `SELECT * FROM (${baseUnion}) base ${dateFilter} ORDER BY ev_time DESC LIMIT $1 OFFSET $2`,
+          [limit, offset]
         ),
       ]);
 
@@ -852,9 +833,6 @@ export function registerFinanceRoutes(app: Express): void {
       });
     } catch (err: any) {
       console.error("[invoice-history]", err);
-      if (err instanceof InvalidCenterDateKeyError) {
-        return res.status(400).json({ message: err.message });
-      }
       res.status(500).json({ message: err.message });
     }
   });
@@ -1049,8 +1027,6 @@ export function registerFinanceRoutes(app: Express): void {
       if (!parsed.success) {
         return res.status(400).json({ message: "Dữ liệu không hợp lệ", errors: parsed.error.errors });
       }
-      const timeZone = await loadCenterTimeZone();
-      normalizeInvoicePayloadTimes(parsed.data, req.body, timeZone);
       const userId = (req as any).user?.id;
       const { data, staffRecipientUserId } = await createOneInvoiceWithSideEffects(parsed.data, userId);
       if (rawCommissions.length > 0) {
@@ -1079,7 +1055,6 @@ export function registerFinanceRoutes(app: Express): void {
        if (list.length > 300) return res.status(400).json({ message: `Tối đa 300 hoá đơn/lần (đang có ${list.length})` });
 
       const userId = (req as any).user?.id;
-      const timeZone = await loadCenterTimeZone();
       const results: Array<{ index: number; ok: boolean; id?: string; code?: string; error?: string }> = [];
       const notifyJobs: Array<() => Promise<void>> = [];
 
@@ -1096,7 +1071,6 @@ export function registerFinanceRoutes(app: Express): void {
           continue;
         }
         try {
-          normalizeInvoicePayloadTimes(parsed.data, row, timeZone);
           const { data, staffRecipientUserId } = await createOneInvoiceWithSideEffects(parsed.data, userId);
           results.push({ index: i, ok: true, id: data.id, code: data.code });
           notifyJobs.push(() =>
@@ -1135,17 +1109,13 @@ export function registerFinanceRoutes(app: Express): void {
       }
       const userId = (req as any).user?.id;
       const before = await storage.getInvoice(req.params.id);
-      const timeZone = await loadCenterTimeZone();
-      normalizeInvoicePayloadTimes(parsed.data, req.body, timeZone);
       const effectiveCreatedAt = invoiceBusinessDateOnly(
         parsed.data.createdAt ?? before?.createdAt,
         parsed.data.createdAt !== undefined ? req.body?.createdAt : undefined,
-        timeZone,
       );
       const effectivePaidAt = invoiceBusinessDateOnly(
         parsed.data.paidAt !== undefined ? parsed.data.paidAt : before?.paidAt,
         parsed.data.paidAt !== undefined ? req.body?.paidAt : undefined,
-        timeZone,
       );
       if (effectiveCreatedAt && effectivePaidAt && effectivePaidAt < effectiveCreatedAt) {
         return res.status(400).json({ message: "Ngày thanh toán không được trước ngày tạo." });
@@ -1559,25 +1529,13 @@ export function registerFinanceRoutes(app: Express): void {
         return res.status(404).json({ message: "Không tìm thấy đợt thanh toán" });
       }
 
-      const timeZone = await loadCenterTimeZone();
-      const normalizedScheduleTimes = {
-        ...parsed.data,
-        ...(parsed.data.createdAt !== undefined
-          ? { createdAt: normalizeInvoiceInstant(parsed.data.createdAt, req.body?.createdAt, timeZone) as Date }
-          : {}),
-        ...(parsed.data.paidAt !== undefined
-          ? { paidAt: normalizeInvoiceInstant(parsed.data.paidAt, req.body?.paidAt, timeZone) }
-          : {}),
-      };
       const effectiveCreatedAt = invoiceBusinessDateOnly(
         parsed.data.createdAt ?? before.createdAt,
         parsed.data.createdAt !== undefined ? req.body?.createdAt : undefined,
-        timeZone,
       );
       const effectivePaidAt = invoiceBusinessDateOnly(
         parsed.data.paidAt !== undefined ? parsed.data.paidAt : before.paidAt,
         parsed.data.paidAt !== undefined ? req.body?.paidAt : undefined,
-        timeZone,
       );
       if (effectiveCreatedAt && effectivePaidAt && effectivePaidAt < effectiveCreatedAt) {
         return res.status(400).json({ message: "Ngày thanh toán không được trước ngày tạo." });
@@ -1591,7 +1549,7 @@ export function registerFinanceRoutes(app: Express): void {
         dueDate,
         createdAt,
         paidAt,
-      } = normalizedScheduleTimes;
+      } = parsed.data;
       const data: Record<string, unknown> = {};
       if (amount !== undefined) {
         if (!Number.isFinite(Number(amount)) || Number(amount) < 0) {

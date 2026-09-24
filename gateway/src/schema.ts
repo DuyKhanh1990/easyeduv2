@@ -26,7 +26,7 @@ export const centerRegistry = pgTable("center_registry", {
   centerUrl: text("center_url").notNull(),
   description: text("description"),
   isActive: boolean("is_active").notNull().default(true),
-  registeredAt: timestamp("registered_at", { withTimezone: true }).defaultNow().notNull(),
+  registeredAt: timestamp("registered_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 

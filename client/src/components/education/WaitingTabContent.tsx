@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { format } from "date-fns";
-import { formatStoredVietnamTimestamp } from "@/lib/vietnam-time";
 import { useClassMutations } from "@/hooks/use-class-mutations";
 import {
   Dialog,
@@ -868,11 +867,7 @@ export function WaitingTabContent({
                   </span>
                 </TableCell>
                 <TableCell>{s.creator?.fullName || "Hệ thống"}</TableCell>
-                <TableCell>{formatStoredVietnamTimestamp(s.createdAt, {
-                  day: "2-digit",
-                  month: "2-digit",
-                  year: "numeric",
-                })}</TableCell>
+                <TableCell>{format(new Date(s.createdAt), "dd/MM/yyyy")}</TableCell>
                 {canEdit && (
                   <TableCell>
                     <Button

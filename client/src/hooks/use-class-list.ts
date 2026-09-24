@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import { useClasses } from "@/hooks/use-classes";
 import type { ClassesPage } from "@/hooks/use-classes";
@@ -103,16 +103,24 @@ export function useClassList() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   // ---------------------------------------------------------------------------
+  // Derived: today (stable reference)
+  // ---------------------------------------------------------------------------
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
+  // ---------------------------------------------------------------------------
   // Status computation (for display in cards/rows)
   // ---------------------------------------------------------------------------
   function getComputedStatus(cls: any): "recruiting" | "active" | "closed" | "force_closed" {
     // Manually closed by admin overrides everything
     if (cls.status === "closed") return "force_closed";
-    const today = classesPage?.centerToday;
-    if (!today) throw new Error("Chưa nhận được ngày hiện tại của trung tâm");
-    // SQL date fields are calendar keys, not instants in the browser's timezone.
-    if (cls.startDate > today) return "recruiting";
-    if (cls.endDate < today) return "closed";
+    const start = new Date(cls.startDate);
+    const end = new Date(cls.endDate);
+    if (today < start) return "recruiting";
+    if (today > end) return "closed";
     return "active";
   }
 

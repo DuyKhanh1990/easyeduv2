@@ -19,9 +19,6 @@ import { useLocations } from "@/hooks/use-locations";
 import { cn } from "@/lib/utils";
 import { HistoryDialog } from "@/components/common/HistoryDialog";
 import { StoreTransferNotes } from "./StoreTransferNotes";
-import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
-import { formatCenterTimestamp } from "@/lib/center-time-format";
-import { format } from "date-fns";
 
 type TransferRow = {
   id: string;
@@ -42,6 +39,12 @@ type TransferRow = {
 type Warehouse = { id: string; name: string };
 
 const PAGE_SIZE_OPTIONS = [20, 30, 50, 100];
+
+function fmtDate(dateStr: string) {
+  if (!dateStr) return "—";
+  const d = new Date(dateStr);
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
 
 function fmtDay(dateStr: string) {
   if (!dateStr) return "—";
@@ -115,7 +118,6 @@ function Pagination({ page, totalPages, total, pageSize, onPage, onPageSize }: {
 }
 
 export function StoreTransferTab() {
-  const { data: timeZone } = useCenterTimeZone();
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -150,8 +152,8 @@ export function StoreTransferTab() {
   params.set("page", String(page));
   params.set("pageSize", String(pageSize));
   if (search.trim()) params.set("search", search.trim());
-  if (dateRange.from) params.set("dateFrom", format(dateRange.from, "yyyy-MM-dd"));
-  if (dateRange.to) params.set("dateTo", format(dateRange.to, "yyyy-MM-dd"));
+  if (dateRange.from) params.set("dateFrom", dateRange.from.toISOString().slice(0, 10));
+  if (dateRange.to) params.set("dateTo", dateRange.to.toISOString().slice(0, 10));
   if (filterFromWarehouse !== "all") params.set("fromWarehouseId", filterFromWarehouse);
   if (filterToWarehouse !== "all") params.set("toWarehouseId", filterToWarehouse);
   if (filterStatus !== "all") params.set("status", filterStatus);
@@ -470,7 +472,7 @@ export function StoreTransferTab() {
               variant="outline"
               size="sm"
               className="flex items-center gap-1.5 h-9 text-xs"
-               onClick={() => exportChuyenKho(transfers, toast, timeZone)}
+              onClick={() => exportChuyenKho(transfers, toast)}
             >
               <FileDown className="w-3.5 h-3.5" /> Tải xuống
             </Button>
@@ -523,7 +525,7 @@ export function StoreTransferTab() {
               </tr>
             ) : transfers.map(r => (
               <tr key={r.id} className="border-t border-border hover:bg-muted/30 transition-colors">
-                <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">{formatCenterTimestamp(r.created_at, timeZone, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}</td>
+                <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">{fmtDate(r.created_at)}</td>
                 <td className="px-4 py-2.5 whitespace-nowrap">
                   <span className="font-mono font-medium text-indigo-600">{r.code}</span>
                 </td>

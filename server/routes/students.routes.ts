@@ -5,13 +5,11 @@ import { z } from "zod";
 import { runSecurityTests } from "../middleware/security-test";
 import { cacheGet, cacheSet, cacheInvalidate } from "../lib/simple-cache";
 import { db } from "../db";
-import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, students, classes, attendanceFeeRules, users, staff, staffAssignments, locations, roles, departments, classGradeBooks, classGradeBookScores, scoreCategories, scoreSheetItems, sessionContents, studentSessionContents, classSessions, studentRelationshipHistory, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools, crmCustomFields, crmRequiredFields, evaluationCriteria, evaluationSubCriteria, centerConfig } from "@shared/schema";
+import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, students, classes, attendanceFeeRules, users, staff, staffAssignments, locations, roles, departments, classGradeBooks, classGradeBookScores, scoreCategories, scoreSheetItems, sessionContents, studentSessionContents, classSessions, studentRelationshipHistory, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools, crmCustomFields, crmRequiredFields, evaluationCriteria, evaluationSubCriteria } from "@shared/schema";
 import { eq, and, isNotNull, sql, inArray, desc, gte, lte, ne } from "drizzle-orm";
 import { getStudentLearningStatusSummary, getCustomerLearningStatusSummary, getCustomerSummary, getNewCustomersSummary, getStudentsBySource, getStudentsByRelationship, getStudentsByLocation, getStudentsByStaff, getStudentsLearningStatuses, getMonthlyStudentCounts } from "../storage/student.storage";
 import { createCrmConfigAuditLog, getCrmConfigAuditLogs } from "../storage/crm-config-audit.storage";
 import { codeStem, nextCodeForStem } from "../lib/role-code";
-import { validateCenterTimeZone } from "@shared/center-time";
-import { InvalidCenterDateKeyError, loadCenterTimeZone } from "../lib/center-date-range";
 
 const CRM_RESOURCE = "/customers";
 const CRM_CONFIG_BASE = "/customers/crm-config";
@@ -300,8 +298,7 @@ export function registerStudentsRoutes(app: Express): void {
       // Determine view scope
       const viewScope = crmPerms.canViewAll ? 'all' : 'own';
 
-       const timeZone = await loadCenterTimeZone();
-       const result = await storage.getStudents({
+      const result = await storage.getStudents({
         allowedLocationIds: req.allowedLocationIds,
         isSuperAdmin: req.isSuperAdmin,
         locationId: req.query.locationId as string | undefined,
@@ -332,7 +329,6 @@ export function registerStudentsRoutes(app: Express): void {
         classTab: req.query.classTab === "unassigned" ? "unassigned" : undefined,
         viewScope,
         viewerStaffId: req.staffId ?? undefined,
-         timeZone,
       });
       res.json(result);
     } catch (err) {
@@ -568,8 +564,7 @@ export function registerStudentsRoutes(app: Express): void {
       const allowedLocationIds: string[] = (req as any).allowedLocationIds ?? [];
       const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
 
-       const timeZone = await loadCenterTimeZone();
-       const summary = await getNewCustomersSummary({ isSuperAdmin, allowedLocationIds, locationId, timeZone });
+      const summary = await getNewCustomersSummary({ isSuperAdmin, allowedLocationIds, locationId });
       res.json(summary);
     } catch (err: any) {
       console.error("New customers summary error:", err);
@@ -592,7 +587,7 @@ export function registerStudentsRoutes(app: Express): void {
       const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom : undefined;
       const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo : undefined;
 
-      const data = await getStudentsBySource({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo, timeZone: await loadCenterTimeZone() });
+      const data = await getStudentsBySource({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo });
       res.json(data);
     } catch (err: any) {
       console.error("Students by source error:", err);
@@ -615,7 +610,7 @@ export function registerStudentsRoutes(app: Express): void {
       const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom : undefined;
       const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo : undefined;
 
-      const data = await getStudentsByRelationship({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo, timeZone: await loadCenterTimeZone() });
+      const data = await getStudentsByRelationship({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo });
       res.json(data);
     } catch (err: any) {
       console.error("Students by relationship error:", err);
@@ -634,7 +629,7 @@ export function registerStudentsRoutes(app: Express): void {
       const months = typeof req.query.months === "string" ? parseInt(req.query.months, 10) : 1;
       const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom : undefined;
       const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo : undefined;
-      const data = await getStudentsByLocation({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo, timeZone: await loadCenterTimeZone() });
+      const data = await getStudentsByLocation({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo });
       res.json(data);
     } catch (err: any) {
       console.error("Students by location error:", err);
@@ -653,7 +648,7 @@ export function registerStudentsRoutes(app: Express): void {
       const months = typeof req.query.months === "string" ? parseInt(req.query.months, 10) : 1;
       const dateFrom = typeof req.query.dateFrom === "string" ? req.query.dateFrom : undefined;
       const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo : undefined;
-      const data = await getStudentsByStaff({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo, timeZone: await loadCenterTimeZone() });
+      const data = await getStudentsByStaff({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo });
       res.json(data);
     } catch (err: any) {
       console.error("Students by staff error:", err);
@@ -672,7 +667,7 @@ export function registerStudentsRoutes(app: Express): void {
       const allowedLocationIds: string[] = (req as any).allowedLocationIds ?? [];
       const locationId = typeof req.query.locationId === "string" ? req.query.locationId : undefined;
       const months = typeof req.query.months === "string" ? parseInt(req.query.months, 10) : 6;
-      const data = await getMonthlyStudentCounts({ isSuperAdmin, allowedLocationIds, locationId, months, timeZone: await loadCenterTimeZone() });
+      const data = await getMonthlyStudentCounts({ isSuperAdmin, allowedLocationIds, locationId, months });
       res.json(data);
     } catch (err: any) {
       console.error("Monthly student counts error:", err);
@@ -694,7 +689,6 @@ export function registerStudentsRoutes(app: Express): void {
       const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo : undefined;
       const months = typeof req.query.months === "string" ? parseInt(req.query.months, 10) : 1;
       const monthlyMonths = 6;
-      const timeZone = await loadCenterTimeZone();
 
       const locKey = isSuperAdmin ? "super" : allowedLocationIds.slice().sort().join(",");
       const cacheKey = `students:dashboard-summary:${locKey}:${locationId ?? ""}:${dateFrom ?? ""}:${dateTo ?? ""}:${months}`;
@@ -703,16 +697,16 @@ export function registerStudentsRoutes(app: Express): void {
 
       const [customerSummary, newCustomers, byLocation, byRelationship] = await Promise.all([
         getCustomerSummary({ isSuperAdmin, allowedLocationIds, locationId }),
-        getNewCustomersSummary({ isSuperAdmin, allowedLocationIds, locationId, timeZone }),
-        getStudentsByLocation({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo, timeZone }),
-        getStudentsByRelationship({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo, timeZone }),
+        getNewCustomersSummary({ isSuperAdmin, allowedLocationIds, locationId }),
+        getStudentsByLocation({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo }),
+        getStudentsByRelationship({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo }),
       ]);
 
       const [learningStatus, bySource, byStaff, monthlyCounts] = await Promise.all([
         getStudentLearningStatusSummary({ isSuperAdmin, allowedLocationIds, locationId, dateFrom, dateTo }),
-        getStudentsBySource({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo, timeZone }),
-        getStudentsByStaff({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo, timeZone }),
-        getMonthlyStudentCounts({ isSuperAdmin, allowedLocationIds, locationId, months: monthlyMonths, timeZone }),
+        getStudentsBySource({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo }),
+        getStudentsByStaff({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo }),
+        getMonthlyStudentCounts({ isSuperAdmin, allowedLocationIds, locationId, months: monthlyMonths }),
       ]);
 
       const result = { customerSummary, learningStatus, newCustomers, bySource, byRelationship, byLocation, byStaff, monthlyCounts };
@@ -845,7 +839,6 @@ export function registerStudentsRoutes(app: Express): void {
         if (!val) return undefined;
         return Array.isArray(val) ? val : [val];
       };
-      const timeZone = await loadCenterTimeZone();
       const result = await storage.getStudents({
         allowedLocationIds: req.allowedLocationIds,
         isSuperAdmin: req.isSuperAdmin,
@@ -860,7 +853,6 @@ export function registerStudentsRoutes(app: Express): void {
         endDate: req.query.dateTo as string | undefined,
         viewScope,
         viewerStaffId: req.staffId ?? undefined,
-        timeZone,
       });
 
       const allParentIds = [...new Set(result.students.flatMap((s: any) => s.parentIds ?? []))] as string[];
@@ -1358,15 +1350,12 @@ export function registerStudentsRoutes(app: Express): void {
         return res.status(403).json({ message: "Bạn không có quyền xem lịch sử cấu hình CRM." });
       }
       const query = req.query as Record<string, string>;
-      const [center] = await db.select({ timeZone: centerConfig.timezone }).from(centerConfig).limit(1);
-      if (!center) return res.status(503).json({ message: "Chưa cấu hình trung tâm" });
       const action = ["created", "updated", "deleted"].includes(query.action)
         ? query.action as "created" | "updated" | "deleted"
         : undefined;
       const result = await getCrmConfigAuditLogs({
         dateFrom: query.dateFrom,
         dateTo: query.dateTo,
-        timeZone: validateCenterTimeZone(center.timeZone),
         entityType: query.entityType,
         action,
         limit: parseInt(query.limit || "100", 10) || 100,
@@ -1386,9 +1375,6 @@ export function registerStudentsRoutes(app: Express): void {
       });
     } catch (error: any) {
       console.error("[crm-config-history] error:", error);
-      if (error instanceof InvalidCenterDateKeyError) {
-        return res.status(400).json({ message: error.message });
-      }
       res.status(500).json({ message: error.message });
     }
   });

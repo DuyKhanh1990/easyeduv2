@@ -44,7 +44,7 @@ import { BulkCollectDialog, type BulkCollectPrintData } from "./components/BulkC
 import { BulkCollectPrintPreview } from "./components/BulkCollectPrintPreview";
 import {
   type InvoiceRow, type ScheduleItem, STATUS_CONFIG, EINVOICE_STATUS_CONFIG,
-  parseNum, fmtMoney, fmtDate, getInvoiceBusinessDateKey, getTodayCenterDate, isInvoicePaidLike,
+  parseNum, fmtMoney, fmtDate, getInvoiceBusinessDateKey, getTodayVietnamDate, isInvoicePaidLike,
 } from "@/types/invoice-types";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -64,8 +64,6 @@ import { ScheduleProgressPopover } from "./components/ScheduleProgressPopover";
 import { InvoiceHistoryTab } from "./components/InvoiceHistoryTab";
 import { HistoryDialog } from "@/components/common/HistoryDialog";
 import { useLocations } from "@/hooks/use-locations";
-import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
-import { DEFAULT_CENTER_TIME_ZONE } from "@shared/center-time";
 import type { SortKey } from "@/hooks/use-invoice-filters";
 
 type TabKey = "all" | "unpaid" | "paid" | "confirmed" | "debt" | "history" | "print-template";
@@ -181,14 +179,13 @@ function MultiSelectFilter({
 }
 
 function DateRangePicker({
-  dateRange, onChange, open, onOpenChange, label, timeZone,
+  dateRange, onChange, open, onOpenChange, label,
 }: {
   dateRange: { from?: Date; to?: Date };
   onChange: (range: { from?: Date; to?: Date }) => void;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   label?: string;
-  timeZone: string;
 }) {
   const [draftFrom, setDraftFrom] = useState("");
   const [draftTo, setDraftTo]     = useState("");
@@ -202,7 +199,7 @@ function DateRangePicker({
     }
   }, [open]);
 
-  const today = getTodayCenterDate(timeZone);
+  const today = getTodayVietnamDate();
 
   const presets = [
     { label: "Toàn thời gian",  key: "all",       fn: () => ({ from: undefined as Date | undefined, to: undefined as Date | undefined }) },
@@ -322,14 +319,12 @@ function EditableInvoiceDateCell({
   canEdit,
   isSelected,
   isOdd,
-  timeZone,
 }: {
   invoice: InvoiceRow;
   field: "createdAt" | "paidAt";
   canEdit: boolean;
   isSelected?: boolean;
   isOdd?: boolean;
-  timeZone: string;
 }) {
   const value = invoice[field];
   const [open, setOpen] = useState(false);
@@ -340,7 +335,7 @@ function EditableInvoiceDateCell({
   const background = isSelected ? "bg-violet-50" : isOdd ? "bg-slate-50" : "bg-white";
   const toInputDate = (date: string | Date | null | undefined) => {
     if (!date) return "";
-    return getInvoiceBusinessDateKey(date, timeZone);
+    return getInvoiceBusinessDateKey(date);
   };
 
   useEffect(() => {
@@ -365,7 +360,7 @@ function EditableInvoiceDateCell({
       toast({
         title: "Đã cập nhật ngày",
         description: payload.createdAt && payload.paidAt
-          ? `Ngày tạo và ngày thanh toán của ${target} đã được đưa về ${fmtDate(payload.paidAt, timeZone)}.`
+          ? `Ngày tạo và ngày thanh toán của ${target} đã được đưa về ${fmtDate(payload.paidAt)}.`
           : field === "createdAt"
           ? `Ngày tạo ${target} đã được thay đổi.`
           : `Ngày thanh toán ${target} đã được thay đổi.`,
@@ -398,7 +393,7 @@ function EditableInvoiceDateCell({
   if (!canEdit) {
     return (
       <td key={field} className={`p-3 whitespace-nowrap text-xs text-muted-foreground ${background}`}>
-        {value ? fmtDate(value, timeZone) : "—"}
+        {value ? fmtDate(value) : "—"}
       </td>
     );
   }
@@ -413,7 +408,7 @@ function EditableInvoiceDateCell({
             title={`Chỉnh ${label}`}
             data-testid={`button-edit-${field}-${invoice.id}`}
           >
-            {value ? fmtDate(value, timeZone) : "—"}
+            {value ? fmtDate(value) : "—"}
           </button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-64 p-3">
@@ -456,11 +451,11 @@ function EditableInvoiceDateCell({
            </DialogHeader>
            <div className="space-y-3 text-sm text-muted-foreground">
              <p>
-               Ngày thanh toán <strong className="text-foreground">{fmtDate(pendingConflictDate, timeZone)}</strong> đang trước ngày tạo{" "}
-               <strong className="text-foreground">{fmtDate(createdDate, timeZone)}</strong>.
+               Ngày thanh toán <strong className="text-foreground">{fmtDate(pendingConflictDate)}</strong> đang trước ngày tạo{" "}
+               <strong className="text-foreground">{fmtDate(createdDate)}</strong>.
              </p>
              <p>
-               Bạn có muốn tự động chuyển ngày tạo về cùng ngày <strong className="text-foreground">{fmtDate(pendingConflictDate, timeZone)}</strong> không?
+               Bạn có muốn tự động chuyển ngày tạo về cùng ngày <strong className="text-foreground">{fmtDate(pendingConflictDate)}</strong> không?
              </p>
            </div>
            <div className="flex justify-end gap-2 pt-2">
@@ -521,7 +516,7 @@ function flattenInvoiceRows(invoices: InvoiceRow[]): InvoiceRow[] {
   });
 }
 
-async function downloadInvoiceListExcel(rows: InvoiceRow[], tabLabel: string, page: number, timeZone: string) {
+async function downloadInvoiceListExcel(rows: InvoiceRow[], tabLabel: string, page: number) {
   const columns = [
     { header: "Học viên", width: 28 },
     { header: "Mã học viên", width: 16 },
@@ -642,9 +637,9 @@ async function downloadInvoiceListExcel(rows: InvoiceRow[], tabLabel: string, pa
       invoice.dueDate ? fmtDate(invoice.dueDate) : "",
       invoice.paymentMethod ? (paymentMethodLabels[invoice.paymentMethod] ?? invoice.paymentMethod) : "",
       invoice.creatorName ?? "",
-      fmtDate(invoice.createdAt, timeZone),
+      fmtDate(invoice.createdAt),
       invoice.paidByName ?? "",
-      invoice.paidAt ? fmtDate(invoice.paidAt, timeZone) : "",
+      invoice.paidAt ? fmtDate(invoice.paidAt) : "",
       invoice.note?.trim() || invoice.description?.trim() || invoice.paymentNote?.trim() || "",
     ]);
 
@@ -703,7 +698,6 @@ function renderInvoiceCell(
   canEdit: boolean,
   isSelected?: boolean,
   isOdd?: boolean,
-  timeZone = DEFAULT_CENTER_TIME_ZONE,
 ) {
   const nameBg = isSelected ? "bg-violet-50" : isOdd ? "bg-slate-50" : "bg-white";
   switch (colKey) {
@@ -789,7 +783,7 @@ function renderInvoiceCell(
       const hasSchedules = inv.hasSchedules && (inv.scheduleCount ?? 0) > 0;
       // Treat all invoices as at least 1 installment
       const total    = hasSchedules ? (inv.scheduleCount ?? 1) : 1;
-      const todayKey = getInvoiceBusinessDateKey(new Date(), timeZone);
+      const todayKey = getInvoiceBusinessDateKey(new Date());
 
       let paidSch: number;
       let nextDue: string | null;
@@ -803,7 +797,7 @@ function renderInvoiceCell(
         lastPaid = inv.scheduleLastPaidDate ?? null;
         allDone  = paidSch === total;
         isOverdue = !allDone && Boolean(nextDue)
-          && getInvoiceBusinessDateKey(nextDue!, timeZone) < todayKey;
+          && getInvoiceBusinessDateKey(nextDue!) < todayKey;
       } else {
         // Single-installment invoice (not split)
         const remaining = parseNum(inv.remainingAmount);
@@ -813,7 +807,7 @@ function renderInvoiceCell(
         nextDue  = inv.dueDate ?? null;
         lastPaid = allDone ? (inv.dueDate ?? null) : null;
         isOverdue = !allDone && Boolean(nextDue)
-          && getInvoiceBusinessDateKey(nextDue!, timeZone) < todayKey;
+          && getInvoiceBusinessDateKey(nextDue!) < todayKey;
       }
 
       return (
@@ -829,7 +823,7 @@ function renderInvoiceCell(
             </div>
             {allDone ? (
               <div className="text-[11px] text-green-600 font-medium">
-                Hoàn tất{lastPaid ? ` ${fmtDate(lastPaid, timeZone)}` : ""}
+                Hoàn tất{lastPaid ? ` ${fmtDate(lastPaid)}` : ""}
               </div>
             ) : nextDue ? (
               <div className={`text-[11px] font-medium ${isOverdue ? "text-red-500" : "text-muted-foreground"}`}>
@@ -908,15 +902,15 @@ function renderInvoiceCell(
     case "creator":
       return <td key="creator" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{inv.creatorName || "—"}</td>;
     case "createdAt":
-      return <EditableInvoiceDateCell invoice={inv} field="createdAt" canEdit={canEdit} isSelected={isSelected} isOdd={isOdd} timeZone={timeZone} />;
+      return <EditableInvoiceDateCell invoice={inv} field="createdAt" canEdit={canEdit} isSelected={isSelected} isOdd={isOdd} />;
     case "paidBy":
       return <td key="paidBy" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{inv.paidByName || "—"}</td>;
     case "paidAt":
-      return <EditableInvoiceDateCell invoice={inv} field="paidAt" canEdit={canEdit} isSelected={isSelected} isOdd={isOdd} timeZone={timeZone} />;
+      return <EditableInvoiceDateCell invoice={inv} field="paidAt" canEdit={canEdit} isSelected={isSelected} isOdd={isOdd} />;
     case "updater":
       return <td key="updater" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{inv.updaterName || "—"}</td>;
     case "updatedAt":
-      return <td key="updatedAt" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{fmtDate(inv.updatedAt, timeZone)}</td>;
+      return <td key="updatedAt" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{fmtDate(inv.updatedAt)}</td>;
     case "commission": {
       const comms = inv.commissions;
       if (comms && comms.length > 0) {
@@ -1062,9 +1056,9 @@ type BulkInvoiceDateTarget = {
   paidAt: string | Date | null | undefined;
 };
 
-function dateOnly(value: string | Date | null | undefined, timeZone: string): string {
+function dateOnly(value: string | Date | null | undefined): string {
   if (!value) return "";
-  return getInvoiceBusinessDateKey(value, timeZone);
+  return getInvoiceBusinessDateKey(value);
 }
 
 function BulkInvoiceDateDialog({
@@ -1076,7 +1070,6 @@ function BulkInvoiceDateDialog({
   onDateChange,
   selectedItems,
   isPending,
-  timeZone,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -1086,7 +1079,6 @@ function BulkInvoiceDateDialog({
   onDateChange: (d: Date | undefined) => void;
   selectedItems: BulkInvoiceDateTarget[];
   isPending: boolean;
-  timeZone: string;
 }) {
   const [confirmingConflict, setConfirmingConflict] = useState(false);
   useEffect(() => {
@@ -1097,10 +1089,10 @@ function BulkInvoiceDateDialog({
   const conflictingItems = selectedDate
     ? selectedItems.filter((item) => {
         if (field === "createdAt" && item.paidAt) {
-          return selectedDateText > dateOnly(item.paidAt, timeZone);
+          return selectedDateText > dateOnly(item.paidAt);
         }
         if (field === "paidAt" && item.createdAt) {
-          return selectedDateText < dateOnly(item.createdAt, timeZone);
+          return selectedDateText < dateOnly(item.createdAt);
         }
         return false;
       })
@@ -1474,7 +1466,6 @@ function DeleteInvoiceDialog({ target, onClose, deleteMutation }: {
 
 export default function Invoices() {
   const [location, navigate] = useLocation();
-  const { data: centerTimeZone = DEFAULT_CENTER_TIME_ZONE } = useCenterTimeZone();
   const routeParams = useParams<{ id?: string }>();
   const urlInvoiceId = routeParams?.id; // "new" | "<uuid>" | undefined
 
@@ -1836,7 +1827,7 @@ export default function Invoices() {
     page, setPage,
     pageSize, setPageSize,
     queryParams,
-  } = useInvoiceFilters(activeTab, centerTimeZone);
+  } = useInvoiceFilters(activeTab);
 
   const { invoices, total, parentTotal, tabCounts, isLoading, deleteMutation: deleteInvoiceMutation, updateStatusMutation } = useInvoices(queryParams);
   const { summary: invoiceSummary, isLoading: isSummaryLoading } = useInvoiceSummary(queryParams);
@@ -1873,8 +1864,9 @@ export default function Invoices() {
     ) => {
       if (!from && !to) return true;
       if (!value) return false;
-      const day = getInvoiceBusinessDateKey(value, centerTimeZone);
-      if (!day) return false;
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return false;
+      const day = getInvoiceBusinessDateKey(date);
       return (!from || day >= from) && (!to || day <= to);
     };
 
@@ -2203,7 +2195,6 @@ export default function Invoices() {
                     onChange={setPaidAtRange}
                     open={paidAtCalendarOpen}
                     onOpenChange={setPaidAtCalendarOpen}
-                    timeZone={centerTimeZone}
                   />
                 </div>
               </PopoverContent>
@@ -2214,7 +2205,6 @@ export default function Invoices() {
               onChange={setDateRange}
               open={calendarOpen}
               onOpenChange={setCalendarOpen}
-              timeZone={centerTimeZone}
             />
 
             <div className="flex-1" />
@@ -2225,7 +2215,7 @@ export default function Invoices() {
               className="h-9 gap-1.5 rounded-lg border-slate-200 bg-white text-slate-600 shadow-sm font-medium hover:bg-slate-50 hover:border-slate-300 transition-all"
               onClick={() => {
                 const tabLabel = TABS.find(tab => tab.key === activeTab)?.label ?? "Tất cả";
-                 void downloadInvoiceListExcel(displayInvoices, tabLabel, page, centerTimeZone);
+                 void downloadInvoiceListExcel(displayInvoices, tabLabel, page);
               }}
               disabled={isLoading || displayInvoices.length === 0}
               data-testid="button-download-invoices-excel"
@@ -2604,7 +2594,6 @@ export default function Invoices() {
                       invPerm.canEdit,
                       isSelected,
                       idx % 2 === 1,
-                      centerTimeZone,
                     ))}
                     <td className={`p-3 sticky right-0 border-l border-slate-100 will-change-transform ${isSelected ? "bg-violet-50" : idx % 2 === 1 ? "bg-slate-50" : "bg-white"}`}>
                       <div className="flex items-center justify-center">
@@ -2736,7 +2725,6 @@ export default function Invoices() {
                     <ScheduleRows
                       key={`sched-${inv.id}`}
                       invoiceId={inv.id}
-                      timeZone={centerTimeZone}
                       isExpanded={isExpanded}
                       visibleColumns={visibleColumns}
                       onSplit={(s) => setSplitDialog({ scheduleId: s.id, label: s.label, amount: parseFloat(s.amount ?? "0"), invoiceId: inv.id })}
@@ -2777,7 +2765,7 @@ export default function Invoices() {
         ) : activeTab === "debt" ? (
           /* ===== DEBT / CÔNG NỢ GROUPED CARD VIEW ===== */
           (() => {
-            const todayKey = getInvoiceBusinessDateKey(new Date(), centerTimeZone);
+            const todayKey = getInvoiceBusinessDateKey(new Date());
             const dayNumber = (key: string) => {
               const [year, month, day] = key.split("-").map(Number);
               return Date.UTC(year, month - 1, day) / 86_400_000;
@@ -2787,7 +2775,7 @@ export default function Invoices() {
             const getDaysUntilDue = (invoice: InvoiceRow) => {
               const dueDate = getDebtDueDate(invoice);
               if (!dueDate) return null;
-              const dueKey = getInvoiceBusinessDateKey(dueDate, centerTimeZone);
+              const dueKey = getInvoiceBusinessDateKey(dueDate);
               return dueKey ? dayNumber(dueKey) - dayNumber(todayKey) : null;
             };
             const filteredDebtInvoices = invoices.filter(invoice => {
@@ -2904,7 +2892,6 @@ export default function Invoices() {
                     onChange={setDateRange}
                     open={calendarOpen}
                     onOpenChange={setCalendarOpen}
-                    timeZone={centerTimeZone}
                   />
                   {hasDebtFilters && (
                     <Button
@@ -3229,7 +3216,6 @@ export default function Invoices() {
         onDateChange={setBulkInvoiceDate}
         selectedItems={selectedDateItems}
         isPending={bulkUpdateInvoiceDateMutation.isPending}
-        timeZone={centerTimeZone}
         onConfirm={(date, adjustCreatedAt) => {
           if (!bulkInvoiceDateField) return;
           const dateText = format(date, "yyyy-MM-dd");
@@ -3237,12 +3223,12 @@ export default function Invoices() {
           const scheduleItems = selectedDateItems.filter(item => item.kind === "schedule");
           const adjustCreatedAtIds = adjustCreatedAt && bulkInvoiceDateField === "paidAt"
             ? invoiceItems
-                .filter(item => item.createdAt && dateText < dateOnly(item.createdAt, centerTimeZone))
+                .filter(item => item.createdAt && dateText < dateOnly(item.createdAt))
                 .map(item => item.id)
             : [];
           const adjustCreatedAtScheduleIds = adjustCreatedAt && bulkInvoiceDateField === "paidAt"
             ? scheduleItems
-                .filter(item => item.createdAt && dateText < dateOnly(item.createdAt, centerTimeZone))
+                .filter(item => item.createdAt && dateText < dateOnly(item.createdAt))
                 .map(item => item.id)
             : [];
           bulkUpdateInvoiceDateMutation.mutate({

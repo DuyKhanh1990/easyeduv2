@@ -42,7 +42,7 @@ async function migrate() {
         center_url   TEXT         NOT NULL,
         description  TEXT,
         is_active    BOOLEAN      NOT NULL DEFAULT TRUE,
-        registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        registered_at TIMESTAMP   NOT NULL DEFAULT NOW(),
         updated_at   TIMESTAMP    NOT NULL DEFAULT NOW()
       );
     `);

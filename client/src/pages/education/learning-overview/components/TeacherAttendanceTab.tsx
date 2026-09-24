@@ -3,7 +3,6 @@ import { ClipboardCheck, Search, ChevronLeft, ChevronRight, Loader2, CheckCircle
 import { cn } from "@/lib/utils";
 import { useTeacherAttendanceTab, TeacherAttendanceRow } from "../hooks/useTeacherAttendanceTab";
 import { useToast } from "@/hooks/use-toast";
-import { formatStoredVietnamTimestamp, getVietnamTodayKey } from "@/lib/vietnam-time";
 
 const WEEKDAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 const PAGE_SIZE_OPTIONS = [20, 50, 100];
@@ -18,28 +17,22 @@ const PRESETS = [
   { label: "Năm nay", get: () => thisYear() },
 ];
 
-function todayStr() { return getVietnamTodayKey(); }
-function addDays(dateKey: string, amount: number) {
-  const date = new Date(`${dateKey}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + amount);
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
-}
+function todayStr() { return new Date().toISOString().split("T")[0]; }
 function daysAgo(n: number) {
-  return addDays(todayStr(), -n);
+  const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().split("T")[0];
 }
 function thisWeek() {
-  const today = todayStr();
-  const d = new Date(`${today}T00:00:00Z`);
-  const day = d.getUTCDay();
-  const mondayOffset = (day + 6) % 7;
-  return { from: addDays(today, -mondayOffset), to: addDays(today, 6 - mondayOffset) };
+  const d = new Date(); const day = d.getDay();
+  const mon = new Date(d); mon.setDate(d.getDate() - ((day + 6) % 7));
+  const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+  return { from: mon.toISOString().split("T")[0], to: sun.toISOString().split("T")[0] };
 }
 function thisMonth() {
-  const [year, month] = todayStr().split("-");
-  return { from: `${year}-${month}-01`, to: todayStr() };
+  const d = new Date();
+  return { from: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`, to: todayStr() };
 }
 function thisYear() {
-  return { from: `${todayStr().slice(0, 4)}-01-01`, to: todayStr() };
+  return { from: `${new Date().getFullYear()}-01-01`, to: todayStr() };
 }
 
 function formatDateLabel(dateStr: string) {
@@ -55,7 +48,8 @@ function timeToMinutes(t: string): number {
 
 function isoToTimeStr(iso: string | null): string {
   if (!iso) return "";
-  return formatStoredVietnamTimestamp(iso, { hour: "2-digit", minute: "2-digit", hour12: false });
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 function computeMinutes(row: TeacherAttendanceRow & { localCheckIn?: string; localCheckOut?: string }) {

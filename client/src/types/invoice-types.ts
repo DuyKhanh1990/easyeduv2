@@ -1,5 +1,3 @@
-import { DEFAULT_CENTER_TIME_ZONE, getCenterDateKey } from "@shared/center-time";
-
 export interface InvoiceRow {
   id: string;
   locationId?: string | null;
@@ -116,40 +114,30 @@ export const parseNum = (v: string | null | undefined): number =>
 export const fmtMoney = (amount: number): string =>
   amount.toLocaleString("vi-VN") + " ₫";
 
-export const getInvoiceBusinessDateKey = (
-  value: string | Date,
-  timeZone = DEFAULT_CENTER_TIME_ZONE,
-): string => {
+const VIETNAM_TIME_ZONE = "Asia/Ho_Chi_Minh";
+
+export const getInvoiceBusinessDateKey = (value: string | Date): string => {
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return getCenterDateKey(date, timeZone);
-};
-
-// Kept as a compatibility alias for invoice callers; timestamp values are
-// real instants and must be interpreted in the Center's configured timezone.
-export const getInvoiceStoredDateKey = getInvoiceBusinessDateKey;
-
-export const getTodayCenterDate = (
-  timeZone = DEFAULT_CENTER_TIME_ZONE,
-  now = new Date(),
-): Date => {
-  const [year, month, day] = getCenterDateKey(now, timeZone).split("-").map(Number);
-  // Calendar widgets and date-only filters use a local-date Date value as a
-  // carrier. It is not an instant and must never be serialized as one.
-  return new Date(year, month - 1, day);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: VIETNAM_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 };
 
 export const getTodayVietnamDate = (): Date => {
-  return getTodayCenterDate("Asia/Ho_Chi_Minh");
+  const [year, month, day] = getInvoiceBusinessDateKey(new Date()).split("-").map(Number);
+  return new Date(year, month - 1, day);
 };
 
-export const fmtDate = (
-  d: string | Date | null | undefined,
-  timeZone = DEFAULT_CENTER_TIME_ZONE,
-): string => {
+export const fmtDate = (d: string | Date | null | undefined): string => {
   if (!d) return "—";
-  const key = getInvoiceBusinessDateKey(d, timeZone);
+  const key = getInvoiceBusinessDateKey(d);
   if (!key) return String(d);
   const [year, month, day] = key.split("-");
   return `${day}/${month}/${year}`;

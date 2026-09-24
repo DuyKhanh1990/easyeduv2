@@ -9,17 +9,11 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MoreHorizontal, Pencil, ReceiptText, Trash2, ChevronDown, MessageCircle, CheckCircle2, XCircle, CalendarPlus, Star, AlertTriangle, Clock, Facebook, PhoneCall } from "lucide-react";
+import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { ColumnConfig } from "./SortableColumnItem";
 import type { StudentResponse } from "@shared/schema";
 import { CreateTaskDialog } from "@/pages/tasks/components/CreateTaskDialog";
-import {
-  formatStoredVietnamTimestamp,
-  parseStoredVietnamTimestamp,
-  storedVietnamTimestampSortValue,
-} from "@/lib/vietnam-time";
-import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
-import { formatCenterTimestamp } from "@/lib/center-time-format";
 
 /* ── Avatar helper ── */
 const AVATAR_GRADIENTS = [
@@ -188,6 +182,7 @@ function formatRelativeVi(date: Date): string {
 function AppointmentCell({ task, onClick }: { task: any; onClick?: (task: any) => void }) {
   if (!task) return <span className="text-slate-300 text-xs">—</span>;
   const isDone = task.statusName && /hoàn thành|done|xong/i.test(task.statusName);
+  const dueDate = task.dueDate ? new Date(task.dueDate) : null;
   const colors = ["text-blue-700 bg-blue-50 border-blue-200","text-purple-700 bg-purple-50 border-purple-200","text-orange-700 bg-orange-50 border-orange-200","text-teal-700 bg-teal-50 border-teal-200","text-pink-700 bg-pink-50 border-pink-200"];
   const colorIdx = task.id ? task.id.charCodeAt(0) % colors.length : 0;
   return (
@@ -195,9 +190,9 @@ function AppointmentCell({ task, onClick }: { task: any; onClick?: (task: any) =
       <span className={cn("inline-block text-xs font-semibold px-1.5 py-0.5 rounded-md border truncate max-w-[150px]", colors[colorIdx])}>
         {task.title}
       </span>
-      {task.dueDate && (
+      {dueDate && (
         <div className="flex items-center gap-1 pl-0.5">
-          <span className="text-xs text-slate-400">{formatStoredVietnamTimestamp(task.dueDate, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).replace(/\//g, "-").replace(", ", " ")}</span>
+          <span className="text-xs text-slate-400">{format(dueDate, "dd-MM-yyyy HH:mm")}</span>
           {isDone ? <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" /> : <XCircle className="w-3 h-3 text-rose-400 shrink-0" />}
         </div>
       )}
@@ -344,7 +339,6 @@ export function CustomersTable({
   onViewClass, onChangePipeline, onChangeAccountStatus, onZaloChat, onFacebookChat, fbLinkedStudentIds,
   canEdit = true, canDelete = true,
 }: CustomersTableProps) {
-  const { data: timeZone } = useCenterTimeZone();
   const [pipelineDialog, setPipelineDialog] = useState<PipelineDialog | null>(null);
   const [accountStatusOpen, setAccountStatusOpen] = useState<string | null>(null);
   const [addTaskStudent, setAddTaskStudent] = useState<StudentResponse | null>(null);
@@ -836,7 +830,7 @@ export function CustomersTable({
 
       case "createdAt":
         return student.createdAt
-          ? <span className="text-xs text-slate-500 whitespace-nowrap">{formatCenterTimestamp(student.createdAt, timeZone, { day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" })}</span>
+          ? <span className="text-xs text-slate-500 whitespace-nowrap">{new Date(student.createdAt).toLocaleString("vi-VN")}</span>
           : <span className="text-slate-300">—</span>;
 
       case "creator":
@@ -846,7 +840,7 @@ export function CustomersTable({
 
       case "updatedAt":
         return student.updatedAt
-          ? <span className="text-xs text-slate-500 whitespace-nowrap">{formatStoredVietnamTimestamp(student.updatedAt, { day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" })}</span>
+          ? <span className="text-xs text-slate-500 whitespace-nowrap">{new Date(student.updatedAt).toLocaleString("vi-VN")}</span>
           : <span className="text-slate-300">—</span>;
 
       case "updater":
@@ -860,8 +854,8 @@ export function CustomersTable({
         const allTasks: any[] = studentTasksMap[student.id] || [];
         const now = new Date();
         const upcoming = allTasks
-          .filter((t) => t.dueDate && (parseStoredVietnamTimestamp(t.dueDate)?.getTime() ?? Number.NaN) >= now.getTime())
-          .sort((a, b) => storedVietnamTimestampSortValue(a.dueDate) - storedVietnamTimestampSortValue(b.dueDate));
+          .filter((t) => t.dueDate && new Date(t.dueDate) >= now)
+          .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
         const idx = columnId === "appointmentNearest" ? 0 : columnId === "appointment1" ? 1 : 2;
         return <AppointmentCell task={upcoming[idx]} onClick={setEditingTask} />;
       }
@@ -869,7 +863,7 @@ export function CustomersTable({
       case "discussion": {
         const lc = (student as any).lastComment as { content: string; createdAt: string; authorName: string } | null | undefined;
         if (!lc) return <span className="text-slate-300">—</span>;
-        const dateStr = lc.createdAt ? formatCenterTimestamp(lc.createdAt, timeZone, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).replace(", ", " ") : "";
+        const dateStr = lc.createdAt ? format(new Date(lc.createdAt), "dd/MM/yyyy HH:mm") : "";
         return (
           <TooltipProvider>
             <Tooltip>
@@ -892,18 +886,17 @@ export function CustomersTable({
         const allTasks: any[] = studentTasksMap[student.id] || [];
         const now = new Date();
         const past = allTasks
-          .filter((t) => t.dueDate && (parseStoredVietnamTimestamp(t.dueDate)?.getTime() ?? Number.NaN) < now.getTime())
-          .sort((a, b) => storedVietnamTimestampSortValue(b.dueDate) - storedVietnamTimestampSortValue(a.dueDate));
+          .filter((t) => t.dueDate && new Date(t.dueDate) < now)
+          .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
         const last = past[0];
         if (!last) return <span className="text-slate-300">—</span>;
-        const dueDate = parseStoredVietnamTimestamp(last.dueDate);
-        if (!dueDate) return <span className="text-slate-300">—</span>;
+        const dueDate = new Date(last.dueDate);
         const relative = formatRelativeVi(dueDate);
         const assigneePart = (last.assigneeNames || []).join(", ");
         const fullMeta = assigneePart ? `${assigneePart} có lịch hẹn: ${last.title}` : "";
         return (
           <div className="flex flex-col gap-0.5 min-w-[180px]">
-            <span className="text-xs text-slate-700 font-medium">{formatStoredVietnamTimestamp(last.dueDate, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).replace(", ", " ")}</span>
+            <span className="text-xs text-slate-700 font-medium">{format(dueDate, "dd/MM/yyyy HH:mm:ss")}</span>
             <span className="text-xs text-slate-400">(cách đây {relative})</span>
             {fullMeta && (
               <TooltipProvider delayDuration={0}>

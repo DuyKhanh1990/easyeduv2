@@ -19,9 +19,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Loader2, Bell, ChevronLeft, ChevronRight, FlaskConical } from "lucide-react";
-import { formatStoredVietnamTimestamp } from "@/lib/vietnam-time";
-import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
-import { formatCenterTimestamp } from "@/lib/center-time-format";
+import { format } from "date-fns";
+import { vi } from "date-fns/locale";
 
 type LogRow = {
   id: string;
@@ -375,7 +374,6 @@ function renderContentNode(log: LogRow): React.ReactNode {
 }
 
 export function NotificationLogs() {
-  const { data: timeZone } = useCenterTimeZone();
   const { toast } = useToast();
   const [page, setPage] = useState(1);
   const [filterType, setFilterType] = useState<string>("all");
@@ -511,7 +509,7 @@ export function NotificationLogs() {
                       onClick={() => setSelectedLog(log)}
                     >
                       <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
-                        {formatCenterTimestamp(log.createdAt, timeZone, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).replace(", ", " ")}
+                        {format(new Date(log.createdAt), "dd/MM/yyyy HH:mm", { locale: vi })}
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap">
                         {log.studentName ? (
@@ -593,7 +591,7 @@ export function NotificationLogs() {
                 <div>
                   <p className="text-xs text-muted-foreground mb-0.5">Thời gian</p>
                   <p className="font-medium text-xs">
-                    {formatCenterTimestamp(selectedLog.createdAt, timeZone, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).replace(", ", " ")}
+                    {format(new Date(selectedLog.createdAt), "dd/MM/yyyy HH:mm:ss", { locale: vi })}
                   </p>
                 </div>
                 <div>

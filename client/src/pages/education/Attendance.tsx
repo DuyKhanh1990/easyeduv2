@@ -54,13 +54,6 @@ import { StoreDateRangePicker, DateRange } from "@/pages/store/StoreDateRangePic
 import { apiRequest } from "@/lib/queryClient";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { useToast } from "@/hooks/use-toast";
-import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
-import { DEFAULT_CENTER_TIME_ZONE, formatCenterInstant } from "@shared/center-time";
-
-function formatAttendanceInstant(value: string, timeZone: string, options: Intl.DateTimeFormatOptions): string {
-  const instant = new Date(value);
-  return Number.isNaN(instant.getTime()) ? "—" : formatCenterInstant(instant, timeZone, options);
-}
 
 type AttendanceFilters = {
   classes: string[];
@@ -134,8 +127,6 @@ function StatusBadge({ status }: { status: string }) {
 
 export function Attendance() {
   const queryClient = useQueryClient();
-  const centerTimeZoneQuery = useCenterTimeZone();
-  const centerTimeZone = centerTimeZoneQuery.data ?? DEFAULT_CENTER_TIME_ZONE;
   const { data: myPerms } = useMyPermissions();
   const canAttend = !myPerms || myPerms.isSuperAdmin || !!(myPerms.permissions["/attendance"]?.canCreate);
 
@@ -804,7 +795,7 @@ export function Attendance() {
                                         <span>{record.shift}</span>
                                         {record.learningFormat === "online" && record.onlineLink && record.onlineClickedAt && (
                                           <span className="text-orange-500 text-xs font-medium">
-                                            Vào lúc {formatAttendanceInstant(record.onlineClickedAt, centerTimeZone, { hour: "2-digit", minute: "2-digit" })}
+                                            Vào lúc {new Date(record.onlineClickedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
                                           </span>
                                         )}
                                       </div>
@@ -862,11 +853,12 @@ export function Attendance() {
                                     <TableCell className="text-sm" data-testid={`cell-online-${record.id}`}>
                                       {(record.learningFormat === "online" || !!record.onlineLink) ? (
                                         record.onlineClickedAt ? (() => {
+                                          const clickedAt = new Date(record.onlineClickedAt);
+                                          const fmt = (d: Date) => d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
                                           let endedAt: Date | null = null;
-                                          let storedEndedAt: string | null = null;
                                           let isDefaultEnd = false;
                                           if (record.onlineEndedAt) {
-                                            storedEndedAt = record.onlineEndedAt;
+                                            endedAt = new Date(record.onlineEndedAt);
                                           } else if (record.endTime && record.sessionDate) {
                                             const [h, m, s = 0] = record.endTime.split(":").map(Number);
                                             const [yr, mo, day] = (typeof record.sessionDate === "string"
@@ -878,12 +870,10 @@ export function Attendance() {
                                           }
                                           return (
                                             <div className="flex flex-col gap-0.5 whitespace-nowrap">
-                                              <span className="text-xs text-emerald-600 font-medium">↗ {formatAttendanceInstant(record.onlineClickedAt, centerTimeZone, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
-                                              {(storedEndedAt || endedAt) && (
+                                              <span className="text-xs text-emerald-600 font-medium">↗ {fmt(clickedAt)}</span>
+                                              {endedAt && (
                                                 <span className={`text-xs font-medium ${isDefaultEnd ? "text-slate-400" : "text-red-500"}`}>
-                                                  ↙ {storedEndedAt
-                                                    ? formatAttendanceInstant(storedEndedAt, centerTimeZone, { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-                                                    : endedAt?.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}{isDefaultEnd ? " *" : ""}
+                                                  ↙ {fmt(endedAt)}{isDefaultEnd ? " *" : ""}
                                                 </span>
                                               )}
                                             </div>

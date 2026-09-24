@@ -9,9 +9,6 @@ import { Button } from "@/components/ui/button";
 import { useLocations } from "@/hooks/use-locations";
 import { ScrollText, X, Building2, Zap, PlusCircle, PencilLine, Trash2, RotateCcw, Eye, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
-import { formatCenterTimestamp } from "@/lib/center-time-format";
-import { getCenterDateKey } from "@shared/center-time";
 
 interface ActivityLog {
   id: string;
@@ -62,14 +59,23 @@ const FIELD_LABELS: Record<string, string> = {
   note: "Ghi chú",
 };
 
-function formatDateTime(dateStr: string, timeZone?: string): string {
-  return formatCenterTimestamp(dateStr, timeZone);
+function formatDateTime(dateStr: string): string {
+  const d = new Date(dateStr);
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = d.getFullYear();
+  const hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  const period = hours < 12 ? "SA" : "CH";
+  const h12 = hours % 12 || 12;
+  return `${day}/${month}/${year} ${String(h12).padStart(2, "0")}:${minutes} ${period}`;
 }
 
-function formatDateGroup(dateStr: string, timeZone?: string): string {
-  return formatCenterTimestamp(dateStr, timeZone, {
-    weekday: "long", day: "2-digit", month: "2-digit", year: "numeric",
-  });
+function formatDateGroup(dateStr: string): string {
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  const weekdays = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"];
+  return `${weekdays[d.getDay()]}, ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 
 function actionConfig(action: string) {
@@ -126,7 +132,7 @@ function DataBlock({ data, highlight }: { data: Record<string, any> | null; high
   );
 }
 
-function ActivityDetailDialog({ log, onClose, timeZone }: { log: ActivityLog | null; onClose: () => void; timeZone?: string }) {
+function ActivityDetailDialog({ log, onClose }: { log: ActivityLog | null; onClose: () => void }) {
   if (!log) return null;
   const cfg = actionConfig(log.action);
   const { changedOldData, changedNewData } =
@@ -151,7 +157,7 @@ function ActivityDetailDialog({ log, onClose, timeZone }: { log: ActivityLog | n
         </DialogHeader>
         <div className="text-xs text-slate-500 -mt-1">
           {log.student_code && <span>Mã: <b>{log.student_code}</b> · </span>}
-          {formatDateTime(log.created_at, timeZone)}
+          {formatDateTime(log.created_at)}
           {log.user_name && <div className="mt-1">Thực hiện bởi: {log.user_name}</div>}
         </div>
         <div className="mt-2 max-h-[55vh] overflow-auto">
@@ -266,7 +272,6 @@ export function CustomerActivityLogDialog({ open, onOpenChange }: Props) {
   const [currentPage, setCurrentPage] = useState(1);
   const [detailLog, setDetailLog] = useState<ActivityLog | null>(null);
   const { data: locations = [] } = useLocations();
-  const { data: timeZone } = useCenterTimeZone();
   const { data, isLoading, refetch } = useQuery<{ logs: ActivityLog[]; total: number }>({
     queryKey: ["/api/customers/activity-logs", locationId, action, dateFrom, dateTo, pageSize, currentPage],
     queryFn: () => {
@@ -295,12 +300,12 @@ export function CustomerActivityLogDialog({ open, onOpenChange }: Props) {
       const date = new Date(log.created_at);
       const key = Number.isNaN(date.getTime())
         ? log.created_at
-        : timeZone ? getCenterDateKey(date, timeZone) : log.created_at;
+        : `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(log);
       return groups;
     }, new Map());
-  }, [logs, timeZone]);
+  }, [logs]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -412,7 +417,7 @@ export function CustomerActivityLogDialog({ open, onOpenChange }: Props) {
                     <div className="flex items-center gap-2 mb-2 px-1">
                       <div className="h-px flex-1 bg-slate-200" />
                       <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">
-                        {formatDateGroup(dateLogs[0].created_at, timeZone)}
+                        {formatDateGroup(dateLogs[0].created_at)}
                       </span>
                       <div className="h-px flex-1 bg-slate-200" />
                     </div>
@@ -442,7 +447,7 @@ export function CustomerActivityLogDialog({ open, onOpenChange }: Props) {
                                 </div>
                               </div>
                               <div className="self-center text-right text-[10px] text-slate-400 whitespace-nowrap">
-                                {formatDateTime(log.created_at, timeZone)}
+                                {formatDateTime(log.created_at)}
                               </div>
                               <button
                                 type="button"
@@ -526,7 +531,7 @@ export function CustomerActivityLogDialog({ open, onOpenChange }: Props) {
             </div>
           </div>
         </div>
-        <ActivityDetailDialog log={detailLog} onClose={() => setDetailLog(null)} timeZone={timeZone} />
+        <ActivityDetailDialog log={detailLog} onClose={() => setDetailLog(null)} />
       </DialogContent>
     </Dialog>
   );

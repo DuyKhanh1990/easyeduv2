@@ -25,7 +25,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { getVietnamTodayKey } from "@/lib/vietnam-time";
 
 type MainTab = "don-tu" | "thuong-phat" | "tam-ung";
 type ViewerType = "staff" | "student" | "parent";
@@ -137,7 +136,7 @@ function formatMoney(value: number) {
 }
 
 function todayDate() {
-  return getVietnamTodayKey();
+  return new Date().toISOString().slice(0, 10);
 }
 
 function calculateStaffLeaveHours(fromDate: string, toDate: string) {

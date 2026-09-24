@@ -17,8 +17,6 @@ import { StudentOverviewTab } from "@/components/customers/StudentOverviewTab";
 import { StudentAppointmentsTab } from "@/components/customers/StudentAppointmentsTab";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/hooks/use-language";
-import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
-import { formatCenterTimestamp } from "@/lib/center-time-format";
 
 const TABS = [
   { value: "overview",      labelKey: "studentDetail.tab.overview",      color: "#6366f1", gradientFrom: "#6366f1", gradientTo: "#8b5cf6" },
@@ -77,7 +75,6 @@ export function StudentDetailDialog({
   prefetchedTasks,
 }: StudentDetailDialogProps) {
   const { t } = useLanguage();
-  const { data: timeZone } = useCenterTimeZone();
   const [inputValue, setInputValue] = useState("");
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
@@ -270,10 +267,13 @@ export function StudentDetailDialog({
   };
 
   const formatDateTime = (dateStr: string) => {
-    return formatCenterTimestamp(dateStr, timeZone, {
-      hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit",
-      year: "numeric", hourCycle: "h23",
-    }).replace(", ", " ");
+    const date = new Date(dateStr);
+    const hours = date.getHours().toString().padStart(2, "0");
+    const minutes = date.getMinutes().toString().padStart(2, "0");
+    const day = date.getDate().toString().padStart(2, "0");
+    const month = (date.getMonth() + 1).toString().padStart(2, "0");
+    const year = date.getFullYear();
+    return `${hours}:${minutes} ${day}/${month}/${year}`;
   };
 
   const getDayName = (dateStr: string) => {

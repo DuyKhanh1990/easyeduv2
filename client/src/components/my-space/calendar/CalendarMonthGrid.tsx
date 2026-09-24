@@ -1,3 +1,4 @@
+import { eachDayOfInterval, endOfMonth, endOfWeek, format, isToday, startOfMonth, startOfWeek } from "date-fns";
 import { cn } from "@/lib/utils";
 import { getClassCalendarColor } from "@/lib/class-calendar-colors";
 import { getAttendanceStatus } from "@/lib/attendance-status";
@@ -10,14 +11,13 @@ interface CalendarMonthGridProps {
   month: number;
   sessions: MyCalendarSessionLight[];
   selectedDate: string;
-  todayDateKey: string;
   onSelectDate: (date: string) => void;
   onSessionClick?: (session: MyCalendarSessionLight) => void;
   mode: "student" | "staff";
 }
 
 function toDateString(date: Date) {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+  return format(date, "yyyy-MM-dd");
 }
 
 function sessionTitle(session: MyCalendarSessionLight, mode: CalendarMonthGridProps["mode"]) {
@@ -52,21 +52,16 @@ export function CalendarMonthGrid({
   month,
   sessions,
   selectedDate,
-  todayDateKey,
   onSelectDate,
   onSessionClick,
   mode,
 }: CalendarMonthGridProps) {
-  const monthStart = new Date(Date.UTC(year, month, 1));
-  const lastDayOfMonth = new Date(Date.UTC(year, month + 1, 0));
-  const startOffset = (monthStart.getUTCDay() + 6) % 7;
-  const endOffset = (7 - lastDayOfMonth.getUTCDay()) % 7;
-  const start = Date.UTC(year, month, 1 - startOffset);
-  const end = Date.UTC(year, month + 1, endOffset);
-  const days: Date[] = [];
-  for (let day = start; day <= end; day += 24 * 60 * 60 * 1000) {
-    days.push(new Date(day));
-  }
+  const monthStart = startOfMonth(new Date(year, month, 1));
+  const monthEnd = endOfMonth(monthStart);
+  const days = eachDayOfInterval({
+    start: startOfWeek(monthStart, { weekStartsOn: 1 }),
+    end: endOfWeek(monthEnd, { weekStartsOn: 1 }),
+  });
   const byDay = new Map<string, MyCalendarSessionLight[]>();
 
   sessions.forEach((session) => {
@@ -95,8 +90,8 @@ export function CalendarMonthGrid({
           const daySessions = (byDay.get(dateStr) ?? []).slice().sort((a, b) =>
             (a.startTime ?? "").localeCompare(b.startTime ?? "")
           );
-          const inCurrentMonth = day.getUTCMonth() === month;
-          const today = dateStr === todayDateKey;
+          const inCurrentMonth = day.getMonth() === month;
+          const today = isToday(day);
           const selected = dateStr === selectedDate;
 
           return (
@@ -128,7 +123,7 @@ export function CalendarMonthGrid({
                     !inCurrentMonth && "text-muted-foreground/45"
                   )}
                 >
-                  {day.getUTCDate()}
+                  {format(day, "d")}
                 </span>
                 {daySessions.length > 0 && (
                     <span className="rounded-full bg-primary/10 px-1 py-0.5 text-[8px] font-semibold text-primary sm:px-1.5 sm:text-[9px]">

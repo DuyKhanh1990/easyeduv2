@@ -8,17 +8,10 @@ import {
   Tag, UserCog, Calendar, Heart, GraduationCap, BookOpen,
   TrendingUp, Wallet, BarChart3, Building2, FileText, Pencil, Save, Star,
 } from "lucide-react";
+import { format, isToday, isTomorrow, isYesterday } from "date-fns";
+import { vi } from "date-fns/locale";
 import type { Task, TaskStatus, TaskLevel } from "@shared/schema";
 import { StudentAttendanceQrInline } from "@/components/customers/StudentAttendanceQrDialog";
-import {
-  formatStoredVietnamTimestamp,
-  getStoredVietnamDateKey,
-  getVietnamTodayKey,
-  storedVietnamTimestampSortValue,
-} from "@/lib/vietnam-time";
-import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
-import { formatCenterTimestamp } from "@/lib/center-time-format";
-import { getCenterDateKey } from "@shared/center-time";
 
 interface StudentOverviewTabProps {
   studentId: string;
@@ -32,16 +25,15 @@ interface StudentOverviewTabProps {
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-function fmtTime(dateStr: string | Date) {
+function fmtTime(dateStr: string) {
   if (!dateStr) return "";
-  return formatStoredVietnamTimestamp(dateStr, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const d = new Date(dateStr);
+  return `${d.getHours().toString().padStart(2,"0")}:${d.getMinutes().toString().padStart(2,"0")}`;
 }
-function fmtDate(dateStr: string | Date) {
+function fmtDate(dateStr: string) {
   if (!dateStr) return "-";
-  const dateKey = getStoredVietnamDateKey(dateStr);
-  if (!dateKey) return "-";
-  const [year, month, day] = dateKey.split("-");
-  return `${day}/${month}/${year}`;
+  const d = new Date(dateStr);
+  return `${d.getDate().toString().padStart(2,"0")}/${(d.getMonth()+1).toString().padStart(2,"0")}/${d.getFullYear()}`;
 }
 function fmtMoney(n: number | string) {
   return Number(n || 0).toLocaleString("vi-VN");
@@ -64,14 +56,12 @@ type ActivityEvent = {
   badge?: { label: string; color: string };
 };
 
-function buildDateKey(dateStr: string | Date): string {
-  const today = getVietnamTodayKey();
-  const [year, month, day] = today.split("-").map(Number);
-  const yesterdayDate = new Date(Date.UTC(year, month - 1, day - 1));
-  const yesterday = `${yesterdayDate.getUTCFullYear()}-${String(yesterdayDate.getUTCMonth() + 1).padStart(2, "0")}-${String(yesterdayDate.getUTCDate()).padStart(2, "0")}`;
-  const dateKey = getStoredVietnamDateKey(dateStr);
-  if (dateKey === today) return "Hôm nay";
-  if (dateKey === yesterday) return "Hôm qua";
+function buildDateKey(dateStr: string): string {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const yesterday = new Date(today); yesterday.setDate(today.getDate()-1);
+  const d = new Date(dateStr); d.setHours(0,0,0,0);
+  if (d.getTime() === today.getTime()) return "Hôm nay";
+  if (d.getTime() === yesterday.getTime()) return "Hôm qua";
   return fmtDate(dateStr);
 }
 
@@ -99,11 +89,9 @@ function getTaskCondition(task: Task, statusName?: string) {
     return { label: "Hoàn tất", badgeBg: "bg-emerald-100", badgeText: "text-emerald-700", cardBg: "bg-white", border: "border-gray-100" };
   if (!task.dueDate)
     return { label: "—",         badgeBg: "bg-gray-100",    badgeText: "text-gray-500",    cardBg: "bg-white", border: "border-gray-100" };
-  const today = getVietnamTodayKey();
-  const due = getStoredVietnamDateKey(task.dueDate);
-  const [todayYear, todayMonth, todayDay] = today.split("-").map(Number);
-  const [dueYear, dueMonth, dueDay] = due.split("-").map(Number);
-  const diff = Math.round((Date.UTC(dueYear, dueMonth - 1, dueDay) - Date.UTC(todayYear, todayMonth - 1, todayDay)) / 86400000);
+  const today = new Date(); today.setHours(0,0,0,0);
+  const due   = new Date(task.dueDate as string); due.setHours(0,0,0,0);
+  const diff  = Math.round((due.getTime() - today.getTime()) / 86400000);
   if (diff < 0)   return { label: "Quá hạn",     badgeBg: "bg-red-100",    badgeText: "text-red-600",    cardBg: "bg-white", border: "border-gray-100" };
   if (diff === 0) return { label: null,           badgeBg: "bg-amber-100",  badgeText: "text-amber-700",  cardBg: "bg-white", border: "border-gray-100" };
   if (diff === 1) return { label: null,           badgeBg: "bg-teal-100",   badgeText: "text-teal-700",   cardBg: "bg-white", border: "border-gray-100" };
@@ -111,26 +99,21 @@ function getTaskCondition(task: Task, statusName?: string) {
   return                 { label: null,           badgeBg: "bg-gray-100",   badgeText: "text-gray-600",   cardBg: "bg-white", border: "border-gray-100" };
 }
 
-function fmtTaskBadge(dueDate: string | Date | null | undefined, conditionLabel: string | null): string {
+function fmtTaskBadge(dueDate: string | null | undefined, conditionLabel: string | null): string {
   if (conditionLabel) return conditionLabel; // "Quá hạn", "Hoàn tất", "—"
   if (!dueDate) return "—";
-  const time = fmtTime(dueDate);
-  const today = getVietnamTodayKey();
-  const dueKey = getStoredVietnamDateKey(dueDate);
-  const [year, month, day] = today.split("-").map(Number);
-  const tomorrowDate = new Date(Date.UTC(year, month - 1, day + 1));
-  const yesterdayDate = new Date(Date.UTC(year, month - 1, day - 1));
-  const tomorrow = `${tomorrowDate.getUTCFullYear()}-${String(tomorrowDate.getUTCMonth() + 1).padStart(2, "0")}-${String(tomorrowDate.getUTCDate()).padStart(2, "0")}`;
-  const yesterday = `${yesterdayDate.getUTCFullYear()}-${String(yesterdayDate.getUTCMonth() + 1).padStart(2, "0")}-${String(yesterdayDate.getUTCDate()).padStart(2, "0")}`;
-  if (dueKey === today) return `Hôm nay ${time}`;
-  if (dueKey === tomorrow) return `Ngày mai ${time}`;
-  if (dueKey === yesterday) return `Hôm qua ${time}`;
-  return `${formatStoredVietnamTimestamp(dueDate, { day: "2-digit", month: "2-digit" })} ${time}`;
+  const d = new Date(dueDate);
+  const time = format(d, "HH:mm");
+  if (isToday(d))    return `Hôm nay ${time}`;
+  if (isTomorrow(d)) return `Ngày mai ${time}`;
+  if (isYesterday(d)) return `Hôm qua ${time}`;
+  return `${format(d, "dd/MM", { locale: vi })} ${time}`;
 }
 
-function fmtTaskDate(dueDate: string | Date | null | undefined): string {
+function fmtTaskDate(dueDate: string | null | undefined): string {
   if (!dueDate) return "—";
-  return formatStoredVietnamTimestamp(dueDate, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).replace(", ", " ");
+  const d = new Date(dueDate);
+  return format(d, "dd/MM/yyyy HH:mm", { locale: vi });
 }
 
 // ─── info row ─────────────────────────────────────────────────────────────────
@@ -187,9 +170,6 @@ function StatCard({ icon, iconBg, label, value, sub, valueColor }: {
 // ─── main component ───────────────────────────────────────────────────────────
 
 export function StudentOverviewTab({ studentId, student, classesData, processedComments, starBalance: starBalanceProp, prefetchedTasks, open }: StudentOverviewTabProps) {
-  const { data: timeZone } = useCenterTimeZone();
-  const formatCommentTimestamp = (value: string, options: Intl.DateTimeFormatOptions) =>
-    formatCenterTimestamp(value, timeZone, options);
 
   // ── classes summary derived from classesData prop (no extra API call) ───────
   const CLASS_LIMIT = 5;
@@ -287,7 +267,7 @@ export function StudentOverviewTab({ studentId, student, classesData, processedC
       if (!a.dueDate && !b.dueDate) return 0;
       if (!a.dueDate) return 1;
       if (!b.dueDate) return -1;
-      return storedVietnamTimestampSortValue(a.dueDate) - storedVietnamTimestampSortValue(b.dueDate);
+      return new Date(a.dueDate as string).getTime() - new Date(b.dueDate as string).getTime();
     });
   const SHOW_MAX = 2;
   const visibleTasks = studentTasks.slice(0, SHOW_MAX);
@@ -296,9 +276,8 @@ export function StudentOverviewTab({ studentId, student, classesData, processedC
   // ── unified timeline ──────────────────────────────────────────────────────
   const events: ActivityEvent[] = [];
   for (const c of processedComments) {
-    const commentDate = new Date(c.createdAt);
-    events.push({ id: `note-${c.id}`, ts: commentDate.getTime(), timeLabel: formatCommentTimestamp(c.createdAt, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }),
-      dateKey: timeZone && !Number.isNaN(commentDate.getTime()) ? getCenterDateKey(commentDate, timeZone) : c.createdAt, type: "note", title: "Ghi chú", desc: c.content, actor: c.authorName });
+    events.push({ id: `note-${c.id}`, ts: new Date(c.createdAt).getTime(), timeLabel: fmtTime(c.createdAt),
+      dateKey: buildDateKey(c.createdAt), type: "note", title: "Ghi chú", desc: c.content, actor: c.authorName });
   }
   const now = Date.now();
   for (const cls of classesData) {
@@ -321,7 +300,7 @@ export function StudentOverviewTab({ studentId, student, classesData, processedC
   // Activity events from paidHistory (already paginated — only adds to timeline if loaded)
   for (const inv of paidHistory) {
     if (inv.paidAt) {
-      events.push({ id: `pay-${inv.id}`, ts: storedVietnamTimestampSortValue(inv.paidAt), timeLabel: fmtTime(inv.paidAt),
+      events.push({ id: `pay-${inv.id}`, ts: new Date(inv.paidAt).getTime(), timeLabel: fmtTime(inv.paidAt),
         dateKey: buildDateKey(inv.paidAt), type: "payment", title: "Thanh toán",
         desc: `${inv.title || "Học phí"} — ${fmtMoney(inv.amount)} đ` });
     }
@@ -481,10 +460,10 @@ export function StudentOverviewTab({ studentId, student, classesData, processedC
                     const assigneeNames = (task.assigneeIds ?? []).map(id => staffMap.get(id)).filter(Boolean) as string[];
                     const managerNames  = (task.managerIds ?? []).map(id => staffMap.get(id)).filter(Boolean) as string[];
                     const responsible   = [...new Set([...assigneeNames, ...managerNames])];
-                    const badgeLabel    = fmtTaskBadge(task.dueDate, condition.label);
+                    const badgeLabel    = fmtTaskBadge(task.dueDate as string | undefined, condition.label);
                     const tooltipLines = [
                       task.title,
-                      task.dueDate ? `Hạn cuối: ${fmtTaskDate(task.dueDate)}` : null,
+                      task.dueDate ? `Hạn cuối: ${fmtTaskDate(task.dueDate as string)}` : null,
                       responsible.length > 0 ? `Nhân sự: ${responsible.join(", ")}` : null,
                     ].filter(Boolean).join("\n");
                     return (
@@ -497,7 +476,7 @@ export function StudentOverviewTab({ studentId, student, classesData, processedC
                         <p className="text-xs font-semibold text-gray-900 leading-snug line-clamp-2 flex-1">{task.title}</p>
                         {task.dueDate && (
                           <span className="text-[10px] text-gray-700">
-                            Hạn cuối: {fmtTaskDate(task.dueDate)}
+                            Hạn cuối: {fmtTaskDate(task.dueDate as string)}
                           </span>
                         )}
                         {responsible.length > 0 && (
@@ -577,7 +556,7 @@ export function StudentOverviewTab({ studentId, student, classesData, processedC
               {student.parentName2 && <InfoRow icon={<Users className="w-3.5 h-3.5" />} label="Phụ huynh 2" value={[student.parentName2, student.parentPhone2].filter(Boolean).join(" — ")} />}
               {student.parentName3 && <InfoRow icon={<Users className="w-3.5 h-3.5" />} label="Phụ huynh 3" value={[student.parentName3, student.parentPhone3].filter(Boolean).join(" — ")} />}
               <InfoRow icon={<Heart    className="w-3.5 h-3.5" />} label="Quan hệ"     value={student.relationship} />
-              <InfoRow icon={<Calendar className="w-3.5 h-3.5" />} label="Ngày tạo"    value={student.createdAt ? formatCommentTimestamp(student.createdAt, { day: "2-digit", month: "2-digit", year: "numeric" }) : null} />
+              <InfoRow icon={<Calendar className="w-3.5 h-3.5" />} label="Ngày tạo"    value={student.createdAt ? fmtDate(student.createdAt) : null} />
             </div>
           </div>
 
@@ -801,7 +780,7 @@ export function StudentOverviewTab({ studentId, student, classesData, processedC
                         {getInitial(c.authorName)}
                       </div>
                       <span className="text-xs font-semibold text-gray-700 flex-1">{c.authorName}</span>
-                      <span className="text-[11px] text-gray-400">{formatCommentTimestamp(c.createdAt, { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
+                      <span className="text-[11px] text-gray-400">{fmtDate(c.createdAt)}</span>
                     </div>
                     <p className="text-xs text-gray-600 line-clamp-2 break-words leading-relaxed pl-7">{c.content}</p>
                   </div>

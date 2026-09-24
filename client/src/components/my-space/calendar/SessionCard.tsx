@@ -10,21 +10,6 @@ import { apiRequest } from "@/lib/queryClient";
 import { getAttendanceStatus } from "@/lib/attendance-status";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
-import {
-  centerWallTimeToInstant,
-  computeCenterOnlineWindowState,
-  formatCenterInstant,
-} from "@shared/center-time";
-
-function formatOnlineInstant(value: string | null, timeZone: string | undefined): string {
-  if (!value) return "";
-  if (!timeZone) return "—";
-  const instant = new Date(value);
-  return Number.isNaN(instant.getTime())
-    ? "—"
-    : formatCenterInstant(instant, timeZone, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
 
 const CONTENT_TYPE_LABELS: Record<string, string> = {
   lesson: "Bài học",
@@ -58,12 +43,31 @@ function computeOnlineWindowState(
   sessionDate: string,
   startTime: string,
   endTime: string,
-  rule: OnlineRuleConfig | null | undefined,
-  timeZone: string | undefined,
+  rule: OnlineRuleConfig | null | undefined
 ): { canJoin: boolean; canEnd: boolean } {
   if (!rule) return { canJoin: true, canEnd: true };
-  if (!timeZone) return { canJoin: false, canEnd: false };
-  return computeCenterOnlineWindowState(sessionDate, startTime, endTime, rule, timeZone);
+
+  const [startH, startM] = startTime.split(":").map(Number);
+  const [endH, endM] = endTime.split(":").map(Number);
+
+  const base = new Date(sessionDate + "T00:00:00");
+
+  const sessionStart = new Date(base);
+  sessionStart.setHours(startH, startM, 0, 0);
+
+  const sessionEnd = new Date(base);
+  sessionEnd.setHours(endH, endM, 0, 0);
+
+  const now = new Date();
+
+  const joinFrom = new Date(sessionStart.getTime() - rule.earlyEntryMinutes * 60_000);
+  const joinUntil = new Date(sessionStart.getTime() + rule.lateEntryMinutes * 60_000);
+  const endFrom = new Date(sessionEnd.getTime() - rule.earlyEndMinutes * 60_000);
+
+  const canJoin = now >= joinFrom && now <= joinUntil;
+  const canEnd = now >= endFrom;
+
+  return { canJoin, canEnd };
 }
 
 interface ContentRowProps {
@@ -119,8 +123,6 @@ function OnlineLinkButton({
   onRecorded,
 }: OnlineLinkButtonProps) {
   const platformName = getOnlinePlatformName(onlineLink);
-  const centerTimeZoneQuery = useCenterTimeZone();
-  const centerTimeZone = centerTimeZoneQuery.data;
   const [localClickedAt, setLocalClickedAt] = useState<string | null>(onlineClickedAt ?? null);
   const [localEndedAt, setLocalEndedAt] = useState<string | null>(onlineEndedAt ?? null);
   const [, setTick] = useState(0);
@@ -141,7 +143,7 @@ function OnlineLinkButton({
 
   const queryClient = useQueryClient();
 
-  const { canJoin, canEnd } = computeOnlineWindowState(sessionDate, startTime, endTime, onlineRule, centerTimeZone);
+  const { canJoin, canEnd } = computeOnlineWindowState(sessionDate, startTime, endTime, onlineRule);
 
   const recordMutation = useMutation({
     mutationFn: async () => {
@@ -228,25 +230,20 @@ function OnlineLinkButton({
       </div>
       {!canJoin && !localClickedAt && onlineRule && (
         <span className="text-[11px] text-muted-foreground">
+          Nút sẽ mở lúc{" "}
           {(() => {
-            if (centerTimeZoneQuery.isError) return "Không tải được múi giờ trung tâm.";
-            if (!centerTimeZone) return "Đang tải múi giờ trung tâm.";
-            try {
-              const sessionStart = centerWallTimeToInstant(sessionDate, startTime, centerTimeZone);
-              const opensAt = new Date(sessionStart.getTime() - onlineRule.earlyEntryMinutes * 60_000);
-              const label = formatCenterInstant(opensAt, centerTimeZone, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-              return `Nút sẽ mở lúc ${label}`;
-            } catch {
-              return "Giờ lịch không tồn tại hoặc không duy nhất trong múi giờ trung tâm.";
-            }
+            const [h, m] = startTime.split(":").map(Number);
+            const t = new Date(sessionDate + "T00:00:00");
+            t.setHours(h, m - onlineRule.earlyEntryMinutes, 0, 0);
+            return t.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
           })()}
         </span>
       )}
       {localClickedAt && (
         <span className="text-[11px] text-orange-500 font-medium">
-          Đã vào lúc {formatOnlineInstant(localClickedAt, centerTimeZone)}
+          Đã vào lúc {new Date(localClickedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
           {localEndedAt && (
-            <> · Kết thúc lúc {formatOnlineInstant(localEndedAt, centerTimeZone)}</>
+            <> · Kết thúc lúc {new Date(localEndedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</>
           )}
         </span>
       )}
@@ -263,26 +260,24 @@ function formatAvailableTime(time: string) {
 }
 
 function formatSessionDateLong(date: string) {
-  const d = new Date(`${date}T00:00:00.000Z`);
+  const d = new Date(date + "T00:00:00");
   const days = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
-  return `${days[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
+  return `${days[d.getDay()]} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 
-function CountdownClock({ targetDate, targetTime, timeZone }: { targetDate: string; targetTime: string; timeZone: string }) {
+function CountdownClock({ targetDate, targetTime }: { targetDate: string; targetTime: string }) {
   const [remaining, setRemaining] = useState(0);
   useEffect(() => {
     function compute() {
-      try {
-        const target = centerWallTimeToInstant(targetDate, targetTime, timeZone);
-        return Math.max(0, target.getTime() - Date.now());
-      } catch {
-        return 0;
-      }
+      const [h, m] = targetTime.split(":").map(Number);
+      const target = new Date(targetDate + "T00:00:00");
+      target.setHours(h, m, 0, 0);
+      return Math.max(0, target.getTime() - Date.now());
     }
     setRemaining(compute());
     const id = setInterval(() => setRemaining(compute()), 1000);
     return () => clearInterval(id);
-  }, [targetDate, targetTime, timeZone]);
+  }, [targetDate, targetTime]);
 
   const totalSec = Math.floor(remaining / 1000);
   const hours = Math.floor(totalSec / 3600);
@@ -310,8 +305,6 @@ interface SessionCardDetailProps {
 
 function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDetailProps) {
   const queryClient = useQueryClient();
-  const centerTimeZoneQuery = useCenterTimeZone();
-  const centerTimeZone = centerTimeZoneQuery.data;
   const [showFeedback, setShowFeedback] = useState(false);
   const [viewingContentId, setViewingContentId] = useState<string | null>(null);
   const [viewingFallbackContent, setViewingFallbackContent] = useState<{ title: string; type: string; content?: string | null } | null>(null);
@@ -323,17 +316,13 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
 
   const isTestSession = session.classCode === "TEST";
 
-  const testEndInstant = isTestSession && session.endTime && centerTimeZone
-    ? (() => {
-        try {
-          return centerWallTimeToInstant(sessionDate, session.endTime!, centerTimeZone);
-        } catch {
-          return null;
-        }
-      })()
-    : null;
-  const testEndTimeInvalid = isTestSession && !!session.endTime && !!centerTimeZone && !testEndInstant;
-  const isTestSessionEnded = isTestSession && !!testEndInstant && Date.now() > testEndInstant.getTime();
+  const isTestSessionEnded = isTestSession && (() => {
+    if (!session.endTime) return false;
+    const [h, m] = session.endTime.split(":").map(Number);
+    const end = new Date(sessionDate + "T00:00:00");
+    end.setHours(h, m, 0, 0);
+    return new Date() > end;
+  })();
 
   function openContentDirect(item: SessionContentItem) {
     if (item.type === "Bài kiểm tra" || item.type === "test") {
@@ -352,18 +341,6 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
   }
 
   const handleViewItem = async (item: SessionContentItem) => {
-    if (!centerTimeZone && (isTestSession || item.availableAt)) {
-      setAttemptError(centerTimeZoneQuery.isError
-        ? "Không tải được múi giờ của trung tâm."
-        : "Đang tải múi giờ trung tâm, vui lòng thử lại.");
-      return;
-    }
-
-    if (testEndTimeInvalid) {
-      setAttemptError("Không thể xác định giờ kết thúc bài kiểm tra trong múi giờ trung tâm.");
-      return;
-    }
-
     // 0. Ended gate: if this is a TEST session that has already ended → show ended popup
     if (isTestSessionEnded) {
       setShowEndedPopup(true);
@@ -372,21 +349,17 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
 
     // 1. Time gate: if availableAt is set and current time is before it → show countdown
     if (item.availableAt) {
-      if (!centerTimeZone) return;
-      let target: Date;
-      try {
-        target = centerWallTimeToInstant(sessionDate, item.availableAt, centerTimeZone);
-      } catch {
-        setAttemptError("Không thể xác định chính xác giờ mở nội dung theo múi giờ trung tâm.");
-        return;
-      }
-      if (Date.now() < target.getTime()) {
+      const [h, m] = item.availableAt.split(":").map(Number);
+      const target = new Date(sessionDate + "T00:00:00");
+      target.setHours(h, m, 0, 0);
+      if (new Date() < target) {
         setCountdownTarget({ title: item.title, date: sessionDate, availableAt: item.availableAt });
         return;
       }
     }
 
     // 2. Attempt gate: if maxAttempts > 0, check and record via API
+    const isTestSession = session.classCode === "TEST";
     if (isTestSession && item.maxAttempts && item.maxAttempts > 0) {
       if (isOpeningContent) return;
       setIsOpeningContent(true);
@@ -429,11 +402,10 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
   const hasGeneralContent = session.generalContents.length > 0;
   const hasReview = session.reviewPublished && safeReviewData.length > 0;
 
-  const displayDate = new Date(`${sessionDate}T00:00:00.000Z`).toLocaleDateString("vi-VN", {
+  const displayDate = new Date(sessionDate + "T00:00:00").toLocaleDateString("vi-VN", {
     weekday: "long",
     day: "2-digit",
     month: "2-digit",
-    timeZone: "UTC",
   });
 
   const handleOnlineRecorded = (_clickedAt: string) => {
@@ -581,7 +553,7 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
               {countdownTarget ? formatSessionDateLong(countdownTarget.date) : ""}
             </p>
             {countdownTarget && (
-              centerTimeZone && <CountdownClock targetDate={countdownTarget.date} targetTime={countdownTarget.availableAt} timeZone={centerTimeZone} />
+              <CountdownClock targetDate={countdownTarget.date} targetTime={countdownTarget.availableAt} />
             )}
           </div>
           <DialogFooter className="justify-center">

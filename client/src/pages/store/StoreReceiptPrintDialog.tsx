@@ -2,8 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { X, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
-import { formatCenterTimestamp } from "@/lib/center-time-format";
 
 interface PrintProps {
   type: "import" | "export";
@@ -38,7 +36,6 @@ function fmtDateFull(dateStr: string | null | undefined) {
 export function StoreReceiptPrintDialog({
   type, id, warehouseName, supplierName, recipientName, locationName, createdByName, onClose,
 }: PrintProps) {
-  const { data: timeZone } = useCenterTimeZone();
   const apiPath = type === "import"
     ? `/api/store/receipts/${id}`
     : `/api/store/issue-receipts/${id}`;
@@ -188,7 +185,7 @@ export function StoreReceiptPrintDialog({
               </table>
 
               <div style={{ textAlign: "right", marginBottom: 20, fontSize: 12, color: "#555" }}>
-                {locationName ? locationName + ", " : ""}{formatCenterTimestamp(detail?.createdAt ?? detail?.created_at, timeZone, { day: "numeric", month: "numeric", year: "numeric" })}
+                {locationName ? locationName + ", " : ""}{fmtDateFull(detail?.createdAt ?? detail?.created_at)}
               </div>
 
               <div className="sigs" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, textAlign: "center" }}>

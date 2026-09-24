@@ -17,11 +17,11 @@ import type { Notification } from "@shared/schema";
 import { useLanguage } from "@/hooks/use-language";
 import type { Language } from "@/hooks/use-language";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
-import { parseStoredVietnamTimestamp } from "@/lib/vietnam-time";
 
 function getRelativeTime(dateInput: string | Date, lang: Language): string {
-  const date = parseStoredVietnamTimestamp(dateInput);
-  if (!date) return "—";
+  const date = typeof dateInput === "string"
+    ? new Date(dateInput.endsWith("Z") || dateInput.includes("+") ? dateInput : dateInput + "Z")
+    : dateInput;
   const diffMs = Date.now() - date.getTime();
   if (diffMs < 0) return lang === "en" ? "Just now" : "Vừa xong";
   const mins = Math.floor(diffMs / 60_000);
@@ -36,7 +36,7 @@ function getRelativeTime(dateInput: string | Date, lang: Language): string {
   return lang === "en" ? `${Math.floor(months / 12)}y ago` : `${Math.floor(months / 12)} năm trước`;
 }
 
-function RelativeTime({ dateStr }: { dateStr: string | Date }) {
+function RelativeTime({ dateStr }: { dateStr: string }) {
   const { lang } = useLanguage();
   const [label, setLabel] = useState(() => getRelativeTime(dateStr, lang));
   useEffect(() => {
@@ -414,7 +414,7 @@ function NotificationItem({ notification, isStudent, onRead, onNavigate }: {
         )}
         <div className="flex items-center gap-2 mt-1">
           <p className="text-[11px] text-muted-foreground">
-            <RelativeTime dateStr={notification.createdAt} />
+            <RelativeTime dateStr={typeof notification.createdAt === "string" ? notification.createdAt : new Date(notification.createdAt).toISOString()} />
           </p>
           {isClickable && (
             <span className="text-[10px] text-primary/60 opacity-0 group-hover:opacity-100 transition-opacity">

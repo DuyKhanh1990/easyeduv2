@@ -21,13 +21,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLocations } from "@/hooks/use-locations";
-import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
-import {
-  DEFAULT_CENTER_TIME_ZONE,
-  formatCenterInstant,
-  isInstantInCenterDateRange,
-} from "@shared/center-time";
 import { CalendarDays, Search, ScrollText, X, Eye } from "lucide-react";
+import { format } from "date-fns";
+import { vi } from "date-fns/locale";
 import { navigation } from "@/lib/sidebar-navigation";
 
 const permissionResourceLabels: Record<string, string> = (() => {
@@ -90,13 +86,30 @@ interface ClassActivityLogDialogProps {
 
 type LogTimeRange = "all" | "today" | "7d" | "30d" | "thismonth";
 
-function parseActivityLogInstant(value: string): Date | null {
-  const instant = new Date(value);
-  return Number.isNaN(instant.getTime()) ? null : instant;
-}
+function isInTimeRange(dateValue: string, range: LogTimeRange): boolean {
+  if (range === "all") return true;
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return false;
 
-function isInTimeRange(dateValue: string, range: LogTimeRange, timeZone: string): boolean {
-  return isInstantInCenterDateRange(parseActivityLogInstant(dateValue), range, timeZone);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(date);
+  target.setHours(0, 0, 0, 0);
+
+  if (range === "today") return target.getTime() === today.getTime();
+  if (range === "7d") {
+    const from = new Date(today);
+    from.setDate(from.getDate() - 6);
+    return target >= from && target <= today;
+  }
+  if (range === "30d") {
+    const from = new Date(today);
+    from.setDate(from.getDate() - 29);
+    return target >= from && target <= today;
+  }
+
+  return target.getFullYear() === today.getFullYear()
+    && target.getMonth() === today.getMonth();
 }
 
 const ACTION_COLORS: Record<string, string> = {
@@ -134,13 +147,15 @@ export function getActionColor(action: string): string {
   return "bg-gray-100 text-gray-700 border-gray-200";
 }
 
-export function formatDate(dateStr: string, timeZone = DEFAULT_CENTER_TIME_ZONE): string {
-  const instant = parseActivityLogInstant(dateStr);
-  if (!instant) return dateStr;
-  return formatCenterInstant(instant, timeZone, {
-    day: "2-digit", month: "2-digit", year: "numeric",
-    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
-  }).replace(", ", " ");
+export function formatDate(dateStr: string): string {
+  try {
+    // Strip 'Z' so the browser treats the timestamp as local time (UTC+7 Vietnam)
+    // instead of converting from UTC which adds an extra 7 hours
+    const local = dateStr.replace("Z", "").replace("+00:00", "");
+    return format(new Date(local), "dd/MM/yyyy HH:mm", { locale: vi });
+  } catch {
+    return dateStr;
+  }
 }
 
 type ContentItem = { title: string; type?: string };
@@ -2184,7 +2199,6 @@ function EducationConfigDetailView({ log }: { log: ActivityLog }) {
 
 /** Popup dialog showing full old + new content for a log entry */
 export function LogDetailDialog({ log, open, onOpenChange }: { log: ActivityLog; open: boolean; onOpenChange: (v: boolean) => void }) {
-  const centerTimeZone = useCenterTimeZone();
   const isUpdateCycle = log.action === "Cập nhật chu kỳ" || log.action === "Loại trừ ngày";
   const isAttendance = log.action === "Điểm danh" || log.action === "Điểm danh hàng loạt";
   const isExtension = log.action === "Gia hạn";
@@ -2197,9 +2211,7 @@ export function LogDetailDialog({ log, open, onOpenChange }: { log: ActivityLog;
   const isApplyScoreSheet = log.action === "Gán bảng điểm";
   const isOnlineLink = log.action === "Gán link online";
   const isChangeCycle = log.action === "Đổi chu kỳ";
-  const isEducationConfig = log.action.startsWith("education-config.")
-    || log.action.startsWith("education_config.")
-    || log.action.startsWith("settings.");
+  const isEducationConfig = log.action.startsWith("education_config.") || log.action.startsWith("settings.");
   const permissionContext = (() => {
     if (log.action !== "settings.permission.updated") return null;
     try {
@@ -2247,7 +2259,7 @@ export function LogDetailDialog({ log, open, onOpenChange }: { log: ActivityLog;
             <span className={`inline-flex items-center px-2 py-0.5 rounded border text-[11px] font-medium ${getActionColor(log.action)}`}>
               {educationActionLabel}
             </span>
-            <span>{centerTimeZone.isError ? "Không tải được múi giờ của trung tâm" : centerTimeZone.data ? formatDate(log.createdAt, centerTimeZone.data) : "Đang tải giờ..."}</span>
+            <span>{formatDate(log.createdAt)}</span>
             {log.userName && <span>{log.userName}</span>}
             {permissionContext && <span className="font-semibold text-slate-700">Phân quyền: {permissionContext}</span>}
           </div>
@@ -2390,8 +2402,6 @@ export function ClassActivityLogDialog({
   const [pageSize, setPageSize] = useState(50);
   const [detailLog, setDetailLog] = useState<ActivityLog | null>(null);
   const { data: locations = [] } = useLocations();
-  const centerTimeZone = useCenterTimeZone();
-  const timeZone = centerTimeZone.data ?? DEFAULT_CENTER_TIME_ZONE;
 
   const queryKey = classId
     ? ["/api/activity-logs", classId]
@@ -2435,7 +2445,7 @@ export function ClassActivityLogDialog({
     if (locationFilter !== "all" && log.locationId !== locationFilter) return false;
     if (classFilter !== "all" && log.classId !== classFilter) return false;
     if (actionFilter !== "all" && log.action !== actionFilter) return false;
-    if (!isInTimeRange(log.createdAt, timeRange, timeZone)) return false;
+    if (!isInTimeRange(log.createdAt, timeRange)) return false;
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (
@@ -2570,9 +2580,7 @@ export function ClassActivityLogDialog({
 
           <ScrollArea className="flex-1 min-h-0 bg-slate-50/40">
             <div className="p-4">
-              {centerTimeZone.isError ? (
-                <div role="alert" className="py-16 text-center text-sm text-red-600">Không tải được múi giờ của trung tâm.</div>
-              ) : isLoading || centerTimeZone.isPending ? (
+              {isLoading ? (
                 <div className="space-y-3">
                   {[...Array(6)].map((_, i) => (
                     <Skeleton key={i} className="h-16 w-full rounded-xl" />
@@ -2619,7 +2627,7 @@ export function ClassActivityLogDialog({
                             )}
                           </TableCell>
                           <TableCell className="py-2.5 text-muted-foreground whitespace-nowrap">
-                            {formatDate(log.createdAt, timeZone)}
+                            {formatDate(log.createdAt)}
                           </TableCell>
                           <TableCell className="py-2.5">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded border text-[11px] font-medium ${getActionColor(log.action)}`}>

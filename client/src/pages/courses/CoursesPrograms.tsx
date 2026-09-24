@@ -98,8 +98,6 @@ import {
 } from "@/components/ui/table";
 import { FileViewer } from "@/components/ui/file-viewer";
 import { CoursesHistoryTab } from "./CoursesHistoryTab";
-import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
-import { formatCenterTimestamp } from "@/lib/center-time-format";
 
 const COURSES_HREF = "/courses";
 const COURSES_TABS = [
@@ -815,7 +813,6 @@ type LibraryContent = CourseProgramContent & { programName?: string | null; crea
 
 function ContentLibraryTab({ perm, isActive }: { perm: TabPerm; isActive: boolean }) {
   const { toast } = useToast();
-  const { data: timeZone } = useCenterTimeZone();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -858,9 +855,9 @@ function ContentLibraryTab({ perm, isActive }: { perm: TabPerm; isActive: boolea
   });
 
   const formatDate = (dt: string | Date) => {
-    return formatCenterTimestamp(dt, timeZone, {
-      weekday: "short", day: "2-digit", month: "2-digit", year: "numeric",
-    });
+    const d = new Date(dt);
+    const days = ["CN","T2","T3","T4","T5","T6","T7"];
+    return `${days[d.getDay()]} ${d.getDate().toString().padStart(2,"0")}/${(d.getMonth()+1).toString().padStart(2,"0")}/${d.getFullYear()}`;
   };
 
   const contentPreview = (text: string | null | undefined) => {

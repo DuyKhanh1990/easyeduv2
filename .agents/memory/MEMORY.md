@@ -24,7 +24,6 @@
 - [Schedule popup responsiveness](schedule-popup-responsiveness.md) — ưu tiên hiển thị popup lịch học trước khi mount cây component nặng; không thay đổi cơ chế chi tiết theo session.
 - [CRM relationship history preservation](crm-relationship-history-preservation.md) — không backfill relationship IDs bằng tên pipeline lúc khởi động; tên trùng có thể khôi phục nhầm quan hệ đã xóa.
 - [Invoice editable dates](invoice-editable-dates.md) — ngày tạo và ngày thanh toán được sửa inline; ngày thanh toán không được trước ngày tạo và mọi thay đổi phải vào audit history.
-- [Finance timestamp timezone](finance-timestamp-timezone.md) — finance TIMESTAMP không timezone là giờ tường Việt Nam; pg parser gắn Z giả, chỉ chuyển sang instant thật đúng một lần ở endpoint.
 - [Invoice confirmed status](invoice-confirmed-status.md) — trạng thái confirmed hiển thị riêng nhưng dùng toàn bộ nghiệp vụ paid: tab, thu/chi, ví, đối soát, thông báo và hoa hồng.
 - [Deleted account login](deleted-account-login.md) — xoá hồ sơ phải vô hiệu hóa user liên kết; login cũng chặn user mồ côi còn sót lại để tránh đăng nhập bằng mật khẩu cũ.
 - [Commission board rules](commission-board-rules.md) — bảng tính từ cấu hình; ngày nghiệp vụ theo trạng thái, xếp chung các trạng thái và cộng dồn cấu hình trùng.
@@ -73,6 +72,3 @@
 - [Free-class teacher assignment precedence](free-class-teacher-assignment.md) — override học viên/ngày thắng GV chung; lịch cá nhân chỉ gửi cho GV hiệu lực.
 - [Grade book roster snapshot](grade-book-roster-snapshot.md) — danh sách học viên được chốt lúc tạo; học viên active phát sinh sau đó chỉ được thêm thủ công.
 - [Invoice installment adjustments](invoice-schedule-adjustments.md) — đợt chưa thanh toán tính từ tiền cơ sở; server khóa đợt đã thu và đồng bộ tổng hóa đơn cha.
-- [EasyEdu time standard](system-time-standard.md) — UTC instants, IANA timezone per center, explicit local dates/schedules, and field-by-field legacy migration.
-- [Live attendance test safety](attendance-live-test-safety.md) — verify invoice allocation and wallet effects on exact sessions before requesting attendance tests on the live DB.
-- [Timestamp inventory verification](timestamp-inventory-verification.md) — use live catalog for counts and primary keys; unwrap chained Drizzle calls when reconciling schema.

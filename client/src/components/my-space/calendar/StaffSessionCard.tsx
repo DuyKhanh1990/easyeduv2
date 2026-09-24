@@ -28,13 +28,6 @@ import {
 import { useStaffSessionDetail } from "@/hooks/use-staff-session-detail";
 import { apiRequest, getAuthHeaders } from "@/lib/queryClient";
 import type { TestSession } from "@/components/education/TestSessionDetailDialog";
-import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
-import {
-  centerWallTimeToInstant,
-  computeCenterOnlineWindowState,
-  formatCenterInstant,
-  shiftCalendarDateKey,
-} from "@shared/center-time";
 
 const CONTENT_TYPE_LABELS: Record<string, string> = {
   "Bài học": "Bài học",
@@ -46,13 +39,6 @@ const CONTENT_TYPE_LABELS: Record<string, string> = {
   "Bài kiểm tra": "Bài kiểm tra",
   "exam": "Bài kiểm tra",
 };
-
-function formatStaffOnlineInstant(value: string, timeZone: string | undefined): string {
-  if (!timeZone) return "—";
-  const instant = new Date(value);
-  if (Number.isNaN(instant.getTime())) return "—";
-  return formatCenterInstant(instant, timeZone, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
 
 function getOnlinePlatformName(url: string): string {
   if (url.includes("meet.google.com")) return "Google Meet";
@@ -66,12 +52,31 @@ function computeOnlineWindowState(
   sessionDate: string,
   startTime: string,
   endTime: string,
-  rule: OnlineRuleConfig | null | undefined,
-  timeZone: string | undefined,
+  rule: OnlineRuleConfig | null | undefined
 ): { canJoin: boolean; canEnd: boolean } {
-  if (!timeZone) return { canJoin: false, canEnd: false };
   if (!rule) return { canJoin: true, canEnd: true };
-  return computeCenterOnlineWindowState(sessionDate, startTime, endTime, rule, timeZone);
+
+  const [startH, startM] = startTime.split(":").map(Number);
+  const [endH, endM] = endTime.split(":").map(Number);
+
+  const base = new Date(sessionDate + "T00:00:00");
+
+  const sessionStart = new Date(base);
+  sessionStart.setHours(startH, startM, 0, 0);
+
+  const sessionEnd = new Date(base);
+  sessionEnd.setHours(endH, endM, 0, 0);
+
+  const now = new Date();
+
+  const joinFrom = new Date(sessionStart.getTime() - rule.earlyEntryMinutes * 60_000);
+  const joinUntil = new Date(sessionStart.getTime() + rule.lateEntryMinutes * 60_000);
+  const endFrom = new Date(sessionEnd.getTime() - rule.earlyEndMinutes * 60_000);
+
+  const canJoin = now >= joinFrom && now <= joinUntil;
+  const canEnd = now >= endFrom;
+
+  return { canJoin, canEnd };
 }
 
 interface StaffOnlineLinkButtonProps {
@@ -98,8 +103,6 @@ function StaffOnlineLinkButton({
   initialCheckOutAt,
 }: StaffOnlineLinkButtonProps) {
   const platformName = getOnlinePlatformName(onlineLink);
-  const centerTimeZoneQuery = useCenterTimeZone();
-  const centerTimeZone = centerTimeZoneQuery.data;
   const [clickedAt, setClickedAt] = useState<string | null>(initialCheckInAt ?? null);
   const [endedAt, setEndedAt] = useState<string | null>(initialCheckOutAt ?? null);
   const [, setTick] = useState(0);
@@ -116,7 +119,7 @@ function StaffOnlineLinkButton({
     return () => clearInterval(id);
   }, []);
 
-  const { canJoin, canEnd } = computeOnlineWindowState(sessionDate, startTime, endTime, onlineRule, centerTimeZone);
+  const { canJoin, canEnd } = computeOnlineWindowState(sessionDate, startTime, endTime, onlineRule);
 
   /**
    * Clamp an ISO timestamp to the scheduled [startTime, endTime] window.
@@ -124,23 +127,26 @@ function StaffOnlineLinkButton({
    * - If actual time > scheduled end   → return scheduled end
    * - Otherwise                        → return original ISO unchanged
    */
-  const clampToSchedule = (isoTime: string): string | null => {
-    if (!centerTimeZone) return null;
-    try {
-      const scheduledStart = centerWallTimeToInstant(sessionDate, startTime, centerTimeZone);
-      let scheduledEnd = centerWallTimeToInstant(sessionDate, endTime, centerTimeZone);
-      if (scheduledEnd.getTime() <= scheduledStart.getTime()) {
-        scheduledEnd = centerWallTimeToInstant(shiftCalendarDateKey(sessionDate, 1), endTime, centerTimeZone);
-      }
+  const clampToSchedule = (isoTime: string): string => {
+    const [startH, startM] = startTime.split(":").map(Number);
+    const [endH, endM] = endTime.split(":").map(Number);
 
-      const actual = new Date(isoTime);
-      if (Number.isNaN(actual.getTime())) return null;
-      if (actual.getTime() < scheduledStart.getTime()) return scheduledStart.toISOString();
-      if (actual.getTime() > scheduledEnd.getTime()) return scheduledEnd.toISOString();
-      return isoTime;
-    } catch {
-      return null;
-    }
+    const base = new Date(sessionDate + "T00:00:00");
+
+    const scheduledStart = new Date(base);
+    scheduledStart.setHours(startH, startM, 0, 0);
+
+    const scheduledEnd = new Date(base);
+    scheduledEnd.setHours(endH, endM, 0, 0);
+
+    const actual = new Date(isoTime);
+    const actualMins = actual.getHours() * 60 + actual.getMinutes();
+    const startMins = startH * 60 + startM;
+    const endMins = endH * 60 + endM;
+
+    if (actualMins < startMins) return scheduledStart.toISOString();
+    if (actualMins > endMins) return scheduledEnd.toISOString();
+    return isoTime;
   };
 
   const saveAttendance = async (checkInAt: string | null, checkOutAt: string | null) => {
@@ -162,7 +168,6 @@ function StaffOnlineLinkButton({
     if (!endedAt) {
       const raw = new Date().toISOString();
       const clamped = clampToSchedule(raw);
-      if (!clamped) return;
       const newClickedAt = clickedAt ?? clamped;
       setClickedAt(newClickedAt);
       saveAttendance(newClickedAt, endedAt);
@@ -174,7 +179,6 @@ function StaffOnlineLinkButton({
     e.stopPropagation();
     const raw = new Date().toISOString();
     const clamped = clampToSchedule(raw);
-    if (!clamped) return;
     setEndedAt(clamped);
     saveAttendance(clickedAt, clamped);
   };
@@ -213,31 +217,22 @@ function StaffOnlineLinkButton({
           </button>
         )}
       </div>
-      {!canJoin && !clickedAt && (onlineRule || !centerTimeZone) && (
+      {!canJoin && !clickedAt && onlineRule && (
         <span className="text-[11px] text-muted-foreground">
-          {centerTimeZoneQuery.isError
-            ? "Không tải được múi giờ trung tâm."
-            : !centerTimeZone
-              ? "Đang tải múi giờ trung tâm."
-              : onlineRule
-                ? (() => {
-                    try {
-                      const sessionStart = centerWallTimeToInstant(sessionDate, startTime, centerTimeZone);
-                      const opensAt = new Date(sessionStart.getTime() - onlineRule.earlyEntryMinutes * 60_000);
-                      const label = formatCenterInstant(opensAt, centerTimeZone, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-                      return `Nút sẽ mở lúc ${label}`;
-                    } catch {
-                      return "Giờ lịch không tồn tại hoặc không duy nhất trong múi giờ trung tâm.";
-                    }
-                  })()
-                : ""}
+          Nút sẽ mở lúc{" "}
+          {(() => {
+            const [h, m] = startTime.split(":").map(Number);
+            const t = new Date(sessionDate + "T00:00:00");
+            t.setHours(h, m - onlineRule.earlyEntryMinutes, 0, 0);
+            return t.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+          })()}
         </span>
       )}
       {clickedAt && (
         <span className="text-[11px] text-orange-500 font-medium">
-          Đã vào lúc {formatStaffOnlineInstant(clickedAt, centerTimeZone)}
+          Đã vào lúc {new Date(clickedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
           {endedAt && (
-            <> · Kết thúc lúc {formatStaffOnlineInstant(endedAt, centerTimeZone)}</>
+            <> · Kết thúc lúc {new Date(endedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</>
           )}
         </span>
       )}
@@ -318,19 +313,14 @@ function ReviewStatus({ reviewedCount, enrolledCount, reviewPublished }: { revie
   );
 }
 
-function getTestSessionEndState(
-  session: MyCalendarSessionLight,
-  timeZone: string | undefined,
-): "ended" | "open" | "unavailable" | "invalid" {
-  if (!session.endTime) return "open";
-  if (!timeZone) return "unavailable";
-  try {
-    return Date.now() > centerWallTimeToInstant(session.sessionDate, session.endTime, timeZone).getTime()
-      ? "ended"
-      : "open";
-  } catch {
-    return "invalid";
-  }
+// Returns true when the test session's end time has already passed
+function isTestSessionEnded(session: MyCalendarSessionLight): boolean {
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  if (session.sessionDate < todayStr) return true;
+  if (session.sessionDate > todayStr) return false;
+  const nowTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  return !!(session.endTime && nowTime > session.endTime);
 }
 
 interface StaffSessionCardProps {
@@ -344,18 +334,13 @@ interface StaffSessionCardProps {
 }
 
 export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAddTestContent, onlineRule, staffId, highlighted }: StaffSessionCardProps) {
-  const centerTimeZoneQuery = useCenterTimeZone();
-  const centerTimeZone = centerTimeZoneQuery.data;
   const [contentDialogOpen, setContentDialogOpen] = useState(false);
   const [libraryDialogOpen, setLibraryDialogOpen] = useState(false);
   const [viewingContentId, setViewingContentId] = useState<string | null>(null);
   const [viewingFallbackContent, setViewingFallbackContent] = useState<{ title: string; type: string; content?: string | null } | null>(null);
 
   const isTestSession = session.classCode === "TEST";
-  const testEndState = isTestSession ? getTestSessionEndState(session, centerTimeZone) : "open";
-  const testTimeUnavailable = isTestSession && testEndState === "unavailable";
-  const testScheduleInvalid = isTestSession && testEndState === "invalid";
-  const testEnded = isTestSession && testEndState === "ended";
+  const testEnded = isTestSession && isTestSessionEnded(session);
   const { data: detail, isLoading, isError } = useStaffSessionDetail(isTestSession ? null : session.classSessionId);
 
   // Fetch test session detail to show assigned content names on the card
@@ -400,16 +385,6 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
               {testEnded && (
                 <span className="ml-2 text-xs font-semibold text-red-500 bg-red-50 dark:bg-red-950/30 px-2 py-0.5 rounded-full">Đã kết thúc</span>
               )}
-              {testTimeUnavailable && (
-                <span className="ml-2 text-xs font-semibold text-amber-600" role="alert">
-                  {centerTimeZoneQuery.isError ? "Không tải được múi giờ trung tâm" : "Đang tải múi giờ"}
-                </span>
-              )}
-              {testScheduleInvalid && (
-                <span className="ml-2 text-xs font-semibold text-amber-600" role="alert">
-                  Giờ kết thúc không xác định được
-                </span>
-              )}
             </p>
             <p className="font-bold text-foreground text-base">Lớp: TEST</p>
             {session.className && session.className !== "TEST" && (
@@ -422,7 +397,7 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
               e.stopPropagation();
               if (!testEnded && testDetail) onAddTestContent?.(testDetail);
             }}
-            disabled={testEnded || testTimeUnavailable || testScheduleInvalid || !testDetail}
+            disabled={testEnded || !testDetail}
             className={cn(
               "flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors sm:w-auto",
               testEnded

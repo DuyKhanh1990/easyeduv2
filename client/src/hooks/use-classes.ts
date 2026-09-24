@@ -6,7 +6,6 @@ export interface ClassesPage {
   total: number;
   page: number;
   pageSize: number;
-  centerToday: string;
 }
 
 export function useClasses(locationId?: string, options?: { enabled?: boolean; minimal?: boolean; view?: "list"; page?: number; pageSize?: number; search?: string; status?: string }) {

@@ -19,8 +19,6 @@ import {
 import * as courseStorage from "../storage/course.storage";
 import { createCourseAuditLog, getCourseAuditLogs } from "../storage/course-audit-log.storage";
 import { createActivityLog, getStaffHistory } from "../storage/activity-log.storage";
-import { validateCenterTimeZone } from "@shared/center-time";
-import { InvalidCenterDateKeyError } from "../lib/center-date-range";
 
 function sanitizeDateField(value: any): string | null {
   if (!value) return null;
@@ -231,17 +229,6 @@ async function getStaffLimitInfo(): Promise<{ limit: number | null; activeCount:
 }
 
 export function registerConfigRoutes(app: Express): void {
-  app.get("/api/center-time-zone", async (_req, res) => {
-    try {
-      const [center] = await db.select({ timeZone: centerConfig.timezone }).from(centerConfig).limit(1);
-      if (!center) return res.status(503).json({ message: "Chưa cấu hình trung tâm" });
-      res.json({ timeZone: validateCenterTimeZone(center.timeZone) });
-    } catch (error) {
-      console.error("[CenterTimeZone] Cannot load center timezone:", error);
-      res.status(500).json({ message: "Không tải được múi giờ của trung tâm" });
-    }
-  });
-
   // Keep one audit trail for every mutation made from the education-config page.
   // Middleware coverage prevents newly added config endpoints from silently
   // skipping history recording.
@@ -499,12 +486,9 @@ export function registerConfigRoutes(app: Express): void {
   app.get("/api/staff/history", async (req, res) => {
     try {
       const q = req.query as Record<string, string>;
-      const [center] = await db.select({ timeZone: centerConfig.timezone }).from(centerConfig).limit(1);
-      if (!center) return res.status(503).json({ message: "Chưa cấu hình trung tâm" });
       const result = await getStaffHistory({
         dateFrom: q.dateFrom || null,
         dateTo: q.dateTo || null,
-        timeZone: validateCenterTimeZone(center.timeZone),
         locationId: q.locationId || null,
         allowedLocationIds: req.allowedLocationIds,
         isSuperAdmin: req.isSuperAdmin,
@@ -514,9 +498,6 @@ export function registerConfigRoutes(app: Express): void {
       res.json(result);
     } catch (err: any) {
       console.error("[staff-history]", err);
-      if (err instanceof InvalidCenterDateKeyError) {
-        return res.status(400).json({ message: err.message });
-      }
       res.status(500).json({ message: "Không thể tải lịch sử nhân sự" });
     }
   });
@@ -649,17 +630,15 @@ export function registerConfigRoutes(app: Express): void {
   app.get("/api/courses/history", async (req, res) => {
     try {
       const q = req.query as Record<string, string>;
-      const [center] = await db.select({ timeZone: centerConfig.timezone }).from(centerConfig).limit(1);
-      if (!center) return res.status(503).json({ message: "Chưa cấu hình trung tâm" });
-      const timeZone = validateCenterTimeZone(center.timeZone);
+      const dateFrom = q.dateFrom ? new Date(`${q.dateFrom}T00:00:00`) : undefined;
+      const dateTo = q.dateTo ? new Date(`${q.dateTo}T23:59:59.999`) : undefined;
       const scope = ["courses", "programs", "library"].includes(q.scope) ? q.scope : undefined;
       const action = ["created", "updated", "deleted"].includes(q.action) ? q.action : undefined;
       const limit = Math.min(Math.max(parseInt(q.limit || "100", 10) || 100, 1), 500);
       const offset = Math.max(parseInt(q.offset || "0", 10) || 0, 0);
       const result = await getCourseAuditLogs({
-        dateFrom: q.dateFrom || undefined,
-        dateTo: q.dateTo || undefined,
-        timeZone,
+        dateFrom,
+        dateTo,
         scope,
         action,
         allowedLocationIds: req.allowedLocationIds,
@@ -686,9 +665,6 @@ export function registerConfigRoutes(app: Express): void {
       });
     } catch (error: any) {
       console.error("[course-history] error:", error);
-      if (error instanceof InvalidCenterDateKeyError) {
-        return res.status(400).json({ message: error.message });
-      }
       res.status(500).json({ message: error.message });
     }
   });

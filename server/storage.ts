@@ -74,7 +74,6 @@ export interface IStorage {
     allowedLocationIds: string[];
     isSuperAdmin: boolean;
     locationId?: string; 
-    timeZone: string;
     offset?: number; 
     limit?: number; 
     searchTerm?: string; 
@@ -803,7 +802,6 @@ export class DatabaseStorage implements IStorage {
     allowedLocationIds: string[];
     isSuperAdmin: boolean;
     locationId?: string; 
-    timeZone: string;
     offset?: number; 
     limit?: number; 
     searchTerm?: string; 

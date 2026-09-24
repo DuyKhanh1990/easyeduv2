@@ -127,7 +127,6 @@ script/build.ts      — Production build script
 
 - `tsx` is a local devDependency — the `npm run dev` script uses `node_modules/.bin/tsx` directly
 - Schema thay đổi qua `shared/schema.ts` + `npm run db:push`, **không** inline trong startup
-- DB bên ngoài mà ứng dụng Preview kết nối qua secret là **DB đang dùng thật**. Mọi thao tác ghi, dữ liệu thử, `db:push` hoặc DDL tại đây đều tác động dữ liệu thật; không coi đây là bản sao thử nghiệm. Kiểm kê chỉ đọc trước, và chỉ chuyển dữ liệu lịch sử khi đã xác minh nguồn ghi, có phương án sao lưu/khôi phục và phạm vi thao tác rõ ràng.
 - Vite HMR WebSocket shows a `400` warning in Replit's proxied iframe — this is cosmetic, HMR still works
 - `drizzle-kit push` hangs nếu DB ngoài (42.96.40.138) chậm từ CLI — chạy từ máy local hoặc server cùng mạng
 - Port 5000 is the only exposed port; both API and frontend are served from it

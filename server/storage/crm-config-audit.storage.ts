@@ -2,7 +2,6 @@ import { and, desc, eq, ilike, sql } from "./base";
 import { db } from "../db";
 import { activityLogs, staff, users } from "@shared/schema";
 import { createActivityLog } from "./activity-log.storage";
-import { centerDateRangeConditions } from "../lib/center-date-range";
 
 export type CrmConfigAuditAction = "created" | "updated" | "deleted";
 
@@ -28,19 +27,14 @@ export async function createCrmConfigAuditLog(data: {
 export async function getCrmConfigAuditLogs(filters?: {
   dateFrom?: string;
   dateTo?: string;
-  timeZone?: string;
   entityType?: string;
   action?: CrmConfigAuditAction;
   limit?: number;
   offset?: number;
 }) {
   const conditions = [ilike(activityLogs.action, "crm_config.%")];
-  conditions.push(...centerDateRangeConditions(
-    activityLogs.createdAt,
-    filters?.dateFrom,
-    filters?.dateTo,
-    filters?.timeZone,
-  ));
+  if (filters?.dateFrom) conditions.push(sql`DATE(${activityLogs.createdAt}) >= ${filters.dateFrom}` as any);
+  if (filters?.dateTo) conditions.push(sql`DATE(${activityLogs.createdAt}) <= ${filters.dateTo}` as any);
   if (filters?.entityType) conditions.push(ilike(activityLogs.action, `crm_config.${filters.entityType}.%`));
   if (filters?.action) {
     conditions.push(
