@@ -24,6 +24,7 @@
 - [Schedule popup responsiveness](schedule-popup-responsiveness.md) — ưu tiên hiển thị popup lịch học trước khi mount cây component nặng; không thay đổi cơ chế chi tiết theo session.
 - [CRM relationship history preservation](crm-relationship-history-preservation.md) — không backfill relationship IDs bằng tên pipeline lúc khởi động; tên trùng có thể khôi phục nhầm quan hệ đã xóa.
 - [Invoice editable dates](invoice-editable-dates.md) — ngày tạo và ngày thanh toán được sửa inline; ngày thanh toán không được trước ngày tạo và mọi thay đổi phải vào audit history.
+- [Finance timestamp timezone](finance-timestamp-timezone.md) — finance TIMESTAMP không timezone là giờ tường Việt Nam; pg parser gắn Z giả, chỉ chuyển sang instant thật đúng một lần ở endpoint.
 - [Invoice confirmed status](invoice-confirmed-status.md) — trạng thái confirmed hiển thị riêng nhưng dùng toàn bộ nghiệp vụ paid: tab, thu/chi, ví, đối soát, thông báo và hoa hồng.
 - [Deleted account login](deleted-account-login.md) — xoá hồ sơ phải vô hiệu hóa user liên kết; login cũng chặn user mồ côi còn sót lại để tránh đăng nhập bằng mật khẩu cũ.
 - [Commission board rules](commission-board-rules.md) — bảng tính từ cấu hình; ngày nghiệp vụ theo trạng thái, xếp chung các trạng thái và cộng dồn cấu hình trùng.

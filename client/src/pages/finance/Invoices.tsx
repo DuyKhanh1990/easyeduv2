@@ -44,7 +44,7 @@ import { BulkCollectDialog, type BulkCollectPrintData } from "./components/BulkC
 import { BulkCollectPrintPreview } from "./components/BulkCollectPrintPreview";
 import {
   type InvoiceRow, type ScheduleItem, STATUS_CONFIG, EINVOICE_STATUS_CONFIG,
-  parseNum, fmtMoney, fmtDate, getInvoiceBusinessDateKey, getTodayVietnamDate, isInvoicePaidLike,
+  parseNum, fmtMoney, fmtDate, getInvoiceBusinessDateKey, getInvoiceStoredDateKey, getTodayVietnamDate, isInvoicePaidLike,
 } from "@/types/invoice-types";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -335,7 +335,7 @@ function EditableInvoiceDateCell({
   const background = isSelected ? "bg-violet-50" : isOdd ? "bg-slate-50" : "bg-white";
   const toInputDate = (date: string | Date | null | undefined) => {
     if (!date) return "";
-    return getInvoiceBusinessDateKey(date);
+    return getInvoiceStoredDateKey(date);
   };
 
   useEffect(() => {
@@ -1058,7 +1058,7 @@ type BulkInvoiceDateTarget = {
 
 function dateOnly(value: string | Date | null | undefined): string {
   if (!value) return "";
-  return getInvoiceBusinessDateKey(value);
+  return getInvoiceStoredDateKey(value);
 }
 
 function BulkInvoiceDateDialog({
@@ -1864,9 +1864,8 @@ export default function Invoices() {
     ) => {
       if (!from && !to) return true;
       if (!value) return false;
-      const date = new Date(value);
-      if (Number.isNaN(date.getTime())) return false;
-      const day = getInvoiceBusinessDateKey(date);
+      const day = getInvoiceStoredDateKey(value);
+      if (!day) return false;
       return (!from || day >= from) && (!to || day <= to);
     };
 

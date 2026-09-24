@@ -232,6 +232,7 @@ function invoiceBusinessDateOnly(value: unknown, rawValue?: unknown): string | n
   if (!value) return null;
   const date = value instanceof Date ? value : new Date(String(value));
   if (Number.isNaN(date.getTime())) return null;
+  if (value instanceof Date && rawValue === undefined) return date.toISOString().slice(0, 10);
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Ho_Chi_Minh",
     year: "numeric",
@@ -707,19 +708,18 @@ export function registerFinanceRoutes(app: Express): void {
         return parts.length ? "AND " + parts.join(" AND ") : "";
       })();
 
-      // Timestamps in the finance tables are TIMESTAMP WITHOUT TIME ZONE values
-      // stored as UTC (see server/db.ts). Convert them to Vietnam time before
-      // applying calendar-date filters, otherwise "Hôm nay" changes with the
-      // database/server timezone and events around midnight land on the wrong day.
+      // The finance timestamp columns are TIMESTAMP WITHOUT TIME ZONE values
+      // stored as Vietnam wall-clock time. Convert to real instants once in the
+      // UNION below; filter those instants using Vietnam midnight boundaries.
       const dateFilter = (() => {
         const parts: string[] = [];
         const isDateOnly = (value: string | null): value is string =>
           Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
         if (dateFrom && isDateOnly(dateFrom)) {
-          parts.push(`(ev_time AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Ho_Chi_Minh') >= '${dateFrom}'::date`);
+          parts.push(`ev_time >= ('${dateFrom}'::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')`);
         }
         if (dateTo && isDateOnly(dateTo)) {
-          parts.push(`(ev_time AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Ho_Chi_Minh') < ('${dateTo}'::date + INTERVAL '1 day')`);
+          parts.push(`ev_time < (('${dateTo}'::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')`);
         }
         return parts.length ? "WHERE " + parts.join(" AND ") : "";
       })();
@@ -727,7 +727,7 @@ export function registerFinanceRoutes(app: Express): void {
       const baseUnion = `
         SELECT
           'created'::text   AS ev_type,
-          i.created_at      AS ev_time,
+          i.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh' AS ev_time,
           i.id::text        AS invoice_id,
           i.code            AS invoice_code,
           i.type            AS invoice_type,
@@ -753,7 +753,7 @@ export function registerFinanceRoutes(app: Express): void {
 
         SELECT
           'paid'::text      AS ev_type,
-          i.paid_at         AS ev_time,
+          i.paid_at AT TIME ZONE 'Asia/Ho_Chi_Minh' AS ev_time,
           i.id::text, i.code, i.type,
           COALESCE(s.full_name, i.subject_name),
           i.grand_total::text,
@@ -774,7 +774,7 @@ export function registerFinanceRoutes(app: Express): void {
 
         SELECT
           'schedule_paid'::text AS ev_type,
-          ps.paid_at         AS ev_time,
+          ps.paid_at AT TIME ZONE 'Asia/Ho_Chi_Minh' AS ev_time,
           i.id::text, i.code, i.type,
           COALESCE(s.full_name, i.subject_name),
           i.grand_total::text,
@@ -796,7 +796,7 @@ export function registerFinanceRoutes(app: Express): void {
 
         SELECT
           al.action                    AS ev_type,
-          al.created_at                AS ev_time,
+          al.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh' AS ev_time,
           al.invoice_id::text          AS invoice_id,
           al.invoice_code              AS invoice_code,
           al.invoice_type              AS invoice_type,

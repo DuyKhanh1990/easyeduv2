@@ -26,9 +26,9 @@ function getBusinessDateString(date = new Date()): string {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-// Timestamp columns are UTC wall-clock values without timezone metadata.
-// Convert a Vietnam calendar-day boundary to a UTC instant and a naive SQL
-// timestamp so filtering is independent of the Node/PostgreSQL process timezone.
+// Finance TIMESTAMP WITHOUT TIME ZONE columns contain Vietnam wall-clock values.
+// Return both the literal SQL boundary and a UTC-encoded copy of those wall-clock
+// fields for in-memory comparisons with Dates produced by the pg parser.
 function getVietnamDateBoundary(dateKey: string, dayOffset = 0) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
   if (!match) return null;
@@ -43,10 +43,10 @@ function getVietnamDateBoundary(dateKey: string, dayOffset = 0) {
     || calendarDate.getUTCDate() !== day
   ) return null;
 
-  const instant = new Date(Date.UTC(year, month - 1, day + dayOffset, -7));
+  const wallClock = new Date(Date.UTC(year, month - 1, day + dayOffset));
   return {
-    instant,
-    sqlTimestamp: instant.toISOString().slice(0, -1).replace("T", " "),
+    wallClock,
+    sqlTimestamp: wallClock.toISOString().slice(0, -1).replace("T", " "),
   };
 }
 
@@ -1201,10 +1201,10 @@ export async function getThuChiReportEntries(filters: {
   }
 
   const fromMs = filters.paidAtFrom
-    ? getVietnamDateBoundary(filters.paidAtFrom)?.instant.getTime() ?? Number.NEGATIVE_INFINITY
+    ? getVietnamDateBoundary(filters.paidAtFrom)?.wallClock.getTime() ?? Number.NEGATIVE_INFINITY
     : Number.NEGATIVE_INFINITY;
   const toMs = filters.paidAtTo
-    ? (getVietnamDateBoundary(filters.paidAtTo, 1)?.instant.getTime() ?? Number.POSITIVE_INFINITY) - 1
+    ? (getVietnamDateBoundary(filters.paidAtTo, 1)?.wallClock.getTime() ?? Number.POSITIVE_INFINITY) - 1
     : Number.POSITIVE_INFINITY;
   const paymentMethods = new Set(filters.paymentMethods ?? []);
 

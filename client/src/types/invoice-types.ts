@@ -130,6 +130,22 @@ export const getInvoiceBusinessDateKey = (value: string | Date): string => {
   return `${values.year}-${values.month}-${values.day}`;
 };
 
+// PostgreSQL TIMESTAMP WITHOUT TIME ZONE values are returned by the current
+// driver as ISO strings with a synthetic Z. For invoice fields, the UTC
+// components preserve the original Vietnam wall-clock date; don't shift them.
+export const getInvoiceStoredDateKey = (value: string | Date): string => {
+  if (typeof value === "string") {
+    const match = /^(\d{4}-\d{2}-\d{2})/.exec(value);
+    if (match) return match[1];
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 export const getTodayVietnamDate = (): Date => {
   const [year, month, day] = getInvoiceBusinessDateKey(new Date()).split("-").map(Number);
   return new Date(year, month - 1, day);
@@ -137,7 +153,7 @@ export const getTodayVietnamDate = (): Date => {
 
 export const fmtDate = (d: string | Date | null | undefined): string => {
   if (!d) return "—";
-  const key = getInvoiceBusinessDateKey(d);
+  const key = getInvoiceStoredDateKey(d);
   if (!key) return String(d);
   const [year, month, day] = key.split("-");
   return `${day}/${month}/${year}`;
