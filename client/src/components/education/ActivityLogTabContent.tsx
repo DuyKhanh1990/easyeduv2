@@ -11,6 +11,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
 import {
   Select,
   SelectContent,
@@ -36,6 +37,7 @@ export function ActivityLogTabContent({ classId }: ActivityLogTabContentProps) {
   const [detailLog, setDetailLog] = useState<ActivityLog | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const centerTimeZone = useCenterTimeZone();
 
   const { data: logs = [], isLoading } = useQuery<ActivityLog[]>({
     queryKey: ["/api/activity-logs", classId],
@@ -137,7 +139,11 @@ export function ActivityLogTabContent({ classId }: ActivityLogTabContentProps) {
                       )}
                     </TableCell>
                     <TableCell className="py-2 text-muted-foreground whitespace-nowrap">
-                      {formatDate(log.createdAt)}
+                      {centerTimeZone.isError
+                        ? "Không tải được múi giờ của trung tâm"
+                        : centerTimeZone.data
+                          ? formatDate(log.createdAt, centerTimeZone.data)
+                          : "Đang tải giờ..."}
                     </TableCell>
                     <TableCell className="py-2">
                       <span

@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { format } from "date-fns";
-import { vi } from "date-fns/locale";
 import { CalendarIcon, Eye, History, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { getCrmFieldLabel } from "@/lib/crm-customer-fields";
 import { HistoryPaginationFooter } from "@/components/common/HistoryPaginationFooter";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
+import { DEFAULT_CENTER_TIME_ZONE, formatCenterInstant } from "@shared/center-time";
 
 type HistoryEvent = {
   id: string;
@@ -57,15 +57,20 @@ const ACTION_CONFIG = {
   deleted: { label: "Xóa", icon: <Trash2 className="h-3 w-3" />, color: "text-red-700", bg: "bg-red-50", border: "border-red-200" },
 } as const;
 
-function stripUtc(value: string) {
-  return value.replace("Z", "").replace("+00:00", "");
-}
-
-function formatDateTime(value: string) {
+function formatDateTime(value: string, timeZone: string) {
   try {
-    return format(new Date(stripUtc(value)), "HH:mm — dd/MM/yyyy", { locale: vi });
+    const instant = new Date(value);
+    if (Number.isNaN(instant.getTime())) return "Không rõ thời gian";
+    return formatCenterInstant(instant, timeZone, {
+      hour: "2-digit",
+      minute: "2-digit",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hourCycle: "h23",
+    }).replace(", ", " — ");
   } catch {
-    return value;
+    return "Không rõ thời gian";
   }
 }
 
@@ -103,7 +108,7 @@ function getFieldLabel(key: string, content: Record<string, unknown>) {
   return FIELD_LABELS[key] ?? "Thông tin khác";
 }
 
-function HistoryDetail({ event, onClose }: { event: HistoryEvent | null; onClose: () => void }) {
+function HistoryDetail({ event, onClose, timeZone }: { event: HistoryEvent | null; onClose: () => void; timeZone: string }) {
   if (!event) return null;
   const config = ACTION_CONFIG[event.action];
   const oldContent = parseContent(event.old_content);
@@ -121,7 +126,7 @@ function HistoryDetail({ event, onClose }: { event: HistoryEvent | null; onClose
               {config.icon}{config.label}
             </span>
             <span className="font-bold text-slate-700">{ENTITY_LABELS[event.entity_type] ?? event.entity_type}</span>
-            <span className="text-slate-400 font-normal">{formatDateTime(event.ev_time)}</span>
+            <span className="text-slate-400 font-normal">{formatDateTime(event.ev_time, timeZone)}</span>
           </DialogTitle>
         </DialogHeader>
         <div className="text-xs text-slate-500 space-y-0.5 -mt-1">
@@ -154,6 +159,8 @@ export function CRMConfigHistoryTab() {
   const [page, setPage] = useState(1);
   const [detailEvent, setDetailEvent] = useState<HistoryEvent | null>(null);
   const [pageSize, setPageSize] = useState(50);
+  const centerTimeZone = useCenterTimeZone();
+  const timeZone = centerTimeZone.data ?? DEFAULT_CENTER_TIME_ZONE;
   const params = new URLSearchParams({ limit: String(pageSize), offset: String((page - 1) * pageSize) });
   if (action !== "all") params.set("action", action);
   if (entityType !== "all") params.set("entityType", entityType);
@@ -201,7 +208,9 @@ export function CRMConfigHistoryTab() {
         <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground"><CalendarIcon className="h-3.5 w-3.5" />{total} sự kiện</div>
       </div>
       <div className="overflow-auto">
-        {isLoading ? <p className="text-sm text-muted-foreground text-center py-12">Đang tải lịch sử...</p> : events.length === 0 ? (
+        {isLoading || centerTimeZone.isPending ? <p className="text-sm text-muted-foreground text-center py-12">Đang tải lịch sử...</p>
+          : centerTimeZone.isError ? <p role="alert" className="text-sm text-red-600 text-center py-12">Không tải được múi giờ của trung tâm.</p>
+          : events.length === 0 ? (
           <div className="flex flex-col items-center gap-3 py-20 text-muted-foreground"><History className="h-12 w-12 opacity-15" /><p className="text-sm">Chưa có lịch sử cấu hình</p></div>
         ) : <div className="space-y-1.5">{events.map(event => {
           const config = ACTION_CONFIG[event.action];
@@ -214,7 +223,7 @@ export function CRMConfigHistoryTab() {
             <span className="text-xs font-semibold text-slate-700">{ENTITY_LABELS[event.entity_type] ?? event.entity_type}</span>
             <span className="text-xs text-slate-600 truncate flex-1">{String(name)}</span>
             {event.user_name && <span className="text-[11px] text-slate-400">bởi {event.user_name}</span>}
-            <span className="text-[10px] text-slate-400 whitespace-nowrap">{formatDateTime(event.ev_time)}</span>
+            <span className="text-[10px] text-slate-400 whitespace-nowrap">{formatDateTime(event.ev_time, timeZone)}</span>
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDetailEvent(event)} title="Xem chi tiết"><Eye className="h-3.5 w-3.5" /></Button>
           </div>;
         })}</div>}
@@ -233,7 +242,7 @@ export function CRMConfigHistoryTab() {
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> Xóa</span>
         </>}
       />
-      <HistoryDetail event={detailEvent} onClose={() => setDetailEvent(null)} />
+      {centerTimeZone.data && <HistoryDetail event={detailEvent} onClose={() => setDetailEvent(null)} timeZone={centerTimeZone.data} />}
     </div>
   );
 }

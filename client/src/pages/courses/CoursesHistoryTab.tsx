@@ -1,11 +1,16 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarIcon, ChevronLeft, ChevronRight, Eye, History, Plus, Pencil, Trash2 } from "lucide-react";
-import { format } from "date-fns";
-import { vi } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
+import {
+  DEFAULT_CENTER_TIME_ZONE,
+  formatCenterInstant,
+  getCenterDateKey,
+  shiftCalendarDateKey,
+} from "@shared/center-time";
 
 type CourseHistoryEvent = {
   id: string;
@@ -22,55 +27,75 @@ type CourseHistoryEvent = {
   user_name: string | null;
   location_name: string | null;
 };
+type ParsedCourseHistoryEvent = CourseHistoryEvent & { createdAtInstant: Date | null };
 
 type HistoryResponse = { events: CourseHistoryEvent[]; total: number };
 type QuickRange = "all" | "today" | "7d" | "30d" | "thismonth";
-
-function stripUtc(value: string) {
-  return value.replace("Z", "").replace("+00:00", "");
-}
 
 function eventTime(event: CourseHistoryEvent) {
   return event.ev_time ?? event.created_at ?? "";
 }
 
-function fmtDateTime(value: string) {
-  try { return format(new Date(stripUtc(value)), "HH:mm — dd/MM/yyyy", { locale: vi }); }
-  catch { return value; }
+function parseCourseAuditInstant(value: string): Date | null {
+  const instant = new Date(value);
+  return Number.isNaN(instant.getTime()) ? null : instant;
 }
 
-function dateKey(value: string) {
-  return stripUtc(value).slice(0, 10);
+function fmtDateTime(value: string | Date | null, timeZone: string) {
+  const instant = value instanceof Date ? value : value ? parseCourseAuditInstant(value) : null;
+  if (!instant) return "Không rõ thời gian";
+  return formatCenterInstant(instant, timeZone, {
+    hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric", hourCycle: "h23",
+  }).replace(", ", " — ");
 }
 
-function fmtDateGroup(value: string) {
-  try { return format(new Date(stripUtc(value)), "EEEE, dd/MM/yyyy", { locale: vi }); }
-  catch { return value; }
+function fmtSnapshotDateTime(value: string) {
+  // Embedded old/new content can contain timestamps from unrelated legacy
+  // columns. Keep their raw wall-clock fields here; only ev_time is a
+  // canonical instant and uses fmtDateTime above. Leave non-UTC offsets raw
+  // because these snapshots have not been provenance-audited.
+  const wallClockValue = value.endsWith("Z")
+    ? value.slice(0, -1)
+    : value.endsWith("+00:00")
+      ? value.slice(0, -6)
+      : value;
+  if (/[+-]\d{2}:\d{2}$/.test(wallClockValue)) return value;
+  const match = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(wallClockValue);
+  return match ? `${match[4]}:${match[5]} — ${match[3]}/${match[2]}/${match[1]}` : value;
 }
 
-function quickRangeDates(range: QuickRange): { from?: string; to?: string } {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  if (range === "today") return { from: fmt(today), to: fmt(today) };
-  if (range === "7d") {
-    const from = new Date(today);
-    from.setDate(from.getDate() - 6);
-    return { from: fmt(from), to: fmt(today) };
-  }
-  if (range === "30d") {
-    const from = new Date(today);
-    from.setDate(from.getDate() - 29);
-    return { from: fmt(from), to: fmt(today) };
-  }
+function dateKey(value: Date | null, timeZone: string) {
+  const instant = value;
+  return instant ? getCenterDateKey(instant, timeZone) : "unknown";
+}
+
+function fmtDateGroup(value: Date | null, timeZone: string) {
+  const instant = value;
+  return instant
+    ? formatCenterInstant(instant, timeZone, { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" })
+    : "Không rõ ngày";
+}
+
+function quickRangeDates(range: QuickRange, timeZone: string): { from?: string; to?: string } {
+  const today = getCenterDateKey(new Date(), timeZone);
+  if (range === "today") return { from: today, to: today };
+  if (range === "7d") return { from: shiftCalendarDateKey(today, -6), to: today };
+  if (range === "30d") return { from: shiftCalendarDateKey(today, -29), to: today };
   if (range === "thismonth") {
+    const [year, month] = today.slice(0, 7).split("-").map(Number);
+    const firstOfNextMonth = month === 12
+      ? `${year + 1}-01-01`
+      : `${year}-${String(month + 1).padStart(2, "0")}-01`;
     return {
-      from: fmt(new Date(today.getFullYear(), today.getMonth(), 1)),
-      to: fmt(new Date(today.getFullYear(), today.getMonth() + 1, 0)),
+      from: `${today.slice(0, 7)}-01`,
+      to: shiftCalendarDateKey(firstOfNextMonth, -1),
     };
   }
   return {};
+}
+
+function formatDateKey(value: string) {
+  return value.split("-").reverse().join("/");
 }
 
 const ACTION_CONFIG = {
@@ -124,8 +149,8 @@ function displayValue(value: any, fieldKey?: string) {
   if (Array.isArray(value)) return value.length ? value.join(", ") : "—";
   if (typeof value === "boolean") return value ? "Có" : "Không";
   if (typeof value === "object") return JSON.stringify(value);
-  if (fieldKey?.endsWith("At") && typeof value === "string" && !Number.isNaN(Date.parse(value))) {
-    return fmtDateTime(value);
+  if (fieldKey?.endsWith("At") && typeof value === "string") {
+    return fmtSnapshotDateTime(value);
   }
   return String(value);
 }
@@ -139,11 +164,13 @@ function EventDetailDialog({
   onClose,
   courseNames,
   programNames,
+  timeZone,
 }: {
-  event: CourseHistoryEvent | null;
+  event: ParsedCourseHistoryEvent | null;
   onClose: () => void;
   courseNames: Record<string, string>;
   programNames: Record<string, string>;
+  timeZone: string;
 }) {
   if (!event) return null;
   const cfg = ACTION_CONFIG[event.action];
@@ -173,7 +200,7 @@ function EventDetailDialog({
               {cfg.icon}{cfg.label}
             </span>
             <span className="min-w-0 break-words font-bold text-slate-700">{event.entity_code || event.entity_name || entityLabel}</span>
-            <span className="whitespace-nowrap text-slate-400 font-normal">{fmtDateTime(eventTime(event))}</span>
+            <span className="whitespace-nowrap text-slate-400 font-normal">{fmtDateTime(event.createdAtInstant, timeZone)}</span>
           </DialogTitle>
         </DialogHeader>
         <div className="shrink-0 text-xs text-slate-500 space-y-0.5 -mt-1">
@@ -200,12 +227,12 @@ function EventDetailDialog({
                      <td className="py-2 pr-3 font-medium text-slate-600 align-top break-words">{fieldLabel(key)}</td>
                     {event.action === "updated" && (
                        <td className="py-2 pr-3 align-top">
-                         <span className="inline-block max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] bg-red-50 text-red-700 px-1.5 py-0.5 rounded line-through">{displayValue(oldObj[key], key)}</span>
+                          <span className="inline-block max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] bg-red-50 text-red-700 px-1.5 py-0.5 rounded line-through">{displayValue(oldObj[key], key)}</span>
                        </td>
                     )}
                      <td className="py-2 align-top">
                        <span className={`inline-block max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] ${event.action === "deleted" ? "bg-slate-100 text-slate-700" : "bg-emerald-50 text-emerald-700"} px-1.5 py-0.5 rounded`}>
-                         {displayValue(event.action === "updated" ? newObj[key] : oldObj[key] ?? newObj[key], key)}
+                          {displayValue(event.action === "updated" ? newObj[key] : oldObj[key] ?? newObj[key], key)}
                        </span>
                      </td>
                   </tr>
@@ -226,9 +253,11 @@ export function CoursesHistoryTab() {
   const [scope, setScope] = useState("all");
   const [action, setAction] = useState("all");
   const [page, setPage] = useState(1);
-  const [detailEvent, setDetailEvent] = useState<CourseHistoryEvent | null>(null);
+  const [detailEvent, setDetailEvent] = useState<ParsedCourseHistoryEvent | null>(null);
   const [pageSize, setPageSize] = useState(50);
-  const { from, to } = quickRangeDates(quickRange);
+  const centerTimeZone = useCenterTimeZone();
+  const timeZone = centerTimeZone.data ?? DEFAULT_CENTER_TIME_ZONE;
+  const { from, to } = quickRangeDates(quickRange, timeZone);
   const params = new URLSearchParams();
   if (from) params.set("dateFrom", from);
   if (to) params.set("dateTo", to);
@@ -238,13 +267,14 @@ export function CoursesHistoryTab() {
   params.set("offset", String((page - 1) * pageSize));
 
   const { data, isLoading } = useQuery<HistoryResponse>({
-    queryKey: ["/api/courses/history", from, to, scope, action, page, pageSize],
+    queryKey: ["/api/courses/history", from, to, timeZone, scope, action, page, pageSize],
     queryFn: async () => {
       const res = await fetch(`/api/courses/history?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Không thể tải lịch sử");
       return res.json();
     },
     staleTime: 30_000,
+    enabled: !!centerTimeZone.data && !centerTimeZone.isError,
   });
   const { data: courses = [] } = useQuery<Array<{ id: string; name: string }>>({
     queryKey: ["/api/courses"],
@@ -256,11 +286,14 @@ export function CoursesHistoryTab() {
   });
   const courseNames = Object.fromEntries(courses.map(course => [course.id, course.name]));
   const programNames = Object.fromEntries(programs.map(program => [program.id, program.name]));
-  const events = data?.events ?? [];
+  const events: ParsedCourseHistoryEvent[] = (data?.events ?? []).map(event => ({
+    ...event,
+    createdAtInstant: parseCourseAuditInstant(eventTime(event)),
+  }));
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const groups = events.reduce<Map<string, CourseHistoryEvent[]>>((map, event) => {
-    const key = dateKey(eventTime(event));
+  const groups = events.reduce<Map<string, ParsedCourseHistoryEvent[]>>((map, event) => {
+    const key = dateKey(event.createdAtInstant, timeZone);
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(event);
     return map;
@@ -308,13 +341,17 @@ export function CoursesHistoryTab() {
           </SelectContent>
         </Select>
         <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
-          <CalendarIcon className="h-3.5 w-3.5" />{from && to ? `${format(new Date(`${from}T00:00`), "dd/MM/yyyy")} – ${format(new Date(`${to}T00:00`), "dd/MM/yyyy")}` : "Toàn thời gian"}
+          <CalendarIcon className="h-3.5 w-3.5" />{from && to ? `${formatDateKey(from)} – ${formatDateKey(to)}` : "Toàn thời gian"}
           <span className="ml-2 font-medium text-slate-600">{total} sự kiện</span>
         </div>
       </div>
 
       <div className="flex-1 overflow-auto">
-        {isLoading ? (
+        {centerTimeZone.isPending ? (
+          <div className="py-16 text-center text-sm text-muted-foreground">Đang tải múi giờ của trung tâm...</div>
+        ) : centerTimeZone.isError ? (
+          <div role="alert" className="py-16 text-center text-sm text-red-600">Không tải được múi giờ của trung tâm.</div>
+        ) : isLoading ? (
           <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground"><div className="h-8 w-8 animate-spin rounded-full border-2 border-violet-600 border-t-transparent" /><p className="text-sm">Đang tải lịch sử...</p></div>
         ) : groups.size === 0 ? (
           <div className="flex flex-col items-center gap-3 py-20 text-muted-foreground"><History className="h-12 w-12 opacity-15" /><p className="text-sm">Không có thao tác nào trong khoảng thời gian này</p></div>
@@ -322,7 +359,7 @@ export function CoursesHistoryTab() {
           <div className="space-y-6">
             {Array.from(groups.entries()).map(([key, group]) => (
               <div key={key}>
-                <div className="flex items-center gap-2 mb-2 sticky top-0 bg-slate-50/90 py-1 px-2 rounded-lg backdrop-blur-sm z-10"><div className="h-px flex-1 bg-slate-200" /><span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">{fmtDateGroup(eventTime(group[0]))}</span><div className="h-px flex-1 bg-slate-200" /></div>
+                <div className="flex items-center gap-2 mb-2 sticky top-0 bg-slate-50/90 py-1 px-2 rounded-lg backdrop-blur-sm z-10"><div className="h-px flex-1 bg-slate-200" /><span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">{key === "unknown" ? "Không rõ ngày" : fmtDateGroup(group[0].createdAtInstant, timeZone)}</span><div className="h-px flex-1 bg-slate-200" /></div>
                 <div className="space-y-1.5">
                   {group.map(event => {
                     const cfg = ACTION_CONFIG[event.action];
@@ -342,7 +379,7 @@ export function CoursesHistoryTab() {
                           </div>
                         </div>
                         <div className="flex-shrink-0 text-right flex flex-col items-end gap-1">
-                          <p className="text-[10px] text-slate-400">{fmtDateTime(eventTime(event))}</p>
+                          <p className="text-[10px] text-slate-400">{fmtDateTime(event.createdAtInstant, timeZone)}</p>
                           <button onClick={() => setDetailEvent(event)} className="mt-0.5 flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600" title="Xem chi tiết"><Eye className="h-3 w-3" /></button>
                         </div>
                       </div>
@@ -355,12 +392,13 @@ export function CoursesHistoryTab() {
         )}
       </div>
       {totalPages > 1 && <div className="shrink-0 flex items-center justify-between text-xs text-muted-foreground pt-1"><span>{total} sự kiện — trang {page}/{totalPages}</span><div className="flex items-center gap-1"><Button variant="outline" size="icon" className="h-7 w-7" disabled={page <= 1} onClick={() => setPage(1)}>«</Button><Button variant="outline" size="icon" className="h-7 w-7" disabled={page <= 1} onClick={() => setPage(p => p - 1)}><ChevronLeft className="h-3.5 w-3.5" /></Button><span className="px-2">Trang {page}/{totalPages}</span><Button variant="outline" size="icon" className="h-7 w-7" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}><ChevronRight className="h-3.5 w-3.5" /></Button><Button variant="outline" size="icon" className="h-7 w-7" disabled={page >= totalPages} onClick={() => setPage(totalPages)}>»</Button></div></div>}
-       <EventDetailDialog
-         event={detailEvent}
-         courseNames={courseNames}
-         programNames={programNames}
-         onClose={() => setDetailEvent(null)}
-       />
+        {centerTimeZone.data && <EventDetailDialog
+          event={detailEvent}
+          timeZone={centerTimeZone.data}
+          courseNames={courseNames}
+          programNames={programNames}
+          onClose={() => setDetailEvent(null)}
+        />}
     </div>
   );
 }

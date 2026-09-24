@@ -40,7 +40,7 @@ export const studentSessions = pgTable("student_sessions", {
   classSessionId: uuid("class_session_id").notNull().references(() => classSessions.id),
   status: varchar("status", { length: 50 }).notNull().default("scheduled"), // scheduled, attended, absent, cancelled
   attendanceStatus: varchar("attendance_status", { length: 20 }).notNull().default("pending"),
-  attendanceAt: timestamp("attendance_at"),
+  attendanceAt: timestamp("attendance_at", { withTimezone: true }),
   attendanceNote: text("attendance_note"),
   note: text("note"),
   // Fee management columns
@@ -2269,7 +2269,7 @@ export const activityLogs = pgTable("activity_logs", {
   action: varchar("action", { length: 255 }).notNull(),
   oldContent: text("old_content"),
   newContent: text("new_content"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const activityLogsRelations = relations(activityLogs, ({ one }) => ({
@@ -3351,7 +3351,7 @@ export const courseAuditLogs = pgTable("course_audit_logs", {
   locationId:  uuid("location_id").references(() => locations.id),
   oldContent:  jsonb("old_content"),
   newContent:  jsonb("new_content"),
-  createdAt:   timestamp("created_at").defaultNow().notNull(),
+  createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const insertCourseAuditLogSchema = createInsertSchema(courseAuditLogs).omit({ id: true, createdAt: true });
@@ -3373,7 +3373,7 @@ export const assessmentAuditLogs = pgTable("assessment_audit_logs", {
   locationId:  uuid("location_id").references(() => locations.id),
   oldContent:  jsonb("old_content"),
   newContent:  jsonb("new_content"),
-  createdAt:   timestamp("created_at").defaultNow().notNull(),
+  createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   createdAtIdx: index("assessment_audit_logs_created_at_idx").on(table.createdAt),
   scopeActionIdx: index("assessment_audit_logs_scope_action_idx").on(table.scope, table.action),

@@ -6,7 +6,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { ActivityLog, LogDetailDialog } from "@/components/education/ClassActivityLogDialog";
 import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
-import { parseStoredVietnamTimestamp } from "@/lib/vietnam-time";
 import {
   DEFAULT_CENTER_TIME_ZONE,
   formatCenterInstant,
@@ -38,16 +37,21 @@ const actionConfig = {
   deleted: { label: "Xóa", Icon: Trash2, color: "text-slate-600", bg: "bg-slate-100", border: "border-slate-300" },
 } as const;
 
+function parseActivityLogInstant(value: string | Date): Date | null {
+  const instant = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(instant.getTime()) ? null : instant;
+}
+
 function dateKey(value: string | Date, timeZone: string) {
-  const instant = parseStoredVietnamTimestamp(value);
+  const instant = parseActivityLogInstant(value);
   return instant ? getCenterDateKey(instant, timeZone) : "";
 }
 function dateLabel(value: string | Date, timeZone: string) {
-  const instant = parseStoredVietnamTimestamp(value);
+  const instant = parseActivityLogInstant(value);
   return instant ? formatCenterInstant(instant, timeZone, { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" }) : "Không rõ ngày";
 }
 function timeLabel(value: string | Date, timeZone: string) {
-  const instant = parseStoredVietnamTimestamp(value);
+  const instant = parseActivityLogInstant(value);
   return instant ? formatCenterInstant(instant, timeZone, { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric", hourCycle: "h23" }) : "Không rõ thời gian";
 }
 function contentLabel(log: ActivityLog, resource: string) {
@@ -110,7 +114,7 @@ export function EducationConfigHistoryTab({ scope = "education-config", resource
       const resource = historyResource(log);
       return (filter === "all" || action === filter)
         && (categoryFilter === "all" || resource === categoryFilter)
-        && isInstantInCenterDateRange(parseStoredVietnamTimestamp(log.createdAt), range, timeZone);
+        && isInstantInCenterDateRange(parseActivityLogInstant(log.createdAt), range, timeZone);
     });
   }, [logs, range, filter, categoryFilter, timeZone]);
   const groups = useMemo(() => filtered.reduce<Map<string, ActivityLog[]>>((map, log) => {

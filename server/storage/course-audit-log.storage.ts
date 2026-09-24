@@ -2,6 +2,7 @@ import { and, desc, eq, isNull, or, inArray, sql } from "drizzle-orm";
 import { db } from "./base";
 import { courseAuditLogs, locations, staff, users } from "@shared/schema";
 import type { InsertCourseAuditLog } from "@shared/schema";
+import { centerDateRangeConditions } from "../lib/center-date-range";
 
 export async function createCourseAuditLog(data: InsertCourseAuditLog) {
   const [row] = await db.insert(courseAuditLogs).values(data).returning();
@@ -28,6 +29,7 @@ export interface CourseAuditLogWithDetails {
 export async function getCourseAuditLogs(filters: {
   dateFrom?: string;
   dateTo?: string;
+  timeZone?: string;
   scope?: string;
   action?: string;
   allowedLocationIds?: string[];
@@ -36,12 +38,12 @@ export async function getCourseAuditLogs(filters: {
   offset?: number;
 } = {}): Promise<{ events: CourseAuditLogWithDetails[]; total: number }> {
   const conditions = [];
-  if (filters.dateFrom) {
-    conditions.push(sql`${courseAuditLogs.createdAt} >= ${filters.dateFrom}::timestamp`);
-  }
-  if (filters.dateTo) {
-    conditions.push(sql`${courseAuditLogs.createdAt} < ${filters.dateTo}::timestamp`);
-  }
+  conditions.push(...centerDateRangeConditions(
+    courseAuditLogs.createdAt,
+    filters.dateFrom,
+    filters.dateTo,
+    filters.timeZone,
+  ));
   if (filters.scope) conditions.push(eq(courseAuditLogs.scope, filters.scope));
   if (filters.action) conditions.push(eq(courseAuditLogs.action, filters.action));
   if (!filters.isSuperAdmin && filters.allowedLocationIds?.length === 0) {
@@ -77,7 +79,7 @@ export async function getCourseAuditLogs(filters: {
     .leftJoin(staff, eq(staff.userId, courseAuditLogs.userId))
     .leftJoin(locations, eq(courseAuditLogs.locationId, locations.id))
     .where(where)
-    .orderBy(desc(courseAuditLogs.createdAt))
+    .orderBy(desc(courseAuditLogs.createdAt), desc(courseAuditLogs.id))
     .limit(filters.limit ?? 100)
     .offset(filters.offset ?? 0);
 

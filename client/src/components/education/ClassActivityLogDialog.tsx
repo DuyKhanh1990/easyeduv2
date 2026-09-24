@@ -22,7 +22,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLocations } from "@/hooks/use-locations";
 import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
-import { parseStoredVietnamTimestamp } from "@/lib/vietnam-time";
 import {
   DEFAULT_CENTER_TIME_ZONE,
   formatCenterInstant,
@@ -91,8 +90,13 @@ interface ClassActivityLogDialogProps {
 
 type LogTimeRange = "all" | "today" | "7d" | "30d" | "thismonth";
 
+function parseActivityLogInstant(value: string): Date | null {
+  const instant = new Date(value);
+  return Number.isNaN(instant.getTime()) ? null : instant;
+}
+
 function isInTimeRange(dateValue: string, range: LogTimeRange, timeZone: string): boolean {
-  return isInstantInCenterDateRange(parseStoredVietnamTimestamp(dateValue), range, timeZone);
+  return isInstantInCenterDateRange(parseActivityLogInstant(dateValue), range, timeZone);
 }
 
 const ACTION_COLORS: Record<string, string> = {
@@ -131,7 +135,7 @@ export function getActionColor(action: string): string {
 }
 
 export function formatDate(dateStr: string, timeZone = DEFAULT_CENTER_TIME_ZONE): string {
-  const instant = parseStoredVietnamTimestamp(dateStr);
+  const instant = parseActivityLogInstant(dateStr);
   if (!instant) return dateStr;
   return formatCenterInstant(instant, timeZone, {
     day: "2-digit", month: "2-digit", year: "numeric",

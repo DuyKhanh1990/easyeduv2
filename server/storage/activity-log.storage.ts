@@ -1,6 +1,7 @@
 import { db, eq, desc, and, inArray, isNull, isNotNull, ilike, or, sql } from "./base";
 import { activityLogs, staff, locations, users, classes, roles, departments } from "@shared/schema";
 import type { InsertActivityLog, ActivityLog } from "@shared/schema";
+import { centerDateRangeConditions } from "../lib/center-date-range";
 
 export async function createActivityLog(data: InsertActivityLog): Promise<ActivityLog> {
   const [row] = await db.insert(activityLogs).values(data).returning();
@@ -176,6 +177,7 @@ export interface StaffHistoryEvent {
 export async function getStaffHistory(filters?: {
   dateFrom?: string | null;
   dateTo?: string | null;
+  timeZone?: string | null;
   locationId?: string | null;
   allowedLocationIds?: string[];
   isSuperAdmin?: boolean;
@@ -184,8 +186,12 @@ export async function getStaffHistory(filters?: {
 }): Promise<{ events: StaffHistoryEvent[]; total: number }> {
   const actions = ["staff.created", "staff.updated", "staff.deleted"];
   const conditions = [inArray(activityLogs.action, actions)];
-  if (filters?.dateFrom) conditions.push(sql`DATE(${activityLogs.createdAt}) >= ${filters.dateFrom}` as any);
-  if (filters?.dateTo) conditions.push(sql`DATE(${activityLogs.createdAt}) <= ${filters.dateTo}` as any);
+  conditions.push(...centerDateRangeConditions(
+    activityLogs.createdAt,
+    filters?.dateFrom,
+    filters?.dateTo,
+    filters?.timeZone,
+  ));
   if (filters?.locationId) conditions.push(eq(activityLogs.locationId, filters.locationId));
   if (!filters?.isSuperAdmin && filters?.allowedLocationIds?.length) {
     conditions.push(or(isNull(activityLogs.locationId), inArray(activityLogs.locationId, filters.allowedLocationIds)) as any);

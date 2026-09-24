@@ -20,6 +20,7 @@ import * as courseStorage from "../storage/course.storage";
 import { createCourseAuditLog, getCourseAuditLogs } from "../storage/course-audit-log.storage";
 import { createActivityLog, getStaffHistory } from "../storage/activity-log.storage";
 import { validateCenterTimeZone } from "@shared/center-time";
+import { InvalidCenterDateKeyError } from "../lib/center-date-range";
 
 function sanitizeDateField(value: any): string | null {
   if (!value) return null;
@@ -27,24 +28,6 @@ function sanitizeDateField(value: any): string | null {
   const d = new Date(value);
   if (!isNaN(d.getTime())) return d.toISOString().split("T")[0];
   return null;
-}
-
-function getDateBoundary(dateKey: string, dayOffset = 0): string | undefined {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
-  if (!match) return undefined;
-  const [, yearText, monthText, dayText] = match;
-  const year = Number(yearText);
-  const month = Number(monthText);
-  const day = Number(dayText);
-  const calendarDate = new Date(Date.UTC(year, month - 1, day));
-  if (
-    calendarDate.getUTCFullYear() !== year
-    || calendarDate.getUTCMonth() !== month - 1
-    || calendarDate.getUTCDate() !== day
-  ) return undefined;
-
-  const boundary = new Date(Date.UTC(year, month - 1, day + dayOffset));
-  return boundary.toISOString().slice(0, -1).replace("T", " ");
 }
 
 function requestUserId(req: any): string | null {
@@ -516,9 +499,12 @@ export function registerConfigRoutes(app: Express): void {
   app.get("/api/staff/history", async (req, res) => {
     try {
       const q = req.query as Record<string, string>;
+      const [center] = await db.select({ timeZone: centerConfig.timezone }).from(centerConfig).limit(1);
+      if (!center) return res.status(503).json({ message: "Chưa cấu hình trung tâm" });
       const result = await getStaffHistory({
         dateFrom: q.dateFrom || null,
         dateTo: q.dateTo || null,
+        timeZone: validateCenterTimeZone(center.timeZone),
         locationId: q.locationId || null,
         allowedLocationIds: req.allowedLocationIds,
         isSuperAdmin: req.isSuperAdmin,
@@ -528,6 +514,9 @@ export function registerConfigRoutes(app: Express): void {
       res.json(result);
     } catch (err: any) {
       console.error("[staff-history]", err);
+      if (err instanceof InvalidCenterDateKeyError) {
+        return res.status(400).json({ message: err.message });
+      }
       res.status(500).json({ message: "Không thể tải lịch sử nhân sự" });
     }
   });
@@ -660,18 +649,17 @@ export function registerConfigRoutes(app: Express): void {
   app.get("/api/courses/history", async (req, res) => {
     try {
       const q = req.query as Record<string, string>;
-      const dateFrom = q.dateFrom ? getDateBoundary(q.dateFrom) : undefined;
-      const dateTo = q.dateTo ? getDateBoundary(q.dateTo, 1) : undefined;
-      if ((q.dateFrom && !dateFrom) || (q.dateTo && !dateTo)) {
-        return res.status(400).json({ message: "Date filters must use a valid YYYY-MM-DD date" });
-      }
+      const [center] = await db.select({ timeZone: centerConfig.timezone }).from(centerConfig).limit(1);
+      if (!center) return res.status(503).json({ message: "Chưa cấu hình trung tâm" });
+      const timeZone = validateCenterTimeZone(center.timeZone);
       const scope = ["courses", "programs", "library"].includes(q.scope) ? q.scope : undefined;
       const action = ["created", "updated", "deleted"].includes(q.action) ? q.action : undefined;
       const limit = Math.min(Math.max(parseInt(q.limit || "100", 10) || 100, 1), 500);
       const offset = Math.max(parseInt(q.offset || "0", 10) || 0, 0);
       const result = await getCourseAuditLogs({
-        dateFrom,
-        dateTo,
+        dateFrom: q.dateFrom || undefined,
+        dateTo: q.dateTo || undefined,
+        timeZone,
         scope,
         action,
         allowedLocationIds: req.allowedLocationIds,
@@ -698,6 +686,9 @@ export function registerConfigRoutes(app: Express): void {
       });
     } catch (error: any) {
       console.error("[course-history] error:", error);
+      if (error instanceof InvalidCenterDateKeyError) {
+        return res.status(400).json({ message: error.message });
+      }
       res.status(500).json({ message: error.message });
     }
   });

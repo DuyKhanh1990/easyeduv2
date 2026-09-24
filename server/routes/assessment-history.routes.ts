@@ -1,40 +1,24 @@
 import type { Express } from "express";
+import { db } from "../db";
+import { centerConfig } from "@shared/schema";
+import { validateCenterTimeZone } from "@shared/center-time";
+import { InvalidCenterDateKeyError } from "../lib/center-date-range";
 import { getAssessmentAuditLogs } from "../storage/assessment-audit-log.storage";
-
-function getDateBoundary(dateKey: string, dayOffset = 0): string | undefined {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
-  if (!match) return undefined;
-  const [, yearText, monthText, dayText] = match;
-  const year = Number(yearText);
-  const month = Number(monthText);
-  const day = Number(dayText);
-  const calendarDate = new Date(Date.UTC(year, month - 1, day));
-  if (
-    calendarDate.getUTCFullYear() !== year
-    || calendarDate.getUTCMonth() !== month - 1
-    || calendarDate.getUTCDate() !== day
-  ) return undefined;
-
-  const boundary = new Date(Date.UTC(year, month - 1, day + dayOffset));
-  return boundary.toISOString().slice(0, -1).replace("T", " ");
-}
 
 export function registerAssessmentHistoryRoutes(app: Express): void {
   app.get("/api/assessments/history", async (req, res) => {
     try {
       const q = req.query as Record<string, string>;
-      const dateFrom = q.dateFrom ? getDateBoundary(q.dateFrom) : undefined;
-      const dateTo = q.dateTo ? getDateBoundary(q.dateTo, 1) : undefined;
-      if ((q.dateFrom && !dateFrom) || (q.dateTo && !dateTo)) {
-        return res.status(400).json({ message: "Date filters must use a valid YYYY-MM-DD date" });
-      }
+      const [center] = await db.select({ timeZone: centerConfig.timezone }).from(centerConfig).limit(1);
+      if (!center) return res.status(503).json({ message: "Chưa cấu hình trung tâm" });
       const scope = ["list", "question-bank", "results"].includes(q.scope) ? q.scope : undefined;
       const action = ["created", "updated", "deleted"].includes(q.action) ? q.action : undefined;
       const limit = Math.min(Math.max(parseInt(q.limit || "100", 10) || 100, 1), 500);
       const offset = Math.max(parseInt(q.offset || "0", 10) || 0, 0);
       const result = await getAssessmentAuditLogs({
-        dateFrom,
-        dateTo,
+        dateFrom: q.dateFrom,
+        dateTo: q.dateTo,
+        timeZone: validateCenterTimeZone(center.timeZone),
         scope,
         action,
         allowedLocationIds: req.allowedLocationIds,
@@ -62,6 +46,9 @@ export function registerAssessmentHistoryRoutes(app: Express): void {
       });
     } catch (error: any) {
       console.error("[assessment-history] error:", error);
+      if (error instanceof InvalidCenterDateKeyError) {
+        return res.status(400).json({ message: error.message });
+      }
       res.status(500).json({ message: error.message });
     }
   });

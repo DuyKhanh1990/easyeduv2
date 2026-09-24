@@ -1,10 +1,10 @@
 # Kiểm kê nguồn ghi thời gian EasyEdu
 
-Kiểm kê ngày 24/09/2026 trên PostgreSQL **đang dùng thật**, chỉ đọc. Tài liệu này tách **mặc định trong schema**, **đường ghi ứng dụng** và **nguồn của từng dòng lịch sử**; không dùng một loại bằng chứng thay cho loại khác. Chưa chạy chuyển đổi dữ liệu hoặc đổi kiểu cột.
+Kiểm kê ban đầu ngày 24/09/2026 trên PostgreSQL **đang dùng thật**. Tài liệu này tách **mặc định trong schema**, **đường ghi ứng dụng** và **nguồn của từng dòng lịch sử**; không dùng một loại bằng chứng thay cho loại khác. Sau kiểm kê, bốn cột đầu tiên đã được chuyển đổi có sao lưu riêng (xem phần tiến độ).
 
 ## Phạm vi
 
-DB có **301 cột `timestamp without time zone` trên 160 bảng**. Đối chiếu bằng AST với `shared/schema.ts`: cả 301 cột đều có khai báo; schema còn một cột của bảng `test_session_content_attempts` chưa có trong DB. Các cột đã là `timestamptz` không nằm trong 301 cột này.
+Tại thời điểm kiểm kê, DB có **301 cột `timestamp without time zone` trên 160 bảng**. Đối chiếu bằng AST với `shared/schema.ts`: cả 301 cột đều có khai báo; schema còn một cột của bảng `test_session_content_attempts` chưa có trong DB. Các cột đã là `timestamptz` không nằm trong 301 cột này. Bảng số lượng dưới đây là **đường cơ sở trước chuyển đổi**, không phải số dư hiện tại.
 
 | Loại cột | Số cột trong DB | Điều mặc định chứng minh được |
 | --- | ---: | --- |
@@ -25,7 +25,18 @@ Phiên DB hiện dùng `Asia/Ho_Chi_Minh`: `now()::timestamp` cho thành phần 
 | Ghi đè `created_at` dù có default | Đường tạo hóa đơn có thể nhận `invoices.created_at` do người dùng nhập; lịch thanh toán có thể nhận `invoice_payment_schedule.created_at`. `notifications.created_at`, `student_attendance_qr_tokens.created_at`, `bidv_location_configs.created_at` có đường INSERT truyền `Date` của server. | 145 cột `created_at` không thể gộp tất cả vào nhóm DB-default-only. |
 | Thời gian do người dùng hoặc nguồn ngoài cung cấp | Ví dụ giờ lịch/hạn nộp (`tasks.due_date`, `exams.open_at/close_at`) và ngày giao dịch BIDV. Giao diện tạo công việc lấy giờ theo thiết bị, gửi ISO, server chuyển lại thành `Date`; luồng tạo công việc còn gửi thông báo cho người được giao. | Phải xác định ý nghĩa giờ địa phương và nguồn/offset cho từng luồng; không thử bằng nghiệp vụ thật chỉ để đo thời gian. |
 
-`student_sessions.attendance_at` hiện có hai đường ghi ứng dụng tìm thấy, đều dùng `new Date()`. DB có **145 giá trị không null**: 99 dòng có nhật ký cùng lớp trong 30 giây *nếu* hiểu giá trị là UTC, nhưng đối chiếu theo lớp/thời điểm chưa đủ để chứng thực từng học viên; 46 dòng còn lại không khớp tiêu chí này. Một trùng khớp theo **giờ thô** lại khác trạng thái điểm danh, minh họa vì sao khớp thời gian đơn lẻ có thể sai. Chưa có căn cứ chuyển toàn bộ 145 dòng lịch sử.
+`student_sessions.attendance_at` có hai đường ghi ứng dụng tìm thấy, đều dùng `new Date()`. DB trước chuyển đổi có **145 giá trị không null**: 99 dòng có nhật ký cùng lớp trong 30 giây *nếu* hiểu giá trị là UTC, nhưng đối chiếu theo lớp/thời điểm chưa đủ để chứng thực từng học viên; 46 dòng còn lại không khớp tiêu chí này. Một trùng khớp theo **giờ thô** lại khác trạng thái điểm danh, minh họa vì sao khớp thời gian đơn lẻ có thể sai. Việc chuyển các dòng lịch sử dùng **giả định theo đường ghi ứng dụng**, không phải chứng cứ độc lập cho từng dòng.
+
+## Tiến độ chuyển đổi trên DB hiện tại
+
+| Cột | Cách diễn giải giá trị cũ | Sao lưu và đối chiếu |
+| --- | --- | --- |
+| `student_sessions.attendance_at` | UTC (hai đường ghi ứng dụng đều `new Date()`) | `time_migration.student_sessions_attendance_at_before_utc`: 1.899 dòng, gồm 145 giá trị; đối chiếu giá trị gốc sau chuyển: **0 lệch**. 46 giá trị không khớp nhật ký theo tiêu chí trên vẫn chưa có chứng cứ độc lập về nguồn, nên giữ bản gốc để hoàn nguyên. |
+| `activity_logs.created_at` | `Asia/Ho_Chi_Minh` (đường ghi ứng dụng bỏ qua cột, DB default `now()` dưới timezone phiên Việt Nam) | `time_migration.activity_logs_created_at_before_utc`: 767 dòng; đối chiếu giá trị gốc sau chuyển: **0 lệch**. Không phát hiện ứng dụng truyền giá trị riêng; dữ liệu nhập ngoài ứng dụng trong quá khứ vẫn không thể loại trừ tuyệt đối. |
+| `course_audit_logs.created_at` | `Asia/Ho_Chi_Minh` (đường ghi ứng dụng bỏ qua cột, DB default `now()`) | `time_migration.course_audit_logs_created_at_before_utc`: 11 dòng; đối chiếu **0 lệch**. |
+| `assessment_audit_logs.created_at` | `Asia/Ho_Chi_Minh` (đường ghi ứng dụng bỏ qua cột, DB default `now()`) | `time_migration.assessment_audit_logs_created_at_before_utc`: 27 dòng; đối chiếu **0 lệch**. |
+
+Ba migration có điều kiện chặn chạy lặp và hướng dẫn hoàn nguyên: `migrations/0033_student_session_attendance_at_utc.sql`, `migrations/0034_activity_logs_created_at_utc.sql`, `migrations/0035_course_assessment_audit_instants.sql`. Sau chúng, **297 cột timestamp không múi giờ của kiểm kê ban đầu vẫn chưa chuyển**. Chưa được mặc định rằng 297 cột này đều là instant: các trường ngày lịch, giờ lặp, và cột trộn nguồn cần xử lý riêng. Các bộ lọc ngày của các nhật ký này đã đổi sang khoảng `[đầu ngày, đầu ngày tiếp theo)` tính theo IANA timezone của Center; màn hình nhật ký đọc ISO instant trực tiếp. Thử biên ngày khi đổi giờ mùa hè ở `Europe/Berlin` xác nhận một ngày có thể dài 23 giờ, không được cộng cố định 24 giờ vào UTC.
 
 ## Quy tắc chuyển đổi khi đủ chứng cứ
 

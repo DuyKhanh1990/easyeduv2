@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "./base";
 import { assessmentAuditLogs, locations, staff, users } from "@shared/schema";
 import type { AssessmentAuditLog, InsertAssessmentAuditLog } from "@shared/schema";
+import { centerDateRangeConditions } from "../lib/center-date-range";
 
 export async function createAssessmentAuditLog(
   data: InsertAssessmentAuditLog,
@@ -18,6 +19,7 @@ export interface AssessmentAuditLogWithDetails extends AssessmentAuditLog {
 export async function getAssessmentAuditLogs(filters: {
   dateFrom?: string;
   dateTo?: string;
+  timeZone?: string;
   scope?: string;
   action?: string;
   allowedLocationIds?: string[];
@@ -26,12 +28,12 @@ export async function getAssessmentAuditLogs(filters: {
   offset?: number;
 } = {}): Promise<{ events: AssessmentAuditLogWithDetails[]; total: number }> {
   const conditions = [];
-  if (filters.dateFrom) {
-    conditions.push(sql`${assessmentAuditLogs.createdAt} >= ${filters.dateFrom}::timestamp`);
-  }
-  if (filters.dateTo) {
-    conditions.push(sql`${assessmentAuditLogs.createdAt} < ${filters.dateTo}::timestamp`);
-  }
+  conditions.push(...centerDateRangeConditions(
+    assessmentAuditLogs.createdAt,
+    filters.dateFrom,
+    filters.dateTo,
+    filters.timeZone,
+  ));
   if (filters.scope) conditions.push(eq(assessmentAuditLogs.scope, filters.scope));
   if (filters.action) conditions.push(eq(assessmentAuditLogs.action, filters.action));
 
@@ -69,7 +71,7 @@ export async function getAssessmentAuditLogs(filters: {
     .leftJoin(staff, eq(staff.userId, assessmentAuditLogs.userId))
     .leftJoin(locations, eq(assessmentAuditLogs.locationId, locations.id))
     .where(where)
-    .orderBy(desc(assessmentAuditLogs.createdAt))
+    .orderBy(desc(assessmentAuditLogs.createdAt), desc(assessmentAuditLogs.id))
     .limit(filters.limit ?? 100)
     .offset(filters.offset ?? 0);
 

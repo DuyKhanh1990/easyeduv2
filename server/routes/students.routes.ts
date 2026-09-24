@@ -5,11 +5,13 @@ import { z } from "zod";
 import { runSecurityTests } from "../middleware/security-test";
 import { cacheGet, cacheSet, cacheInvalidate } from "../lib/simple-cache";
 import { db } from "../db";
-import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, students, classes, attendanceFeeRules, users, staff, staffAssignments, locations, roles, departments, classGradeBooks, classGradeBookScores, scoreCategories, scoreSheetItems, sessionContents, studentSessionContents, classSessions, studentRelationshipHistory, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools, crmCustomFields, crmRequiredFields, evaluationCriteria, evaluationSubCriteria } from "@shared/schema";
+import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, students, classes, attendanceFeeRules, users, staff, staffAssignments, locations, roles, departments, classGradeBooks, classGradeBookScores, scoreCategories, scoreSheetItems, sessionContents, studentSessionContents, classSessions, studentRelationshipHistory, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools, crmCustomFields, crmRequiredFields, evaluationCriteria, evaluationSubCriteria, centerConfig } from "@shared/schema";
 import { eq, and, isNotNull, sql, inArray, desc, gte, lte, ne } from "drizzle-orm";
 import { getStudentLearningStatusSummary, getCustomerLearningStatusSummary, getCustomerSummary, getNewCustomersSummary, getStudentsBySource, getStudentsByRelationship, getStudentsByLocation, getStudentsByStaff, getStudentsLearningStatuses, getMonthlyStudentCounts } from "../storage/student.storage";
 import { createCrmConfigAuditLog, getCrmConfigAuditLogs } from "../storage/crm-config-audit.storage";
 import { codeStem, nextCodeForStem } from "../lib/role-code";
+import { validateCenterTimeZone } from "@shared/center-time";
+import { InvalidCenterDateKeyError } from "../lib/center-date-range";
 
 const CRM_RESOURCE = "/customers";
 const CRM_CONFIG_BASE = "/customers/crm-config";
@@ -1350,12 +1352,15 @@ export function registerStudentsRoutes(app: Express): void {
         return res.status(403).json({ message: "Bạn không có quyền xem lịch sử cấu hình CRM." });
       }
       const query = req.query as Record<string, string>;
+      const [center] = await db.select({ timeZone: centerConfig.timezone }).from(centerConfig).limit(1);
+      if (!center) return res.status(503).json({ message: "Chưa cấu hình trung tâm" });
       const action = ["created", "updated", "deleted"].includes(query.action)
         ? query.action as "created" | "updated" | "deleted"
         : undefined;
       const result = await getCrmConfigAuditLogs({
         dateFrom: query.dateFrom,
         dateTo: query.dateTo,
+        timeZone: validateCenterTimeZone(center.timeZone),
         entityType: query.entityType,
         action,
         limit: parseInt(query.limit || "100", 10) || 100,
@@ -1375,6 +1380,9 @@ export function registerStudentsRoutes(app: Express): void {
       });
     } catch (error: any) {
       console.error("[crm-config-history] error:", error);
+      if (error instanceof InvalidCenterDateKeyError) {
+        return res.status(400).json({ message: error.message });
+      }
       res.status(500).json({ message: error.message });
     }
   });
