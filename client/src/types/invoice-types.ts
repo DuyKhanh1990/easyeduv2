@@ -1,4 +1,4 @@
-import { getStoredVietnamDateKey } from "@/lib/vietnam-time";
+import { DEFAULT_CENTER_TIME_ZONE, getCenterDateKey } from "@shared/center-time";
 
 export interface InvoiceRow {
   id: string;
@@ -116,38 +116,40 @@ export const parseNum = (v: string | null | undefined): number =>
 export const fmtMoney = (amount: number): string =>
   amount.toLocaleString("vi-VN") + " ₫";
 
-const VIETNAM_TIME_ZONE = "Asia/Ho_Chi_Minh";
-
 export const getInvoiceBusinessDateKey = (
   value: string | Date,
-  timeZone = VIETNAM_TIME_ZONE,
+  timeZone = DEFAULT_CENTER_TIME_ZONE,
 ): string => {
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
+  return getCenterDateKey(date, timeZone);
 };
 
-// PostgreSQL TIMESTAMP WITHOUT TIME ZONE values are returned by the current
-// driver as ISO strings with a synthetic Z. For invoice fields, the UTC
-// components preserve the original Vietnam wall-clock date; don't shift them.
-export const getInvoiceStoredDateKey = getStoredVietnamDateKey;
+// Kept as a compatibility alias for invoice callers; timestamp values are
+// real instants and must be interpreted in the Center's configured timezone.
+export const getInvoiceStoredDateKey = getInvoiceBusinessDateKey;
 
-export const getTodayVietnamDate = (): Date => {
-  const [year, month, day] = getInvoiceBusinessDateKey(new Date()).split("-").map(Number);
+export const getTodayCenterDate = (
+  timeZone = DEFAULT_CENTER_TIME_ZONE,
+  now = new Date(),
+): Date => {
+  const [year, month, day] = getCenterDateKey(now, timeZone).split("-").map(Number);
+  // Calendar widgets and date-only filters use a local-date Date value as a
+  // carrier. It is not an instant and must never be serialized as one.
   return new Date(year, month - 1, day);
 };
 
-export const fmtDate = (d: string | Date | null | undefined): string => {
+export const getTodayVietnamDate = (): Date => {
+  return getTodayCenterDate("Asia/Ho_Chi_Minh");
+};
+
+export const fmtDate = (
+  d: string | Date | null | undefined,
+  timeZone = DEFAULT_CENTER_TIME_ZONE,
+): string => {
   if (!d) return "—";
-  const key = getInvoiceStoredDateKey(d);
+  const key = getInvoiceBusinessDateKey(d, timeZone);
   if (!key) return String(d);
   const [year, month, day] = key.split("-");
   return `${day}/${month}/${year}`;

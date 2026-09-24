@@ -20,3 +20,11 @@ When the user explicitly authorizes changing a database whose contents are test 
 **Why:** Some test attendance values could not be paired to independent action logs even though the known application writers use the same UTC-naive convention; a blanket claim of proven historical instants would overstate the evidence.
 
 **How to apply:** Make this an explicit, reversible exception for authorized test data only. Do not generalize it to production or mixed-writer columns, and never erase the distinction between transformation verification and provenance verification.
+
+## Delivery order
+
+Complete one user-visible business flow end to end as a reusable example before moving to the next page. Group fields that share a writer rule, but verify the whole flow (storage, filtering, display, and reversible test data) rather than turning every column into a separate user-facing milestone.
+
+**Why:** The user preferred an immediately usable Invoices example over a multi-day estimate for changing the entire application at once; a long per-column cadence had not answered whether the standard could work in practice.
+
+**How to apply:** Reuse the invoice approach for later pages on development, with source-aware backups and explicit historical assumptions. Keep calendar-only fields distinct and do not imply that a working example proves every legacy row or an authenticated UI path.

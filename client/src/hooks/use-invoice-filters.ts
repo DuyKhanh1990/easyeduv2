@@ -1,7 +1,8 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { getTodayVietnamDate } from "@/types/invoice-types";
+import { DEFAULT_CENTER_TIME_ZONE } from "@shared/center-time";
+import { getTodayCenterDate } from "@/types/invoice-types";
 import type { InvoiceQueryParams } from "./use-invoices";
 
 export type SortKey =
@@ -28,8 +29,8 @@ export const DEFAULT_FILTERS: InvoiceFilters = {
 export const hasActiveFilters = (f: InvoiceFilters) =>
   Object.values(f).some(arr => arr.length > 0);
 
-function defaultCurrentMonth(): { from: Date; to: Date } {
-  const now = getTodayVietnamDate();
+function defaultCurrentMonth(timeZone: string): { from: Date; to: Date } {
+  const now = getTodayCenterDate(timeZone);
   const from = new Date(now.getFullYear(), now.getMonth(), 1);
   const to   = new Date(now.getFullYear(), now.getMonth() + 1, 0);
   return { from, to };
@@ -37,11 +38,24 @@ function defaultCurrentMonth(): { from: Date; to: Date } {
 
 const TAB_FILTERS = new Set(["unpaid", "paid", "confirmed", "debt"]);
 
-export function useInvoiceFilters(activeTab: string) {
+function sameRange(
+  left: { from?: Date; to?: Date },
+  right: { from?: Date; to?: Date },
+): boolean {
+  return (
+    (left.from ? format(left.from, "yyyy-MM-dd") : undefined) ===
+      (right.from ? format(right.from, "yyyy-MM-dd") : undefined) &&
+    (left.to ? format(left.to, "yyyy-MM-dd") : undefined) ===
+      (right.to ? format(right.to, "yyyy-MM-dd") : undefined)
+  );
+}
+
+export function useInvoiceFilters(activeTab: string, timeZone = DEFAULT_CENTER_TIME_ZONE) {
   const isDebtTab = activeTab === "debt";
+  const initialTimeZone = useRef(timeZone);
   const [search, setSearchRaw]               = useState("");
-  const [createdDateRange, setCreatedDateRange] = useState<{ from?: Date; to?: Date }>(defaultCurrentMonth);
-  const [dueDateRange, setDueDateRange]         = useState<{ from?: Date; to?: Date }>(defaultCurrentMonth);
+  const [createdDateRange, setCreatedDateRange] = useState<{ from?: Date; to?: Date }>(() => defaultCurrentMonth(timeZone));
+  const [dueDateRange, setDueDateRange]         = useState<{ from?: Date; to?: Date }>(() => defaultCurrentMonth(timeZone));
   const [calendarOpen, setCalendarOpen]      = useState(false);
   const [paidAtRange, setPaidAtRangeRaw]     = useState<{ from?: Date; to?: Date }>({});
   const [paidAtCalendarOpen, setPaidAtCalendarOpen] = useState(false);
@@ -51,6 +65,20 @@ export function useInvoiceFilters(activeTab: string) {
   const [filterOpen, setFilterOpen]          = useState(false);
   const [page, setPage]                      = useState(1);
   const [pageSize, setPageSizeRaw]           = useState(20);
+
+  useEffect(() => {
+    const previousTimeZone = initialTimeZone.current;
+    if (previousTimeZone === timeZone) return;
+    const previousDefault = defaultCurrentMonth(previousTimeZone);
+    const nextDefault = defaultCurrentMonth(timeZone);
+    setCreatedDateRange(current =>
+      sameRange(current, previousDefault) ? nextDefault : current,
+    );
+    setDueDateRange(current =>
+      sameRange(current, previousDefault) ? nextDefault : current,
+    );
+    initialTimeZone.current = timeZone;
+  }, [timeZone]);
 
   const resetPage = useCallback(() => setPage(1), []);
 

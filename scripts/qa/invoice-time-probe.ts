@@ -9,7 +9,8 @@
 import { randomUUID } from "node:crypto";
 import { pool } from "../../server/db";
 import { createInvoice, getInvoice, updateInvoice } from "../../server/storage/finance.storage";
-import { getStoredVietnamDateKey } from "../../client/src/lib/vietnam-time";
+import { loadCenterTimeZone } from "../../server/lib/center-date-range";
+import { centerWallTimeToInstant, getCenterDateKey } from "../../shared/center-time";
 
 if (process.env.NODE_ENV === "production" || process.env.RUN_DEV_INVOICE_TIME_PROBE !== "1") {
   throw new Error("This probe requires explicit opt-in on the development database.");
@@ -17,6 +18,7 @@ if (process.env.NODE_ENV === "production" || process.env.RUN_DEV_INVOICE_TIME_PR
 
 const code = `TIME-QA-${randomUUID().slice(0, 8)}`;
 let invoiceId: string | undefined;
+let centerTimeZone: string;
 
 async function snapshot(stage: string) {
   if (!invoiceId) throw new Error("Invoice not created");
@@ -36,17 +38,43 @@ async function snapshot(stage: string) {
   const { created_raw, updated_raw, paid_raw, db_zone } = result.rows[0];
   const now = new Date();
   const centerClock = new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Asia/Ho_Chi_Minh",
+    timeZone: centerTimeZone,
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit",
     hourCycle: "h23",
   }).format(now);
+  const createdDateKey = getCenterDateKey(invoice.createdAt, centerTimeZone);
+  const paidDateKey = invoice.paidAt ? getCenterDateKey(invoice.paidAt, centerTimeZone) : null;
+  if (stage === "created") {
+    if (Math.abs(invoice.createdAt.getTime() - now.getTime()) > 30_000 ||
+        Math.abs(invoice.updatedAt.getTime() - now.getTime()) > 30_000) {
+      throw new Error("Created/updated invoice instants differ from current time");
+    }
+  }
+  if (stage === "edited" && Math.abs(invoice.updatedAt.getTime() - now.getTime()) > 30_000) {
+    throw new Error("Updated invoice instant differs from current time");
+  }
+  if (stage === "paid_automatically" &&
+      (!invoice.paidAt || Math.abs(invoice.paidAt.getTime() - now.getTime()) > 30_000)) {
+    throw new Error("Automatic paidAt instant differs from current time");
+  }
+  if (stage.startsWith("created_date_manually") &&
+      (createdDateKey !== "2026-09-20" ||
+       invoice.createdAt.getTime() !== centerWallTimeToInstant("2026-09-20", "00:00", centerTimeZone).getTime())) {
+    throw new Error("Manual createdAt calendar date changed");
+  }
+  if (stage.startsWith("paid_date_manually") &&
+      (paidDateKey !== "2026-09-21" ||
+       invoice.paidAt?.getTime() !== centerWallTimeToInstant("2026-09-21", "00:00", centerTimeZone).getTime())) {
+    throw new Error("Manual paidAt calendar date changed");
+  }
   console.log(JSON.stringify({
     stage,
     code,
     id: invoiceId,
     nowUtc: now.toISOString(),
-    nowVietnam: centerClock,
+    nowCenter: centerClock,
+    centerTimeZone,
     dbZone: db_zone,
     raw: { createdAt: created_raw, updatedAt: updated_raw, paidAt: paid_raw },
     serializedStorage: {
@@ -55,14 +83,23 @@ async function snapshot(stage: string) {
       paidAt: invoice.paidAt?.toISOString() ?? null,
     },
     invoiceDateFormatter: {
-      createdAt: getStoredVietnamDateKey(invoice.createdAt),
-      updatedAt: getStoredVietnamDateKey(invoice.updatedAt),
-      paidAt: invoice.paidAt ? getStoredVietnamDateKey(invoice.paidAt) : null,
+      createdAt: createdDateKey,
+      updatedAt: getCenterDateKey(invoice.updatedAt, centerTimeZone),
+      paidAt: paidDateKey,
     },
   }));
 }
 
 try {
+  const { rows: columns } = await pool.query<{ column_name: string; data_type: string }>(
+    `SELECT column_name, data_type FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'invoices'
+       AND column_name IN ('created_at', 'updated_at', 'paid_at')`,
+  );
+  if (columns.length !== 3 || columns.some((column) => column.data_type !== "timestamp with time zone")) {
+    throw new Error("Invoice instant columns must be migrated to TIMESTAMPTZ before this probe runs");
+  }
+  centerTimeZone = await loadCenterTimeZone();
   const created = await createInvoice({
     code,
     type: "Thu",
@@ -95,10 +132,14 @@ try {
   });
   await snapshot("paid_automatically");
 
-  await updateInvoice(invoiceId!, { createdAt: new Date("2026-09-20") });
+  await updateInvoice(invoiceId!, {
+    createdAt: centerWallTimeToInstant("2026-09-20", "00:00", centerTimeZone),
+  });
   await snapshot("created_date_manually_2026-09-20");
 
-  await updateInvoice(invoiceId!, { paidAt: new Date("2026-09-21") });
+  await updateInvoice(invoiceId!, {
+    paidAt: centerWallTimeToInstant("2026-09-21", "00:00", centerTimeZone),
+  });
   await snapshot("paid_date_manually_2026-09-21");
 
   await updateInvoice(invoiceId!, { status: "cancelled", paidAt: null, paidAmount: "0", remainingAmount: "0" });

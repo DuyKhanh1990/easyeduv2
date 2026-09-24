@@ -14,40 +14,12 @@ import type {
   FinanceVoucher, InsertFinanceVoucher,
   InvoicePrintTemplateRow, InsertInvoicePrintTemplate,
 } from "@shared/schema";
+import { loadCenterTimeZone } from "../lib/center-date-range";
+import { centerInstantRangeConditions, getCenterDayRangeInstants } from "../lib/invoice-time";
+import { getCenterDateKey } from "@shared/center-time";
 
-function getBusinessDateString(date = new Date()): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Bangkok",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
-}
-
-// Finance TIMESTAMP WITHOUT TIME ZONE columns contain Vietnam wall-clock values.
-// Return both the literal SQL boundary and a UTC-encoded copy of those wall-clock
-// fields for in-memory comparisons with Dates produced by the pg parser.
-function getVietnamDateBoundary(dateKey: string, dayOffset = 0) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
-  if (!match) return null;
-  const [, yearText, monthText, dayText] = match;
-  const year = Number(yearText);
-  const month = Number(monthText);
-  const day = Number(dayText);
-  const calendarDate = new Date(Date.UTC(year, month - 1, day));
-  if (
-    calendarDate.getUTCFullYear() !== year
-    || calendarDate.getUTCMonth() !== month - 1
-    || calendarDate.getUTCDate() !== day
-  ) return null;
-
-  const wallClock = new Date(Date.UTC(year, month - 1, day + dayOffset));
-  return {
-    wallClock,
-    sqlTimestamp: wallClock.toISOString().slice(0, -1).replace("T", " "),
-  };
+function getBusinessDateString(timeZone: string, date = new Date()): string {
+  return getCenterDateKey(date, timeZone);
 }
 
 const isPaidInvoiceStatus = (status: string | null | undefined): boolean =>
@@ -550,20 +522,9 @@ export async function getInvoices(filters: {
   if (f.paidAtFrom || f.paidAtTo) {
     const invoicePaidAtConditions: any[] = [isNotNull(invoices.paidAt)];
     const schedulePaidAtConditions: any[] = [isNotNull(invoicePaymentSchedule.paidAt)];
-    if (f.paidAtFrom) {
-      const from = getVietnamDateBoundary(f.paidAtFrom);
-      if (from) {
-        invoicePaidAtConditions.push(sql`${invoices.paidAt} >= ${from.sqlTimestamp}::timestamp`);
-        schedulePaidAtConditions.push(sql`${invoicePaymentSchedule.paidAt} >= ${from.sqlTimestamp}::timestamp`);
-      }
-    }
-    if (f.paidAtTo) {
-      const toExclusive = getVietnamDateBoundary(f.paidAtTo, 1);
-      if (toExclusive) {
-        invoicePaidAtConditions.push(sql`${invoices.paidAt} < ${toExclusive.sqlTimestamp}::timestamp`);
-        schedulePaidAtConditions.push(sql`${invoicePaymentSchedule.paidAt} < ${toExclusive.sqlTimestamp}::timestamp`);
-      }
-    }
+    const timeZone = await loadCenterTimeZone();
+    invoicePaidAtConditions.push(...centerInstantRangeConditions(invoices.paidAt, f.paidAtFrom, f.paidAtTo, timeZone));
+    schedulePaidAtConditions.push(...centerInstantRangeConditions(invoicePaymentSchedule.paidAt, f.paidAtFrom, f.paidAtTo, timeZone));
     const schedulePaidAtInvoiceIds = db
       .select({ invoiceId: invoicePaymentSchedule.invoiceId })
       .from(invoicePaymentSchedule)
@@ -614,19 +575,10 @@ export async function getInvoices(filters: {
   } else {
     const invoiceCreatedConditions: any[] = [];
     const scheduleCreatedConditions: any[] = [];
-    if (f.dateFrom) {
-      const from = getVietnamDateBoundary(f.dateFrom);
-      if (from) {
-        invoiceCreatedConditions.push(sql`${invoices.createdAt} >= ${from.sqlTimestamp}::timestamp`);
-        scheduleCreatedConditions.push(sql`${invoicePaymentSchedule.createdAt} >= ${from.sqlTimestamp}::timestamp`);
-      }
-    }
-    if (f.dateTo) {
-      const toExclusive = getVietnamDateBoundary(f.dateTo, 1);
-      if (toExclusive) {
-        invoiceCreatedConditions.push(sql`${invoices.createdAt} < ${toExclusive.sqlTimestamp}::timestamp`);
-        scheduleCreatedConditions.push(sql`${invoicePaymentSchedule.createdAt} < ${toExclusive.sqlTimestamp}::timestamp`);
-      }
+    if (f.dateFrom || f.dateTo) {
+      const timeZone = await loadCenterTimeZone();
+      invoiceCreatedConditions.push(...centerInstantRangeConditions(invoices.createdAt, f.dateFrom, f.dateTo, timeZone));
+      scheduleCreatedConditions.push(...centerInstantRangeConditions(invoicePaymentSchedule.createdAt, f.dateFrom, f.dateTo, timeZone));
     }
     if (invoiceCreatedConditions.length > 0) {
       const scheduleCreatedInvoiceIds = db
@@ -1084,13 +1036,9 @@ export async function getInvoiceFilterOptions(filters: {
   if (filters.dueDateFrom) conditions.push(gte(invoices.dueDate, filters.dueDateFrom));
   if (filters.dueDateTo) {
     conditions.push(lte(invoices.dueDate, filters.dueDateTo));
-  } else if (filters.dateFrom) {
-    const from = getVietnamDateBoundary(filters.dateFrom);
-    if (from) conditions.push(sql`${invoices.createdAt} >= ${from.sqlTimestamp}::timestamp`);
-  }
-  if (filters.dateTo && !filters.dueDateTo) {
-    const toExclusive = getVietnamDateBoundary(filters.dateTo, 1);
-    if (toExclusive) conditions.push(sql`${invoices.createdAt} < ${toExclusive.sqlTimestamp}::timestamp`);
+  } else if (filters.dateFrom || filters.dateTo) {
+    const timeZone = await loadCenterTimeZone();
+    conditions.push(...centerInstantRangeConditions(invoices.createdAt, filters.dateFrom, filters.dateTo, timeZone));
   }
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -1200,18 +1148,17 @@ export async function getThuChiReportEntries(filters: {
     }
   }
 
-  const fromMs = filters.paidAtFrom
-    ? getVietnamDateBoundary(filters.paidAtFrom)?.wallClock.getTime() ?? Number.NEGATIVE_INFINITY
-    : Number.NEGATIVE_INFINITY;
-  const toMs = filters.paidAtTo
-    ? (getVietnamDateBoundary(filters.paidAtTo, 1)?.wallClock.getTime() ?? Number.POSITIVE_INFINITY) - 1
-    : Number.POSITIVE_INFINITY;
+  const paymentRange = filters.paidAtFrom || filters.paidAtTo
+    ? getCenterDayRangeInstants(filters.paidAtFrom, filters.paidAtTo, await loadCenterTimeZone())
+    : {};
+  const fromMs = paymentRange.from?.getTime() ?? Number.NEGATIVE_INFINITY;
+  const toExclusiveMs = paymentRange.toExclusive?.getTime() ?? Number.POSITIVE_INFINITY;
   const paymentMethods = new Set(filters.paymentMethods ?? []);
 
   const isInSelectedPeriod = (value: unknown): boolean => {
     if (!value) return false;
     const time = value instanceof Date ? value.getTime() : new Date(String(value)).getTime();
-    return Number.isFinite(time) && time >= fromMs && time <= toMs;
+    return Number.isFinite(time) && time >= fromMs && time < toExclusiveMs;
   };
 
   const matchesPaymentMethod = (method: unknown): boolean =>
@@ -1624,7 +1571,7 @@ export async function getNextInvoiceCode(type: string, locationId?: string | nul
 
 export async function createInvoice(data: any): Promise<any> {
   const { items = [], paymentSchedule = [], ...invoiceData } = data;
-  const defaultDueDate = getBusinessDateString();
+  const defaultDueDate = getBusinessDateString(await loadCenterTimeZone());
   invoiceData.dueDate = invoiceData.dueDate || defaultDueDate;
   if (!invoiceData.code) {
     invoiceData.code = await getNextInvoiceCode(invoiceData.type === "Chi" ? "expense" : "income", invoiceData.locationId);
@@ -1792,6 +1739,7 @@ async function consumeFinanceVouchers(
 
 export async function updateInvoice(id: string, data: any): Promise<any> {
   const { items, paymentSchedule, ...invoiceData } = data;
+  const centerTimeZone = await loadCenterTimeZone();
   const toUpdate: any = { ...invoiceData, updatedAt: new Date() };
   if (toUpdate.totalAmount !== undefined) toUpdate.totalAmount = toUpdate.totalAmount.toString();
   if (toUpdate.totalPromotion !== undefined) toUpdate.totalPromotion = toUpdate.totalPromotion.toString();
@@ -1844,7 +1792,7 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
       }
       const retainedIds = new Set<string>();
       const now = new Date();
-      const defaultDueDate = getBusinessDateString(now);
+      const defaultDueDate = getBusinessDateString(centerTimeZone, now);
 
       const scheduleRows = paymentSchedule.map((s: any, idx: number) => {
         // Some edit surfaces may send a temporary or stale schedule ID. The
@@ -2206,6 +2154,7 @@ export async function updateInvoiceScheduleStatus(scheduleId: string, status: st
 }
 
 export async function appendSalaryPayment(invoiceId: string, amountPaid: number): Promise<any> {
+  const centerTimeZone = await loadCenterTimeZone();
   return db.transaction(async (tx) => {
     const [inv] = await tx.select().from(invoices).where(eq(invoices.id, invoiceId));
     if (!inv) throw new Error("Không tìm thấy phiếu chi");
@@ -2255,7 +2204,7 @@ export async function appendSalaryPayment(invoiceId: string, amountPaid: number)
           status: "paid",
           paidAt: new Date(),
           sortOrder: currentUnpaidSortOrder,
-          dueDate: getBusinessDateString(),
+          dueDate: getBusinessDateString(centerTimeZone),
         });
       }
     }

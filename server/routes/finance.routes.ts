@@ -9,8 +9,9 @@ import {
 import { saveInvoiceCommissions, getInvoiceFilterOptions, getThuChiReportEntries, getNextLocationCode, getAvailableFinanceVouchers } from "../storage/finance.storage";
 import { createInvoiceAuditLog } from "../storage/invoice-audit-log.storage";
 import { createIssueReceiptsForInvoice, cancelIssueReceiptForInvoice } from "./store-issue-receipt.routes";
-import { centerDateRangeConditions, InvalidCenterDateKeyError } from "../lib/center-date-range";
+import { centerDateRangeConditions, InvalidCenterDateKeyError, loadCenterTimeZone } from "../lib/center-date-range";
 import { validateCenterTimeZone } from "@shared/center-time";
+import { invoiceBusinessDateOnly, normalizeInvoiceInstant } from "../lib/invoice-time";
 
 import { z } from "zod";
 import {
@@ -229,20 +230,30 @@ const updateScheduleBodySchema = z.object({
   paidAt: z.coerce.date().nullable().optional(),
 });
 
-function invoiceBusinessDateOnly(value: unknown, rawValue?: unknown): string | null {
-  if (typeof rawValue === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawValue)) return rawValue;
-  if (!value) return null;
-  const date = value instanceof Date ? value : new Date(String(value));
-  if (Number.isNaN(date.getTime())) return null;
-  if (value instanceof Date && rawValue === undefined) return date.toISOString().slice(0, 10);
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Ho_Chi_Minh",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
+function normalizeInvoicePayloadTimes(data: any, rawData: any, timeZone: string): void {
+  if (data.createdAt !== undefined) {
+    data.createdAt = normalizeInvoiceInstant(data.createdAt, rawData?.createdAt, timeZone) as Date;
+  }
+  if (data.paidAt !== undefined) {
+    data.paidAt = normalizeInvoiceInstant(data.paidAt, rawData?.paidAt, timeZone);
+  }
+  if (data.paymentSchedule) {
+    data.paymentSchedule = data.paymentSchedule.map((
+      schedule: { createdAt?: Date; paidAt?: Date | null; [key: string]: unknown },
+      index: number,
+    ) => {
+      const rawSchedule = rawData?.paymentSchedule?.[index];
+      return {
+        ...schedule,
+        ...(schedule.createdAt !== undefined
+          ? { createdAt: normalizeInvoiceInstant(schedule.createdAt, rawSchedule?.createdAt, timeZone) as Date }
+          : {}),
+        ...(schedule.paidAt !== undefined
+          ? { paidAt: normalizeInvoiceInstant(schedule.paidAt, rawSchedule?.paidAt, timeZone) }
+          : {}),
+      };
+    });
+  }
 }
 
 const splitScheduleBodySchema = z.object({
@@ -1038,6 +1049,8 @@ export function registerFinanceRoutes(app: Express): void {
       if (!parsed.success) {
         return res.status(400).json({ message: "Dữ liệu không hợp lệ", errors: parsed.error.errors });
       }
+      const timeZone = await loadCenterTimeZone();
+      normalizeInvoicePayloadTimes(parsed.data, req.body, timeZone);
       const userId = (req as any).user?.id;
       const { data, staffRecipientUserId } = await createOneInvoiceWithSideEffects(parsed.data, userId);
       if (rawCommissions.length > 0) {
@@ -1066,6 +1079,7 @@ export function registerFinanceRoutes(app: Express): void {
        if (list.length > 300) return res.status(400).json({ message: `Tối đa 300 hoá đơn/lần (đang có ${list.length})` });
 
       const userId = (req as any).user?.id;
+      const timeZone = await loadCenterTimeZone();
       const results: Array<{ index: number; ok: boolean; id?: string; code?: string; error?: string }> = [];
       const notifyJobs: Array<() => Promise<void>> = [];
 
@@ -1082,6 +1096,7 @@ export function registerFinanceRoutes(app: Express): void {
           continue;
         }
         try {
+          normalizeInvoicePayloadTimes(parsed.data, row, timeZone);
           const { data, staffRecipientUserId } = await createOneInvoiceWithSideEffects(parsed.data, userId);
           results.push({ index: i, ok: true, id: data.id, code: data.code });
           notifyJobs.push(() =>
@@ -1120,13 +1135,17 @@ export function registerFinanceRoutes(app: Express): void {
       }
       const userId = (req as any).user?.id;
       const before = await storage.getInvoice(req.params.id);
+      const timeZone = await loadCenterTimeZone();
+      normalizeInvoicePayloadTimes(parsed.data, req.body, timeZone);
       const effectiveCreatedAt = invoiceBusinessDateOnly(
         parsed.data.createdAt ?? before?.createdAt,
         parsed.data.createdAt !== undefined ? req.body?.createdAt : undefined,
+        timeZone,
       );
       const effectivePaidAt = invoiceBusinessDateOnly(
         parsed.data.paidAt !== undefined ? parsed.data.paidAt : before?.paidAt,
         parsed.data.paidAt !== undefined ? req.body?.paidAt : undefined,
+        timeZone,
       );
       if (effectiveCreatedAt && effectivePaidAt && effectivePaidAt < effectiveCreatedAt) {
         return res.status(400).json({ message: "Ngày thanh toán không được trước ngày tạo." });
@@ -1540,13 +1559,25 @@ export function registerFinanceRoutes(app: Express): void {
         return res.status(404).json({ message: "Không tìm thấy đợt thanh toán" });
       }
 
+      const timeZone = await loadCenterTimeZone();
+      const normalizedScheduleTimes = {
+        ...parsed.data,
+        ...(parsed.data.createdAt !== undefined
+          ? { createdAt: normalizeInvoiceInstant(parsed.data.createdAt, req.body?.createdAt, timeZone) as Date }
+          : {}),
+        ...(parsed.data.paidAt !== undefined
+          ? { paidAt: normalizeInvoiceInstant(parsed.data.paidAt, req.body?.paidAt, timeZone) }
+          : {}),
+      };
       const effectiveCreatedAt = invoiceBusinessDateOnly(
         parsed.data.createdAt ?? before.createdAt,
         parsed.data.createdAt !== undefined ? req.body?.createdAt : undefined,
+        timeZone,
       );
       const effectivePaidAt = invoiceBusinessDateOnly(
         parsed.data.paidAt !== undefined ? parsed.data.paidAt : before.paidAt,
         parsed.data.paidAt !== undefined ? req.body?.paidAt : undefined,
+        timeZone,
       );
       if (effectiveCreatedAt && effectivePaidAt && effectivePaidAt < effectiveCreatedAt) {
         return res.status(400).json({ message: "Ngày thanh toán không được trước ngày tạo." });
@@ -1560,7 +1591,7 @@ export function registerFinanceRoutes(app: Express): void {
         dueDate,
         createdAt,
         paidAt,
-      } = parsed.data;
+      } = normalizedScheduleTimes;
       const data: Record<string, unknown> = {};
       if (amount !== undefined) {
         if (!Number.isFinite(Number(amount)) || Number(amount) < 0) {

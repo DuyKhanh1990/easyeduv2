@@ -204,11 +204,11 @@ export const invoices = pgTable("invoices", {
   // Audit
   createdBy: uuid("created_by").references(() => users.id),
   updatedBy: uuid("updated_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   // Thanh toán
   paidBy: uuid("paid_by").references(() => users.id),
-  paidAt: timestamp("paid_at"),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
   // Liên kết phiếu kho
   storeReceiptId: uuid("store_receipt_id"),
   storeIssueReceiptId: uuid("store_issue_receipt_id"),
@@ -260,7 +260,7 @@ export const invoicePaymentSchedule = pgTable("invoice_payment_schedule", {
   surchargeAmount: decimal("surcharge_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   dueDate: date("due_date"),                                  // Hạn thanh toán đợt này
   status: varchar("status", { length: 20 }).notNull().default("unpaid"), // unpaid | paid
-  paidAt: timestamp("paid_at"),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
   paidBy: uuid("paid_by").references(() => users.id),
   sortOrder: integer("sort_order").default(0),
   settleCode: varchar("settle_code", { length: 50 }),              // KT0001 khi đợt được thanh toán
@@ -272,9 +272,9 @@ export const invoicePaymentSchedule = pgTable("invoice_payment_schedule", {
   einvoiceMaTraCuu: varchar("einvoice_ma_tra_cuu", { length: 100 }),
   einvoiceMessage: text("einvoice_message"),
   einvoiceUpdatedAt: timestamp("einvoice_updated_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   createdBy: uuid("created_by").references(() => users.id),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   updatedBy: uuid("updated_by").references(() => users.id),
 });
 
