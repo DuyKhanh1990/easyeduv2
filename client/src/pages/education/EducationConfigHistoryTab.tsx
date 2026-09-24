@@ -5,6 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ActivityLog, LogDetailDialog } from "@/components/education/ClassActivityLogDialog";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
+import { parseStoredVietnamTimestamp } from "@/lib/vietnam-time";
+import {
+  DEFAULT_CENTER_TIME_ZONE,
+  formatCenterInstant,
+  getCenterDateKey,
+  isInstantInCenterDateRange,
+} from "@shared/center-time";
 
 type Range = "all" | "today" | "7d" | "30d" | "thismonth";
 type Filter = "all" | "created" | "updated" | "deleted";
@@ -30,14 +38,17 @@ const actionConfig = {
   deleted: { label: "Xóa", Icon: Trash2, color: "text-slate-600", bg: "bg-slate-100", border: "border-slate-300" },
 } as const;
 
-function dateKey(value: string | Date) {
-  return new Date(value).toLocaleDateString("sv-SE");
+function dateKey(value: string | Date, timeZone: string) {
+  const instant = parseStoredVietnamTimestamp(value);
+  return instant ? getCenterDateKey(instant, timeZone) : "";
 }
-function dateLabel(value: string | Date) {
-  return new Date(value).toLocaleDateString("vi-VN", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" });
+function dateLabel(value: string | Date, timeZone: string) {
+  const instant = parseStoredVietnamTimestamp(value);
+  return instant ? formatCenterInstant(instant, timeZone, { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" }) : "Không rõ ngày";
 }
-function timeLabel(value: string | Date) {
-  return new Date(value).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" });
+function timeLabel(value: string | Date, timeZone: string) {
+  const instant = parseStoredVietnamTimestamp(value);
+  return instant ? formatCenterInstant(instant, timeZone, { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric", hourCycle: "h23" }) : "Không rõ thời gian";
 }
 function contentLabel(log: ActivityLog, resource: string) {
   const raw = log.newContent || log.oldContent;
@@ -72,17 +83,6 @@ function historyResource(log: ActivityLog) {
   } catch { /* keep the stored resource */ }
   return resource;
 }
-function rangeDates(range: Range) {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  if (range === "today") return { from: today, to: today };
-  if (range === "7d" || range === "30d") {
-    const from = new Date(today); from.setDate(from.getDate() - (range === "7d" ? 6 : 29));
-    return { from, to: today };
-  }
-  if (range === "thismonth") return { from: new Date(today.getFullYear(), today.getMonth(), 1), to: today };
-  return { from: null, to: null };
-}
-
 export function EducationConfigHistoryTab({ scope = "education-config", resourceOptions }: {
   scope?: "education-config" | "settings";
   resourceOptions?: Record<string, string>;
@@ -91,6 +91,8 @@ export function EducationConfigHistoryTab({ scope = "education-config", resource
   const [filter, setFilter] = useState<Filter>("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [detail, setDetail] = useState<ActivityLog | null>(null);
+  const centerTimeZone = useCenterTimeZone();
+  const timeZone = centerTimeZone.data ?? DEFAULT_CENTER_TIME_ZONE;
   const { data: logs = [], isLoading } = useQuery<ActivityLog[]>({
     queryKey: ["/api/activity-logs", scope],
     queryFn: async () => {
@@ -103,23 +105,20 @@ export function EducationConfigHistoryTab({ scope = "education-config", resource
   });
 
   const filtered = useMemo(() => {
-    const { from, to } = rangeDates(range);
     return logs.filter(log => {
       const [, , action] = log.action.split(".");
       const resource = historyResource(log);
-      const date = new Date(log.createdAt);
       return (filter === "all" || action === filter)
         && (categoryFilter === "all" || resource === categoryFilter)
-        && (!from || date >= from)
-        && (!to || date < new Date(to.getTime() + 86400000));
+        && isInstantInCenterDateRange(parseStoredVietnamTimestamp(log.createdAt), range, timeZone);
     });
-  }, [logs, range, filter, categoryFilter]);
+  }, [logs, range, filter, categoryFilter, timeZone]);
   const groups = useMemo(() => filtered.reduce<Map<string, ActivityLog[]>>((map, log) => {
-    const key = dateKey(log.createdAt);
+    const key = dateKey(log.createdAt, timeZone);
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(log);
     return map;
-  }, new Map()), [filtered]);
+  }, new Map()), [filtered, timeZone]);
 
   return (
     <div className="flex h-[calc(100vh-220px)] min-h-[420px] flex-col gap-3 rounded-xl border bg-slate-50/40 p-5 pt-4">
@@ -159,7 +158,8 @@ export function EducationConfigHistoryTab({ scope = "education-config", resource
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {isLoading ? <div className="py-16 text-center text-sm text-slate-400">Đang tải lịch sử...</div>
+          {centerTimeZone.isError ? <div role="alert" className="py-16 text-center text-sm text-red-600">Không tải được múi giờ của trung tâm.</div>
+           : isLoading || centerTimeZone.isPending ? <div className="py-16 text-center text-sm text-slate-400">Đang tải lịch sử...</div>
           : groups.size === 0 ? (
             <div className="flex flex-col items-center gap-3 py-20 text-slate-400">
               <History className="h-12 w-12 opacity-20" /><p className="text-sm">Không có sự kiện trong khoảng thời gian này</p>
@@ -168,8 +168,8 @@ export function EducationConfigHistoryTab({ scope = "education-config", resource
             <div className="space-y-6">
               {Array.from(groups.entries()).map(([key, events]) => (
                 <section key={key}>
-                  <div className="sticky top-0 z-10 mb-2 flex items-center gap-2 bg-slate-50/90 px-2 py-1 backdrop-blur-sm">
-                    <div className="h-px flex-1 bg-slate-200" /><span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{dateLabel(events[0].createdAt)}</span><div className="h-px flex-1 bg-slate-200" />
+                   <div className="sticky top-0 z-10 mb-2 flex items-center gap-2 bg-slate-50/90 px-2 py-1 backdrop-blur-sm">
+                     <div className="h-px flex-1 bg-slate-200" /><span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{dateLabel(events[0].createdAt, timeZone)}</span><div className="h-px flex-1 bg-slate-200" />
                   </div>
                   <div className="space-y-1.5">
                     {events.map(log => {
@@ -186,7 +186,7 @@ export function EducationConfigHistoryTab({ scope = "education-config", resource
                           </div>
                           <div className="mt-1 flex flex-wrap gap-3 text-[11px] text-slate-400"><span>{log.userName || "Hệ thống"}</span>{log.locationName && <span>{log.locationName}</span>}</div>
                         </div>
-                        <div className="flex shrink-0 flex-col items-end gap-1"><span className="text-[10px] text-slate-400">{timeLabel(log.createdAt)}</span><Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={() => setDetail(log)} title="Xem chi tiết"><Eye className="h-3 w-3" /></Button></div>
+                         <div className="flex shrink-0 flex-col items-end gap-1"><span className="text-[10px] text-slate-400">{timeLabel(log.createdAt, timeZone)}</span><Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={() => setDetail(log)} title="Xem chi tiết"><Eye className="h-3 w-3" /></Button></div>
                       </div>;
                     })}
                   </div>

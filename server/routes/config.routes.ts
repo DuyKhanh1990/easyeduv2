@@ -19,6 +19,7 @@ import {
 import * as courseStorage from "../storage/course.storage";
 import { createCourseAuditLog, getCourseAuditLogs } from "../storage/course-audit-log.storage";
 import { createActivityLog, getStaffHistory } from "../storage/activity-log.storage";
+import { validateCenterTimeZone } from "@shared/center-time";
 
 function sanitizeDateField(value: any): string | null {
   if (!value) return null;
@@ -247,6 +248,17 @@ async function getStaffLimitInfo(): Promise<{ limit: number | null; activeCount:
 }
 
 export function registerConfigRoutes(app: Express): void {
+  app.get("/api/center-time-zone", async (_req, res) => {
+    try {
+      const [center] = await db.select({ timeZone: centerConfig.timezone }).from(centerConfig).limit(1);
+      if (!center) return res.status(503).json({ message: "Chưa cấu hình trung tâm" });
+      res.json({ timeZone: validateCenterTimeZone(center.timeZone) });
+    } catch (error) {
+      console.error("[CenterTimeZone] Cannot load center timezone:", error);
+      res.status(500).json({ message: "Không tải được múi giờ của trung tâm" });
+    }
+  });
+
   // Keep one audit trail for every mutation made from the education-config page.
   // Middleware coverage prevents newly added config endpoints from silently
   // skipping history recording.

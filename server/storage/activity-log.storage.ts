@@ -24,7 +24,10 @@ export async function getActivityLogs(filters?: {
   const where = filters?.classId
     ? eq(activityLogs.classId, filters.classId)
     : filters?.scope === "education-config"
-      ? ilike(activityLogs.action, "education_config.%")
+      ? or(
+          ilike(activityLogs.action, "education-config.%"),
+          ilike(activityLogs.action, "education_config.%"),
+        )
       : filters?.scope === "settings"
         ? ilike(activityLogs.action, "settings.%")
     : filters?.onlyClassLogs
