@@ -2614,6 +2614,7 @@ export type ShortLink = typeof shortLinks.$inferSelect;
 export const centerConfig = pgTable("center_config", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   centerUrl: text("center_url").notNull().default(""),
+  timezone: varchar("timezone", { length: 100 }).notNull().default("Asia/Ho_Chi_Minh"),
   singletonKey: text("singleton_key").notNull().default("default"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({

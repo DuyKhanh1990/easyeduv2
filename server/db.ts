@@ -4,8 +4,10 @@ import * as schema from "@shared/schema";
 
 const { Pool } = pg;
 
-// Fix TIMESTAMP WITHOUT TIMEZONE: pg driver reads these as local strings.
-// Append 'Z' so JavaScript Date always treats them as UTC regardless of server locale.
+// Legacy compatibility only. Canonical EasyEdu instant columns are TIMESTAMPTZ
+// (OID 1184) and are not handled by this parser. Keep OID 1114 stable while
+// historical databases are migrated field-by-field; remove it when no legacy
+// TIMESTAMP WITHOUT TIME ZONE instant columns remain.
 pg.types.setTypeParser(1114, (val: string) => new Date(val + "Z"));
 
 // APP_DATABASE_URL takes priority over DATABASE_URL because Replit injects
