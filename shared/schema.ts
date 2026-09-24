@@ -83,7 +83,7 @@ export const freeClassRegistrations = pgTable("free_class_registrations", {
   shiftTemplateId: uuid("shift_template_id").references(() => shiftTemplates.id, { onDelete: "set null" }),
   status: varchar("status", { length: 20 }).notNull().default("registered"), // registered | attended | reserved
   registeredBy: uuid("registered_by").references(() => users.id, { onDelete: "set null" }),
-  registeredAt: timestamp("registered_at").defaultNow().notNull(),
+  registeredAt: timestamp("registered_at", { withTimezone: true }).defaultNow().notNull(),
   attendedBy: uuid("attended_by").references(() => users.id, { onDelete: "set null" }),
   attendedAt: timestamp("attended_at"),
   note: text("note"),
@@ -2837,7 +2837,7 @@ export const teacherSalaryPublishedRows = pgTable("teacher_salary_published_rows
   salaryTableId: uuid("salary_table_id").notNull(),
   teacherId: uuid("teacher_id").notNull(),
   classId: uuid("class_id").notNull(),
-  publishedAt: timestamp("published_at").notNull().default(sql`now()`),
+  publishedAt: timestamp("published_at", { withTimezone: true }).notNull().default(sql`now()`),
 }, (t) => ({
   uniqueSalaryTeacherClassPublished: unique().on(t.salaryTableId, t.teacherId, t.classId),
 }));
@@ -3108,7 +3108,7 @@ export const centerRegistry = pgTable("center_registry", {
   centerUrl: text("center_url").notNull(),
   description: text("description"),
   isActive: boolean("is_active").notNull().default(true),
-  registeredAt: timestamp("registered_at").notNull().default(sql`now()`),
+  registeredAt: timestamp("registered_at", { withTimezone: true }).notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 });
 
@@ -3502,7 +3502,7 @@ export const databaseBackups = pgTable("database_backups", {
   // Keep operational backup history stable even when application user data is
   // restored to an older snapshot.
   requestedBy:     uuid("requested_by"),
-  requestedAt:     timestamp("requested_at").defaultNow().notNull(),
+  requestedAt:     timestamp("requested_at", { withTimezone: true }).defaultNow().notNull(),
   startedAt:       timestamp("started_at"),
   completedAt:     timestamp("completed_at"),
   errorMessage:    text("error_message"),

@@ -409,7 +409,7 @@ export async function ensureTeacherSalaryPublishedRowsTable(): Promise<void> {
       salary_table_id UUID NOT NULL,
       teacher_id UUID NOT NULL,
       class_id UUID NOT NULL,
-      published_at TIMESTAMP NOT NULL DEFAULT NOW()
+      published_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
   await db.execute(sql`
