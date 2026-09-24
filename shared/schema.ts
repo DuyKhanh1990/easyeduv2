@@ -2177,7 +2177,7 @@ export const tasks = pgTable("tasks", {
   assigneeIds: uuid("assignee_ids").array().notNull().default(sql`'{}'`),
   attachments: jsonb("attachments").default([]),
   createdBy: uuid("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   statusIdIdx: index("tasks_status_id_idx").on(table.statusId),
@@ -2197,7 +2197,7 @@ export const taskComments = pgTable("task_comments", {
   authorId: uuid("author_id").references(() => users.id),
   authorName: varchar("author_name", { length: 200 }).notNull().default(""),
   content: text("content").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export type TaskComment = typeof taskComments.$inferSelect;

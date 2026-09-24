@@ -6,7 +6,10 @@ import {
   shiftCalendarDateKey,
   validateCenterTimeZone,
 } from "@shared/center-time";
-import { parseStoredVietnamTimestamp } from "../../client/src/lib/vietnam-time";
+import {
+  formatStoredVietnamTimestamp,
+  parseStoredVietnamTimestamp,
+} from "../../client/src/lib/vietnam-time";
 
 describe("center time and legacy Vietnam timestamps", () => {
   it("converts a legacy synthetic-Z wall clock exactly once", () => {
@@ -24,6 +27,73 @@ describe("center time and legacy Vietnam timestamps", () => {
     expect(formatCenterInstant(updated, "Asia/Ho_Chi_Minh", {
       hour: "2-digit", minute: "2-digit", hourCycle: "h23",
     })).toContain("11:53");
+  });
+
+  it("demonstrates the different legacy display behavior of DB-default and JS-Date values", () => {
+    const options: Intl.DateTimeFormatOptions = {
+      day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    };
+
+    // Representative development rows from database_backups:
+    // requested_at is DB-default Vietnam wall time; started_at is a JS Date
+    // whose UTC clock components were stored in a legacy-naive column.
+    const requestedAtRaw = "2026-09-24T00:29:59.997Z";
+    const startedAtRaw = "2026-09-23T17:30:00.007Z";
+
+    expect(formatStoredVietnamTimestamp(requestedAtRaw, options))
+      .toContain("24/09/2026");
+    expect(formatStoredVietnamTimestamp(requestedAtRaw, options))
+      .toContain("00:29");
+
+    // This shows the current legacy helper cannot be applied to both sources.
+    expect(formatStoredVietnamTimestamp(startedAtRaw, options))
+      .toContain("23/09/2026");
+    expect(formatStoredVietnamTimestamp(startedAtRaw, options))
+      .toContain("17:30");
+
+    // After source-aware conversion, both display in the Center's local time.
+    expect(formatCenterInstant(
+      new Date("2026-09-23T17:29:59.997Z"),
+      "Asia/Ho_Chi_Minh",
+      options,
+    )).toContain("24/09/2026");
+    expect(formatCenterInstant(
+      new Date("2026-09-23T17:30:00.007Z"),
+      "Asia/Ho_Chi_Minh",
+      options,
+    )).toContain("00:30");
+  });
+
+  it("keeps task creation times unchanged in the Center after the grouped migration", () => {
+    const options: Intl.DateTimeFormatOptions = {
+      day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    };
+    const samples = [
+      {
+        field: "tasks.created_at",
+        legacy: "2026-04-04T09:29:51.953Z",
+        instant: "2026-04-04T02:29:51.953Z",
+        clock: "09:29",
+      },
+      {
+        field: "task_comments.created_at",
+        legacy: "2026-04-04T09:30:08.641Z",
+        instant: "2026-04-04T02:30:08.641Z",
+        clock: "09:30",
+      },
+    ];
+
+    for (const sample of samples) {
+      const legacyInstant = parseStoredVietnamTimestamp(sample.legacy);
+      const migratedInstant = new Date(sample.instant);
+      expect(legacyInstant?.getTime(), sample.field).toBe(migratedInstant.getTime());
+      expect(formatStoredVietnamTimestamp(sample.legacy, options), sample.field)
+        .toContain(sample.clock);
+      expect(formatCenterInstant(migratedInstant, "Asia/Ho_Chi_Minh", options), sample.field)
+        .toContain(sample.clock);
+    }
   });
 
   it("uses the center's day rather than the browser or server day", () => {
