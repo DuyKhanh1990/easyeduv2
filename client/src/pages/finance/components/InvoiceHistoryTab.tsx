@@ -36,27 +36,51 @@ interface HistoryResponse {
 }
 
 /* ── Helpers ────────────────────────────────────────────── */
-// Strip 'Z' so the browser treats the timestamp as local time (UTC+7 Vietnam)
-// instead of converting from UTC which would shift 7 hours — same pattern used app-wide
-function stripUtc(iso: string) {
-  return iso.replace("Z", "").replace("+00:00", "");
+const VIETNAM_TIME_ZONE = "Asia/Ho_Chi_Minh";
+
+function getVietnamParts(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: VIETNAM_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  return Object.fromEntries(parts.map(part => [part.type, part.value]));
+}
+
+function parseTimestamp(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function fmtDateTime(iso: string) {
-  try {
-    return format(new Date(stripUtc(iso)), "HH:mm — dd/MM/yyyy", { locale: vi });
-  } catch { return iso; }
+  const date = parseTimestamp(iso);
+  if (!date) return iso;
+  const parts = getVietnamParts(date);
+  return `${parts.hour}:${parts.minute} — ${parts.day}/${parts.month}/${parts.year}`;
 }
 
 function fmtDateGroup(iso: string) {
-  try {
-    return format(new Date(stripUtc(iso)), "EEEE, dd/MM/yyyy", { locale: vi });
-  } catch { return iso; }
+  const date = parseTimestamp(iso);
+  if (!date) return iso;
+  const parts = getVietnamParts(date);
+  return `${parts.weekday}, ${parts.day}/${parts.month}/${parts.year}`;
 }
 
 function dateKey(iso: string) {
-  try { return stripUtc(iso).slice(0, 10); }
-  catch { return iso; }
+  const date = parseTimestamp(iso);
+  if (!date) return iso;
+  const parts = getVietnamParts(date);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function formatDateOnly(dateKeyValue: string) {
+  const [year, month, day] = dateKeyValue.split("-");
+  return `${day}/${month}/${year}`;
 }
 
 type EvCfg = { label: string; icon: React.ReactNode; bg: string; border: string; textColor: string };
@@ -186,8 +210,15 @@ function formatFieldValue(key: string, val: any): string {
   }
   if (key === "paymentMethod") return payMethodLabel(String(val)) ?? String(val);
   if (key === "type") return String(val) === "Thu" ? "Thu (Phiếu thu)" : "Chi (Phiếu chi)";
-  if (["dueDate", "createdAt", "paidAt"].includes(key)) {
-    try { return format(new Date(String(val)), "dd/MM/yyyy"); } catch { return String(val); }
+  if (key === "dueDate") {
+    const value = String(val);
+    return /^\d{4}-\d{2}-\d{2}/.test(value)
+      ? formatDateOnly(value.slice(0, 10))
+      : value;
+  }
+  if (["createdAt", "paidAt"].includes(key)) {
+    const date = parseTimestamp(String(val));
+    return date ? fmtDateTime(String(val)) : String(val);
   }
   return String(val);
 }
@@ -349,12 +380,21 @@ type QuickRange = "all" | "today" | "7d" | "30d" | "thismonth";
 
 function quickRangeDates(r: QuickRange): { from?: string; to?: string } {
   const pad = (n: number) => String(n).padStart(2, "0");
-  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const fmt = (d: Date) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+  const todayParts = getVietnamParts(new Date());
+  const today = new Date(Date.UTC(
+    Number(todayParts.year),
+    Number(todayParts.month) - 1,
+    Number(todayParts.day),
+  ));
   if (r === "today") { const s = fmt(today); return { from: s, to: s }; }
   if (r === "7d") { const f = new Date(today); f.setDate(f.getDate() - 6); return { from: fmt(f), to: fmt(today) }; }
   if (r === "30d") { const f = new Date(today); f.setDate(f.getDate() - 29); return { from: fmt(f), to: fmt(today) }; }
-  if (r === "thismonth") { const f = new Date(today.getFullYear(), today.getMonth(), 1); const t = new Date(today.getFullYear(), today.getMonth() + 1, 0); return { from: fmt(f), to: fmt(t) }; }
+  if (r === "thismonth") {
+    const f = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+    const t = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 0));
+    return { from: fmt(f), to: fmt(t) };
+  }
   return {};
 }
 
@@ -458,7 +498,7 @@ export function InvoiceHistoryTab({
 
         <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
           <CalendarIcon className="h-3.5 w-3.5" />
-          {from && to ? `${format(new Date(from + "T00:00"), "dd/MM/yyyy")} – ${format(new Date(to + "T00:00"), "dd/MM/yyyy")}` : "Toàn thời gian"}
+          {from && to ? `${formatDateOnly(from)} – ${formatDateOnly(to)}` : "Toàn thời gian"}
           <span className="ml-2 font-medium text-slate-600">{total} sự kiện</span>
         </div>
       </div>

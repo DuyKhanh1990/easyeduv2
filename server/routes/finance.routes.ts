@@ -692,11 +692,20 @@ export function registerFinanceRoutes(app: Express): void {
         return parts.length ? "AND " + parts.join(" AND ") : "";
       })();
 
-      // Outer date filter on the merged result
+      // Timestamps in the finance tables are TIMESTAMP WITHOUT TIME ZONE values
+      // stored as UTC (see server/db.ts). Convert them to Vietnam time before
+      // applying calendar-date filters, otherwise "Hôm nay" changes with the
+      // database/server timezone and events around midnight land on the wrong day.
       const dateFilter = (() => {
         const parts: string[] = [];
-        if (dateFrom) parts.push(`ev_time >= '${dateFrom}'`);
-        if (dateTo)   parts.push(`ev_time <  '${dateTo}T23:59:59'`);
+        const isDateOnly = (value: string | null): value is string =>
+          Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+        if (dateFrom && isDateOnly(dateFrom)) {
+          parts.push(`(ev_time AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Ho_Chi_Minh') >= '${dateFrom}'::date`);
+        }
+        if (dateTo && isDateOnly(dateTo)) {
+          parts.push(`(ev_time AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Ho_Chi_Minh') < ('${dateTo}'::date + INTERVAL '1 day')`);
+        }
         return parts.length ? "WHERE " + parts.join(" AND ") : "";
       })();
 
