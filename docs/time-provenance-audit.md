@@ -71,6 +71,7 @@ Các migration có điều kiện chặn chạy lặp và hướng dẫn hoàn n
 - Development trả `Asia/Ho_Chi_Minh` từ `current_setting('TimeZone')`; `now()::timestamp` khớp `now() AT TIME ZONE 'Asia/Ho_Chi_Minh'`.
 - Dữ liệu `database_backups` thực tế cho thấy `requested_at` là giờ DB (ví dụ `2026-09-24 00:29:59.997471`) còn `started_at` là giờ UTC-naive (ví dụ `2026-09-23 17:30:00.007`). Diễn giải đúng cho từng nguồn đưa về gần cùng thời điểm; formatter legacy hiện tại không dùng chung an toàn cho cả hai.
 - `tasks` có 19 dòng và `task_comments` có 9 dòng; hai insert hiện tại bỏ qua `created_at`. Test dùng mẫu thực tế, xác nhận hiển thị trước và sau chuyển đổi giữ nguyên giờ Center. Migration `0047` đã sao lưu/đối chiếu từng ID, **0 lệch**.
+- Mẫu task thử trên development: `created_at` hiển thị đúng 15:34 Asia/Bangkok; `updated_at` thô là 08:34 không múi giờ, tương ứng 15:34 nếu diễn giải là UTC. Hạn nhập 29/09/2026 08:00 được lưu thành 29/09/2026 01:00 không múi giờ. Mẫu này xác nhận đường update hiện tại và cách caller mã hóa hạn; không chứng minh nguồn của các dòng lịch sử.
 - `npx vitest run tests/time/center-time.test.ts tests/time/center-date-range.test.ts`: **9/9 đạt**. `npm run build`: đạt. `npm run check` vẫn báo 271 lỗi, bằng baseline đã ghi nhận trước đợt này.
 
 Chưa chuyển các `updated_at`, trường lịch/giờ địa phương, provider hoặc mixed-source trong đợt này. Các cohort còn lại cần được thử writer/reader riêng; giữ nguyên các bảng backup trong `time_migration` cho tới khi hoàn tất audit.
