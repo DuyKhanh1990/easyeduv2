@@ -10,7 +10,7 @@ import {
   CheckCircle, AlertCircle, X, CalendarDays, Printer, Scissors,
   Trash2, QrCode, FileSignature, CalendarIcon, Download,
 } from "lucide-react";
-import { parseNum, fmtMoney, fmtDate, STATUS_CONFIG, EINVOICE_STATUS_CONFIG, type InvoiceRow, type ScheduleItem } from "@/types/invoice-types";
+import { parseNum, fmtMoney, fmtDate, isInvoicePaidLike, STATUS_CONFIG, EINVOICE_STATUS_CONFIG, type InvoiceRow, type ScheduleItem } from "@/types/invoice-types";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { SplitScheduleDialog } from "./SplitScheduleDialog";
@@ -132,7 +132,7 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
   /* Build schedule-as-invoice for print */
   const buildScheduleAsInvoice = (s: ScheduleItem) => {
     const amount = parseNum(s.amount);
-    const isPaid = s.status === "paid";
+    const isPaid = isInvoicePaidLike(s.status);
     const invAny = inv as any;
     return {
       id: s.id,

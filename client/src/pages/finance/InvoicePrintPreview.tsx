@@ -7,7 +7,7 @@ import { Printer, AlertTriangle } from "lucide-react";
 import type { InvoicePrintTemplateRow } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
 import { useStaff } from "@/hooks/use-staff";
-import { fmtDate as formatInvoiceDate } from "@/types/invoice-types";
+import { fmtDate as formatInvoiceDate, isInvoicePaidLike } from "@/types/invoice-types";
 
 interface InvoicePrintData {
   id: string;
@@ -217,17 +217,15 @@ function numberToVietnameseWords(n: number): string {
   return `${words} đồng`;
 }
 
-function renderHistoryHtml(schedule: NonNullable<InvoicePrintData["paymentSchedule"]>): string {
+export function renderHistoryHtml(schedule: NonNullable<InvoicePrintData["paymentSchedule"]>): string {
   if (!schedule || schedule.length === 0) {
     return `<div style="text-align:center;font-style:italic;color:#888;padding:8px;font-size:11px;">Hoá đơn này không chia đợt thanh toán.</div>`;
   }
   const rows = schedule.map((s, i) => {
-    const isPaid = s.status === "paid";
-    const dateText = isPaid && s.paidAt
-      ? fmtDate(s.paidAt)
-      : s.dueDate
-        ? `Dự kiến ${fmtDate(s.dueDate)}`
-        : "";
+    const isPaid = isInvoicePaidLike(s.status);
+    const dateText = isPaid
+      ? (s.paidAt ? fmtDate(s.paidAt) : "—")
+      : (s.dueDate ? `Dự kiến ${fmtDate(s.dueDate)}` : "");
     const amount = Number(s.amount) || 0;
     const amountText = amount > 0 ? `${fmtMoney(amount)} đ` : "";
     const methodText = paymentMethodLabel(s.paymentMethod);
