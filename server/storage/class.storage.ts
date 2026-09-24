@@ -11,6 +11,8 @@ import { distributeInvoiceFeeToSessions } from "./invoice-session-allocation.sto
 import { getNextLocationCode } from "./finance.storage";
 import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 import { buildClassVisibilityCondition, buildClassVisibilitySql, type ClassViewScope } from "../lib/class-access";
+import { loadCenterTimeZone } from "../lib/center-date-range";
+import { getCenterDateKey } from "@shared/center-time";
 
 import type { Class } from "./base";
 
@@ -249,34 +251,34 @@ export async function getClassesListPaginated(params: {
   status?: string;
   page: number;
   pageSize: number;
-}): Promise<{ data: any[]; total: number; page: number; pageSize: number }> {
+}): Promise<{ data: any[]; total: number; page: number; pageSize: number; centerToday: string }> {
   const ALLOWED_SIZES = [20, 30, 50, 100];
   const page = Math.max(1, params.page);
   const pageSize = ALLOWED_SIZES.includes(params.pageSize) ? params.pageSize : 20;
   const offset = (page - 1) * pageSize;
+  const centerToday = getCenterDateKey(new Date(), await loadCenterTimeZone());
 
   const whereFilters: any[] = [];
 
   if (params.locationId && params.locationId !== "all") {
     if (params.allowedLocationIds !== null && params.allowedLocationIds !== undefined && !params.allowedLocationIds.includes(params.locationId)) {
-      return { data: [], total: 0, page, pageSize };
+      return { data: [], total: 0, page, pageSize, centerToday };
     }
     whereFilters.push(eq(classes.locationId, params.locationId));
   } else if (params.allowedLocationIds !== null && params.allowedLocationIds !== undefined && params.allowedLocationIds.length > 0) {
     whereFilters.push(inArray(classes.locationId, params.allowedLocationIds));
   } else if (params.allowedLocationIds !== null && params.allowedLocationIds !== undefined && params.allowedLocationIds.length === 0) {
-    return { data: [], total: 0, page, pageSize };
+    return { data: [], total: 0, page, pageSize, centerToday };
   }
   if (params.viewScope) whereFilters.push(buildClassVisibilityCondition(params.viewScope));
 
-  const today = new Date().toISOString().split("T")[0];
   if (params.status && params.status !== "all") {
     if (params.status === "recruiting") {
-      whereFilters.push(sql`${classes.startDate} > ${today}::date`);
+      whereFilters.push(sql`${classes.status} <> 'closed' AND ${classes.startDate} > ${centerToday}::date`);
     } else if (params.status === "active") {
-      whereFilters.push(sql`${classes.startDate} <= ${today}::date AND ${classes.endDate} >= ${today}::date`);
+      whereFilters.push(sql`${classes.status} <> 'closed' AND ${classes.startDate} <= ${centerToday}::date AND ${classes.endDate} >= ${centerToday}::date`);
     } else if (params.status === "closed") {
-      whereFilters.push(sql`${classes.endDate} < ${today}::date`);
+      whereFilters.push(sql`(${classes.status} = 'closed' OR ${classes.endDate} < ${centerToday}::date)`);
     }
   }
 
@@ -352,7 +354,7 @@ export async function getClassesListPaginated(params: {
     };
   });
 
-  return { data, total, page, pageSize };
+  return { data, total, page, pageSize, centerToday };
 }
 
 // ---------------------------------------------------------------------------

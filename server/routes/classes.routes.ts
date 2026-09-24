@@ -18,6 +18,7 @@ import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 import { getNextLocationCode } from "../storage/finance.storage";
 import { recordFreeClassWalletTransition } from "../storage/free-class-wallet.storage";
 import { loadCenterTimeZone } from "../lib/center-date-range";
+import { getCenterDateKey } from "@shared/center-time";
 
 async function resolveStaffFullName(userId: string | undefined | null): Promise<string | null> {
   if (!userId) return null;
@@ -42,6 +43,17 @@ function getBangkokDateString(): string {
   }).formatToParts(new Date());
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}`;
+}
+
+export function isValidScheduleDateRange(from: unknown, to: unknown): boolean {
+  const isRealDateKey = (value: unknown): value is string => {
+    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    if (Number(value.slice(0, 4)) < 1) return false;
+    const timestamp = Date.parse(`${value}T00:00:00.000Z`);
+    return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === value;
+  };
+
+  return isRealDateKey(from) && isRealDateKey(to) && from <= to;
 }
 
 async function getClassReadScope(req: any): Promise<{ scope: ClassViewScope; canView: boolean; canViewAll: boolean }> {
@@ -4469,9 +4481,15 @@ export function registerClassesRoutes(app: Express): void {
   // Schedule (calendar view)
   app.get("/api/schedule", async (req, res) => {
     try {
-      const { from, to, teacherId, locationId } = req.query as Record<string, string>;
+      const { teacherId, locationId } = req.query as Record<string, string>;
+      const from = typeof req.query.from === "string" ? req.query.from : undefined;
+      const to = typeof req.query.to === "string" ? req.query.to : undefined;
       if (!from || !to) return res.status(400).json({ message: "from and to are required" });
-      const todayInBangkok = getBangkokDateString();
+      if (!isValidScheduleDateRange(from, to)) {
+        return res.status(400).json({ message: "from and to must be valid YYYY-MM-DD dates with from <= to" });
+      }
+      const centerTimeZone = await loadCenterTimeZone();
+      const todayInCenter = getCenterDateKey(new Date(), centerTimeZone);
 
       const allowedLocationIds = await getAllowedLocationIds(req);
 
@@ -4601,7 +4619,7 @@ export function registerClassesRoutes(app: Express): void {
             isNull(classes.freeClassMode),
             sql`coalesce(array_length(${classes.teacherIds}, 1), 0) > 0`,
           ),
-          gte(freeClassRegistrations.registrationDate, todayInBangkok),
+          gte(freeClassRegistrations.registrationDate, todayInCenter),
           ne(freeClassRegistrations.status, "registered"),
         ),
       ];
@@ -4663,7 +4681,7 @@ export function registerClassesRoutes(app: Express): void {
         : allowedLocationIds !== null && allowedLocationIds.length > 0
         ? [inArray(classes.locationId, allowedLocationIds)]
         : [];
-      const selfPracticeRows = from <= todayInBangkok && todayInBangkok <= to
+      const selfPracticeRows = from <= todayInCenter && todayInCenter <= to
         ? await db
           .select({
             registrationId: freeClassRegistrations.id,
@@ -4674,7 +4692,7 @@ export function registerClassesRoutes(app: Express): void {
             classTeacherIds: classes.teacherIds,
             locationId: classes.locationId,
             locationName: locations.name,
-            sessionDate: sql<string>`${todayInBangkok}::date`,
+            sessionDate: sql<string>`${todayInCenter}::date`,
             registrationStatus: sql<string>`coalesce(${freeClassRegistrations.status}, 'registered')`,
             teacherId: freeClassRegistrations.teacherId,
             shiftTemplateId: freeClassRegistrations.shiftTemplateId,
@@ -4701,7 +4719,7 @@ export function registerClassesRoutes(app: Express): void {
             freeClassRegistrations,
             and(
               eq(freeClassRegistrations.studentClassId, studentClasses.id),
-              eq(freeClassRegistrations.registrationDate, todayInBangkok),
+              eq(freeClassRegistrations.registrationDate, todayInCenter),
             ),
           )
           .leftJoin(shiftTemplates, eq(freeClassRegistrations.shiftTemplateId, shiftTemplates.id))
@@ -4709,10 +4727,10 @@ export function registerClassesRoutes(app: Express): void {
             eq(classes.classType, "free"),
             selfPracticeMode,
             inArray(studentClasses.status, ["active", "waiting"]),
-            or(isNull(classes.startDate), lte(classes.startDate, todayInBangkok)),
-            or(isNull(classes.endDate), gte(classes.endDate, todayInBangkok)),
-            or(isNull(studentClasses.startDate), lte(studentClasses.startDate, todayInBangkok)),
-            or(isNull(studentClasses.endDate), gte(studentClasses.endDate, todayInBangkok)),
+            or(isNull(classes.startDate), lte(classes.startDate, todayInCenter)),
+            or(isNull(classes.endDate), gte(classes.endDate, todayInCenter)),
+            or(isNull(studentClasses.startDate), lte(studentClasses.startDate, todayInCenter)),
+            or(isNull(studentClasses.endDate), gte(studentClasses.endDate, todayInCenter)),
             ...selfPracticeLocationConditions,
           ))
         : [];

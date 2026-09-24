@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { format } from "date-fns";
 import { CalendarDays, ChevronLeft, ChevronRight, List, Calendar, Eye, Loader2 } from "lucide-react";
 import { useLanguage } from "@/hooks/use-language";
 import { CalendarStrip } from "@/components/my-space/calendar/CalendarStrip";
@@ -31,6 +30,8 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { getAttendanceStatus } from "@/lib/attendance-status";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
+import { getCenterDateKey } from "@shared/center-time";
 import {
   Dialog,
   DialogContent,
@@ -40,25 +41,40 @@ import {
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
-function toDateString(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+function dateKeyParts(dateKey: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month ||
+    date.getUTCDate() !== day
+  ) return null;
+  return { year, month, dateKey };
 }
 function formatMonthLabel(year: number, month: number, lang: string) {
   if (lang === "en") {
-    return new Date(year, month).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    return new Date(Date.UTC(year, month, 1)).toLocaleDateString("en-US", {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    });
   }
   return `Tháng ${String(month + 1).padStart(2, "0")}/${year}`;
 }
 function formatSelectedDateLabel(dateStr: string, lang: string) {
-  const date = new Date(dateStr + "T00:00:00");
-  const d = String(date.getDate()).padStart(2, "0");
-  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const date = new Date(`${dateStr}T00:00:00.000Z`);
+  const d = String(date.getUTCDate()).padStart(2, "0");
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
   if (lang === "en") {
     const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    return `${weekdays[date.getDay()]}, ${m}/${d}`;
+    return `${weekdays[date.getUTCDay()]}, ${m}/${d}`;
   }
   const weekdays = ["Chủ Nhật", "Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy"];
-  return `${weekdays[date.getDay()]}, ${d}/${m}`;
+  return `${weekdays[date.getUTCDay()]}, ${d}/${m}`;
 }
 
 type ClassMeta = {
@@ -113,7 +129,12 @@ function ClassSessionsTable({ classId, classCode, className: classNameLabel, pag
     setFeedbackLoading(true);
     setFeedbackOpen(true);
     setFeedbackSessionDate(
-      new Date(sessionDate + "T00:00:00").toLocaleDateString("vi-VN", { weekday: "long", day: "2-digit", month: "2-digit" })
+      new Date(`${sessionDate}T00:00:00.000Z`).toLocaleDateString("vi-VN", {
+        weekday: "long",
+        day: "2-digit",
+        month: "2-digit",
+        timeZone: "UTC",
+      })
     );
     try {
       const res = await fetch(`/api/my-space/calendar/student/session/${classSessionId}`, { credentials: "include" });
@@ -169,9 +190,12 @@ function ClassSessionsTable({ classId, classCode, className: classNameLabel, pag
         ) : (
           sessions.map((s, idx) => {
             const att = s.attendanceStatus ? getAttendanceStatus(s.attendanceStatus) : null;
-            const dateObj = s.sessionDate ? new Date(s.sessionDate + "T00:00:00") : null;
-            const DOW = dateObj ? DOW_SHORT[dateObj.getDay()] : "";
-            const dateStr = dateObj ? format(dateObj, "dd/MM/yyyy") : "—";
+            const dateParts = s.sessionDate ? dateKeyParts(s.sessionDate) : null;
+            const dateObj = dateParts ? new Date(`${dateParts.dateKey}T00:00:00.000Z`) : null;
+            const DOW = dateObj ? DOW_SHORT[dateObj.getUTCDay()] : "";
+            const dateStr = dateParts
+              ? `${String(dateParts.dateKey.slice(8)).padStart(2, "0")}/${String(dateParts.month + 1).padStart(2, "0")}/${dateParts.year}`
+              : "—";
             const rowNum = startItem + idx;
 
             return (
@@ -231,9 +255,12 @@ function ClassSessionsTable({ classId, classCode, className: classNameLabel, pag
             ) : (
               sessions.map((s, idx) => {
                 const att = s.attendanceStatus ? getAttendanceStatus(s.attendanceStatus) : null;
-                const dateObj = s.sessionDate ? new Date(s.sessionDate + "T00:00:00") : null;
-                const DOW = dateObj ? DOW_SHORT[dateObj.getDay()] : "";
-                const dateStr = dateObj ? format(dateObj, "dd/MM/yyyy") : "—";
+                const dateParts = s.sessionDate ? dateKeyParts(s.sessionDate) : null;
+                const dateObj = dateParts ? new Date(`${dateParts.dateKey}T00:00:00.000Z`) : null;
+                const DOW = dateObj ? DOW_SHORT[dateObj.getUTCDay()] : "";
+                const dateStr = dateParts
+                  ? `${String(dateParts.dateKey.slice(8)).padStart(2, "0")}/${String(dateParts.month + 1).padStart(2, "0")}/${dateParts.year}`
+                  : "—";
                 const rowNum = startItem + idx;
 
                 return (
@@ -448,21 +475,24 @@ function StudentListView() {
 
 // ─── Calendar view ────────────────────────────────────────────────────────────
 
-function parseDateParam(search: string): Date | null {
+function parseDateParam(search: string): string | null {
   const p = new URLSearchParams(search).get("date");
   if (!p) return null;
-  const d = new Date(p + "T00:00:00");
-  return isNaN(d.getTime()) ? null : d;
+  return dateKeyParts(p)?.dateKey ?? null;
 }
 
 function StudentCalendarView({ viewMode }: { viewMode: "calendar" | "month" }) {
   const search = useSearch();
   const { lang } = useLanguage();
-  const initDate = parseDateParam(search) ?? new Date();
-  const today = new Date();
-  const [year, setYear] = useState(initDate.getFullYear());
-  const [month, setMonth] = useState(initDate.getMonth());
-  const [selectedDate, setSelectedDate] = useState(toDateString(initDate));
+  const centerTimeZoneQuery = useCenterTimeZone();
+  const centerTimeZone = centerTimeZoneQuery.data;
+  const initialDateKey = parseDateParam(search);
+  const initialDate = initialDateKey ? dateKeyParts(initialDateKey) : null;
+  const [year, setYear] = useState(initialDate?.year ?? 1970);
+  const [month, setMonth] = useState(initialDate?.month ?? 0);
+  const [selectedDate, setSelectedDate] = useState(initialDateKey ?? "");
+  const [calendarReady, setCalendarReady] = useState(Boolean(initialDateKey));
+  const todayDateKey = centerTimeZone ? getCenterDateKey(new Date(), centerTimeZone) : "";
   const [monthSession, setMonthSession] = useState<{
     session: MyCalendarSessionLight;
     date: string;
@@ -475,14 +505,28 @@ function StudentCalendarView({ viewMode }: { viewMode: "calendar" | "month" }) {
     if (search === prevSearchRef.current) return;
     prevSearchRef.current = search;
     const dateFromUrl = parseDateParam(search);
-    if (dateFromUrl) {
-      setYear(dateFromUrl.getFullYear());
-      setMonth(dateFromUrl.getMonth());
-      setSelectedDate(toDateString(dateFromUrl));
+    const parts = dateFromUrl ? dateKeyParts(dateFromUrl) : null;
+    if (parts) {
+      setYear(parts.year);
+      setMonth(parts.month);
+      setSelectedDate(parts.dateKey);
+      setCalendarReady(true);
     }
   }, [search]);
 
-  const monthStr = `${year}-${String(month + 1).padStart(2, "0")}`;
+  useEffect(() => {
+    if (calendarReady || !centerTimeZone) return;
+    const parts = dateKeyParts(getCenterDateKey(new Date(), centerTimeZone));
+    if (!parts) return;
+    setYear(parts.year);
+    setMonth(parts.month);
+    setSelectedDate(parts.dateKey);
+    setCalendarReady(true);
+  }, [calendarReady, centerTimeZone]);
+
+  const monthStr = calendarReady
+    ? `${year}-${String(month + 1).padStart(2, "0")}`
+    : "";
   const { data, isLoading, isError } = useStudentCalendar(monthStr);
   const { data: onlineRules = [] } = useOnlineLearningRules();
 
@@ -505,9 +549,19 @@ function StudentCalendarView({ viewMode }: { viewMode: "calendar" | "month" }) {
     else setMonth((m) => m + 1);
   };
   const goToToday = () => {
-    const now = new Date();
-    setYear(now.getFullYear()); setMonth(now.getMonth()); setSelectedDate(toDateString(now));
+    const parts = todayDateKey ? dateKeyParts(todayDateKey) : null;
+    if (!parts) return;
+    setYear(parts.year);
+    setMonth(parts.month);
+    setSelectedDate(parts.dateKey);
   };
+
+  if (centerTimeZoneQuery.isError) {
+    return <div role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">Không tải được múi giờ của trung tâm.</div>;
+  }
+  if (!calendarReady) {
+    return <div role="status" className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">Đang tải múi giờ trung tâm…</div>;
+  }
 
   return (
     <>
@@ -538,6 +592,7 @@ function StudentCalendarView({ viewMode }: { viewMode: "calendar" | "month" }) {
             month={month}
             sessions={data?.sessions ?? []}
             selectedDate={selectedDate}
+            todayDateKey={todayDateKey}
             onSelectDate={setSelectedDate}
             onSessionClick={(session) => {
               setSelectedDate(session.sessionDate);
@@ -548,7 +603,7 @@ function StudentCalendarView({ viewMode }: { viewMode: "calendar" | "month" }) {
         ) : (
           <CalendarStrip
             year={year} month={month}
-            selectedDate={selectedDate} onSelectDate={setSelectedDate}
+            selectedDate={selectedDate} todayDateKey={todayDateKey} onSelectDate={setSelectedDate}
             datesWithSessions={data?.datesWithSessions ?? []}
           />
         )}

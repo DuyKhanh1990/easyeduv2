@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   format, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
   addWeeks, subWeeks, addMonths, subMonths, addDays, subDays,
-  eachDayOfInterval, isToday, parseISO,
+  eachDayOfInterval, parseISO,
 } from "date-fns";
 import { vi } from "date-fns/locale";
 import {
@@ -25,6 +25,8 @@ import {
 import { cn } from "@/lib/utils";
 import { getAuthHeaders } from "@/lib/queryClient";
 import ExcelJS from "exceljs";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
+import { getCenterDateKey } from "@shared/center-time";
 
 type ViewMode = "list-day" | "list-week" | "week" | "month" | "room" | "teacher";
 
@@ -103,10 +105,27 @@ function getScheduleTimeLabel(session: Pick<ScheduleSession, "isFreeSession" | "
   return session.isFreeSession ? "Lớp tự do" : "—";
 }
 
+function dateKeyToCalendarDate(dateKey: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date = new Date(year, month, day, 12);
+  return format(date, "yyyy-MM-dd") === dateKey ? date : null;
+}
+
+function isCenterToday(date: Date, todayDateKey: string): boolean {
+  return format(date, "yyyy-MM-dd") === todayDateKey;
+}
+
 export function Schedule() {
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<ViewMode>("week");
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const centerTimeZoneQuery = useCenterTimeZone();
+  const centerTimeZone = centerTimeZoneQuery.data;
+  const [currentDate, setCurrentDate] = useState<Date | null>(null);
+  const todayDateKey = centerTimeZone ? getCenterDateKey(new Date(), centerTimeZone) : "";
   const [search, setSearch] = useState("");
   const [filterTeachers, setFilterTeachers] = useState<string[]>([]);
   const [filterLocations, setFilterLocations] = useState<string[]>([]);
@@ -122,7 +141,14 @@ export function Schedule() {
   const [hlTeachers, setHlTeachers] = useState<string[]>([]);
   const [hlHolidays, setHlHolidays] = useState<string[]>([]);
 
+  useEffect(() => {
+    if (currentDate || !todayDateKey) return;
+    const centerToday = dateKeyToCalendarDate(todayDateKey);
+    if (centerToday) setCurrentDate(centerToday);
+  }, [currentDate, todayDateKey]);
+
   const { from, to } = useMemo(() => {
+    if (!currentDate) return { from: "", to: "" };
     if (viewMode === "month") {
       const s = startOfMonth(currentDate);
       const e = endOfMonth(currentDate);
@@ -137,16 +163,19 @@ export function Schedule() {
     return { from: format(s, "yyyy-MM-dd"), to: format(e, "yyyy-MM-dd") };
   }, [viewMode, currentDate]);
 
-  const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
-  const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
-  const dateLabel = viewMode === "month"
+  const weekStart = currentDate ? startOfWeek(currentDate, { weekStartsOn: 1 }) : null;
+  const weekEnd = currentDate ? endOfWeek(currentDate, { weekStartsOn: 1 }) : null;
+  const dateLabel = !currentDate
+    ? ""
+    : viewMode === "month"
     ? format(currentDate, "MMMM yyyy", { locale: vi })
     : viewMode === "list-day"
     ? format(currentDate, "EEEE, dd/MM/yyyy", { locale: vi })
-    : `Tuần ${format(weekStart, "dd/MM")} – ${format(weekEnd, "dd/MM/yyyy")}`;
+    : `Tuần ${format(weekStart!, "dd/MM")} – ${format(weekEnd!, "dd/MM/yyyy")}`;
 
   const { data: sessions = [], isLoading } = useQuery<ScheduleSession[]>({
     queryKey: ["/api/schedule", from, to],
+    enabled: Boolean(currentDate && from && to),
     queryFn: async () => {
       const params = new URLSearchParams({ from, to });
       const res = await fetch(`/api/schedule?${params}`, {
@@ -204,9 +233,10 @@ export function Schedule() {
   }), [sessions, filterTeachers, filterLocations, filterClasses, filterTimeFrom, filterTimeTo, search]);
 
   function navigate(dir: 1 | -1) {
-    if (viewMode === "month") setCurrentDate(d => dir === 1 ? addMonths(d, 1) : subMonths(d, 1));
-    else if (viewMode === "list-day") setCurrentDate(d => dir === 1 ? addDays(d, 1) : subDays(d, 1));
-    else setCurrentDate(d => dir === 1 ? addWeeks(d, 1) : subWeeks(d, 1));
+    if (!currentDate) return;
+    if (viewMode === "month") setCurrentDate(d => d ? (dir === 1 ? addMonths(d, 1) : subMonths(d, 1)) : d);
+    else if (viewMode === "list-day") setCurrentDate(d => d ? (dir === 1 ? addDays(d, 1) : subDays(d, 1)) : d);
+    else setCurrentDate(d => d ? (dir === 1 ? addWeeks(d, 1) : subWeeks(d, 1)) : d);
   }
 
   function openSession(session: ScheduleSession) {
@@ -217,6 +247,21 @@ export function Schedule() {
     } else {
       setSelectedSession({ sessionId: session.id, classId: session.classId });
     }
+  }
+
+  if (centerTimeZoneQuery.isError) {
+    return (
+      <DashboardLayout>
+        <div role="alert" className="p-6 text-sm text-destructive">Không tải được múi giờ của trung tâm.</div>
+      </DashboardLayout>
+    );
+  }
+  if (!centerTimeZone || !currentDate) {
+    return (
+      <DashboardLayout>
+        <div role="status" className="p-6 text-sm text-muted-foreground">Đang tải lịch theo múi giờ trung tâm…</div>
+      </DashboardLayout>
+    );
   }
 
   return (
@@ -361,15 +406,15 @@ export function Schedule() {
               Đang tải lịch học...
             </div>
           ) : viewMode === "list-day" || viewMode === "list-week" ? (
-            <ListView sessions={filtered} onSessionClick={openSession} holidays={holidays} />
+            <ListView sessions={filtered} onSessionClick={openSession} holidays={holidays} todayDateKey={todayDateKey} />
           ) : viewMode === "week" ? (
-            <WeekView sessions={filtered} currentDate={currentDate} onSessionClick={openSession} holidays={holidays} />
+            <WeekView sessions={filtered} currentDate={currentDate} onSessionClick={openSession} holidays={holidays} todayDateKey={todayDateKey} />
           ) : viewMode === "room" ? (
-            <RoomView sessions={filtered} currentDate={currentDate} onSessionClick={openSession} filterLocation={filterLocations.length === 1 ? filterLocations[0] : "all"} holidays={holidays} />
+            <RoomView sessions={filtered} currentDate={currentDate} onSessionClick={openSession} filterLocation={filterLocations.length === 1 ? filterLocations[0] : "all"} holidays={holidays} todayDateKey={todayDateKey} />
           ) : viewMode === "teacher" ? (
-            <TeacherView sessions={filtered} currentDate={currentDate} onSessionClick={openSession} holidays={holidays} />
+            <TeacherView sessions={filtered} currentDate={currentDate} onSessionClick={openSession} holidays={holidays} todayDateKey={todayDateKey} />
           ) : (
-            <MonthView sessions={filtered} currentDate={currentDate} onSessionClick={openSession} holidays={holidays} />
+            <MonthView sessions={filtered} currentDate={currentDate} onSessionClick={openSession} holidays={holidays} todayDateKey={todayDateKey} />
           )}
         </div>
       </div>
@@ -1069,10 +1114,12 @@ function ListView({
   sessions,
   onSessionClick,
   holidays = [],
+  todayDateKey,
 }: {
   sessions: ScheduleSession[];
   onSessionClick: (s: ScheduleSession) => void;
   holidays?: { startDate: string; endDate: string }[];
+  todayDateKey: string;
 }) {
   const byDay = useMemo(() => {
     const map = new Map<string, ScheduleSession[]>();
@@ -1112,7 +1159,7 @@ function ListView({
           const dayLabel = `${WEEKDAY_LABELS[d.getDay()]} – ${format(d, "dd/MM/yyyy")}`;
           return (
             <div key={date} className="rounded-xl border overflow-hidden">
-              <div className={`px-5 py-2.5 border-b ${isHolidayDate(date, holidays) ? "bg-red-100" : isToday(d) ? "bg-blue-100" : "bg-muted/60"}`}>
+              <div className={`px-5 py-2.5 border-b ${isHolidayDate(date, holidays) ? "bg-red-100" : isCenterToday(d, todayDateKey) ? "bg-blue-100" : "bg-muted/60"}`}>
                 <h3 className="font-semibold text-sm" data-testid={`day-header-${date}`}>{dayLabel}</h3>
               </div>
               <div className="overflow-x-auto">
@@ -1209,12 +1256,13 @@ function ListView({
 
 // ── Week view ──────────────────────────────────────────────────────────────
 function WeekView({
-  sessions, currentDate, onSessionClick, holidays = [],
+  sessions, currentDate, onSessionClick, holidays = [], todayDateKey,
 }: {
   sessions: ScheduleSession[];
   currentDate: Date;
   onSessionClick: (s: ScheduleSession) => void;
   holidays?: { startDate: string; endDate: string }[];
+  todayDateKey: string;
 }) {
   const days = eachDayOfInterval({
     start: startOfWeek(currentDate, { weekStartsOn: 1 }),
@@ -1239,7 +1287,7 @@ function WeekView({
         {days.map(day => {
           const dateStr = format(day, "yyyy-MM-dd");
           const count = (byDay.get(dateStr) || []).length;
-          const today = isToday(day);
+          const today = isCenterToday(day, todayDateKey);
           return (
             <div
               key={`hdr-${dateStr}`}
@@ -1263,7 +1311,7 @@ function WeekView({
           {days.map(day => {
             const dateStr = format(day, "yyyy-MM-dd");
             const daySessions = (byDay.get(dateStr) || []).sort((a, b) => a.shiftStart.localeCompare(b.shiftStart));
-            const today = isToday(day);
+            const today = isCenterToday(day, todayDateKey);
             return (
               <div key={`body-${dateStr}`} className={`border-r last:border-r-0 p-2 space-y-1.5 min-w-0 overflow-visible ${isHolidayDate(dateStr, holidays) ? "bg-red-50" : today ? "bg-blue-50/40" : ""}`}>
                 {daySessions.length === 0
@@ -1282,12 +1330,13 @@ function WeekView({
 
 // ── Month view ─────────────────────────────────────────────────────────────
 function MonthView({
-  sessions, currentDate, onSessionClick, holidays = [],
+  sessions, currentDate, onSessionClick, holidays = [], todayDateKey,
 }: {
   sessions: ScheduleSession[];
   currentDate: Date;
   onSessionClick: (s: ScheduleSession) => void;
   holidays?: { startDate: string; endDate: string }[];
+  todayDateKey: string;
 }) {
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
@@ -1321,7 +1370,7 @@ function MonthView({
           {days.map(day => {
             const dateStr = format(day, "yyyy-MM-dd");
             const daySessions = (byDay.get(dateStr) || []).sort((a, b) => a.shiftStart.localeCompare(b.shiftStart));
-            const today = isToday(day);
+            const today = isCenterToday(day, todayDateKey);
             const inMonth = inCurrentMonth(day);
             return (
               <div key={dateStr} className={`border-r border-b last:border-r-0 p-1.5 ${isHolidayDate(dateStr, holidays) ? "bg-red-50" : !inMonth ? "bg-muted/20" : today ? "bg-blue-50/40" : "bg-white"}`}>
@@ -1483,19 +1532,21 @@ function RoomView({
   onSessionClick,
   filterLocation,
   holidays = [],
+  todayDateKey,
 }: {
   sessions: ScheduleSession[];
   currentDate: Date;
   onSessionClick: (s: ScheduleSession) => void;
   filterLocation: string;
   holidays?: { startDate: string; endDate: string }[];
+  todayDateKey: string;
 }) {
   const days = eachDayOfInterval({
     start: startOfWeek(currentDate, { weekStartsOn: 1 }),
     end: endOfWeek(currentDate, { weekStartsOn: 1 }),
   });
 
-  const todayStr = format(new Date(), "yyyy-MM-dd");
+  const todayStr = todayDateKey;
   const dayStrs = days.map(d => format(d, "yyyy-MM-dd"));
   const [selectedDate, setSelectedDate] = useState<string>(() =>
     dayStrs.includes(todayStr) ? todayStr : dayStrs[0]
@@ -1505,7 +1556,7 @@ function RoomView({
   useEffect(() => {
     setSelectedDate(dayStrs.includes(todayStr) ? todayStr : dayStrs[0]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentDate]);
+  }, [currentDate, todayDateKey]);
 
   const { data: classroomsList = [] } = useQuery<{ id: string; name: string; capacity?: number | null; locationId: string }[]>({
     queryKey: ["/api/classrooms", filterLocation !== "all" ? filterLocation : undefined],
@@ -1636,7 +1687,7 @@ function RoomView({
               </div>
               {days.map(day => {
                 const dateStr = format(day, "yyyy-MM-dd");
-                const today = isToday(day);
+                const today = isCenterToday(day, todayDateKey);
                 const isHoliday = isHolidayDate(dateStr, holidays);
                 return (
                   <div
@@ -1694,7 +1745,7 @@ function RoomView({
                     {/* Day cells */}
                     {days.map(day => {
                       const dateStr = format(day, "yyyy-MM-dd");
-                      const today = isToday(day);
+                      const today = isCenterToday(day, todayDateKey);
                       const isHoliday = isHolidayDate(dateStr, holidays);
                       const cellSessions = weekSessions.filter(s => s.sessionDate === dateStr)
                         .sort((a, b) => a.shiftStart.localeCompare(b.shiftStart));
@@ -1801,7 +1852,7 @@ function RoomView({
           {days.map(day => {
             const dateStr = format(day, "yyyy-MM-dd");
             const count = sessions.filter(s => s.sessionDate === dateStr).length;
-            const today = isToday(day);
+            const today = isCenterToday(day, todayDateKey);
             const selected = dateStr === selectedDate;
             const isHoliday = isHolidayDate(dateStr, holidays);
             return (
@@ -2048,18 +2099,20 @@ function TeacherView({
   currentDate,
   onSessionClick,
   holidays = [],
+  todayDateKey,
 }: {
   sessions: ScheduleSession[];
   currentDate: Date;
   onSessionClick: (s: ScheduleSession) => void;
   holidays?: { startDate: string; endDate: string }[];
+  todayDateKey: string;
 }) {
   const days = eachDayOfInterval({
     start: startOfWeek(currentDate, { weekStartsOn: 1 }),
     end: endOfWeek(currentDate, { weekStartsOn: 1 }),
   });
 
-  const todayStr = format(new Date(), "yyyy-MM-dd");
+  const todayStr = todayDateKey;
   const dayStrs = days.map(d => format(d, "yyyy-MM-dd"));
   const [selectedDate, setSelectedDate] = useState<string>(() =>
     dayStrs.includes(todayStr) ? todayStr : dayStrs[0]
@@ -2069,7 +2122,7 @@ function TeacherView({
   useEffect(() => {
     setSelectedDate(dayStrs.includes(todayStr) ? todayStr : dayStrs[0]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentDate]);
+  }, [currentDate, todayDateKey]);
 
   const daySessions = useMemo(() =>
     sessions.filter(s => s.sessionDate === selectedDate),
@@ -2153,7 +2206,7 @@ function TeacherView({
               </div>
               {days.map(day => {
                 const dateStr = format(day, "yyyy-MM-dd");
-                const today = isToday(day);
+                const today = isCenterToday(day, todayDateKey);
                 const isHoliday = isHolidayDate(dateStr, holidays);
                 return (
                   <div
@@ -2202,7 +2255,7 @@ function TeacherView({
                     {/* Day cells */}
                     {days.map(day => {
                       const dateStr = format(day, "yyyy-MM-dd");
-                      const today = isToday(day);
+                      const today = isCenterToday(day, todayDateKey);
                       const isHoliday = isHolidayDate(dateStr, holidays);
                       const cellSessions = weekSessions.filter(s => s.sessionDate === dateStr)
                         .sort((a, b) => a.shiftStart.localeCompare(b.shiftStart));
@@ -2315,7 +2368,7 @@ function TeacherView({
           {days.map(day => {
             const dateStr = format(day, "yyyy-MM-dd");
             const count = sessions.filter(s => s.sessionDate === dateStr).length;
-            const today = isToday(day);
+            const today = isCenterToday(day, todayDateKey);
             const selected = dateStr === selectedDate;
             const isHoliday = isHolidayDate(dateStr, holidays);
             return (

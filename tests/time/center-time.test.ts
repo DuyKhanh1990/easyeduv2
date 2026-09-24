@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  centerWallTimeToInstant,
+  computeCenterOnlineWindowState,
   formatCenterInstant,
   getCenterDateKey,
   isInstantInCenterDateRange,
@@ -167,5 +169,42 @@ describe("center time and legacy Vietnam timestamps", () => {
     expect(validateCenterTimeZone("Asia/Ho_Chi_Minh")).toBe("Asia/Ho_Chi_Minh");
     expect(() => validateCenterTimeZone("Not/A_Time_Zone")).toThrow();
     expect(() => validateCenterTimeZone(" Asia/Ho_Chi_Minh ")).toThrow();
+  });
+
+  it("converts center-local schedule wall times without relying on the device zone", () => {
+    expect(centerWallTimeToInstant("2026-09-24", "10:18", "Asia/Ho_Chi_Minh").toISOString())
+      .toBe("2026-09-24T03:18:00.000Z");
+    expect(centerWallTimeToInstant("2026-03-29", "03:30", "Europe/Berlin").toISOString())
+      .toBe("2026-03-29T01:30:00.000Z");
+    expect(centerWallTimeToInstant("2026-10-25", "03:30", "Europe/Berlin").toISOString())
+      .toBe("2026-10-25T02:30:00.000Z");
+  });
+
+  it("fails closed for nonexistent and ambiguous DST wall times", () => {
+    expect(() => centerWallTimeToInstant("2026-03-29", "02:30", "Europe/Berlin"))
+      .toThrow(/không tồn tại/i);
+    expect(() => centerWallTimeToInstant("2026-10-25", "02:30", "Europe/Berlin"))
+      .toThrow(/không xác định duy nhất/i);
+    expect(() => centerWallTimeToInstant("2026-02-30", "10:00", "UTC")).toThrow();
+    expect(() => centerWallTimeToInstant("2026-02-28", "24:00", "UTC")).toThrow();
+  });
+
+  it("evaluates online windows in the center zone and disables invalid DST schedules", () => {
+    const rule = { earlyEntryMinutes: 10, lateEntryMinutes: 5, earlyEndMinutes: 10 };
+    const start = centerWallTimeToInstant("2026-03-29", "03:00", "Europe/Berlin");
+    const end = centerWallTimeToInstant("2026-03-29", "04:00", "Europe/Berlin");
+
+    expect(computeCenterOnlineWindowState(
+      "2026-03-29", "03:00", "04:00", rule, "Europe/Berlin",
+      new Date(start.getTime() - 5 * 60_000),
+    )).toEqual({ canJoin: true, canEnd: false });
+    expect(computeCenterOnlineWindowState(
+      "2026-03-29", "03:00", "04:00", rule, "Europe/Berlin",
+      new Date(end.getTime() - 5 * 60_000),
+    )).toEqual({ canJoin: false, canEnd: true });
+    expect(computeCenterOnlineWindowState(
+      "2026-03-29", "02:30", "04:00", rule, "Europe/Berlin",
+      new Date(start.getTime()),
+    )).toEqual({ canJoin: false, canEnd: false });
   });
 });

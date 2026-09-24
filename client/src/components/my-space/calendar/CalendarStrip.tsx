@@ -6,29 +6,29 @@ const WEEKDAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 
 function getDaysInMonth(year: number, month: number) {
   const days: Date[] = [];
-  const d = new Date(year, month, 1);
-  while (d.getMonth() === month) {
+  const d = new Date(Date.UTC(year, month, 1));
+  while (d.getUTCMonth() === month) {
     days.push(new Date(d));
-    d.setDate(d.getDate() + 1);
+    d.setUTCDate(d.getUTCDate() + 1);
   }
   return days;
 }
 
 function toDateString(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
 }
 
 interface CalendarStripProps {
   year: number;
   month: number; // 0-indexed
   selectedDate: string;
+  todayDateKey: string;
   onSelectDate: (dateStr: string) => void;
   datesWithSessions: string[];
 }
 
-export function CalendarStrip({ year, month, selectedDate, onSelectDate, datesWithSessions }: CalendarStripProps) {
+export function CalendarStrip({ year, month, selectedDate, todayDateKey, onSelectDate, datesWithSessions }: CalendarStripProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const today = toDateString(new Date());
   const days = getDaysInMonth(year, month);
   const datesSet = new Set(datesWithSessions);
 
@@ -63,9 +63,9 @@ export function CalendarStrip({ year, month, selectedDate, onSelectDate, datesWi
         {days.map((day) => {
           const dateStr = toDateString(day);
           const isSelected = dateStr === selectedDate;
-          const isToday = dateStr === today;
+          const isToday = dateStr === todayDateKey;
           const hasSessions = datesSet.has(dateStr);
-          const weekday = WEEKDAY_LABELS[day.getDay()];
+          const weekday = WEEKDAY_LABELS[day.getUTCDay()];
 
           return (
             <button
@@ -91,7 +91,7 @@ export function CalendarStrip({ year, month, selectedDate, onSelectDate, datesWi
                 "text-base font-bold leading-none",
                 isSelected ? "text-white" : isToday ? "text-green-600" : "text-foreground"
               )}>
-                {day.getDate()}
+                {day.getUTCDate()}
               </span>
               <span className={cn(
                 "h-1.5 w-1.5 rounded-full mt-0.5",

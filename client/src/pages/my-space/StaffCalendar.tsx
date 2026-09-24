@@ -14,42 +14,59 @@ import { useLanguage } from "@/hooks/use-language";
 import { cn } from "@/lib/utils";
 import { MyCalendarSession, OnlineRuleConfig } from "@/types/my-calendar";
 import { useStaffSessionDetail } from "@/hooks/use-staff-session-detail";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
+import { getCenterDateKey } from "@shared/center-time";
 
-function toDateString(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+function dateKeyParts(dateKey: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month ||
+    date.getUTCDate() !== day
+  ) return null;
+  return { year, month, dateKey };
 }
 
 function formatMonthLabel(year: number, month: number, lang: string) {
   if (lang === "en") {
-    return new Date(year, month).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    return new Date(Date.UTC(year, month, 1)).toLocaleDateString("en-US", {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    });
   }
   return `Tháng ${String(month + 1).padStart(2, "0")}/${year}`;
 }
 
 function formatSelectedDateLabel(dateStr: string, lang: string) {
-  const date = new Date(dateStr + "T00:00:00");
-  const d = String(date.getDate()).padStart(2, "0");
-  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const date = new Date(`${dateStr}T00:00:00.000Z`);
+  const d = String(date.getUTCDate()).padStart(2, "0");
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
   if (lang === "en") {
     const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    return `${weekdays[date.getDay()]}, ${m}/${d}`;
+    return `${weekdays[date.getUTCDay()]}, ${m}/${d}`;
   }
   const weekdays = ["Chủ Nhật", "Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy"];
-  return `${weekdays[date.getDay()]}, ${d}/${m}`;
+  return `${weekdays[date.getUTCDay()]}, ${d}/${m}`;
 }
 
 export function StaffCalendar() {
   const search = useSearch();
   const { t, lang } = useLanguage();
+  const centerTimeZoneQuery = useCenterTimeZone();
+  const centerTimeZone = centerTimeZoneQuery.data;
   const urlDateParam = new URLSearchParams(search).get("date");
-  const initDate = (() => {
-    if (urlDateParam) { const d = new Date(urlDateParam + "T00:00:00"); if (!isNaN(d.getTime())) return d; }
-    return new Date();
-  })();
-  const today = new Date();
-  const [year, setYear] = useState(initDate.getFullYear());
-  const [month, setMonth] = useState(initDate.getMonth());
-  const [selectedDate, setSelectedDate] = useState(toDateString(initDate));
+  const initialDate = urlDateParam ? dateKeyParts(urlDateParam) : null;
+  const [year, setYear] = useState(initialDate?.year ?? 1970);
+  const [month, setMonth] = useState(initialDate?.month ?? 0);
+  const [selectedDate, setSelectedDate] = useState(initialDate?.dateKey ?? "");
+  const [calendarReady, setCalendarReady] = useState(Boolean(initialDate));
+  const todayDateKey = centerTimeZone ? getCenterDateKey(new Date(), centerTimeZone) : "";
   const [view, setView] = useState<"calendar" | "month">("calendar");
   const [detailSession, setDetailSession] = useState<MyCalendarSession | null>(null);
   const [monthDetailSessionId, setMonthDetailSessionId] = useState<string | null>(null);
@@ -64,12 +81,23 @@ export function StaffCalendar() {
     prevSearchRef.current = search;
     const p = new URLSearchParams(search).get("date");
     if (!p) return;
-    const d = new Date(p + "T00:00:00");
-    if (isNaN(d.getTime())) return;
-    setYear(d.getFullYear());
-    setMonth(d.getMonth());
-    setSelectedDate(toDateString(d));
+    const parts = dateKeyParts(p);
+    if (!parts) return;
+    setYear(parts.year);
+    setMonth(parts.month);
+    setSelectedDate(parts.dateKey);
+    setCalendarReady(true);
   }, [search]);
+
+  useEffect(() => {
+    if (calendarReady || !centerTimeZone) return;
+    const parts = dateKeyParts(getCenterDateKey(new Date(), centerTimeZone));
+    if (!parts) return;
+    setYear(parts.year);
+    setMonth(parts.month);
+    setSelectedDate(parts.dateKey);
+    setCalendarReady(true);
+  }, [calendarReady, centerTimeZone]);
 
   const queryClient = useQueryClient();
   const saveTestContentMutation = useMutation({
@@ -85,7 +113,9 @@ export function StaffCalendar() {
     },
   });
 
-  const monthStr = `${year}-${String(month + 1).padStart(2, "0")}`;
+  const monthStr = calendarReady
+    ? `${year}-${String(month + 1).padStart(2, "0")}`
+    : "";
   const { data, isLoading, isError } = useStaffCalendar(monthStr);
   const { data: monthDetailSession } = useStaffSessionDetail(monthDetailSessionId);
   const { data: onlineRules = [] } = useOnlineLearningRules();
@@ -117,14 +147,22 @@ export function StaffCalendar() {
   };
 
   const goToToday = () => {
-    const now = new Date();
-    setYear(now.getFullYear());
-    setMonth(now.getMonth());
-    setSelectedDate(toDateString(now));
+    const parts = todayDateKey ? dateKeyParts(todayDateKey) : null;
+    if (!parts) return;
+    setYear(parts.year);
+    setMonth(parts.month);
+    setSelectedDate(parts.dateKey);
   };
 
   const sessionCount = sessionsForDate.length;
   const sessionCountLabel = sessionCount > 0 ? `${sessionCount} ${t("calendar.sessionCount")}` : t("calendar.noSchedule");
+
+  if (centerTimeZoneQuery.isError) {
+    return <div role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">Không tải được múi giờ của trung tâm.</div>;
+  }
+  if (!calendarReady) {
+    return <div role="status" className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">Đang tải múi giờ trung tâm…</div>;
+  }
 
   return (
     <>
@@ -200,6 +238,7 @@ export function StaffCalendar() {
             month={month}
             sessions={data?.sessions ?? []}
             selectedDate={selectedDate}
+            todayDateKey={todayDateKey}
             onSelectDate={setSelectedDate}
             onSessionClick={(session) => {
               if (!session.isFreeSession) setMonthDetailSessionId(session.classSessionId);
@@ -211,6 +250,7 @@ export function StaffCalendar() {
             year={year}
             month={month}
             selectedDate={selectedDate}
+            todayDateKey={todayDateKey}
             onSelectDate={setSelectedDate}
             datesWithSessions={data?.datesWithSessions ?? []}
           />
