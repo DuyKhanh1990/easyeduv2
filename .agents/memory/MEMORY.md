@@ -75,3 +75,4 @@
 - [Invoice installment adjustments](invoice-schedule-adjustments.md) — đợt chưa thanh toán tính từ tiền cơ sở; server khóa đợt đã thu và đồng bộ tổng hóa đơn cha.
 - [EasyEdu time standard](system-time-standard.md) — UTC instants, IANA timezone per center, explicit local dates/schedules, and field-by-field legacy migration.
 - [Live attendance test safety](attendance-live-test-safety.md) — verify invoice allocation and wallet effects on exact sessions before requesting attendance tests on the live DB.
+- [Timestamp inventory verification](timestamp-inventory-verification.md) — use live catalog for counts and unwrap chained Drizzle calls when reconciling schema; lexical searches undercount.
