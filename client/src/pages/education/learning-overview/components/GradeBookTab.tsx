@@ -19,6 +19,8 @@ import { GradeBookRow, GradeBookFilters } from "../types";
 import { AddGradeBookFromOverviewDialog } from "./AddGradeBookFromOverviewDialog";
 import { EditGradeBookFromOverviewDialog } from "./EditGradeBookFromOverviewDialog";
 import { GradeBookViewDialog } from "@/components/education/GradeBookViewDialog";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
+import { formatCenterTimestamp } from "@/lib/center-time-format";
 
 // ── Sub-components ─────────────────────────────────────────
 
@@ -130,13 +132,14 @@ export function GradeBookTab({
   onDelete,
   isDeleting,
 }: GradeBookTabProps) {
+  const { data: timeZone } = useCenterTimeZone();
   const [editTarget, setEditTarget] = useState<GradeBookRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GradeBookRow | null>(null);
   const [viewTarget, setViewTarget] = useState<GradeBookRow | null>(null);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
 
   const fmt = (d: string | null) =>
-    d ? format(new Date(d), "dd/MM/yyyy HH:mm") : "—";
+    formatCenterTimestamp(d, timeZone, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
   return (
     <>

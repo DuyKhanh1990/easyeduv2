@@ -37,6 +37,7 @@ import {
   getSessionsByTeacherSummary,
 } from "../storage/class.storage";
 import { storage } from "../storage";
+import { loadCenterTimeZone } from "../lib/center-date-range";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -92,6 +93,7 @@ export function registerMobileDashboardRoutes(app: Express): void {
     try {
       const months = 1;
       const monthlyMonths = 6;
+       const timeZone = await loadCenterTimeZone();
 
       const [
         customerSummary,
@@ -104,13 +106,13 @@ export function registerMobileDashboardRoutes(app: Express): void {
         monthlyCounts,
       ] = await Promise.all([
         getCustomerSummary({ isSuperAdmin, allowedLocationIds, locationId }),
-        getNewCustomersSummary({ isSuperAdmin, allowedLocationIds, locationId }),
+         getNewCustomersSummary({ isSuperAdmin, allowedLocationIds, locationId, timeZone }),
         getStudentLearningStatusSummary({ isSuperAdmin, allowedLocationIds, locationId, dateFrom, dateTo }),
-        getStudentsByRelationship({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo }),
-        getStudentsBySource({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo }),
-        getStudentsByLocation({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo }),
-        getStudentsByStaff({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo }),
-        getMonthlyStudentCounts({ isSuperAdmin, allowedLocationIds, locationId, months: monthlyMonths }),
+         getStudentsByRelationship({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo, timeZone }),
+         getStudentsBySource({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo, timeZone }),
+         getStudentsByLocation({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo, timeZone }),
+         getStudentsByStaff({ isSuperAdmin, allowedLocationIds, locationId, months, dateFrom, dateTo, timeZone }),
+         getMonthlyStudentCounts({ isSuperAdmin, allowedLocationIds, locationId, months: monthlyMonths, timeZone }),
       ]);
 
       // Tách accountStatus ra riêng để mobile dễ dùng cho gauge chart
@@ -162,8 +164,8 @@ export function registerMobileDashboardRoutes(app: Express): void {
   app.get("/api/mobile/dashboard/training", async (req, res) => {
     if (!requireStaff(req, res)) return;
     const { isSuperAdmin, allowedLocationIds, locationId, dateFrom, dateTo } = parseCommonParams(req);
-
     try {
+       const timeZone = await loadCenterTimeZone();
       const [
         formatSummary,
         statusSummary,
@@ -175,10 +177,10 @@ export function registerMobileDashboardRoutes(app: Express): void {
       ] = await Promise.all([
         getClassFormatSummary({ isSuperAdmin, allowedLocationIds, locationId }),
         getClassStatusSummary({ isSuperAdmin, allowedLocationIds, locationId }),
-        getNewClassesSummary({ isSuperAdmin, allowedLocationIds, locationId }),
-        getClassesByLocationSummary({ isSuperAdmin, allowedLocationIds, locationId, dateFrom, dateTo }),
-        getMonthlyAttendanceRate({ isSuperAdmin, allowedLocationIds, locationId, months: 6 }),
-        getClassesByTeacherSummary({ isSuperAdmin, allowedLocationIds, locationId, dateFrom, dateTo }),
+        getNewClassesSummary({ isSuperAdmin, allowedLocationIds, locationId, timeZone }),
+         getClassesByLocationSummary({ isSuperAdmin, allowedLocationIds, locationId, dateFrom, dateTo, timeZone }),
+        getMonthlyAttendanceRate({ isSuperAdmin, allowedLocationIds, locationId, months: 6, timeZone }),
+         getClassesByTeacherSummary({ isSuperAdmin, allowedLocationIds, locationId, dateFrom, dateTo, timeZone }),
         getSessionsByTeacherSummary({ isSuperAdmin, allowedLocationIds, locationId, dateFrom, dateTo }),
       ]);
 

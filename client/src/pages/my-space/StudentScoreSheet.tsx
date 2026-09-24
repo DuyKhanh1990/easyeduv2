@@ -6,6 +6,9 @@ import { BarChart3, BookOpen, Eye, MessageSquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageGuideButton } from "@/components/guides/PageGuideDialog";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
+import { formatCenterTimestamp } from "@/lib/center-time-format";
+import { getCenterDateKey } from "@shared/center-time";
 import {
   Dialog,
   DialogContent,
@@ -55,6 +58,7 @@ const formatDateLabel = (d: string) => {
 };
 
 export function StudentScoreSheet() {
+  const { data: timeZone } = useCenterTimeZone();
   const [selected, setSelected] = useState<GradeBookRow | null>(null);
 
   const { data, isLoading } = useQuery<GradeBookRow[]>({
@@ -72,7 +76,7 @@ export function StudentScoreSheet() {
   const grouped = gradeBooks.reduce<Record<string, GradeBookRow[]>>((acc, book) => {
     const dateKey = book.sessionDate
       ? book.sessionDate.substring(0, 10)
-      : book.createdAt.substring(0, 10);
+      : timeZone ? getCenterDateKey(new Date(book.createdAt), timeZone) : book.createdAt.substring(0, 10);
     if (!acc[dateKey]) acc[dateKey] = [];
     acc[dateKey].push(book);
     return acc;
@@ -203,7 +207,7 @@ export function StudentScoreSheet() {
                           {/* Col 4: Creator + date */}
                           <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
                             <p className="text-[11px] text-muted-foreground whitespace-nowrap truncate">
-                              Tạo: {book.createdByName ?? "—"} · {formatDate(book.createdAt)}
+                              Tạo: {book.createdByName ?? "—"} · {formatCenterTimestamp(book.createdAt, timeZone, { day: "2-digit", month: "2-digit", year: "numeric" })}
                             </p>
                             <p className="text-[11px] text-muted-foreground/70 whitespace-nowrap truncate">
                               Cập nhật: {formatDate(book.updatedAt)}

@@ -18,6 +18,8 @@ import {
   parseStoredVietnamTimestamp,
   storedVietnamTimestampSortValue,
 } from "@/lib/vietnam-time";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
+import { formatCenterTimestamp } from "@/lib/center-time-format";
 
 /* ── Avatar helper ── */
 const AVATAR_GRADIENTS = [
@@ -342,6 +344,7 @@ export function CustomersTable({
   onViewClass, onChangePipeline, onChangeAccountStatus, onZaloChat, onFacebookChat, fbLinkedStudentIds,
   canEdit = true, canDelete = true,
 }: CustomersTableProps) {
+  const { data: timeZone } = useCenterTimeZone();
   const [pipelineDialog, setPipelineDialog] = useState<PipelineDialog | null>(null);
   const [accountStatusOpen, setAccountStatusOpen] = useState<string | null>(null);
   const [addTaskStudent, setAddTaskStudent] = useState<StudentResponse | null>(null);
@@ -833,7 +836,7 @@ export function CustomersTable({
 
       case "createdAt":
         return student.createdAt
-          ? <span className="text-xs text-slate-500 whitespace-nowrap">{formatStoredVietnamTimestamp(student.createdAt, { day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" })}</span>
+          ? <span className="text-xs text-slate-500 whitespace-nowrap">{formatCenterTimestamp(student.createdAt, timeZone, { day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" })}</span>
           : <span className="text-slate-300">—</span>;
 
       case "creator":
@@ -866,7 +869,7 @@ export function CustomersTable({
       case "discussion": {
         const lc = (student as any).lastComment as { content: string; createdAt: string; authorName: string } | null | undefined;
         if (!lc) return <span className="text-slate-300">—</span>;
-        const dateStr = lc.createdAt ? formatStoredVietnamTimestamp(lc.createdAt, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).replace(", ", " ") : "";
+        const dateStr = lc.createdAt ? formatCenterTimestamp(lc.createdAt, timeZone, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).replace(", ", " ") : "";
         return (
           <TooltipProvider>
             <Tooltip>

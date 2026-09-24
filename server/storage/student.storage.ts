@@ -11,6 +11,7 @@ import {
 } from "./base";
 import { hashPassword } from "../auth";
 import { normalizeSearchText, normalizedSearchSql } from "../lib/search-text";
+import { centerDateRangeConditions } from "../lib/center-date-range";
 import { codeStem, nextCodeForStem } from "../lib/role-code";
 import type {
   StudentResponse, Staff as StaffType,
@@ -50,6 +51,7 @@ export async function getStudents(params: {
   allowedLocationIds: string[];
   isSuperAdmin: boolean;
   locationId?: string;
+  timeZone: string;
   offset?: number;
   limit?: number;
   searchTerm?: string;
@@ -84,7 +86,7 @@ export async function getStudents(params: {
     sources, rejectReasons, salesIds, managerIds, teacherIds, classIds, schoolIds, birthYear,
     startDate, endDate, updatedFrom, updatedTo,
     accountStatuses, learningStatuses, birthdayFrom, birthdayTo, classTabId, classTab,
-    viewScope, viewerStaffId
+    viewScope, viewerStaffId, timeZone
   } = params;
 
   let whereClause = sql`1=1`;
@@ -177,14 +179,10 @@ export async function getStudents(params: {
     )`;
   }
   if (startDate) {
-    const boundary = getDateBoundary(startDate);
-    if (!boundary) throw new Error("startDate must be a valid YYYY-MM-DD date");
-    whereClause = sql`${whereClause} AND ${students.createdAt} >= ${boundary}::timestamp`;
+    whereClause = sql`${whereClause} AND ${centerDateRangeConditions(students.createdAt, startDate, undefined, timeZone)[0]}`;
   }
   if (endDate) {
-    const boundary = getDateBoundary(endDate, 1);
-    if (!boundary) throw new Error("endDate must be a valid YYYY-MM-DD date");
-    whereClause = sql`${whereClause} AND ${students.createdAt} < ${boundary}::timestamp`;
+    whereClause = sql`${whereClause} AND ${centerDateRangeConditions(students.createdAt, undefined, endDate, timeZone)[0]}`;
   }
   if (updatedFrom) {
     const boundary = getDateBoundary(updatedFrom);
@@ -2236,6 +2234,7 @@ export async function getNewCustomersSummary(params: {
   isSuperAdmin: boolean;
   allowedLocationIds: string[];
   locationId?: string;
+  timeZone: string;
 }): Promise<{
   today: number;
   thisMonth: number;
@@ -2243,10 +2242,13 @@ export async function getNewCustomersSummary(params: {
   const locationWhere = buildLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
   const queryStr = `
     SELECT
-      COUNT(*) FILTER (WHERE DATE(s.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh') = CURRENT_DATE) AS today,
       COUNT(*) FILTER (
-        WHERE DATE_TRUNC('month', s.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')
-            = DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')
+        WHERE DATE(s.created_at AT TIME ZONE '${params.timeZone}')
+            = DATE(NOW() AT TIME ZONE '${params.timeZone}')
+      ) AS today,
+      COUNT(*) FILTER (
+        WHERE DATE_TRUNC('month', s.created_at AT TIME ZONE '${params.timeZone}')
+            = DATE_TRUNC('month', NOW() AT TIME ZONE '${params.timeZone}')
       ) AS this_month
     FROM students s
     WHERE ${locationWhere}
@@ -2507,6 +2509,7 @@ export async function getStudentsBySource(params: {
   isSuperAdmin: boolean;
   allowedLocationIds: string[];
   locationId?: string;
+  timeZone: string;
   months?: number;
   dateFrom?: string;
   dateTo?: string;
@@ -2517,9 +2520,9 @@ export async function getStudentsBySource(params: {
   if (params.dateFrom && params.dateTo) {
     const from = params.dateFrom.replace(/[^0-9\-]/g, "");
     const to = params.dateTo.replace(/[^0-9\-]/g, "");
-    timeWhere = `AND s.created_at >= '${from}'::date AND s.created_at < ('${to}'::date + INTERVAL '1 day')`;
+    timeWhere = `AND s.created_at >= ('${from}'::date::timestamp AT TIME ZONE '${params.timeZone}') AND s.created_at < (('${to}'::date + INTERVAL '1 day')::timestamp AT TIME ZONE '${params.timeZone}')`;
   } else if (params.months && params.months > 0) {
-    timeWhere = `AND s.created_at >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') - INTERVAL '${params.months - 1} months'`;
+    timeWhere = `AND s.created_at >= (DATE_TRUNC('month', NOW() AT TIME ZONE '${params.timeZone}') - INTERVAL '${params.months - 1} months') AT TIME ZONE '${params.timeZone}'`;
   }
 
   const queryStr = `
@@ -2611,6 +2614,7 @@ export async function getStudentsByRelationship(params: {
   isSuperAdmin: boolean;
   allowedLocationIds: string[];
   locationId?: string;
+  timeZone: string;
   months?: number;
   dateFrom?: string;
   dateTo?: string;
@@ -2621,9 +2625,9 @@ export async function getStudentsByRelationship(params: {
   if (params.dateFrom && params.dateTo) {
     const from = params.dateFrom.replace(/[^0-9\-]/g, "");
     const to = params.dateTo.replace(/[^0-9\-]/g, "");
-    timeWhere = `AND s.created_at >= '${from}'::date AND s.created_at < ('${to}'::date + INTERVAL '1 day')`;
+    timeWhere = `AND s.created_at >= ('${from}'::date::timestamp AT TIME ZONE '${params.timeZone}') AND s.created_at < (('${to}'::date + INTERVAL '1 day')::timestamp AT TIME ZONE '${params.timeZone}')`;
   } else if (params.months && params.months > 0) {
-    timeWhere = `AND s.created_at >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') - INTERVAL '${params.months - 1} months'`;
+    timeWhere = `AND s.created_at >= (DATE_TRUNC('month', NOW() AT TIME ZONE '${params.timeZone}') - INTERVAL '${params.months - 1} months') AT TIME ZONE '${params.timeZone}'`;
   }
 
   const queryStr = `
@@ -2654,6 +2658,7 @@ export async function getStudentsByLocation(params: {
   isSuperAdmin: boolean;
   allowedLocationIds: string[];
   locationId?: string;
+  timeZone: string;
   months?: number;
   dateFrom?: string;
   dateTo?: string;
@@ -2664,9 +2669,9 @@ export async function getStudentsByLocation(params: {
   if (params.dateFrom && params.dateTo) {
     const from = params.dateFrom.replace(/[^0-9\-]/g, "");
     const to = params.dateTo.replace(/[^0-9\-]/g, "");
-    timeWhere = `AND s.created_at >= '${from}'::date AND s.created_at < ('${to}'::date + INTERVAL '1 day')`;
+    timeWhere = `AND s.created_at >= ('${from}'::date::timestamp AT TIME ZONE '${params.timeZone}') AND s.created_at < (('${to}'::date + INTERVAL '1 day')::timestamp AT TIME ZONE '${params.timeZone}')`;
   } else if (params.months && params.months > 0) {
-    timeWhere = `AND s.created_at >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') - INTERVAL '${params.months - 1} months'`;
+    timeWhere = `AND s.created_at >= (DATE_TRUNC('month', NOW() AT TIME ZONE '${params.timeZone}') - INTERVAL '${params.months - 1} months') AT TIME ZONE '${params.timeZone}'`;
   }
 
   const queryStr = `
@@ -2700,6 +2705,7 @@ export async function getStudentsByStaff(params: {
   isSuperAdmin: boolean;
   allowedLocationIds: string[];
   locationId?: string;
+  timeZone: string;
   months?: number;
   dateFrom?: string;
   dateTo?: string;
@@ -2710,9 +2716,9 @@ export async function getStudentsByStaff(params: {
   if (params.dateFrom && params.dateTo) {
     const from = params.dateFrom.replace(/[^0-9\-]/g, "");
     const to = params.dateTo.replace(/[^0-9\-]/g, "");
-    timeWhere = `AND s.created_at >= '${from}'::date AND s.created_at < ('${to}'::date + INTERVAL '1 day')`;
+    timeWhere = `AND s.created_at >= ('${from}'::date::timestamp AT TIME ZONE '${params.timeZone}') AND s.created_at < (('${to}'::date + INTERVAL '1 day')::timestamp AT TIME ZONE '${params.timeZone}')`;
   } else if (params.months && params.months > 0) {
-    timeWhere = `AND s.created_at >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') - INTERVAL '${params.months - 1} months'`;
+    timeWhere = `AND s.created_at >= (DATE_TRUNC('month', NOW() AT TIME ZONE '${params.timeZone}') - INTERVAL '${params.months - 1} months') AT TIME ZONE '${params.timeZone}'`;
   }
 
   const queryStr = `
@@ -2818,6 +2824,7 @@ export async function getMonthlyStudentCounts(params: {
   isSuperAdmin: boolean;
   allowedLocationIds: string[];
   locationId?: string;
+  timeZone: string;
   months?: number;
 }): Promise<{ monthKey: string; label: string; count: number; growthPct: number }[]> {
   const n = Math.max(1, Math.min(params.months ?? 6, 36));
@@ -2827,18 +2834,18 @@ export async function getMonthlyStudentCounts(params: {
   const queryStr = `
     WITH months AS (
       SELECT generate_series(
-        DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') - INTERVAL '${n} months',
-        DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh'),
+        DATE_TRUNC('month', NOW() AT TIME ZONE '${params.timeZone}') - INTERVAL '${n} months',
+        DATE_TRUNC('month', NOW() AT TIME ZONE '${params.timeZone}'),
         INTERVAL '1 month'
       ) AS month_start
     ),
     counts AS (
       SELECT
-        DATE_TRUNC('month', s.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh') AS month_start,
+        DATE_TRUNC('month', s.created_at AT TIME ZONE '${params.timeZone}') AS month_start,
         COUNT(*) AS cnt
       FROM students s
       WHERE ${locationWhere}
-        AND s.created_at >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') - INTERVAL '${n} months'
+        AND s.created_at >= (DATE_TRUNC('month', NOW() AT TIME ZONE '${params.timeZone}') - INTERVAL '${n} months') AT TIME ZONE '${params.timeZone}'
       GROUP BY 1
     )
     SELECT m.month_start, COALESCE(c.cnt, 0)::int AS cnt

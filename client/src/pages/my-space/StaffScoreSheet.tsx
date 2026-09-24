@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/button";
 import { GradeBookEditDialog } from "@/components/education/GradeBookEditDialog";
 import { GradeBookCreateDialog } from "@/components/education/GradeBookCreateDialog";
 import { PageGuideButton } from "@/components/guides/PageGuideDialog";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
+import { formatCenterTimestamp } from "@/lib/center-time-format";
+import { getCenterDateKey } from "@shared/center-time";
 
 type StaffGradeBookRow = {
   id: string;
@@ -41,6 +44,7 @@ const formatDateLabel = (d: string) => {
 };
 
 export function StaffScoreSheet() {
+  const { data: timeZone } = useCenterTimeZone();
   const [editingBook, setEditingBook] = useState<StaffGradeBookRow | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -59,7 +63,7 @@ export function StaffScoreSheet() {
   const grouped = gradeBooks.reduce<Record<string, StaffGradeBookRow[]>>((acc, book) => {
     const dateKey = book.sessionDate
       ? book.sessionDate.substring(0, 10)
-      : book.createdAt.substring(0, 10);
+      : timeZone ? getCenterDateKey(new Date(book.createdAt), timeZone) : book.createdAt.substring(0, 10);
     if (!acc[dateKey]) acc[dateKey] = [];
     acc[dateKey].push(book);
     return acc;
@@ -200,7 +204,7 @@ export function StaffScoreSheet() {
                         {/* Col 5: Creator / updater */}
                         <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
                           <p className="text-[11px] text-muted-foreground whitespace-nowrap truncate">
-                            Tạo: {book.createdByName ?? "—"} · {formatDate(book.createdAt)}
+                            Tạo: {book.createdByName ?? "—"} · {formatCenterTimestamp(book.createdAt, timeZone, { day: "2-digit", month: "2-digit", year: "numeric" })}
                           </p>
                           <p className="text-[11px] text-muted-foreground/70 whitespace-nowrap truncate">
                             Cập nhật: {book.updatedByName ?? "—"} · {formatDate(book.updatedAt)}

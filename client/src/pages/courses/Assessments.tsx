@@ -79,6 +79,8 @@ import { useToast } from "@/hooks/use-toast";
 import { ExamCommentDialog } from "@/components/my-space/assignments/ExamCommentDialog";
 import { AssessmentHistoryTab } from "./AssessmentHistoryTab";
 import { formatStoredVietnamTimestamp, getStoredVietnamDateKey } from "@/lib/vietnam-time";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
+import { formatCenterTimestamp } from "@/lib/center-time-format";
 
 type ExamWithUsers = Exam & { createdByName: string | null; updatedByName: string | null };
 
@@ -152,6 +154,7 @@ const TYPE_COLOR_MAP: Record<string, string> = {
 };
 
 export default function Assessments() {
+  const { data: timeZone } = useCenterTimeZone();
   const { isSubTabVisible } = useSidebarVisibility();
   const { data: myPerms } = useMyPermissions();
   const isSuperAdmin = myPerms?.isSuperAdmin ?? false;
@@ -970,7 +973,7 @@ export default function Assessments() {
                             <div className="flex items-center gap-1 whitespace-nowrap">
                               <span className="text-muted-foreground shrink-0">Người tạo:</span>
                               <span className="font-medium">{exam.createdByName || "—"}</span>
-                              <span className="text-muted-foreground">{formatStoredVietnamTimestamp(exam.createdAt, { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
+                              <span className="text-muted-foreground">{formatCenterTimestamp(exam.createdAt, timeZone, { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
                             </div>
                             <div className="flex items-center gap-1 whitespace-nowrap">
                               <span className="text-muted-foreground shrink-0">Cập nhật:</span>

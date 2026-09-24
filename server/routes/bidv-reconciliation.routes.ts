@@ -7,6 +7,7 @@ import {
   invoices,
   locations,
 } from "@shared/schema";
+import { centerDateRangeConditions, loadCenterTimeZone } from "../lib/center-date-range";
 
 function getDateBoundary(dateKey: string, dayOffset = 0): string | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
@@ -65,17 +66,8 @@ export function registerBidvReconciliationRoutes(app: Express) {
       if (locationId) {
         conditions.push(eq(resolvedLocationId, locationId));
       }
-      const fromBoundary = dateFrom ? getDateBoundary(dateFrom) : null;
-      const toBoundary = dateTo ? getDateBoundary(dateTo, 1) : null;
-      if ((dateFrom && !fromBoundary) || (dateTo && !toBoundary)) {
-        return res.status(400).json({ message: "Date filters must use a valid YYYY-MM-DD date" });
-      }
-      if (fromBoundary) {
-        conditions.push(sql`${bidvTransactions.createdAt} >= ${fromBoundary}::timestamp`);
-      }
-      if (toBoundary) {
-        conditions.push(sql`${bidvTransactions.createdAt} < ${toBoundary}::timestamp`);
-      }
+      const timeZone = await loadCenterTimeZone();
+      conditions.push(...centerDateRangeConditions(bidvTransactions.createdAt, dateFrom || undefined, dateTo || undefined, timeZone));
       if (status) {
         conditions.push(eq(bidvTransactions.status, status));
       }

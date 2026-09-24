@@ -20,6 +20,10 @@ import { useLocations } from "@/hooks/use-locations";
 import { HistoryDialog } from "@/components/common/HistoryDialog";
 import { StoreReceiptNotes } from "./StoreReceiptNotes";
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
+import { formatCenterTimestamp } from "@/lib/center-time-format";
+import { getCenterDateKey } from "@shared/center-time";
+import { format } from "date-fns";
 
 type ReceiptRow = {
   id: string;
@@ -49,13 +53,8 @@ function fmtVND(val: string | number | null | undefined) {
   return isNaN(n) ? "0 đ" : n.toLocaleString("vi-VN") + " đ";
 }
 
-function fmtDate(dateStr: string) {
-  if (!dateStr) return "—";
-  const d = new Date(dateStr);
-  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
-
 export function StoreReceiptTab() {
+  const { data: timeZone } = useCenterTimeZone();
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -148,15 +147,15 @@ export function StoreReceiptTab() {
       );
     }
 
-    if (dateRange.from) {
-      const from = new Date(dateRange.from);
-      from.setHours(0, 0, 0, 0);
-      result = result.filter(r => new Date(r.created_at) >= from);
-    }
-    if (dateRange.to) {
-      const to = new Date(dateRange.to);
-      to.setHours(23, 59, 59, 999);
-      result = result.filter(r => new Date(r.created_at) <= to);
+    const fromKey = dateRange.from ? format(dateRange.from, "yyyy-MM-dd") : undefined;
+    const toKey = dateRange.to ? format(dateRange.to, "yyyy-MM-dd") : undefined;
+    if ((fromKey || toKey) && timeZone) {
+      result = result.filter(r => {
+        const createdAt = new Date(r.created_at);
+        if (Number.isNaN(createdAt.getTime())) return false;
+        const createdDateKey = getCenterDateKey(createdAt, timeZone);
+        return (!fromKey || createdDateKey >= fromKey) && (!toKey || createdDateKey <= toKey);
+      });
     }
 
     if (filterLocation !== "all") result = result.filter(r => r.location_id === filterLocation);
@@ -175,7 +174,7 @@ export function StoreReceiptTab() {
     }
 
     return result;
-  }, [receipts, search, dateRange, filterLocation, filterWarehouse, filterSupplier, filterStatus, filterProductCodes, filterProductNames]);
+  }, [receipts, search, dateRange, timeZone, filterLocation, filterWarehouse, filterSupplier, filterStatus, filterProductCodes, filterProductNames]);
 
   useEffect(() => { setPage(1); }, [search, dateRange, filterLocation, filterWarehouse, filterSupplier, filterStatus, filterProductCodes, filterProductNames]);
 
@@ -507,7 +506,7 @@ export function StoreReceiptTab() {
               variant="outline"
               size="sm"
               className="flex items-center gap-1.5 h-9 text-xs"
-              onClick={() => exportNhapKho(filtered, toast)}
+              onClick={() => exportNhapKho(filtered, toast, timeZone)}
             >
               <FileDown className="w-3.5 h-3.5" /> Tải xuống
             </Button>
@@ -565,7 +564,7 @@ export function StoreReceiptTab() {
               </tr>
             ) : paginatedReceipts.map(r => (
               <tr key={r.id} className="border-t border-border hover:bg-muted/30 transition-colors">
-                <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">{fmtDate(r.created_at)}</td>
+                <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">{formatCenterTimestamp(r.created_at, timeZone, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}</td>
                 <td className="px-4 py-2.5 whitespace-nowrap">{r.location_name ?? "—"}</td>
                 <td className="px-4 py-2.5 whitespace-nowrap">
                   <span className="font-mono font-medium text-primary">{r.code}</span>

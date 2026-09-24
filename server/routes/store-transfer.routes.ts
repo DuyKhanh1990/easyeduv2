@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { invoices, invoiceItems } from "@shared/schema";
 import { getNextLocationCode } from "../storage/finance.storage";
 import { z } from "zod";
+import { centerDateRangeConditions, loadCenterTimeZone } from "../lib/center-date-range";
 
 function formatInvoiceDate(value: string | Date | null | undefined): string {
   if (!value) return "";
@@ -475,8 +476,10 @@ export async function registerStoreTransferRoutes(app: Express) {
         conds.push(sql`(t.from_location_id = ANY(ARRAY[${sql.raw(allowedLocationIds.map(id => `'${id}'`).join(','))}]::uuid[]) OR t.to_location_id = ANY(ARRAY[${sql.raw(allowedLocationIds.map(id => `'${id}'`).join(','))}]::uuid[]))`);
       }
       if (search) conds.push(sql`(t.code ILIKE ${'%' + search + '%'} OR fw.name ILIKE ${'%' + search + '%'} OR tw.name ILIKE ${'%' + search + '%'})`);
-      if (dateFrom) conds.push(sql`t.created_at::date >= ${dateFrom}::date`);
-      if (dateTo) conds.push(sql`t.created_at::date <= ${dateTo}::date`);
+       if (dateFrom || dateTo) {
+         const timeZone = await loadCenterTimeZone();
+         conds.push(...centerDateRangeConditions(sql`t.created_at`, dateFrom || undefined, dateTo || undefined, timeZone));
+       }
       if (fromWarehouseId) conds.push(sql`t.from_warehouse_id = ${fromWarehouseId}::uuid`);
       if (toWarehouseId) conds.push(sql`t.to_warehouse_id = ${toWarehouseId}::uuid`);
       if (status) conds.push(sql`t.status = ${status}`);

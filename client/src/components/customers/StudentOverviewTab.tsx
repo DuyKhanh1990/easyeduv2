@@ -16,6 +16,9 @@ import {
   getVietnamTodayKey,
   storedVietnamTimestampSortValue,
 } from "@/lib/vietnam-time";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
+import { formatCenterTimestamp } from "@/lib/center-time-format";
+import { getCenterDateKey } from "@shared/center-time";
 
 interface StudentOverviewTabProps {
   studentId: string;
@@ -184,6 +187,9 @@ function StatCard({ icon, iconBg, label, value, sub, valueColor }: {
 // ─── main component ───────────────────────────────────────────────────────────
 
 export function StudentOverviewTab({ studentId, student, classesData, processedComments, starBalance: starBalanceProp, prefetchedTasks, open }: StudentOverviewTabProps) {
+  const { data: timeZone } = useCenterTimeZone();
+  const formatCommentTimestamp = (value: string, options: Intl.DateTimeFormatOptions) =>
+    formatCenterTimestamp(value, timeZone, options);
 
   // ── classes summary derived from classesData prop (no extra API call) ───────
   const CLASS_LIMIT = 5;
@@ -290,8 +296,9 @@ export function StudentOverviewTab({ studentId, student, classesData, processedC
   // ── unified timeline ──────────────────────────────────────────────────────
   const events: ActivityEvent[] = [];
   for (const c of processedComments) {
-    events.push({ id: `note-${c.id}`, ts: storedVietnamTimestampSortValue(c.createdAt), timeLabel: fmtTime(c.createdAt),
-      dateKey: buildDateKey(c.createdAt), type: "note", title: "Ghi chú", desc: c.content, actor: c.authorName });
+    const commentDate = new Date(c.createdAt);
+    events.push({ id: `note-${c.id}`, ts: commentDate.getTime(), timeLabel: formatCommentTimestamp(c.createdAt, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }),
+      dateKey: timeZone && !Number.isNaN(commentDate.getTime()) ? getCenterDateKey(commentDate, timeZone) : c.createdAt, type: "note", title: "Ghi chú", desc: c.content, actor: c.authorName });
   }
   const now = Date.now();
   for (const cls of classesData) {
@@ -570,7 +577,7 @@ export function StudentOverviewTab({ studentId, student, classesData, processedC
               {student.parentName2 && <InfoRow icon={<Users className="w-3.5 h-3.5" />} label="Phụ huynh 2" value={[student.parentName2, student.parentPhone2].filter(Boolean).join(" — ")} />}
               {student.parentName3 && <InfoRow icon={<Users className="w-3.5 h-3.5" />} label="Phụ huynh 3" value={[student.parentName3, student.parentPhone3].filter(Boolean).join(" — ")} />}
               <InfoRow icon={<Heart    className="w-3.5 h-3.5" />} label="Quan hệ"     value={student.relationship} />
-              <InfoRow icon={<Calendar className="w-3.5 h-3.5" />} label="Ngày tạo"    value={student.createdAt ? fmtDate(student.createdAt) : null} />
+              <InfoRow icon={<Calendar className="w-3.5 h-3.5" />} label="Ngày tạo"    value={student.createdAt ? formatCommentTimestamp(student.createdAt, { day: "2-digit", month: "2-digit", year: "numeric" }) : null} />
             </div>
           </div>
 
@@ -794,7 +801,7 @@ export function StudentOverviewTab({ studentId, student, classesData, processedC
                         {getInitial(c.authorName)}
                       </div>
                       <span className="text-xs font-semibold text-gray-700 flex-1">{c.authorName}</span>
-                      <span className="text-[11px] text-gray-400">{fmtDate(c.createdAt)}</span>
+                      <span className="text-[11px] text-gray-400">{formatCommentTimestamp(c.createdAt, { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
                     </div>
                     <p className="text-xs text-gray-600 line-clamp-2 break-words leading-relaxed pl-7">{c.content}</p>
                   </div>

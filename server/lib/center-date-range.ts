@@ -1,7 +1,15 @@
 import { sql, type SQL, type SQLWrapper } from "drizzle-orm";
 import { validateCenterTimeZone } from "@shared/center-time";
+import { db } from "../db";
+import { centerConfig } from "@shared/schema";
 
 export class InvalidCenterDateKeyError extends Error {}
+
+export async function loadCenterTimeZone(): Promise<string> {
+  const [center] = await db.select({ timeZone: centerConfig.timezone }).from(centerConfig).limit(1);
+  if (!center) throw new Error("Chưa cấu hình trung tâm");
+  return validateCenterTimeZone(center.timeZone);
+}
 
 function validateDateKey(value: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {

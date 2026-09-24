@@ -2033,6 +2033,7 @@ export async function getNewClassesSummary(params: {
   isSuperAdmin: boolean;
   allowedLocationIds: string[] | null;
   locationId?: string;
+  timeZone: string;
   viewScope?: ClassViewScope;
 }): Promise<{
   today: number;
@@ -2041,10 +2042,13 @@ export async function getNewClassesSummary(params: {
   const where = `${buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId)} AND ${params.viewScope ? buildClassVisibilitySql(params.viewScope) : "1=1"}`;
   const queryStr = `
     SELECT
-      COUNT(*) FILTER (WHERE DATE(c.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh') = CURRENT_DATE) AS today,
       COUNT(*) FILTER (
-        WHERE DATE_TRUNC('month', c.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')
-            = DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')
+        WHERE DATE(c.created_at AT TIME ZONE '${params.timeZone}')
+            = DATE(NOW() AT TIME ZONE '${params.timeZone}')
+      ) AS today,
+      COUNT(*) FILTER (
+        WHERE DATE_TRUNC('month', c.created_at AT TIME ZONE '${params.timeZone}')
+            = DATE_TRUNC('month', NOW() AT TIME ZONE '${params.timeZone}')
       ) AS this_month
     FROM classes c
     WHERE ${where}
@@ -2064,6 +2068,7 @@ export async function getClassesByLocationSummary(params: {
   isSuperAdmin: boolean;
   allowedLocationIds: string[] | null;
   locationId?: string;
+  timeZone: string;
   dateFrom?: string;
   dateTo?: string;
   viewScope?: ClassViewScope;
@@ -2084,8 +2089,8 @@ export async function getClassesByLocationSummary(params: {
   }
 
   const dateConds: string[] = [];
-  if (dateFrom) dateConds.push(`c.created_at >= '${dateFrom.replace(/[^0-9\-]/g, "")}'::date`);
-  if (dateTo) dateConds.push(`c.created_at <= ('${dateTo.replace(/[^0-9\-]/g, "")}'::date + INTERVAL '1 day')`);
+  if (dateFrom) dateConds.push(`c.created_at >= ('${dateFrom.replace(/[^0-9\-]/g, "")}'::date::timestamp AT TIME ZONE '${params.timeZone}')`);
+  if (dateTo) dateConds.push(`c.created_at < (('${dateTo.replace(/[^0-9\-]/g, "")}'::date + INTERVAL '1 day')::timestamp AT TIME ZONE '${params.timeZone}')`);
   const dateWhere = dateConds.length > 0 ? `AND ${dateConds.join(" AND ")}` : "";
 
   const queryStr = `
@@ -2113,6 +2118,7 @@ export async function getMonthlyAttendanceRate(params: {
   isSuperAdmin: boolean;
   allowedLocationIds: string[] | null;
   locationId?: string;
+  timeZone: string;
   months?: number;
   viewScope?: ClassViewScope;
 }): Promise<{ monthKey: string; label: string; total: number; present: number; rate: number }[]> {
@@ -2125,8 +2131,8 @@ export async function getMonthlyAttendanceRate(params: {
              TO_CHAR(d, 'MM/YYYY') AS label,
              d AS month_start
       FROM generate_series(
-        DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') - INTERVAL '${months - 1} months',
-        DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh'),
+        DATE_TRUNC('month', NOW() AT TIME ZONE '${params.timeZone}') - INTERVAL '${months - 1} months',
+        DATE_TRUNC('month', NOW() AT TIME ZONE '${params.timeZone}'),
         INTERVAL '1 month'
       ) d
     ),
@@ -2139,7 +2145,7 @@ export async function getMonthlyAttendanceRate(params: {
       JOIN class_sessions cs ON cs.id = ss.class_session_id
       JOIN classes c ON c.id = ss.class_id
       WHERE ${where}
-        AND cs.session_date >= (DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') - INTERVAL '${months - 1} months')::date
+        AND cs.session_date >= (DATE_TRUNC('month', NOW() AT TIME ZONE '${params.timeZone}') - INTERVAL '${months - 1} months')::date
       GROUP BY month_key
     )
     SELECT m.month_key, m.label,
@@ -2168,6 +2174,7 @@ export async function getClassesByTeacherSummary(params: {
   isSuperAdmin: boolean;
   allowedLocationIds: string[] | null;
   locationId?: string;
+  timeZone: string;
   limit?: number;
   dateFrom?: string;
   dateTo?: string;
@@ -2176,8 +2183,8 @@ export async function getClassesByTeacherSummary(params: {
   const where = `${buildClassLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId)} AND ${params.viewScope ? buildClassVisibilitySql(params.viewScope) : "1=1"}`;
   const limit = Math.max(1, Math.min(50, params.limit ?? 10));
   const dateConds: string[] = [];
-  if (params.dateFrom) dateConds.push(`c.created_at >= '${params.dateFrom.replace(/[^0-9\-]/g, "")}'::date`);
-  if (params.dateTo) dateConds.push(`c.created_at <= ('${params.dateTo.replace(/[^0-9\-]/g, "")}'::date + INTERVAL '1 day')`);
+  if (params.dateFrom) dateConds.push(`c.created_at >= ('${params.dateFrom.replace(/[^0-9\-]/g, "")}'::date::timestamp AT TIME ZONE '${params.timeZone}')`);
+  if (params.dateTo) dateConds.push(`c.created_at < (('${params.dateTo.replace(/[^0-9\-]/g, "")}'::date + INTERVAL '1 day')::timestamp AT TIME ZONE '${params.timeZone}')`);
   const dateWhere = dateConds.length > 0 ? `AND ${dateConds.join(" AND ")}` : "";
   const queryStr = `
     SELECT s.full_name AS name, COUNT(c.id)::int AS count

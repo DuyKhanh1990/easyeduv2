@@ -17,6 +17,7 @@ import { buildClassVisibilitySql, canViewClass, resolveClassViewAccess, type Cla
 import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 import { getNextLocationCode } from "../storage/finance.storage";
 import { recordFreeClassWalletTransition } from "../storage/free-class-wallet.storage";
+import { loadCenterTimeZone } from "../lib/center-date-range";
 
 async function resolveStaffFullName(userId: string | undefined | null): Promise<string | null> {
   if (!userId) return null;
@@ -1232,7 +1233,7 @@ export function registerClassesRoutes(app: Express): void {
       const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo : undefined;
       const readAccess = await getClassReadScope(req);
       if (!readAccess.canView && !readAccess.canViewAll) return res.status(403).json({ message: "Bạn không có quyền xem lớp học." });
-      const data = await getClassesByLocationSummary({ isSuperAdmin, allowedLocationIds, locationId, dateFrom, dateTo, viewScope: readAccess.scope });
+      const data = await getClassesByLocationSummary({ isSuperAdmin, allowedLocationIds, locationId, dateFrom, dateTo, viewScope: readAccess.scope, timeZone: await loadCenterTimeZone() });
       res.json(data);
     } catch (err: any) {
       console.error("Classes by location error:", err);
@@ -1251,7 +1252,7 @@ export function registerClassesRoutes(app: Express): void {
       const months = req.query.months ? parseInt(String(req.query.months), 10) : 6;
       const readAccess = await getClassReadScope(req);
       if (!readAccess.canView && !readAccess.canViewAll) return res.status(403).json({ message: "Bạn không có quyền xem lớp học." });
-      const data = await getMonthlyAttendanceRate({ isSuperAdmin, allowedLocationIds, locationId, months, viewScope: readAccess.scope });
+      const data = await getMonthlyAttendanceRate({ isSuperAdmin, allowedLocationIds, locationId, months, viewScope: readAccess.scope, timeZone: await loadCenterTimeZone() });
       res.json(data);
     } catch (err: any) {
       console.error("Monthly attendance rate error:", err);
@@ -1271,7 +1272,7 @@ export function registerClassesRoutes(app: Express): void {
       const dateTo = typeof req.query.dateTo === "string" ? req.query.dateTo : undefined;
       const readAccess = await getClassReadScope(req);
       if (!readAccess.canView && !readAccess.canViewAll) return res.status(403).json({ message: "Bạn không có quyền xem lớp học." });
-      const data = await getClassesByTeacherSummary({ isSuperAdmin, allowedLocationIds, locationId, dateFrom, dateTo, viewScope: readAccess.scope });
+      const data = await getClassesByTeacherSummary({ isSuperAdmin, allowedLocationIds, locationId, dateFrom, dateTo, viewScope: readAccess.scope, timeZone: await loadCenterTimeZone() });
       res.json(data);
     } catch (err: any) {
       console.error("Classes by teacher error:", err);
@@ -1313,7 +1314,7 @@ export function registerClassesRoutes(app: Express): void {
       const readAccess = await getClassReadScope(req);
       if (!readAccess.canView && !readAccess.canViewAll) return res.status(403).json({ message: "Bạn không có quyền xem lớp học." });
 
-      const summary = await getNewClassesSummary({ isSuperAdmin, allowedLocationIds, locationId, viewScope: readAccess.scope });
+      const summary = await getNewClassesSummary({ isSuperAdmin, allowedLocationIds, locationId, viewScope: readAccess.scope, timeZone: await loadCenterTimeZone() });
       res.json(summary);
     } catch (err: any) {
       console.error("New classes summary error:", err);

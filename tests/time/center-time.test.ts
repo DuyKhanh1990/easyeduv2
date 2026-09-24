@@ -10,6 +10,7 @@ import {
   formatStoredVietnamTimestamp,
   parseStoredVietnamTimestamp,
 } from "../../client/src/lib/vietnam-time";
+import { formatCenterTimestamp } from "../../client/src/lib/center-time-format";
 
 describe("center time and legacy Vietnam timestamps", () => {
   it("converts a legacy synthetic-Z wall clock exactly once", () => {
@@ -92,6 +93,54 @@ describe("center time and legacy Vietnam timestamps", () => {
       expect(formatStoredVietnamTimestamp(sample.legacy, options), sample.field)
         .toContain(sample.clock);
       expect(formatCenterInstant(migratedInstant, "Asia/Ho_Chi_Minh", options), sample.field)
+        .toContain(sample.clock);
+    }
+  });
+
+  it("preserves representative DB-default created_at displays across the larger batch", () => {
+    const options: Intl.DateTimeFormatOptions = {
+      day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    };
+    const samples = [
+      {
+        field: "students.created_at",
+        legacy: "2026-04-03T16:09:00.538Z",
+        instant: "2026-04-03T09:09:00.538Z",
+        clock: "16:09",
+      },
+      {
+        field: "notification_logs.created_at",
+        legacy: "2026-05-25T10:04:06.277Z",
+        instant: "2026-05-25T03:04:06.277Z",
+        clock: "10:04",
+      },
+      {
+        field: "store_transfers.created_at",
+        legacy: "2026-05-20T16:37:09.748Z",
+        instant: "2026-05-20T09:37:09.748Z",
+        clock: "16:37",
+      },
+      {
+        field: "customer_activity_logs.created_at",
+        legacy: "2026-04-23T11:21:58.006Z",
+        instant: "2026-04-23T04:21:58.006Z",
+        clock: "11:21",
+      },
+      {
+        field: "news_feed_posts.created_at",
+        legacy: "2026-07-02T15:08:51.446Z",
+        instant: "2026-07-02T08:08:51.446Z",
+        clock: "15:08",
+      },
+    ];
+
+    for (const sample of samples) {
+      const legacyInstant = parseStoredVietnamTimestamp(sample.legacy);
+      expect(legacyInstant?.toISOString(), sample.field).toBe(sample.instant);
+      expect(formatStoredVietnamTimestamp(sample.legacy, options), sample.field)
+        .toContain(sample.clock);
+      expect(formatCenterTimestamp(sample.instant, "Asia/Ho_Chi_Minh", options), sample.field)
         .toContain(sample.clock);
     }
   });

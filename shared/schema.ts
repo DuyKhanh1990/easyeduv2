@@ -55,7 +55,7 @@ export const studentSessions = pgTable("student_sessions", {
   reviewPublished: boolean("review_published").default(false),
   onlineClickedAt: timestamp("online_clicked_at", { withTimezone: true }),
   onlineEndedAt: timestamp("online_ended_at", { withTimezone: true }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   statusIdx: index("student_sessions_status_idx").on(table.status),
@@ -89,7 +89,7 @@ export const freeClassRegistrations = pgTable("free_class_registrations", {
   note: text("note"),
   reviewData: jsonb("review_data"),
   reviewPublished: boolean("review_published").default(false),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   classDateIdx: index("free_class_registrations_class_date_idx").on(table.classId, table.registrationDate),
@@ -146,7 +146,7 @@ export const studentComments = pgTable("student_comments", {
   studentId: uuid("student_id").notNull().references(() => students.id, { onDelete: "cascade" }),
   userId: uuid("user_id").notNull().references(() => users.id),
   content: text("content").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
 });
@@ -239,7 +239,7 @@ export const invoiceItems = pgTable("invoice_items", {
   subtotal: decimal("subtotal", { precision: 15, scale: 2 }).notNull().default("0"),
   sortOrder: integer("sort_order").default(0),
   category: varchar("category", { length: 100 }),               // Danh mục (per item)
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // ==========================================
@@ -287,7 +287,7 @@ export const invoiceSessionAllocations = pgTable("invoice_session_allocations", 
   invoiceItemId: uuid("invoice_item_id").notNull().references(() => invoiceItems.id, { onDelete: "cascade" }),
   studentSessionId: uuid("student_session_id").notNull().references(() => studentSessions.id, { onDelete: "cascade" }),
   allocatedAmount: decimal("allocated_amount", { precision: 15, scale: 2 }).notNull().default("0"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // ==========================================
@@ -298,7 +298,7 @@ export const tuitionPackageChangeRequests = pgTable("tuition_package_change_requ
   operationKey: varchar("operation_key", { length: 80 }).notNull().unique(),
   requestHash: text("request_hash").notNull(),
   createdBy: uuid("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const tuitionPackageChangeOperations = pgTable("tuition_package_change_operations", {
@@ -310,7 +310,7 @@ export const tuitionPackageChangeOperations = pgTable("tuition_package_change_op
   difference: decimal("difference", { precision: 15, scale: 2 }).notNull(),
   adjustmentInvoiceId: uuid("adjustment_invoice_id").references(() => invoices.id, { onDelete: "set null" }),
   createdBy: uuid("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   requestStudentClassUnique: uniqueIndex("tuition_package_change_operation_student_unique")
     .on(table.requestId, table.studentClassId),
@@ -322,7 +322,7 @@ export const tuitionPackageSessionAdjustments = pgTable("tuition_package_session
   studentSessionId: uuid("student_session_id").notNull().references(() => studentSessions.id, { onDelete: "cascade" }),
   effectiveAmount: decimal("effective_amount", { precision: 15, scale: 2 }).notNull(),
   appliedSequence: serial("applied_sequence").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   operationSessionUnique: uniqueIndex("tuition_package_session_adjustment_unique")
     .on(table.operationId, table.studentSessionId),
@@ -338,7 +338,7 @@ export const invoiceCommissions = pgTable("invoice_commissions", {
   invoiceId: uuid("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
   staffId: uuid("staff_id").notNull().references(() => staff.id, { onDelete: "cascade" }),
   percentage: decimal("percentage", { precision: 5, scale: 2 }).notNull().default("0"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // ==========================================
@@ -356,7 +356,7 @@ export const commissionConfigs = pgTable("commission_configs", {
   roleConfigs: jsonb("role_configs").notNull().default(sql`'{}'::jsonb`),
   createdBy: uuid("created_by").references(() => users.id),
   updatedBy: uuid("updated_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   effectiveFromIdx: index("commission_configs_effective_from_idx").on(table.effectiveFrom),
@@ -542,7 +542,7 @@ export const users = pgTable("users", {
   passwordEncrypted: text("password_encrypted"),
   isActive: boolean("is_active").default(true),
   tinodeUserId: varchar("tinode_user_id", { length: 100 }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
   uniqueIndex("users_tinode_user_id_uidx").on(t.tinodeUserId),
@@ -561,7 +561,7 @@ export const staff = pgTable("staff", {
   dateOfBirth: date("date_of_birth"),
   address: text("address"),
   status: varchar("status", { length: 50 }).default("Hoạt động"), // Hoạt động/ Không hoạt động
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   userIdIdx: index("staff_user_id_idx").on(table.userId),
@@ -672,7 +672,7 @@ export const students = pgTable("students", {
   note: text("note"),
   avatarUrl: text("avatar_url"),
   customFields: jsonb("custom_fields").$type<Record<string, any>>().default({}),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   createdAtIdx: index("students_created_at_idx").on(table.createdAt),
@@ -735,7 +735,7 @@ export const studentLeaveRequests = pgTable("student_leave_requests", {
   attendanceApprovalMode: varchar("attendance_approval_mode", { length: 20 }), // unchanged | applied; only meaningful when approved
   rejectionReason: text("rejection_reason"),
   createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   studentCreatedAtIdx: index("student_leave_requests_student_created_at_idx").on(table.studentId, table.createdAt),
@@ -814,7 +814,7 @@ export const crmCustomFields = pgTable("crm_custom_fields", {
   fieldType: varchar("field_type", { length: 20 }).notNull().default("text"), // text | number | date | textarea | select
   options: text("options").array(),
   position: integer("position").notNull().default(0),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -914,7 +914,7 @@ export const classes = pgTable("classes", {
   freeClassMode: varchar("free_class_mode", { length: 30 }), // self_practice, guided
   tinodeTopicId: varchar("tinode_topic_id", { length: 100 }),
   cycleHistory: jsonb("cycle_history"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   statusIdx: index("classes_status_idx").on(table.status),
@@ -1008,7 +1008,7 @@ export const classSessionExclusions = pgTable("class_session_exclusions", {
   toSessionDate: date("to_session_date").notNull(),
   reason: text("reason"),
   createdBy: uuid("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const classSessionExclusionsRelations = relations(classSessionExclusions, ({ one }) => ({
@@ -1097,7 +1097,7 @@ export const teacherAvailability = pgTable("teacher_availability", {
   weekday: integer("weekday").notNull(), // 0=Sunday, 1=Monday...6=Saturday
   effectiveFrom: date("effective_from"),
   effectiveTo: date("effective_to"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => {
   return {
@@ -1158,7 +1158,7 @@ export const shiftAssignments = pgTable("shift_assignments", {
   effectiveFrom: date("effective_from"),
   effectiveTo: date("effective_to"),
   status: varchar("status", { length: 20 }).default("active"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -1255,7 +1255,7 @@ export const sessionContents = pgTable("session_contents", {
   resourceUrl: text("resource_url"),
   displayOrder: integer("display_order").default(0),
   dueDate: timestamp("due_date"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // ==========================================
@@ -1272,7 +1272,7 @@ export const studentSessionContents = pgTable("student_session_contents", {
   submissionAttachments: jsonb("submission_attachments").$type<string[]>(),
   score: varchar("score", { length: 20 }),
   gradingComment: text("grading_comment"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // Relations are handled by foreign keys, no need for explicit Drizzle relations
@@ -1318,7 +1318,7 @@ export const financePromotions = pgTable("finance_promotions", {
   fromDate: date("from_date"),
   toDate: date("to_date"),
   isActive: boolean("is_active").default(true).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -1345,7 +1345,7 @@ export const financeVouchers = pgTable("finance_vouchers", {
   usedCount: integer("used_count").notNull().default(0),
   isActive: boolean("is_active").notNull().default(true),
   createdBy: uuid("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   codeIdx: uniqueIndex("finance_vouchers_code_idx").on(table.code),
@@ -1473,7 +1473,7 @@ export const teacherSalaryTables = pgTable("teacher_salary_tables", {
   startDate: date("start_date").notNull(),
   endDate: date("end_date").notNull(),
   createdBy: uuid("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -1610,7 +1610,7 @@ export const bidvVirtualAccounts = pgTable("bidv_virtual_accounts", {
   vaCode: varchar("va_code", { length: 50 }).notNull().unique(),
   type: varchar("type", { length: 20 }).notNull().default("student"),
   status: varchar("status", { length: 20 }).notNull().default("active"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -1627,7 +1627,7 @@ export const bidvTransactions = pgTable("bidv_transactions", {
   invoiceId: uuid("invoice_id"),
   amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
   status: varchar("status", { length: 20 }).notNull().default("processed"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export type BidvTransaction = typeof bidvTransactions.$inferSelect;
@@ -1655,7 +1655,7 @@ export const bidvReconciliationSessions = pgTable("bidv_reconciliation_sessions"
   errorMessage: text("error_message"),
   requestId: varchar("request_id", { length: 100 }),
   signatureVerified: boolean("signature_verified").notNull().default(false),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   lookupIdx: index("bidv_recon_sessions_lookup_idx").on(table.providerId, table.reconcileDate, table.fileType),
@@ -1678,7 +1678,7 @@ export const bidvReconciliationFiles = pgTable("bidv_reconciliation_files", {
   rawResponseMetadata: jsonb("raw_response_metadata"),
   signatureVerified: boolean("signature_verified").notNull().default(false),
   encrypted: boolean("encrypted").notNull().default(true),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const bidvReconciliationRecords = pgTable("bidv_reconciliation_records", {
@@ -1698,7 +1698,7 @@ export const bidvReconciliationRecords = pgTable("bidv_reconciliation_records", 
   channelCode: varchar("channel_code", { length: 20 }),
   serviceId: varchar("service_id", { length: 20 }),
   rawData: jsonb("raw_data").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   sessionIdx: index("bidv_recon_records_session_idx").on(table.sessionId),
   externalIdx: index("bidv_recon_records_external_idx").on(table.externalTransactionId),
@@ -1798,7 +1798,7 @@ export const classGradeBooks = pgTable("class_grade_books", {
   studentComments: jsonb("student_comments").default({}).notNull(),
   createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
   updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -1808,7 +1808,7 @@ export const classGradeBookScores = pgTable("class_grade_book_scores", {
   studentId: uuid("student_id").notNull().references(() => students.id, { onDelete: "cascade" }),
   categoryId: uuid("category_id").notNull().references(() => scoreCategories.id, { onDelete: "cascade" }),
   score: varchar("score", { length: 50 }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const classGradeBookStudentComments = pgTable("class_grade_book_student_comments", {
@@ -1816,7 +1816,7 @@ export const classGradeBookStudentComments = pgTable("class_grade_book_student_c
   gradeBookId: uuid("grade_book_id").notNull().references(() => classGradeBooks.id, { onDelete: "cascade" }),
   studentId: uuid("student_id").notNull().references(() => students.id, { onDelete: "cascade" }),
   comment: text("comment").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -1841,7 +1841,7 @@ export const studentWalletTransactions = pgTable("student_wallet_transactions", 
   invoiceDescription: text("invoice_description"),
   createdBy: uuid("created_by").references(() => users.id),
   createdByName: varchar("created_by_name", { length: 255 }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const insertStudentWalletTransactionSchema = createInsertSchema(studentWalletTransactions).omit({ id: true, createdAt: true });
@@ -1897,7 +1897,7 @@ export const exams = pgTable("exams", {
   closeAt: timestamp("close_at"),
   createdBy: uuid("created_by").references(() => users.id),
   updatedBy: uuid("updated_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -1996,7 +1996,7 @@ export const examSessions = pgTable("exam_sessions", {
   startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   status: varchar("status", { length: 20 }).notNull().default("active"), // active | submitted | expired
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   userExamUnique: uniqueIndex("exam_sessions_user_exam_uidx").on(table.userId, table.examId),
@@ -2309,7 +2309,7 @@ export const teacherAttendance = pgTable("teacher_attendance", {
   checkInAt: timestamp("check_in_at"),
   checkOutAt: timestamp("check_out_at"),
   note: text("note"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({
   sessionStaffUnique: uniqueIndex("teacher_attendance_session_staff_unique").on(t.classSessionId, t.staffId),
@@ -2334,7 +2334,7 @@ export const customerActivityLogs = pgTable("customer_activity_logs", {
   action: varchar("action", { length: 50 }).notNull(),
   oldData: jsonb("old_data"),
   newData: jsonb("new_data"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const customerActivityLogsRelations = relations(customerActivityLogs, ({ one }) => ({
@@ -2361,7 +2361,7 @@ export const testSessions = pgTable("test_sessions", {
   studentResults: jsonb("student_results").default({}),
   contentSettings: jsonb("content_settings").$type<Record<string, { availableAt: string; maxAttempts: number }>>().default({}),
   notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -2487,7 +2487,7 @@ export const storeReceipts = pgTable("store_receipts", {
   totalAmount: decimal("total_amount", { precision: 15, scale: 2 }).default("0"),
   createdBy: uuid("created_by"),
   createdByName: varchar("created_by_name", { length: 255 }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -2506,7 +2506,7 @@ export const storeReceiptItems = pgTable("store_receipt_items", {
   salePrice: decimal("sale_price", { precision: 15, scale: 2 }).default("0"),
   starPrice: integer("star_price").default(0),
   totalStars: integer("total_stars").default(0),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export type StoreReceipt = typeof storeReceipts.$inferSelect;
@@ -2527,7 +2527,7 @@ export const notificationTemplates = pgTable("notification_templates", {
   variables: jsonb("variables"),
   enabled: boolean("enabled").default(true),
   znsTemplateId: varchar("zns_template_id", { length: 100 }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export type NotificationTemplate = typeof notificationTemplates.$inferSelect;
@@ -2566,7 +2566,7 @@ export const centerNotificationSettings = pgTable("center_notification_settings"
   emailEnabled: boolean("email_enabled").default(false),
   channelPriority: varchar("channel_priority", { length: 50 }).default("AUTO"),
   debtReminderConfig: jsonb("debt_reminder_config"),               // { before: DebtReminderRule, after: DebtReminderRule }
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export type CenterNotificationSettings = typeof centerNotificationSettings.$inferSelect;
@@ -2579,7 +2579,7 @@ export const studentNotificationChannels = pgTable("student_notification_channel
   isFollowed: boolean("is_followed").default(false),
   hasInteracted: boolean("has_interacted").default(false),
   preferredChannel: varchar("preferred_channel", { length: 50 }).default("AUTO"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
   studentCenterUniq: unique().on(t.studentId, t.centerId),
   studentIdIdx: index("student_notification_channels_student_id_idx").on(t.studentId),
@@ -2597,7 +2597,7 @@ export const notificationLogs = pgTable("notification_logs", {
   payload: jsonb("payload"),
   errorMessage: text("error_message"),
   reason: varchar("reason", { length: 100 }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export type NotificationLog = typeof notificationLogs.$inferSelect;
@@ -2605,7 +2605,7 @@ export type NotificationLog = typeof notificationLogs.$inferSelect;
 export const shortLinks = pgTable("short_links", {
   code: text("code").primaryKey(),
   targetUrl: text("target_url").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   expiresAt: timestamp("expires_at"),
 });
 
@@ -2642,7 +2642,7 @@ export const storeInventoryReservations = pgTable("store_inventory_reservations"
   warehouseId: uuid("warehouse_id").notNull(),
   quantity: integer("quantity").notNull().default(1),
   expiresAt: timestamp("expires_at").notNull(),
-  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
 }, (table) => ({
   sessionProductWarehouseUnique: uniqueIndex("store_inventory_reservations_session_product_warehouse_uidx")
     .on(table.sessionId, table.productId, table.warehouseId),
@@ -2682,7 +2682,7 @@ export const storeIssueReceipts = pgTable("store_issue_receipts", {
   invoiceId: uuid("invoice_id"),
   createdBy: uuid("created_by"),
   createdByName: varchar("created_by_name"),
-  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 });
 
@@ -2713,7 +2713,7 @@ export const storeIssueReceiptItems = pgTable("store_issue_receipt_items", {
   promotionAmount: numeric("promotion_amount").default("0"),
   surchargeAmount: numeric("surcharge_amount").default("0"),
   lineTotal: numeric("line_total").default("0"),
-  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
 });
 
 export type StoreIssueReceiptItem = typeof storeIssueReceiptItems.$inferSelect;
@@ -2765,7 +2765,7 @@ export const storeTransfers = pgTable("store_transfers", {
   status: varchar("status").notNull().default("draft"),
   createdBy: uuid("created_by"),
   createdByName: varchar("created_by_name"),
-  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
   fromLocationId: uuid("from_location_id"),
   toLocationId: uuid("to_location_id"),
@@ -2787,7 +2787,7 @@ export const storeTransferItems = pgTable("store_transfer_items", {
   productName: varchar("product_name").notNull(),
   quantity: integer("quantity").notNull().default(1),
   unitPrice: numeric("unit_price").notNull().default("0"),
-  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
 });
 
 export type StoreTransferItem = typeof storeTransferItems.$inferSelect;
@@ -2806,7 +2806,7 @@ export const storeTransferAuditLogs = pgTable("store_transfer_audit_logs", {
   fromLocationId: uuid("from_location_id").references(() => locations.id, { onDelete: "set null" }),
   oldContent:    jsonb("old_content"),
   newContent:    jsonb("new_content"),
-  createdAt:     timestamp("created_at").defaultNow().notNull(),
+  createdAt:     timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const insertStoreTransferAuditLogSchema = createInsertSchema(storeTransferAuditLogs).omit({ id: true, createdAt: true });
@@ -2823,7 +2823,7 @@ export const studentStarTransactions = pgTable("student_star_transactions", {
   reason: text("reason"),
   receiptId: uuid("receipt_id"),
   receiptCode: varchar("receipt_code", { length: 50 }),
-  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
 });
 
 export type StudentStarTransaction = typeof studentStarTransactions.$inferSelect;
@@ -2854,7 +2854,7 @@ export const teacherSalaryRowPackages = pgTable("teacher_salary_row_packages", {
   teacherId: uuid("teacher_id").notNull(),
   classId: uuid("class_id").notNull(),
   packageId: uuid("package_id").notNull(),
-  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 }, (t) => ({
   uniqueSalaryTeacherClass: unique().on(t.salaryTableId, t.teacherId, t.classId),
@@ -2872,7 +2872,7 @@ export const teacherSalarySessionPackages = pgTable("teacher_salary_session_pack
   classSessionId: uuid("class_session_id").notNull(),
   teacherId: uuid("teacher_id").notNull(),
   packageId: uuid("package_id").notNull(),
-  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 }, (t) => ({
   uniqueSalarySessionTeacher: unique().on(t.salaryTableId, t.classSessionId, t.teacherId),
@@ -2910,7 +2910,7 @@ export const leaveRequests = pgTable("leave_requests", {
   reason: text("reason"),
   status: varchar("status", { length: 20 }).notNull().default("pending"), // 'pending' | 'approved' | 'rejected'
   adminNote: text("admin_note"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -2957,7 +2957,7 @@ export const publicHolidays = pgTable("public_holidays", {
   startDate: date("start_date").notNull(),
   endDate: date("end_date").notNull(),
   description: text("description"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -2975,7 +2975,7 @@ export const staffAttendances = pgTable("staff_attendances", {
   tongCong: numeric("tong_cong").default("0"),
   note: text("note"),
   createdBy: uuid("created_by"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, t => ({
   // Allow multiple rows per day (one per shift); unique per (staff, date, shift)
@@ -3000,7 +3000,7 @@ export const salarySheets = pgTable("salary_sheets", {
   note: text("note"),
   status: varchar("status", { length: 20 }).notNull().default("draft"), // draft | locked
   createdBy: uuid("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -3032,7 +3032,7 @@ export const salarySheetEmployees = pgTable("salary_sheet_employees", {
   tamUng: numeric("tam_ung", { precision: 15, scale: 2 }).notNull().default("0"),
   thucNhan: numeric("thuc_nhan", { precision: 15, scale: 2 }).notNull().default("0"),
   daChi: boolean("da_chi").notNull().default(false),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -3141,7 +3141,7 @@ export const userTenantMap = pgTable("user_tenant_map", {
   zaloUserId: varchar("zalo_user_id", { length: 100 }).notNull().unique(),
   userId: varchar("user_id", { length: 100 }).notNull(),
   tenantId: varchar("tenant_id", { length: 100 }).notNull(),
-  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 });
 
@@ -3178,7 +3178,7 @@ export const newsFeedPosts = pgTable("news_feed_posts", {
   locationId: uuid("location_id"),
   /** Danh sách cơ sở mà bài viết này hiển thị. NULL = hiển thị cho tất cả (legacy). */
   postLocationIds: jsonb("post_location_ids").$type<string[]>(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
   index("news_feed_posts_author_idx").on(t.authorId),
@@ -3194,7 +3194,7 @@ export const newsFeedReactions = pgTable("news_feed_reactions", {
   postId: uuid("post_id").notNull().references(() => newsFeedPosts.id, { onDelete: "cascade" }),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   reaction: varchar("reaction", { length: 10 }).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index("news_feed_reactions_post_idx").on(t.postId),
   unique("news_feed_reactions_post_user_uniq").on(t.postId, t.userId),
@@ -3397,7 +3397,7 @@ export const storeReceiptAuditLogs = pgTable("store_receipt_audit_logs", {
   locationId:  uuid("location_id").references(() => locations.id),
   oldContent:  jsonb("old_content"),
   newContent:  jsonb("new_content"),
-  createdAt:   timestamp("created_at").defaultNow().notNull(),
+  createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 export const insertStoreReceiptAuditLogSchema = createInsertSchema(storeReceiptAuditLogs).omit({ id: true, createdAt: true });
 export type StoreReceiptAuditLog = typeof storeReceiptAuditLogs.$inferSelect;
@@ -3414,7 +3414,7 @@ export const storeIssueReceiptAuditLogs = pgTable("store_issue_receipt_audit_log
   locationId:  uuid("location_id").references(() => locations.id),
   oldContent:  jsonb("old_content"),
   newContent:  jsonb("new_content"),
-  createdAt:   timestamp("created_at").defaultNow().notNull(),
+  createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 export const insertStoreIssueReceiptAuditLogSchema = createInsertSchema(storeIssueReceiptAuditLogs).omit({ id: true, createdAt: true });
 export type StoreIssueReceiptAuditLog = typeof storeIssueReceiptAuditLogs.$inferSelect;
@@ -3506,7 +3506,7 @@ export const databaseBackups = pgTable("database_backups", {
   startedAt:       timestamp("started_at"),
   completedAt:     timestamp("completed_at"),
   errorMessage:    text("error_message"),
-  createdAt:       timestamp("created_at").defaultNow().notNull(),
+  createdAt:       timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt:       timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   snapshotAtIdx: index("database_backups_snapshot_at_idx").on(table.snapshotAt),
@@ -3536,7 +3536,7 @@ export const databaseRestores = pgTable("database_restores", {
   startedAt:       timestamp("started_at"),
   completedAt:     timestamp("completed_at"),
   errorMessage:    text("error_message"),
-  createdAt:       timestamp("created_at").defaultNow().notNull(),
+  createdAt:       timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt:       timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   statusIdx: index("database_restores_status_idx").on(table.status),

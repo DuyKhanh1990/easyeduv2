@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { vi } from "date-fns/locale";
 import { formatStoredVietnamTimestamp } from "@/lib/vietnam-time";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
+import { formatCenterTimestamp } from "@/lib/center-time-format";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import {
@@ -739,6 +741,7 @@ function DeleteConfirm({ open, sheetCode, onConfirm, onCancel, deleting }: Delet
 
 // ─── Tab 1: Bảng tổng lương ───────────────────────────────────────────────────
 function SalarySheetsTab() {
+  const { data: timeZone } = useCenterTimeZone();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { data: myPerms } = useMyPermissions();
@@ -943,7 +946,7 @@ function SalarySheetsTab() {
                         <StatusBadge status={sheet.status} />
                       </td>
                       <td className="px-5 py-3.5 text-sm text-muted-foreground">
-                        {formatStoredVietnamTimestamp(sheet.createdAt, {
+                        {formatCenterTimestamp(sheet.createdAt, timeZone, {
                           day: "2-digit",
                           month: "2-digit",
                           year: "numeric",
@@ -2538,6 +2541,7 @@ function AllowanceTypesCard() {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function TongLuong() {
+  const { data: timeZone } = useCenterTimeZone();
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState<TabValue>(getTabFromUrl);
 

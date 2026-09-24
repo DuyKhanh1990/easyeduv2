@@ -33,7 +33,8 @@ import {
 import { apiRequest, getAuthHeaders } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Pagination } from "./Pagination";
-import { formatStoredVietnamTimestamp } from "@/lib/vietnam-time";
+import { formatCenterTimestamp } from "@/lib/center-time-format";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
 
 type LocationOption = {
   id: string;
@@ -130,10 +131,6 @@ function formatDate(date: string | null | undefined) {
   return year && month && day ? `${day}/${month}/${year}` : "—";
 }
 
-function formatDateTime(date: string | null | undefined) {
-  return formatStoredVietnamTimestamp(date, { day: "2-digit", month: "2-digit", year: "numeric" });
-}
-
 function ScheduleLines({ schedules }: { schedules: ScheduleOption[] }) {
   if (!schedules?.length) return <span className="text-muted-foreground">Chưa chọn lịch</span>;
 
@@ -161,6 +158,7 @@ function ScheduleLines({ schedules }: { schedules: ScheduleOption[] }) {
 
 export function LeaveRequestTab() {
   const { toast } = useToast();
+  const { data: timeZone } = useCenterTimeZone();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -570,7 +568,7 @@ export function LeaveRequestTab() {
                     </td>
                     <td className="px-3 py-3 text-muted-foreground">{request.locationName}</td>
                     <td className="px-3 py-3"><ScheduleLines schedules={request.scheduleSnapshot ?? []} /></td>
-                    <td className="px-3 py-3 text-muted-foreground">{formatDateTime(request.createdAt)}</td>
+                    <td className="px-3 py-3 text-muted-foreground">{formatCenterTimestamp(request.createdAt, timeZone, { day: "2-digit", month: "2-digit", year: "numeric" })}</td>
                     <td className="px-3 py-3 whitespace-nowrap">{formatDate(request.startDate)}</td>
                     <td className="px-3 py-3 whitespace-nowrap">{formatDate(request.endDate)}</td>
                     <td className="max-w-[250px] px-3 py-3 text-muted-foreground">

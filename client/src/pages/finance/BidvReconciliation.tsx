@@ -40,6 +40,8 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, getAuthHeaders, queryClient } from "@/lib/queryClient";
 import { formatStoredVietnamTimestamp } from "@/lib/vietnam-time";
 import { getBidvRequestDate } from "@shared/bidv-reconciliation";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
+import { formatCenterTimestamp } from "@/lib/center-time-format";
 
 type ReconciliationRow = {
   id: string;
@@ -134,8 +136,8 @@ function formatDate(value: string | Date | null | undefined) {
   });
 }
 
-function formatStoredDate(value: string | Date | null | undefined) {
-  return formatStoredVietnamTimestamp(value, {
+function formatStoredDate(value: string | Date | null | undefined, timeZone?: string) {
+  return formatCenterTimestamp(value, timeZone, {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -176,6 +178,7 @@ function formatInputDate(value: string) {
 }
 
 export default function ReconciliationPage() {
+  const { data: timeZone } = useCenterTimeZone();
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
   const [reconcileDate, setReconcileDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -779,7 +782,7 @@ export default function ReconciliationPage() {
                     {data.rows.map((row) => (
                       <TableRow key={row.id} data-testid={`row-reconciliation-${row.id}`}>
                         <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                          {formatStoredDate(row.createdAt)}
+                          {formatStoredDate(row.createdAt, timeZone)}
                         </TableCell>
                         <TableCell className="max-w-[220px]">
                           <span className="break-all font-mono text-xs">{row.transactionId}</span>

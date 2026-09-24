@@ -25,6 +25,8 @@ import {
 import { ConflictDetailSheet } from "@/components/education/ConflictDetailSheet";
 import type { ConflictItem } from "@/components/education/ConflictDetailSheet";
 import { formatStoredVietnamTimestamp, getStoredVietnamDateKey } from "@/lib/vietnam-time";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
+import { formatCenterTimestamp } from "@/lib/center-time-format";
 
 interface ExcludeSessionsDialogProps {
   isOpen: boolean;
@@ -71,6 +73,7 @@ export function ExcludeSessionsDialog({
   currentSessionId = null,
   classSessions
 }: ExcludeSessionsDialogProps) {
+  const { data: timeZone } = useCenterTimeZone();
   const [ranges, setRanges] = useState<Range[]>([{ fromSessionId: "", toSessionId: "" }]);
   const [reason, setReason] = useState<string>("");
   const [showWarning, setShowWarning] = useState(false);
@@ -396,7 +399,7 @@ export function ExcludeSessionsDialog({
                           </div>
                         )}
                         <div className="text-muted-foreground/60">
-                          {formatStoredVietnamTimestamp(exclusion.createdAt, { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                          {formatCenterTimestamp(exclusion.createdAt, timeZone, { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}
                         </div>
                       </div>
                     ))}
