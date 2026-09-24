@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { getTodayVietnamDate } from "@/types/invoice-types";
 import type { InvoiceQueryParams } from "./use-invoices";
 
 export type SortKey =
@@ -28,7 +29,7 @@ export const hasActiveFilters = (f: InvoiceFilters) =>
   Object.values(f).some(arr => arr.length > 0);
 
 function defaultCurrentMonth(): { from: Date; to: Date } {
-  const now = new Date();
+  const now = getTodayVietnamDate();
   const from = new Date(now.getFullYear(), now.getMonth(), 1);
   const to   = new Date(now.getFullYear(), now.getMonth() + 1, 0);
   return { from, to };

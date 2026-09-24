@@ -44,7 +44,7 @@ import { BulkCollectDialog, type BulkCollectPrintData } from "./components/BulkC
 import { BulkCollectPrintPreview } from "./components/BulkCollectPrintPreview";
 import {
   type InvoiceRow, type ScheduleItem, STATUS_CONFIG, EINVOICE_STATUS_CONFIG,
-  parseNum, fmtMoney, fmtDate, isInvoicePaidLike,
+  parseNum, fmtMoney, fmtDate, getInvoiceBusinessDateKey, getTodayVietnamDate, isInvoicePaidLike,
 } from "@/types/invoice-types";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -199,7 +199,7 @@ function DateRangePicker({
     }
   }, [open]);
 
-  const today = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
+  const today = getTodayVietnamDate();
 
   const presets = [
     { label: "Toàn thời gian",  key: "all",       fn: () => ({ from: undefined as Date | undefined, to: undefined as Date | undefined }) },
@@ -335,7 +335,7 @@ function EditableInvoiceDateCell({
   const background = isSelected ? "bg-violet-50" : isOdd ? "bg-slate-50" : "bg-white";
   const toInputDate = (date: string | Date | null | undefined) => {
     if (!date) return "";
-    try { return format(new Date(date), "yyyy-MM-dd"); } catch { return ""; }
+    return getInvoiceBusinessDateKey(date);
   };
 
   useEffect(() => {
@@ -783,7 +783,7 @@ function renderInvoiceCell(
       const hasSchedules = inv.hasSchedules && (inv.scheduleCount ?? 0) > 0;
       // Treat all invoices as at least 1 installment
       const total    = hasSchedules ? (inv.scheduleCount ?? 1) : 1;
-      const today    = new Date(); today.setHours(0,0,0,0);
+      const todayKey = getInvoiceBusinessDateKey(new Date());
 
       let paidSch: number;
       let nextDue: string | null;
@@ -796,8 +796,8 @@ function renderInvoiceCell(
         nextDue  = inv.scheduleNextDueDate ?? null;
         lastPaid = inv.scheduleLastPaidDate ?? null;
         allDone  = paidSch === total;
-        const nextDate = nextDue ? new Date(nextDue) : null;
-        isOverdue = !allDone && nextDate !== null && nextDate < today;
+        isOverdue = !allDone && Boolean(nextDue)
+          && getInvoiceBusinessDateKey(nextDue!) < todayKey;
       } else {
         // Single-installment invoice (not split)
         const remaining = parseNum(inv.remainingAmount);
@@ -806,8 +806,8 @@ function renderInvoiceCell(
         paidSch  = allDone ? 1 : 0;
         nextDue  = inv.dueDate ?? null;
         lastPaid = allDone ? (inv.dueDate ?? null) : null;
-        const nextDate = nextDue ? new Date(nextDue) : null;
-        isOverdue = !allDone && nextDate !== null && nextDate < today;
+        isOverdue = !allDone && Boolean(nextDue)
+          && getInvoiceBusinessDateKey(nextDue!) < todayKey;
       }
 
       return (
@@ -1058,12 +1058,7 @@ type BulkInvoiceDateTarget = {
 
 function dateOnly(value: string | Date | null | undefined): string {
   if (!value) return "";
-  if (typeof value === "string") {
-    const match = value.match(/^\d{4}-\d{2}-\d{2}/);
-    if (match) return match[0];
-  }
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? "" : format(parsed, "yyyy-MM-dd");
+  return getInvoiceBusinessDateKey(value);
 }
 
 function BulkInvoiceDateDialog({
@@ -1871,7 +1866,7 @@ export default function Invoices() {
       if (!value) return false;
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) return false;
-      const day = format(date, "yyyy-MM-dd");
+      const day = getInvoiceBusinessDateKey(date);
       return (!from || day >= from) && (!to || day <= to);
     };
 
@@ -2770,16 +2765,18 @@ export default function Invoices() {
         ) : activeTab === "debt" ? (
           /* ===== DEBT / CÔNG NỢ GROUPED CARD VIEW ===== */
           (() => {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
+            const todayKey = getInvoiceBusinessDateKey(new Date());
+            const dayNumber = (key: string) => {
+              const [year, month, day] = key.split("-").map(Number);
+              return Date.UTC(year, month - 1, day) / 86_400_000;
+            };
             const getDebtDueDate = (invoice: InvoiceRow) =>
               invoice.scheduleNextDueDate || invoice.dueDate;
             const getDaysUntilDue = (invoice: InvoiceRow) => {
               const dueDate = getDebtDueDate(invoice);
               if (!dueDate) return null;
-              const due = new Date(dueDate);
-              due.setHours(0, 0, 0, 0);
-              return Math.round((due.getTime() - today.getTime()) / 86400000);
+              const dueKey = getInvoiceBusinessDateKey(dueDate);
+              return dueKey ? dayNumber(dueKey) - dayNumber(todayKey) : null;
             };
             const filteredDebtInvoices = invoices.filter(invoice => {
               if (debtCondition === "all") return true;

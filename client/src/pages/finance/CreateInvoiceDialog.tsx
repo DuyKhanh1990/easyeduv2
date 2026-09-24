@@ -26,7 +26,7 @@ import { useClasses } from "@/hooks/use-classes";
 import { useStaff } from "@/hooks/use-staff";
 import { useAuth } from "@/hooks/use-auth";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
-import { fmtMoney, isInvoicePaidLike } from "@/types/invoice-types";
+import { fmtMoney, getTodayVietnamDate, isInvoicePaidLike } from "@/types/invoice-types";
 import { FinancePromotionDialog, type FinancePromotionType } from "./components/FinancePromotionDialog";
 
 interface Product {
@@ -156,6 +156,14 @@ const getInitialAdjustmentRows = (
     : amount > 0
       ? [{ id: `${prefix}-manual`, valueType: "amount", value: amount }]
       : [];
+
+const parseDateOnly = (value: string | null | undefined): Date | undefined => {
+  if (!value) return undefined;
+  const dateKey = value.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(dateKey)
+    ? new Date(`${dateKey}T00:00:00`)
+    : undefined;
+};
 
 function AdjustmentRowsEditor({
   kind,
@@ -364,7 +372,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const [splitAmount, setSplitAmount] = useState<number>(0);
   const [splitDueDate, setSplitDueDate] = useState<string>("");
   const [note, setNote] = useState("");
-  const [dueDate, setDueDate] = useState<string>(() => new Date().toISOString().split("T")[0]);
+  const [dueDate, setDueDate] = useState<string>(() => format(getTodayVietnamDate(), "yyyy-MM-dd"));
   const [directPaidAmount, setDirectPaidAmount] = useState<number>(0);
   const [directPaymentMethod, setDirectPaymentMethod] = useState<string>("cash");
   const [directBank, setDirectBank] = useState<string>("");
@@ -418,7 +426,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         setSplitAmount(0);
         setSplitDueDate("");
         setNote("");
-        setDueDate(new Date().toISOString().split("T")[0]);
+        setDueDate(format(getTodayVietnamDate(), "yyyy-MM-dd"));
         setDirectPaidAmount(0);
         setDirectPaymentMethod("cash");
         setDirectBank("");
@@ -446,7 +454,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       setPreloadedStudent(null);
     }
     setNote(inv.note ?? inv.description ?? "");
-    setDueDate(inv.dueDate ? inv.dueDate.split("T")[0] : new Date().toISOString().split("T")[0]);
+    setDueDate(inv.dueDate ? inv.dueDate.split("T")[0] : format(getTodayVietnamDate(), "yyyy-MM-dd"));
     // When a payment schedule exists, paid info is captured per-installment — don't double-count paidAmount
     const hasSchedule = Array.isArray(inv.paymentSchedule) && inv.paymentSchedule.length > 0;
     setDirectPaidAmount(hasSchedule ? 0 : (parseFloat(inv.paidAmount) || 0));
@@ -548,7 +556,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         ),
         promotionAmount: parseFloat(s.promotionAmount) || 0,
         surchargeAmount: parseFloat(s.surchargeAmount) || 0,
-        due: s.dueDate ? new Date(s.dueDate) : undefined,
+        due: parseDateOnly(s.dueDate),
         status: s.status ?? "unpaid",
         paymentMethod: s.paymentMethod ?? "cash",
         bank: s.bank ?? "",
@@ -921,7 +929,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
             label: "ĐỢT 2",
             code: `PT-${Date.now()}`,
             amount: difference,
-            due: new Date(),
+            due: getTodayVietnamDate(),
             status: "unpaid",
             paymentMethod: "cash",
             bank: "",
@@ -946,7 +954,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
           label: `ĐỢT ${nextNum}`,
           code: `PT-${Date.now()}`,
           amount: difference,
-          due: new Date(),
+          due: getTodayVietnamDate(),
           status: "unpaid",
           paymentMethod: "cash",
           bank: "",
@@ -1183,7 +1191,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       const remaining = Math.max(0, finalTotal - allocated);
       // When directPaidAmount > 0, schedule starts at ĐỢT 2
       const nextNum = getNextPaymentNumber(prev, directPaidAmount);
-      return [...prev, { id: Date.now().toString(), label: `ĐỢT ${nextNum}`, code: `PT-${Date.now()}`, amount: remaining, due: new Date(), status: "unpaid", paymentMethod: "cash", bank: "" }];
+      return [...prev, { id: Date.now().toString(), label: `ĐỢT ${nextNum}`, code: `PT-${Date.now()}`, amount: remaining, due: getTodayVietnamDate(), status: "unpaid", paymentMethod: "cash", bank: "" }];
     });
   };
   const removePayment = (id: string) => setPaymentSchedule(prev => {
@@ -1388,7 +1396,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       surchargeKeys: s.surchargeKeys ?? [],
       promotionAmount: String(s.promotionAmount ?? 0),
       surchargeAmount: String(s.surchargeAmount ?? 0),
-      dueDate: s.due ? s.due.toISOString().split("T")[0] : null,
+      dueDate: s.due ? format(s.due, "yyyy-MM-dd") : null,
       status: s.status,
       paymentMethod: s.paymentMethod || null,
       appliedBankAccount: s.paymentMethod === "transfer" && s.bank
@@ -1403,7 +1411,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
             label: "ĐỢT 1",
             code: `PT1-${Date.now()}`,
             amount: String(directPaidAmount),
-            dueDate: new Date().toISOString().split("T")[0],
+            dueDate: format(getTodayVietnamDate(), "yyyy-MM-dd"),
             status: "paid",
             paymentMethod: directPaymentMethod || null,
             appliedBankAccount: directPaymentMethod === "transfer" && directBank

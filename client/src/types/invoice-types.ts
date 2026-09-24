@@ -1,5 +1,3 @@
-import { format } from "date-fns";
-
 export interface InvoiceRow {
   id: string;
   locationId?: string | null;
@@ -116,7 +114,31 @@ export const parseNum = (v: string | null | undefined): number =>
 export const fmtMoney = (amount: number): string =>
   amount.toLocaleString("vi-VN") + " ₫";
 
+const VIETNAM_TIME_ZONE = "Asia/Ho_Chi_Minh";
+
+export const getInvoiceBusinessDateKey = (value: string | Date): string => {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: VIETNAM_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+};
+
+export const getTodayVietnamDate = (): Date => {
+  const [year, month, day] = getInvoiceBusinessDateKey(new Date()).split("-").map(Number);
+  return new Date(year, month - 1, day);
+};
+
 export const fmtDate = (d: string | Date | null | undefined): string => {
   if (!d) return "—";
-  try { return format(new Date(d), "dd/MM/yyyy"); } catch { return String(d); }
+  const key = getInvoiceBusinessDateKey(d);
+  if (!key) return String(d);
+  const [year, month, day] = key.split("-");
+  return `${day}/${month}/${year}`;
 };

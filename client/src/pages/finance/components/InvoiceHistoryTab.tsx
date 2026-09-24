@@ -4,9 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CalendarIcon, History, Plus, CreditCard, CheckCircle2, Eye } from "lucide-react";
-import { format } from "date-fns";
-import { vi } from "date-fns/locale";
-import { fmtMoney } from "@/types/invoice-types";
+import { fmtMoney, getInvoiceBusinessDateKey } from "@/types/invoice-types";
 import { Pencil, Trash2, XCircle } from "lucide-react";
 import { HistoryPaginationFooter } from "@/components/common/HistoryPaginationFooter";
 
@@ -39,7 +37,7 @@ interface HistoryResponse {
 const VIETNAM_TIME_ZONE = "Asia/Ho_Chi_Minh";
 
 function getVietnamParts(date: Date) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
+  const parts = new Intl.DateTimeFormat("vi-VN", {
     timeZone: VIETNAM_TIME_ZONE,
     year: "numeric",
     month: "2-digit",
@@ -47,7 +45,7 @@ function getVietnamParts(date: Date) {
     weekday: "long",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
   }).formatToParts(date);
   return Object.fromEntries(parts.map(part => [part.type, part.value]));
 }
@@ -69,13 +67,6 @@ function fmtDateGroup(iso: string) {
   if (!date) return iso;
   const parts = getVietnamParts(date);
   return `${parts.weekday}, ${parts.day}/${parts.month}/${parts.year}`;
-}
-
-function dateKey(iso: string) {
-  const date = parseTimestamp(iso);
-  if (!date) return iso;
-  const parts = getVietnamParts(date);
-  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
 function formatDateOnly(dateKeyValue: string) {
@@ -435,7 +426,7 @@ export function InvoiceHistoryTab({
 
   // Group events by date
   const groups = events.reduce<Map<string, HistoryEvent[]>>((map, ev) => {
-    const k = dateKey(ev.ev_time);
+    const k = getInvoiceBusinessDateKey(ev.ev_time);
     if (!map.has(k)) map.set(k, []);
     map.get(k)!.push(ev);
     return map;

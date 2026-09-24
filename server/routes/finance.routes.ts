@@ -227,6 +227,21 @@ const updateScheduleBodySchema = z.object({
   paidAt: z.coerce.date().nullable().optional(),
 });
 
+function invoiceBusinessDateOnly(value: unknown, rawValue?: unknown): string | null {
+  if (typeof rawValue === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawValue)) return rawValue;
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 const splitScheduleBodySchema = z.object({
   splitAmount: z.union([z.number().positive(), z.string().transform(v => {
     const n = Number(v);
@@ -1094,13 +1109,14 @@ export function registerFinanceRoutes(app: Express): void {
       }
       const userId = (req as any).user?.id;
       const before = await storage.getInvoice(req.params.id);
-      const dateOnly = (value: unknown): string | null => {
-        if (!value) return null;
-        const date = value instanceof Date ? value : new Date(value as string);
-        return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
-      };
-      const effectiveCreatedAt = dateOnly(parsed.data.createdAt ?? before?.createdAt);
-      const effectivePaidAt = dateOnly(parsed.data.paidAt !== undefined ? parsed.data.paidAt : before?.paidAt);
+      const effectiveCreatedAt = invoiceBusinessDateOnly(
+        parsed.data.createdAt ?? before?.createdAt,
+        parsed.data.createdAt !== undefined ? req.body?.createdAt : undefined,
+      );
+      const effectivePaidAt = invoiceBusinessDateOnly(
+        parsed.data.paidAt !== undefined ? parsed.data.paidAt : before?.paidAt,
+        parsed.data.paidAt !== undefined ? req.body?.paidAt : undefined,
+      );
       if (effectiveCreatedAt && effectivePaidAt && effectivePaidAt < effectiveCreatedAt) {
         return res.status(400).json({ message: "Ngày thanh toán không được trước ngày tạo." });
       }
@@ -1513,14 +1529,13 @@ export function registerFinanceRoutes(app: Express): void {
         return res.status(404).json({ message: "Không tìm thấy đợt thanh toán" });
       }
 
-      const dateOnly = (value: unknown): string | null => {
-        if (!value) return null;
-        const date = value instanceof Date ? value : new Date(value as string);
-        return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
-      };
-      const effectiveCreatedAt = dateOnly(parsed.data.createdAt ?? before.createdAt);
-      const effectivePaidAt = dateOnly(
+      const effectiveCreatedAt = invoiceBusinessDateOnly(
+        parsed.data.createdAt ?? before.createdAt,
+        parsed.data.createdAt !== undefined ? req.body?.createdAt : undefined,
+      );
+      const effectivePaidAt = invoiceBusinessDateOnly(
         parsed.data.paidAt !== undefined ? parsed.data.paidAt : before.paidAt,
+        parsed.data.paidAt !== undefined ? req.body?.paidAt : undefined,
       );
       if (effectiveCreatedAt && effectivePaidAt && effectivePaidAt < effectiveCreatedAt) {
         return res.status(400).json({ message: "Ngày thanh toán không được trước ngày tạo." });
