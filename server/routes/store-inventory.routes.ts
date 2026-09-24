@@ -2,6 +2,30 @@ import type { Express } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
+function getDateBoundary(dateKey: string, dayOffset = 0): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!match) return null;
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const calendarDate = new Date(Date.UTC(year, month - 1, day));
+  if (
+    calendarDate.getUTCFullYear() !== year
+    || calendarDate.getUTCMonth() !== month - 1
+    || calendarDate.getUTCDate() !== day
+  ) return null;
+
+  return new Date(Date.UTC(year, month - 1, day + dayOffset));
+}
+
+function getWallClockDate(value: Date | string): Date {
+  if (value instanceof Date) return value;
+  const text = value.trim();
+  const hasTimezone = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/i.test(text);
+  return new Date(hasTimezone ? text : `${text.replace(" ", "T")}Z`);
+}
+
 async function ensureInventoryExtTables() {
   // Reservations table (giữ chỗ)
   await db.execute(sql`
@@ -289,13 +313,16 @@ export async function registerStoreInventoryRoutes(app: Express) {
 
       const dateFrom = String(req.query.dateFrom ?? "").trim();
       const dateTo = String(req.query.dateTo ?? "").trim();
+      const fromBoundary = dateFrom ? getDateBoundary(dateFrom) : null;
+      const toBoundary = dateTo ? getDateBoundary(dateTo, 1) : null;
+      if ((dateFrom && !fromBoundary) || (dateTo && !toBoundary)) {
+        return res.status(400).json({ message: "Date filters must use a valid YYYY-MM-DD date" });
+      }
       if (dateFrom) {
-        const from = new Date(dateFrom + "T00:00:00");
-        data = data.filter(d => d.updatedAt && new Date(d.updatedAt) >= from);
+        data = data.filter(d => d.updatedAt && getWallClockDate(d.updatedAt) >= fromBoundary!);
       }
       if (dateTo) {
-        const to = new Date(dateTo + "T23:59:59");
-        data = data.filter(d => d.updatedAt && new Date(d.updatedAt) <= to);
+        data = data.filter(d => d.updatedAt && getWallClockDate(d.updatedAt) < toBoundary!);
       }
 
       const total = data.length;

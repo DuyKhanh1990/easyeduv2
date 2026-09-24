@@ -54,6 +54,7 @@ import { StoreDateRangePicker, DateRange } from "@/pages/store/StoreDateRangePic
 import { apiRequest } from "@/lib/queryClient";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { useToast } from "@/hooks/use-toast";
+import { formatStoredVietnamTimestamp } from "@/lib/vietnam-time";
 
 type AttendanceFilters = {
   classes: string[];
@@ -795,7 +796,7 @@ export function Attendance() {
                                         <span>{record.shift}</span>
                                         {record.learningFormat === "online" && record.onlineLink && record.onlineClickedAt && (
                                           <span className="text-orange-500 text-xs font-medium">
-                                            Vào lúc {new Date(record.onlineClickedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
+                                            Vào lúc {formatStoredVietnamTimestamp(record.onlineClickedAt, { hour: "2-digit", minute: "2-digit" })}
                                           </span>
                                         )}
                                       </div>
@@ -853,12 +854,11 @@ export function Attendance() {
                                     <TableCell className="text-sm" data-testid={`cell-online-${record.id}`}>
                                       {(record.learningFormat === "online" || !!record.onlineLink) ? (
                                         record.onlineClickedAt ? (() => {
-                                          const clickedAt = new Date(record.onlineClickedAt);
-                                          const fmt = (d: Date) => d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
                                           let endedAt: Date | null = null;
+                                          let storedEndedAt: string | null = null;
                                           let isDefaultEnd = false;
                                           if (record.onlineEndedAt) {
-                                            endedAt = new Date(record.onlineEndedAt);
+                                            storedEndedAt = record.onlineEndedAt;
                                           } else if (record.endTime && record.sessionDate) {
                                             const [h, m, s = 0] = record.endTime.split(":").map(Number);
                                             const [yr, mo, day] = (typeof record.sessionDate === "string"
@@ -870,10 +870,12 @@ export function Attendance() {
                                           }
                                           return (
                                             <div className="flex flex-col gap-0.5 whitespace-nowrap">
-                                              <span className="text-xs text-emerald-600 font-medium">↗ {fmt(clickedAt)}</span>
-                                              {endedAt && (
+                                              <span className="text-xs text-emerald-600 font-medium">↗ {formatStoredVietnamTimestamp(record.onlineClickedAt, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+                                              {(storedEndedAt || endedAt) && (
                                                 <span className={`text-xs font-medium ${isDefaultEnd ? "text-slate-400" : "text-red-500"}`}>
-                                                  ↙ {fmt(endedAt)}{isDefaultEnd ? " *" : ""}
+                                                  ↙ {storedEndedAt
+                                                    ? formatStoredVietnamTimestamp(storedEndedAt, { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                                                    : endedAt?.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}{isDefaultEnd ? " *" : ""}
                                                 </span>
                                               )}
                                             </div>

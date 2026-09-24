@@ -38,6 +38,7 @@ import {
 import { useLocations } from "@/hooks/use-locations";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, getAuthHeaders, queryClient } from "@/lib/queryClient";
+import { formatStoredVietnamTimestamp } from "@/lib/vietnam-time";
 import { getBidvRequestDate } from "@shared/bidv-reconciliation";
 
 type ReconciliationRow = {
@@ -130,6 +131,17 @@ function formatDate(value: string | Date | null | undefined) {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+  });
+}
+
+function formatStoredDate(value: string | Date | null | undefined) {
+  return formatStoredVietnamTimestamp(value, {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
   });
 }
 
@@ -477,7 +489,7 @@ export default function ReconciliationPage() {
                       {sessionData.rows.map((session) => (
                         <TableRow key={session.id} data-testid={`row-bidv-reconciliation-session-${session.id}`}>
                           <TableCell className="font-medium">{session.reconcileDate}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{formatDate(session.requestedAt)}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{formatStoredDate(session.requestedAt)}</TableCell>
                           <TableCell className="text-xs">
                             {session.locationId
                               ? locations.find((location) => location.id === session.locationId)?.name ?? session.locationId
@@ -767,7 +779,7 @@ export default function ReconciliationPage() {
                     {data.rows.map((row) => (
                       <TableRow key={row.id} data-testid={`row-reconciliation-${row.id}`}>
                         <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                          {formatDate(row.createdAt)}
+                          {formatStoredDate(row.createdAt)}
                         </TableCell>
                         <TableCell className="max-w-[220px]">
                           <span className="break-all font-mono text-xs">{row.transactionId}</span>

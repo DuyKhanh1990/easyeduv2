@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { and, asc, desc, eq, ilike, inArray, lt, gte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   bidvTransactions,
@@ -7,6 +7,24 @@ import {
   invoices,
   locations,
 } from "@shared/schema";
+
+function getDateBoundary(dateKey: string, dayOffset = 0): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!match) return null;
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const calendarDate = new Date(Date.UTC(year, month - 1, day));
+  if (
+    calendarDate.getUTCFullYear() !== year
+    || calendarDate.getUTCMonth() !== month - 1
+    || calendarDate.getUTCDate() !== day
+  ) return null;
+
+  const boundary = new Date(Date.UTC(year, month - 1, day + dayOffset));
+  return boundary.toISOString().slice(0, -1).replace("T", " ");
+}
 
 /**
  * Read-only reconciliation view.
@@ -47,13 +65,16 @@ export function registerBidvReconciliationRoutes(app: Express) {
       if (locationId) {
         conditions.push(eq(resolvedLocationId, locationId));
       }
-      if (dateFrom && /^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) {
-        conditions.push(gte(bidvTransactions.createdAt, new Date(`${dateFrom}T00:00:00`)));
+      const fromBoundary = dateFrom ? getDateBoundary(dateFrom) : null;
+      const toBoundary = dateTo ? getDateBoundary(dateTo, 1) : null;
+      if ((dateFrom && !fromBoundary) || (dateTo && !toBoundary)) {
+        return res.status(400).json({ message: "Date filters must use a valid YYYY-MM-DD date" });
       }
-      if (dateTo && /^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
-        const end = new Date(`${dateTo}T00:00:00`);
-        end.setDate(end.getDate() + 1);
-        conditions.push(lt(bidvTransactions.createdAt, end));
+      if (fromBoundary) {
+        conditions.push(sql`${bidvTransactions.createdAt} >= ${fromBoundary}::timestamp`);
+      }
+      if (toBoundary) {
+        conditions.push(sql`${bidvTransactions.createdAt} < ${toBoundary}::timestamp`);
       }
       if (status) {
         conditions.push(eq(bidvTransactions.status, status));

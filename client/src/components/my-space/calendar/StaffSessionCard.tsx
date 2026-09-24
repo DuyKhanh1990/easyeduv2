@@ -28,6 +28,7 @@ import {
 import { useStaffSessionDetail } from "@/hooks/use-staff-session-detail";
 import { apiRequest, getAuthHeaders } from "@/lib/queryClient";
 import type { TestSession } from "@/components/education/TestSessionDetailDialog";
+import { formatStoredVietnamTimestamp, getVietnamTodayKey } from "@/lib/vietnam-time";
 
 const CONTENT_TYPE_LABELS: Record<string, string> = {
   "Bài học": "Bài học",
@@ -230,9 +231,9 @@ function StaffOnlineLinkButton({
       )}
       {clickedAt && (
         <span className="text-[11px] text-orange-500 font-medium">
-          Đã vào lúc {new Date(clickedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+          Đã vào lúc {formatStoredVietnamTimestamp(clickedAt, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
           {endedAt && (
-            <> · Kết thúc lúc {new Date(endedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</>
+            <> · Kết thúc lúc {formatStoredVietnamTimestamp(endedAt, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</>
           )}
         </span>
       )}
@@ -316,7 +317,7 @@ function ReviewStatus({ reviewedCount, enrolledCount, reviewPublished }: { revie
 // Returns true when the test session's end time has already passed
 function isTestSessionEnded(session: MyCalendarSessionLight): boolean {
   const now = new Date();
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const todayStr = getVietnamTodayKey();
   if (session.sessionDate < todayStr) return true;
   if (session.sessionDate > todayStr) return false;
   const nowTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;

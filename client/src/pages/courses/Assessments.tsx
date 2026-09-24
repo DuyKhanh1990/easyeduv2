@@ -78,6 +78,7 @@ import type { Question, Exam, ExamSubmission } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { ExamCommentDialog } from "@/components/my-space/assignments/ExamCommentDialog";
 import { AssessmentHistoryTab } from "./AssessmentHistoryTab";
+import { formatStoredVietnamTimestamp, getStoredVietnamDateKey } from "@/lib/vietnam-time";
 
 type ExamWithUsers = Exam & { createdByName: string | null; updatedByName: string | null };
 
@@ -294,8 +295,9 @@ export default function Assessments() {
       }
       if (examStatusFilter !== "all" && exam.status !== examStatusFilter) return false;
       if (examCreatorFilter !== "all" && exam.createdByName !== examCreatorFilter) return false;
-      if (examUpdatedFrom && new Date(exam.updatedAt) < new Date(examUpdatedFrom)) return false;
-      if (examUpdatedTo && new Date(exam.updatedAt) > new Date(examUpdatedTo + "T23:59:59")) return false;
+      const updatedDateKey = getStoredVietnamDateKey(exam.updatedAt);
+      if (updatedDateKey && examUpdatedFrom && updatedDateKey < examUpdatedFrom) return false;
+      if (updatedDateKey && examUpdatedTo && updatedDateKey > examUpdatedTo) return false;
       return true;
     });
   }, [exams, examSearch, examStatusFilter, examCreatorFilter, examUpdatedFrom, examUpdatedTo]);
@@ -333,8 +335,9 @@ export default function Assessments() {
       const studentKey = sub.studentId || sub.studentName || "";
       if (subStudentIds.length > 0 && !subStudentIds.includes(studentKey)) return false;
       if (subClassIds.length > 0 && (!sub.className || !subClassIds.includes(sub.className))) return false;
-      if (subDateFrom && sub.submittedAt && new Date(sub.submittedAt) < new Date(subDateFrom)) return false;
-      if (subDateTo && sub.submittedAt && new Date(sub.submittedAt) > new Date(subDateTo + "T23:59:59")) return false;
+      const submittedDateKey = sub.submittedAt ? getStoredVietnamDateKey(sub.submittedAt) : "";
+      if (submittedDateKey && subDateFrom && submittedDateKey < subDateFrom) return false;
+      if (submittedDateKey && subDateTo && submittedDateKey > subDateTo) return false;
       return true;
     });
   }, [submissions, subExamIds, subStudentIds, subClassIds, subDateFrom, subDateTo, myLocationIds, myPerms]);
@@ -967,12 +970,12 @@ export default function Assessments() {
                             <div className="flex items-center gap-1 whitespace-nowrap">
                               <span className="text-muted-foreground shrink-0">Người tạo:</span>
                               <span className="font-medium">{exam.createdByName || "—"}</span>
-                              <span className="text-muted-foreground">{new Date(exam.createdAt).toLocaleDateString("vi-VN")}</span>
+                              <span className="text-muted-foreground">{formatStoredVietnamTimestamp(exam.createdAt, { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
                             </div>
                             <div className="flex items-center gap-1 whitespace-nowrap">
                               <span className="text-muted-foreground shrink-0">Cập nhật:</span>
                               <span className="font-medium">{exam.updatedByName || "—"}</span>
-                              <span className="text-muted-foreground">{new Date(exam.updatedAt).toLocaleDateString("vi-VN")}</span>
+                              <span className="text-muted-foreground">{formatStoredVietnamTimestamp(exam.updatedAt, { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
                             </div>
                           </div>
                         </TableCell>
@@ -1549,7 +1552,7 @@ export default function Assessments() {
                             {/* Submit time */}
                             <td className="px-4 py-3">
                               <span className="text-xs text-slate-500 whitespace-nowrap">
-                                {new Date(sub.submittedAt).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" })}
+                                {formatStoredVietnamTimestamp(sub.submittedAt, { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}
                               </span>
                             </td>
                             {/* Actions */}

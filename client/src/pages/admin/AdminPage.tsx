@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Redirect } from "wouter";
-import { format } from "date-fns";
-import { vi } from "date-fns/locale";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -25,6 +23,7 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useAuth } from "@/hooks/use-auth";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { apiRequest } from "@/lib/queryClient";
+import { formatStoredVietnamTimestamp } from "@/lib/vietnam-time";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -85,10 +84,14 @@ type DatabaseRestore = {
 };
 
 function formatDateTime(value: string | null | undefined): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return format(date, "dd/MM/yyyy HH:mm", { locale: vi });
+  return formatStoredVietnamTimestamp(value, {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
 }
 
 function formatBytes(value: string | number | null): string {

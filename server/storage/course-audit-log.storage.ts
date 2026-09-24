@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNull, lte, or, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, or, inArray, sql } from "drizzle-orm";
 import { db } from "./base";
 import { courseAuditLogs, locations, staff, users } from "@shared/schema";
 import type { InsertCourseAuditLog } from "@shared/schema";
@@ -26,8 +26,8 @@ export interface CourseAuditLogWithDetails {
 }
 
 export async function getCourseAuditLogs(filters: {
-  dateFrom?: Date;
-  dateTo?: Date;
+  dateFrom?: string;
+  dateTo?: string;
   scope?: string;
   action?: string;
   allowedLocationIds?: string[];
@@ -36,8 +36,12 @@ export async function getCourseAuditLogs(filters: {
   offset?: number;
 } = {}): Promise<{ events: CourseAuditLogWithDetails[]; total: number }> {
   const conditions = [];
-  if (filters.dateFrom) conditions.push(gte(courseAuditLogs.createdAt, filters.dateFrom));
-  if (filters.dateTo) conditions.push(lte(courseAuditLogs.createdAt, filters.dateTo));
+  if (filters.dateFrom) {
+    conditions.push(sql`${courseAuditLogs.createdAt} >= ${filters.dateFrom}::timestamp`);
+  }
+  if (filters.dateTo) {
+    conditions.push(sql`${courseAuditLogs.createdAt} < ${filters.dateTo}::timestamp`);
+  }
   if (filters.scope) conditions.push(eq(courseAuditLogs.scope, filters.scope));
   if (filters.action) conditions.push(eq(courseAuditLogs.action, filters.action));
   if (!filters.isSuperAdmin && filters.allowedLocationIds?.length === 0) {

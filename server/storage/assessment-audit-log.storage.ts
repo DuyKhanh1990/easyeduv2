@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "./base";
 import { assessmentAuditLogs, locations, staff, users } from "@shared/schema";
 import type { AssessmentAuditLog, InsertAssessmentAuditLog } from "@shared/schema";
@@ -16,8 +16,8 @@ export interface AssessmentAuditLogWithDetails extends AssessmentAuditLog {
 }
 
 export async function getAssessmentAuditLogs(filters: {
-  dateFrom?: Date;
-  dateTo?: Date;
+  dateFrom?: string;
+  dateTo?: string;
   scope?: string;
   action?: string;
   allowedLocationIds?: string[];
@@ -26,8 +26,12 @@ export async function getAssessmentAuditLogs(filters: {
   offset?: number;
 } = {}): Promise<{ events: AssessmentAuditLogWithDetails[]; total: number }> {
   const conditions = [];
-  if (filters.dateFrom) conditions.push(gte(assessmentAuditLogs.createdAt, filters.dateFrom));
-  if (filters.dateTo) conditions.push(lte(assessmentAuditLogs.createdAt, filters.dateTo));
+  if (filters.dateFrom) {
+    conditions.push(sql`${assessmentAuditLogs.createdAt} >= ${filters.dateFrom}::timestamp`);
+  }
+  if (filters.dateTo) {
+    conditions.push(sql`${assessmentAuditLogs.createdAt} < ${filters.dateTo}::timestamp`);
+  }
   if (filters.scope) conditions.push(eq(assessmentAuditLogs.scope, filters.scope));
   if (filters.action) conditions.push(eq(assessmentAuditLogs.action, filters.action));
 

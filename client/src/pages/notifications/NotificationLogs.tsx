@@ -19,8 +19,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Loader2, Bell, ChevronLeft, ChevronRight, FlaskConical } from "lucide-react";
-import { format } from "date-fns";
-import { vi } from "date-fns/locale";
+import { formatStoredVietnamTimestamp } from "@/lib/vietnam-time";
 
 type LogRow = {
   id: string;
@@ -509,7 +508,7 @@ export function NotificationLogs() {
                       onClick={() => setSelectedLog(log)}
                     >
                       <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
-                        {format(new Date(log.createdAt), "dd/MM/yyyy HH:mm", { locale: vi })}
+                        {formatStoredVietnamTimestamp(log.createdAt, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).replace(", ", " ")}
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap">
                         {log.studentName ? (
@@ -591,7 +590,7 @@ export function NotificationLogs() {
                 <div>
                   <p className="text-xs text-muted-foreground mb-0.5">Thời gian</p>
                   <p className="font-medium text-xs">
-                    {format(new Date(selectedLog.createdAt), "dd/MM/yyyy HH:mm:ss", { locale: vi })}
+                    {formatStoredVietnamTimestamp(selectedLog.createdAt, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).replace(", ", " ")}
                   </p>
                 </div>
                 <div>

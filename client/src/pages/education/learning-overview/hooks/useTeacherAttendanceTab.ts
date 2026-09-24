@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getAuthHeaders } from "@/lib/queryClient";
+import { getVietnamTodayKey } from "@/lib/vietnam-time";
 
 export interface TeacherAttendanceRow {
   sessionId: string;
@@ -27,7 +28,7 @@ interface TeacherAttendanceResponse {
 const QUERY_KEY = "/api/learning-overview/teacher-attendance";
 
 function todayStr() {
-  return new Date().toISOString().split("T")[0];
+  return getVietnamTodayKey();
 }
 
 function buildUrl(params: {

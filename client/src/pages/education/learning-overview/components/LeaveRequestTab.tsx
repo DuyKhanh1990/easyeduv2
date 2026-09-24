@@ -33,6 +33,7 @@ import {
 import { apiRequest, getAuthHeaders } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Pagination } from "./Pagination";
+import { formatStoredVietnamTimestamp } from "@/lib/vietnam-time";
 
 type LocationOption = {
   id: string;
@@ -130,11 +131,7 @@ function formatDate(date: string | null | undefined) {
 }
 
 function formatDateTime(date: string | null | undefined) {
-  if (!date) return "—";
-  const parsed = new Date(date);
-  return Number.isNaN(parsed.getTime())
-    ? "—"
-    : parsed.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return formatStoredVietnamTimestamp(date, { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 function ScheduleLines({ schedules }: { schedules: ScheduleOption[] }) {

@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { format, formatDistanceToNow } from "date-fns";
 import { vi } from "date-fns/locale";
+import { formatStoredVietnamTimestamp, parseStoredVietnamTimestamp } from "@/lib/vietnam-time";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -238,7 +239,10 @@ function CommentItem({ comment, onDelete, canDelete }: {
         <div className="flex items-baseline justify-between gap-2">
           <span className="text-xs font-semibold">{comment.authorName || "Ẩn danh"}</span>
           <span className="text-[10px] text-muted-foreground shrink-0">
-            {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true, locale: vi })}
+            {(() => {
+              const createdAt = parseStoredVietnamTimestamp(comment.createdAt);
+              return createdAt ? formatDistanceToNow(createdAt, { addSuffix: true, locale: vi }) : "—";
+            })()}
           </span>
         </div>
         <div className="flex items-start justify-between gap-1">
@@ -412,7 +416,14 @@ export function TaskDetailPanel({
 
             <InfoCell icon={User} label="Tạo bởi">
               <span className="text-muted-foreground text-xs">
-                {format(new Date(task.createdAt), "dd/MM/yyyy HH:mm")}
+                {formatStoredVietnamTimestamp(task.createdAt, {
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hourCycle: "h23",
+                })}
               </span>
             </InfoCell>
 

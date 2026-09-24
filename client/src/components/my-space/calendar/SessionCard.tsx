@@ -10,6 +10,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { getAttendanceStatus } from "@/lib/attendance-status";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { formatStoredVietnamTimestamp } from "@/lib/vietnam-time";
 
 const CONTENT_TYPE_LABELS: Record<string, string> = {
   lesson: "Bài học",
@@ -241,9 +242,9 @@ function OnlineLinkButton({
       )}
       {localClickedAt && (
         <span className="text-[11px] text-orange-500 font-medium">
-          Đã vào lúc {new Date(localClickedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+          Đã vào lúc {formatStoredVietnamTimestamp(localClickedAt, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
           {localEndedAt && (
-            <> · Kết thúc lúc {new Date(localEndedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</>
+            <> · Kết thúc lúc {formatStoredVietnamTimestamp(localEndedAt, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</>
           )}
         </span>
       )}

@@ -24,6 +24,24 @@ import type {
   User,
 } from "./base";
 
+function getDateBoundary(dateKey: string, dayOffset = 0): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!match) return null;
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const calendarDate = new Date(Date.UTC(year, month - 1, day));
+  if (
+    calendarDate.getUTCFullYear() !== year
+    || calendarDate.getUTCMonth() !== month - 1
+    || calendarDate.getUTCDate() !== day
+  ) return null;
+
+  const boundary = new Date(Date.UTC(year, month - 1, day + dayOffset));
+  return boundary.toISOString().slice(0, -1).replace("T", " ");
+}
+
 // ==========================================
 // STUDENT METHODS
 // ==========================================
@@ -159,20 +177,24 @@ export async function getStudents(params: {
     )`;
   }
   if (startDate) {
-    whereClause = sql`${whereClause} AND ${students.createdAt} >= ${new Date(startDate)}`;
+    const boundary = getDateBoundary(startDate);
+    if (!boundary) throw new Error("startDate must be a valid YYYY-MM-DD date");
+    whereClause = sql`${whereClause} AND ${students.createdAt} >= ${boundary}::timestamp`;
   }
   if (endDate) {
-    const end = new Date(endDate);
-    end.setHours(23, 59, 59, 999);
-    whereClause = sql`${whereClause} AND ${students.createdAt} <= ${end}`;
+    const boundary = getDateBoundary(endDate, 1);
+    if (!boundary) throw new Error("endDate must be a valid YYYY-MM-DD date");
+    whereClause = sql`${whereClause} AND ${students.createdAt} < ${boundary}::timestamp`;
   }
   if (updatedFrom) {
-    whereClause = sql`${whereClause} AND ${students.updatedAt} >= ${new Date(updatedFrom)}`;
+    const boundary = getDateBoundary(updatedFrom);
+    if (!boundary) throw new Error("updatedFrom must be a valid YYYY-MM-DD date");
+    whereClause = sql`${whereClause} AND ${students.updatedAt} >= ${boundary}::timestamp`;
   }
   if (updatedTo) {
-    const end = new Date(updatedTo);
-    end.setHours(23, 59, 59, 999);
-    whereClause = sql`${whereClause} AND ${students.updatedAt} <= ${end}`;
+    const boundary = getDateBoundary(updatedTo, 1);
+    if (!boundary) throw new Error("updatedTo must be a valid YYYY-MM-DD date");
+    whereClause = sql`${whereClause} AND ${students.updatedAt} < ${boundary}::timestamp`;
   }
   if (birthYear && /^\d{4}$/.test(birthYear)) {
     whereClause = sql`${whereClause}

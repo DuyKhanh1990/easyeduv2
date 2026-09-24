@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { vi } from "date-fns/locale";
+import { formatStoredVietnamTimestamp } from "@/lib/vietnam-time";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import {
@@ -942,7 +943,11 @@ function SalarySheetsTab() {
                         <StatusBadge status={sheet.status} />
                       </td>
                       <td className="px-5 py-3.5 text-sm text-muted-foreground">
-                        {format(new Date(sheet.createdAt), "dd/MM/yyyy")}
+                        {formatStoredVietnamTimestamp(sheet.createdAt, {
+                          day: "2-digit",
+                          month: "2-digit",
+                          year: "numeric",
+                        })}
                       </td>
                       <td className="px-5 py-3.5">
                         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>

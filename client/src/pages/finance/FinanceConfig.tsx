@@ -5,6 +5,7 @@ import { queryClient, apiRequest, STATIC_STALE_TIME } from "@/lib/queryClient";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { formatStoredVietnamTimestamp } from "@/lib/vietnam-time";
 import { useSidebarVisibility } from "@/hooks/use-sidebar-visibility";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1205,7 +1206,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                       </td>
                       <td className="px-4 py-2.5 text-muted-foreground">
                         {row.usedAt
-                          ? new Date(row.usedAt).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" })
+                          ? formatStoredVietnamTimestamp(row.usedAt, { dateStyle: "short", timeStyle: "short" })
                           : "—"}
                       </td>
                       <td className="px-4 py-2.5">

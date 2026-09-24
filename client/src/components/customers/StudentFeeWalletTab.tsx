@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { TransferFeeWalletDialog } from "./TransferFeeWalletDialog";
 import { AdjustFeeWalletDialog } from "./AdjustFeeWalletDialog";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
+import { formatStoredVietnamTimestamp } from "@/lib/vietnam-time";
 
 interface FeeWalletSummary {
   hocPhi: number;
@@ -42,14 +43,14 @@ function formatCurrency(amount: number) {
 }
 
 function formatDateTime(iso: string | null) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  const day   = String(d.getDate()).padStart(2, "0");
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const year  = d.getFullYear();
-  const hour  = String(d.getHours()).padStart(2, "0");
-  const min   = String(d.getMinutes()).padStart(2, "0");
-  return `${day}/${month}/${year} ${hour}:${min}`;
+  return formatStoredVietnamTimestamp(iso, {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).replace(", ", " ");
 }
 
 interface SummaryCardProps {
