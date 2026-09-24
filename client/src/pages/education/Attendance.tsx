@@ -54,7 +54,13 @@ import { StoreDateRangePicker, DateRange } from "@/pages/store/StoreDateRangePic
 import { apiRequest } from "@/lib/queryClient";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { useToast } from "@/hooks/use-toast";
-import { formatStoredVietnamTimestamp } from "@/lib/vietnam-time";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
+import { DEFAULT_CENTER_TIME_ZONE, formatCenterInstant } from "@shared/center-time";
+
+function formatAttendanceInstant(value: string, timeZone: string, options: Intl.DateTimeFormatOptions): string {
+  const instant = new Date(value);
+  return Number.isNaN(instant.getTime()) ? "—" : formatCenterInstant(instant, timeZone, options);
+}
 
 type AttendanceFilters = {
   classes: string[];
@@ -128,6 +134,8 @@ function StatusBadge({ status }: { status: string }) {
 
 export function Attendance() {
   const queryClient = useQueryClient();
+  const centerTimeZoneQuery = useCenterTimeZone();
+  const centerTimeZone = centerTimeZoneQuery.data ?? DEFAULT_CENTER_TIME_ZONE;
   const { data: myPerms } = useMyPermissions();
   const canAttend = !myPerms || myPerms.isSuperAdmin || !!(myPerms.permissions["/attendance"]?.canCreate);
 
@@ -796,7 +804,7 @@ export function Attendance() {
                                         <span>{record.shift}</span>
                                         {record.learningFormat === "online" && record.onlineLink && record.onlineClickedAt && (
                                           <span className="text-orange-500 text-xs font-medium">
-                                            Vào lúc {formatStoredVietnamTimestamp(record.onlineClickedAt, { hour: "2-digit", minute: "2-digit" })}
+                                            Vào lúc {formatAttendanceInstant(record.onlineClickedAt, centerTimeZone, { hour: "2-digit", minute: "2-digit" })}
                                           </span>
                                         )}
                                       </div>
@@ -870,11 +878,11 @@ export function Attendance() {
                                           }
                                           return (
                                             <div className="flex flex-col gap-0.5 whitespace-nowrap">
-                                              <span className="text-xs text-emerald-600 font-medium">↗ {formatStoredVietnamTimestamp(record.onlineClickedAt, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+                                              <span className="text-xs text-emerald-600 font-medium">↗ {formatAttendanceInstant(record.onlineClickedAt, centerTimeZone, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
                                               {(storedEndedAt || endedAt) && (
                                                 <span className={`text-xs font-medium ${isDefaultEnd ? "text-slate-400" : "text-red-500"}`}>
                                                   ↙ {storedEndedAt
-                                                    ? formatStoredVietnamTimestamp(storedEndedAt, { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                                                    ? formatAttendanceInstant(storedEndedAt, centerTimeZone, { hour: "2-digit", minute: "2-digit", second: "2-digit" })
                                                     : endedAt?.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}{isDefaultEnd ? " *" : ""}
                                                 </span>
                                               )}

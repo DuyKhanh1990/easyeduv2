@@ -118,12 +118,15 @@ export const fmtMoney = (amount: number): string =>
 
 const VIETNAM_TIME_ZONE = "Asia/Ho_Chi_Minh";
 
-export const getInvoiceBusinessDateKey = (value: string | Date): string => {
+export const getInvoiceBusinessDateKey = (
+  value: string | Date,
+  timeZone = VIETNAM_TIME_ZONE,
+): string => {
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: VIETNAM_TIME_ZONE,
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

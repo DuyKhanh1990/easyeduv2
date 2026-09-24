@@ -10,7 +10,16 @@ import { apiRequest } from "@/lib/queryClient";
 import { getAttendanceStatus } from "@/lib/attendance-status";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { formatStoredVietnamTimestamp } from "@/lib/vietnam-time";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
+import { DEFAULT_CENTER_TIME_ZONE, formatCenterInstant } from "@shared/center-time";
+
+function formatOnlineInstant(value: string | null, timeZone: string): string {
+  if (!value) return "";
+  const instant = new Date(value);
+  return Number.isNaN(instant.getTime())
+    ? "—"
+    : formatCenterInstant(instant, timeZone, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
 
 const CONTENT_TYPE_LABELS: Record<string, string> = {
   lesson: "Bài học",
@@ -124,6 +133,8 @@ function OnlineLinkButton({
   onRecorded,
 }: OnlineLinkButtonProps) {
   const platformName = getOnlinePlatformName(onlineLink);
+  const centerTimeZoneQuery = useCenterTimeZone();
+  const centerTimeZone = centerTimeZoneQuery.data ?? DEFAULT_CENTER_TIME_ZONE;
   const [localClickedAt, setLocalClickedAt] = useState<string | null>(onlineClickedAt ?? null);
   const [localEndedAt, setLocalEndedAt] = useState<string | null>(onlineEndedAt ?? null);
   const [, setTick] = useState(0);
@@ -242,9 +253,9 @@ function OnlineLinkButton({
       )}
       {localClickedAt && (
         <span className="text-[11px] text-orange-500 font-medium">
-          Đã vào lúc {formatStoredVietnamTimestamp(localClickedAt, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+          Đã vào lúc {formatOnlineInstant(localClickedAt, centerTimeZone)}
           {localEndedAt && (
-            <> · Kết thúc lúc {formatStoredVietnamTimestamp(localEndedAt, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</>
+            <> · Kết thúc lúc {formatOnlineInstant(localEndedAt, centerTimeZone)}</>
           )}
         </span>
       )}

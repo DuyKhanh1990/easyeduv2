@@ -7,6 +7,7 @@ import { CalendarIcon, History, Plus, CreditCard, CheckCircle2, Eye } from "luci
 import { fmtMoney, getInvoiceBusinessDateKey } from "@/types/invoice-types";
 import { Pencil, Trash2, XCircle } from "lucide-react";
 import { HistoryPaginationFooter } from "@/components/common/HistoryPaginationFooter";
+import { useCenterTimeZone } from "@/hooks/use-center-time-zone";
 
 /* ── Types ─────────────────────────────────────────────── */
 interface HistoryEvent {
@@ -34,11 +35,11 @@ interface HistoryResponse {
 }
 
 /* ── Helpers ────────────────────────────────────────────── */
-const VIETNAM_TIME_ZONE = "Asia/Ho_Chi_Minh";
+const DEFAULT_TIME_ZONE = "Asia/Ho_Chi_Minh";
 
-function getVietnamParts(date: Date) {
+function getVietnamParts(date: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat("vi-VN", {
-    timeZone: VIETNAM_TIME_ZONE,
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -55,17 +56,17 @@ function parseTimestamp(value: string) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function fmtDateTime(iso: string) {
+function fmtDateTime(iso: string, timeZone: string) {
   const date = parseTimestamp(iso);
   if (!date) return iso;
-  const parts = getVietnamParts(date);
+  const parts = getVietnamParts(date, timeZone);
   return `${parts.hour}:${parts.minute} — ${parts.day}/${parts.month}/${parts.year}`;
 }
 
-function fmtDateGroup(iso: string) {
+function fmtDateGroup(iso: string, timeZone: string) {
   const date = parseTimestamp(iso);
   if (!date) return iso;
-  const parts = getVietnamParts(date);
+  const parts = getVietnamParts(date, timeZone);
   return `${parts.weekday}, ${parts.day}/${parts.month}/${parts.year}`;
 }
 
@@ -192,7 +193,7 @@ const SKIP_IF_SIBLING: Record<string, string> = {
   classId:    "className",
 };
 
-function formatFieldValue(key: string, val: any): string {
+function formatFieldValue(key: string, val: any, timeZone: string): string {
   if (val === null || val === undefined || val === "") return "—";
   if (key === "status") return STATUS_LABELS[String(val)] ?? String(val);
   if (MONEY_FIELDS.has(key)) {
@@ -209,7 +210,7 @@ function formatFieldValue(key: string, val: any): string {
   }
   if (["createdAt", "paidAt"].includes(key)) {
     const date = parseTimestamp(String(val));
-    return date ? fmtDateTime(String(val)) : String(val);
+    return date ? fmtDateTime(String(val), timeZone) : String(val);
   }
   return String(val);
 }
@@ -218,9 +219,11 @@ function formatFieldValue(key: string, val: any): string {
 function EventDetailDialog({
   event,
   onClose,
+  timeZone,
 }: {
   event: HistoryEvent | null;
   onClose: () => void;
+  timeZone: string;
 }) {
   if (!event) return null;
   const cfg = getEventConfig(event.ev_type);
@@ -263,7 +266,7 @@ function EventDetailDialog({
               {cfg.label}
             </span>
             <span className="font-bold text-slate-700">{event.invoice_code}</span>
-            <span className="text-slate-400 font-normal">{fmtDateTime(event.ev_time)}</span>
+            <span className="text-slate-400 font-normal">{fmtDateTime(event.ev_time, timeZone)}</span>
           </DialogTitle>
         </DialogHeader>
 
@@ -295,8 +298,8 @@ function EventDetailDialog({
               <tbody>
                 {diffRows.map(k => {
                   const label = FIELD_LABELS[k] ?? k;
-                  const oldVal = formatFieldValue(k, oldObj[k]);
-                  const newVal = formatFieldValue(k, newObj[k]);
+                  const oldVal = formatFieldValue(k, oldObj[k], timeZone);
+                  const newVal = formatFieldValue(k, newObj[k], timeZone);
                   return (
                     <tr key={k} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                       <td className="py-2 pr-3 font-medium text-slate-600 align-top">{label}</td>
@@ -369,10 +372,10 @@ function EventDetailDialog({
 /* ── Date range quick-filter ────────────────────────────── */
 type QuickRange = "all" | "today" | "7d" | "30d" | "thismonth";
 
-function quickRangeDates(r: QuickRange): { from?: string; to?: string } {
+function quickRangeDates(r: QuickRange, timeZone: string): { from?: string; to?: string } {
   const pad = (n: number) => String(n).padStart(2, "0");
   const fmt = (d: Date) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
-  const todayParts = getVietnamParts(new Date());
+  const todayParts = getVietnamParts(new Date(), timeZone);
   const today = new Date(Date.UTC(
     Number(todayParts.year),
     Number(todayParts.month) - 1,
@@ -395,13 +398,15 @@ export function InvoiceHistoryTab({
 }: {
   locationOptions: { value: string; label: string }[];
 }) {
+  const centerTimeZoneQuery = useCenterTimeZone();
+  const centerTimeZone = centerTimeZoneQuery.data ?? DEFAULT_TIME_ZONE;
   const [quickRange, setQuickRange] = useState<QuickRange>("7d");
   const [locationId, setLocationId] = useState<string>("__all__");
   const [page, setPage] = useState(1);
   const [detailEvent, setDetailEvent] = useState<HistoryEvent | null>(null);
   const [pageSize, setPageSize] = useState(50);
 
-  const { from, to } = quickRangeDates(quickRange);
+  const { from, to } = quickRangeDates(quickRange, centerTimeZone);
 
   const params = new URLSearchParams();
   if (from) params.set("dateFrom", from);
@@ -411,12 +416,13 @@ export function InvoiceHistoryTab({
   params.set("offset", String((page - 1) * pageSize));
 
   const { data, isLoading } = useQuery<HistoryResponse>({
-    queryKey: ["/api/finance/invoices/history", from, to, locationId, page, pageSize],
+    queryKey: ["/api/finance/invoices/history", from, to, locationId, page, pageSize, centerTimeZone],
     queryFn: async () => {
       const res = await fetch(`/api/finance/invoices/history?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
+    enabled: Boolean(centerTimeZoneQuery.data),
     staleTime: 30_000,
   });
 
@@ -426,7 +432,7 @@ export function InvoiceHistoryTab({
 
   // Group events by date
   const groups = events.reduce<Map<string, HistoryEvent[]>>((map, ev) => {
-    const k = getInvoiceBusinessDateKey(ev.ev_time);
+    const k = getInvoiceBusinessDateKey(ev.ev_time, centerTimeZone);
     if (!map.has(k)) map.set(k, []);
     map.get(k)!.push(ev);
     return map;
@@ -514,7 +520,7 @@ export function InvoiceHistoryTab({
                 <div className="flex items-center gap-2 mb-2 sticky top-0 bg-slate-50/90 py-1 px-2 rounded-lg backdrop-blur-sm z-10">
                   <div className="h-px flex-1 bg-slate-200" />
                   <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">
-                    {fmtDateGroup(evs[0].ev_time)}
+                    {fmtDateGroup(evs[0].ev_time, centerTimeZone)}
                   </span>
                   <div className="h-px flex-1 bg-slate-200" />
                 </div>
@@ -594,7 +600,7 @@ export function InvoiceHistoryTab({
                           <p className={`text-sm font-bold ${isIncome ? "text-emerald-600" : "text-red-600"}`}>
                             {isIncome ? "+" : "-"}{fmtMoney(amount)} đ
                           </p>
-                          <p className="text-[10px] text-slate-400">{fmtDateTime(ev.ev_time)}</p>
+                          <p className="text-[10px] text-slate-400">{fmtDateTime(ev.ev_time, centerTimeZone)}</p>
                           {/* Eye icon — always visible on audit events, hover on others */}
                           <button
                             onClick={() => setDetailEvent(ev)}
@@ -634,7 +640,7 @@ export function InvoiceHistoryTab({
       />
 
       {/* ── Detail dialog ────────────────────────────────────── */}
-      <EventDetailDialog event={detailEvent} onClose={() => setDetailEvent(null)} />
+      <EventDetailDialog event={detailEvent} onClose={() => setDetailEvent(null)} timeZone={centerTimeZone} />
     </div>
   );
 }

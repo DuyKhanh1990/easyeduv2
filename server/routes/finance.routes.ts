@@ -9,6 +9,8 @@ import {
 import { saveInvoiceCommissions, getInvoiceFilterOptions, getThuChiReportEntries, getNextLocationCode, getAvailableFinanceVouchers } from "../storage/finance.storage";
 import { createInvoiceAuditLog } from "../storage/invoice-audit-log.storage";
 import { createIssueReceiptsForInvoice, cancelIssueReceiptForInvoice } from "./store-issue-receipt.routes";
+import { centerDateRangeConditions, InvalidCenterDateKeyError } from "../lib/center-date-range";
+import { validateCenterTimeZone } from "@shared/center-time";
 
 import { z } from "zod";
 import {
@@ -18,7 +20,7 @@ import {
   insertFinanceVoucherSchema,
 } from "@shared/schema";
 import { db, pool } from "../db";
-import { staff, classes, invoices, invoicePaymentSchedule, students, classSessions } from "@shared/schema";
+import { staff, classes, invoices, invoicePaymentSchedule, students, classSessions, centerConfig } from "@shared/schema";
 import { eq, asc, sql, and, isNotNull, gte, lte, inArray } from "drizzle-orm";
 import { ensureVirtualAccount } from "../services/bidv/bidv-virtual-account.service";
 import { resolveInvoiceRecipientUserIds, sendInvoiceCreatedNotification, sendInvoicePaidNotification } from "../lib/invoice-notification";
@@ -686,6 +688,9 @@ export function registerFinanceRoutes(app: Express): void {
   app.get("/api/finance/invoices/history", async (req, res) => {
     try {
       const q = req.query as Record<string, string>;
+      const [center] = await db.select({ timeZone: centerConfig.timezone }).from(centerConfig).limit(1);
+      if (!center) return res.status(503).json({ message: "Chưa cấu hình trung tâm" });
+      const timeZone = validateCenterTimeZone(center.timeZone);
       const dateFrom   = q.dateFrom   || null;
       const dateTo     = q.dateTo     || null;
       const locationId = q.locationId || null;
@@ -708,20 +713,23 @@ export function registerFinanceRoutes(app: Express): void {
         return parts.length ? "AND " + parts.join(" AND ") : "";
       })();
 
-      // The finance timestamp columns are TIMESTAMP WITHOUT TIME ZONE values
-      // stored as Vietnam wall-clock time. Convert to real instants once in the
-      // UNION below; filter those instants using Vietnam midnight boundaries.
+      // Legacy finance timestamps are converted to instants in each UNION
+      // branch. Filter the combined timeline by the center's business-day zone.
+      centerDateRangeConditions(sql`ev_time`, dateFrom, dateTo, timeZone);
       const dateFilter = (() => {
         const parts: string[] = [];
         const isDateOnly = (value: string | null): value is string =>
           Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+        const dateParams: unknown[] = [];
         if (dateFrom && isDateOnly(dateFrom)) {
-          parts.push(`ev_time >= ('${dateFrom}'::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')`);
+          dateParams.push(dateFrom, timeZone);
+          parts.push(`ev_time >= ($${dateParams.length - 1}::date::timestamp AT TIME ZONE $${dateParams.length})`);
         }
         if (dateTo && isDateOnly(dateTo)) {
-          parts.push(`ev_time < (('${dateTo}'::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')`);
+          dateParams.push(dateTo, timeZone);
+          parts.push(`ev_time < (($${dateParams.length - 1}::date + INTERVAL '1 day')::timestamp AT TIME ZONE $${dateParams.length})`);
         }
-        return parts.length ? "WHERE " + parts.join(" AND ") : "";
+        return { clause: parts.length ? "WHERE " + parts.join(" AND ") : "", params: dateParams };
       })();
 
       const baseUnion = `
@@ -796,7 +804,7 @@ export function registerFinanceRoutes(app: Express): void {
 
         SELECT
           al.action                    AS ev_type,
-          al.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh' AS ev_time,
+          al.created_at AS ev_time,
           al.invoice_id::text          AS invoice_id,
           al.invoice_code              AS invoice_code,
           al.invoice_type              AS invoice_type,
@@ -820,10 +828,10 @@ export function registerFinanceRoutes(app: Express): void {
       `;
 
       const [countResult, dataResult] = await Promise.all([
-        pool.query(`SELECT COUNT(*) AS cnt FROM (${baseUnion}) base ${dateFilter}`),
+        pool.query(`SELECT COUNT(*) AS cnt FROM (${baseUnion}) base ${dateFilter.clause}`, dateFilter.params),
         pool.query(
-          `SELECT * FROM (${baseUnion}) base ${dateFilter} ORDER BY ev_time DESC LIMIT $1 OFFSET $2`,
-          [limit, offset]
+          `SELECT * FROM (${baseUnion}) base ${dateFilter.clause} ORDER BY ev_time DESC LIMIT $${dateFilter.params.length + 1} OFFSET $${dateFilter.params.length + 2}`,
+          [...dateFilter.params, limit, offset]
         ),
       ]);
 
@@ -833,6 +841,9 @@ export function registerFinanceRoutes(app: Express): void {
       });
     } catch (err: any) {
       console.error("[invoice-history]", err);
+      if (err instanceof InvalidCenterDateKeyError) {
+        return res.status(400).json({ message: err.message });
+      }
       res.status(500).json({ message: err.message });
     }
   });
