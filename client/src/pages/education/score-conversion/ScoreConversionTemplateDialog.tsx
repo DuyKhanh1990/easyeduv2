@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -29,7 +28,6 @@ type ScoreConversionTemplateDialogProps = {
   onSave: (draft: ScoreConversionTemplateInput) => Promise<void>;
 };
 
-const newId = () => crypto.randomUUID();
 const numericValue = (value: string) => (value === "" ? 0 : Number(value));
 
 export function ScoreConversionTemplateDialog({
@@ -142,12 +140,6 @@ export function ScoreConversionTemplateDialog({
         }
       }
     }
-    if (draft.overallRule.maxScore < draft.overallRule.minScore) {
-      return "Điểm tối đa của điểm tổng phải lớn hơn hoặc bằng điểm tối thiểu.";
-    }
-    if (draft.overallRule.gradeBands.some((band) => !band.label.trim() || band.maxScore < band.minScore)) {
-      return "Vui lòng kiểm tra tên và khoảng điểm của các ngưỡng xếp loại.";
-    }
     return "";
   };
 
@@ -167,10 +159,7 @@ export function ScoreConversionTemplateDialog({
           rawUnit: section.rawUnit.trim(),
           convertedUnit: section.convertedUnit.trim(),
         })),
-        overallRule: {
-          ...draft.overallRule,
-          description: draft.overallRule.description.trim(),
-        },
+        overallRule: { ...draft.overallRule },
       });
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Không thể lưu bảng quy đổi.");
@@ -462,101 +451,23 @@ export function ScoreConversionTemplateDialog({
 
           <section className="space-y-3 rounded-lg border p-4">
             <div>
-              <h3 className="font-semibold">Quy tắc điểm tổng</h3>
-              <p className="text-sm text-muted-foreground">Có thể chỉnh cách tổng hợp điểm quy đổi từ các phần thi.</p>
+              <h3 className="font-semibold">Cách tính điểm tổng</h3>
+              <p className="text-sm text-muted-foreground">
+                Sau khi quy đổi từng phần thi, hệ thống sẽ áp dụng công thức này.
+              </p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              <div className="space-y-1.5">
-                <Label htmlFor="overall-method">Cách tính</Label>
-                <Select
-                  value={draft.overallRule.method}
-                  onValueChange={(value) => updateRule({ method: value as "sum" | "average" })}
-                >
-                  <SelectTrigger id="overall-method"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="average">Trung bình</SelectItem>
-                    <SelectItem value="sum">Cộng tổng</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="overall-min">Điểm tổng từ</Label>
-                <Input id="overall-min" type="number" step="any" value={draft.overallRule.minScore}
-                  onChange={(event) => updateRule({ minScore: numericValue(event.target.value) })} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="overall-max">Đến</Label>
-                <Input id="overall-max" type="number" step="any" value={draft.overallRule.maxScore}
-                  onChange={(event) => updateRule({ maxScore: numericValue(event.target.value) })} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="overall-rounding">Làm tròn đến</Label>
-                <Input id="overall-rounding" type="number" min="0.01" step="any"
-                  placeholder="Không làm tròn" value={draft.overallRule.roundingStep ?? ""}
-                  onChange={(event) => updateRule({
-                    roundingStep: event.target.value === "" ? null : numericValue(event.target.value),
-                  })} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="overall-unit">Đơn vị điểm tổng</Label>
-                <Input id="overall-unit" value={draft.overallRule.unit} maxLength={40}
-                  onChange={(event) => updateRule({ unit: event.target.value })} />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="overall-description">Mô tả quy tắc</Label>
-              <Textarea id="overall-description" value={draft.overallRule.description}
-                placeholder="Mô tả cách tính điểm tổng"
-                onChange={(event) => updateRule({ description: event.target.value })} maxLength={1000} />
-            </div>
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <Label>Ngưỡng xếp loại (không bắt buộc)</Label>
-                  <p className="text-xs text-muted-foreground">Ví dụ: A2 từ 120 đến 139 điểm.</p>
-                </div>
-                <Button type="button" variant="outline" size="sm" onClick={() => updateRule({
-                  gradeBands: [...draft.overallRule.gradeBands, {
-                    id: newId(), label: "", minScore: draft.overallRule.minScore, maxScore: draft.overallRule.maxScore,
-                  }],
-                })}>
-                  <Plus className="mr-1 h-4 w-4" />Thêm ngưỡng
-                </Button>
-              </div>
-              {draft.overallRule.gradeBands.map((band, index) => (
-                <div key={band.id} className="grid items-end gap-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
-                  <div className="space-y-1.5">
-                    <Label htmlFor={`band-label-${band.id}`}>Xếp loại {index + 1}</Label>
-                    <Input id={`band-label-${band.id}`} value={band.label} placeholder="Ví dụ: A2"
-                      onChange={(event) => updateRule({
-                        gradeBands: draft.overallRule.gradeBands.map((item) =>
-                          item.id === band.id ? { ...item, label: event.target.value } : item),
-                      })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor={`band-min-${band.id}`}>Điểm từ</Label>
-                    <Input id={`band-min-${band.id}`} type="number" step="any" value={band.minScore}
-                      onChange={(event) => updateRule({
-                        gradeBands: draft.overallRule.gradeBands.map((item) =>
-                          item.id === band.id ? { ...item, minScore: numericValue(event.target.value) } : item),
-                      })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor={`band-max-${band.id}`}>Đến</Label>
-                    <Input id={`band-max-${band.id}`} type="number" step="any" value={band.maxScore}
-                      onChange={(event) => updateRule({
-                        gradeBands: draft.overallRule.gradeBands.map((item) =>
-                          item.id === band.id ? { ...item, maxScore: numericValue(event.target.value) } : item),
-                      })} />
-                  </div>
-                  <Button type="button" variant="ghost" size="icon" aria-label={`Xóa ngưỡng xếp loại ${index + 1}`}
-                    onClick={() => updateRule({
-                      gradeBands: draft.overallRule.gradeBands.filter((item) => item.id !== band.id),
-                    })}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
+            <div className="max-w-sm space-y-1.5">
+              <Label htmlFor="overall-method">Công thức chung</Label>
+              <Select
+                value={draft.overallRule.method}
+                onValueChange={(value) => updateRule({ method: value as "sum" | "average" })}
+              >
+                <SelectTrigger id="overall-method"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="average">Trung bình các phần thi</SelectItem>
+                  <SelectItem value="sum">Cộng điểm các phần thi</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </section>
 

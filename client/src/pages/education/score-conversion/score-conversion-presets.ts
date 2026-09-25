@@ -16,14 +16,11 @@ export const SCORE_CONVERSION_TYPES: Array<{ value: ScoreConversionTypeKey; labe
 ];
 
 type PresetSection = Omit<ScoreConversionTemplateInput["sections"][number], "id" | "mappings">;
-type PresetBand = Omit<ScoreConversionTemplateInput["overallRule"]["gradeBands"][number], "id">;
 type Preset = {
   typeKey: Exclude<ScoreConversionTypeKey, "custom">;
   typeName: string;
   sectionDefaults: PresetSection[];
-  overallRule: Omit<ScoreConversionTemplateInput["overallRule"], "gradeBands"> & {
-    gradeBands: PresetBand[];
-  };
+  overallRule: ScoreConversionTemplateInput["overallRule"];
 };
 
 const part = (
@@ -59,12 +56,6 @@ const presetDefinitions: Record<Exclude<ScoreConversionTypeKey, "custom">, Prese
     ],
     overallRule: {
       method: "sum",
-      minScore: 0,
-      maxScore: 15,
-      roundingStep: null,
-      unit: "khiên",
-      description: "Cộng số khiên của 3 kỹ năng; tối đa 15 khiên.",
-      gradeBands: [],
     },
   },
   movers: {
@@ -77,12 +68,6 @@ const presetDefinitions: Record<Exclude<ScoreConversionTypeKey, "custom">, Prese
     ],
     overallRule: {
       method: "sum",
-      minScore: 0,
-      maxScore: 15,
-      roundingStep: null,
-      unit: "khiên",
-      description: "Cộng số khiên của 3 kỹ năng; tối đa 15 khiên.",
-      gradeBands: [],
     },
   },
   flyers: {
@@ -95,12 +80,6 @@ const presetDefinitions: Record<Exclude<ScoreConversionTypeKey, "custom">, Prese
     ],
     overallRule: {
       method: "sum",
-      minScore: 0,
-      maxScore: 15,
-      roundingStep: null,
-      unit: "khiên",
-      description: "Cộng số khiên của 3 kỹ năng; tối đa 15 khiên.",
-      gradeBands: [],
     },
   },
   ket: {
@@ -114,16 +93,6 @@ const presetDefinitions: Record<Exclude<ScoreConversionTypeKey, "custom">, Prese
     ],
     overallRule: {
       method: "average",
-      minScore: 100,
-      maxScore: 150,
-      roundingStep: null,
-      unit: "điểm Cambridge English Scale",
-      description: "Lấy điểm trung bình của 4 kỹ năng trên thang Cambridge English Scale.",
-      gradeBands: [
-        { label: "A1", minScore: 100, maxScore: 119 },
-        { label: "A2", minScore: 120, maxScore: 139 },
-        { label: "B1", minScore: 140, maxScore: 150 },
-      ],
     },
   },
   pet: {
@@ -137,16 +106,6 @@ const presetDefinitions: Record<Exclude<ScoreConversionTypeKey, "custom">, Prese
     ],
     overallRule: {
       method: "average",
-      minScore: 120,
-      maxScore: 170,
-      roundingStep: null,
-      unit: "điểm Cambridge English Scale",
-      description: "Lấy điểm trung bình của 4 kỹ năng trên thang Cambridge English Scale.",
-      gradeBands: [
-        { label: "A2", minScore: 120, maxScore: 139 },
-        { label: "B1", minScore: 140, maxScore: 159 },
-        { label: "B2", minScore: 160, maxScore: 170 },
-      ],
     },
   },
   toeic: {
@@ -158,12 +117,6 @@ const presetDefinitions: Record<Exclude<ScoreConversionTypeKey, "custom">, Prese
     ],
     overallRule: {
       method: "sum",
-      minScore: 10,
-      maxScore: 990,
-      roundingStep: null,
-      unit: "điểm",
-      description: "Cộng điểm Listening và Reading; tổng điểm tối đa 990.",
-      gradeBands: [],
     },
   },
   ielts: {
@@ -177,12 +130,6 @@ const presetDefinitions: Record<Exclude<ScoreConversionTypeKey, "custom">, Prese
     ],
     overallRule: {
       method: "average",
-      minScore: 0,
-      maxScore: 9,
-      roundingStep: 0.5,
-      unit: "band",
-      description: "Lấy trung bình 4 kỹ năng và làm tròn đến 0,5 band gần nhất.",
-      gradeBands: [],
     },
   },
 };
@@ -201,12 +148,6 @@ export function createDefaultDraft(typeKey: ScoreConversionTypeKey = "starters")
       sections: [makeSection(part("Phần thi 1", 0, 100, 1, "điểm thô", 0, 100, 1, "điểm"))],
       overallRule: {
         method: "average",
-        minScore: 0,
-        maxScore: 100,
-        roundingStep: null,
-        unit: "điểm",
-        description: "",
-        gradeBands: [],
       },
     };
   }
@@ -216,10 +157,7 @@ export function createDefaultDraft(typeKey: ScoreConversionTypeKey = "starters")
     typeKey,
     typeName: preset.typeName,
     sections: preset.sectionDefaults.map(makeSection),
-    overallRule: {
-      ...preset.overallRule,
-      gradeBands: preset.overallRule.gradeBands.map((band) => ({ ...band, id: newId() })),
-    },
+    overallRule: { ...preset.overallRule },
   };
 }
 
@@ -231,10 +169,7 @@ export function draftFromTemplate(template: ScoreConversionTemplate): ScoreConve
       ...section,
       mappings: section.mappings.map((mapping) => ({ ...mapping })),
     })),
-    overallRule: {
-      ...template.overallRule,
-      gradeBands: template.overallRule.gradeBands.map((band) => ({ ...band })),
-    },
+    overallRule: { ...template.overallRule },
   };
 }
 

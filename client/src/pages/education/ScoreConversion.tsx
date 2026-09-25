@@ -127,7 +127,7 @@ export default function ScoreConversion() {
                           <th className="px-4 py-3 font-medium">Loại bài kiểm tra</th>
                           <th className="px-4 py-3 font-medium">Phần thi</th>
                           <th className="px-4 py-3 font-medium">Khoảng quy đổi</th>
-                          <th className="px-4 py-3 font-medium">Quy tắc điểm tổng</th>
+                          <th className="px-4 py-3 font-medium">Cách tính điểm tổng</th>
                           {canEdit && <th className="w-16 px-4 py-3" />}
                         </tr>
                       </thead>
@@ -148,15 +148,11 @@ export default function ScoreConversion() {
                               {template.sections.reduce((total, section) => total + section.mappings.length, 0)}
                             </td>
                             <td className="max-w-sm px-4 py-3">
-                              <div className="font-medium">
-                                {template.overallRule.method === "sum" ? "Cộng tổng" : "Trung bình"}
-                                {" · "}{template.overallRule.minScore}–{template.overallRule.maxScore} {template.overallRule.unit}
-                              </div>
-                              {template.overallRule.description && (
-                                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                                  {template.overallRule.description}
-                                </p>
-                              )}
+                              <span className="font-medium">
+                                {template.overallRule.method === "sum"
+                                  ? "Cộng điểm các phần thi"
+                                  : "Trung bình các phần thi"}
+                              </span>
                             </td>
                             {canEdit && (
                               <td className="px-4 py-3">

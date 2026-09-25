@@ -108,7 +108,7 @@ export const scoreConversionTemplateInputSchema = z.object({
   typeKey: z.enum(SCORE_CONVERSION_TYPE_KEYS),
   typeName: z.string().trim().min(1).max(100),
   sections: z.array(scoreConversionSectionSchema).min(1).max(20),
-  overallRule: legacyScoreConversionRuleSchema,
+  overallRule: scoreConversionRuleSchema,
 });
 
 export const scoreConversionTemplateSchema = scoreConversionTemplateInputSchema.extend({
@@ -130,7 +130,7 @@ export const legacyScoreConversionTemplateSchema = z.object({
     step: z.number().positive(),
     unit: z.string().trim().min(1).max(40),
   })),
-  overallRule: scoreConversionRuleSchema,
+  overallRule: legacyScoreConversionRuleSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
 });
