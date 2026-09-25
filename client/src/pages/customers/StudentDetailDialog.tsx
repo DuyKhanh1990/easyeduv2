@@ -752,6 +752,7 @@ export function StudentDetailDialog({
                                     <tbody>
                                       {paginatedSessions.length > 0 ? (
                                         paginatedSessions.map((session: any, idx: number) => {
+                                          const studentLessonNumber = (sessionsPage - 1) * sessionsPageSize + idx + 1;
                                           const shiftTemplate = session.shiftTemplate;
                                           const packageType = session.studentSession?.packageType || "buổi";
                                           const sessionPrice = Number(session.studentSession?.sessionPrice || 0);
@@ -775,12 +776,12 @@ export function StudentDetailDialog({
                                                      type="button"
                                                      className="font-medium text-sky-600 hover:text-sky-800 hover:underline"
                                                      onClick={() => navigateToClassSession(session)}
-                                                     aria-label={`Mở Buổi ${session.studentSession?.sessionOrder || (sessionsPage - 1) * sessionsPageSize + idx + 1} trong lịch học`}
+                                                      aria-label={`Mở Buổi ${studentLessonNumber} trong lịch học`}
                                                    >
-                                                     Buổi {session.studentSession?.sessionOrder || (sessionsPage - 1) * sessionsPageSize + idx + 1}
+                                                      Buổi {studentLessonNumber}
                                                    </button>
                                                  ) : (
-                                                   <>Buổi {session.studentSession?.sessionOrder || (sessionsPage - 1) * sessionsPageSize + idx + 1}</>
+                                                    <>Buổi {studentLessonNumber}</>
                                                  )}
                                                </td>
                                               <td className="p-2">
