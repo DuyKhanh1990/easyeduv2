@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { VoucherHint } from "@/components/finance/VoucherHint";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { normalizeSearchText } from "@/lib/search-text";
 import { useScheduleTab, ScheduleHeaderActions } from "@/hooks/use-schedule-tab";
 import { useClassMutations } from "@/hooks/use-class-mutations";
 import {
@@ -421,12 +422,14 @@ export function ScheduleTabContent({
 
   const combinedCandidates = [...enrolledNotInSession, ...availableNotInClass];
 
-  // Filter enrolled students by search keyword (server already filters available students)
+  const normalizedSessionSearchTerm = normalizeSearchText(searchTermForSession);
+
+  // Keep the local filter aligned with the server and Customers search for Vietnamese names.
   const filteredAvailableStudentsForSession = combinedCandidates.filter(
     (s: any) =>
-      !searchTermForSession ||
-      s.fullName?.toLowerCase().includes(searchTermForSession.toLowerCase()) ||
-      s.code?.toLowerCase().includes(searchTermForSession.toLowerCase())
+      !normalizedSessionSearchTerm ||
+      normalizeSearchText(s.fullName).includes(normalizedSessionSearchTerm) ||
+      normalizeSearchText(s.code).includes(normalizedSessionSearchTerm)
   );
 
   const selectedStudentsForMakeup =

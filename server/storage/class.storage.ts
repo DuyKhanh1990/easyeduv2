@@ -11,6 +11,7 @@ import { distributeInvoiceFeeToSessions } from "./invoice-session-allocation.sto
 import { getNextLocationCode } from "./finance.storage";
 import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 import { buildClassVisibilityCondition, buildClassVisibilitySql, type ClassViewScope } from "../lib/class-access";
+import { normalizeSearchText, normalizedSearchSql } from "../lib/search-text";
 
 import type { Class } from "./base";
 
@@ -1356,6 +1357,7 @@ export async function getClassStudents(classId: string, status: string): Promise
 // getAvailableStudentsForClass
 // ---------------------------------------------------------------------------
 export async function getAvailableStudentsForClass(classId: string, searchTerm?: string): Promise<any[]> {
+  const normalizedSearchTerm = normalizeSearchText(searchTerm);
   const [cls] = await db
     .select({ locationId: classes.locationId })
     .from(classes)
@@ -1370,7 +1372,7 @@ export async function getAvailableStudentsForClass(classId: string, searchTerm?:
     sql`${students.id} NOT IN (${existingIdsQuery})`,
   ];
 
-  if (!searchTerm) {
+  if (!normalizedSearchTerm) {
     // No search: only active students, first 10 sorted by name
     return db.select({
       id: students.id,
@@ -1400,13 +1402,13 @@ export async function getAvailableStudentsForClass(classId: string, searchTerm?:
   .innerJoin(studentLocations, eq(students.id, studentLocations.studentId))
   .where(and(
     ...baseConditions,
-    sql`(${students.fullName} ILIKE ${`%${searchTerm}%`} OR ${students.code} ILIKE ${`%${searchTerm}%`})`,
+    sql`(${normalizedSearchSql(students.fullName)} LIKE ${`%${normalizedSearchTerm}%`} OR ${normalizedSearchSql(students.code)} LIKE ${`%${normalizedSearchTerm}%`})`,
   ))
   .orderBy(
     sql`CASE WHEN (${students.accountStatus} IS NULL OR ${students.accountStatus} != 'Không hoạt động') THEN 0 ELSE 1 END`,
     sql`CASE
-      WHEN LOWER(${students.fullName}) = LOWER(${searchTerm}) OR LOWER(${students.code}) = LOWER(${searchTerm}) THEN 0
-      WHEN LOWER(${students.fullName}) LIKE LOWER(${searchTerm + "%"}) OR LOWER(${students.code}) LIKE LOWER(${searchTerm + "%"}) THEN 1
+      WHEN ${normalizedSearchSql(students.fullName)} = ${normalizedSearchTerm} OR ${normalizedSearchSql(students.code)} = ${normalizedSearchTerm} THEN 0
+      WHEN ${normalizedSearchSql(students.fullName)} LIKE ${normalizedSearchTerm + "%"} OR ${normalizedSearchSql(students.code)} LIKE ${normalizedSearchTerm + "%"} THEN 1
       ELSE 2
     END`,
     students.fullName
