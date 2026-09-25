@@ -20,7 +20,7 @@ type Preset = {
   typeKey: Exclude<ScoreConversionTypeKey, "custom">;
   typeName: string;
   sectionDefaults: PresetSection[];
-  overallRule: ScoreConversionTemplateInput["overallRule"];
+  overallRule: Pick<ScoreConversionTemplateInput["overallRule"], "method">;
 };
 
 const part = (
@@ -43,8 +43,6 @@ const part = (
   convertedMaxScore,
   convertedStep,
   convertedUnit,
-  weight: 1,
-  weightType: "multiplier",
 });
 
 const presetDefinitions: Record<Exclude<ScoreConversionTypeKey, "custom">, Preset> = {
@@ -150,6 +148,7 @@ export function createDefaultDraft(typeKey: ScoreConversionTypeKey = "starters")
       sections: [makeSection(part("Phần thi 1", 0, 100, 1, "điểm thô", 0, 100, 1, "điểm"))],
       overallRule: {
         method: "average",
+        formula: "",
       },
     };
   }
@@ -159,7 +158,7 @@ export function createDefaultDraft(typeKey: ScoreConversionTypeKey = "starters")
     typeKey,
     typeName: preset.typeName,
     sections: preset.sectionDefaults.map(makeSection),
-    overallRule: { ...preset.overallRule },
+    overallRule: { ...preset.overallRule, formula: "" },
   };
 }
 

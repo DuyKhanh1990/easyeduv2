@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validateScoreConversionFormula } from "./score-conversion-formula";
 
 export const SCORE_CONVERSION_TYPE_KEYS = [
   "starters",
@@ -33,8 +34,6 @@ export const scoreConversionSectionSchema = z.object({
   convertedStep: z.number().positive(),
   convertedUnit: z.string().trim().min(1).max(40),
   mappings: z.array(scoreConversionMappingSchema).max(500),
-  weight: z.number().finite().min(0).default(1),
-  weightType: z.enum(["percentage", "multiplier"]).default("multiplier"),
 }).superRefine((section, context) => {
   if (section.rawMaxScore < section.rawMinScore) {
     context.addIssue({
@@ -50,14 +49,6 @@ export const scoreConversionSectionSchema = z.object({
       path: ["convertedMaxScore"],
     });
   }
-  if (section.weightType === "percentage" && section.weight > 100) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Trọng số phần trăm phải nằm trong khoảng từ 0 đến 100.",
-      path: ["weight"],
-    });
-  }
-
   const orderedMappings = section.mappings
     .map((mapping, index) => ({ mapping, index }))
     .sort((a, b) => a.mapping.rawFrom - b.mapping.rawFrom);
@@ -89,11 +80,12 @@ export const scoreConversionSectionSchema = z.object({
 });
 
 export const scoreConversionRuleSchema = z.object({
-  method: z.enum(["sum", "average", "weightedAverage"]),
+  method: z.enum(["sum", "average", "custom"]),
+  formula: z.string().trim().max(1000).default(""),
 });
 
 const legacyScoreConversionRuleSchema = z.object({
-  method: z.enum(["sum", "average", "weightedAverage"]),
+  method: z.enum(["sum", "average"]),
   minScore: z.number().finite(),
   maxScore: z.number().finite(),
   roundingStep: z.number().positive().nullable(),
@@ -113,18 +105,42 @@ const legacyScoreConversionRuleSchema = z.object({
   path: ["maxScore"],
 });
 
-export const scoreConversionTemplateInputSchema = z.object({
+const scoreConversionTemplateBaseSchema = z.object({
   typeKey: z.enum(SCORE_CONVERSION_TYPE_KEYS),
   typeName: z.string().trim().min(1).max(100),
   sections: z.array(scoreConversionSectionSchema).min(1).max(20),
   overallRule: scoreConversionRuleSchema,
 });
 
-export const scoreConversionTemplateSchema = scoreConversionTemplateInputSchema.extend({
+function validateCustomRule(
+  template: {
+    sections: Array<{ name: string }>;
+    overallRule: { method: string; formula: string };
+  },
+  context: z.RefinementCtx,
+) {
+  if (template.overallRule.method !== "custom") return;
+
+  const formulaError = validateScoreConversionFormula(
+    template.overallRule.formula,
+    template.sections.map((section) => section.name),
+  );
+  if (formulaError) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: formulaError,
+      path: ["overallRule", "formula"],
+    });
+  }
+}
+
+export const scoreConversionTemplateInputSchema = scoreConversionTemplateBaseSchema.superRefine(validateCustomRule);
+
+export const scoreConversionTemplateSchema = scoreConversionTemplateBaseSchema.extend({
   id: z.string().uuid(),
   createdAt: z.string(),
   updatedAt: z.string(),
-});
+}).superRefine(validateCustomRule);
 
 export const legacyScoreConversionTemplateSchema = z.object({
   id: z.string().uuid(),

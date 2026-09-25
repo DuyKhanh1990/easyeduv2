@@ -1,10 +1,11 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import type {
   ScoreConversionTemplate,
   ScoreConversionTemplateInput,
   ScoreConversionTypeKey,
 } from "@shared/score-conversion";
+import { validateScoreConversionFormula } from "@shared/score-conversion-formula";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -42,6 +43,8 @@ export function ScoreConversionTemplateDialog({
   const [draft, setDraft] = useState<ScoreConversionTemplateInput>(() => createDefaultDraft(initialTypeKey));
   const [activeSectionId, setActiveSectionId] = useState("");
   const [formError, setFormError] = useState("");
+  const formulaInputRef = useRef<HTMLInputElement>(null);
+  const formulaSelectionRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -50,6 +53,15 @@ export function ScoreConversionTemplateDialog({
     setActiveSectionId(nextDraft.sections[0]?.id ?? "");
     setFormError("");
   }, [open, template, initialTypeKey]);
+
+  useEffect(() => {
+    const position = formulaSelectionRef.current;
+    if (position === null) return;
+    const input = formulaInputRef.current;
+    input?.focus();
+    input?.setSelectionRange(position, position);
+    formulaSelectionRef.current = null;
+  }, [draft.overallRule.formula]);
 
   const changeType = (typeKey: ScoreConversionTypeKey) => {
     const nextDraft = createDefaultDraft(typeKey);
@@ -93,6 +105,17 @@ export function ScoreConversionTemplateDialog({
     }));
   };
 
+  const insertFormulaVariable = (sectionName: string) => {
+    const formula = draft.overallRule.formula;
+    const input = formulaInputRef.current;
+    const start = input?.selectionStart ?? formula.length;
+    const end = input?.selectionEnd ?? formula.length;
+    const variable = `[${sectionName}]`;
+    const nextFormula = `${formula.slice(0, start)}${variable}${formula.slice(end)}`;
+    formulaSelectionRef.current = start + variable.length;
+    updateRule({ formula: nextFormula });
+  };
+
   const addSection = () => {
     const section = createDefaultDraft("custom").sections[0];
     section.name = `Phần thi ${draft.sections.length + 1}`;
@@ -123,9 +146,6 @@ export function ScoreConversionTemplateDialog({
       if (section.convertedMaxScore < section.convertedMinScore || section.convertedStep <= 0) {
         return `Vui lòng kiểm tra thang điểm quy đổi của phần ${section.name}.`;
       }
-      if (section.weight < 0 || (section.weightType === "percentage" && section.weight > 100)) {
-        return `Vui lòng kiểm tra trọng số của phần ${section.name}.`;
-      }
       const ordered = [...section.mappings].sort((a, b) => a.rawFrom - b.rawFrom);
       for (let index = 0; index < ordered.length; index += 1) {
         const mapping = ordered[index];
@@ -143,12 +163,12 @@ export function ScoreConversionTemplateDialog({
         }
       }
     }
-    if (draft.overallRule.method === "weightedAverage") {
-      const totalWeight = draft.sections.reduce(
-        (total, section) => total + (section.weightType === "percentage" ? section.weight / 100 : section.weight),
-        0,
+    if (draft.overallRule.method === "custom") {
+      const formulaError = validateScoreConversionFormula(
+        draft.overallRule.formula,
+        draft.sections.map((section) => section.name),
       );
-      if (totalWeight <= 0) return "Cần có ít nhất một phần thi có trọng số lớn hơn 0.";
+      if (formulaError) return formulaError;
     }
     return "";
   };
@@ -471,64 +491,66 @@ export function ScoreConversionTemplateDialog({
               <Select
                 value={draft.overallRule.method}
                 onValueChange={(value) => updateRule({
-                  method: value as "sum" | "average" | "weightedAverage",
+                  method: value as "sum" | "average" | "custom",
                 })}
               >
                 <SelectTrigger id="overall-method"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="average">Trung bình các phần thi</SelectItem>
-                  <SelectItem value="weightedAverage">Trung bình có trọng số</SelectItem>
                   <SelectItem value="sum">Cộng điểm các phần thi</SelectItem>
+                  <SelectItem value="custom">Tùy chỉnh công thức</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            {draft.overallRule.method === "weightedAverage" && (
+            {draft.overallRule.method === "custom" && (
               <div className="space-y-3 rounded-lg border p-3">
                 <div>
-                  <h4 className="text-sm font-medium">Trọng số từng phần thi</h4>
+                  <h4 className="text-sm font-medium">Công thức tính điểm</h4>
                   <p className="text-xs text-muted-foreground">
-                    Nhập tỷ lệ từ 0–100% hoặc hệ số nhân. Hệ thống chuẩn hóa theo tổng trọng số; có thể kết hợp cả hai dạng.
+                    Dùng +, −, ×, ÷, ngoặc và %. Bấm vào tên phần thi để chèn biến; công thức trả về điểm tổng trực tiếp.
                   </p>
                 </div>
-                <div className="space-y-2">
+                <Input
+                  ref={formulaInputRef}
+                  aria-label="Công thức điểm tổng"
+                  value={draft.overallRule.formula}
+                  onChange={(event) => updateRule({ formula: event.target.value })}
+                  placeholder="=[Listening] * 2 + [Reading] * 20%"
+                  maxLength={1000}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Biến có sẵn:</span>
                   {draft.sections.map((section) => (
-                    <div
+                    <Button
                       key={section.id}
-                      className="grid items-center gap-2 sm:grid-cols-[minmax(0,1fr)_8rem_10rem]"
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      title={`Chèn biến [${section.name}]`}
+                      onClick={() => insertFormulaVariable(section.name)}
                     >
-                      <Label htmlFor={`weight-value-${section.id}`}>{section.name}</Label>
-                      <Input
-                        id={`weight-value-${section.id}`}
-                        aria-label={`Trọng số ${section.name}`}
-                        type="number"
-                        min="0"
-                        max={section.weightType === "percentage" ? 100 : undefined}
-                        step="any"
-                        value={section.weight}
-                        onChange={(event) => updateSection(section.id, {
-                          weight: numericValue(event.target.value),
-                        })}
-                      />
-                      <Select
-                        value={section.weightType}
-                        onValueChange={(value) => updateSection(section.id, {
-                          weightType: value as "percentage" | "multiplier",
-                        })}
-                      >
-                        <SelectTrigger
-                          id={`weight-type-${section.id}`}
-                          aria-label={`Dạng trọng số ${section.name}`}
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="percentage">Tỷ lệ (%)</SelectItem>
-                          <SelectItem value="multiplier">Hệ số (×)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                      {section.name}
+                    </Button>
                   ))}
                 </div>
+                {draft.overallRule.formula.trim() && (
+                  <p
+                    className={`text-xs ${
+                      validateScoreConversionFormula(
+                        draft.overallRule.formula,
+                        draft.sections.map((section) => section.name),
+                      )
+                        ? "text-destructive"
+                        : "text-muted-foreground"
+                    }`}
+                    role="status"
+                  >
+                    {validateScoreConversionFormula(
+                      draft.overallRule.formula,
+                      draft.sections.map((section) => section.name),
+                    ) ?? "Công thức hợp lệ."}
+                  </p>
+                )}
               </div>
             )}
           </section>
