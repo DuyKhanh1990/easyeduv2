@@ -490,9 +490,15 @@ export function ScoreConversionTemplateDialog({
               <Label htmlFor="overall-method">Công thức chung</Label>
               <Select
                 value={draft.overallRule.method}
-                onValueChange={(value) => updateRule({
-                  method: value as "sum" | "average" | "custom",
-                })}
+                onValueChange={(value) => {
+                  const method = value as "sum" | "average" | "custom";
+                  if (method === "custom" && !draft.overallRule.formula.trim()) {
+                    formulaSelectionRef.current = 1;
+                    updateRule({ method, formula: "=" });
+                    return;
+                  }
+                  updateRule({ method });
+                }}
               >
                 <SelectTrigger id="overall-method"><SelectValue /></SelectTrigger>
                 <SelectContent>
