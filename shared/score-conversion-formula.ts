@@ -102,11 +102,10 @@ class FormulaParser {
 
   private parseAdditive(): FormulaNode {
     let expression = this.parseMultiplicative();
-    while (
-      this.current().type === "operator" &&
-      (this.current().value === "+" || this.current().value === "-")
-    ) {
-      const operator = this.current().value;
+    while (true) {
+      const token = this.current();
+      if (token.type !== "operator" || (token.value !== "+" && token.value !== "-")) break;
+      const operator = token.value;
       this.position += 1;
       expression = {
         type: "binary",
@@ -120,11 +119,10 @@ class FormulaParser {
 
   private parseMultiplicative(): FormulaNode {
     let expression = this.parseUnary();
-    while (
-      this.current().type === "operator" &&
-      (this.current().value === "*" || this.current().value === "/")
-    ) {
-      const operator = this.current().value;
+    while (true) {
+      const token = this.current();
+      if (token.type !== "operator" || (token.value !== "*" && token.value !== "/")) break;
+      const operator = token.value;
       this.position += 1;
       expression = {
         type: "binary",
@@ -137,8 +135,9 @@ class FormulaParser {
   }
 
   private parseUnary(): FormulaNode {
-    if (this.current().type === "operator" && (this.current().value === "+" || this.current().value === "-")) {
-      const operator = this.current().value;
+    const token = this.current();
+    if (token.type === "operator" && (token.value === "+" || token.value === "-")) {
+      const operator = token.value;
       this.position += 1;
       return { type: "unary", operator, operand: this.parseUnary() };
     }

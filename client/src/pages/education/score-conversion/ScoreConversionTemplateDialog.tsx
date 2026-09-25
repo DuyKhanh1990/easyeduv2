@@ -507,12 +507,13 @@ export function ScoreConversionTemplateDialog({
                 <div>
                   <h4 className="text-sm font-medium">Công thức tính điểm</h4>
                   <p className="text-xs text-muted-foreground">
-                    Dùng +, −, ×, ÷, ngoặc và %. Bấm vào tên phần thi để chèn biến; công thức trả về điểm tổng trực tiếp.
+                    Dùng +, -, *, /, ngoặc và %. Số thập phân dùng dấu chấm. Bấm tên phần thi để chèn biến; công thức trả về điểm tổng trực tiếp.
                   </p>
                 </div>
+                <Label htmlFor="overall-formula">Công thức</Label>
                 <Input
+                  id="overall-formula"
                   ref={formulaInputRef}
-                  aria-label="Công thức điểm tổng"
                   value={draft.overallRule.formula}
                   onChange={(event) => updateRule({ formula: event.target.value })}
                   placeholder="=[Listening] * 2 + [Reading] * 20%"
