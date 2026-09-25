@@ -94,6 +94,7 @@ export default function ScoreConversion() {
         <Tabs defaultValue="international" className="space-y-4">
           <TabsList>
             <TabsTrigger value="international">Điểm Quy đổi Quốc tế</TabsTrigger>
+            <TabsTrigger value="sample">Bảng điểm mẫu</TabsTrigger>
           </TabsList>
           <TabsContent value="international" className="space-y-4">
             {canCreate && (
@@ -188,6 +189,13 @@ export default function ScoreConversion() {
                     </div>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="sample">
+            <Card>
+              <CardContent className="flex min-h-52 items-center justify-center p-6 text-center text-sm text-muted-foreground">
+                Nội dung bảng điểm mẫu sẽ được bổ sung sau.
               </CardContent>
             </Card>
           </TabsContent>
