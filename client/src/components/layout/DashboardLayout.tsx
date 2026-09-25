@@ -24,6 +24,7 @@ const GUIDE_PAGE_TITLES: Record<string, string> = {
   "/classes": "Lớp học",
   "/schedule": "Lịch học",
   "/attendance": "Điểm danh",
+  "/score-conversion": "Bảng điểm quy đổi",
 };
 
 function getGuidePageTitle(location: string) {

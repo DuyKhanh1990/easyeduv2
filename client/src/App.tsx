@@ -30,6 +30,7 @@ const Assessments = lazy(() => import("@/pages/courses/Assessments"));
 const ExamDetail = lazy(() => import("@/pages/courses/ExamDetail").then(m => ({ default: m.ExamDetail })));
 
 const EducationConfig = lazy(() => import("@/pages/education/EducationConfig"));
+const ScoreConversion = lazy(() => import("@/pages/education/ScoreConversion"));
 const ClassList = lazy(() => import("@/pages/education/ClassList").then(m => ({ default: m.ClassList })));
 const CreateClass = lazy(() => import("@/pages/education/CreateClass").then(m => ({ default: m.CreateClass })));
 const CreateTutorClass = lazy(() => import("@/pages/education/CreateTutorClass").then(m => ({ default: m.CreateTutorClass })));
@@ -96,6 +97,7 @@ function Router() {
         <Route path="/content-library" component={() => <Redirect to="/courses" />} />
         <Route path="/assessments" component={Assessments} />
         <Route path="/assessments/:id" component={ExamDetail} />
+        <Route path="/score-conversion" component={ScoreConversion} />
         <Route path="/education-config" component={EducationConfig} />
         <Route path="/classrooms" component={() => <Redirect to="/education-config?tab=classrooms" />} />
         <Route path="/subjects" component={() => <Redirect to="/education-config?tab=subjects" />} />

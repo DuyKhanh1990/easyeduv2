@@ -216,6 +216,12 @@ export const navigation: NavEntry[] = [
         ]
       },
       {
+        name: "Bảng điểm quy đổi",
+        href: "/score-conversion",
+        icon: BarChart3,
+        permissionHref: "/assessments#list",
+      },
+      {
         name: "Cấu hình Education",
         href: "/education-config",
         icon: Cog,

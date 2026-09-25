@@ -941,6 +941,7 @@ const navMap: Record<string, string> = {
   "Điểm danh": "Attendance",
   "Khoá học & Chương trình": "Courses & Programs",
   "Bài kiểm tra": "Assessments",
+  "Bảng điểm quy đổi": "Score Conversion Table",
   "Cấu hình Education": "Education Settings",
   "Tổng quan học viên": "Student Overview",
   "Học viên sắp hết lịch": "Students Ending Soon",
