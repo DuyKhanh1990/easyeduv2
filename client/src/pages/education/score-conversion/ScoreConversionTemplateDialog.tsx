@@ -30,6 +30,7 @@ type ScoreConversionTemplateDialogProps = {
 };
 
 const numericValue = (value: string) => (value === "" ? 0 : Number(value));
+const MAX_GENERATED_MAPPINGS = 500;
 
 export function ScoreConversionTemplateDialog({
   open,
@@ -123,6 +124,74 @@ export function ScoreConversionTemplateDialog({
     setActiveSectionId(section.id);
   };
 
+  const generateMappingTable = (section: ScoreConversionTemplateInput["sections"][number]) => {
+    const { rawMinScore, rawMaxScore, rawStep } = section;
+    if (
+      !Number.isFinite(rawMinScore) ||
+      !Number.isFinite(rawMaxScore) ||
+      !Number.isFinite(rawStep) ||
+      rawMaxScore < rawMinScore ||
+      rawStep < 0
+    ) {
+      setFormError(`Vui lòng kiểm tra khoảng điểm và bước điểm thô của phần ${section.name}.`);
+      return;
+    }
+    if (rawStep === 0 && (!Number.isInteger(rawMinScore) || !Number.isInteger(rawMaxScore))) {
+      setFormError("Khi bước điểm thô bằng 0, điểm từ và điểm đến phải là số nguyên.");
+      return;
+    }
+
+    const existingScores = new Map(
+      section.mappings.map((mapping) => [`${mapping.rawFrom}:${mapping.rawTo}`, mapping.convertedScore]),
+    );
+    const generatedMappings: ScoreConversionTemplateInput["sections"][number]["mappings"] = [];
+    let upper = rawMaxScore;
+    let lower = rawStep === 0 ? upper : Math.max(rawMinScore, upper - rawStep);
+
+    while (true) {
+      if (generatedMappings.length >= MAX_GENERATED_MAPPINGS) {
+        setFormError(`Không thể tạo quá ${MAX_GENERATED_MAPPINGS} khoảng điểm. Hãy tăng bước điểm hoặc thu hẹp thang điểm.`);
+        return;
+      }
+
+      const key = `${lower}:${upper}`;
+      generatedMappings.push({
+        id: createEmptyMapping().id,
+        rawFrom: lower,
+        rawTo: upper,
+        convertedScore: existingScores.get(key) ?? 0,
+      });
+
+      if (lower <= rawMinScore) break;
+      const nextUpper = lower;
+      const nextLower = Math.max(
+        rawMinScore,
+        nextUpper - rawStep - 1,
+      );
+      if (nextLower >= lower) {
+        setFormError("Không thể tạo bảng với bước điểm này. Hãy tăng bước điểm hoặc thu hẹp thang điểm.");
+        return;
+      }
+      upper = nextUpper;
+      lower = nextLower;
+    }
+
+    if (
+      section.mappings.length > 0 &&
+      !window.confirm("Tạo lại sẽ thay thế các khoảng hiện tại. Bạn có muốn tiếp tục không?")
+    ) {
+      return;
+    }
+
+    setDraft((current) => ({
+      ...current,
+      sections: current.sections.map((currentSection) => currentSection.id === section.id
+        ? { ...currentSection, mappings: generatedMappings }
+        : currentSection),
+    }));
+    setFormError("");
+  };
+
   const removeSection = (sectionId: string) => {
     const remaining = draft.sections.filter((section) => section.id !== sectionId);
     if (!remaining.length) return;
@@ -140,7 +209,7 @@ export function ScoreConversionTemplateDialog({
       if (!section.name.trim() || !section.rawUnit.trim() || !section.convertedUnit.trim()) {
         return "Vui lòng nhập tên phần thi và đơn vị điểm.";
       }
-      if (section.rawMaxScore < section.rawMinScore || section.rawStep <= 0) {
+      if (section.rawMaxScore < section.rawMinScore || section.rawStep < 0) {
         return `Vui lòng kiểm tra thang điểm thô của phần ${section.name}.`;
       }
       if (section.convertedMaxScore < section.convertedMinScore || section.convertedStep <= 0) {
@@ -157,7 +226,7 @@ export function ScoreConversionTemplateDialog({
         ) {
           return `Vui lòng kiểm tra khoảng điểm và điểm quy đổi của phần ${section.name}.`;
         }
-        if (index > 0 && mapping.rawFrom <= ordered[index - 1].rawTo) {
+        if (index > 0 && mapping.rawFrom < ordered[index - 1].rawTo) {
           return `Các khoảng điểm thô của phần ${section.name} không được chồng lấn.`;
         }
       }
@@ -278,58 +347,50 @@ export function ScoreConversionTemplateDialog({
 
               {draft.sections.map((section) => (
                 <TabsContent key={section.id} value={section.id} className="space-y-4">
-                  <details className="group">
-                    <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
-                      Tên phần thi và thang điểm thô
-                    </summary>
-                    <div className="mt-3 rounded-lg border p-4">
-                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        <div className="space-y-1.5">
-                          <Label htmlFor={`section-name-${section.id}`}>Tên phần thi</Label>
-                          <Input
-                            id={`section-name-${section.id}`}
-                            value={section.name}
-                            onChange={(event) => updateSection(section.id, { name: event.target.value })}
-                            maxLength={120}
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label htmlFor={`raw-min-${section.id}`}>Điểm thô từ</Label>
-                          <Input
-                            id={`raw-min-${section.id}`}
-                            type="number"
-                            step="any"
-                            value={section.rawMinScore}
-                            onChange={(event) => updateSection(section.id, { rawMinScore: numericValue(event.target.value) })}
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label htmlFor={`raw-max-${section.id}`}>Điểm thô đến</Label>
-                          <Input
-                            id={`raw-max-${section.id}`}
-                            type="number"
-                            step="any"
-                            value={section.rawMaxScore}
-                            onChange={(event) => updateSection(section.id, { rawMaxScore: numericValue(event.target.value) })}
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label htmlFor={`raw-step-${section.id}`}>Bước điểm thô</Label>
-                          <Input
-                            id={`raw-step-${section.id}`}
-                            type="number"
-                            min="0.01"
-                            step="any"
-                            value={section.rawStep}
-                            onChange={(event) => updateSection(section.id, { rawStep: numericValue(event.target.value) })}
-                          />
-                        </div>
+                  <div className="rounded-lg border p-4">
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`section-name-${section.id}`}>Tên phần thi</Label>
+                        <Input
+                          id={`section-name-${section.id}`}
+                          value={section.name}
+                          onChange={(event) => updateSection(section.id, { name: event.target.value })}
+                          maxLength={120}
+                        />
                       </div>
-                      <p className="mt-3 text-xs text-muted-foreground">
-                        Điểm quy đổi được nhập trong bảng bên dưới.
-                      </p>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`raw-min-${section.id}`}>Điểm thô từ</Label>
+                        <Input
+                          id={`raw-min-${section.id}`}
+                          type="number"
+                          step="any"
+                          value={section.rawMinScore}
+                          onChange={(event) => updateSection(section.id, { rawMinScore: numericValue(event.target.value) })}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`raw-max-${section.id}`}>Điểm thô đến</Label>
+                        <Input
+                          id={`raw-max-${section.id}`}
+                          type="number"
+                          step="any"
+                          value={section.rawMaxScore}
+                          onChange={(event) => updateSection(section.id, { rawMaxScore: numericValue(event.target.value) })}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`raw-step-${section.id}`}>Bước điểm thô</Label>
+                        <Input
+                          id={`raw-step-${section.id}`}
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={section.rawStep}
+                          onChange={(event) => updateSection(section.id, { rawStep: numericValue(event.target.value) })}
+                        />
+                      </div>
                     </div>
-                  </details>
+                  </div>
 
                   <div className="space-y-3 rounded-lg border p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -349,6 +410,14 @@ export function ScoreConversionTemplateDialog({
                           onClick={() => removeSection(section.id)}
                         >
                           <Trash2 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => generateMappingTable(section)}
+                        >
+                          Tạo bảng quy đổi
                         </Button>
                         <Button
                           type="button"

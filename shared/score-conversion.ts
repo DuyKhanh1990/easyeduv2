@@ -27,7 +27,7 @@ export const scoreConversionSectionSchema = z.object({
   name: z.string().trim().min(1).max(120),
   rawMinScore: z.number().finite(),
   rawMaxScore: z.number().finite(),
-  rawStep: z.number().positive(),
+  rawStep: z.number().nonnegative(),
   rawUnit: z.string().trim().min(1).max(40),
   convertedMinScore: z.number().finite(),
   convertedMaxScore: z.number().finite(),
@@ -69,7 +69,7 @@ export const scoreConversionSectionSchema = z.object({
     }
   }
   for (let index = 1; index < orderedMappings.length; index += 1) {
-    if (orderedMappings[index].mapping.rawFrom <= orderedMappings[index - 1].mapping.rawTo) {
+    if (orderedMappings[index].mapping.rawFrom < orderedMappings[index - 1].mapping.rawTo) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: "Các khoảng điểm thô không được chồng lấn.",
