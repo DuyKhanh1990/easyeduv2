@@ -5,9 +5,11 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db } from "../db";
 import {
+  legacyScoreConversionTemplateSchema,
   scoreConversionTemplateInputSchema,
   scoreConversionTemplateSchema,
   type ScoreConversionTemplate,
+  type ScoreConversionTemplateInput,
 } from "@shared/score-conversion";
 import { eq, and, sql, notExists, inArray, ne } from "drizzle-orm";
 import {
@@ -29,6 +31,41 @@ import { createActivityLog, getStaffHistory } from "../storage/activity-log.stor
 const SCORE_CONVERSION_SETTINGS_KEY = "scoreConversionTemplates";
 const SCORE_CONVERSION_PERMISSION_RESOURCE = "/assessments#list";
 
+function parseScoreConversionTemplates(value: string): ScoreConversionTemplate[] {
+  const records = z.array(z.unknown()).parse(JSON.parse(value));
+  return records.map((record) => {
+    const current = scoreConversionTemplateSchema.safeParse(record);
+    if (current.success) return current.data;
+
+    const legacy = legacyScoreConversionTemplateSchema.parse(record);
+    return scoreConversionTemplateSchema.parse({
+      id: legacy.id,
+      createdAt: legacy.createdAt,
+      updatedAt: legacy.updatedAt,
+      typeKey: legacy.typeKey,
+      typeName: legacy.typeName,
+      sections: legacy.sections.map((section) => {
+        const isIeltsRawSection = legacy.typeKey === "ielts"
+          && ["Listening", "Reading"].includes(section.name);
+        return {
+          id: section.id,
+          name: section.name,
+          rawMinScore: 0,
+          rawMaxScore: isIeltsRawSection ? 40 : Math.max(0, section.maxScore),
+          rawStep: section.step,
+          rawUnit: isIeltsRawSection ? "câu đúng" : "điểm thô",
+          convertedMinScore: section.minScore,
+          convertedMaxScore: section.maxScore,
+          convertedStep: section.step,
+          convertedUnit: section.unit,
+          mappings: [],
+        };
+      }),
+      overallRule: legacy.overallRule,
+    });
+  });
+}
+
 async function readScoreConversionTemplates(): Promise<ScoreConversionTemplate[]> {
   const { systemSettings } = await import("@shared/schema");
   const [row] = await db.select({ value: systemSettings.value })
@@ -36,7 +73,7 @@ async function readScoreConversionTemplates(): Promise<ScoreConversionTemplate[]
     .where(eq(systemSettings.key, SCORE_CONVERSION_SETTINGS_KEY))
     .limit(1);
   if (!row) return [];
-  return z.array(scoreConversionTemplateSchema).parse(JSON.parse(row.value));
+  return parseScoreConversionTemplates(row.value);
 }
 
 async function mutateScoreConversionTemplates(
@@ -58,13 +95,22 @@ async function mutateScoreConversionTemplates(
       .limit(1);
     if (!row) throw new Error("Không thể tải cấu hình bảng điểm quy đổi.");
 
-    const templates = z.array(scoreConversionTemplateSchema).parse(JSON.parse(row.value));
+    const templates = parseScoreConversionTemplates(row.value);
     const result = mutate(templates);
     await tx.update(systemSettings)
       .set({ value: JSON.stringify(result.templates), updatedAt: new Date() })
       .where(eq(systemSettings.key, SCORE_CONVERSION_SETTINGS_KEY));
     return result.result;
   });
+}
+
+function sameScoreConversionType(
+  template: ScoreConversionTemplate,
+  input: ScoreConversionTemplateInput,
+): boolean {
+  if (template.typeKey !== input.typeKey) return false;
+  if (input.typeKey !== "custom") return true;
+  return template.typeName.trim().toLocaleLowerCase() === input.typeName.trim().toLocaleLowerCase();
 }
 
 async function getScoreConversionPermissions(req: any) {
@@ -2045,13 +2091,21 @@ export function registerConfigRoutes(app: Express): void {
         createdAt: now,
         updatedAt: now,
       });
-      const created = await mutateScoreConversionTemplates((templates) => ({
-        templates: [template, ...templates],
-        result: template,
-      }));
+      const created = await mutateScoreConversionTemplates((templates) => {
+        if (templates.some((existing) => sameScoreConversionType(existing, input))) {
+          const error: any = new Error("Đã có bảng quy đổi cho loại này. Hãy mở bảng hiện có để chỉnh sửa.");
+          error.code = "SCORE_CONVERSION_TYPE_EXISTS";
+          throw error;
+        }
+        return {
+          templates: [template, ...templates],
+          result: template,
+        };
+      });
       res.status(201).json(created);
     } catch (err: any) {
       if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0]?.message ?? "Cấu hình không hợp lệ." });
+      if (err?.code === "SCORE_CONVERSION_TYPE_EXISTS") return res.status(409).json({ message: err.message });
       res.status(500).json({ message: err.message });
     }
   });
@@ -2067,6 +2121,12 @@ export function registerConfigRoutes(app: Express): void {
         const index = templates.findIndex((template) => template.id === req.params.id);
         if (index < 0) return { templates, result: null };
         const previous = templates[index];
+        if (templates.some((existing) =>
+          existing.id !== previous.id && sameScoreConversionType(existing, input))) {
+          const error: any = new Error("Đã có bảng quy đổi cho loại này.");
+          error.code = "SCORE_CONVERSION_TYPE_EXISTS";
+          throw error;
+        }
         const next = scoreConversionTemplateSchema.parse({
           ...input,
           id: previous.id,
@@ -2081,6 +2141,7 @@ export function registerConfigRoutes(app: Express): void {
       res.json(updated);
     } catch (err: any) {
       if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0]?.message ?? "Cấu hình không hợp lệ." });
+      if (err?.code === "SCORE_CONVERSION_TYPE_EXISTS") return res.status(409).json({ message: err.message });
       res.status(500).json({ message: err.message });
     }
   });

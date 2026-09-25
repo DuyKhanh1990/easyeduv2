@@ -11,11 +11,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { createDefaultDraft, draftFromTemplate, SCORE_CONVERSION_TYPES } from "./score-conversion-presets";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  createDefaultDraft,
+  createEmptyMapping,
+  draftFromTemplate,
+  SCORE_CONVERSION_TYPES,
+} from "./score-conversion-presets";
 
 type ScoreConversionTemplateDialogProps = {
   open: boolean;
   template: ScoreConversionTemplate | null;
+  templates: ScoreConversionTemplate[];
+  initialTypeKey: ScoreConversionTypeKey;
   saving: boolean;
   onOpenChange: (open: boolean) => void;
   onSave: (draft: ScoreConversionTemplateInput) => Promise<void>;
@@ -27,28 +35,56 @@ const numericValue = (value: string) => (value === "" ? 0 : Number(value));
 export function ScoreConversionTemplateDialog({
   open,
   template,
+  templates,
+  initialTypeKey,
   saving,
   onOpenChange,
   onSave,
 }: ScoreConversionTemplateDialogProps) {
-  const [draft, setDraft] = useState<ScoreConversionTemplateInput>(() => createDefaultDraft());
+  const [draft, setDraft] = useState<ScoreConversionTemplateInput>(() => createDefaultDraft(initialTypeKey));
+  const [activeSectionId, setActiveSectionId] = useState("");
   const [formError, setFormError] = useState("");
 
   useEffect(() => {
     if (!open) return;
-    setDraft(template ? draftFromTemplate(template) : createDefaultDraft("ielts"));
+    const nextDraft = template ? draftFromTemplate(template) : createDefaultDraft(initialTypeKey);
+    setDraft(nextDraft);
+    setActiveSectionId(nextDraft.sections[0]?.id ?? "");
     setFormError("");
-  }, [open, template]);
+  }, [open, template, initialTypeKey]);
 
   const changeType = (typeKey: ScoreConversionTypeKey) => {
-    setDraft((current) => createDefaultDraft(typeKey, current.name));
+    const nextDraft = createDefaultDraft(typeKey);
+    setDraft(nextDraft);
+    setActiveSectionId(nextDraft.sections[0]?.id ?? "");
     setFormError("");
   };
 
-  const updateSection = (id: string, update: Partial<ScoreConversionTemplateInput["sections"][number]>) => {
+  const updateSection = (
+    sectionId: string,
+    update: Partial<ScoreConversionTemplateInput["sections"][number]>,
+  ) => {
     setDraft((current) => ({
       ...current,
-      sections: current.sections.map((section) => section.id === id ? { ...section, ...update } : section),
+      sections: current.sections.map((section) =>
+        section.id === sectionId ? { ...section, ...update } : section),
+    }));
+  };
+
+  const updateMapping = (
+    sectionId: string,
+    mappingId: string,
+    update: Partial<ScoreConversionTemplateInput["sections"][number]["mappings"][number]>,
+  ) => {
+    setDraft((current) => ({
+      ...current,
+      sections: current.sections.map((section) => section.id === sectionId
+        ? {
+            ...section,
+            mappings: section.mappings.map((mapping) =>
+              mapping.id === mappingId ? { ...mapping, ...update } : mapping),
+          }
+        : section),
     }));
   };
 
@@ -59,199 +95,372 @@ export function ScoreConversionTemplateDialog({
     }));
   };
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setFormError("");
+  const addSection = () => {
+    const section = createDefaultDraft("custom").sections[0];
+    section.name = `Phần thi ${draft.sections.length + 1}`;
+    setDraft((current) => ({ ...current, sections: [...current.sections, section] }));
+    setActiveSectionId(section.id);
+  };
 
-    if (!draft.name.trim()) {
-      setFormError("Vui lòng nhập tên bài kiểm tra.");
-      return;
-    }
+  const removeSection = (sectionId: string) => {
+    const remaining = draft.sections.filter((section) => section.id !== sectionId);
+    if (!remaining.length) return;
+    setDraft((current) => ({ ...current, sections: remaining }));
+    if (activeSectionId === sectionId) setActiveSectionId(remaining[0].id);
+  };
+
+  const validateDraft = () => {
     if (draft.typeKey === "custom" && !draft.typeName.trim()) {
-      setFormError("Vui lòng đặt tên loại bài kiểm tra tùy chỉnh.");
-      return;
+      return "Vui lòng đặt tên loại bài kiểm tra tùy chỉnh.";
     }
-    if (draft.sections.some((section) => !section.name.trim() || !section.unit.trim() || section.maxScore < section.minScore || section.step <= 0)) {
-      setFormError("Vui lòng kiểm tra tên, đơn vị và thang điểm của từng phần thi.");
-      return;
+    if (!draft.sections.length) return "Cần có ít nhất một phần thi.";
+
+    for (const section of draft.sections) {
+      if (!section.name.trim() || !section.rawUnit.trim() || !section.convertedUnit.trim()) {
+        return "Vui lòng nhập tên phần thi và đơn vị điểm.";
+      }
+      if (section.rawMaxScore < section.rawMinScore || section.rawStep <= 0) {
+        return `Vui lòng kiểm tra thang điểm thô của phần ${section.name}.`;
+      }
+      if (section.convertedMaxScore < section.convertedMinScore || section.convertedStep <= 0) {
+        return `Vui lòng kiểm tra thang điểm quy đổi của phần ${section.name}.`;
+      }
+      const ordered = [...section.mappings].sort((a, b) => a.rawFrom - b.rawFrom);
+      for (let index = 0; index < ordered.length; index += 1) {
+        const mapping = ordered[index];
+        if (
+          mapping.rawTo < mapping.rawFrom ||
+          mapping.rawFrom < section.rawMinScore ||
+          mapping.rawTo > section.rawMaxScore ||
+          mapping.convertedScore < section.convertedMinScore ||
+          mapping.convertedScore > section.convertedMaxScore
+        ) {
+          return `Có khoảng điểm nằm ngoài thang điểm của phần ${section.name}.`;
+        }
+        if (index > 0 && mapping.rawFrom <= ordered[index - 1].rawTo) {
+          return `Các khoảng điểm thô của phần ${section.name} không được chồng lấn.`;
+        }
+      }
     }
     if (draft.overallRule.maxScore < draft.overallRule.minScore) {
-      setFormError("Điểm tối đa của điểm tổng phải lớn hơn hoặc bằng điểm tối thiểu.");
-      return;
+      return "Điểm tối đa của điểm tổng phải lớn hơn hoặc bằng điểm tối thiểu.";
     }
+    if (draft.overallRule.gradeBands.some((band) => !band.label.trim() || band.maxScore < band.minScore)) {
+      return "Vui lòng kiểm tra tên và khoảng điểm của các ngưỡng xếp loại.";
+    }
+    return "";
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const validationError = validateDraft();
+    setFormError(validationError);
+    if (validationError) return;
 
     try {
       await onSave({
         ...draft,
-        name: draft.name.trim(),
         typeName: draft.typeName.trim(),
+        sections: draft.sections.map((section) => ({
+          ...section,
+          name: section.name.trim(),
+          rawUnit: section.rawUnit.trim(),
+          convertedUnit: section.convertedUnit.trim(),
+        })),
         overallRule: {
           ...draft.overallRule,
           description: draft.overallRule.description.trim(),
         },
       });
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : "Không thể lưu cấu hình.");
+      setFormError(error instanceof Error ? error.message : "Không thể lưu bảng quy đổi.");
     }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-4xl">
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-5xl">
         <DialogHeader>
-          <DialogTitle>{template ? "Sửa cấu hình bài kiểm tra" : "Thêm bài kiểm tra"}</DialogTitle>
+          <DialogTitle>{template ? "Sửa bảng điểm quy đổi" : "Thêm bảng điểm quy đổi"}</DialogTitle>
           <DialogDescription>
-            Chọn một mẫu có sẵn để nạp cấu hình ban đầu, sau đó có thể chỉnh các phần thi và quy tắc điểm trước khi lưu.
+            Tạo bảng quy đổi dùng chung cho loại bài kiểm tra; bảng này chưa gắn với một bài kiểm tra cụ thể.
           </DialogDescription>
         </DialogHeader>
 
         <form className="space-y-6" onSubmit={handleSubmit}>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="score-conversion-name">Tên bài kiểm tra</Label>
-              <Input
-                id="score-conversion-name"
-                autoFocus
-                value={draft.name}
-                onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
-                placeholder="Ví dụ: IELTS Mock Test 01"
-                maxLength={255}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Loại bài kiểm tra</Label>
+              <Label htmlFor="score-conversion-type">Loại bài kiểm tra</Label>
               <Select value={draft.typeKey} onValueChange={(value) => changeType(value as ScoreConversionTypeKey)}>
-                <SelectTrigger aria-label="Loại bài kiểm tra">
+                <SelectTrigger id="score-conversion-type" aria-label="Loại bài kiểm tra">
                   <SelectValue placeholder="Chọn loại bài kiểm tra" />
                 </SelectTrigger>
                 <SelectContent>
-                  {SCORE_CONVERSION_TYPES.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
-                  ))}
+                  {SCORE_CONVERSION_TYPES.map((type) => {
+                    const alreadyConfigured = type.value !== "custom" && templates.some(
+                      (item) => item.typeKey === type.value && item.id !== template?.id,
+                    );
+                    return (
+                      <SelectItem key={type.value} value={type.value} disabled={alreadyConfigured}>
+                        {type.label}{alreadyConfigured ? " · Đã có bảng" : ""}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
+            {draft.typeKey === "custom" && (
+              <div className="space-y-2">
+                <Label htmlFor="score-conversion-custom-type">Tên loại tùy chỉnh</Label>
+                <Input
+                  id="score-conversion-custom-type"
+                  value={draft.typeName}
+                  onChange={(event) => setDraft((current) => ({ ...current, typeName: event.target.value }))}
+                  placeholder="Ví dụ: Bài kiểm tra nội bộ"
+                  maxLength={100}
+                />
+              </div>
+            )}
           </div>
-
-          {draft.typeKey === "custom" && (
-            <div className="max-w-md space-y-2">
-              <Label htmlFor="score-conversion-type-name">Tên loại tùy chỉnh</Label>
-              <Input
-                id="score-conversion-type-name"
-                value={draft.typeName}
-                onChange={(event) => setDraft((current) => ({ ...current, typeName: event.target.value }))}
-                placeholder="Ví dụ: Bài kiểm tra nội bộ"
-                maxLength={100}
-              />
-            </div>
-          )}
 
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h3 className="font-semibold">Các phần thi và thang điểm</h3>
-                <p className="text-sm text-muted-foreground">Có thể đổi tên, thang điểm, đơn vị hoặc thêm/bớt phần thi.</p>
+                <p className="text-sm text-muted-foreground">
+                  Mẫu nạp sẵn tên phần và thang gợi ý; chọn từng tab để nhập khoảng điểm thô và điểm quy đổi của trung tâm.
+                </p>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setDraft((current) => ({
-                  ...current,
-                  sections: [...current.sections, {
-                    id: newId(),
-                    name: `Phần thi ${current.sections.length + 1}`,
-                    minScore: 0,
-                    maxScore: 100,
-                    step: 1,
-                    unit: "điểm",
-                  }],
-                }))}
-              >
+              <Button type="button" variant="outline" size="sm" onClick={addSection}>
                 <Plus className="mr-1 h-4 w-4" />
                 Thêm phần thi
               </Button>
             </div>
 
-            <div className="space-y-3">
-              {draft.sections.map((section, index) => (
-                <div key={section.id} className="rounded-lg border p-3">
-                  <div className="mb-3 flex items-center justify-between">
-                    <p className="text-sm font-medium">Phần thi {index + 1}</p>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Xóa phần thi ${index + 1}`}
-                      disabled={draft.sections.length <= 1}
-                      onClick={() => setDraft((current) => ({
-                        ...current,
-                        sections: current.sections.filter((item) => item.id !== section.id),
-                      }))}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+            <Tabs
+              value={activeSectionId || draft.sections[0]?.id}
+              onValueChange={setActiveSectionId}
+              className="space-y-4"
+            >
+              <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto p-1">
+                {draft.sections.map((section) => (
+                  <TabsTrigger key={section.id} value={section.id} className="shrink-0 whitespace-nowrap">
+                    {section.name || "Phần thi"}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+
+              {draft.sections.map((section) => (
+                <TabsContent key={section.id} value={section.id} className="space-y-4">
+                  <div className="space-y-4 rounded-lg border p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="font-medium">{section.name || "Phần thi"}</h4>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Xóa phần thi ${section.name}`}
+                        disabled={draft.sections.length <= 1}
+                        onClick={() => removeSection(section.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`section-name-${section.id}`}>Tên phần thi</Label>
+                        <Input
+                          id={`section-name-${section.id}`}
+                          value={section.name}
+                          onChange={(event) => updateSection(section.id, { name: event.target.value })}
+                          maxLength={120}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`raw-min-${section.id}`}>Điểm thô từ</Label>
+                        <Input
+                          id={`raw-min-${section.id}`}
+                          type="number"
+                          step="any"
+                          value={section.rawMinScore}
+                          onChange={(event) => updateSection(section.id, { rawMinScore: numericValue(event.target.value) })}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`raw-max-${section.id}`}>Điểm thô đến</Label>
+                        <Input
+                          id={`raw-max-${section.id}`}
+                          type="number"
+                          step="any"
+                          value={section.rawMaxScore}
+                          onChange={(event) => updateSection(section.id, { rawMaxScore: numericValue(event.target.value) })}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`raw-step-${section.id}`}>Bước điểm thô</Label>
+                        <Input
+                          id={`raw-step-${section.id}`}
+                          type="number"
+                          min="0.01"
+                          step="any"
+                          value={section.rawStep}
+                          onChange={(event) => updateSection(section.id, { rawStep: numericValue(event.target.value) })}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`raw-unit-${section.id}`}>Đơn vị điểm thô</Label>
+                        <Input
+                          id={`raw-unit-${section.id}`}
+                          value={section.rawUnit}
+                          onChange={(event) => updateSection(section.id, { rawUnit: event.target.value })}
+                          maxLength={40}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`converted-min-${section.id}`}>Điểm quy đổi từ</Label>
+                        <Input
+                          id={`converted-min-${section.id}`}
+                          type="number"
+                          step="any"
+                          value={section.convertedMinScore}
+                          onChange={(event) => updateSection(section.id, { convertedMinScore: numericValue(event.target.value) })}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`converted-max-${section.id}`}>Điểm quy đổi đến</Label>
+                        <Input
+                          id={`converted-max-${section.id}`}
+                          type="number"
+                          step="any"
+                          value={section.convertedMaxScore}
+                          onChange={(event) => updateSection(section.id, { convertedMaxScore: numericValue(event.target.value) })}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`converted-step-${section.id}`}>Bước điểm quy đổi</Label>
+                        <Input
+                          id={`converted-step-${section.id}`}
+                          type="number"
+                          min="0.01"
+                          step="any"
+                          value={section.convertedStep}
+                          onChange={(event) => updateSection(section.id, { convertedStep: numericValue(event.target.value) })}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`converted-unit-${section.id}`}>Đơn vị điểm quy đổi</Label>
+                        <Input
+                          id={`converted-unit-${section.id}`}
+                          value={section.convertedUnit}
+                          onChange={(event) => updateSection(section.id, { convertedUnit: event.target.value })}
+                          maxLength={40}
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                    <div className="space-y-1.5 lg:col-span-1">
-                      <Label htmlFor={`section-name-${section.id}`}>Tên phần</Label>
-                      <Input
-                        id={`section-name-${section.id}`}
-                        value={section.name}
-                        onChange={(event) => updateSection(section.id, { name: event.target.value })}
-                        maxLength={120}
-                      />
+
+                  <div className="space-y-3 rounded-lg border p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h4 className="font-medium">Bảng quy đổi {section.name}</h4>
+                        <p className="text-sm text-muted-foreground">
+                          Điểm thô {section.rawUnit} được đổi sang {section.convertedUnit}.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => updateSection(section.id, {
+                          mappings: [...section.mappings, createEmptyMapping()],
+                        })}
+                      >
+                        <Plus className="mr-1 h-4 w-4" />
+                        Thêm khoảng điểm
+                      </Button>
                     </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`section-min-${section.id}`}>Điểm từ</Label>
-                      <Input
-                        id={`section-min-${section.id}`}
-                        type="number"
-                        step="any"
-                        value={section.minScore}
-                        onChange={(event) => updateSection(section.id, { minScore: numericValue(event.target.value) })}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`section-max-${section.id}`}>Đến</Label>
-                      <Input
-                        id={`section-max-${section.id}`}
-                        type="number"
-                        step="any"
-                        value={section.maxScore}
-                        onChange={(event) => updateSection(section.id, { maxScore: numericValue(event.target.value) })}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`section-step-${section.id}`}>Bước điểm</Label>
-                      <Input
-                        id={`section-step-${section.id}`}
-                        type="number"
-                        min="0.01"
-                        step="any"
-                        value={section.step}
-                        onChange={(event) => updateSection(section.id, { step: numericValue(event.target.value) })}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`section-unit-${section.id}`}>Đơn vị</Label>
-                      <Input
-                        id={`section-unit-${section.id}`}
-                        value={section.unit}
-                        onChange={(event) => updateSection(section.id, { unit: event.target.value })}
-                        maxLength={40}
-                      />
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[560px] text-left text-sm">
+                        <thead className="border-b text-muted-foreground">
+                          <tr>
+                            <th className="px-3 py-2 font-medium">Điểm thô từ</th>
+                            <th className="px-3 py-2 font-medium">Điểm thô đến</th>
+                            <th className="px-3 py-2 font-medium">Quy đổi ({section.convertedUnit})</th>
+                            <th className="w-12 px-2 py-2" />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {section.mappings.length ? section.mappings.map((mapping) => (
+                            <tr key={mapping.id} className="border-b last:border-0">
+                              <td className="px-3 py-2">
+                                <Input
+                                  aria-label={`Điểm thô từ ${section.name}`}
+                                  type="number"
+                                  step="any"
+                                  value={mapping.rawFrom}
+                                  onChange={(event) => updateMapping(section.id, mapping.id, {
+                                    rawFrom: numericValue(event.target.value),
+                                  })}
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <Input
+                                  aria-label={`Điểm thô đến ${section.name}`}
+                                  type="number"
+                                  step="any"
+                                  value={mapping.rawTo}
+                                  onChange={(event) => updateMapping(section.id, mapping.id, {
+                                    rawTo: numericValue(event.target.value),
+                                  })}
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <Input
+                                  aria-label={`Điểm quy đổi ${section.name}`}
+                                  type="number"
+                                  step="any"
+                                  value={mapping.convertedScore}
+                                  onChange={(event) => updateMapping(section.id, mapping.id, {
+                                    convertedScore: numericValue(event.target.value),
+                                  })}
+                                />
+                              </td>
+                              <td className="px-2 py-2">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label={`Xóa khoảng điểm ${mapping.rawFrom}–${mapping.rawTo}`}
+                                  onClick={() => updateSection(section.id, {
+                                    mappings: section.mappings.filter((item) => item.id !== mapping.id),
+                                  })}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </td>
+                            </tr>
+                          )) : (
+                            <tr>
+                              <td colSpan={4} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                                Chưa có khoảng quy đổi. Thêm các khoảng điểm thô và điểm tương ứng.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
-                </div>
+                </TabsContent>
               ))}
-            </div>
+            </Tabs>
           </section>
 
           <section className="space-y-3 rounded-lg border p-4">
             <div>
               <h3 className="font-semibold">Quy tắc điểm tổng</h3>
-              <p className="text-sm text-muted-foreground">Mẫu có sẵn đã điền quy tắc thường dùng; có thể sửa thủ công.</p>
+              <p className="text-sm text-muted-foreground">Có thể chỉnh cách tổng hợp điểm quy đổi từ các phần thi.</p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <div className="space-y-1.5">
@@ -260,9 +469,7 @@ export function ScoreConversionTemplateDialog({
                   value={draft.overallRule.method}
                   onValueChange={(value) => updateRule({ method: value as "sum" | "average" })}
                 >
-                  <SelectTrigger id="overall-method">
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger id="overall-method"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="average">Trung bình</SelectItem>
                     <SelectItem value="sum">Cộng tổng</SelectItem>
@@ -271,57 +478,33 @@ export function ScoreConversionTemplateDialog({
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="overall-min">Điểm tổng từ</Label>
-                <Input
-                  id="overall-min"
-                  type="number"
-                  step="any"
-                  value={draft.overallRule.minScore}
-                  onChange={(event) => updateRule({ minScore: numericValue(event.target.value) })}
-                />
+                <Input id="overall-min" type="number" step="any" value={draft.overallRule.minScore}
+                  onChange={(event) => updateRule({ minScore: numericValue(event.target.value) })} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="overall-max">Đến</Label>
-                <Input
-                  id="overall-max"
-                  type="number"
-                  step="any"
-                  value={draft.overallRule.maxScore}
-                  onChange={(event) => updateRule({ maxScore: numericValue(event.target.value) })}
-                />
+                <Input id="overall-max" type="number" step="any" value={draft.overallRule.maxScore}
+                  onChange={(event) => updateRule({ maxScore: numericValue(event.target.value) })} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="overall-rounding">Làm tròn đến</Label>
-                <Input
-                  id="overall-rounding"
-                  type="number"
-                  min="0.01"
-                  step="any"
-                  placeholder="Không làm tròn"
-                  value={draft.overallRule.roundingStep ?? ""}
+                <Input id="overall-rounding" type="number" min="0.01" step="any"
+                  placeholder="Không làm tròn" value={draft.overallRule.roundingStep ?? ""}
                   onChange={(event) => updateRule({
                     roundingStep: event.target.value === "" ? null : numericValue(event.target.value),
-                  })}
-                />
+                  })} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="overall-unit">Đơn vị điểm tổng</Label>
-                <Input
-                  id="overall-unit"
-                  value={draft.overallRule.unit}
-                  onChange={(event) => updateRule({ unit: event.target.value })}
-                  maxLength={40}
-                />
+                <Input id="overall-unit" value={draft.overallRule.unit} maxLength={40}
+                  onChange={(event) => updateRule({ unit: event.target.value })} />
               </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="overall-description">Mô tả quy tắc</Label>
-              <Textarea
-                id="overall-description"
-                value={draft.overallRule.description}
-                onChange={(event) => updateRule({ description: event.target.value })}
-                placeholder="Mô tả cách tính hoặc quy đổi điểm"
-                maxLength={1000}
-              />
+              <Textarea id="overall-description" value={draft.overallRule.description}
+                placeholder="Mô tả cách tính điểm tổng"
+                onChange={(event) => updateRule({ description: event.target.value })} maxLength={1000} />
             </div>
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -329,72 +512,44 @@ export function ScoreConversionTemplateDialog({
                   <Label>Ngưỡng xếp loại (không bắt buộc)</Label>
                   <p className="text-xs text-muted-foreground">Ví dụ: A2 từ 120 đến 139 điểm.</p>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => updateRule({
-                    gradeBands: [...draft.overallRule.gradeBands, {
-                      id: newId(),
-                      label: "",
-                      minScore: draft.overallRule.minScore,
-                      maxScore: draft.overallRule.maxScore,
-                    }],
-                  })}
-                >
-                  <Plus className="mr-1 h-4 w-4" />
-                  Thêm ngưỡng
+                <Button type="button" variant="outline" size="sm" onClick={() => updateRule({
+                  gradeBands: [...draft.overallRule.gradeBands, {
+                    id: newId(), label: "", minScore: draft.overallRule.minScore, maxScore: draft.overallRule.maxScore,
+                  }],
+                })}>
+                  <Plus className="mr-1 h-4 w-4" />Thêm ngưỡng
                 </Button>
               </div>
               {draft.overallRule.gradeBands.map((band, index) => (
                 <div key={band.id} className="grid items-end gap-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
                   <div className="space-y-1.5">
                     <Label htmlFor={`band-label-${band.id}`}>Xếp loại {index + 1}</Label>
-                    <Input
-                      id={`band-label-${band.id}`}
-                      value={band.label}
+                    <Input id={`band-label-${band.id}`} value={band.label} placeholder="Ví dụ: A2"
                       onChange={(event) => updateRule({
                         gradeBands: draft.overallRule.gradeBands.map((item) =>
                           item.id === band.id ? { ...item, label: event.target.value } : item),
-                      })}
-                      placeholder="Ví dụ: A2"
-                    />
+                      })} />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor={`band-min-${band.id}`}>Điểm từ</Label>
-                    <Input
-                      id={`band-min-${band.id}`}
-                      type="number"
-                      step="any"
-                      value={band.minScore}
+                    <Input id={`band-min-${band.id}`} type="number" step="any" value={band.minScore}
                       onChange={(event) => updateRule({
                         gradeBands: draft.overallRule.gradeBands.map((item) =>
                           item.id === band.id ? { ...item, minScore: numericValue(event.target.value) } : item),
-                      })}
-                    />
+                      })} />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor={`band-max-${band.id}`}>Đến</Label>
-                    <Input
-                      id={`band-max-${band.id}`}
-                      type="number"
-                      step="any"
-                      value={band.maxScore}
+                    <Input id={`band-max-${band.id}`} type="number" step="any" value={band.maxScore}
                       onChange={(event) => updateRule({
                         gradeBands: draft.overallRule.gradeBands.map((item) =>
                           item.id === band.id ? { ...item, maxScore: numericValue(event.target.value) } : item),
-                      })}
-                    />
+                      })} />
                   </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Xóa ngưỡng xếp loại ${index + 1}`}
+                  <Button type="button" variant="ghost" size="icon" aria-label={`Xóa ngưỡng xếp loại ${index + 1}`}
                     onClick={() => updateRule({
                       gradeBands: draft.overallRule.gradeBands.filter((item) => item.id !== band.id),
-                    })}
-                  >
+                    })}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -409,7 +564,7 @@ export function ScoreConversionTemplateDialog({
               Hủy
             </Button>
             <Button type="submit" disabled={saving}>
-              {saving ? "Đang lưu..." : "Lưu cấu hình"}
+              {saving ? "Đang lưu..." : "Lưu bảng quy đổi"}
             </Button>
           </DialogFooter>
         </form>

@@ -15,26 +15,47 @@ export const SCORE_CONVERSION_TYPES: Array<{ value: ScoreConversionTypeKey; labe
   { value: "custom", label: "+ Tạo bài kiểm tra tùy chỉnh" },
 ];
 
-type PresetPart = {
-  name: string;
-  minScore: number;
-  maxScore: number;
-  step: number;
-  unit: string;
+type PresetSection = Omit<ScoreConversionTemplateInput["sections"][number], "id" | "mappings">;
+type PresetBand = Omit<ScoreConversionTemplateInput["overallRule"]["gradeBands"][number], "id">;
+type Preset = {
+  typeKey: Exclude<ScoreConversionTypeKey, "custom">;
+  typeName: string;
+  sectionDefaults: PresetSection[];
+  overallRule: Omit<ScoreConversionTemplateInput["overallRule"], "gradeBands"> & {
+    gradeBands: PresetBand[];
+  };
 };
 
-type Preset = Omit<ScoreConversionTemplateInput, "name" | "sections"> & {
-  sectionDefaults: PresetPart[];
-};
+const part = (
+  name: string,
+  rawMinScore: number,
+  rawMaxScore: number,
+  rawStep: number,
+  rawUnit: string,
+  convertedMinScore: number,
+  convertedMaxScore: number,
+  convertedStep: number,
+  convertedUnit: string,
+): PresetSection => ({
+  name,
+  rawMinScore,
+  rawMaxScore,
+  rawStep,
+  rawUnit,
+  convertedMinScore,
+  convertedMaxScore,
+  convertedStep,
+  convertedUnit,
+});
 
 const presetDefinitions: Record<Exclude<ScoreConversionTypeKey, "custom">, Preset> = {
   starters: {
     typeKey: "starters",
     typeName: "Starters",
     sectionDefaults: [
-      { name: "Listening", minScore: 0, maxScore: 5, step: 1, unit: "khiên" },
-      { name: "Reading & Writing", minScore: 0, maxScore: 5, step: 1, unit: "khiên" },
-      { name: "Speaking", minScore: 0, maxScore: 5, step: 1, unit: "khiên" },
+      part("Listening", 0, 100, 1, "điểm thô", 0, 5, 1, "khiên"),
+      part("Reading & Writing", 0, 100, 1, "điểm thô", 0, 5, 1, "khiên"),
+      part("Speaking", 0, 100, 1, "điểm thô", 0, 5, 1, "khiên"),
     ],
     overallRule: {
       method: "sum",
@@ -50,9 +71,9 @@ const presetDefinitions: Record<Exclude<ScoreConversionTypeKey, "custom">, Prese
     typeKey: "movers",
     typeName: "Movers",
     sectionDefaults: [
-      { name: "Listening", minScore: 0, maxScore: 5, step: 1, unit: "khiên" },
-      { name: "Reading & Writing", minScore: 0, maxScore: 5, step: 1, unit: "khiên" },
-      { name: "Speaking", minScore: 0, maxScore: 5, step: 1, unit: "khiên" },
+      part("Listening", 0, 100, 1, "điểm thô", 0, 5, 1, "khiên"),
+      part("Reading & Writing", 0, 100, 1, "điểm thô", 0, 5, 1, "khiên"),
+      part("Speaking", 0, 100, 1, "điểm thô", 0, 5, 1, "khiên"),
     ],
     overallRule: {
       method: "sum",
@@ -68,9 +89,9 @@ const presetDefinitions: Record<Exclude<ScoreConversionTypeKey, "custom">, Prese
     typeKey: "flyers",
     typeName: "Flyers",
     sectionDefaults: [
-      { name: "Listening", minScore: 0, maxScore: 5, step: 1, unit: "khiên" },
-      { name: "Reading & Writing", minScore: 0, maxScore: 5, step: 1, unit: "khiên" },
-      { name: "Speaking", minScore: 0, maxScore: 5, step: 1, unit: "khiên" },
+      part("Listening", 0, 100, 1, "điểm thô", 0, 5, 1, "khiên"),
+      part("Reading & Writing", 0, 100, 1, "điểm thô", 0, 5, 1, "khiên"),
+      part("Speaking", 0, 100, 1, "điểm thô", 0, 5, 1, "khiên"),
     ],
     overallRule: {
       method: "sum",
@@ -86,10 +107,10 @@ const presetDefinitions: Record<Exclude<ScoreConversionTypeKey, "custom">, Prese
     typeKey: "ket",
     typeName: "KET",
     sectionDefaults: [
-      { name: "Reading", minScore: 100, maxScore: 150, step: 1, unit: "điểm Cambridge English Scale" },
-      { name: "Writing", minScore: 100, maxScore: 150, step: 1, unit: "điểm Cambridge English Scale" },
-      { name: "Listening", minScore: 100, maxScore: 150, step: 1, unit: "điểm Cambridge English Scale" },
-      { name: "Speaking", minScore: 100, maxScore: 150, step: 1, unit: "điểm Cambridge English Scale" },
+      part("Reading", 0, 100, 1, "điểm thô", 100, 150, 1, "điểm Cambridge English Scale"),
+      part("Writing", 0, 100, 1, "điểm thô", 100, 150, 1, "điểm Cambridge English Scale"),
+      part("Listening", 0, 100, 1, "điểm thô", 100, 150, 1, "điểm Cambridge English Scale"),
+      part("Speaking", 0, 100, 1, "điểm thô", 100, 150, 1, "điểm Cambridge English Scale"),
     ],
     overallRule: {
       method: "average",
@@ -99,9 +120,9 @@ const presetDefinitions: Record<Exclude<ScoreConversionTypeKey, "custom">, Prese
       unit: "điểm Cambridge English Scale",
       description: "Lấy điểm trung bình của 4 kỹ năng trên thang Cambridge English Scale.",
       gradeBands: [
-        { id: crypto.randomUUID(), label: "A1", minScore: 100, maxScore: 119 },
-        { id: crypto.randomUUID(), label: "A2", minScore: 120, maxScore: 139 },
-        { id: crypto.randomUUID(), label: "B1", minScore: 140, maxScore: 150 },
+        { label: "A1", minScore: 100, maxScore: 119 },
+        { label: "A2", minScore: 120, maxScore: 139 },
+        { label: "B1", minScore: 140, maxScore: 150 },
       ],
     },
   },
@@ -109,10 +130,10 @@ const presetDefinitions: Record<Exclude<ScoreConversionTypeKey, "custom">, Prese
     typeKey: "pet",
     typeName: "PET",
     sectionDefaults: [
-      { name: "Reading", minScore: 120, maxScore: 170, step: 1, unit: "điểm Cambridge English Scale" },
-      { name: "Writing", minScore: 120, maxScore: 170, step: 1, unit: "điểm Cambridge English Scale" },
-      { name: "Listening", minScore: 120, maxScore: 170, step: 1, unit: "điểm Cambridge English Scale" },
-      { name: "Speaking", minScore: 120, maxScore: 170, step: 1, unit: "điểm Cambridge English Scale" },
+      part("Reading", 0, 100, 1, "điểm thô", 120, 170, 1, "điểm Cambridge English Scale"),
+      part("Writing", 0, 100, 1, "điểm thô", 120, 170, 1, "điểm Cambridge English Scale"),
+      part("Listening", 0, 100, 1, "điểm thô", 120, 170, 1, "điểm Cambridge English Scale"),
+      part("Speaking", 0, 100, 1, "điểm thô", 120, 170, 1, "điểm Cambridge English Scale"),
     ],
     overallRule: {
       method: "average",
@@ -122,9 +143,9 @@ const presetDefinitions: Record<Exclude<ScoreConversionTypeKey, "custom">, Prese
       unit: "điểm Cambridge English Scale",
       description: "Lấy điểm trung bình của 4 kỹ năng trên thang Cambridge English Scale.",
       gradeBands: [
-        { id: crypto.randomUUID(), label: "A2", minScore: 120, maxScore: 139 },
-        { id: crypto.randomUUID(), label: "B1", minScore: 140, maxScore: 159 },
-        { id: crypto.randomUUID(), label: "B2", minScore: 160, maxScore: 170 },
+        { label: "A2", minScore: 120, maxScore: 139 },
+        { label: "B1", minScore: 140, maxScore: 159 },
+        { label: "B2", minScore: 160, maxScore: 170 },
       ],
     },
   },
@@ -132,8 +153,8 @@ const presetDefinitions: Record<Exclude<ScoreConversionTypeKey, "custom">, Prese
     typeKey: "toeic",
     typeName: "TOEIC",
     sectionDefaults: [
-      { name: "Listening", minScore: 5, maxScore: 495, step: 5, unit: "điểm" },
-      { name: "Reading", minScore: 5, maxScore: 495, step: 5, unit: "điểm" },
+      part("Listening", 0, 100, 1, "điểm thô", 5, 495, 5, "điểm"),
+      part("Reading", 0, 100, 1, "điểm thô", 5, 495, 5, "điểm"),
     ],
     overallRule: {
       method: "sum",
@@ -149,10 +170,10 @@ const presetDefinitions: Record<Exclude<ScoreConversionTypeKey, "custom">, Prese
     typeKey: "ielts",
     typeName: "IELTS",
     sectionDefaults: [
-      { name: "Listening", minScore: 0, maxScore: 9, step: 0.5, unit: "band" },
-      { name: "Reading", minScore: 0, maxScore: 9, step: 0.5, unit: "band" },
-      { name: "Writing", minScore: 0, maxScore: 9, step: 0.5, unit: "band" },
-      { name: "Speaking", minScore: 0, maxScore: 9, step: 0.5, unit: "band" },
+      part("Listening", 0, 40, 1, "câu đúng", 0, 9, 0.5, "band"),
+      part("Reading", 0, 40, 1, "câu đúng", 0, 9, 0.5, "band"),
+      part("Writing", 0, 9, 0.5, "band", 0, 9, 0.5, "band"),
+      part("Speaking", 0, 9, 0.5, "band", 0, 9, 0.5, "band"),
     ],
     overallRule: {
       method: "average",
@@ -166,27 +187,18 @@ const presetDefinitions: Record<Exclude<ScoreConversionTypeKey, "custom">, Prese
   },
 };
 
-function newId() {
-  return crypto.randomUUID();
+const newId = () => crypto.randomUUID();
+
+function makeSection(section: PresetSection): ScoreConversionTemplateInput["sections"][number] {
+  return { id: newId(), ...section, mappings: [] };
 }
 
-export function createDefaultDraft(
-  typeKey: ScoreConversionTypeKey = "ielts",
-  name = "",
-): ScoreConversionTemplateInput {
+export function createDefaultDraft(typeKey: ScoreConversionTypeKey = "starters"): ScoreConversionTemplateInput {
   if (typeKey === "custom") {
     return {
-      name,
       typeKey,
       typeName: "",
-      sections: [{
-        id: newId(),
-        name: "Phần thi 1",
-        minScore: 0,
-        maxScore: 100,
-        step: 1,
-        unit: "điểm",
-      }],
+      sections: [makeSection(part("Phần thi 1", 0, 100, 1, "điểm thô", 0, 100, 1, "điểm"))],
       overallRule: {
         method: "average",
         minScore: 0,
@@ -201,13 +213,9 @@ export function createDefaultDraft(
 
   const preset = presetDefinitions[typeKey];
   return {
-    name,
     typeKey,
     typeName: preset.typeName,
-    sections: preset.sectionDefaults.map((section) => ({
-      id: newId(),
-      ...section,
-    })),
+    sections: preset.sectionDefaults.map(makeSection),
     overallRule: {
       ...preset.overallRule,
       gradeBands: preset.overallRule.gradeBands.map((band) => ({ ...band, id: newId() })),
@@ -215,17 +223,21 @@ export function createDefaultDraft(
   };
 }
 
-export function draftFromTemplate(
-  template: ScoreConversionTemplate,
-): ScoreConversionTemplateInput {
+export function draftFromTemplate(template: ScoreConversionTemplate): ScoreConversionTemplateInput {
   return {
-    name: template.name,
     typeKey: template.typeKey,
     typeName: template.typeName,
-    sections: template.sections.map((section) => ({ ...section })),
+    sections: template.sections.map((section) => ({
+      ...section,
+      mappings: section.mappings.map((mapping) => ({ ...mapping })),
+    })),
     overallRule: {
       ...template.overallRule,
       gradeBands: template.overallRule.gradeBands.map((band) => ({ ...band })),
     },
   };
+}
+
+export function createEmptyMapping(): ScoreConversionTemplateInput["sections"][number]["mappings"][number] {
+  return { id: newId(), rawFrom: 0, rawTo: 0, convertedScore: 0 };
 }

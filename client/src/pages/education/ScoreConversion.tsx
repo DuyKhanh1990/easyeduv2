@@ -8,8 +8,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { ScoreConversionTemplate, ScoreConversionTemplateInput } from "@shared/score-conversion";
+import type {
+  ScoreConversionTemplate,
+  ScoreConversionTemplateInput,
+  ScoreConversionTypeKey,
+} from "@shared/score-conversion";
 import { ScoreConversionTemplateDialog } from "./score-conversion/ScoreConversionTemplateDialog";
+import { SCORE_CONVERSION_TYPES } from "./score-conversion/score-conversion-presets";
 
 const TEMPLATE_ENDPOINT = "/api/score-conversion-templates";
 const TEMPLATE_QUERY_KEY = [TEMPLATE_ENDPOINT];
@@ -31,6 +36,11 @@ export default function ScoreConversion() {
       return response.json();
     },
   });
+  const savedTemplates = templatesQuery.data ?? [];
+  const initialTypeKey: ScoreConversionTypeKey =
+    SCORE_CONVERSION_TYPES.find((type) =>
+      type.value !== "custom" && !savedTemplates.some((template) => template.typeKey === type.value),
+    )?.value ?? "custom";
 
   const saveMutation = useMutation({
     mutationFn: async ({ id, draft }: { id: string | null; draft: ScoreConversionTemplateInput }) => {
@@ -46,7 +56,7 @@ export default function ScoreConversion() {
       setDialogOpen(false);
       toast({
         title: variables.id ? "Đã cập nhật cấu hình" : "Đã lưu cấu hình",
-        description: "Cấu hình bài kiểm tra đã sẵn sàng để dùng lại.",
+        description: "Bảng quy đổi đã sẵn sàng để áp dụng cho các bài kiểm tra.",
       });
     },
   });
@@ -114,9 +124,9 @@ export default function ScoreConversion() {
                     <table className="w-full min-w-[760px] text-left text-sm">
                       <thead className="border-b bg-muted/40 text-muted-foreground">
                         <tr>
-                          <th className="px-4 py-3 font-medium">Tên bài kiểm tra</th>
-                          <th className="px-4 py-3 font-medium">Loại</th>
+                          <th className="px-4 py-3 font-medium">Loại bài kiểm tra</th>
                           <th className="px-4 py-3 font-medium">Phần thi</th>
+                          <th className="px-4 py-3 font-medium">Khoảng quy đổi</th>
                           <th className="px-4 py-3 font-medium">Quy tắc điểm tổng</th>
                           {canEdit && <th className="w-16 px-4 py-3" />}
                         </tr>
@@ -124,8 +134,7 @@ export default function ScoreConversion() {
                       <tbody>
                         {templatesQuery.data.map((template) => (
                           <tr key={template.id} className="border-b last:border-0">
-                            <td className="px-4 py-3 font-medium">{template.name}</td>
-                            <td className="px-4 py-3">{template.typeName}</td>
+                            <td className="px-4 py-3 font-medium">{template.typeName}</td>
                             <td className="px-4 py-3">
                               <div className="flex flex-wrap gap-1.5">
                                 {template.sections.map((section) => (
@@ -134,6 +143,9 @@ export default function ScoreConversion() {
                                   </span>
                                 ))}
                               </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              {template.sections.reduce((total, section) => total + section.mappings.length, 0)}
                             </td>
                             <td className="max-w-sm px-4 py-3">
                               <div className="font-medium">
@@ -151,7 +163,7 @@ export default function ScoreConversion() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  aria-label={`Sửa ${template.name}`}
+                                  aria-label={`Sửa bảng ${template.typeName}`}
                                   onClick={() => openEditDialog(template)}
                                 >
                                   <Pencil className="h-4 w-4" />
@@ -169,9 +181,9 @@ export default function ScoreConversion() {
                       <BarChart3 className="h-5 w-5 text-muted-foreground" />
                     </div>
                     <div>
-                      <p className="font-medium">Chưa có cấu hình bài kiểm tra</p>
+                      <p className="font-medium">Chưa có bảng điểm quy đổi</p>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        Chọn một mẫu có sẵn hoặc tạo loại bài kiểm tra riêng.
+                        Tạo bảng quy đổi dùng chung theo loại bài kiểm tra.
                       </p>
                     </div>
                     {canCreate && (
@@ -190,6 +202,8 @@ export default function ScoreConversion() {
       <ScoreConversionTemplateDialog
         open={dialogOpen}
         template={editingTemplate}
+        templates={savedTemplates}
+        initialTypeKey={initialTypeKey}
         saving={saveMutation.isPending}
         onOpenChange={setDialogOpen}
         onSave={handleSave}
