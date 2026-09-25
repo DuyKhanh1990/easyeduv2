@@ -313,15 +313,22 @@ export async function deleteClassSessions(
       await tx.delete(studentSessions).where(inArray(studentSessions.classSessionId, sessionIdsToDelete));
       await tx.delete(classSessions).where(inArray(classSessions.id, sessionIdsToDelete));
 
-      // FIX: Re-index tất cả sessions còn lại bằng 1 SQL ROW_NUMBER() thay vì N UPDATE riêng lẻ.
-      // Dùng session_date ASC làm thứ tự chuẩn (giống logic cũ), id ASC làm tie-breaker.
+      // Re-index remaining sessions by date and shift start time. Keep the old
+      // index as a stable tie-breaker when two sessions share the same date/time.
       await tx.execute(sql`
         UPDATE class_sessions cs
         SET session_index = ranked.rn
         FROM (
-          SELECT id, ROW_NUMBER() OVER (ORDER BY session_date ASC, id ASC) AS rn
-          FROM class_sessions
-          WHERE class_id = ${classId}
+          SELECT cs_order.id,
+                 ROW_NUMBER() OVER (
+                   ORDER BY cs_order.session_date ASC,
+                            st.start_time ASC NULLS LAST,
+                            cs_order.session_index ASC NULLS LAST,
+                            cs_order.id ASC
+                 ) AS rn
+          FROM class_sessions cs_order
+          LEFT JOIN shift_templates st ON st.id = cs_order.shift_template_id
+          WHERE cs_order.class_id = ${classId}
         ) ranked
         WHERE cs.id = ranked.id
       `);
@@ -1099,14 +1106,21 @@ export async function extendStudentSessions(data: {
             JSON.stringify([...newWeekdays!].sort((a, b) => a - b)));
 
         if (cycleChanged) {
-          // Renumber sessionOrder for all student sessions in date order —
+          // Renumber student session order by the class date and shift time —
           // single SQL UPDATE with a ROW_NUMBER() CTE instead of N sequential UPDATEs.
           await tx.execute(sql`
             WITH ranked AS (
               SELECT ss.id,
-                     ROW_NUMBER() OVER (ORDER BY cs.session_date ASC, ss.created_at ASC) AS rn
+                     ROW_NUMBER() OVER (
+                       ORDER BY cs.session_date ASC,
+                                st.start_time ASC NULLS LAST,
+                                cs.session_index ASC NULLS LAST,
+                                ss.created_at ASC,
+                                ss.id ASC
+                     ) AS rn
               FROM student_sessions ss
               INNER JOIN class_sessions cs ON ss.class_session_id = cs.id
+              LEFT JOIN shift_templates st ON st.id = cs.shift_template_id
               WHERE ss.student_class_id = ${sc.id}
             )
             UPDATE student_sessions

@@ -790,6 +790,37 @@ export async function getClassAssignInfo(id: string): Promise<any> {
   };
 }
 
+async function sortClassSessionRowsByDateAndTime<T extends {
+  sessionDate: string | Date;
+  shiftTemplateId?: string | null;
+}>(tx: any, sessions: T[]): Promise<T[]> {
+  if (sessions.length < 2) return sessions;
+
+  const shiftIds = Array.from(new Set(
+    sessions.map(session => session.shiftTemplateId).filter((id): id is string => !!id),
+  ));
+  const shiftRows = shiftIds.length > 0
+    ? await tx.select({
+        id: shiftTemplates.id,
+        startTime: shiftTemplates.startTime,
+      }).from(shiftTemplates).where(inArray(shiftTemplates.id, shiftIds))
+    : [];
+  const startTimeByShiftId = new Map<string, string>();
+  for (const shift of shiftRows) {
+    startTimeByShiftId.set(shift.id, String(shift.startTime ?? "99:99:99"));
+  }
+
+  return sessions
+    .map((session, originalOrder) => ({ session, originalOrder }))
+    .sort((a, b) =>
+      String(a.session.sessionDate).slice(0, 10).localeCompare(String(b.session.sessionDate).slice(0, 10)) ||
+      (startTimeByShiftId.get(a.session.shiftTemplateId ?? "") ?? "99:99:99")
+        .localeCompare(startTimeByShiftId.get(b.session.shiftTemplateId ?? "") ?? "99:99:99") ||
+      a.originalOrder - b.originalOrder
+    )
+    .map(({ session }) => session);
+}
+
 // ---------------------------------------------------------------------------
 // createClass
 // ---------------------------------------------------------------------------
@@ -879,8 +910,10 @@ export async function createClass(data: any): Promise<Class> {
       }
     }
 
+    const orderedSessions = await sortClassSessionRowsByDateAndTime(tx, sessions);
+
     // Compute endDate: last session date when endType = "sessions", otherwise use data.endDate
-    const computedEndDate = sessions.length > 0 ? sessions[sessions.length - 1].sessionDate : (data.endDate || data.startDate);
+    const computedEndDate = orderedSessions.length > 0 ? orderedSessions[orderedSessions.length - 1].sessionDate : (data.endDate || data.startDate);
 
     const [newClass] = await tx.insert(classes).values({
       classCode: data.classCode,
@@ -915,8 +948,8 @@ export async function createClass(data: any): Promise<Class> {
          : null,
     }).returning();
 
-    if (sessions.length > 0) {
-      const sessionsWithIndex = sessions.map((s, idx) => ({
+    if (orderedSessions.length > 0) {
+      const sessionsWithIndex = orderedSessions.map((s, idx) => ({
         ...s,
         classId: newClass.id,
         sessionIndex: idx + 1,
@@ -1070,8 +1103,9 @@ export async function updateClass(id: string, data: any): Promise<Class> {
         }
       }
 
-      const computedEndDate = sessions.length > 0
-        ? sessions[sessions.length - 1].sessionDate
+      const orderedSessions = await sortClassSessionRowsByDateAndTime(tx, sessions);
+      const computedEndDate = orderedSessions.length > 0
+        ? orderedSessions[orderedSessions.length - 1].sessionDate
         : (data.endDate || data.startDate);
 
       const updateData: any = {};
@@ -1088,8 +1122,8 @@ export async function updateClass(id: string, data: any): Promise<Class> {
 
       const [updated] = await tx.update(classes).set(updateData).where(eq(classes.id, id)).returning();
 
-      if (sessions.length > 0) {
-        const sessionsWithIndex = sessions.map((s, idx) => ({
+      if (orderedSessions.length > 0) {
+        const sessionsWithIndex = orderedSessions.map((s, idx) => ({
           ...s,
           sessionIndex: idx + 1,
           subjectId: updated.subjectId || null,
@@ -1556,7 +1590,14 @@ export async function scheduleClassStudents(classId: string, configs: any[], use
       const start = new Date(config.startDate);
       let sessions = filteredSessions
         .filter((s: any) => new Date(s.sessionDate) >= start)
-        .sort((a: any, b: any) => new Date(a.sessionDate).getTime() - new Date(b.sessionDate).getTime());
+        .sort((a: any, b: any) =>
+          new Date(a.sessionDate).getTime() - new Date(b.sessionDate).getTime() ||
+          String(a.shiftTemplate?.startTime ?? "99:99:99").localeCompare(
+            String(b.shiftTemplate?.startTime ?? "99:99:99"),
+          ) ||
+          (a.sessionIndex ?? Number.MAX_SAFE_INTEGER) - (b.sessionIndex ?? Number.MAX_SAFE_INTEGER) ||
+          String(a.id).localeCompare(String(b.id))
+        );
 
       if (config.endType === "date") {
         const end = new Date(config.endDate);

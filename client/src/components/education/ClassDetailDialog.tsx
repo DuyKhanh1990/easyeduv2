@@ -82,10 +82,17 @@ export function ClassDetailDialog({ classId, isOpen, onClose }: ClassDetailDialo
     staleTime: 0,
     select: (data) =>
       [...data].sort((a, b) => {
-        const dateA = new Date(a.sessionDate).getTime();
-        const dateB = new Date(b.sessionDate).getTime();
-        if (dateA !== dateB) return dateA - dateB;
-        return a.id.localeCompare(b.id);
+        const dateA = String(a.sessionDate).slice(0, 10);
+        const dateB = String(b.sessionDate).slice(0, 10);
+        if (dateA !== dateB) return dateA.localeCompare(dateB);
+
+        const timeA = String(a.shiftTemplate?.startTime ?? "99:99:99").slice(0, 8);
+        const timeB = String(b.shiftTemplate?.startTime ?? "99:99:99").slice(0, 8);
+        if (timeA !== timeB) return timeA.localeCompare(timeB);
+
+        const indexA = a.sessionIndex ?? Number.MAX_SAFE_INTEGER;
+        const indexB = b.sessionIndex ?? Number.MAX_SAFE_INTEGER;
+        return indexA - indexB || String(a.id).localeCompare(String(b.id));
       }),
   });
 
