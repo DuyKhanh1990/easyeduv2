@@ -163,11 +163,10 @@ export function ScoreConversionTemplateDialog({
       });
 
       if (lower <= rawMinScore) break;
-      const nextUpper = lower;
-      const nextLower = Math.max(
-        rawMinScore,
-        nextUpper - rawStep - 1,
-      );
+      const nextUpper = rawStep === 0 ? lower - 1 : lower;
+      const nextLower = rawStep === 0
+        ? Math.max(rawMinScore, nextUpper)
+        : Math.max(rawMinScore, nextUpper - rawStep - 1);
       if (nextLower >= lower) {
         setFormError("Không thể tạo bảng với bước điểm này. Hãy tăng bước điểm hoặc thu hẹp thang điểm.");
         return;
