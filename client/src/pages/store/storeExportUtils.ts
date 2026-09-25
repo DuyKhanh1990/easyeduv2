@@ -3,6 +3,7 @@
  * Each function takes the already-filtered/visible data and a toast callback.
  */
 import ExcelJS from "exceljs";
+import { formatCenterTimestamp } from "@/lib/center-time-format";
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -12,8 +13,18 @@ function fmtVND(val: string | number | null | undefined): string {
   return isNaN(n) ? "0" : n.toLocaleString("vi-VN");
 }
 
-function fmtDate(dateStr: string | null | undefined): string {
+function fmtDate(dateStr: string | null | undefined, timeZone?: string): string {
   if (!dateStr) return "—";
+  if (timeZone) {
+    return formatCenterTimestamp(dateStr, timeZone, {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    });
+  }
   const d = new Date(dateStr);
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
@@ -178,7 +189,7 @@ export type TransferRow = {
   [key: string]: any;
 };
 
-export async function exportChuyenKho(rows: TransferRow[], toast: (o: any) => void) {
+export async function exportChuyenKho(rows: TransferRow[], toast: (o: any) => void, timeZone?: string) {
   try {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Chuyển kho");
@@ -201,7 +212,7 @@ export async function exportChuyenKho(rows: TransferRow[], toast: (o: any) => vo
         r.status === "transferring" ? "Đang chuyển" :
         r.status === "cancelled" ? "Đã hủy" : "Nháp";
       const row = ws.addRow([
-        fmtDate(r.created_at), r.code, fmtDay(r.date),
+        fmtDate(r.created_at, timeZone), r.code, fmtDay(r.date),
         r.from_warehouse_name ?? "—", r.to_warehouse_name ?? "—",
         statusLabel, r.item_count, r.total_quantity,
         r.created_by_name ?? "—", r.note ?? "",
