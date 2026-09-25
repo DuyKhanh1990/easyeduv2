@@ -794,7 +794,6 @@ export function Dashboard() {
   // Gộp 8 summary API thành 1 request duy nhất để giảm DB round trips
   const { data: dashboardSummary, isLoading: loadingDashboard } = useQuery<{
     customerSummary: { total: number; hocVien: number; hocVienPct: number; phuHuynh: number; phuHuynhPct: number; active: number; activePct: number; inactive: number };
-    learningStatus: { dangHoc: number; baoLuu: number; choLich: number; daNghi: number; chuaCoLich: number; total: number };
     newCustomers: { today: number; thisMonth: number };
     bySource: { name: string; count: number; pct: number }[];
     byRelationship: { name: string; count: number; color?: string }[];
@@ -814,8 +813,26 @@ export function Dashboard() {
     staleTime: 2 * 60 * 1000,
   });
 
+  // Keep this data source identical to the status cards on /customers.
+  // Learning status is current enrollment state, not activity within dashboard date range.
+  const { data: learningStatus, isLoading: loadingStatus } = useQuery<{
+    dangHoc: number; baoLuu: number; choLich: number; daNghi: number; chuaCoLich: number; total: number;
+  }>({
+    queryKey: ["/api/students/customer-learning-status-summary"],
+    enabled: isAuthed && activeTab === "khach-hang",
+    queryFn: async () => {
+      const res = await fetch("/api/students/customer-learning-status-summary", {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed to fetch customer learning status summary");
+      return res.json();
+    },
+    staleTime: 2 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
   const customerSummary = dashboardSummary?.customerSummary;
-  const learningStatus = dashboardSummary?.learningStatus;
   const newCustomers = dashboardSummary?.newCustomers;
   const bySource = dashboardSummary?.bySource ?? [];
   const byRelationship = dashboardSummary?.byRelationship ?? [];
@@ -823,7 +840,6 @@ export function Dashboard() {
   const byStaff = dashboardSummary?.byStaff ?? [];
   const monthlyCounts = dashboardSummary?.monthlyCounts ?? [];
   const loadingCustomer = loadingDashboard;
-  const loadingStatus = loadingDashboard;
   const loadingNewCustomers = loadingDashboard;
   const loadingBySource = loadingDashboard;
   const loadingByRelationship = loadingDashboard;
