@@ -1366,19 +1366,16 @@ export async function getAvailableStudentsForClass(classId: string, searchTerm?:
   if (!cls) return [];
 
   const existingIdsQuery = db.select({ id: studentClasses.studentId }).from(studentClasses).where(eq(studentClasses.classId, classId));
-
-  const baseConditions = [
-    eq(studentLocations.locationId, cls.locationId),
-    sql`${students.id} NOT IN (${existingIdsQuery})`,
-  ];
+  const baseConditions = [eq(studentLocations.locationId, cls.locationId)];
 
   if (!normalizedSearchTerm) {
-    // No search: only active students, first 10 sorted by name
+    // Keep the initial list small; searching below returns every match at this location.
     return db.select({
       id: students.id,
       fullName: students.fullName,
       code: students.code,
       accountStatus: students.accountStatus,
+      isEnrolled: sql<boolean>`${students.id} IN (${existingIdsQuery})`,
     })
     .from(students)
     .innerJoin(studentLocations, eq(students.id, studentLocations.studentId))
@@ -1397,6 +1394,7 @@ export async function getAvailableStudentsForClass(classId: string, searchTerm?:
     fullName: students.fullName,
     code: students.code,
     accountStatus: students.accountStatus,
+    isEnrolled: sql<boolean>`${students.id} IN (${existingIdsQuery})`,
   })
   .from(students)
   .innerJoin(studentLocations, eq(students.id, studentLocations.studentId))
@@ -1412,8 +1410,7 @@ export async function getAvailableStudentsForClass(classId: string, searchTerm?:
       ELSE 2
     END`,
     students.fullName
-  )
-  .limit(50);
+  );
 }
 
 // ---------------------------------------------------------------------------

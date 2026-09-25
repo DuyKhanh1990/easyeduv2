@@ -416,11 +416,14 @@ export function ScheduleTabContent({
     }));
 
   const enrolledStudentIds = new Set(enrolledNotInSession.map((s) => s.id));
-  const availableNotInClass = (availableStudentsForSession || [])
-    .filter((s: any) => !enrolledStudentIds.has(s.id))
-    .map((s: any) => ({ ...s, source: "available" as const }));
+  const locationStudentsNotInSession = (availableStudentsForSession || [])
+    .filter((s: any) => !sessionStudentIds.has(s.id) && !enrolledStudentIds.has(s.id))
+    .map((s: any) => ({
+      ...s,
+      source: s.isEnrolled ? "enrolled" as const : "available" as const,
+    }));
 
-  const combinedCandidates = [...enrolledNotInSession, ...availableNotInClass];
+  const combinedCandidates = [...enrolledNotInSession, ...locationStudentsNotInSession];
 
   const normalizedSessionSearchTerm = normalizeSearchText(searchTermForSession);
 
