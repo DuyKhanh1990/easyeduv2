@@ -11,16 +11,72 @@ export const SCORE_CONVERSION_TYPE_KEYS = [
   "custom",
 ] as const;
 
+export const scoreConversionMappingSchema = z.object({
+  id: z.string().uuid(),
+  rawFrom: z.number().finite(),
+  rawTo: z.number().finite(),
+  convertedScore: z.number().finite(),
+}).refine((mapping) => mapping.rawTo >= mapping.rawFrom, {
+  message: "Điểm thô đến phải lớn hơn hoặc bằng điểm thô từ.",
+  path: ["rawTo"],
+});
+
 export const scoreConversionSectionSchema = z.object({
   id: z.string().uuid(),
   name: z.string().trim().min(1).max(120),
-  minScore: z.number().finite(),
-  maxScore: z.number().finite(),
-  step: z.number().positive(),
-  unit: z.string().trim().min(1).max(40),
-}).refine((section) => section.maxScore >= section.minScore, {
-  message: "Điểm tối đa phải lớn hơn hoặc bằng điểm tối thiểu.",
-  path: ["maxScore"],
+  rawMinScore: z.number().finite(),
+  rawMaxScore: z.number().finite(),
+  rawStep: z.number().positive(),
+  rawUnit: z.string().trim().min(1).max(40),
+  convertedMinScore: z.number().finite(),
+  convertedMaxScore: z.number().finite(),
+  convertedStep: z.number().positive(),
+  convertedUnit: z.string().trim().min(1).max(40),
+  mappings: z.array(scoreConversionMappingSchema).max(500),
+}).superRefine((section, context) => {
+  if (section.rawMaxScore < section.rawMinScore) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Điểm thô tối đa phải lớn hơn hoặc bằng điểm tối thiểu.",
+      path: ["rawMaxScore"],
+    });
+  }
+  if (section.convertedMaxScore < section.convertedMinScore) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Điểm quy đổi tối đa phải lớn hơn hoặc bằng điểm tối thiểu.",
+      path: ["convertedMaxScore"],
+    });
+  }
+
+  const orderedMappings = section.mappings
+    .map((mapping, index) => ({ mapping, index }))
+    .sort((a, b) => a.mapping.rawFrom - b.mapping.rawFrom);
+  for (const { mapping, index } of orderedMappings) {
+    if (mapping.rawFrom < section.rawMinScore || mapping.rawTo > section.rawMaxScore) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Khoảng điểm thô phải nằm trong giới hạn của phần thi.",
+        path: ["mappings", index, "rawFrom"],
+      });
+    }
+    if (mapping.convertedScore < section.convertedMinScore || mapping.convertedScore > section.convertedMaxScore) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Điểm quy đổi phải nằm trong giới hạn của phần thi.",
+        path: ["mappings", index, "convertedScore"],
+      });
+    }
+  }
+  for (let index = 1; index < orderedMappings.length; index += 1) {
+    if (orderedMappings[index].mapping.rawFrom <= orderedMappings[index - 1].mapping.rawTo) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Các khoảng điểm thô không được chồng lấn.",
+        path: ["mappings", orderedMappings[index].index, "rawFrom"],
+      });
+    }
+  }
 });
 
 export const scoreConversionGradeBandSchema = z.object({
@@ -47,7 +103,6 @@ export const scoreConversionRuleSchema = z.object({
 });
 
 export const scoreConversionTemplateInputSchema = z.object({
-  name: z.string().trim().min(1).max(255),
   typeKey: z.enum(SCORE_CONVERSION_TYPE_KEYS),
   typeName: z.string().trim().min(1).max(100),
   sections: z.array(scoreConversionSectionSchema).min(1).max(20),
@@ -56,6 +111,24 @@ export const scoreConversionTemplateInputSchema = z.object({
 
 export const scoreConversionTemplateSchema = scoreConversionTemplateInputSchema.extend({
   id: z.string().uuid(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export const legacyScoreConversionTemplateSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().trim().min(1).max(255),
+  typeKey: z.enum(SCORE_CONVERSION_TYPE_KEYS),
+  typeName: z.string().trim().min(1).max(100),
+  sections: z.array(z.object({
+    id: z.string().uuid(),
+    name: z.string().trim().min(1).max(120),
+    minScore: z.number().finite(),
+    maxScore: z.number().finite(),
+    step: z.number().positive(),
+    unit: z.string().trim().min(1).max(40),
+  })),
+  overallRule: scoreConversionRuleSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
 });
