@@ -187,6 +187,14 @@ export function ScoreConversionTemplateDialog({
           ...section,
           name: section.name.trim(),
           rawUnit: section.rawUnit.trim(),
+          convertedMinScore: section.mappings.reduce(
+            (minimum, mapping) => Math.min(minimum, mapping.convertedScore),
+            section.convertedMinScore,
+          ),
+          convertedMaxScore: section.mappings.reduce(
+            (maximum, mapping) => Math.max(maximum, mapping.convertedScore),
+            section.convertedMaxScore,
+          ),
           convertedUnit: section.convertedUnit.trim(),
         })),
         overallRule: { ...draft.overallRule },
@@ -273,101 +281,55 @@ export function ScoreConversionTemplateDialog({
                 <TabsContent key={section.id} value={section.id} className="space-y-4">
                   <details className="group">
                     <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
-                      Tùy chỉnh tên phần thi và thang điểm
+                      Tên phần thi và thang điểm thô
                     </summary>
                     <div className="mt-3 rounded-lg border p-4">
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                      <div className="space-y-1.5">
-                        <Label htmlFor={`section-name-${section.id}`}>Tên phần thi</Label>
-                        <Input
-                          id={`section-name-${section.id}`}
-                          value={section.name}
-                          onChange={(event) => updateSection(section.id, { name: event.target.value })}
-                          maxLength={120}
-                        />
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <div className="space-y-1.5">
+                          <Label htmlFor={`section-name-${section.id}`}>Tên phần thi</Label>
+                          <Input
+                            id={`section-name-${section.id}`}
+                            value={section.name}
+                            onChange={(event) => updateSection(section.id, { name: event.target.value })}
+                            maxLength={120}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor={`raw-min-${section.id}`}>Điểm thô từ</Label>
+                          <Input
+                            id={`raw-min-${section.id}`}
+                            type="number"
+                            step="any"
+                            value={section.rawMinScore}
+                            onChange={(event) => updateSection(section.id, { rawMinScore: numericValue(event.target.value) })}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor={`raw-max-${section.id}`}>Điểm thô đến</Label>
+                          <Input
+                            id={`raw-max-${section.id}`}
+                            type="number"
+                            step="any"
+                            value={section.rawMaxScore}
+                            onChange={(event) => updateSection(section.id, { rawMaxScore: numericValue(event.target.value) })}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor={`raw-step-${section.id}`}>Bước điểm thô</Label>
+                          <Input
+                            id={`raw-step-${section.id}`}
+                            type="number"
+                            min="0.01"
+                            step="any"
+                            value={section.rawStep}
+                            onChange={(event) => updateSection(section.id, { rawStep: numericValue(event.target.value) })}
+                          />
+                        </div>
                       </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor={`raw-min-${section.id}`}>Điểm thô từ</Label>
-                        <Input
-                          id={`raw-min-${section.id}`}
-                          type="number"
-                          step="any"
-                          value={section.rawMinScore}
-                          onChange={(event) => updateSection(section.id, { rawMinScore: numericValue(event.target.value) })}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor={`raw-max-${section.id}`}>Điểm thô đến</Label>
-                        <Input
-                          id={`raw-max-${section.id}`}
-                          type="number"
-                          step="any"
-                          value={section.rawMaxScore}
-                          onChange={(event) => updateSection(section.id, { rawMaxScore: numericValue(event.target.value) })}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor={`raw-step-${section.id}`}>Bước điểm thô</Label>
-                        <Input
-                          id={`raw-step-${section.id}`}
-                          type="number"
-                          min="0.01"
-                          step="any"
-                          value={section.rawStep}
-                          onChange={(event) => updateSection(section.id, { rawStep: numericValue(event.target.value) })}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor={`raw-unit-${section.id}`}>Đơn vị điểm thô</Label>
-                        <Input
-                          id={`raw-unit-${section.id}`}
-                          value={section.rawUnit}
-                          onChange={(event) => updateSection(section.id, { rawUnit: event.target.value })}
-                          maxLength={40}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor={`converted-min-${section.id}`}>Điểm quy đổi từ</Label>
-                        <Input
-                          id={`converted-min-${section.id}`}
-                          type="number"
-                          step="any"
-                          value={section.convertedMinScore}
-                          onChange={(event) => updateSection(section.id, { convertedMinScore: numericValue(event.target.value) })}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor={`converted-max-${section.id}`}>Điểm quy đổi đến</Label>
-                        <Input
-                          id={`converted-max-${section.id}`}
-                          type="number"
-                          step="any"
-                          value={section.convertedMaxScore}
-                          onChange={(event) => updateSection(section.id, { convertedMaxScore: numericValue(event.target.value) })}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor={`converted-step-${section.id}`}>Bước điểm quy đổi</Label>
-                        <Input
-                          id={`converted-step-${section.id}`}
-                          type="number"
-                          min="0.01"
-                          step="any"
-                          value={section.convertedStep}
-                          onChange={(event) => updateSection(section.id, { convertedStep: numericValue(event.target.value) })}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor={`converted-unit-${section.id}`}>Đơn vị điểm quy đổi</Label>
-                        <Input
-                          id={`converted-unit-${section.id}`}
-                          value={section.convertedUnit}
-                          onChange={(event) => updateSection(section.id, { convertedUnit: event.target.value })}
-                          maxLength={40}
-                        />
-                      </div>
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        Điểm quy đổi được nhập trong bảng bên dưới.
+                      </p>
                     </div>
-                  </div>
                   </details>
 
                   <div className="space-y-3 rounded-lg border p-4">
@@ -375,7 +337,7 @@ export function ScoreConversionTemplateDialog({
                       <div>
                         <h4 className="font-medium">Bảng quy đổi {section.name}</h4>
                         <p className="text-sm text-muted-foreground">
-                          Điểm thô {section.rawUnit} được đổi sang {section.convertedUnit}.
+                          Nhập điểm quy đổi tương ứng với từng khoảng điểm thô.
                         </p>
                       </div>
                       <div className="flex items-center gap-1">
