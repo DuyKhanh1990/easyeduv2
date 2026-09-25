@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   createDefaultDraft,
+  createEmptyGradeBand,
   createEmptyMapping,
   draftFromTemplate,
   SCORE_CONVERSION_TYPES,
@@ -108,6 +109,22 @@ export function ScoreConversionTemplateDialog({
       ...current,
       overallRule: { ...current.overallRule, ...update },
     }));
+  };
+
+  const updateGradeBand = (
+    bandId: string,
+    update: Partial<ScoreConversionTemplateInput["overallRule"]["gradeBands"][number]>,
+  ) => {
+    updateRule({
+      gradeBands: draft.overallRule.gradeBands.map((band) =>
+        band.id === bandId ? { ...band, ...update } : band),
+    });
+  };
+
+  const removeGradeBand = (bandId: string) => {
+    updateRule({
+      gradeBands: draft.overallRule.gradeBands.filter((band) => band.id !== bandId),
+    });
   };
 
   const insertFormulaVariable = (sectionName: string) => {
@@ -287,6 +304,12 @@ export function ScoreConversionTemplateDialog({
         if (index > 0 && mapping.rawFrom < ordered[index - 1].rawTo) {
           return `Các khoảng điểm thô của phần ${section.name} không được chồng lấn.`;
         }
+      }
+    }
+    for (const band of draft.overallRule.gradeBands) {
+      if (!band.label.trim()) return "Vui lòng nhập tên cho từng ngưỡng xếp loại.";
+      if (band.maxScore < band.minScore) {
+        return `Điểm đến của ngưỡng ${band.label} phải lớn hơn hoặc bằng điểm từ.`;
       }
     }
     if (draft.overallRule.method === "custom") {
@@ -671,6 +694,79 @@ export function ScoreConversionTemplateDialog({
                   </p>
                 )}
               </div>
+            )}
+          </section>
+
+          <section className="space-y-3 rounded-lg border p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="font-semibold">Ngưỡng xếp loại (không bắt buộc)</h3>
+                <p className="text-sm text-muted-foreground">
+                  Ví dụ: A2 từ 120 đến 139 điểm.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={draft.overallRule.gradeBands.length >= 20}
+                onClick={() => updateRule({
+                  gradeBands: [...draft.overallRule.gradeBands, createEmptyGradeBand()],
+                })}
+              >
+                <Plus className="mr-1 h-4 w-4" />
+                Thêm ngưỡng
+              </Button>
+            </div>
+            {draft.overallRule.gradeBands.length > 0 ? (
+              <div className="space-y-3">
+                {draft.overallRule.gradeBands.map((band, index) => (
+                  <div key={band.id} className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end">
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`grade-band-label-${band.id}`}>Xếp loại {index + 1}</Label>
+                      <Input
+                        id={`grade-band-label-${band.id}`}
+                        value={band.label}
+                        onChange={(event) => updateGradeBand(band.id, { label: event.target.value })}
+                        placeholder="Ví dụ: A2"
+                        maxLength={80}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`grade-band-min-${band.id}`}>Điểm từ</Label>
+                      <Input
+                        id={`grade-band-min-${band.id}`}
+                        type="number"
+                        step="any"
+                        value={band.minScore}
+                        onChange={(event) => updateGradeBand(band.id, { minScore: numericValue(event.target.value) })}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`grade-band-max-${band.id}`}>Đến</Label>
+                      <Input
+                        id={`grade-band-max-${band.id}`}
+                        type="number"
+                        step="any"
+                        value={band.maxScore}
+                        onChange={(event) => updateGradeBand(band.id, { maxScore: numericValue(event.target.value) })}
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="justify-self-end"
+                      aria-label={`Xóa ngưỡng xếp loại ${band.label || index + 1}`}
+                      onClick={() => removeGradeBand(band.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Chưa có ngưỡng xếp loại.</p>
             )}
           </section>
 

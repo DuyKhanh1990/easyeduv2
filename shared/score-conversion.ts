@@ -80,9 +80,20 @@ export const scoreConversionSectionSchema = z.object({
   }
 });
 
+const scoreConversionGradeBandSchema = z.object({
+  id: z.string().uuid(),
+  label: z.string().trim().min(1).max(80),
+  minScore: z.number().finite(),
+  maxScore: z.number().finite(),
+}).refine((band) => band.maxScore >= band.minScore, {
+  message: "Điểm tối đa phải lớn hơn hoặc bằng điểm tối thiểu.",
+  path: ["maxScore"],
+});
+
 export const scoreConversionRuleSchema = z.object({
   method: z.enum(["sum", "average", "custom"]),
   formula: z.string().trim().max(1000).default(""),
+  gradeBands: z.array(scoreConversionGradeBandSchema).max(20).default([]),
 });
 
 const legacyScoreConversionRuleSchema = z.object({
@@ -92,15 +103,7 @@ const legacyScoreConversionRuleSchema = z.object({
   roundingStep: z.number().positive().nullable(),
   unit: z.string().trim().min(1).max(40),
   description: z.string().trim().max(1000),
-  gradeBands: z.array(z.object({
-    id: z.string().uuid(),
-    label: z.string().trim().min(1).max(80),
-    minScore: z.number().finite(),
-    maxScore: z.number().finite(),
-  }).refine((band) => band.maxScore >= band.minScore, {
-    message: "Điểm tối đa phải lớn hơn hoặc bằng điểm tối thiểu.",
-    path: ["maxScore"],
-  })).max(20),
+  gradeBands: z.array(scoreConversionGradeBandSchema).max(20),
 }).refine((rule) => rule.maxScore >= rule.minScore, {
   message: "Điểm tối đa phải lớn hơn hoặc bằng điểm tối thiểu.",
   path: ["maxScore"],

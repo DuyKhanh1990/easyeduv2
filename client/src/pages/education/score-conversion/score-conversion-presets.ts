@@ -149,6 +149,7 @@ export function createDefaultDraft(typeKey: ScoreConversionTypeKey = "starters")
       overallRule: {
         method: "average",
         formula: "",
+        gradeBands: [],
       },
     };
   }
@@ -158,7 +159,7 @@ export function createDefaultDraft(typeKey: ScoreConversionTypeKey = "starters")
     typeKey,
     typeName: preset.typeName,
     sections: preset.sectionDefaults.map(makeSection),
-    overallRule: { ...preset.overallRule, formula: "" },
+    overallRule: { ...preset.overallRule, formula: "", gradeBands: [] },
   };
 }
 
@@ -176,4 +177,8 @@ export function draftFromTemplate(template: ScoreConversionTemplate): ScoreConve
 
 export function createEmptyMapping(): ScoreConversionTemplateInput["sections"][number]["mappings"][number] {
   return { id: newId(), rawFrom: 0, rawTo: 0, internalScore: 0, convertedScore: 0 };
+}
+
+export function createEmptyGradeBand(): ScoreConversionTemplateInput["overallRule"]["gradeBands"][number] {
+  return { id: newId(), label: "", minScore: 0, maxScore: 15 };
 }
