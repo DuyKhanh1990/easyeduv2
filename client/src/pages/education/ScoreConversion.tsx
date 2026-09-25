@@ -1,6 +1,7 @@
 import { BarChart3 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function ScoreConversion() {
   return (
@@ -17,11 +18,18 @@ export default function ScoreConversion() {
             </p>
           </div>
         </div>
-        <Card>
-          <CardContent className="flex min-h-48 items-center justify-center text-sm text-muted-foreground">
-            Chưa có nội dung.
-          </CardContent>
-        </Card>
+        <Tabs defaultValue="international" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="international">Điểm Quy đổi Quốc tế</TabsTrigger>
+          </TabsList>
+          <TabsContent value="international">
+            <Card>
+              <CardContent className="flex min-h-48 items-center justify-center text-sm text-muted-foreground">
+                Nội dung sẽ được bổ sung sau.
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </DashboardLayout>
   );
