@@ -1356,7 +1356,11 @@ export async function getClassStudents(classId: string, status: string): Promise
 // ---------------------------------------------------------------------------
 // getAvailableStudentsForClass
 // ---------------------------------------------------------------------------
-export async function getAvailableStudentsForClass(classId: string, searchTerm?: string): Promise<any[]> {
+export async function getAvailableStudentsForClass(
+  classId: string,
+  searchTerm?: string,
+  includeEnrolled = false,
+): Promise<any[]> {
   const normalizedSearchTerm = normalizeSearchText(searchTerm);
   const [cls] = await db
     .select({ locationId: classes.locationId })
@@ -1366,7 +1370,10 @@ export async function getAvailableStudentsForClass(classId: string, searchTerm?:
   if (!cls) return [];
 
   const existingIdsQuery = db.select({ id: studentClasses.studentId }).from(studentClasses).where(eq(studentClasses.classId, classId));
-  const baseConditions = [eq(studentLocations.locationId, cls.locationId)];
+  const baseConditions = [
+    eq(studentLocations.locationId, cls.locationId),
+    ...(includeEnrolled ? [] : [sql`${students.id} NOT IN (${existingIdsQuery})`]),
+  ];
 
   if (!normalizedSearchTerm) {
     // Keep the initial list small; searching below returns every match at this location.

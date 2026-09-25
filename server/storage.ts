@@ -215,7 +215,7 @@ export interface IStorage {
   createMinimalClass(data: { classCode: string; name: string; locationId: string; createdBy?: string | null }): Promise<{ id: string; classCode: string; name: string }>;
   getClassSessions(classId: string): Promise<ClassSession[]>;
   getClassStudents(classId: string, status: string): Promise<any[]>;
-  getAvailableStudentsForClass(classId: string, searchTerm?: string): Promise<any[]>;
+  getAvailableStudentsForClass(classId: string, searchTerm?: string, includeEnrolled?: boolean): Promise<any[]>;
   addClassStudents(classId: string, studentIds: string[], userId: string, status?: string): Promise<void>;
   scheduleClassStudents(classId: string, configs: any[], userId?: string): Promise<void>;
   getStudentSessionsForClass(classId: string, studentId: string): Promise<any[]>;
@@ -615,8 +615,8 @@ export class DatabaseStorage implements IStorage {
     return classStorage.getClassStudents(classId, status);
   }
 
-  async getAvailableStudentsForClass(classId: string, searchTerm?: string): Promise<any[]> {
-    return classStorage.getAvailableStudentsForClass(classId, searchTerm);
+  async getAvailableStudentsForClass(classId: string, searchTerm?: string, includeEnrolled?: boolean): Promise<any[]> {
+    return classStorage.getAvailableStudentsForClass(classId, searchTerm, includeEnrolled);
   }
 
   async findClassByCode(classCode: string): Promise<{ id: string; classCode: string; name: string } | null> {

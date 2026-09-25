@@ -1355,7 +1355,8 @@ export function registerClassesRoutes(app: Express): void {
     const classId = String(req.params.id);
     if (!(await assertClassReadable(req, res, classId))) return;
     const searchTerm = req.query.searchTerm as string;
-    const studentList = await storage.getAvailableStudentsForClass(classId, searchTerm);
+    const includeEnrolled = req.query.includeEnrolled === "true";
+    const studentList = await storage.getAvailableStudentsForClass(classId, searchTerm, includeEnrolled);
     res.json(studentList);
   });
 

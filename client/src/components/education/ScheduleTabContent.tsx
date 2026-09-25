@@ -389,9 +389,9 @@ export function ScheduleTabContent({
   const { data: availableStudentsForSession, isLoading: isLoadingAvailableStudents } = useQuery<any[]>({
     queryKey: [`/api/classes/${classId}/available-students`, searchTermForSession],
     queryFn: async () => {
-      const url = searchTermForSession
-        ? `/api/classes/${classId}/available-students?searchTerm=${encodeURIComponent(searchTermForSession)}`
-        : `/api/classes/${classId}/available-students`;
+      const params = new URLSearchParams({ includeEnrolled: "true" });
+      if (searchTermForSession) params.set("searchTerm", searchTermForSession);
+      const url = `/api/classes/${classId}/available-students?${params.toString()}`;
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch students");
       return res.json();
