@@ -16,6 +16,7 @@ export const scoreConversionMappingSchema = z.object({
   id: z.string().uuid(),
   rawFrom: z.number().finite(),
   rawTo: z.number().finite(),
+  internalScore: z.number().finite().default(0),
   convertedScore: z.number().finite(),
 }).refine((mapping) => mapping.rawTo >= mapping.rawFrom, {
   message: "Điểm thô đến phải lớn hơn hoặc bằng điểm thô từ.",

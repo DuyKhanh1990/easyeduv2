@@ -145,9 +145,10 @@ export function ScoreConversionTemplateDialog({
       return;
     }
 
-    const existingScores = new Map(
-      section.mappings.map((mapping) => [`${mapping.rawFrom}:${mapping.rawTo}`, mapping.convertedScore]),
-    );
+    const existingScores = new Map(section.mappings.map((mapping) => [
+      `${mapping.rawFrom}:${mapping.rawTo}`,
+      { internalScore: mapping.internalScore, convertedScore: mapping.convertedScore },
+    ]));
     const generatedMappings: ScoreConversionTemplateInput["sections"][number]["mappings"] = [];
     let upper = rawMaxScore;
     let lower = rawStep === 0 ? upper : Math.max(rawMinScore, upper - rawStep);
@@ -159,11 +160,13 @@ export function ScoreConversionTemplateDialog({
       }
 
       const key = `${lower}:${upper}`;
+      const existingScore = existingScores.get(key);
       generatedMappings.push({
         id: createEmptyMapping().id,
         rawFrom: lower,
         rawTo: upper,
-        convertedScore: existingScores.get(key) ?? 0,
+        internalScore: existingScore?.internalScore ?? 0,
+        convertedScore: existingScore?.convertedScore ?? 0,
       });
 
       if (lower <= rawMinScore) break;
@@ -276,6 +279,7 @@ export function ScoreConversionTemplateDialog({
           mapping.rawTo < mapping.rawFrom ||
           mapping.rawFrom < section.rawMinScore ||
           mapping.rawTo > section.rawMaxScore ||
+          !Number.isFinite(mapping.internalScore) ||
           !Number.isFinite(mapping.convertedScore)
         ) {
           return `Vui lòng kiểm tra khoảng điểm và điểm quy đổi của phần ${section.name}.`;
@@ -500,12 +504,13 @@ export function ScoreConversionTemplateDialog({
                     </div>
 
                     <div className="overflow-x-auto">
-                      <table className="w-full min-w-[560px] text-left text-sm">
+                      <table className="w-full min-w-[760px] text-left text-sm">
                         <thead className="border-b text-muted-foreground">
                           <tr>
                             <th className="px-3 py-2 font-medium">Điểm thô từ</th>
                             <th className="px-3 py-2 font-medium">Điểm thô đến</th>
-                            <th className="px-3 py-2 font-medium">Quy đổi ({section.convertedUnit})</th>
+                            <th className="px-3 py-2 font-medium">Quy đổi nội bộ</th>
+                            <th className="px-3 py-2 font-medium">Quy đổi Quốc tế</th>
                             <th className="w-12 px-2 py-2" />
                           </tr>
                         </thead>
@@ -536,7 +541,18 @@ export function ScoreConversionTemplateDialog({
                               </td>
                               <td className="px-3 py-2">
                                 <Input
-                                  aria-label={`Điểm quy đổi ${section.name}`}
+                                  aria-label={`Điểm quy đổi nội bộ ${section.name}`}
+                                  type="number"
+                                  step="any"
+                                  value={mapping.internalScore}
+                                  onChange={(event) => updateMapping(section.id, mapping.id, {
+                                    internalScore: numericValue(event.target.value),
+                                  })}
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <Input
+                                  aria-label={`Điểm quy đổi quốc tế ${section.name}`}
                                   type="number"
                                   step="any"
                                   value={mapping.convertedScore}
@@ -561,7 +577,7 @@ export function ScoreConversionTemplateDialog({
                             </tr>
                           )) : (
                             <tr>
-                              <td colSpan={4} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                              <td colSpan={5} className="px-3 py-8 text-center text-sm text-muted-foreground">
                                 Chưa có khoảng quy đổi. Thêm các khoảng điểm thô và điểm tương ứng.
                               </td>
                             </tr>

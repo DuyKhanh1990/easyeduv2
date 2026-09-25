@@ -175,5 +175,5 @@ export function draftFromTemplate(template: ScoreConversionTemplate): ScoreConve
 }
 
 export function createEmptyMapping(): ScoreConversionTemplateInput["sections"][number]["mappings"][number] {
-  return { id: newId(), rawFrom: 0, rawTo: 0, convertedScore: 0 };
+  return { id: newId(), rawFrom: 0, rawTo: 0, internalScore: 0, convertedScore: 0 };
 }
