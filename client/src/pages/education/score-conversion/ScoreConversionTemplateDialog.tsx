@@ -252,21 +252,11 @@ export function ScoreConversionTemplateDialog({
 
               {draft.sections.map((section) => (
                 <TabsContent key={section.id} value={section.id} className="space-y-4">
-                  <div className="space-y-4 rounded-lg border p-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <h4 className="font-medium">{section.name || "Phần thi"}</h4>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Xóa phần thi ${section.name}`}
-                        disabled={draft.sections.length <= 1}
-                        onClick={() => removeSection(section.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-
+                  <details className="group">
+                    <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
+                      Tùy chỉnh tên phần thi và thang điểm
+                    </summary>
+                    <div className="mt-3 rounded-lg border p-4">
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                       <div className="space-y-1.5">
                         <Label htmlFor={`section-name-${section.id}`}>Tên phần thi</Label>
@@ -359,6 +349,7 @@ export function ScoreConversionTemplateDialog({
                       </div>
                     </div>
                   </div>
+                  </details>
 
                   <div className="space-y-3 rounded-lg border p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -368,17 +359,29 @@ export function ScoreConversionTemplateDialog({
                           Điểm thô {section.rawUnit} được đổi sang {section.convertedUnit}.
                         </p>
                       </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => updateSection(section.id, {
-                          mappings: [...section.mappings, createEmptyMapping()],
-                        })}
-                      >
-                        <Plus className="mr-1 h-4 w-4" />
-                        Thêm khoảng điểm
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Xóa phần thi ${section.name}`}
+                          disabled={draft.sections.length <= 1}
+                          onClick={() => removeSection(section.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => updateSection(section.id, {
+                            mappings: [...section.mappings, createEmptyMapping()],
+                          })}
+                        >
+                          <Plus className="mr-1 h-4 w-4" />
+                          Thêm khoảng điểm
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="overflow-x-auto">
