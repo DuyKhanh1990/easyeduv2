@@ -33,6 +33,8 @@ export const scoreConversionSectionSchema = z.object({
   convertedStep: z.number().positive(),
   convertedUnit: z.string().trim().min(1).max(40),
   mappings: z.array(scoreConversionMappingSchema).max(500),
+  weight: z.number().finite().min(0).default(1),
+  weightType: z.enum(["percentage", "multiplier"]).default("multiplier"),
 }).superRefine((section, context) => {
   if (section.rawMaxScore < section.rawMinScore) {
     context.addIssue({
@@ -46,6 +48,13 @@ export const scoreConversionSectionSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: "Điểm quy đổi tối đa phải lớn hơn hoặc bằng điểm tối thiểu.",
       path: ["convertedMaxScore"],
+    });
+  }
+  if (section.weightType === "percentage" && section.weight > 100) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Trọng số phần trăm phải nằm trong khoảng từ 0 đến 100.",
+      path: ["weight"],
     });
   }
 
@@ -80,11 +89,11 @@ export const scoreConversionSectionSchema = z.object({
 });
 
 export const scoreConversionRuleSchema = z.object({
-  method: z.enum(["sum", "average"]),
+  method: z.enum(["sum", "average", "weightedAverage"]),
 });
 
 const legacyScoreConversionRuleSchema = z.object({
-  method: z.enum(["sum", "average"]),
+  method: z.enum(["sum", "average", "weightedAverage"]),
   minScore: z.number().finite(),
   maxScore: z.number().finite(),
   roundingStep: z.number().positive().nullable(),

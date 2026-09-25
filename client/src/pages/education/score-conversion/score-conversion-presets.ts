@@ -43,6 +43,8 @@ const part = (
   convertedMaxScore,
   convertedStep,
   convertedUnit,
+  weight: 1,
+  weightType: "multiplier",
 });
 
 const presetDefinitions: Record<Exclude<ScoreConversionTypeKey, "custom">, Preset> = {

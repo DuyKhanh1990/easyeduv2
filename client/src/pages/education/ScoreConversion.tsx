@@ -151,7 +151,9 @@ export default function ScoreConversion() {
                               <span className="font-medium">
                                 {template.overallRule.method === "sum"
                                   ? "Cộng điểm các phần thi"
-                                  : "Trung bình các phần thi"}
+                                  : template.overallRule.method === "weightedAverage"
+                                    ? "Trung bình có trọng số"
+                                    : "Trung bình các phần thi"}
                               </span>
                             </td>
                             {canEdit && (

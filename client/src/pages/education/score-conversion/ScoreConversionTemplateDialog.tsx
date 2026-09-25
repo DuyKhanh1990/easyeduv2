@@ -123,6 +123,9 @@ export function ScoreConversionTemplateDialog({
       if (section.convertedMaxScore < section.convertedMinScore || section.convertedStep <= 0) {
         return `Vui lòng kiểm tra thang điểm quy đổi của phần ${section.name}.`;
       }
+      if (section.weight < 0 || (section.weightType === "percentage" && section.weight > 100)) {
+        return `Vui lòng kiểm tra trọng số của phần ${section.name}.`;
+      }
       const ordered = [...section.mappings].sort((a, b) => a.rawFrom - b.rawFrom);
       for (let index = 0; index < ordered.length; index += 1) {
         const mapping = ordered[index];
@@ -139,6 +142,13 @@ export function ScoreConversionTemplateDialog({
           return `Các khoảng điểm thô của phần ${section.name} không được chồng lấn.`;
         }
       }
+    }
+    if (draft.overallRule.method === "weightedAverage") {
+      const totalWeight = draft.sections.reduce(
+        (total, section) => total + (section.weightType === "percentage" ? section.weight / 100 : section.weight),
+        0,
+      );
+      if (totalWeight <= 0) return "Cần có ít nhất một phần thi có trọng số lớn hơn 0.";
     }
     return "";
   };
@@ -460,15 +470,67 @@ export function ScoreConversionTemplateDialog({
               <Label htmlFor="overall-method">Công thức chung</Label>
               <Select
                 value={draft.overallRule.method}
-                onValueChange={(value) => updateRule({ method: value as "sum" | "average" })}
+                onValueChange={(value) => updateRule({
+                  method: value as "sum" | "average" | "weightedAverage",
+                })}
               >
                 <SelectTrigger id="overall-method"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="average">Trung bình các phần thi</SelectItem>
+                  <SelectItem value="weightedAverage">Trung bình có trọng số</SelectItem>
                   <SelectItem value="sum">Cộng điểm các phần thi</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            {draft.overallRule.method === "weightedAverage" && (
+              <div className="space-y-3 rounded-lg border p-3">
+                <div>
+                  <h4 className="text-sm font-medium">Trọng số từng phần thi</h4>
+                  <p className="text-xs text-muted-foreground">
+                    Nhập tỷ lệ từ 0–100% hoặc hệ số nhân. Hệ thống chuẩn hóa theo tổng trọng số; có thể kết hợp cả hai dạng.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {draft.sections.map((section) => (
+                    <div
+                      key={section.id}
+                      className="grid items-center gap-2 sm:grid-cols-[minmax(0,1fr)_8rem_10rem]"
+                    >
+                      <Label htmlFor={`weight-value-${section.id}`}>{section.name}</Label>
+                      <Input
+                        id={`weight-value-${section.id}`}
+                        aria-label={`Trọng số ${section.name}`}
+                        type="number"
+                        min="0"
+                        max={section.weightType === "percentage" ? 100 : undefined}
+                        step="any"
+                        value={section.weight}
+                        onChange={(event) => updateSection(section.id, {
+                          weight: numericValue(event.target.value),
+                        })}
+                      />
+                      <Select
+                        value={section.weightType}
+                        onValueChange={(value) => updateSection(section.id, {
+                          weightType: value as "percentage" | "multiplier",
+                        })}
+                      >
+                        <SelectTrigger
+                          id={`weight-type-${section.id}`}
+                          aria-label={`Dạng trọng số ${section.name}`}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="percentage">Tỷ lệ (%)</SelectItem>
+                          <SelectItem value="multiplier">Hệ số (×)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
 
           {formError && <p className="text-sm text-destructive" role="alert">{formError}</p>}
