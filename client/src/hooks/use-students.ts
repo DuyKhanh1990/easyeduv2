@@ -27,6 +27,7 @@ export function useStudents(params?: {
   updatedTo?: string;
   accountStatuses?: string[];
   learningStatuses?: string[];
+  customerLearningStatus?: string;
   birthdayFrom?: string;
   birthdayTo?: string;
   classTabId?: string;

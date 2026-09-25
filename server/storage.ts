@@ -79,6 +79,8 @@ export interface IStorage {
     searchTerm?: string; 
     type?: string; 
     pipelineStage?: string;
+    pipelineGroupId?: string;
+    parentRelationshipId?: string;
     sources?: string[];
     rejectReasons?: string[];
     salesIds?: string[];
@@ -93,6 +95,7 @@ export interface IStorage {
     updatedTo?: string;
     accountStatuses?: string[];
     learningStatuses?: string[];
+    customerLearningStatus?: string;
     birthdayFrom?: string;
     birthdayTo?: string;
     classTabId?: string;
@@ -807,6 +810,8 @@ export class DatabaseStorage implements IStorage {
     searchTerm?: string; 
     type?: string; 
     pipelineStage?: string;
+    pipelineGroupId?: string;
+    parentRelationshipId?: string;
     sources?: string[];
     rejectReasons?: string[];
     salesIds?: string[];
@@ -821,6 +826,7 @@ export class DatabaseStorage implements IStorage {
     updatedTo?: string;
     accountStatuses?: string[];
     learningStatuses?: string[];
+    customerLearningStatus?: string;
     birthdayFrom?: string;
     birthdayTo?: string;
     classTabId?: string;

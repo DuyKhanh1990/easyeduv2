@@ -53,6 +53,7 @@ export async function getStudents(params: {
   updatedTo?: string;
   accountStatuses?: string[];
   learningStatuses?: string[];
+  customerLearningStatus?: string;
   birthdayFrom?: string;
   birthdayTo?: string;
   classTabId?: string;
@@ -65,7 +66,7 @@ export async function getStudents(params: {
     locationId, offset, limit, searchTerm, type, pipelineStage, pipelineGroupId, parentRelationshipId,
     sources, rejectReasons, salesIds, managerIds, teacherIds, classIds, schoolIds, birthYear,
     startDate, endDate, updatedFrom, updatedTo,
-    accountStatuses, learningStatuses, birthdayFrom, birthdayTo, classTabId, classTab,
+    accountStatuses, learningStatuses, customerLearningStatus, birthdayFrom, birthdayTo, classTabId, classTab,
     viewScope, viewerStaffId
   } = params;
 
@@ -230,6 +231,39 @@ export async function getStudents(params: {
         END
       ) IN ${learningStatuses}
     )`;
+  }
+  if (customerLearningStatus) {
+    const classEnrollmentStatus = sql`CASE
+      WHEN EXISTS (
+        SELECT 1 FROM student_classes card_status_active
+        WHERE card_status_active.student_id = ${students.id}
+          AND COALESCE(card_status_active.status, '') NOT IN ('paused', 'completed', 'dropped')
+          AND (card_status_active.start_date IS NOT NULL OR card_status_active.end_date IS NOT NULL)
+          AND (card_status_active.start_date IS NULL OR card_status_active.start_date <= CURRENT_DATE)
+          AND (card_status_active.end_date IS NULL OR card_status_active.end_date >= CURRENT_DATE)
+      ) THEN 'dang_hoc'
+      WHEN EXISTS (
+        SELECT 1 FROM student_classes card_status_paused
+        WHERE card_status_paused.student_id = ${students.id}
+          AND card_status_paused.status = 'paused'
+      ) THEN 'bao_luu'
+      WHEN EXISTS (
+        SELECT 1 FROM student_classes card_status_future
+        WHERE card_status_future.student_id = ${students.id}
+          AND COALESCE(card_status_future.status, '') NOT IN ('paused', 'completed', 'dropped')
+          AND card_status_future.start_date > CURRENT_DATE
+      ) THEN 'cho_lich'
+      WHEN EXISTS (
+        SELECT 1 FROM student_classes card_status_ended
+        WHERE card_status_ended.student_id = ${students.id}
+          AND (
+            card_status_ended.status IN ('completed', 'dropped')
+            OR (card_status_ended.end_date IS NOT NULL AND card_status_ended.end_date < CURRENT_DATE)
+          )
+      ) THEN 'da_nghi'
+      ELSE 'chua_co_lich'
+    END`;
+    whereClause = sql`${whereClause} AND ${classEnrollmentStatus} = ${customerLearningStatus}`;
   }
   const normalizedSearch = normalizeSearchText(searchTerm);
   if (normalizedSearch) {

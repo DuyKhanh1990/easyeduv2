@@ -103,6 +103,7 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
 
 export function CustomersList() {
   type ViewMode = "relationship" | "class";
+  type CustomerLearningStatus = "dang_hoc" | "chua_co_lich" | "cho_lich" | "bao_luu" | "da_nghi";
   const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
@@ -136,6 +137,7 @@ export function CustomersList() {
     birthdayFrom: "",
     birthdayTo: "",
   });
+  const [customerLearningStatusFilter, setCustomerLearningStatusFilter] = useState<CustomerLearningStatus | null>(null);
 
   const { data: classTabsData, isLoading: classTabsLoading } = useQuery<{
     classes: { id: string; name: string; classCode: string }[];
@@ -176,6 +178,7 @@ export function CustomersList() {
     updatedTo: filters.updatedRange.to ? format(filters.updatedRange.to, "yyyy-MM-dd") : undefined,
     accountStatuses: filters.accountStatuses.length > 0 ? filters.accountStatuses : undefined,
     learningStatuses: filters.learningStatuses.length > 0 ? filters.learningStatuses : undefined,
+    customerLearningStatus: customerLearningStatusFilter ?? undefined,
     birthdayFrom: filters.birthdayFrom || undefined,
     birthdayTo: filters.birthdayTo || undefined,
   });
@@ -280,6 +283,9 @@ export function CustomersList() {
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
   });
+  const tableLearningStatuses = customerLearningStatusFilter
+    ? Object.fromEntries(students.map((student) => [student.id, customerLearningStatusFilter]))
+    : learningStatuses;
 
   const [columnSearch, setColumnSearch] = useState("");
   const [isActivityLogOpen, setIsActivityLogOpen] = useState(false);
@@ -339,6 +345,13 @@ export function CustomersList() {
 
   const { data: freshEditingStudent } = useStudent(editingStudent?.id || "");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const handleCustomerLearningStatusClick = (status: CustomerLearningStatus | null) => {
+    setCustomerLearningStatusFilter((current) => status !== null && current === status ? null : status);
+    setFilters((current) => current.learningStatuses.length > 0
+      ? { ...current, learningStatuses: [] }
+      : current);
+    setSelectedIds([]);
+  };
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const [selectedStudentDetail, setSelectedStudentDetail] = useState<StudentResponse | null>(null);
 
@@ -519,7 +532,7 @@ export function CustomersList() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, filters, pageSize]);
+  }, [searchTerm, filters, pageSize, customerLearningStatusFilter]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -625,6 +638,7 @@ export function CustomersList() {
   };
 
   const hasActiveFilters =
+    customerLearningStatusFilter !== null ||
     filters.locationId !== "all" ||
     filters.type !== "all" ||
     filters.pipelineStage !== "all" ||
@@ -654,7 +668,15 @@ export function CustomersList() {
         <div className="flex items-center justify-between gap-3 flex-shrink-0">
           <div className="flex items-center gap-2 flex-wrap">
             {/* Tổng KH */}
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 shadow-md shadow-sky-200 min-w-[90px]">
+            <button
+              type="button"
+              onClick={() => handleCustomerLearningStatusClick(null)}
+              aria-pressed={customerLearningStatusFilter === null && filters.learningStatuses.length === 0}
+              data-testid="customer-status-card-total"
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 shadow-md shadow-sky-200 min-w-[90px] text-left cursor-pointer transition-shadow hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+                customerLearningStatusFilter === null && filters.learningStatuses.length === 0 ? "ring-2 ring-blue-500 ring-offset-1" : ""
+              }`}
+            >
               <Users className="w-4 h-4 text-white/80 flex-shrink-0" />
               <div>
                 <p className="text-[10px] font-semibold text-white/70 uppercase tracking-wide leading-none">{t("customers.statTotal")}</p>
@@ -662,10 +684,18 @@ export function CustomersList() {
                   {summaryLoading ? "…" : (learningSummary?.total ?? totalItems).toLocaleString()}
                 </p>
               </div>
-            </div>
+            </button>
 
             {/* Đang học */}
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-emerald-200 shadow-sm min-w-[90px]">
+            <button
+              type="button"
+              onClick={() => handleCustomerLearningStatusClick("dang_hoc")}
+              aria-pressed={customerLearningStatusFilter === "dang_hoc"}
+              data-testid="customer-status-card-dang-hoc"
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-emerald-200 shadow-sm min-w-[90px] text-left cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-1 ${
+                customerLearningStatusFilter === "dang_hoc" ? "ring-2 ring-emerald-500 ring-offset-1" : ""
+              }`}
+            >
               <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
               <div>
                 <p className="text-[10px] font-semibold text-emerald-600 uppercase tracking-wide leading-none">{t("customers.statActive")}</p>
@@ -673,10 +703,18 @@ export function CustomersList() {
                   {summaryLoading ? "…" : (learningSummary?.dangHoc ?? 0).toLocaleString()}
                 </p>
               </div>
-            </div>
+            </button>
 
             {/* Chưa có lịch */}
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-slate-200 shadow-sm min-w-[100px]">
+            <button
+              type="button"
+              onClick={() => handleCustomerLearningStatusClick("chua_co_lich")}
+              aria-pressed={customerLearningStatusFilter === "chua_co_lich"}
+              data-testid="customer-status-card-chua-co-lich"
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-slate-200 shadow-sm min-w-[100px] text-left cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-1 ${
+                customerLearningStatusFilter === "chua_co_lich" ? "ring-2 ring-slate-500 ring-offset-1" : ""
+              }`}
+            >
               <span className="w-2 h-2 rounded-full bg-slate-400 flex-shrink-0" />
               <div>
                 <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide leading-none">{t("customers.statNoSchedule")}</p>
@@ -684,10 +722,18 @@ export function CustomersList() {
                   {summaryLoading ? "…" : (learningSummary?.chuaCoLich ?? 0).toLocaleString()}
                 </p>
               </div>
-            </div>
+            </button>
 
             {/* Chờ lịch */}
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-violet-200 shadow-sm min-w-[90px]">
+            <button
+              type="button"
+              onClick={() => handleCustomerLearningStatusClick("cho_lich")}
+              aria-pressed={customerLearningStatusFilter === "cho_lich"}
+              data-testid="customer-status-card-cho-lich"
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-violet-200 shadow-sm min-w-[90px] text-left cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-1 ${
+                customerLearningStatusFilter === "cho_lich" ? "ring-2 ring-violet-500 ring-offset-1" : ""
+              }`}
+            >
               <span className="w-2 h-2 rounded-full bg-violet-500 flex-shrink-0" />
               <div>
                 <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-wide leading-none">{t("customers.statWaiting")}</p>
@@ -695,10 +741,18 @@ export function CustomersList() {
                   {summaryLoading ? "…" : (learningSummary?.choLich ?? 0).toLocaleString()}
                 </p>
               </div>
-            </div>
+            </button>
 
             {/* Bảo lưu */}
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-amber-200 shadow-sm min-w-[90px]">
+            <button
+              type="button"
+              onClick={() => handleCustomerLearningStatusClick("bao_luu")}
+              aria-pressed={customerLearningStatusFilter === "bao_luu"}
+              data-testid="customer-status-card-bao-luu"
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-amber-200 shadow-sm min-w-[90px] text-left cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 ${
+                customerLearningStatusFilter === "bao_luu" ? "ring-2 ring-amber-500 ring-offset-1" : ""
+              }`}
+            >
               <span className="w-2 h-2 rounded-full bg-amber-500 flex-shrink-0" />
               <div>
                 <p className="text-[10px] font-semibold text-amber-600 uppercase tracking-wide leading-none">{t("customers.statDeferred")}</p>
@@ -706,10 +760,18 @@ export function CustomersList() {
                   {summaryLoading ? "…" : (learningSummary?.baoLuu ?? 0).toLocaleString()}
                 </p>
               </div>
-            </div>
+            </button>
 
             {/* Đã nghỉ */}
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-rose-200 shadow-sm min-w-[90px]">
+            <button
+              type="button"
+              onClick={() => handleCustomerLearningStatusClick("da_nghi")}
+              aria-pressed={customerLearningStatusFilter === "da_nghi"}
+              data-testid="customer-status-card-da-nghi"
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-rose-200 shadow-sm min-w-[90px] text-left cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-1 ${
+                customerLearningStatusFilter === "da_nghi" ? "ring-2 ring-rose-500 ring-offset-1" : ""
+              }`}
+            >
               <span className="w-2 h-2 rounded-full bg-rose-500 flex-shrink-0" />
               <div>
                 <p className="text-[10px] font-semibold text-rose-600 uppercase tracking-wide leading-none">{t("customers.statInactive")}</p>
@@ -717,7 +779,7 @@ export function CustomersList() {
                   {summaryLoading ? "…" : (learningSummary?.daNghi ?? 0).toLocaleString()}
                 </p>
               </div>
-            </div>
+            </button>
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -1238,8 +1300,14 @@ export function CustomersList() {
                           { id: "chua_co_lich", name: t("customers.statusNoSchedule") },
                         ]}
                         selected={filters.learningStatuses}
-                        onSelect={(val) => setFilters((f) => ({ ...f, learningStatuses: [...f.learningStatuses, val] }))}
-                        onRemove={(val) => setFilters((f) => ({ ...f, learningStatuses: f.learningStatuses.filter((s) => s !== val) }))}
+                        onSelect={(val) => {
+                          setCustomerLearningStatusFilter(null);
+                          setFilters((f) => ({ ...f, learningStatuses: [...f.learningStatuses, val] }));
+                        }}
+                        onRemove={(val) => {
+                          setCustomerLearningStatusFilter(null);
+                          setFilters((f) => ({ ...f, learningStatuses: f.learningStatuses.filter((s) => s !== val) }));
+                        }}
                       />
                     </div>
                     {/* Sinh nhật */}
@@ -1325,7 +1393,10 @@ export function CustomersList() {
                       variant="ghost"
                       size="sm"
                       className="h-8 text-xs text-slate-500 hover:text-slate-700 rounded-lg"
-                      onClick={() => setFilters({ locationId: "all", type: "all", pipelineStage: filters.pipelineStage, sources: [], rejectReasons: [], saleIds: [], managerIds: [], teacherIds: [], classIds: [], schoolIds: [], birthYear: "", dateRange: {} as DateRange, updatedRange: {} as DateRange, accountStatuses: [], learningStatuses: [], birthdayFrom: "", birthdayTo: "" })}
+                      onClick={() => {
+                        setCustomerLearningStatusFilter(null);
+                        setFilters({ locationId: "all", type: "all", pipelineStage: filters.pipelineStage, sources: [], rejectReasons: [], saleIds: [], managerIds: [], teacherIds: [], classIds: [], schoolIds: [], birthYear: "", dateRange: {} as DateRange, updatedRange: {} as DateRange, accountStatuses: [], learningStatuses: [], birthdayFrom: "", birthdayTo: "" });
+                      }}
                       data-testid="button-filter-clear-all"
                     >
                       {t("customers.filterClearAll")}
@@ -1361,7 +1432,7 @@ export function CustomersList() {
               selectedIds={selectedIds}
               crmRelationships={crmRelationships}
               parents={parents}
-              learningStatuses={learningStatuses}
+              learningStatuses={tableLearningStatuses}
               toggleSelectAll={toggleSelectAll}
               toggleSelect={toggleSelect}
               onEdit={(student) => { setEditingStudent(student); setIsEditOpen(true); }}

@@ -297,6 +297,15 @@ export function registerStudentsRoutes(app: Express): void {
 
       // Determine view scope
       const viewScope = crmPerms.canViewAll ? 'all' : 'own';
+      const validCustomerLearningStatuses = ["dang_hoc", "chua_co_lich", "cho_lich", "bao_luu", "da_nghi"];
+      const customerLearningStatusQuery = req.query.customerLearningStatus;
+      if (
+        customerLearningStatusQuery !== undefined &&
+        (typeof customerLearningStatusQuery !== "string" || !validCustomerLearningStatuses.includes(customerLearningStatusQuery))
+      ) {
+        return res.status(400).json({ message: "Trạng thái học viên không hợp lệ." });
+      }
+      const customerLearningStatus = customerLearningStatusQuery as string | undefined;
 
       const result = await storage.getStudents({
         allowedLocationIds: req.allowedLocationIds,
@@ -323,6 +332,7 @@ export function registerStudentsRoutes(app: Express): void {
         updatedTo: req.query.updatedTo as string | undefined,
         accountStatuses: parseArray(req.query.accountStatuses),
         learningStatuses: parseArray(req.query.learningStatuses),
+        customerLearningStatus,
         birthdayFrom: req.query.birthdayFrom as string | undefined,
         birthdayTo: req.query.birthdayTo as string | undefined,
         classTabId: req.query.classTabId as string | undefined,
