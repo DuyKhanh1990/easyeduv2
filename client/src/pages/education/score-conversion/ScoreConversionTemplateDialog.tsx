@@ -153,10 +153,9 @@ export function ScoreConversionTemplateDialog({
           mapping.rawTo < mapping.rawFrom ||
           mapping.rawFrom < section.rawMinScore ||
           mapping.rawTo > section.rawMaxScore ||
-          mapping.convertedScore < section.convertedMinScore ||
-          mapping.convertedScore > section.convertedMaxScore
+          !Number.isFinite(mapping.convertedScore)
         ) {
-          return `Có khoảng điểm nằm ngoài thang điểm của phần ${section.name}.`;
+          return `Vui lòng kiểm tra khoảng điểm và điểm quy đổi của phần ${section.name}.`;
         }
         if (index > 0 && mapping.rawFrom <= ordered[index - 1].rawTo) {
           return `Các khoảng điểm thô của phần ${section.name} không được chồng lấn.`;
