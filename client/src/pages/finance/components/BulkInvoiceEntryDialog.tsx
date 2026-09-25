@@ -1521,7 +1521,7 @@ const RowEditor = memo(function RowEditor({
           inputMode="numeric"
           className="h-8 text-xs text-right"
           value={formatNumber(row.amount)}
-          onChange={e => updateAmount(row.id, "amount", e.target.value)}
+          onChange={e => updateAmount(row.id, e.target.value)}
           data-testid={`input-amount-${row.id}`}
         />
       </Td>
