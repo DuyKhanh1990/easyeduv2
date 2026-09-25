@@ -1,8 +1,14 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { api } from "@shared/routes";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db } from "../db";
+import {
+  scoreConversionTemplateInputSchema,
+  scoreConversionTemplateSchema,
+  type ScoreConversionTemplate,
+} from "@shared/score-conversion";
 import { eq, and, sql, notExists, inArray, ne } from "drizzle-orm";
 import {
   staffAssignments, departments, users, roles, students, shiftTemplates, classes, studentClasses, centerConfig,
@@ -19,6 +25,54 @@ import {
 import * as courseStorage from "../storage/course.storage";
 import { createCourseAuditLog, getCourseAuditLogs } from "../storage/course-audit-log.storage";
 import { createActivityLog, getStaffHistory } from "../storage/activity-log.storage";
+
+const SCORE_CONVERSION_SETTINGS_KEY = "scoreConversionTemplates";
+const SCORE_CONVERSION_PERMISSION_RESOURCE = "/assessments#list";
+
+async function readScoreConversionTemplates(): Promise<ScoreConversionTemplate[]> {
+  const { systemSettings } = await import("@shared/schema");
+  const [row] = await db.select({ value: systemSettings.value })
+    .from(systemSettings)
+    .where(eq(systemSettings.key, SCORE_CONVERSION_SETTINGS_KEY))
+    .limit(1);
+  if (!row) return [];
+  return z.array(scoreConversionTemplateSchema).parse(JSON.parse(row.value));
+}
+
+async function mutateScoreConversionTemplates(
+  mutate: (templates: ScoreConversionTemplate[]) => {
+    templates: ScoreConversionTemplate[];
+    result: ScoreConversionTemplate | null;
+  },
+): Promise<ScoreConversionTemplate | null> {
+  const { systemSettings } = await import("@shared/schema");
+  return db.transaction(async (tx) => {
+    await tx.insert(systemSettings)
+      .values({ key: SCORE_CONVERSION_SETTINGS_KEY, value: "[]" })
+      .onConflictDoNothing();
+
+    const [row] = await tx.select({ value: systemSettings.value })
+      .from(systemSettings)
+      .where(eq(systemSettings.key, SCORE_CONVERSION_SETTINGS_KEY))
+      .for("update")
+      .limit(1);
+    if (!row) throw new Error("Không thể tải cấu hình bảng điểm quy đổi.");
+
+    const templates = z.array(scoreConversionTemplateSchema).parse(JSON.parse(row.value));
+    const result = mutate(templates);
+    await tx.update(systemSettings)
+      .set({ value: JSON.stringify(result.templates), updatedAt: new Date() })
+      .where(eq(systemSettings.key, SCORE_CONVERSION_SETTINGS_KEY));
+    return result.result;
+  });
+}
+
+async function getScoreConversionPermissions(req: any) {
+  if (req.isSuperAdmin) {
+    return { canView: true, canViewAll: true, canCreate: true, canEdit: true, canDelete: true };
+  }
+  return storage.getEffectivePermissions(req.roleIds ?? [], SCORE_CONVERSION_PERMISSION_RESOURCE);
+}
 
 function sanitizeDateField(value: any): string | null {
   if (!value) return null;
@@ -66,7 +120,7 @@ async function recordCourseAudit(req: any, data: {
 }
 
 async function recordEducationConfigAudit(req: any, data: {
-  resource: "classroom" | "subject" | "evaluation_criteria" | "evaluation_sub_criteria" | "shift" | "attendance_fee" | "attendance_limit" | "score_category" | "score_sheet" | "online_learning" | "location" | "department" | "role" | "permission" | "holiday";
+  resource: "classroom" | "subject" | "evaluation_criteria" | "evaluation_sub_criteria" | "shift" | "attendance_fee" | "attendance_limit" | "score_category" | "score_sheet" | "score_conversion_template" | "online_learning" | "location" | "department" | "role" | "permission" | "holiday";
   action: "created" | "updated" | "deleted";
   scope?: "education-config" | "settings";
   entityId?: string | null;
@@ -129,6 +183,16 @@ async function getEducationConfigSnapshot(resource: string, path: string, body?:
     }
   }
   const id = path.split("/").filter(Boolean).pop();
+  if (resource === "score_conversion_template") {
+    if (!id || id === "score-conversion-templates") return null;
+    try {
+      const templates = await readScoreConversionTemplates();
+      return templates.find((template) => template.id === id) ?? null;
+    } catch (error) {
+      console.error("[education-config-audit] failed to snapshot score conversion template:", error);
+      return null;
+    }
+  }
   if (resource === "attendance_limit" && id === "attendance-limit") {
     try {
       const { systemSettings } = await import("@shared/schema");
@@ -242,6 +306,7 @@ export function registerConfigRoutes(app: Express): void {
       [/^\/attendance-fee-rules(?:\/|$)/, "attendance_fee"],
       [/^\/score-categories(?:\/|$)/, "score_category"],
       [/^\/score-sheets(?:\/|$)/, "score_sheet"],
+      [/^\/score-conversion-templates(?:\/|$)/, "score_conversion_template"],
       [/^\/online-learning-rules(?:\/|$)/, "online_learning"],
        [/^\/system-settings\/attendance-limit$/, "attendance_limit"],
     ];
@@ -1949,6 +2014,73 @@ export function registerConfigRoutes(app: Express): void {
       await db.delete(scoreCategories).where(eq(scoreCategories.id, req.params.id));
       res.json({ success: true });
     } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── International Score Conversion Templates ─────────────────────────────
+  app.get("/api/score-conversion-templates", async (req, res) => {
+    try {
+      const permissions = await getScoreConversionPermissions(req);
+      if (!permissions.canView && !permissions.canViewAll) {
+        return res.status(403).json({ message: "Bạn không có quyền xem cấu hình bảng điểm quy đổi." });
+      }
+      res.json(await readScoreConversionTemplates());
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/score-conversion-templates", async (req, res) => {
+    try {
+      const permissions = await getScoreConversionPermissions(req);
+      if (!permissions.canCreate) {
+        return res.status(403).json({ message: "Bạn không có quyền tạo cấu hình bảng điểm quy đổi." });
+      }
+      const input = scoreConversionTemplateInputSchema.parse(req.body);
+      const now = new Date().toISOString();
+      const template = scoreConversionTemplateSchema.parse({
+        ...input,
+        id: randomUUID(),
+        createdAt: now,
+        updatedAt: now,
+      });
+      const created = await mutateScoreConversionTemplates((templates) => ({
+        templates: [template, ...templates],
+        result: template,
+      }));
+      res.status(201).json(created);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0]?.message ?? "Cấu hình không hợp lệ." });
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/score-conversion-templates/:id", async (req, res) => {
+    try {
+      const permissions = await getScoreConversionPermissions(req);
+      if (!permissions.canEdit) {
+        return res.status(403).json({ message: "Bạn không có quyền chỉnh sửa cấu hình bảng điểm quy đổi." });
+      }
+      const input = scoreConversionTemplateInputSchema.parse(req.body);
+      const updated = await mutateScoreConversionTemplates((templates) => {
+        const index = templates.findIndex((template) => template.id === req.params.id);
+        if (index < 0) return { templates, result: null };
+        const previous = templates[index];
+        const next = scoreConversionTemplateSchema.parse({
+          ...input,
+          id: previous.id,
+          createdAt: previous.createdAt,
+          updatedAt: new Date().toISOString(),
+        });
+        const nextTemplates = [...templates];
+        nextTemplates[index] = next;
+        return { templates: nextTemplates, result: next };
+      });
+      if (!updated) return res.status(404).json({ message: "Không tìm thấy cấu hình bài kiểm tra." });
+      res.json(updated);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0]?.message ?? "Cấu hình không hợp lệ." });
       res.status(500).json({ message: err.message });
     }
   });
