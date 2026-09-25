@@ -78,7 +78,7 @@ export default function ScoreConversion() {
   return (
     <DashboardLayout>
       <div className="p-4 md:p-6">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div className="mb-6 flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-3">
             <div className="rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30">
               <BarChart3 className="h-5 w-5 text-emerald-700 dark:text-emerald-300" />
@@ -90,18 +90,20 @@ export default function ScoreConversion() {
               </p>
             </div>
           </div>
-          {canCreate && (
-            <Button onClick={openCreateDialog}>
-              <Plus className="mr-2 h-4 w-4" />
-              Thêm mới
-            </Button>
-          )}
         </div>
         <Tabs defaultValue="international" className="space-y-4">
           <TabsList>
             <TabsTrigger value="international">Điểm Quy đổi Quốc tế</TabsTrigger>
           </TabsList>
-          <TabsContent value="international">
+          <TabsContent value="international" className="space-y-4">
+            {canCreate && (
+              <div className="flex justify-end">
+                <Button onClick={openCreateDialog}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Thêm mới
+                </Button>
+              </div>
+            )}
             <Card>
               <CardContent className="p-0">
                 {templatesQuery.isLoading ? (
@@ -184,12 +186,6 @@ export default function ScoreConversion() {
                         Tạo bảng quy đổi dùng chung theo loại bài kiểm tra.
                       </p>
                     </div>
-                    {canCreate && (
-                      <Button variant="outline" size="sm" onClick={openCreateDialog}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Thêm mới
-                      </Button>
-                    )}
                   </div>
                 )}
               </CardContent>
