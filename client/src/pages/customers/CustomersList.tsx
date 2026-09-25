@@ -686,6 +686,17 @@ export function CustomersList() {
               </div>
             </div>
 
+            {/* Chờ lịch */}
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-violet-200 shadow-sm min-w-[90px]">
+              <span className="w-2 h-2 rounded-full bg-violet-500 flex-shrink-0" />
+              <div>
+                <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-wide leading-none">{t("customers.statWaiting")}</p>
+                <p className="text-base font-bold text-violet-700 leading-tight mt-0.5">
+                  {summaryLoading ? "…" : (learningSummary?.choLich ?? 0).toLocaleString()}
+                </p>
+              </div>
+            </div>
+
             {/* Bảo lưu */}
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-amber-200 shadow-sm min-w-[90px]">
               <span className="w-2 h-2 rounded-full bg-amber-500 flex-shrink-0" />
