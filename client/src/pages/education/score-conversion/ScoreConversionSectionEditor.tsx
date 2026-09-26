@@ -49,9 +49,6 @@ export function ScoreConversionSectionEditor({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="font-semibold">Các phần thi và thang điểm</h3>
-          <p className="text-sm text-muted-foreground">
-            Mẫu nạp sẵn tên phần và thang gợi ý; chọn từng tab để nhập khoảng điểm thô và điểm quy đổi của trung tâm.
-          </p>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={onAddSection}>
           <Plus className="mr-1 h-4 w-4" />
@@ -127,9 +124,6 @@ export function ScoreConversionSectionEditor({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h4 className="font-medium">Bảng quy đổi {section.name}</h4>
-                  <p className="text-sm text-muted-foreground">
-                    Nhập điểm quy đổi tương ứng với từng khoảng điểm thô.
-                  </p>
                 </div>
                 <div className="flex items-center gap-1">
                   <Button

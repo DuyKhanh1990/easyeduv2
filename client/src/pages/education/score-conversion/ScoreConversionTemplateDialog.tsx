@@ -429,14 +429,8 @@ export function ScoreConversionTemplateDialog({
 
             <aside className="min-w-0 space-y-4">
           <section className="space-y-3 rounded-lg border bg-white p-4">
-            <div>
-              <h3 className="font-semibold">Cách tính điểm tổng</h3>
-              <p className="text-sm text-muted-foreground">
-                Sau khi quy đổi từng phần thi, hệ thống sẽ áp dụng công thức này.
-              </p>
-            </div>
             <div className="max-w-sm space-y-1.5">
-              <Label htmlFor="overall-method">Công thức chung</Label>
+              <Label htmlFor="overall-method">Công thức tính điểm Tổng</Label>
               <Select
                 value={draft.overallRule.method}
                 onValueChange={(value) => {
