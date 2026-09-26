@@ -358,7 +358,7 @@ export function ScoreConversionTemplateDialog({
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[98vw] max-w-[98vw] max-h-[92vh] overflow-y-auto">
+      <DialogContent className="w-[98vw] max-w-[98vw] max-h-[92vh] overflow-y-auto bg-slate-100">
         <DialogHeader>
           <DialogTitle>{template ? "Sửa bảng điểm quy đổi" : "Thêm bảng điểm quy đổi"}</DialogTitle>
           <DialogDescription>
@@ -402,7 +402,7 @@ export function ScoreConversionTemplateDialog({
             )}
           </div>
 
-          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(360px,1fr)]">
+          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div className="min-w-0">
               <ScoreConversionSectionEditor
                 sections={draft.sections}
@@ -428,7 +428,7 @@ export function ScoreConversionTemplateDialog({
             </div>
 
             <aside className="min-w-0 space-y-4">
-          <section className="space-y-3 rounded-lg border p-4">
+          <section className="space-y-3 rounded-lg border bg-white p-4">
             <div>
               <h3 className="font-semibold">Cách tính điểm tổng</h3>
               <p className="text-sm text-muted-foreground">
@@ -458,7 +458,7 @@ export function ScoreConversionTemplateDialog({
               </Select>
             </div>
             {draft.overallRule.method === "custom" && (
-              <div className="space-y-3 rounded-lg border p-3">
+              <div className="space-y-3 rounded-lg border bg-white p-3">
                 <div>
                   <h4 className="text-sm font-medium">Công thức tính điểm</h4>
                   <p className="text-xs text-muted-foreground">
@@ -511,7 +511,7 @@ export function ScoreConversionTemplateDialog({
             )}
           </section>
 
-          <section className="space-y-3 rounded-lg border p-4">
+          <section className="space-y-3 rounded-lg border bg-white p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="font-semibold">Ngưỡng xếp loại (không bắt buộc)</h3>

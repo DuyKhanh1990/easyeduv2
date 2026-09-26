@@ -78,7 +78,7 @@ export function ScoreConversionSectionEditor({
 
         {sections.map((section) => (
           <TabsContent key={section.id} value={section.id} className="space-y-4">
-            <div className="rounded-lg border p-4">
+            <div className="rounded-lg border bg-white p-3">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="space-y-1.5">
                   <Label htmlFor={`section-name-${section.id}`}>Tên phần thi</Label>
@@ -123,7 +123,7 @@ export function ScoreConversionSectionEditor({
               </div>
             </div>
 
-            <div className="space-y-3 rounded-lg border p-4">
+            <div className="space-y-3 rounded-lg border bg-white p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h4 className="font-medium">Bảng quy đổi {section.name}</h4>
@@ -172,21 +172,22 @@ export function ScoreConversionSectionEditor({
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] text-left text-sm">
+                <table className="w-full min-w-[560px] table-fixed text-left text-sm">
                   <thead className="border-b text-muted-foreground">
                     <tr>
-                      <th className="px-3 py-2 font-medium">Điểm thô từ</th>
-                      <th className="px-3 py-2 font-medium">Điểm thô đến</th>
-                      <th className="px-3 py-2 font-medium">Quy đổi nội bộ</th>
-                      <th className="px-3 py-2 font-medium">Quy đổi Quốc tế</th>
-                      <th className="w-12 px-2 py-2" />
+                      <th className="w-[18%] px-2 py-2 font-medium">Điểm thô từ</th>
+                      <th className="w-[18%] px-2 py-2 font-medium">Điểm thô đến</th>
+                      <th className="w-[25%] px-2 py-2 font-medium">Quy đổi nội bộ</th>
+                      <th className="w-[25%] px-2 py-2 font-medium">Quy đổi Quốc tế</th>
+                      <th className="w-10 px-1 py-2" />
                     </tr>
                   </thead>
                   <tbody>
                     {section.mappings.length ? section.mappings.map((mapping) => (
                       <tr key={mapping.id} className="border-b last:border-0">
-                        <td className="px-3 py-2">
+                        <td className="px-2 py-1.5">
                           <Input
+                            className="h-8 px-2"
                             aria-label={`Điểm thô từ ${section.name}`}
                             type="number"
                             step="any"
@@ -196,8 +197,9 @@ export function ScoreConversionSectionEditor({
                             })}
                           />
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-2 py-1.5">
                           <Input
+                            className="h-8 px-2"
                             aria-label={`Điểm thô đến ${section.name}`}
                             type="number"
                             step="any"
@@ -207,8 +209,9 @@ export function ScoreConversionSectionEditor({
                             })}
                           />
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-2 py-1.5">
                           <Input
+                            className="h-8 px-2"
                             aria-label={`Điểm quy đổi nội bộ ${section.name}`}
                             type="number"
                             step="any"
@@ -218,8 +221,9 @@ export function ScoreConversionSectionEditor({
                             })}
                           />
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-2 py-1.5">
                           <Input
+                            className="h-8 px-2"
                             aria-label={`Điểm quy đổi quốc tế ${section.name}`}
                             type="number"
                             step="any"
@@ -229,7 +233,7 @@ export function ScoreConversionSectionEditor({
                             })}
                           />
                         </td>
-                        <td className="px-2 py-2">
+                        <td className="px-1 py-1.5">
                           <Button
                             type="button"
                             variant="ghost"
