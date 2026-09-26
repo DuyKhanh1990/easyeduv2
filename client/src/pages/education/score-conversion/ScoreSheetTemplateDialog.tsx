@@ -82,6 +82,7 @@ export function ScoreSheetTemplateDialog({
           skills: template.skills.map((skill) => ({
             sectionId: skill.sectionId,
             parts: skill.parts.map((part) => ({ ...part })),
+             partFormula: skill.partFormula ?? { method: "sum", formula: "" },
           })),
         }
       : emptyDraft());
@@ -361,6 +362,12 @@ export function ScoreSheetTemplateDialog({
                               </div>
                             )}
                           </div>
+                        )}
+
+                        {parts.length > 0 && (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Kết quả là điểm thô của kỹ năng; sau đó sẽ được đối chiếu với thang quy đổi phía trên.
+                          </p>
                         )}
 
                         {parts.length > 0 && (
