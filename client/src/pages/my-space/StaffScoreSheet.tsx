@@ -2,11 +2,15 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { vi } from "date-fns/locale";
-import { BarChart3, BookOpen, CalendarDays, Clock3, Pencil, Plus, Users, CheckCircle2, Clock, CircleDot } from "lucide-react";
+import { BarChart3, BookOpen, CalendarDays, Clock3, Eye, Pencil, Plus, Users, CheckCircle2, Clock, CircleDot } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GradeBookEditDialog } from "@/components/education/GradeBookEditDialog";
 import { GradeBookCreateDialog } from "@/components/education/GradeBookCreateDialog";
+import {
+  StaffScoreSheetAssessmentStudentsDialog,
+  type StaffAssignedScoreSheetAssessment,
+} from "@/components/education/StaffScoreSheetAssessmentStudentsDialog";
 import { PageGuideButton } from "@/components/guides/PageGuideDialog";
 
 type StaffGradeBookRow = {
@@ -29,21 +33,6 @@ type StaffGradeBookRow = {
   updatedByName: string | null;
 };
 
-type AssignedScoreSheetAssessment = {
-  sessionId: string;
-  classId: string;
-  classCode: string;
-  className: string;
-  sessionIndex: number | null;
-  examDate: string;
-  assessmentId: string;
-  assessmentCode: string | null;
-  assessmentName: string | null;
-  templateName: string | null;
-  scoreDeadlineAt: string | null;
-  studentCount: number;
-};
-
 type ScoreSheetTimelineEntry =
   | {
       kind: "grade-book";
@@ -55,7 +44,7 @@ type ScoreSheetTimelineEntry =
       kind: "conversion";
       id: string;
       dateKey: string;
-      assessment: AssignedScoreSheetAssessment;
+      assessment: StaffAssignedScoreSheetAssessment;
     };
 
 type DeadlineStatus = {
@@ -151,6 +140,7 @@ const formatDateLabel = (d: string) => {
 export function StaffScoreSheet() {
   const [editingBook, setEditingBook] = useState<StaffGradeBookRow | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [selectedAssessment, setSelectedAssessment] = useState<StaffAssignedScoreSheetAssessment | null>(null);
 
   const { data, isLoading, refetch } = useQuery<StaffGradeBookRow[]>({
     queryKey: ["/api/my-space/score-sheet/staff"],
@@ -165,7 +155,7 @@ export function StaffScoreSheet() {
     data: assignedAssessmentsData,
     isLoading: isLoadingAssignedAssessments,
     isError: isAssignedAssessmentsError,
-  } = useQuery<AssignedScoreSheetAssessment[]>({
+  } = useQuery<StaffAssignedScoreSheetAssessment[]>({
     queryKey: ["/api/my-space/score-sheet/staff-assessments"],
     queryFn: async () => {
       const res = await fetch("/api/my-space/score-sheet/staff-assessments", { credentials: "include" });
@@ -291,7 +281,18 @@ export function StaffScoreSheet() {
                         return (
                           <div
                             key={`conversion:${entry.id}`}
-                            className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(160px,1fr)_160px_60px_120px_minmax(180px,1fr)_56px] xl:items-center xl:gap-x-4 xl:gap-y-0"
+                            role="button"
+                            tabIndex={0}
+                            aria-haspopup="dialog"
+                            aria-label={`Xem danh sách học viên: ${assessment.assessmentName ?? "Bảng điểm Quy đổi"} - ${assessment.classCode}`}
+                            onClick={() => setSelectedAssessment(assessment)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                setSelectedAssessment(assessment);
+                              }
+                            }}
+                            className="grid min-w-0 cursor-pointer grid-cols-2 items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(160px,1fr)_160px_60px_120px_minmax(180px,1fr)_56px] xl:items-center xl:gap-x-4 xl:gap-y-0"
                             data-testid={`row-staff-conversion-assessment-${assessment.sessionId}`}
                           >
                             <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
@@ -353,7 +354,10 @@ export function StaffScoreSheet() {
                             </div>
 
                             <div className="col-span-2 flex justify-end border-t border-border/60 pt-2 sm:col-span-3 md:col-span-4 xl:col-span-1 xl:border-0 xl:pt-0">
-                              <span className="text-[11px] text-muted-foreground">—</span>
+                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">
+                                <Eye className="h-3.5 w-3.5" />
+                                Xem
+                              </span>
                             </div>
                           </div>
                         );
@@ -453,6 +457,14 @@ export function StaffScoreSheet() {
           })}
         </div>
       )}
+
+      <StaffScoreSheetAssessmentStudentsDialog
+        assessment={selectedAssessment}
+        open={!!selectedAssessment}
+        onOpenChange={(open) => {
+          if (!open) setSelectedAssessment(null);
+        }}
+      />
 
       {editingBook && (
         <GradeBookEditDialog

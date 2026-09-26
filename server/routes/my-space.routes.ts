@@ -3909,4 +3909,57 @@ export function registerMySpaceRoutes(app: Express): void {
       res.status(500).json({ message: err.message || "Lỗi khi tải bảng điểm được giao" });
     }
   });
+
+  app.get("/api/my-space/score-sheet/staff-assessments/:sessionId/students", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+      const sessionId = z.string().uuid().safeParse(req.params.sessionId);
+      if (!sessionId.success) return res.status(400).json({ message: "Buổi thi không hợp lệ" });
+
+      const staffRecord = await getStaffForUser(user.id);
+      if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
+
+      const access = await db.execute(sql`
+        SELECT cs.id
+        FROM class_sessions cs
+        JOIN classes c ON c.id = cs.class_id
+        WHERE cs.id = ${sessionId.data}::uuid
+          AND cs.score_sheet_assessment_id IS NOT NULL
+          AND (
+            ${staffRecord.id} = ANY(c.teacher_ids)
+            OR ${staffRecord.id} = ANY(c.manager_ids)
+            OR cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
+          )
+          AND EXISTS (
+            SELECT 1
+            FROM staff_assignments sa
+            WHERE sa.staff_id = ${staffRecord.id}
+              AND sa.location_id = c.location_id
+          )
+        LIMIT 1
+      `);
+      if (access.rows.length === 0) {
+        return res.status(404).json({ message: "Không tìm thấy buổi thi hoặc bạn không có quyền xem" });
+      }
+
+      const roster = await getRegularSessionStudents(sessionId.data);
+      const uniqueStudents = new Map<string, { studentId: string; code: string; fullName: string }>();
+      for (const row of roster) {
+        if (!uniqueStudents.has(row.studentId)) {
+          uniqueStudents.set(row.studentId, {
+            studentId: row.studentId,
+            code: row.student.code,
+            fullName: row.student.fullName,
+          });
+        }
+      }
+
+      res.json(Array.from(uniqueStudents.values()));
+    } catch (err: any) {
+      console.error("Staff score assessment roster error:", err);
+      res.status(500).json({ message: err.message || "Lỗi khi tải danh sách học viên" });
+    }
+  });
 }
