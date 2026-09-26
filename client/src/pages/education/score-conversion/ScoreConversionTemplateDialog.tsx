@@ -12,7 +12,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   createDefaultDraft,
   createEmptyGradeBand,
@@ -20,6 +19,7 @@ import {
   draftFromTemplate,
   SCORE_CONVERSION_TYPES,
 } from "./score-conversion-presets";
+import { ScoreConversionSectionEditor } from "./ScoreConversionSectionEditor";
 
 type ScoreConversionTemplateDialogProps = {
   open: boolean;
@@ -404,222 +404,6 @@ export function ScoreConversionTemplateDialog({
 
           <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(340px,1fr)]">
           <div className="min-w-0 space-y-6">
-          <section className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 className="font-semibold">Các phần thi và thang điểm</h3>
-                <p className="text-sm text-muted-foreground">
-                  Mẫu nạp sẵn tên phần và thang gợi ý; chọn từng tab để nhập khoảng điểm thô và điểm quy đổi của trung tâm.
-                </p>
-              </div>
-              <Button type="button" variant="outline" size="sm" onClick={addSection}>
-                <Plus className="mr-1 h-4 w-4" />
-                Thêm phần thi
-              </Button>
-            </div>
-
-            <Tabs
-              value={activeSectionId || draft.sections[0]?.id}
-              onValueChange={setActiveSectionId}
-              className="space-y-4"
-            >
-              <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto p-1">
-                {draft.sections.map((section) => (
-                  <TabsTrigger
-                    key={section.id}
-                    value={section.id}
-                    className="shrink-0 whitespace-nowrap data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-                  >
-                    {section.name || "Phần thi"}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-
-              {draft.sections.map((section) => (
-                <TabsContent key={section.id} value={section.id} className="space-y-4">
-                  <div className="rounded-lg border p-4">
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                      <div className="space-y-1.5">
-                        <Label htmlFor={`section-name-${section.id}`}>Tên phần thi</Label>
-                        <Input
-                          id={`section-name-${section.id}`}
-                          value={section.name}
-                          onChange={(event) => updateSection(section.id, { name: event.target.value })}
-                          maxLength={120}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor={`raw-min-${section.id}`}>Điểm thô từ</Label>
-                        <Input
-                          id={`raw-min-${section.id}`}
-                          type="number"
-                          step="any"
-                          value={section.rawMinScore}
-                          onChange={(event) => updateSection(section.id, { rawMinScore: numericValue(event.target.value) })}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor={`raw-max-${section.id}`}>Điểm thô đến</Label>
-                        <Input
-                          id={`raw-max-${section.id}`}
-                          type="number"
-                          step="any"
-                          value={section.rawMaxScore}
-                          onChange={(event) => updateSection(section.id, { rawMaxScore: numericValue(event.target.value) })}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor={`raw-step-${section.id}`}>Bước điểm thô</Label>
-                        <Input
-                          id={`raw-step-${section.id}`}
-                          type="number"
-                          min="0"
-                          step="any"
-                          value={section.rawStep}
-                          onChange={(event) => updateSection(section.id, { rawStep: numericValue(event.target.value) })}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3 rounded-lg border p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <h4 className="font-medium">Bảng quy đổi {section.name}</h4>
-                        <p className="text-sm text-muted-foreground">
-                          Nhập điểm quy đổi tương ứng với từng khoảng điểm thô.
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label={`Xóa phần thi ${section.name}`}
-                          disabled={draft.sections.length <= 1}
-                          onClick={() => removeSection(section.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={section.mappings.length === 0 || draft.sections.length < 2}
-                          onClick={() => openCopyMappings(section)}
-                        >
-                          Sao chép sang...
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => generateMappingTable(section)}
-                        >
-                          Tạo bảng quy đổi
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => updateSection(section.id, {
-                            mappings: [...section.mappings, createEmptyMapping()],
-                          })}
-                        >
-                          <Plus className="mr-1 h-4 w-4" />
-                          Thêm khoảng điểm
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full min-w-[760px] text-left text-sm">
-                        <thead className="border-b text-muted-foreground">
-                          <tr>
-                            <th className="px-3 py-2 font-medium">Điểm thô từ</th>
-                            <th className="px-3 py-2 font-medium">Điểm thô đến</th>
-                            <th className="px-3 py-2 font-medium">Quy đổi nội bộ</th>
-                            <th className="px-3 py-2 font-medium">Quy đổi Quốc tế</th>
-                            <th className="w-12 px-2 py-2" />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {section.mappings.length ? section.mappings.map((mapping) => (
-                            <tr key={mapping.id} className="border-b last:border-0">
-                              <td className="px-3 py-2">
-                                <Input
-                                  aria-label={`Điểm thô từ ${section.name}`}
-                                  type="number"
-                                  step="any"
-                                  value={mapping.rawFrom}
-                                  onChange={(event) => updateMapping(section.id, mapping.id, {
-                                    rawFrom: numericValue(event.target.value),
-                                  })}
-                                />
-                              </td>
-                              <td className="px-3 py-2">
-                                <Input
-                                  aria-label={`Điểm thô đến ${section.name}`}
-                                  type="number"
-                                  step="any"
-                                  value={mapping.rawTo}
-                                  onChange={(event) => updateMapping(section.id, mapping.id, {
-                                    rawTo: numericValue(event.target.value),
-                                  })}
-                                />
-                              </td>
-                              <td className="px-3 py-2">
-                                <Input
-                                  aria-label={`Điểm quy đổi nội bộ ${section.name}`}
-                                  type="number"
-                                  step="any"
-                                  value={mapping.internalScore}
-                                  onChange={(event) => updateMapping(section.id, mapping.id, {
-                                    internalScore: numericValue(event.target.value),
-                                  })}
-                                />
-                              </td>
-                              <td className="px-3 py-2">
-                                <Input
-                                  aria-label={`Điểm quy đổi quốc tế ${section.name}`}
-                                  type="number"
-                                  step="any"
-                                  value={mapping.convertedScore}
-                                  onChange={(event) => updateMapping(section.id, mapping.id, {
-                                    convertedScore: numericValue(event.target.value),
-                                  })}
-                                />
-                              </td>
-                              <td className="px-2 py-2">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  aria-label={`Xóa khoảng điểm ${mapping.rawFrom}–${mapping.rawTo}`}
-                                  onClick={() => updateSection(section.id, {
-                                    mappings: section.mappings.filter((item) => item.id !== mapping.id),
-                                  })}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </td>
-                            </tr>
-                          )) : (
-                            <tr>
-                              <td colSpan={5} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                                Chưa có khoảng quy đổi. Thêm các khoảng điểm thô và điểm tương ứng.
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </TabsContent>
-              ))}
-            </Tabs>
-          </section>
-
           <section className="space-y-3 rounded-lg border p-4">
             <div>
               <h3 className="font-semibold">Cách tính điểm tổng</h3>
@@ -781,6 +565,28 @@ export function ScoreConversionTemplateDialog({
           </section>
           </aside>
           </div>
+
+          <ScoreConversionSectionEditor
+            sections={draft.sections}
+            activeSectionId={activeSectionId}
+            onActiveSectionChange={setActiveSectionId}
+            onAddSection={addSection}
+            onUpdateSection={updateSection}
+            onRemoveSection={removeSection}
+            onOpenCopyMappings={openCopyMappings}
+            onGenerateMappingTable={generateMappingTable}
+            onAddMapping={(section) => updateSection(section.id, {
+              mappings: [...section.mappings, createEmptyMapping()],
+            })}
+            onUpdateMapping={updateMapping}
+            onRemoveMapping={(sectionId, mappingId) => {
+              const section = draft.sections.find((item) => item.id === sectionId);
+              if (!section) return;
+              updateSection(sectionId, {
+                mappings: section.mappings.filter((item) => item.id !== mappingId),
+              });
+            }}
+          />
 
           {formError && <p className="text-sm text-destructive" role="alert">{formError}</p>}
 
