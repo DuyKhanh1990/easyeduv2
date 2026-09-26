@@ -278,6 +278,12 @@ export function StaffScoreSheet() {
                       if (entry.kind === "conversion") {
                         const assessment = entry.assessment;
                         const deadlineStatus = getDeadlineStatus(assessment.scoreDeadlineAt, nowWallClockMs);
+                        const scoreProgressLabel = assessment.studentCount > 0
+                          && assessment.completedStudentCount >= assessment.studentCount
+                          ? "Đã nhập đủ điểm"
+                          : assessment.enteredStudentCount > 0
+                            ? `${assessment.enteredStudentCount}/${assessment.studentCount} đã nhập`
+                            : "Chưa nhập";
                         return (
                           <div
                             key={`conversion:${entry.id}`}
@@ -335,7 +341,7 @@ export function StaffScoreSheet() {
                             <div className="flex min-w-0 flex-col items-start gap-1">
                               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground whitespace-nowrap">
                                 <CircleDot className="h-3.5 w-3.5 shrink-0" />
-                                Chưa nhập
+                                {scoreProgressLabel}
                               </span>
                               <span className={`inline-flex items-center gap-1 rounded border px-1 text-[10px] font-medium whitespace-nowrap ${deadlineStatus.className}`}>
                                 {deadlineStatus.indicator} {deadlineStatus.label}

@@ -1822,9 +1822,43 @@ export const classGradeBookStudentComments = pgTable("class_grade_book_student_c
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const scoreSheetAssessmentStudentAttempts = pgTable("score_sheet_assessment_student_attempts", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  assessmentId: uuid("assessment_id").notNull(),
+  classSessionId: uuid("class_session_id").notNull().references(() => classSessions.id, { onDelete: "cascade" }),
+  studentId: uuid("student_id").notNull().references(() => students.id, { onDelete: "cascade" }),
+  attemptNumber: integer("attempt_number").notNull(),
+  partScores: jsonb("part_scores").$type<Record<string, Record<string, number | null>>>().notNull().default({}),
+  skillScores: jsonb("skill_scores").$type<Record<string, number | null>>().notNull().default({}),
+  notes: jsonb("notes").$type<Record<string, Record<string, string>>>().notNull().default({}),
+  result: jsonb("result").$type<Record<string, unknown>>().notNull().default({}),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  attemptUnique: uniqueIndex("score_sheet_assessment_student_attempts_unique_idx").on(
+    table.assessmentId,
+    table.classSessionId,
+    table.studentId,
+    table.attemptNumber,
+  ),
+  sessionIdx: index("score_sheet_assessment_student_attempts_session_idx").on(
+    table.assessmentId,
+    table.classSessionId,
+  ),
+  studentIdx: index("score_sheet_assessment_student_attempts_student_idx").on(
+    table.assessmentId,
+    table.studentId,
+  ),
+}));
+
 export const insertClassGradeBookSchema = createInsertSchema(classGradeBooks).omit({ id: true, createdAt: true, updatedAt: true });
 export type ClassGradeBook = typeof classGradeBooks.$inferSelect;
 export type InsertClassGradeBook = z.infer<typeof insertClassGradeBookSchema>;
+export const insertScoreSheetAssessmentStudentAttemptSchema = createInsertSchema(scoreSheetAssessmentStudentAttempts).omit({ id: true, createdAt: true, updatedAt: true });
+export type ScoreSheetAssessmentStudentAttempt = typeof scoreSheetAssessmentStudentAttempts.$inferSelect;
+export type InsertScoreSheetAssessmentStudentAttempt = z.infer<typeof insertScoreSheetAssessmentStudentAttemptSchema>;
 
 // ==========================================
 // STUDENT WALLET TRANSACTIONS (Ví học phí)

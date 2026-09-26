@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { scoreConversionTemplateSchema } from "./score-conversion";
 import { scoreSheetTemplateSchema } from "./score-sheet-template";
 
 export const scoreSheetAssessmentScoringPolicySchema = z.enum(["highest", "latest"]);
@@ -29,6 +30,7 @@ export const scoreSheetAssessmentInputSchema = scoreSheetAssessmentFieldsSchema;
 export const scoreSheetAssessmentSchema = scoreSheetAssessmentFieldsSchema.extend({
   id: z.string().uuid(),
   templateSnapshot: scoreSheetTemplateSchema,
+  conversionTemplateSnapshot: scoreConversionTemplateSchema.nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

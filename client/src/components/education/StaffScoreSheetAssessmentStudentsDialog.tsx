@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { AlertCircle, Loader2, Settings2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StaffScoreSheetAssessmentScoreDialog } from "./StaffScoreSheetAssessmentScoreDialog";
 import {
   Dialog,
   DialogContent,
@@ -32,12 +34,24 @@ export type StaffAssignedScoreSheetAssessment = {
   templateName: string | null;
   scoreDeadlineAt: string | null;
   studentCount: number;
+  enteredStudentCount: number;
+  completedStudentCount: number;
+  attemptCount: number;
+  scoringPolicy: "highest" | "latest";
+  hasConversion: boolean;
 };
 
 type AssessmentRosterStudent = {
   studentId: string;
   code: string;
   fullName: string;
+  attemptsTaken: number;
+  attemptNumber: number | null;
+  rawScore: number | null;
+  convertedScore: number | null;
+  gradeBandLabel: string | null;
+  inputComplete: boolean;
+  status: "not_entered" | "in_progress" | "complete";
 };
 
 function formatDate(value: string | null | undefined) {
@@ -83,10 +97,22 @@ export function StaffScoreSheetAssessmentStudentsDialog({
 
   const students = rosterQuery.data ?? [];
   const assessmentName = assessment?.assessmentName ?? "Bảng điểm Quy đổi";
+  const [editingStudent, setEditingStudent] = useState<AssessmentRosterStudent | null>(null);
+
+  function formatScore(value: number | null | undefined) {
+    if (value == null || !Number.isFinite(value)) return "—";
+    return new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(value);
+  }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[90vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col gap-0 overflow-hidden p-0 sm:w-[95vw] sm:max-w-[95vw] xl:max-w-[1200px]">
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) setEditingStudent(null);
+        onOpenChange(nextOpen);
+      }}
+    >
+      <DialogContent className="flex max-h-[90vh] w-[98vw] max-w-[98vw] flex-col gap-0 overflow-hidden p-0 sm:w-[98vw] sm:max-w-[98vw]">
         <DialogHeader className="shrink-0 border-b px-5 py-4 text-left sm:px-6">
           <div className="flex flex-wrap items-center gap-2">
             <DialogTitle className="text-base">{assessmentName}</DialogTitle>
@@ -135,7 +161,9 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                     <TableHead className="min-w-[90px] text-center">Lịch học</TableHead>
                     <TableHead className="min-w-[125px]">Ngày phải trả</TableHead>
                     <TableHead className="min-w-[90px] text-center">Lần thi</TableHead>
-                    <TableHead className="min-w-[110px]">Điểm quy đổi</TableHead>
+                    <TableHead className="min-w-[110px]">
+                      {assessment?.hasConversion ? "Điểm quy đổi" : "Tổng điểm"}
+                    </TableHead>
                     <TableHead className="min-w-[100px]">Kết quả</TableHead>
                     <TableHead className="min-w-[110px]">Tình trạng</TableHead>
                     <TableHead className="min-w-[110px]">Công bố</TableHead>
@@ -158,11 +186,26 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                         <TableCell>{assessment?.assessmentName ?? assessment?.assessmentCode ?? "—"}</TableCell>
                         <TableCell className="text-center">{assessment?.sessionIndex ?? "—"}</TableCell>
                         <TableCell>{formatDeadline(assessment?.scoreDeadlineAt)}</TableCell>
-                        <TableCell className="text-center">—</TableCell>
-                        <TableCell>—</TableCell>
-                        <TableCell>—</TableCell>
+                        <TableCell className="text-center">
+                          {student.attemptNumber
+                            ? `${student.attemptNumber}/${assessment?.attemptCount ?? 1}`
+                            : "—"}
+                        </TableCell>
+                        <TableCell className="font-medium tabular-nums">
+                          {formatScore(assessment?.hasConversion ? student.convertedScore : student.rawScore)}
+                        </TableCell>
+                        <TableCell>{student.gradeBandLabel ?? "—"}</TableCell>
                         <TableCell>
-                          <Badge variant="secondary" className="font-normal">Chưa thi</Badge>
+                          <Badge
+                            variant={student.status === "complete" ? "default" : "secondary"}
+                            className={`font-normal ${student.status === "complete" ? "bg-emerald-600 hover:bg-emerald-600" : ""}`}
+                          >
+                            {student.status === "complete"
+                              ? "Đã nhập"
+                              : student.status === "in_progress"
+                                ? "Đang nhập"
+                                : "Chưa nhập"}
+                          </Badge>
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary" className="font-normal">Chưa công bố</Badge>
@@ -172,9 +215,10 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8"
-                            disabled
-                            title="Chức năng nhập kết quả sẽ được bổ sung sau"
+                            onClick={() => setEditingStudent(student)}
+                            title={`Nhập điểm cho ${student.fullName}`}
                             aria-label={`Quản lý kết quả của ${student.fullName}`}
+                            data-testid={`btn-manage-assessment-score-${student.studentId}`}
                           >
                             <Settings2 className="h-4 w-4" />
                           </Button>
@@ -188,6 +232,15 @@ export function StaffScoreSheetAssessmentStudentsDialog({
           )}
         </div>
       </DialogContent>
+      <StaffScoreSheetAssessmentScoreDialog
+        assessment={assessment}
+        student={editingStudent}
+        open={!!editingStudent}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setEditingStudent(null);
+        }}
+        onSaved={() => rosterQuery.refetch()}
+      />
     </Dialog>
   );
 }

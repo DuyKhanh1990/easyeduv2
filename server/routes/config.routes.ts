@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db } from "../db";
 import {
-  legacyScoreConversionTemplateSchema,
+  parseScoreConversionTemplatesJson,
   scoreConversionTemplateInputSchema,
   scoreConversionTemplateSchema,
   type ScoreConversionTemplate,
@@ -45,38 +45,7 @@ const SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY = "scoreSheetAssessments";
 const SCORE_CONVERSION_PERMISSION_RESOURCE = "/assessments#list";
 
 function parseScoreConversionTemplates(value: string): ScoreConversionTemplate[] {
-  const records = z.array(z.unknown()).parse(JSON.parse(value));
-  return records.map((record) => {
-    const current = scoreConversionTemplateSchema.safeParse(record);
-    if (current.success) return current.data;
-
-    const legacy = legacyScoreConversionTemplateSchema.parse(record);
-    return scoreConversionTemplateSchema.parse({
-      id: legacy.id,
-      createdAt: legacy.createdAt,
-      updatedAt: legacy.updatedAt,
-      typeKey: legacy.typeKey,
-      typeName: legacy.typeName,
-      sections: legacy.sections.map((section) => {
-        const isIeltsRawSection = legacy.typeKey === "ielts"
-          && ["Listening", "Reading"].includes(section.name);
-        return {
-          id: section.id,
-          name: section.name,
-          rawMinScore: 0,
-          rawMaxScore: isIeltsRawSection ? 40 : Math.max(0, section.maxScore),
-          rawStep: section.step,
-          rawUnit: isIeltsRawSection ? "câu đúng" : "điểm thô",
-          convertedMinScore: section.minScore,
-          convertedMaxScore: section.maxScore,
-          convertedStep: section.step,
-          convertedUnit: section.unit,
-          mappings: [],
-        };
-      }),
-      overallRule: legacy.overallRule,
-    });
-  });
+  return parseScoreConversionTemplatesJson(value);
 }
 
 async function readScoreConversionTemplates(): Promise<ScoreConversionTemplate[]> {
@@ -2390,6 +2359,16 @@ export function registerConfigRoutes(app: Express): void {
         error.code = "SCORE_SHEET_ASSESSMENT_TEMPLATE_MISSING";
         throw error;
       }
+      const conversionTemplateSnapshot = scoreSheetTemplate.scoreConversionTemplateId
+        ? (await readScoreConversionTemplates()).find(
+          (template) => template.id === scoreSheetTemplate.scoreConversionTemplateId,
+        ) ?? null
+        : null;
+      if (scoreSheetTemplate.scoreConversionTemplateId && !conversionTemplateSnapshot) {
+        const error: any = new Error("Không tìm thấy bảng quy đổi của bảng điểm mẫu.");
+        error.code = "SCORE_SHEET_ASSESSMENT_CONVERSION_MISSING";
+        throw error;
+      }
 
       const now = new Date().toISOString();
       const assessment = scoreSheetAssessmentSchema.parse({
@@ -2397,6 +2376,7 @@ export function registerConfigRoutes(app: Express): void {
         code: parsed.code.toUpperCase(),
         id: randomUUID(),
         templateSnapshot: scoreSheetTemplate,
+        conversionTemplateSnapshot,
         createdAt: now,
         updatedAt: now,
       });
@@ -2415,6 +2395,9 @@ export function registerConfigRoutes(app: Express): void {
         return res.status(400).json({ message: err.errors[0]?.message ?? "Thông tin bảng điểm không hợp lệ." });
       }
       if (err?.code === "SCORE_SHEET_ASSESSMENT_TEMPLATE_MISSING") {
+        return res.status(400).json({ message: err.message });
+      }
+      if (err?.code === "SCORE_SHEET_ASSESSMENT_CONVERSION_MISSING") {
         return res.status(400).json({ message: err.message });
       }
       if (err?.code === "SCORE_SHEET_ASSESSMENT_CODE_EXISTS") {

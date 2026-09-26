@@ -167,3 +167,38 @@ export const legacyScoreConversionTemplateSchema = z.object({
 export type ScoreConversionTemplateInput = z.infer<typeof scoreConversionTemplateInputSchema>;
 export type ScoreConversionTemplate = z.infer<typeof scoreConversionTemplateSchema>;
 export type ScoreConversionTypeKey = typeof SCORE_CONVERSION_TYPE_KEYS[number];
+
+export function parseScoreConversionTemplatesJson(value: string): ScoreConversionTemplate[] {
+  const records = z.array(z.unknown()).parse(JSON.parse(value));
+  return records.map((record) => {
+    const current = scoreConversionTemplateSchema.safeParse(record);
+    if (current.success) return current.data;
+
+    const legacy = legacyScoreConversionTemplateSchema.parse(record);
+    return scoreConversionTemplateSchema.parse({
+      id: legacy.id,
+      createdAt: legacy.createdAt,
+      updatedAt: legacy.updatedAt,
+      typeKey: legacy.typeKey,
+      typeName: legacy.typeName,
+      sections: legacy.sections.map((section) => {
+        const isIeltsRawSection = legacy.typeKey === "ielts"
+          && ["Listening", "Reading"].includes(section.name);
+        return {
+          id: section.id,
+          name: section.name,
+          rawMinScore: 0,
+          rawMaxScore: isIeltsRawSection ? 40 : Math.max(0, section.maxScore),
+          rawStep: section.step,
+          rawUnit: isIeltsRawSection ? "câu đúng" : "điểm thô",
+          convertedMinScore: section.minScore,
+          convertedMaxScore: section.maxScore,
+          convertedStep: section.step,
+          convertedUnit: section.unit,
+          mappings: [],
+        };
+      }),
+      overallRule: legacy.overallRule,
+    });
+  });
+}

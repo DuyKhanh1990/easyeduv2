@@ -4,6 +4,16 @@ import { db, pool } from "../db";
 import { z } from "zod";
 import { scoreSheetAssessmentSchema } from "@shared/score-sheet-assessment";
 import {
+  parseScoreConversionTemplatesJson,
+  scoreConversionTemplateSchema,
+} from "@shared/score-conversion";
+import {
+  calculateScoreSheetAssessmentAttemptResult,
+  scoreSheetAssessmentAttemptResultSchema,
+  scoreSheetAssessmentAttemptValuesSchema,
+  type ScoreSheetAssessmentAttemptResult,
+} from "@shared/score-sheet-assessment-scoring";
+import {
   students,
   staff,
   staffAssignments,
@@ -36,6 +46,7 @@ import {
   freeClassSessionContents,
   studentClasses,
   systemSettings,
+  scoreSheetAssessmentStudentAttempts,
 } from "@shared/schema";
 import { storage } from "../storage";
 import { eq, and, gte, lte, sql, inArray, isNotNull, isNull, or, desc } from "drizzle-orm";
@@ -57,6 +68,81 @@ async function getStaffForUser(userId: string) {
     .where(eq(staff.userId, userId))
     .limit(1);
   return staffRecord ?? null;
+}
+
+async function getScoreSheetAssessmentScoringConfig(assessmentId: string, queryable: any = db) {
+  const [settingsRow] = await queryable
+    .select({ value: systemSettings.value })
+    .from(systemSettings)
+    .where(eq(systemSettings.key, "scoreSheetAssessments"))
+    .limit(1);
+  if (!settingsRow) return null;
+
+  const assessments = z.array(scoreSheetAssessmentSchema).parse(JSON.parse(settingsRow.value));
+  const assessment = assessments.find((item) => item.id === assessmentId);
+  if (!assessment) return null;
+
+  const conversionTemplateId = assessment.templateSnapshot.scoreConversionTemplateId;
+  let conversionTemplate = assessment.conversionTemplateSnapshot ?? null;
+  if (conversionTemplateId && !conversionTemplate) {
+    const [conversionRow] = await queryable
+      .select({ value: systemSettings.value })
+      .from(systemSettings)
+      .where(eq(systemSettings.key, "scoreConversionTemplates"))
+      .limit(1);
+    if (conversionRow) {
+      conversionTemplate = parseScoreConversionTemplatesJson(conversionRow.value)
+        .find((template) => template.id === conversionTemplateId) ?? null;
+    }
+    if (!conversionTemplate) {
+      throw new Error("Không tìm thấy cấu hình quy đổi của bảng điểm này.");
+    }
+  }
+
+  return {
+    ...assessment,
+    conversionTemplateSnapshot: conversionTemplate
+      ? scoreConversionTemplateSchema.parse(conversionTemplate)
+      : null,
+  };
+}
+
+type AssessmentAttemptSummaryRow = {
+  attemptNumber: number;
+  result: unknown;
+};
+
+function selectAssessmentAttemptSummary(
+  attempts: AssessmentAttemptSummaryRow[],
+  scoringPolicy: "highest" | "latest",
+  hasConversion: boolean,
+): { attemptNumber: number; result: ScoreSheetAssessmentAttemptResult } | null {
+  const parsed = attempts.map((attempt) => ({
+    attemptNumber: attempt.attemptNumber,
+    result: scoreSheetAssessmentAttemptResultSchema.parse(attempt.result),
+  }));
+  if (parsed.length === 0) return null;
+
+  if (scoringPolicy === "latest") {
+    return parsed.reduce((latest, current) =>
+      current.attemptNumber > latest.attemptNumber ? current : latest,
+    );
+  }
+
+  return parsed.reduce((highest, current) => {
+    const highestScore = hasConversion
+      ? highest.result.overallConvertedScore
+      : highest.result.overallRawScore;
+    const currentScore = hasConversion
+      ? current.result.overallConvertedScore
+      : current.result.overallRawScore;
+    if (currentScore === null && highestScore !== null) return highest;
+    if (currentScore !== null && highestScore === null) return current;
+    if (currentScore !== null && highestScore !== null && currentScore !== highestScore) {
+      return currentScore > highestScore ? current : highest;
+    }
+    return current.attemptNumber > highest.attemptNumber ? current : highest;
+  });
 }
 
 async function isStaffInDaotaoDept(staffId: string): Promise<boolean> {
@@ -3867,7 +3953,20 @@ export function registerMySpaceRoutes(app: Express): void {
             SELECT COUNT(DISTINCT ss.student_id)::int
             FROM student_sessions ss
             WHERE ss.class_session_id = cs.id
-          ) AS student_count
+          ) AS student_count,
+          (
+            SELECT COUNT(DISTINCT attempt.student_id)::int
+            FROM score_sheet_assessment_student_attempts attempt
+            WHERE attempt.assessment_id = cs.score_sheet_assessment_id
+              AND attempt.class_session_id = cs.id
+          ) AS entered_student_count,
+          (
+            SELECT COUNT(DISTINCT attempt.student_id)::int
+            FROM score_sheet_assessment_student_attempts attempt
+            WHERE attempt.assessment_id = cs.score_sheet_assessment_id
+              AND attempt.class_session_id = cs.id
+              AND attempt.result @> '{"inputComplete":true}'::jsonb
+          ) AS completed_student_count
         FROM class_sessions cs
         JOIN classes c ON c.id = cs.class_id
         WHERE cs.score_sheet_assessment_id IS NOT NULL
@@ -3894,12 +3993,17 @@ export function registerMySpaceRoutes(app: Express): void {
           className: row.class_name,
           sessionIndex: row.session_index,
           studentCount: row.student_count,
+          enteredStudentCount: row.entered_student_count ?? 0,
+          completedStudentCount: row.completed_student_count ?? 0,
           examDate: row.session_date,
           assessmentId: row.assessment_id,
           assessmentCode: assessment?.code ?? null,
           assessmentName: assessment?.name ?? null,
           templateName: assessment?.templateSnapshot.name ?? null,
           scoreDeadlineAt: assessment?.scoreDeadlineAt ?? null,
+          attemptCount: assessment?.attemptCount ?? 1,
+          scoringPolicy: assessment?.scoringPolicy ?? "latest",
+          hasConversion: !!assessment?.templateSnapshot.scoreConversionTemplateId,
         };
       });
 
@@ -3922,7 +4026,7 @@ export function registerMySpaceRoutes(app: Express): void {
       if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
 
       const access = await db.execute(sql`
-        SELECT cs.id
+        SELECT cs.id, cs.score_sheet_assessment_id AS assessment_id
         FROM class_sessions cs
         JOIN classes c ON c.id = cs.class_id
         WHERE cs.id = ${sessionId.data}::uuid
@@ -3944,6 +4048,12 @@ export function registerMySpaceRoutes(app: Express): void {
         return res.status(404).json({ message: "Không tìm thấy buổi thi hoặc bạn không có quyền xem" });
       }
 
+      const assessmentId = String(access.rows[0].assessment_id);
+      const assessment = await getScoreSheetAssessmentScoringConfig(assessmentId);
+      if (!assessment) {
+        return res.status(409).json({ message: "Cấu hình bảng điểm được giao không còn khả dụng." });
+      }
+
       const roster = await getRegularSessionStudents(sessionId.data);
       const uniqueStudents = new Map<string, { studentId: string; code: string; fullName: string }>();
       for (const row of roster) {
@@ -3956,10 +4066,305 @@ export function registerMySpaceRoutes(app: Express): void {
         }
       }
 
-      res.json(Array.from(uniqueStudents.values()));
+      const attemptRows = await db
+        .select({
+          studentId: scoreSheetAssessmentStudentAttempts.studentId,
+          attemptNumber: scoreSheetAssessmentStudentAttempts.attemptNumber,
+          result: scoreSheetAssessmentStudentAttempts.result,
+        })
+        .from(scoreSheetAssessmentStudentAttempts)
+        .where(and(
+          eq(scoreSheetAssessmentStudentAttempts.assessmentId, assessmentId),
+          eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId.data),
+        ));
+      const attemptsByStudent = new Map<string, AssessmentAttemptSummaryRow[]>();
+      for (const attempt of attemptRows) {
+        const studentAttempts = attemptsByStudent.get(attempt.studentId) ?? [];
+        studentAttempts.push({
+          attemptNumber: attempt.attemptNumber,
+          result: attempt.result,
+        });
+        attemptsByStudent.set(attempt.studentId, studentAttempts);
+      }
+
+      res.json(Array.from(uniqueStudents.values()).map((student) => {
+        const attempts = attemptsByStudent.get(student.studentId) ?? [];
+        const summary = selectAssessmentAttemptSummary(
+          attempts,
+          assessment.scoringPolicy,
+          !!assessment.templateSnapshot.scoreConversionTemplateId,
+        );
+        return {
+          ...student,
+          attemptsTaken: attempts.length,
+          attemptNumber: summary?.attemptNumber ?? null,
+          rawScore: summary?.result.overallRawScore ?? null,
+          convertedScore: summary?.result.overallConvertedScore ?? null,
+          gradeBandLabel: summary?.result.gradeBand?.label ?? null,
+          inputComplete: summary?.result.inputComplete ?? false,
+          status: !summary ? "not_entered" : summary.result.inputComplete ? "complete" : "in_progress",
+        };
+      }));
     } catch (err: any) {
       console.error("Staff score assessment roster error:", err);
       res.status(500).json({ message: err.message || "Lỗi khi tải danh sách học viên" });
     }
   });
+
+  app.get(
+    "/api/my-space/score-sheet/staff-assessments/:sessionId/students/:studentId/score-entry",
+    async (req, res) => {
+      try {
+        const user = req.user as any;
+        if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+        const sessionId = z.string().uuid().safeParse(req.params.sessionId);
+        const studentId = z.string().uuid().safeParse(req.params.studentId);
+        if (!sessionId.success || !studentId.success) {
+          return res.status(400).json({ message: "Buổi thi hoặc học viên không hợp lệ." });
+        }
+
+        const staffRecord = await getStaffForUser(user.id);
+        if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
+
+        const access = await db.execute(sql`
+          SELECT cs.score_sheet_assessment_id AS assessment_id
+          FROM class_sessions cs
+          JOIN classes c ON c.id = cs.class_id
+          WHERE cs.id = ${sessionId.data}::uuid
+            AND cs.score_sheet_assessment_id IS NOT NULL
+            AND (
+              ${staffRecord.id} = ANY(c.teacher_ids)
+              OR ${staffRecord.id} = ANY(c.manager_ids)
+              OR cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
+            )
+            AND EXISTS (
+              SELECT 1
+              FROM staff_assignments sa
+              WHERE sa.staff_id = ${staffRecord.id}
+                AND sa.location_id = c.location_id
+            )
+          LIMIT 1
+        `);
+        if (access.rows.length === 0) {
+          return res.status(404).json({ message: "Không tìm thấy buổi thi hoặc bạn không có quyền xem." });
+        }
+
+        const [membership] = await db
+          .select({ id: studentSessions.id })
+          .from(studentSessions)
+          .where(and(
+            eq(studentSessions.classSessionId, sessionId.data),
+            eq(studentSessions.studentId, studentId.data),
+          ))
+          .limit(1);
+        if (!membership) return res.status(404).json({ message: "Học viên không thuộc buổi thi này." });
+
+        const assessmentId = String(access.rows[0].assessment_id);
+        const assessment = await getScoreSheetAssessmentScoringConfig(assessmentId);
+        if (!assessment) {
+          return res.status(409).json({ message: "Cấu hình bảng điểm được giao không còn khả dụng." });
+        }
+
+        const attempts = await db
+          .select()
+          .from(scoreSheetAssessmentStudentAttempts)
+          .where(and(
+            eq(scoreSheetAssessmentStudentAttempts.assessmentId, assessmentId),
+            eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId.data),
+            eq(scoreSheetAssessmentStudentAttempts.studentId, studentId.data),
+          ))
+          .orderBy(scoreSheetAssessmentStudentAttempts.attemptNumber);
+
+        res.json({
+          assessment: {
+            id: assessment.id,
+            code: assessment.code,
+            name: assessment.name,
+            attemptCount: assessment.attemptCount,
+            scoringPolicy: assessment.scoringPolicy,
+            scoreDeadlineAt: assessment.scoreDeadlineAt,
+            templateSnapshot: assessment.templateSnapshot,
+            conversionTemplateSnapshot: assessment.conversionTemplateSnapshot,
+          },
+          attempts: attempts.map((attempt) => ({
+            attemptNumber: attempt.attemptNumber,
+            partScores: attempt.partScores,
+            skillScores: attempt.skillScores,
+            notes: attempt.notes,
+            result: scoreSheetAssessmentAttemptResultSchema.parse(attempt.result),
+            createdAt: attempt.createdAt,
+            updatedAt: attempt.updatedAt,
+          })),
+        });
+      } catch (err: any) {
+        console.error("Staff score assessment entry load error:", err);
+        const status = err instanceof z.ZodError ? 400 : 500;
+        res.status(status).json({ message: err.message || "Lỗi khi tải biểu mẫu nhập điểm." });
+      }
+    },
+  );
+
+  app.put(
+    "/api/my-space/score-sheet/staff-assessments/:sessionId/students/:studentId/score-entry/:attemptNumber",
+    async (req, res) => {
+      try {
+        const user = req.user as any;
+        if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+        const sessionId = z.string().uuid().safeParse(req.params.sessionId);
+        const studentId = z.string().uuid().safeParse(req.params.studentId);
+        const attemptNumber = z.coerce.number().int().min(1).max(100).safeParse(req.params.attemptNumber);
+        const values = scoreSheetAssessmentAttemptValuesSchema.safeParse(req.body);
+        if (!sessionId.success || !studentId.success || !attemptNumber.success) {
+          return res.status(400).json({ message: "Buổi thi, học viên hoặc lần thi không hợp lệ." });
+        }
+        if (!values.success) {
+          return res.status(400).json({ message: values.error.errors[0]?.message ?? "Thông tin điểm chưa hợp lệ." });
+        }
+
+        const staffRecord = await getStaffForUser(user.id);
+        if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
+
+        const saved = await db.transaction(async (tx) => {
+          const access = await tx.execute(sql`
+            SELECT cs.id, cs.score_sheet_assessment_id AS assessment_id
+            FROM class_sessions cs
+            JOIN classes c ON c.id = cs.class_id
+            WHERE cs.id = ${sessionId.data}::uuid
+              AND cs.score_sheet_assessment_id IS NOT NULL
+              AND (
+                ${staffRecord.id} = ANY(c.teacher_ids)
+                OR ${staffRecord.id} = ANY(c.manager_ids)
+                OR cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
+              )
+              AND EXISTS (
+                SELECT 1
+                FROM staff_assignments sa
+                WHERE sa.staff_id = ${staffRecord.id}
+                  AND sa.location_id = c.location_id
+              )
+            LIMIT 1
+            FOR UPDATE OF cs
+          `);
+          if (access.rows.length === 0) {
+            const error: any = new Error("Không tìm thấy buổi thi hoặc bạn không có quyền nhập điểm.");
+            error.status = 404;
+            throw error;
+          }
+
+          const assessmentId = String(access.rows[0].assessment_id);
+          const assessment = await getScoreSheetAssessmentScoringConfig(assessmentId, tx);
+          if (!assessment) {
+            const error: any = new Error("Cấu hình bảng điểm được giao không còn khả dụng.");
+            error.status = 409;
+            throw error;
+          }
+          if (attemptNumber.data > assessment.attemptCount) {
+            const error: any = new Error(`Bảng điểm này chỉ cho phép tối đa ${assessment.attemptCount} lần thi.`);
+            error.status = 400;
+            throw error;
+          }
+
+          const [membership] = await tx
+            .select({ id: studentSessions.id })
+            .from(studentSessions)
+            .where(and(
+              eq(studentSessions.classSessionId, sessionId.data),
+              eq(studentSessions.studentId, studentId.data),
+            ))
+            .limit(1);
+          if (!membership) {
+            const error: any = new Error("Học viên không thuộc buổi thi này.");
+            error.status = 404;
+            throw error;
+          }
+
+          const existingAttempts = await tx
+            .select({ attemptNumber: scoreSheetAssessmentStudentAttempts.attemptNumber })
+            .from(scoreSheetAssessmentStudentAttempts)
+            .where(and(
+              eq(scoreSheetAssessmentStudentAttempts.assessmentId, assessmentId),
+              eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId.data),
+              eq(scoreSheetAssessmentStudentAttempts.studentId, studentId.data),
+            ));
+          const highestAttempt = existingAttempts.reduce(
+            (highest, attempt) => Math.max(highest, attempt.attemptNumber),
+            0,
+          );
+          const attemptExists = existingAttempts.some(
+            (attempt) => attempt.attemptNumber === attemptNumber.data,
+          );
+          if (!attemptExists && attemptNumber.data !== highestAttempt + 1) {
+            const error: any = new Error("Hãy nhập các lần thi theo thứ tự, bắt đầu từ lần tiếp theo.");
+            error.status = 409;
+            throw error;
+          }
+
+          let result: ScoreSheetAssessmentAttemptResult;
+          try {
+            result = calculateScoreSheetAssessmentAttemptResult({
+              template: assessment.templateSnapshot,
+              conversionTemplate: assessment.conversionTemplateSnapshot ?? null,
+              values: values.data,
+            });
+          } catch (scoreError: any) {
+            const error: any = new Error(scoreError?.message || "Điểm nhập không hợp lệ.");
+            error.status = 400;
+            throw error;
+          }
+
+          const now = new Date();
+          const [attempt] = await tx
+            .insert(scoreSheetAssessmentStudentAttempts)
+            .values({
+              assessmentId,
+              classSessionId: sessionId.data,
+              studentId: studentId.data,
+              attemptNumber: attemptNumber.data,
+              partScores: values.data.partScores,
+              skillScores: values.data.skillScores,
+              notes: values.data.notes,
+              result,
+              createdBy: user.id,
+              updatedBy: user.id,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .onConflictDoUpdate({
+              target: [
+                scoreSheetAssessmentStudentAttempts.assessmentId,
+                scoreSheetAssessmentStudentAttempts.classSessionId,
+                scoreSheetAssessmentStudentAttempts.studentId,
+                scoreSheetAssessmentStudentAttempts.attemptNumber,
+              ],
+              set: {
+                partScores: values.data.partScores,
+                skillScores: values.data.skillScores,
+                notes: values.data.notes,
+                result,
+                updatedBy: user.id,
+                updatedAt: now,
+              },
+            })
+            .returning();
+
+          return {
+            attemptNumber: attempt.attemptNumber,
+            partScores: attempt.partScores,
+            skillScores: attempt.skillScores,
+            notes: attempt.notes,
+            result: scoreSheetAssessmentAttemptResultSchema.parse(attempt.result),
+            updatedAt: attempt.updatedAt,
+          };
+        });
+
+        res.json(saved);
+      } catch (err: any) {
+        const status = err instanceof z.ZodError ? 400 : err?.status ?? 500;
+        if (status >= 500) console.error("Staff score assessment save error:", err);
+        res.status(status).json({ message: err.message || "Lỗi khi lưu điểm." });
+      }
+    },
+  );
 }
