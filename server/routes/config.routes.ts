@@ -157,7 +157,14 @@ function validateScoreSheetTemplateConversion(
   input: ScoreSheetTemplateInput,
   conversionTemplates: ScoreConversionTemplate[],
 ): void {
-  if (!input.scoreConversionTemplateId) return;
+  if (!input.scoreConversionTemplateId) {
+    if (input.skills.some((skill) => skill.sectionId !== null)) {
+      const error: any = new Error("Kỹ năng tự tạo không được liên kết với section của bảng quy đổi.");
+      error.code = "SCORE_SHEET_TEMPLATE_SKILLS_MISMATCH";
+      throw error;
+    }
+    return;
+  }
   const conversion = conversionTemplates.find((item) => item.id === input.scoreConversionTemplateId);
   if (!conversion) {
     const error: any = new Error("Không tìm thấy bảng quy đổi đã chọn.");
@@ -166,7 +173,10 @@ function validateScoreSheetTemplateConversion(
   }
 
   const sectionIds = new Set(conversion.sections.map((section) => section.id));
-  if (input.skills.length !== sectionIds.size || input.skills.some((skill) => !sectionIds.has(skill.sectionId))) {
+  if (
+    input.skills.length !== sectionIds.size
+    || input.skills.some((skill) => !skill.sectionId || !sectionIds.has(skill.sectionId))
+  ) {
     const error: any = new Error("Danh sách kỹ năng không khớp với bảng quy đổi đã chọn.");
     error.code = "SCORE_SHEET_TEMPLATE_SKILLS_MISMATCH";
     throw error;

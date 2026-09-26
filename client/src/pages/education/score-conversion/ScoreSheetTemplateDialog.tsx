@@ -36,7 +36,26 @@ import {
 } from "@/components/ui/select";
 
 type Part = ScoreSheetTemplateInput["skills"][number]["parts"][number];
+type Skill = ScoreSheetTemplateInput["skills"][number];
 type PartFormula = ScoreSheetTemplateInput["skills"][number]["partFormula"];
+type OverallRule = NonNullable<ScoreSheetTemplateInput["overallRule"]>;
+
+const DEFAULT_OVERALL_RULE: OverallRule = { method: "average", formula: "" };
+const DEFAULT_PART_FORMULA: PartFormula = { method: "sum", formula: "" };
+
+function skillIdentifier(skill: Skill): string {
+  return skill.id ?? skill.sectionId ?? "";
+}
+
+function appendFormulaVariable(formula: string, name: string): string {
+  const trimmed = formula.trim();
+  const prefix = trimmed.startsWith("=") ? "=" : "";
+  const expression = trimmed.replace(/^=/, "").trim();
+  const separator = expression
+    ? /[+\-*/(]$/.test(expression) ? " " : " + "
+    : "";
+  return `${prefix}${expression}${separator}[${name}]`;
+}
 
 type ScoreSheetTemplateDialogProps = {
   open: boolean;
@@ -54,6 +73,7 @@ function emptyDraft(): ScoreSheetTemplateInput {
     name: "",
     scoreConversionTemplateId: null,
     skills: [],
+    overallRule: DEFAULT_OVERALL_RULE,
   };
 }
 
@@ -73,22 +93,32 @@ export function ScoreSheetTemplateDialog({
   const [pendingConversionTemplateId, setPendingConversionTemplateId] = useState<string | null | undefined>();
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || conversionTemplatesLoading) return;
+    const linkedConversion = conversionTemplates.find(
+      (item) => item.id === template?.scoreConversionTemplateId,
+    );
     setDraft(template
       ? {
           code: template.code,
           name: template.name,
           scoreConversionTemplateId: template.scoreConversionTemplateId,
+          overallRule: template.overallRule
+            ? { ...template.overallRule }
+            : linkedConversion
+              ? { method: linkedConversion.overallRule.method, formula: linkedConversion.overallRule.formula }
+              : DEFAULT_OVERALL_RULE,
           skills: template.skills.map((skill) => ({
+            id: skill.id ?? skill.sectionId ?? crypto.randomUUID(),
+            name: linkedConversion?.sections.find((section) => section.id === skill.sectionId)?.name ?? skill.name,
             sectionId: skill.sectionId,
             parts: skill.parts.map((part) => ({ ...part })),
-             partFormula: skill.partFormula ?? { method: "sum", formula: "" },
+            partFormula: skill.partFormula ?? DEFAULT_PART_FORMULA,
           })),
         }
       : emptyDraft());
     setFormError("");
     setPendingConversionTemplateId(undefined);
-  }, [open, template]);
+  }, [open, template, conversionTemplatesLoading]);
 
   const selectedConversion = conversionTemplates.find(
     (item) => item.id === draft.scoreConversionTemplateId,
@@ -101,12 +131,26 @@ export function ScoreSheetTemplateDialog({
       scoreConversionTemplateId: conversionTemplateId,
       skills: nextConversion
         ? nextConversion.sections.map((section) => ({
+            id: section.id,
+            name: section.name,
             sectionId: section.id,
-            parts: current.skills.find((skill) => skill.sectionId === section.id)?.parts ?? [],
-              partFormula: current.skills.find((skill) => skill.sectionId === section.id)?.partFormula
-                ?? { method: "sum", formula: "" },
+            parts: current.skills.find((skill) =>
+              skill.sectionId === section.id
+              || (!skill.sectionId && skill.name.trim().toLocaleLowerCase() === section.name.trim().toLocaleLowerCase()),
+            )?.parts ?? [],
+            partFormula: current.skills.find((skill) =>
+              skill.sectionId === section.id
+              || (!skill.sectionId && skill.name.trim().toLocaleLowerCase() === section.name.trim().toLocaleLowerCase()),
+            )?.partFormula ?? DEFAULT_PART_FORMULA,
           }))
-        : [],
+        : current.skills.map((skill) => ({
+            ...skill,
+            id: skill.id ?? skill.sectionId ?? crypto.randomUUID(),
+            sectionId: null,
+          })),
+      overallRule: nextConversion
+        ? { method: nextConversion.overallRule.method, formula: nextConversion.overallRule.formula }
+        : current.overallRule ?? DEFAULT_OVERALL_RULE,
     }));
     setFormError("");
   };
@@ -114,19 +158,50 @@ export function ScoreSheetTemplateDialog({
   const handleConversionChange = (value: string) => {
     const conversionTemplateId = value === "none" ? null : value;
     if (conversionTemplateId === draft.scoreConversionTemplateId) return;
-    const hasParts = draft.skills.some((skill) => skill.parts.length > 0);
-    if (hasParts) {
+    if (draft.skills.length > 0) {
       setPendingConversionTemplateId(conversionTemplateId);
       return;
     }
     applyConversionTemplate(conversionTemplateId);
   };
 
-  const addPart = (sectionId: string) => {
+  const addManualSkill = () => {
+    setDraft((current) => ({
+      ...current,
+      skills: [
+        ...current.skills,
+        {
+          id: crypto.randomUUID(),
+          name: `Kỹ năng ${current.skills.length + 1}`,
+          sectionId: null,
+          parts: [],
+          partFormula: DEFAULT_PART_FORMULA,
+        },
+      ],
+    }));
+  };
+
+  const removeSkill = (skillId: string) => {
+    setDraft((current) => ({
+      ...current,
+      skills: current.skills.filter((skill) => skillIdentifier(skill) !== skillId),
+    }));
+  };
+
+  const updateSkill = (skillId: string, update: Partial<Skill>) => {
+    setDraft((current) => ({
+      ...current,
+      skills: current.skills.map((skill) => skillIdentifier(skill) === skillId
+        ? { ...skill, ...update }
+        : skill),
+    }));
+  };
+
+  const addPart = (skillId: string) => {
     setDraft((current) => ({
       ...current,
       skills: current.skills.map((skill) => {
-        if (skill.sectionId !== sectionId) return skill;
+        if (skillIdentifier(skill) !== skillId) return skill;
         const part: Part = {
           id: crypto.randomUUID(),
           name: `Part ${skill.parts.length + 1}`,
@@ -137,10 +212,10 @@ export function ScoreSheetTemplateDialog({
     }));
   };
 
-  const updatePart = (sectionId: string, partId: string, update: Partial<Part>) => {
+  const updatePart = (skillId: string, partId: string, update: Partial<Part>) => {
     setDraft((current) => ({
       ...current,
-      skills: current.skills.map((skill) => skill.sectionId === sectionId
+      skills: current.skills.map((skill) => skillIdentifier(skill) === skillId
         ? {
             ...skill,
             parts: skill.parts.map((part) => part.id === partId ? { ...part, ...update } : part),
@@ -149,59 +224,106 @@ export function ScoreSheetTemplateDialog({
     }));
   };
 
-  const removePart = (sectionId: string, partId: string) => {
+  const removePart = (skillId: string, partId: string) => {
     setDraft((current) => ({
       ...current,
-      skills: current.skills.map((skill) => skill.sectionId === sectionId
+      skills: current.skills.map((skill) => skillIdentifier(skill) === skillId
         ? { ...skill, parts: skill.parts.filter((part) => part.id !== partId) }
         : skill),
     }));
   };
 
-  const updatePartFormula = (sectionId: string, update: Partial<PartFormula>) => {
+  const updatePartFormula = (skillId: string, update: Partial<PartFormula>) => {
     setDraft((current) => ({
       ...current,
-      skills: current.skills.map((skill) => skill.sectionId === sectionId
+      skills: current.skills.map((skill) => skillIdentifier(skill) === skillId
         ? { ...skill, partFormula: { ...skill.partFormula, ...update } }
         : skill),
     }));
   };
 
-  const appendPartVariable = (sectionId: string, partName: string) => {
-    const skill = draft.skills.find((item) => item.sectionId === sectionId);
+  const appendPartVariable = (skillId: string, partName: string) => {
+    const skill = draft.skills.find((item) => skillIdentifier(item) === skillId);
     if (!skill) return;
-    const currentFormula = skill.partFormula.formula.trim();
-    const variable = `[${partName}]`;
-    updatePartFormula(sectionId, {
-      formula: currentFormula ? `${currentFormula} + ${variable}` : `=${variable}`,
+    updatePartFormula(skillId, {
+      formula: appendFormulaVariable(skill.partFormula.formula, partName),
     });
   };
 
-  const overallRuleDescription = selectedConversion
-    ? selectedConversion.overallRule.method === "custom"
-      ? `Công thức tổng: ${selectedConversion.overallRule.formula}`
-      : selectedConversion.overallRule.method === "sum"
-        ? "Công thức tổng: cộng điểm các kỹ năng"
-        : "Công thức tổng: trung bình các kỹ năng"
-    : "";
+  const overallRule = draft.overallRule ?? DEFAULT_OVERALL_RULE;
+  const updateOverallRule = (update: Partial<OverallRule>) => {
+    setDraft((current) => ({
+      ...current,
+      overallRule: { ...(current.overallRule ?? DEFAULT_OVERALL_RULE), ...update },
+    }));
+  };
+
+  const setOverallRuleMethod = (value: string) => {
+    const method = value as OverallRule["method"];
+    if (method === "custom" && !overallRule.formula.trim()) {
+      updateOverallRule({ method, formula: "=" });
+      return;
+    }
+    updateOverallRule({ method });
+  };
+
+  const appendSkillVariable = (skillName: string) => {
+    updateOverallRule({
+      formula: appendFormulaVariable(overallRule.formula, skillName),
+    });
+  };
+
+  const visibleSkills = selectedConversion
+    ? selectedConversion.sections.map((section, index) => {
+        const savedSkill = draft.skills.find((skill) => skill.sectionId === section.id);
+        return {
+          id: section.id,
+          name: section.name,
+          sectionId: section.id,
+          parts: savedSkill?.parts ?? [],
+          partFormula: savedSkill?.partFormula ?? DEFAULT_PART_FORMULA,
+          conversionSection: section,
+          skillIndex: index,
+        };
+      })
+    : draft.skills.map((skill, index) => ({
+        ...skill,
+        id: skillIdentifier(skill),
+        conversionSection: null,
+        skillIndex: index,
+      }));
+
+  const overallFormulaError = overallRule.method === "custom" && visibleSkills.length > 0
+    ? validateScoreConversionFormula(overallRule.formula, visibleSkills.map((skill) => skill.name))
+    : null;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFormError("");
     try {
       const skills = selectedConversion
-        ? selectedConversion.sections.map((section) => ({
-            sectionId: section.id,
-            parts: draft.skills.find((skill) => skill.sectionId === section.id)?.parts ?? [],
-              partFormula: draft.skills.find((skill) => skill.sectionId === section.id)?.partFormula
-                ?? { method: "sum", formula: "" },
-          }))
-        : [];
+        ? selectedConversion.sections.map((section) => {
+            const savedSkill = draft.skills.find((skill) => skill.sectionId === section.id);
+            return {
+              id: section.id,
+              name: section.name,
+              sectionId: section.id,
+              parts: savedSkill?.parts ?? [],
+              partFormula: savedSkill?.partFormula ?? DEFAULT_PART_FORMULA,
+            };
+          })
+        : draft.skills.map((skill) => ({
+            ...skill,
+            id: skill.id ?? crypto.randomUUID(),
+            name: skill.name.trim(),
+            sectionId: null,
+          }));
       await onSave({
         ...draft,
         code: draft.code.trim().toUpperCase(),
         name: draft.name.trim(),
         skills,
+        overallRule,
       });
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Không thể lưu bảng điểm mẫu.");
@@ -265,52 +387,164 @@ export function ScoreSheetTemplateDialog({
                   <p className="text-xs text-muted-foreground">Đang tải bảng quy đổi...</p>
                 )}
               </div>
+
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="score-sheet-template-overall-method">Công thức tính điểm Tổng</Label>
+                <Select value={overallRule.method} onValueChange={setOverallRuleMethod}>
+                  <SelectTrigger id="score-sheet-template-overall-method">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="average">Trung bình các phần thi</SelectItem>
+                    <SelectItem value="sum">Cộng điểm các phần thi</SelectItem>
+                    <SelectItem value="custom">Tùy chỉnh công thức</SelectItem>
+                  </SelectContent>
+                </Select>
+                {overallRule.method === "custom" && (
+                  <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+                    <Label htmlFor="score-sheet-template-overall-formula">Công thức tùy chỉnh</Label>
+                    <Input
+                      id="score-sheet-template-overall-formula"
+                      value={overallRule.formula}
+                      onChange={(event) => updateOverallRule({ formula: event.target.value })}
+                      placeholder={`=[${visibleSkills[0]?.name ?? "Kỹ năng 1"}] + [${visibleSkills[1]?.name ?? visibleSkills[0]?.name ?? "Kỹ năng 2"}]`}
+                      maxLength={1000}
+                    />
+                    {visibleSkills.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Biến có sẵn:</span>
+                        {visibleSkills.filter((skill) => skill.name.trim()).map((skill) => (
+                          <Button
+                            key={skill.id}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => appendSkillVariable(skill.name)}
+                          >
+                            {skill.name}
+                          </Button>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Dùng tên kỹ năng trong dấu ngoặc vuông; hỗ trợ +, -, *, /, ngoặc và %.
+                    </p>
+                    {overallRule.formula.trim() && visibleSkills.length > 0 && (
+                      <p
+                        className={`text-xs ${overallFormulaError ? "text-destructive" : "text-muted-foreground"}`}
+                        role="status"
+                      >
+                        {overallFormulaError ?? "Công thức hợp lệ."}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
             </section>
 
-            {selectedConversion ? (
-              <section className="space-y-3 rounded-lg border bg-white p-4">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <h3 className="font-semibold">Kỹ năng được tạo từ {selectedConversion.typeName}</h3>
-                    <p className="text-sm text-muted-foreground">{overallRuleDescription}</p>
-                  </div>
+            <section className="space-y-3 rounded-lg border bg-white p-4">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h3 className="font-semibold">
+                    {selectedConversion ? `Kỹ năng được tạo từ ${selectedConversion.typeName}` : "Kỹ năng tự tạo"}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedConversion
+                      ? "Các kỹ năng lấy từ bảng quy đổi đã chọn."
+                      : "Tạo kỹ năng riêng và thêm các part con nếu cần."}
+                  </p>
                 </div>
+                {!selectedConversion && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={addManualSkill}
+                    disabled={draft.skills.length >= 20}
+                  >
+                    <Plus className="mr-1 h-4 w-4" />
+                    Thêm kỹ năng
+                  </Button>
+                )}
+              </div>
+
+              {visibleSkills.length === 0 ? (
+                <div className="rounded-md bg-muted/30 p-4 text-sm text-muted-foreground">
+                  {selectedConversion
+                    ? "Bảng quy đổi này chưa có kỹ năng."
+                    : "Chưa có kỹ năng. Nhấn “Thêm kỹ năng” để bắt đầu tạo bảng điểm thủ công."}
+                </div>
+              ) : (
                 <div className="space-y-3">
-                  {selectedConversion.sections.map((section, skillIndex) => {
-                    const skillDraft = draft.skills.find((skill) => skill.sectionId === section.id);
-                    const parts = skillDraft?.parts ?? [];
+                  {visibleSkills.map((skill) => {
+                    const parts = skill.parts;
+                    const partFormulaError = skill.partFormula.method === "custom" && parts.length > 0
+                      ? validateScoreConversionFormula(skill.partFormula.formula, parts.map((part) => part.name))
+                      : null;
                     return (
-                      <div key={section.id} className="rounded-lg border bg-white p-3">
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <h4 className="font-medium">
-                              {skillIndex + 1}. {section.name}
-                            </h4>
-                            <p className="text-xs text-muted-foreground">
-                              Thang quy đổi: {section.rawMinScore}–{section.rawMaxScore} {section.rawUnit}
-                              {" → "}
-                              {section.convertedMinScore}–{section.convertedMaxScore} {section.convertedUnit}
-                              {" · "}{section.mappings.length} khoảng
-                            </p>
+                      <div key={skill.id} className="rounded-lg border bg-white p-3">
+                        <div className="flex flex-wrap items-end justify-between gap-3">
+                          {skill.conversionSection ? (
+                            <div className="min-w-0">
+                              <h4 className="font-medium">
+                                {skill.skillIndex + 1}. {skill.name}
+                              </h4>
+                              <p className="text-xs text-muted-foreground">
+                                Thang quy đổi: {skill.conversionSection.rawMinScore}–{skill.conversionSection.rawMaxScore} {skill.conversionSection.rawUnit}
+                                {" → "}
+                                {skill.conversionSection.convertedMinScore}–{skill.conversionSection.convertedMaxScore} {skill.conversionSection.convertedUnit}
+                                {" · "}{skill.conversionSection.mappings.length} khoảng
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <Label htmlFor={`score-manual-skill-name-${skill.id}`}>Tên kỹ năng</Label>
+                              <Input
+                                id={`score-manual-skill-name-${skill.id}`}
+                                value={skill.name}
+                                onChange={(event) => updateSkill(skill.id, { name: event.target.value })}
+                                placeholder="Nhập tên kỹ năng"
+                                maxLength={120}
+                                required
+                              />
+                            </div>
+                          )}
+                          <div className="flex shrink-0 items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => addPart(skill.id)}
+                              disabled={parts.length >= 100}
+                            >
+                              <Plus className="mr-1 h-4 w-4" />
+                              Thêm part
+                            </Button>
+                            {!skill.conversionSection && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                aria-label={`Xóa kỹ năng ${skill.name}`}
+                                onClick={() => removeSkill(skill.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
                           </div>
-                          <Button type="button" variant="outline" size="sm" onClick={() => addPart(section.id)}>
-                            <Plus className="mr-1 h-4 w-4" />
-                            Thêm part
-                          </Button>
                         </div>
 
-                        {parts.length > 0 && skillDraft && (
+                        {parts.length > 0 && (
                           <div className="mt-3 grid gap-2 rounded-md bg-muted/20 p-2 sm:grid-cols-[minmax(180px,240px)_minmax(0,1fr)] sm:items-center">
-                            <Label htmlFor={`score-part-formula-method-${section.id}`}>
+                            <Label htmlFor={`score-part-formula-method-${skill.id}`}>
                               Công thức điểm kỹ năng
                             </Label>
                             <Select
-                              value={skillDraft.partFormula.method}
-                              onValueChange={(value) => updatePartFormula(section.id, {
+                              value={skill.partFormula.method}
+                              onValueChange={(value) => updatePartFormula(skill.id, {
                                 method: value as PartFormula["method"],
                               })}
                             >
-                              <SelectTrigger id={`score-part-formula-method-${section.id}`}>
+                              <SelectTrigger id={`score-part-formula-method-${skill.id}`}>
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -319,13 +553,13 @@ export function ScoreSheetTemplateDialog({
                                 <SelectItem value="custom">Tùy chỉnh</SelectItem>
                               </SelectContent>
                             </Select>
-                            {skillDraft.partFormula.method === "custom" && (
+                            {skill.partFormula.method === "custom" && (
                               <div className="space-y-2 sm:col-span-2">
-                                <Label htmlFor={`score-part-formula-${section.id}`}>Công thức tùy chỉnh</Label>
+                                <Label htmlFor={`score-part-formula-${skill.id}`}>Công thức tùy chỉnh</Label>
                                 <Input
-                                  id={`score-part-formula-${section.id}`}
-                                  value={skillDraft.partFormula.formula}
-                                  onChange={(event) => updatePartFormula(section.id, {
+                                  id={`score-part-formula-${skill.id}`}
+                                  value={skill.partFormula.formula}
+                                  onChange={(event) => updatePartFormula(skill.id, {
                                     formula: event.target.value,
                                   })}
                                   placeholder={`=[${parts[0].name}] + [${parts[1]?.name ?? parts[0].name}]`}
@@ -339,7 +573,7 @@ export function ScoreSheetTemplateDialog({
                                       type="button"
                                       size="sm"
                                       variant="outline"
-                                      onClick={() => appendPartVariable(section.id, part.name)}
+                                      onClick={() => appendPartVariable(skill.id, part.name)}
                                     >
                                       [{part.name}]
                                     </Button>
@@ -348,16 +582,8 @@ export function ScoreSheetTemplateDialog({
                                 <p className="text-xs text-muted-foreground">
                                   Dùng tên part trong dấu ngoặc vuông; hỗ trợ +, -, *, /, ngoặc và %.
                                 </p>
-                                {validateScoreConversionFormula(
-                                  skillDraft.partFormula.formula,
-                                  parts.map((part) => part.name),
-                                ) && (
-                                  <p className="text-xs text-destructive" role="alert">
-                                    {validateScoreConversionFormula(
-                                      skillDraft.partFormula.formula,
-                                      parts.map((part) => part.name),
-                                    )}
-                                  </p>
+                                {partFormulaError && (
+                                  <p className="text-xs text-destructive" role="alert">{partFormulaError}</p>
                                 )}
                               </div>
                             )}
@@ -366,7 +592,7 @@ export function ScoreSheetTemplateDialog({
 
                         {parts.length > 0 && (
                           <p className="mt-2 text-xs text-muted-foreground">
-                            Kết quả là điểm thô của kỹ năng; sau đó sẽ được đối chiếu với thang quy đổi phía trên.
+                            Kết quả là điểm thô của kỹ năng{skill.conversionSection ? "; sau đó được đối chiếu với thang quy đổi phía trên." : "."}
                           </p>
                         )}
 
@@ -378,14 +604,14 @@ export function ScoreSheetTemplateDialog({
                                 className="grid items-end gap-2 rounded-md bg-muted/30 p-2 sm:grid-cols-[52px_minmax(0,1fr)_150px_36px]"
                               >
                                 <div className="pb-2 text-xs font-semibold text-muted-foreground">
-                                  {skillIndex + 1}.{partIndex + 1}
+                                  {skill.skillIndex + 1}.{partIndex + 1}
                                 </div>
                                 <div className="space-y-1">
                                   <Label htmlFor={`score-part-name-${part.id}`}>Tên part</Label>
                                   <Input
                                     id={`score-part-name-${part.id}`}
                                     value={part.name}
-                                    onChange={(event) => updatePart(section.id, part.id, { name: event.target.value })}
+                                    onChange={(event) => updatePart(skill.id, part.id, { name: event.target.value })}
                                     maxLength={120}
                                     required
                                   />
@@ -398,7 +624,7 @@ export function ScoreSheetTemplateDialog({
                                     min="0"
                                     step="any"
                                     value={part.rawMaxScore}
-                                    onChange={(event) => updatePart(section.id, part.id, {
+                                    onChange={(event) => updatePart(skill.id, part.id, {
                                       rawMaxScore: numericValue(event.target.value),
                                     })}
                                     required
@@ -409,7 +635,7 @@ export function ScoreSheetTemplateDialog({
                                   variant="ghost"
                                   size="icon"
                                   aria-label={`Xóa part ${part.name}`}
-                                  onClick={() => removePart(section.id, part.id)}
+                                  onClick={() => removePart(skill.id, part.id)}
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
@@ -421,12 +647,8 @@ export function ScoreSheetTemplateDialog({
                     );
                   })}
                 </div>
-              </section>
-            ) : (
-              <div className="rounded-lg border bg-white p-4 text-sm text-muted-foreground">
-                Chọn bảng quy đổi để tự tạo các kỹ năng. Có thể lưu bảng điểm mẫu mà không áp dụng bảng quy đổi.
-              </div>
-            )}
+              )}
+            </section>
 
             {formError && <p className="text-sm text-destructive" role="alert">{formError}</p>}
             <DialogFooter>
@@ -451,7 +673,8 @@ export function ScoreSheetTemplateDialog({
           <AlertDialogHeader>
             <AlertDialogTitle>Đổi bảng quy đổi?</AlertDialogTitle>
             <AlertDialogDescription>
-              Danh sách kỹ năng sẽ được tạo lại. Các part đã nhập ở kỹ năng không còn trong bảng mới sẽ bị bỏ.
+              Nếu bỏ liên kết, kỹ năng và part hiện tại sẽ được giữ lại để chỉnh thủ công. Nếu chuyển sang bảng khác,
+              kỹ năng được tạo theo bảng mới; part chỉ được giữ cho kỹ năng trùng section hoặc trùng tên.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

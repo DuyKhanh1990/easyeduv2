@@ -12,8 +12,15 @@ export const scoreSheetTemplatePartFormulaSchema = z.object({
   formula: z.string().trim().max(1000).default(""),
 });
 
+export const scoreSheetTemplateOverallRuleSchema = z.object({
+  method: z.enum(["sum", "average", "custom"]),
+  formula: z.string().trim().max(1000).default(""),
+});
+
 export const scoreSheetTemplateSkillSchema = z.object({
-  sectionId: z.string().uuid(),
+  id: z.string().uuid().optional(),
+  name: z.string().trim().max(120).default(""),
+  sectionId: z.string().uuid().nullable().default(null),
   parts: z.array(scoreSheetTemplatePartSchema).max(100),
   partFormula: scoreSheetTemplatePartFormulaSchema.default({ method: "sum", formula: "" }),
 }).superRefine((skill, context) => {
@@ -36,26 +43,66 @@ const scoreSheetTemplateBaseSchema = z.object({
   name: z.string().trim().min(1).max(120),
   scoreConversionTemplateId: z.string().uuid().nullable(),
   skills: z.array(scoreSheetTemplateSkillSchema).max(20),
+  overallRule: scoreSheetTemplateOverallRuleSchema.optional(),
 });
 
 function validateScoreSheetTemplate(
   template: z.infer<typeof scoreSheetTemplateBaseSchema>,
   context: z.RefinementCtx,
 ) {
-  const sectionIds = new Set(template.skills.map((skill) => skill.sectionId));
-  if (sectionIds.size !== template.skills.length) {
+  const sectionIds = template.skills.map((skill) => skill.sectionId).filter(Boolean);
+  if (new Set(sectionIds).size !== sectionIds.length) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       message: "Mỗi kỹ năng chỉ được cấu hình một lần.",
       path: ["skills"],
     });
   }
-  if (!template.scoreConversionTemplateId && template.skills.length > 0) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Chọn bảng quy đổi trước khi cấu hình kỹ năng.",
-      path: ["scoreConversionTemplateId"],
-    });
+
+  if (!template.scoreConversionTemplateId) {
+    const normalizedNames = template.skills.map((skill) => skill.name.trim().toLocaleLowerCase());
+    if (template.skills.some((skill) => !skill.name.trim())) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Nhập tên cho tất cả kỹ năng tự tạo.",
+        path: ["skills"],
+      });
+    }
+    if (new Set(normalizedNames).size !== normalizedNames.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Tên các kỹ năng tự tạo phải khác nhau.",
+        path: ["skills"],
+      });
+    }
+    if (template.skills.some((skill) => skill.sectionId !== null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Kỹ năng tự tạo không được liên kết với section của bảng quy đổi.",
+        path: ["skills"],
+      });
+    }
+    if (template.skills.some((skill) => !skill.id)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Mỗi kỹ năng tự tạo phải có mã định danh.",
+        path: ["skills"],
+      });
+    }
+  }
+
+  if (template.overallRule?.method === "custom" && template.skills.length > 0) {
+    const formulaError = validateScoreConversionFormula(
+      template.overallRule.formula,
+      template.skills.map((skill) => skill.name),
+    );
+    if (formulaError) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: formulaError,
+        path: ["overallRule", "formula"],
+      });
+    }
   }
 }
 
