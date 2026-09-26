@@ -402,7 +402,7 @@ export function ScoreConversionTemplateDialog({
             )}
           </div>
 
-          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
+          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(340px,1fr)]">
           <div className="min-w-0 space-y-6">
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -425,7 +425,11 @@ export function ScoreConversionTemplateDialog({
             >
               <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto p-1">
                 {draft.sections.map((section) => (
-                  <TabsTrigger key={section.id} value={section.id} className="shrink-0 whitespace-nowrap">
+                  <TabsTrigger
+                    key={section.id}
+                    value={section.id}
+                    className="shrink-0 whitespace-nowrap data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                  >
                     {section.name || "Phần thi"}
                   </TabsTrigger>
                 ))}
@@ -725,51 +729,49 @@ export function ScoreConversionTemplateDialog({
             {draft.overallRule.gradeBands.length > 0 ? (
               <div className="space-y-3">
                 {draft.overallRule.gradeBands.map((band, index) => (
-                  <div key={band.id} className="space-y-3 rounded-md border p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium">Xếp loại {index + 1}</span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Xóa ngưỡng xếp loại ${band.label || index + 1}`}
-                        onClick={() => removeGradeBand(band.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                  <div
+                    key={band.id}
+                    className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2 rounded-md border p-2"
+                  >
+                    <div className="min-w-0 space-y-1.5">
+                      <Label htmlFor={`grade-band-label-${band.id}`}>Tên xếp loại</Label>
+                      <Input
+                        id={`grade-band-label-${band.id}`}
+                        value={band.label}
+                        onChange={(event) => updateGradeBand(band.id, { label: event.target.value })}
+                        placeholder="Ví dụ: A2"
+                        maxLength={80}
+                      />
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-1.5 sm:col-span-2">
-                        <Label htmlFor={`grade-band-label-${band.id}`}>Tên xếp loại</Label>
-                        <Input
-                          id={`grade-band-label-${band.id}`}
-                          value={band.label}
-                          onChange={(event) => updateGradeBand(band.id, { label: event.target.value })}
-                          placeholder="Ví dụ: A2"
-                          maxLength={80}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor={`grade-band-min-${band.id}`}>Điểm từ</Label>
-                        <Input
-                          id={`grade-band-min-${band.id}`}
-                          type="number"
-                          step="any"
-                          value={band.minScore}
-                          onChange={(event) => updateGradeBand(band.id, { minScore: numericValue(event.target.value) })}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor={`grade-band-max-${band.id}`}>Đến</Label>
-                        <Input
-                          id={`grade-band-max-${band.id}`}
-                          type="number"
-                          step="any"
-                          value={band.maxScore}
-                          onChange={(event) => updateGradeBand(band.id, { maxScore: numericValue(event.target.value) })}
-                        />
-                      </div>
+                    <div className="min-w-0 space-y-1.5">
+                      <Label htmlFor={`grade-band-min-${band.id}`}>Điểm từ</Label>
+                      <Input
+                        id={`grade-band-min-${band.id}`}
+                        type="number"
+                        step="any"
+                        value={band.minScore}
+                        onChange={(event) => updateGradeBand(band.id, { minScore: numericValue(event.target.value) })}
+                      />
                     </div>
+                    <div className="min-w-0 space-y-1.5">
+                      <Label htmlFor={`grade-band-max-${band.id}`}>Đến</Label>
+                      <Input
+                        id={`grade-band-max-${band.id}`}
+                        type="number"
+                        step="any"
+                        value={band.maxScore}
+                        onChange={(event) => updateGradeBand(band.id, { maxScore: numericValue(event.target.value) })}
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Xóa ngưỡng xếp loại ${band.label || index + 1}`}
+                      onClick={() => removeGradeBand(band.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 ))}
               </div>
