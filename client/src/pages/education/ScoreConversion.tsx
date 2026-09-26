@@ -17,14 +17,31 @@ import type {
   ScoreSheetTemplate,
   ScoreSheetTemplateInput,
 } from "@shared/score-sheet-template";
+import type {
+  ScoreSheetAssessment,
+  ScoreSheetAssessmentInput,
+} from "@shared/score-sheet-assessment";
 import { ScoreConversionTemplateDialog } from "./score-conversion/ScoreConversionTemplateDialog";
 import { ScoreSheetTemplateDialog } from "./score-conversion/ScoreSheetTemplateDialog";
+import { ScoreSheetAssessmentDialog } from "./score-conversion/ScoreSheetAssessmentDialog";
 import { SCORE_CONVERSION_TYPES } from "./score-conversion/score-conversion-presets";
 
 const TEMPLATE_ENDPOINT = "/api/score-conversion-templates";
 const TEMPLATE_QUERY_KEY = [TEMPLATE_ENDPOINT];
 const SCORE_SHEET_TEMPLATE_ENDPOINT = "/api/score-sheet-templates";
 const SCORE_SHEET_TEMPLATE_QUERY_KEY = [SCORE_SHEET_TEMPLATE_ENDPOINT];
+const SCORE_SHEET_ASSESSMENT_ENDPOINT = "/api/score-sheet-assessments";
+const SCORE_SHEET_ASSESSMENT_QUERY_KEY = [SCORE_SHEET_ASSESSMENT_ENDPOINT];
+
+function formatLocalDateTime(value: string): string {
+  const [date = "", time = ""] = value.split("T");
+  const [year = "", month = "", day = ""] = date.split("-");
+  return `${day}/${month}/${year} ${time}`;
+}
+
+function scoringPolicyLabel(policy: ScoreSheetAssessment["scoringPolicy"]): string {
+  return policy === "highest" ? "Lấy điểm cao nhất" : "Lấy điểm gần nhất";
+}
 
 export default function ScoreConversion() {
   const queryClient = useQueryClient();
@@ -34,6 +51,7 @@ export default function ScoreConversion() {
   const [editingTemplate, setEditingTemplate] = useState<ScoreConversionTemplate | null>(null);
   const [scoreSheetDialogOpen, setScoreSheetDialogOpen] = useState(false);
   const [editingScoreSheetTemplate, setEditingScoreSheetTemplate] = useState<ScoreSheetTemplate | null>(null);
+  const [scoreSheetAssessmentDialogOpen, setScoreSheetAssessmentDialogOpen] = useState(false);
   const assessmentPermissions = myPermissions?.permissions["/assessments#list"];
   const canCreate = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canCreate);
   const canEdit = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canEdit);
@@ -49,6 +67,13 @@ export default function ScoreConversion() {
     queryKey: SCORE_SHEET_TEMPLATE_QUERY_KEY,
     queryFn: async () => {
       const response = await apiRequest("GET", SCORE_SHEET_TEMPLATE_ENDPOINT);
+      return response.json();
+    },
+  });
+  const scoreSheetAssessmentsQuery = useQuery<ScoreSheetAssessment[]>({
+    queryKey: SCORE_SHEET_ASSESSMENT_QUERY_KEY,
+    queryFn: async () => {
+      const response = await apiRequest("GET", SCORE_SHEET_ASSESSMENT_ENDPOINT);
       return response.json();
     },
   });
@@ -95,6 +120,18 @@ export default function ScoreConversion() {
     },
   });
 
+  const createScoreSheetAssessmentMutation = useMutation({
+    mutationFn: async (draft: ScoreSheetAssessmentInput) => {
+      const response = await apiRequest("POST", SCORE_SHEET_ASSESSMENT_ENDPOINT, draft);
+      return response.json() as Promise<ScoreSheetAssessment>;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: SCORE_SHEET_ASSESSMENT_QUERY_KEY });
+      setScoreSheetAssessmentDialogOpen(false);
+      toast({ title: "Đã tạo bảng điểm" });
+    },
+  });
+
   const openCreateDialog = () => {
     setEditingTemplate(null);
     setDialogOpen(true);
@@ -124,6 +161,10 @@ export default function ScoreConversion() {
       id: editingScoreSheetTemplate?.id ?? null,
       draft,
     });
+  };
+
+  const handleCreateScoreSheetAssessment = async (draft: ScoreSheetAssessmentInput) => {
+    await createScoreSheetAssessmentMutation.mutateAsync(draft);
   };
 
   return (
@@ -329,14 +370,80 @@ export default function ScoreConversion() {
               </CardContent>
             </Card>
           </TabsContent>
-          <TabsContent value="scores">
+          <TabsContent value="scores" className="space-y-4">
+            {canCreate && (
+              <div className="flex justify-end">
+                <Button onClick={() => setScoreSheetAssessmentDialogOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Thêm mới
+                </Button>
+              </div>
+            )}
             <Card>
-              <CardContent className="flex min-h-52 flex-col items-center justify-center gap-2 p-6 text-center">
-                <BarChart3 className="h-5 w-5 text-muted-foreground" />
-                <p className="font-medium">Danh sách Bảng điểm</p>
-                <p className="text-sm text-muted-foreground">
-                  Danh sách và nhập điểm thực tế sẽ được bổ sung ở giai đoạn tiếp theo.
-                </p>
+              <CardContent className="p-0">
+                {scoreSheetAssessmentsQuery.isLoading ? (
+                  <div className="flex min-h-48 items-center justify-center text-sm text-muted-foreground">
+                    Đang tải danh sách bảng điểm...
+                  </div>
+                ) : scoreSheetAssessmentsQuery.isError ? (
+                  <div className="flex min-h-48 flex-col items-center justify-center gap-3 p-6 text-center">
+                    <p className="text-sm text-destructive">
+                      {scoreSheetAssessmentsQuery.error instanceof Error
+                        ? scoreSheetAssessmentsQuery.error.message
+                        : "Không thể tải danh sách bảng điểm."}
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => scoreSheetAssessmentsQuery.refetch()}
+                    >
+                      Thử lại
+                    </Button>
+                  </div>
+                ) : scoreSheetAssessmentsQuery.data?.length ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[1000px] text-left text-sm">
+                      <thead className="border-b bg-muted/40 text-muted-foreground">
+                        <tr>
+                          <th className="px-4 py-3 font-medium">Mã</th>
+                          <th className="px-4 py-3 font-medium">Tên bảng điểm</th>
+                          <th className="px-4 py-3 font-medium">Bảng điểm mẫu</th>
+                          <th className="px-4 py-3 font-medium">Ngày thi</th>
+                          <th className="px-4 py-3 font-medium">Hạn trả điểm</th>
+                          <th className="px-4 py-3 font-medium">Số lần chấm</th>
+                          <th className="px-4 py-3 font-medium">Chính sách tính điểm</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {scoreSheetAssessmentsQuery.data.map((assessment) => (
+                          <tr key={assessment.id} className="border-b last:border-0">
+                            <td className="px-4 py-3 font-medium">{assessment.code}</td>
+                            <td className="px-4 py-3">{assessment.name}</td>
+                            <td className="px-4 py-3">
+                              {assessment.templateSnapshot.code} — {assessment.templateSnapshot.name}
+                            </td>
+                            <td className="px-4 py-3">{formatLocalDateTime(assessment.examAt)}</td>
+                            <td className="px-4 py-3">{formatLocalDateTime(assessment.scoreDeadlineAt)}</td>
+                            <td className="px-4 py-3">{assessment.attemptCount}</td>
+                            <td className="px-4 py-3">{scoringPolicyLabel(assessment.scoringPolicy)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="flex min-h-52 flex-col items-center justify-center gap-3 p-6 text-center">
+                    <div className="rounded-full bg-muted p-3">
+                      <BarChart3 className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="font-medium">Chưa có bảng điểm</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Tạo bảng điểm mới từ một bảng điểm mẫu.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -359,6 +466,14 @@ export default function ScoreConversion() {
         saving={saveScoreSheetTemplateMutation.isPending}
         onOpenChange={setScoreSheetDialogOpen}
         onSave={handleSaveScoreSheetTemplate}
+      />
+      <ScoreSheetAssessmentDialog
+        open={scoreSheetAssessmentDialogOpen}
+        templates={scoreSheetTemplatesQuery.data ?? []}
+        templatesLoading={scoreSheetTemplatesQuery.isLoading}
+        saving={createScoreSheetAssessmentMutation.isPending}
+        onOpenChange={setScoreSheetAssessmentDialogOpen}
+        onSave={handleCreateScoreSheetAssessment}
       />
     </DashboardLayout>
   );

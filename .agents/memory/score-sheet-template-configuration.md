@@ -9,6 +9,8 @@ The score-sheet template owns its overall scoring rule separately from the conve
 
 Actual score-entry calculation from these configuration rules is a later phase; do not silently add it to the configuration editor.
 
-**Why:** A score sheet may be a standalone structure or use an international conversion table, and the overall formula must remain editable without mutating the shared conversion table.
+Assessment records keep a snapshot of the selected score-sheet template, not just its ID, so later edits to the template do not silently change an already scheduled assessment. Exam and score-deadline fields are stored as local wall-clock date-times, without converting them to UTC.
 
-**How to apply:** Keep API validation, edit-form state, and conversion switching consistent with these rules. Preserve old linked templates that lack an explicit overall rule.
+**Why:** A score sheet may be a standalone structure or use an international conversion table, and the overall formula must remain editable without mutating the shared conversion table. Assessment structure must also remain stable, while wall-clock times must not shift in the Asia/Bangkok app.
+
+**How to apply:** Keep API validation, edit-form state, and conversion switching consistent with these rules. Preserve old linked templates that lack an explicit overall rule. Use the saved template snapshot and local date-time strings when implementing actual score entry.
