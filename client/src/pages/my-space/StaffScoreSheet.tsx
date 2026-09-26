@@ -228,9 +228,9 @@ export function StaffScoreSheet() {
         <div className="flex min-w-0 items-center gap-2">
           <BarChart3 className="h-5 w-5 shrink-0 text-violet-500 sm:h-6 sm:w-6" />
           <h1 className="truncate text-lg font-semibold sm:text-xl">Bảng điểm của tôi</h1>
-          {gradeBooks.length > 0 && (
+          {timelineEntries.length > 0 && (
             <Badge variant="secondary" className="text-xs font-normal">
-              {gradeBooks.length} bảng điểm
+              {timelineEntries.length} bảng điểm
             </Badge>
           )}
         </div>
@@ -253,95 +253,8 @@ export function StaffScoreSheet() {
         </div>
       )}
 
-      {assignedAssessments.length > 0 && (
-        <section className="space-y-3" aria-labelledby="assigned-score-assessments-heading">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 id="assigned-score-assessments-heading" className="text-base font-semibold">
-                Bảng điểm được giao
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Ngày thi được lấy theo ngày của buổi học.
-              </p>
-            </div>
-            <Badge variant="secondary" className="shrink-0 text-xs font-normal">
-              {assignedAssessments.length} buổi
-            </Badge>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {assignedAssessments.map((item) => {
-              const deadlineStatus = getDeadlineStatus(item.scoreDeadlineAt, nowWallClockMs);
-              return (
-                <article
-                  key={item.sessionId}
-                  className="flex min-w-0 flex-col gap-4 rounded-xl border border-border bg-card p-4 shadow-sm"
-                  data-testid={`card-assigned-score-assessment-${item.sessionId}`}
-                >
-                  <div className="flex min-w-0 items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-foreground">
-                        {item.assessmentName ?? "Cấu hình bảng điểm không khả dụng"}
-                      </p>
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {item.assessmentCode ? `${item.assessmentCode} · ` : ""}
-                        {item.templateName ?? "Bảng điểm từ chuyển đổi điểm"}
-                      </p>
-                    </div>
-                    <Badge variant="outline" className="shrink-0 border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                      <CircleDot className="mr-1 h-3 w-3" />
-                      Chưa nhập
-                    </Badge>
-                  </div>
-
-                  <div className="flex min-w-0 items-center gap-2 text-xs">
-                    <span className="truncate font-medium text-foreground">{item.classCode}</span>
-                    {item.className !== item.classCode && (
-                      <span className="truncate text-muted-foreground">— {item.className}</span>
-                    )}
-                    {item.sessionIndex != null && (
-                      <span className="shrink-0 text-muted-foreground">· Buổi {item.sessionIndex}</span>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="min-w-0 rounded-lg bg-muted/50 px-3 py-2">
-                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                        <CalendarDays className="h-3.5 w-3.5 shrink-0" />
-                        Ngày thi
-                      </div>
-                      <p className="mt-1 text-sm font-semibold">{formatAssessmentDate(item.examDate)}</p>
-                    </div>
-                    <div className="min-w-0 rounded-lg bg-muted/50 px-3 py-2">
-                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                        <Clock3 className="h-3.5 w-3.5 shrink-0" />
-                        Hạn trả điểm
-                      </div>
-                      <p className="mt-1 truncate text-sm font-semibold">
-                        {formatAssessmentDeadline(item.scoreDeadlineAt)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium ${deadlineStatus.className}`}>
-                    <span aria-hidden="true">{deadlineStatus.indicator}</span>
-                    <span>{deadlineStatus.label}</span>
-                    {item.scoreDeadlineAt && (
-                      <span className="ml-auto inline-flex items-center gap-1 font-normal opacity-80">
-                        <Clock className="h-3 w-3" />
-                        Hạn trả điểm
-                      </span>
-                    )}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      {gradeBooks.length === 0 ? (
-        assignedAssessments.length === 0 && !isLoadingAssignedAssessments && !isAssignedAssessmentsError ? (
+      {timelineEntries.length === 0 ? (
+        !isLoadingAssignedAssessments && !isAssignedAssessmentsError ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground">
             <BookOpen className="h-10 w-10 opacity-25" />
             <p className="text-sm">Chưa có bảng điểm nào trong các lớp của bạn</p>
@@ -350,7 +263,7 @@ export function StaffScoreSheet() {
       ) : (
         <div className="space-y-0">
             {sortedDates.map((dateKey, dateIdx) => {
-            const books = grouped[dateKey];
+            const entries = grouped[dateKey];
             const isLast = dateIdx === sortedDates.length - 1;
 
             return (
@@ -371,91 +284,168 @@ export function StaffScoreSheet() {
                   </p>
 
                   <div className="space-y-2">
-                    {books.map((book) => (
-                      <div
-                        key={book.id}
-                        className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(160px,1fr)_160px_60px_120px_minmax(180px,1fr)_56px] xl:items-center xl:gap-x-4 xl:gap-y-0"
-                        data-testid={`row-staff-grade-book-${book.id}`}
-                      >
-                        {/* Col 1: Title + class */}
-                        <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
-                          <p className="text-sm font-semibold text-foreground truncate leading-tight">
-                            {book.title}
-                          </p>
-                          <div className="flex items-center gap-1 mt-0.5">
-                            <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
-                              {book.classCode}
-                            </span>
-                            {book.className !== book.classCode && (
-                              <span className="text-xs text-muted-foreground/70 truncate">
-                                — {book.className}
+                    {entries.map((entry) => {
+                      if (entry.kind === "conversion") {
+                        const assessment = entry.assessment;
+                        const deadlineStatus = getDeadlineStatus(assessment.scoreDeadlineAt, nowWallClockMs);
+                        return (
+                          <div
+                            key={`conversion:${entry.id}`}
+                            className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(160px,1fr)_160px_60px_120px_minmax(180px,1fr)_56px] xl:items-center xl:gap-x-4 xl:gap-y-0"
+                            data-testid={`row-staff-conversion-assessment-${assessment.sessionId}`}
+                          >
+                            <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
+                              <p className="text-sm font-semibold text-foreground truncate leading-tight">
+                                {assessment.assessmentName ?? "Cấu hình bảng điểm không khả dụng"}
+                              </p>
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+                                  {assessment.classCode}
+                                </span>
+                                {assessment.className !== assessment.classCode && (
+                                  <span className="text-xs text-muted-foreground/70 truncate">
+                                    — {assessment.className}
+                                  </span>
+                                )}
+                                {assessment.sessionIndex != null && (
+                                  <span className="text-[11px] text-muted-foreground/60 whitespace-nowrap">
+                                    · Buổi {assessment.sessionIndex}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex min-w-0 flex-col items-start gap-1">
+                              <Badge variant="outline" className="text-[11px] whitespace-nowrap">
+                                Bảng điểm Quy đổi
+                              </Badge>
+                              {assessment.assessmentCode && (
+                                <span className="max-w-full truncate text-[10px] text-muted-foreground">
+                                  {assessment.assessmentCode}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                              <Users className="h-3.5 w-3.5 shrink-0" />
+                              <span>{assessment.studentCount ?? 0} HV</span>
+                            </div>
+
+                            <div className="flex min-w-0 flex-col items-start gap-1">
+                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground whitespace-nowrap">
+                                <CircleDot className="h-3.5 w-3.5 shrink-0" />
+                                Chưa nhập
                               </span>
+                              <span className={`inline-flex items-center gap-1 rounded border px-1 text-[10px] font-medium whitespace-nowrap ${deadlineStatus.className}`}>
+                                {deadlineStatus.indicator} {deadlineStatus.label}
+                              </span>
+                            </div>
+
+                            <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
+                              <p className="flex items-center gap-1 text-[11px] text-muted-foreground whitespace-nowrap">
+                                <CalendarDays className="h-3 w-3 shrink-0" />
+                                Ngày thi: {formatAssessmentDate(assessment.examDate)}
+                              </p>
+                              <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground/70 whitespace-nowrap">
+                                <Clock3 className="h-3 w-3 shrink-0" />
+                                Hạn trả: {formatAssessmentDeadline(assessment.scoreDeadlineAt)}
+                              </p>
+                            </div>
+
+                            <div className="col-span-2 flex justify-end border-t border-border/60 pt-2 sm:col-span-3 md:col-span-4 xl:col-span-1 xl:border-0 xl:pt-0">
+                              <span className="text-[11px] text-muted-foreground">—</span>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      const book = entry.gradeBook;
+                      return (
+                        <div
+                          key={`grade-book:${book.id}`}
+                          className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(160px,1fr)_160px_60px_120px_minmax(180px,1fr)_56px] xl:items-center xl:gap-x-4 xl:gap-y-0"
+                          data-testid={`row-staff-grade-book-${book.id}`}
+                        >
+                          {/* Col 1: Title + class */}
+                          <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
+                            <p className="text-sm font-semibold text-foreground truncate leading-tight">
+                              {book.title}
+                            </p>
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+                                {book.classCode}
+                              </span>
+                              {book.className !== book.classCode && (
+                                <span className="text-xs text-muted-foreground/70 truncate">
+                                  — {book.className}
+                                </span>
+                              )}
+                              {book.sessionIndex != null && (
+                                <span className="text-[11px] text-muted-foreground/60 whitespace-nowrap">
+                                  · Buổi {book.sessionIndex}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Col 2: Score sheet badge */}
+                          <div className="min-w-0">
+                            {book.scoreSheetName ? (
+                              <Badge variant="outline" className="text-[11px] whitespace-nowrap">
+                                {book.scoreSheetName}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
                             )}
-                            {book.sessionIndex != null && (
-                              <span className="text-[11px] text-muted-foreground/60 whitespace-nowrap">
-                                · Buổi {book.sessionIndex}
+                          </div>
+
+                          {/* Col 3: Students */}
+                          <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                            <Users className="h-3.5 w-3.5 shrink-0" />
+                            <span>{book.studentCount ?? 0} HV</span>
+                          </div>
+
+                          {/* Col 4: Status */}
+                          <div className="min-w-0">
+                            {book.published ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-green-700 dark:text-green-400 whitespace-nowrap">
+                                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                Đã công bố
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground whitespace-nowrap">
+                                <Clock className="h-3.5 w-3.5 shrink-0" />
+                                Chưa công bố
                               </span>
                             )}
                           </div>
-                        </div>
 
-                        {/* Col 2: Score sheet badge */}
-                        <div className="min-w-0">
-                          {book.scoreSheetName ? (
-                            <Badge variant="outline" className="text-[11px] whitespace-nowrap">
-                              {book.scoreSheetName}
-                            </Badge>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
-                        </div>
+                          {/* Col 5: Creator / updater */}
+                          <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
+                            <p className="text-[11px] text-muted-foreground whitespace-nowrap truncate">
+                              Tạo: {book.createdByName ?? "—"} · {formatDate(book.createdAt)}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground/70 whitespace-nowrap truncate">
+                              Cập nhật: {book.updatedByName ?? "—"} · {formatDate(book.updatedAt)}
+                            </p>
+                          </div>
 
-                        {/* Col 3: Students */}
-                        <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-                          <Users className="h-3.5 w-3.5 shrink-0" />
-                          <span>{book.studentCount ?? 0} HV</span>
+                          {/* Col 6: Edit action */}
+                          <div className="col-span-2 flex justify-end border-t border-border/60 pt-2 sm:col-span-3 md:col-span-4 xl:col-span-1 xl:border-0 xl:pt-0">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground whitespace-nowrap"
+                              onClick={() => setEditingBook(book)}
+                              data-testid={`btn-edit-grade-book-${book.id}`}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              Sửa
+                            </Button>
+                          </div>
                         </div>
-
-                        {/* Col 4: Status */}
-                        <div className="min-w-0">
-                          {book.published ? (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-green-700 dark:text-green-400 whitespace-nowrap">
-                              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                              Đã công bố
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground whitespace-nowrap">
-                              <Clock className="h-3.5 w-3.5 shrink-0" />
-                              Chưa công bố
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Col 5: Creator / updater */}
-                        <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
-                          <p className="text-[11px] text-muted-foreground whitespace-nowrap truncate">
-                            Tạo: {book.createdByName ?? "—"} · {formatDate(book.createdAt)}
-                          </p>
-                          <p className="text-[11px] text-muted-foreground/70 whitespace-nowrap truncate">
-                            Cập nhật: {book.updatedByName ?? "—"} · {formatDate(book.updatedAt)}
-                          </p>
-                        </div>
-
-                        {/* Col 6: Edit action */}
-                        <div className="col-span-2 flex justify-end border-t border-border/60 pt-2 sm:col-span-3 md:col-span-4 xl:col-span-1 xl:border-0 xl:pt-0">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground whitespace-nowrap"
-                            onClick={() => setEditingBook(book)}
-                            data-testid={`btn-edit-grade-book-${book.id}`}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                            Sửa
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>
