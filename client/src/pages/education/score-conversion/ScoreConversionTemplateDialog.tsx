@@ -402,8 +402,32 @@ export function ScoreConversionTemplateDialog({
             )}
           </div>
 
-          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(340px,1fr)]">
-          <div className="min-w-0 space-y-6">
+          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(360px,1fr)]">
+            <div className="min-w-0">
+              <ScoreConversionSectionEditor
+                sections={draft.sections}
+                activeSectionId={activeSectionId}
+                onActiveSectionChange={setActiveSectionId}
+                onAddSection={addSection}
+                onUpdateSection={updateSection}
+                onRemoveSection={removeSection}
+                onOpenCopyMappings={openCopyMappings}
+                onGenerateMappingTable={generateMappingTable}
+                onAddMapping={(section) => updateSection(section.id, {
+                  mappings: [...section.mappings, createEmptyMapping()],
+                })}
+                onUpdateMapping={updateMapping}
+                onRemoveMapping={(sectionId, mappingId) => {
+                  const section = draft.sections.find((item) => item.id === sectionId);
+                  if (!section) return;
+                  updateSection(sectionId, {
+                    mappings: section.mappings.filter((item) => item.id !== mappingId),
+                  });
+                }}
+              />
+            </div>
+
+            <aside className="min-w-0 space-y-4">
           <section className="space-y-3 rounded-lg border p-4">
             <div>
               <h3 className="font-semibold">Cách tính điểm tổng</h3>
@@ -486,9 +510,7 @@ export function ScoreConversionTemplateDialog({
               </div>
             )}
           </section>
-          </div>
 
-          <aside className="min-w-0">
           <section className="space-y-3 rounded-lg border p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -563,30 +585,8 @@ export function ScoreConversionTemplateDialog({
               <p className="text-sm text-muted-foreground">Chưa có ngưỡng xếp loại.</p>
             )}
           </section>
-          </aside>
+            </aside>
           </div>
-
-          <ScoreConversionSectionEditor
-            sections={draft.sections}
-            activeSectionId={activeSectionId}
-            onActiveSectionChange={setActiveSectionId}
-            onAddSection={addSection}
-            onUpdateSection={updateSection}
-            onRemoveSection={removeSection}
-            onOpenCopyMappings={openCopyMappings}
-            onGenerateMappingTable={generateMappingTable}
-            onAddMapping={(section) => updateSection(section.id, {
-              mappings: [...section.mappings, createEmptyMapping()],
-            })}
-            onUpdateMapping={updateMapping}
-            onRemoveMapping={(sectionId, mappingId) => {
-              const section = draft.sections.find((item) => item.id === sectionId);
-              if (!section) return;
-              updateSection(sectionId, {
-                mappings: section.mappings.filter((item) => item.id !== mappingId),
-              });
-            }}
-          />
 
           {formError && <p className="text-sm text-destructive" role="alert">{formError}</p>}
 
