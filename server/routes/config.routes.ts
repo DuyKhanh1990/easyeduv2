@@ -11,6 +11,12 @@ import {
   type ScoreConversionTemplate,
   type ScoreConversionTemplateInput,
 } from "@shared/score-conversion";
+import {
+  scoreSheetTemplateInputSchema,
+  scoreSheetTemplateSchema,
+  type ScoreSheetTemplate,
+  type ScoreSheetTemplateInput,
+} from "@shared/score-sheet-template";
 import { eq, and, sql, notExists, inArray, ne } from "drizzle-orm";
 import {
   staffAssignments, departments, users, roles, students, shiftTemplates, classes, studentClasses, centerConfig,
@@ -29,6 +35,7 @@ import { createCourseAuditLog, getCourseAuditLogs } from "../storage/course-audi
 import { createActivityLog, getStaffHistory } from "../storage/activity-log.storage";
 
 const SCORE_CONVERSION_SETTINGS_KEY = "scoreConversionTemplates";
+const SCORE_SHEET_TEMPLATE_SETTINGS_KEY = "scoreSheetTemplates";
 const SCORE_CONVERSION_PERMISSION_RESOURCE = "/assessments#list";
 
 function parseScoreConversionTemplates(value: string): ScoreConversionTemplate[] {
@@ -102,6 +109,68 @@ async function mutateScoreConversionTemplates(
       .where(eq(systemSettings.key, SCORE_CONVERSION_SETTINGS_KEY));
     return result.result;
   });
+}
+
+function parseScoreSheetTemplates(value: string): ScoreSheetTemplate[] {
+  return z.array(scoreSheetTemplateSchema).parse(JSON.parse(value));
+}
+
+async function readScoreSheetTemplates(): Promise<ScoreSheetTemplate[]> {
+  const { systemSettings } = await import("@shared/schema");
+  const [row] = await db.select({ value: systemSettings.value })
+    .from(systemSettings)
+    .where(eq(systemSettings.key, SCORE_SHEET_TEMPLATE_SETTINGS_KEY))
+    .limit(1);
+  if (!row) return [];
+  return parseScoreSheetTemplates(row.value);
+}
+
+async function mutateScoreSheetTemplates(
+  mutate: (templates: ScoreSheetTemplate[]) => {
+    templates: ScoreSheetTemplate[];
+    result: ScoreSheetTemplate | null;
+  },
+): Promise<ScoreSheetTemplate | null> {
+  const { systemSettings } = await import("@shared/schema");
+  return db.transaction(async (tx) => {
+    await tx.insert(systemSettings)
+      .values({ key: SCORE_SHEET_TEMPLATE_SETTINGS_KEY, value: "[]" })
+      .onConflictDoNothing();
+
+    const [row] = await tx.select({ value: systemSettings.value })
+      .from(systemSettings)
+      .where(eq(systemSettings.key, SCORE_SHEET_TEMPLATE_SETTINGS_KEY))
+      .for("update")
+      .limit(1);
+    if (!row) throw new Error("Không thể tải cấu hình bảng điểm mẫu.");
+
+    const templates = parseScoreSheetTemplates(row.value);
+    const result = mutate(templates);
+    await tx.update(systemSettings)
+      .set({ value: JSON.stringify(result.templates), updatedAt: new Date() })
+      .where(eq(systemSettings.key, SCORE_SHEET_TEMPLATE_SETTINGS_KEY));
+    return result.result;
+  });
+}
+
+function validateScoreSheetTemplateConversion(
+  input: ScoreSheetTemplateInput,
+  conversionTemplates: ScoreConversionTemplate[],
+): void {
+  if (!input.scoreConversionTemplateId) return;
+  const conversion = conversionTemplates.find((item) => item.id === input.scoreConversionTemplateId);
+  if (!conversion) {
+    const error: any = new Error("Không tìm thấy bảng quy đổi đã chọn.");
+    error.code = "SCORE_SHEET_TEMPLATE_CONVERSION_MISSING";
+    throw error;
+  }
+
+  const sectionIds = new Set(conversion.sections.map((section) => section.id));
+  if (input.skills.length !== sectionIds.size || input.skills.some((skill) => !sectionIds.has(skill.sectionId))) {
+    const error: any = new Error("Danh sách kỹ năng không khớp với bảng quy đổi đã chọn.");
+    error.code = "SCORE_SHEET_TEMPLATE_SKILLS_MISMATCH";
+    throw error;
+  }
 }
 
 function sameScoreConversionType(
@@ -2142,6 +2211,96 @@ export function registerConfigRoutes(app: Express): void {
     } catch (err: any) {
       if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0]?.message ?? "Cấu hình không hợp lệ." });
       if (err?.code === "SCORE_CONVERSION_TYPE_EXISTS") return res.status(409).json({ message: err.message });
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── Score Sheet Templates ──────────────────────────────────────────────────
+  app.get("/api/score-sheet-templates", async (req, res) => {
+    try {
+      const permissions = await getScoreConversionPermissions(req);
+      if (!permissions.canView && !permissions.canViewAll) {
+        return res.status(403).json({ message: "Bạn không có quyền xem cấu hình bảng điểm mẫu." });
+      }
+      res.json(await readScoreSheetTemplates());
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/score-sheet-templates", async (req, res) => {
+    try {
+      const permissions = await getScoreConversionPermissions(req);
+      if (!permissions.canCreate) {
+        return res.status(403).json({ message: "Bạn không có quyền tạo bảng điểm mẫu." });
+      }
+      const parsed = scoreSheetTemplateInputSchema.parse(req.body);
+      const input = { ...parsed, code: parsed.code.trim().toUpperCase() };
+      validateScoreSheetTemplateConversion(input, await readScoreConversionTemplates());
+      const now = new Date().toISOString();
+      const template = scoreSheetTemplateSchema.parse({
+        ...input,
+        id: randomUUID(),
+        createdAt: now,
+        updatedAt: now,
+      });
+      const created = await mutateScoreSheetTemplates((templates) => {
+        if (templates.some((existing) => existing.code.toLocaleLowerCase() === template.code.toLocaleLowerCase())) {
+          const error: any = new Error("Mã bảng điểm mẫu đã tồn tại.");
+          error.code = "SCORE_SHEET_TEMPLATE_CODE_EXISTS";
+          throw error;
+        }
+        return { templates: [template, ...templates], result: template };
+      });
+      res.status(201).json(created);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0]?.message ?? "Cấu hình không hợp lệ." });
+      if (err?.code === "SCORE_SHEET_TEMPLATE_CODE_EXISTS") return res.status(409).json({ message: err.message });
+      if (err?.code === "SCORE_SHEET_TEMPLATE_CONVERSION_MISSING" || err?.code === "SCORE_SHEET_TEMPLATE_SKILLS_MISMATCH") {
+        return res.status(400).json({ message: err.message });
+      }
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/score-sheet-templates/:id", async (req, res) => {
+    try {
+      const permissions = await getScoreConversionPermissions(req);
+      if (!permissions.canEdit) {
+        return res.status(403).json({ message: "Bạn không có quyền chỉnh sửa bảng điểm mẫu." });
+      }
+      const parsed = scoreSheetTemplateInputSchema.parse(req.body);
+      const input = { ...parsed, code: parsed.code.trim().toUpperCase() };
+      validateScoreSheetTemplateConversion(input, await readScoreConversionTemplates());
+      const updated = await mutateScoreSheetTemplates((templates) => {
+        const index = templates.findIndex((template) => template.id === req.params.id);
+        if (index < 0) return { templates, result: null };
+        const previous = templates[index];
+        if (templates.some((existing) =>
+          existing.id !== previous.id
+          && existing.code.toLocaleLowerCase() === input.code.toLocaleLowerCase())) {
+          const error: any = new Error("Mã bảng điểm mẫu đã tồn tại.");
+          error.code = "SCORE_SHEET_TEMPLATE_CODE_EXISTS";
+          throw error;
+        }
+        const next = scoreSheetTemplateSchema.parse({
+          ...input,
+          id: previous.id,
+          createdAt: previous.createdAt,
+          updatedAt: new Date().toISOString(),
+        });
+        const nextTemplates = [...templates];
+        nextTemplates[index] = next;
+        return { templates: nextTemplates, result: next };
+      });
+      if (!updated) return res.status(404).json({ message: "Không tìm thấy bảng điểm mẫu." });
+      res.json(updated);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0]?.message ?? "Cấu hình không hợp lệ." });
+      if (err?.code === "SCORE_SHEET_TEMPLATE_CODE_EXISTS") return res.status(409).json({ message: err.message });
+      if (err?.code === "SCORE_SHEET_TEMPLATE_CONVERSION_MISSING" || err?.code === "SCORE_SHEET_TEMPLATE_SKILLS_MISMATCH") {
+        return res.status(400).json({ message: err.message });
+      }
       res.status(500).json({ message: err.message });
     }
   });

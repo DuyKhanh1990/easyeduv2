@@ -13,11 +13,18 @@ import type {
   ScoreConversionTemplateInput,
   ScoreConversionTypeKey,
 } from "@shared/score-conversion";
+import type {
+  ScoreSheetTemplate,
+  ScoreSheetTemplateInput,
+} from "@shared/score-sheet-template";
 import { ScoreConversionTemplateDialog } from "./score-conversion/ScoreConversionTemplateDialog";
+import { ScoreSheetTemplateDialog } from "./score-conversion/ScoreSheetTemplateDialog";
 import { SCORE_CONVERSION_TYPES } from "./score-conversion/score-conversion-presets";
 
 const TEMPLATE_ENDPOINT = "/api/score-conversion-templates";
 const TEMPLATE_QUERY_KEY = [TEMPLATE_ENDPOINT];
+const SCORE_SHEET_TEMPLATE_ENDPOINT = "/api/score-sheet-templates";
+const SCORE_SHEET_TEMPLATE_QUERY_KEY = [SCORE_SHEET_TEMPLATE_ENDPOINT];
 
 export default function ScoreConversion() {
   const queryClient = useQueryClient();
@@ -25,6 +32,8 @@ export default function ScoreConversion() {
   const { data: myPermissions } = useMyPermissions();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<ScoreConversionTemplate | null>(null);
+  const [scoreSheetDialogOpen, setScoreSheetDialogOpen] = useState(false);
+  const [editingScoreSheetTemplate, setEditingScoreSheetTemplate] = useState<ScoreSheetTemplate | null>(null);
   const assessmentPermissions = myPermissions?.permissions["/assessments#list"];
   const canCreate = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canCreate);
   const canEdit = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canEdit);
@@ -33,6 +42,13 @@ export default function ScoreConversion() {
     queryKey: TEMPLATE_QUERY_KEY,
     queryFn: async () => {
       const response = await apiRequest("GET", TEMPLATE_ENDPOINT);
+      return response.json();
+    },
+  });
+  const scoreSheetTemplatesQuery = useQuery<ScoreSheetTemplate[]>({
+    queryKey: SCORE_SHEET_TEMPLATE_QUERY_KEY,
+    queryFn: async () => {
+      const response = await apiRequest("GET", SCORE_SHEET_TEMPLATE_ENDPOINT);
       return response.json();
     },
   });
@@ -61,6 +77,24 @@ export default function ScoreConversion() {
     },
   });
 
+  const saveScoreSheetTemplateMutation = useMutation({
+    mutationFn: async ({ id, draft }: { id: string | null; draft: ScoreSheetTemplateInput }) => {
+      const response = await apiRequest(
+        id ? "PUT" : "POST",
+        id ? `${SCORE_SHEET_TEMPLATE_ENDPOINT}/${id}` : SCORE_SHEET_TEMPLATE_ENDPOINT,
+        draft,
+      );
+      return response.json() as Promise<ScoreSheetTemplate>;
+    },
+    onSuccess: async (_saved, variables) => {
+      await queryClient.invalidateQueries({ queryKey: SCORE_SHEET_TEMPLATE_QUERY_KEY });
+      setScoreSheetDialogOpen(false);
+      toast({
+        title: variables.id ? "Đã cập nhật bảng điểm mẫu" : "Đã lưu bảng điểm mẫu",
+      });
+    },
+  });
+
   const openCreateDialog = () => {
     setEditingTemplate(null);
     setDialogOpen(true);
@@ -73,6 +107,23 @@ export default function ScoreConversion() {
 
   const handleSave = async (draft: ScoreConversionTemplateInput) => {
     await saveMutation.mutateAsync({ id: editingTemplate?.id ?? null, draft });
+  };
+
+  const openCreateScoreSheetTemplateDialog = () => {
+    setEditingScoreSheetTemplate(null);
+    setScoreSheetDialogOpen(true);
+  };
+
+  const openEditScoreSheetTemplateDialog = (template: ScoreSheetTemplate) => {
+    setEditingScoreSheetTemplate(template);
+    setScoreSheetDialogOpen(true);
+  };
+
+  const handleSaveScoreSheetTemplate = async (draft: ScoreSheetTemplateInput) => {
+    await saveScoreSheetTemplateMutation.mutateAsync({
+      id: editingScoreSheetTemplate?.id ?? null,
+      draft,
+    });
   };
 
   return (
@@ -192,10 +243,88 @@ export default function ScoreConversion() {
               </CardContent>
             </Card>
           </TabsContent>
-          <TabsContent value="sample">
+          <TabsContent value="sample" className="space-y-4">
+            {canCreate && (
+              <div className="flex justify-end">
+                <Button onClick={openCreateScoreSheetTemplateDialog}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Thêm mới
+                </Button>
+              </div>
+            )}
             <Card>
-              <CardContent className="flex min-h-52 items-center justify-center p-6 text-center text-sm text-muted-foreground">
-                Nội dung bảng điểm mẫu sẽ được bổ sung sau.
+              <CardContent className="p-0">
+                {scoreSheetTemplatesQuery.isLoading ? (
+                  <div className="flex min-h-48 items-center justify-center text-sm text-muted-foreground">
+                    Đang tải bảng điểm mẫu...
+                  </div>
+                ) : scoreSheetTemplatesQuery.isError ? (
+                  <div className="flex min-h-48 flex-col items-center justify-center gap-3 p-6 text-center">
+                    <p className="text-sm text-destructive">
+                      {scoreSheetTemplatesQuery.error instanceof Error
+                        ? scoreSheetTemplatesQuery.error.message
+                        : "Không thể tải bảng điểm mẫu."}
+                    </p>
+                    <Button variant="outline" size="sm" onClick={() => scoreSheetTemplatesQuery.refetch()}>
+                      Thử lại
+                    </Button>
+                  </div>
+                ) : scoreSheetTemplatesQuery.data?.length ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[680px] text-left text-sm">
+                      <thead className="border-b bg-muted/40 text-muted-foreground">
+                        <tr>
+                          <th className="px-4 py-3 font-medium">Mã</th>
+                          <th className="px-4 py-3 font-medium">Tên bảng điểm</th>
+                          <th className="px-4 py-3 font-medium">Bảng quy đổi</th>
+                          <th className="px-4 py-3 font-medium">Kỹ năng</th>
+                          {canEdit && <th className="w-16 px-4 py-3" />}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {scoreSheetTemplatesQuery.data.map((template) => {
+                          const conversion = savedTemplates.find(
+                            (item) => item.id === template.scoreConversionTemplateId,
+                          );
+                          return (
+                            <tr key={template.id} className="border-b last:border-0">
+                              <td className="px-4 py-3 font-medium">{template.code}</td>
+                              <td className="px-4 py-3">{template.name}</td>
+                              <td className="px-4 py-3">
+                                {conversion?.typeName ?? (template.scoreConversionTemplateId ? "Không tìm thấy bảng quy đổi" : "Không áp dụng")}
+                              </td>
+                              <td className="px-4 py-3">{conversion?.sections.length ?? template.skills.length}</td>
+                              {canEdit && (
+                                <td className="px-4 py-3">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    aria-label={`Sửa bảng điểm mẫu ${template.name}`}
+                                    onClick={() => openEditScoreSheetTemplateDialog(template)}
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="flex min-h-52 flex-col items-center justify-center gap-3 p-6 text-center">
+                    <div className="rounded-full bg-muted p-3">
+                      <BarChart3 className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="font-medium">Chưa có bảng điểm mẫu</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Tạo bảng điểm mẫu và tùy chọn liên kết với bảng quy đổi quốc tế.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -209,6 +338,15 @@ export default function ScoreConversion() {
         saving={saveMutation.isPending}
         onOpenChange={setDialogOpen}
         onSave={handleSave}
+      />
+      <ScoreSheetTemplateDialog
+        open={scoreSheetDialogOpen}
+        template={editingScoreSheetTemplate}
+        conversionTemplates={savedTemplates}
+        conversionTemplatesLoading={templatesQuery.isLoading}
+        saving={saveScoreSheetTemplateMutation.isPending}
+        onOpenChange={setScoreSheetDialogOpen}
+        onSave={handleSaveScoreSheetTemplate}
       />
     </DashboardLayout>
   );
