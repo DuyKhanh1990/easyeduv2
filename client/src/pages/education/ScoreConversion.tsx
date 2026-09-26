@@ -144,8 +144,9 @@ export default function ScoreConversion() {
         </div>
         <Tabs defaultValue="international" className="space-y-4">
           <TabsList>
-            <TabsTrigger value="international">Điểm Quy đổi Quốc tế</TabsTrigger>
+            <TabsTrigger value="international">Cấu hình điểm Quy đổi</TabsTrigger>
             <TabsTrigger value="sample">Bảng điểm mẫu</TabsTrigger>
+            <TabsTrigger value="scores">Danh sách Bảng điểm</TabsTrigger>
           </TabsList>
           <TabsContent value="international" className="space-y-4">
             {canCreate && (
@@ -325,6 +326,17 @@ export default function ScoreConversion() {
                     </div>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="scores">
+            <Card>
+              <CardContent className="flex min-h-52 flex-col items-center justify-center gap-2 p-6 text-center">
+                <BarChart3 className="h-5 w-5 text-muted-foreground" />
+                <p className="font-medium">Danh sách Bảng điểm</p>
+                <p className="text-sm text-muted-foreground">
+                  Danh sách và nhập điểm thực tế sẽ được bổ sung ở giai đoạn tiếp theo.
+                </p>
               </CardContent>
             </Card>
           </TabsContent>
