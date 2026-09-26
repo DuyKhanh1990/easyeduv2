@@ -34,7 +34,6 @@ function emptyDraft(): ScoreSheetAssessmentInput {
     code: "",
     name: "",
     scoreSheetTemplateId: "",
-    examAt: "",
     scoreDeadlineAt: "",
     attemptCount: 1,
     scoringPolicy: "highest",
@@ -73,11 +72,6 @@ export function ScoreSheetAssessmentDialog({
       setFormError("Chọn bảng điểm mẫu áp dụng.");
       return;
     }
-    if (draft.scoreDeadlineAt <= draft.examAt) {
-      setFormError("Hạn trả điểm phải sau ngày thi.");
-      return;
-    }
-
     try {
       await onSave({
         ...draft,
@@ -95,7 +89,7 @@ export function ScoreSheetAssessmentDialog({
         <DialogHeader>
           <DialogTitle>Thêm bảng điểm</DialogTitle>
           <DialogDescription>
-            Khai báo lịch thi và cách tính điểm. Cấu trúc kỹ năng được lấy từ bảng điểm mẫu đã chọn.
+            Tạo cấu hình dùng chung. Ngày thi thực tế sẽ lấy theo ngày của buổi học khi gán bảng điểm.
           </DialogDescription>
         </DialogHeader>
         <form className="space-y-4" onSubmit={handleSubmit}>
@@ -154,16 +148,6 @@ export function ScoreSheetAssessmentDialog({
                   Hãy tạo bảng điểm mẫu trước ở tab “Bảng điểm mẫu”.
                 </p>
               )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="score-assessment-exam-at">Ngày thi</Label>
-              <Input
-                id="score-assessment-exam-at"
-                type="datetime-local"
-                value={draft.examAt}
-                onChange={(event) => setDraft((current) => ({ ...current, examAt: event.target.value }))}
-                required
-              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="score-assessment-deadline">Hạn trả điểm</Label>

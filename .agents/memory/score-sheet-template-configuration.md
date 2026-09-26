@@ -9,8 +9,8 @@ The score-sheet template owns its overall scoring rule separately from the conve
 
 Actual score-entry calculation from these configuration rules is a later phase; do not silently add it to the configuration editor.
 
-Assessment records keep a snapshot of the selected score-sheet template, not just its ID, so later edits to the template do not silently change an already scheduled assessment. Exam and score-deadline fields are stored as local wall-clock date-times, without converting them to UTC.
+Reusable assessment definitions keep a snapshot of the selected score-sheet template, not just its ID, so later edits to the template do not silently change existing configuration. They have no exam date: when assigned to a class session, the actual exam date is that session's `sessionDate`, and the assignment stores the reusable definition ID on the session. Do not change the timetable date or lesson order to assign an exam. Any configured score deadline remains a local wall-clock date-time.
 
-**Why:** A score sheet may be a standalone structure or use an international conversion table, and the overall formula must remain editable without mutating the shared conversion table. Assessment structure must also remain stable, while wall-clock times must not shift in the Asia/Bangkok app.
+**Why:** A score sheet may be a standalone structure or use an international conversion table, and the overall formula must remain editable without mutating the shared conversion table. The same reusable definition can be assigned on different dates, so the actual exam date belongs to each scheduled session.
 
-**How to apply:** Keep API validation, edit-form state, and conversion switching consistent with these rules. Preserve old linked templates that lack an explicit overall rule. Use the saved template snapshot and local date-time strings when implementing actual score entry.
+**How to apply:** Keep API validation, edit-form state, and conversion switching consistent with these rules. Preserve old linked templates that lack an explicit overall rule. A future results view should derive exam date from the assigned session's `sessionDate` and use the saved template snapshot.

@@ -386,6 +386,10 @@ export function ScheduleTabContent({
     queryKey: ["/api/score-sheets"],
   });
 
+  const { data: allScoreSheetAssessments } = useQuery<any[]>({
+    queryKey: ["/api/score-sheet-assessments"],
+  });
+
   const { data: availableStudentsForSession, isLoading: isLoadingAvailableStudents } = useQuery<any[]>({
     queryKey: [`/api/classes/${classId}/available-students`, searchTermForSession],
     queryFn: async () => {
@@ -722,6 +726,7 @@ export function ScheduleTabContent({
             setApplyCriteriaToIdx={setApplyCriteriaToIdx}
             setApplyCriteriaId={setApplyCriteriaId}
             allScoreSheets={allScoreSheets}
+            allScoreSheetAssessments={allScoreSheetAssessments}
             setIsApplyScoreSheetOpen={setIsApplyScoreSheetOpen}
             setApplyScoreSheetFromIdx={setApplyScoreSheetFromIdx}
             setApplyScoreSheetToIdx={setApplyScoreSheetToIdx}
@@ -777,6 +782,7 @@ export function ScheduleTabContent({
             setApplyCriteriaToIdx={setApplyCriteriaToIdx}
             setApplyCriteriaId={setApplyCriteriaId}
             allScoreSheets={allScoreSheets}
+            allScoreSheetAssessments={allScoreSheetAssessments}
             setIsApplyScoreSheetOpen={setIsApplyScoreSheetOpen}
             setApplyScoreSheetFromIdx={setApplyScoreSheetFromIdx}
             setApplyScoreSheetToIdx={setApplyScoreSheetToIdx}
@@ -1454,6 +1460,7 @@ export function ScheduleTabContent({
         classId={classId}
         classSessions={classSessions}
         allEvaluationCriteria={allEvaluationCriteria}
+        allScoreSheetAssessments={allScoreSheetAssessments}
         selectedClassSessionId={selectedClassSessionId}
         isApplyProgramOpen={isApplyProgramOpen}
         setIsApplyProgramOpen={setIsApplyProgramOpen}

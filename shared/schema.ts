@@ -946,12 +946,14 @@ export const classSessions = pgTable("class_sessions", {
   evaluationCriteriaIds: uuid("evaluation_criteria_ids").array(),
   programId: uuid("program_id").references(() => coursePrograms.id, { onDelete: "set null" }),
   scoreSheetId: uuid("score_sheet_id").references(() => scoreSheets.id, { onDelete: "set null" }),
+  scoreSheetAssessmentId: uuid("score_sheet_assessment_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   sessionDateIdx: index("class_sessions_session_date_idx").on(table.sessionDate),
   statusIdx: index("class_sessions_status_idx").on(table.status),
   classDateIdx: index("class_sessions_class_date_idx").on(table.classId, table.sessionDate),
+  scoreSheetAssessmentIdx: index("class_sessions_score_sheet_assessment_id_idx").on(table.scoreSheetAssessmentId),
   roomConflictIdx: index("class_sessions_room_conflict_idx").on(table.roomId, table.sessionDate, table.shiftTemplateId),
 }));
 

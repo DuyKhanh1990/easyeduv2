@@ -4,6 +4,7 @@ import { createActivityLog, getActivityLogs } from "../storage/activity-log.stor
 import { getClassFormatSummary, getClassStatusSummary, getNewClassesSummary, getClassesByLocationSummary, getMonthlyAttendanceRate, getClassesByTeacherSummary, getSessionsByTeacherSummary, getMakeupClassEligibility, getMakeupStartOptions } from "../storage/class.storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
+import { scoreSheetAssessmentSchema } from "@shared/score-sheet-assessment";
 import { db, pool } from "../db";
 import { classSessions, studentSessions, freeClassRegistrations, freeClassDayAssignments, students, classes, studentClasses, staff, staffAssignments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, invoiceItems, courseFeePackages, financePromotions, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
 import { eq, and, sql, inArray, avg, between, gte, lte, gt, desc, asc, or, ilike, isNotNull, isNull, ne } from "drizzle-orm";
@@ -31,6 +32,7 @@ async function checkAttendanceLimitForSession(classSessionId: string, req: any):
 }
 
 const CLASSES_RESOURCE = "/classes";
+const SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY = "scoreSheetAssessments";
 
 function getBangkokDateString(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -7414,13 +7416,52 @@ export function registerClassesRoutes(app: Express): void {
   app.post("/api/classes/:classId/apply-score-sheet", async (req, res) => {
     try {
       const { classId } = req.params;
-      const { scoreSheetId, fromSessionIndex, toSessionIndex } = req.body;
-      if (!scoreSheetId || fromSessionIndex == null || toSessionIndex == null) {
+      const {
+        scoreSheetId,
+        scoreSheetAssessmentId,
+        fromSessionIndex,
+        toSessionIndex,
+      } = req.body;
+      if (
+        Boolean(scoreSheetId) === Boolean(scoreSheetAssessmentId)
+        || !Number.isInteger(fromSessionIndex)
+        || !Number.isInteger(toSessionIndex)
+        || fromSessionIndex < 1
+        || toSessionIndex < fromSessionIndex
+      ) {
         return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
       }
+      if (
+        (scoreSheetId && !z.string().uuid().safeParse(scoreSheetId).success)
+        || (scoreSheetAssessmentId && !z.string().uuid().safeParse(scoreSheetAssessmentId).success)
+      ) {
+        return res.status(400).json({ message: "Mã bảng điểm không hợp lệ." });
+      }
+
+      let assessmentName: string | null = null;
+      if (scoreSheetAssessmentId) {
+        const { systemSettings } = await import("@shared/schema");
+        const [settingsRow] = await db.select({ value: systemSettings.value })
+          .from(systemSettings)
+          .where(eq(systemSettings.key, SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY))
+          .limit(1);
+        const assessments = settingsRow
+          ? z.array(scoreSheetAssessmentSchema).parse(JSON.parse(settingsRow.value))
+          : [];
+        const assessment = assessments.find((item) => item.id === scoreSheetAssessmentId);
+        if (!assessment) {
+          return res.status(404).json({ message: "Không tìm thấy cấu hình bảng điểm đã chọn." });
+        }
+        assessmentName = `${assessment.code} — ${assessment.name}`;
+      }
+
       const { db: baseDb, eq: baseEq, and: baseAnd, sql: baseSql, classSessions: baseSessions } = await import("../storage/base");
       const sessions = await baseDb
-        .select({ id: baseSessions.id })
+        .select({
+          id: baseSessions.id,
+          sessionIndex: baseSessions.sessionIndex,
+          sessionDate: baseSessions.sessionDate,
+        })
         .from(baseSessions)
         .where(
           baseAnd(
@@ -7429,14 +7470,28 @@ export function registerClassesRoutes(app: Express): void {
           )
         );
       for (const session of sessions) {
-        await baseDb.update(baseSessions).set({ scoreSheetId }).where(baseEq(baseSessions.id, session.id));
+        await baseDb.update(baseSessions).set(
+          scoreSheetAssessmentId
+            ? { scoreSheetId: null, scoreSheetAssessmentId }
+            : { scoreSheetId, scoreSheetAssessmentId: null },
+        ).where(baseEq(baseSessions.id, session.id));
       }
-      res.json({ message: "Áp dụng bảng điểm thành công" });
+      res.json({
+        message: "Áp dụng bảng điểm thành công",
+        sessionsUpdated: sessions.length,
+        assignedSessions: sessions.map((session) => ({
+          sessionId: session.id,
+          sessionIndex: session.sessionIndex,
+          examDate: session.sessionDate,
+        })),
+      });
       // Activity log (fire-and-forget)
       try {
         const userId = (req as any).user?.id ?? null;
-        const [sheetRow] = await db.select({ name: scoreSheets.name })
-          .from(scoreSheets).where(eq(scoreSheets.id, scoreSheetId)).limit(1);
+        const [sheetRow] = scoreSheetId
+          ? await db.select({ name: scoreSheets.name })
+            .from(scoreSheets).where(eq(scoreSheets.id, scoreSheetId)).limit(1)
+          : [];
         const [classInfo] = await db.select({ locationId: classes.locationId })
           .from(classes).where(eq(classes.id, classId)).limit(1);
         createActivityLog({
@@ -7446,11 +7501,13 @@ export function registerClassesRoutes(app: Express): void {
           action: "Gán bảng điểm",
           oldContent: null,
           newContent: JSON.stringify({
-            scoreSheetId,
-            scoreSheetName: sheetRow?.name ?? scoreSheetId,
+            scoreSheetId: scoreSheetId ?? null,
+            scoreSheetAssessmentId: scoreSheetAssessmentId ?? null,
+            scoreSheetName: sheetRow?.name ?? assessmentName ?? scoreSheetId ?? scoreSheetAssessmentId,
             fromSessionIndex,
             toSessionIndex,
             sessionCount: sessions.length,
+            examDates: sessions.map((session) => session.sessionDate),
           }),
         }).catch(console.error);
       } catch (logErr) {

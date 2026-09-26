@@ -2366,10 +2366,9 @@ export function registerConfigRoutes(app: Express): void {
   // ─── Score Sheet Assessments ────────────────────────────────────────────────
   app.get("/api/score-sheet-assessments", async (req, res) => {
     try {
-      const permissions = await getScoreConversionPermissions(req);
-      if (!permissions.canView && !permissions.canViewAll) {
-        return res.status(403).json({ message: "Bạn không có quyền xem danh sách bảng điểm." });
-      }
+      // Session assignment uses this list in the same way as /api/score-sheets.
+      // Keep it readable for users who can manage class schedules, even if
+      // they do not administer score-conversion settings.
       res.json(await readScoreSheetAssessments());
     } catch (err: any) {
       res.status(500).json({ message: err.message });

@@ -82,6 +82,7 @@ interface SessionDetailPanelProps {
   setApplyCriteriaToIdx: (idx: number) => void;
   setApplyCriteriaId: (id: string) => void;
   allScoreSheets?: any[] | undefined;
+  allScoreSheetAssessments?: any[] | undefined;
   setIsApplyScoreSheetOpen: (open: boolean) => void;
   setApplyScoreSheetFromIdx: (idx: number) => void;
   setApplyScoreSheetToIdx: (idx: number) => void;
@@ -138,6 +139,7 @@ export function SessionDetailPanel({
   setApplyCriteriaToIdx,
   setApplyCriteriaId,
   allScoreSheets,
+  allScoreSheetAssessments,
   setIsApplyScoreSheetOpen,
   setApplyScoreSheetFromIdx,
   setApplyScoreSheetToIdx,
@@ -280,6 +282,13 @@ export function SessionDetailPanel({
 
   const sessionScoreSheetId = session?.scoreSheetId || null;
   const assignedScoreSheet = allScoreSheets?.find((s: any) => s.id === sessionScoreSheetId) || null;
+  const sessionScoreSheetAssessmentId = session?.scoreSheetAssessmentId || null;
+  const assignedScoreSheetAssessment = allScoreSheetAssessments?.find(
+    (assessment: any) => assessment.id === sessionScoreSheetAssessmentId,
+  ) || null;
+  const assignedScoreSheetName = assignedScoreSheetAssessment
+    ? `${assignedScoreSheetAssessment.code} — ${assignedScoreSheetAssessment.name}`
+    : assignedScoreSheet?.name;
 
   const infoCard = (
     <div className={`${mode === "info" ? "w-full" : "sticky top-0"} rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-white`}>
@@ -410,11 +419,26 @@ export function SessionDetailPanel({
             </div>
             <span className="text-xs text-slate-600 w-20 shrink-0 mt-0.5 font-medium whitespace-nowrap">Bảng điểm:</span>
             <span className="text-xs font-semibold text-blue-600 break-words min-w-0 flex-1 mt-0.5">
-              {assignedScoreSheet ? assignedScoreSheet.name : <span className="text-slate-400 italic font-normal">Chưa xác định</span>}
+              {assignedScoreSheetName || <span className="text-slate-400 italic font-normal">Chưa xác định</span>}
+              {assignedScoreSheetAssessment && session?.sessionDate && (
+                <span className="mt-0.5 block text-[11px] font-normal text-slate-500">
+                  Ngày thi thực tế: {format(new Date(`${session.sessionDate}T12:00:00`), "dd/MM/yyyy")}
+                </span>
+              )}
             </span>
             {canEdit && (
               <button data-testid="btn-apply-score-sheet" className="shrink-0 text-slate-300 hover:text-indigo-500 transition-colors mt-0.5"
-                onClick={() => { const i = session?.sessionIndex ?? 1; setApplyScoreSheetFromIdx(i); setApplyScoreSheetToIdx(i); setApplyScoreSheetId(sessionScoreSheetId || ""); setIsApplyScoreSheetOpen(true); }}>
+                onClick={() => {
+                  const i = session?.sessionIndex ?? 1;
+                  setApplyScoreSheetFromIdx(i);
+                  setApplyScoreSheetToIdx(i);
+                  setApplyScoreSheetId(sessionScoreSheetAssessmentId
+                    ? `assessment:${sessionScoreSheetAssessmentId}`
+                    : sessionScoreSheetId
+                      ? `sheet:${sessionScoreSheetId}`
+                      : "");
+                  setIsApplyScoreSheetOpen(true);
+                }}>
                 <Pencil className="h-3 w-3" />
               </button>
             )}

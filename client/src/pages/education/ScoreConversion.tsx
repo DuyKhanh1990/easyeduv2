@@ -402,13 +402,12 @@ export default function ScoreConversion() {
                   </div>
                 ) : scoreSheetAssessmentsQuery.data?.length ? (
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1000px] text-left text-sm">
+                    <table className="w-full min-w-[900px] text-left text-sm">
                       <thead className="border-b bg-muted/40 text-muted-foreground">
                         <tr>
                           <th className="px-4 py-3 font-medium">Mã</th>
                           <th className="px-4 py-3 font-medium">Tên bảng điểm</th>
                           <th className="px-4 py-3 font-medium">Bảng điểm mẫu</th>
-                          <th className="px-4 py-3 font-medium">Ngày thi</th>
                           <th className="px-4 py-3 font-medium">Hạn trả điểm</th>
                           <th className="px-4 py-3 font-medium">Số lần chấm</th>
                           <th className="px-4 py-3 font-medium">Chính sách tính điểm</th>
@@ -422,7 +421,6 @@ export default function ScoreConversion() {
                             <td className="px-4 py-3">
                               {assessment.templateSnapshot.code} — {assessment.templateSnapshot.name}
                             </td>
-                            <td className="px-4 py-3">{formatLocalDateTime(assessment.examAt)}</td>
                             <td className="px-4 py-3">{formatLocalDateTime(assessment.scoreDeadlineAt)}</td>
                             <td className="px-4 py-3">{assessment.attemptCount}</td>
                             <td className="px-4 py-3">{scoringPolicyLabel(assessment.scoringPolicy)}</td>

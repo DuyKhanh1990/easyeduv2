@@ -19,34 +19,19 @@ const scoreSheetAssessmentFieldsSchema = z.object({
   code: z.string().trim().min(1, "Nhập mã bảng điểm.").max(40),
   name: z.string().trim().min(1, "Nhập tên bảng điểm.").max(120),
   scoreSheetTemplateId: z.string().uuid("Chọn bảng điểm mẫu áp dụng."),
-  examAt: localDateTimeSchema,
   scoreDeadlineAt: localDateTimeSchema,
   attemptCount: z.number().int().min(1, "Số lần chấm bài phải từ 1 trở lên."),
   scoringPolicy: scoreSheetAssessmentScoringPolicySchema,
 });
 
-function validateAssessmentTimes(
-  assessment: z.infer<typeof scoreSheetAssessmentFieldsSchema>,
-  context: z.RefinementCtx,
-) {
-  if (assessment.scoreDeadlineAt <= assessment.examAt) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Hạn trả điểm phải sau ngày thi.",
-      path: ["scoreDeadlineAt"],
-    });
-  }
-}
-
-export const scoreSheetAssessmentInputSchema = scoreSheetAssessmentFieldsSchema
-  .superRefine(validateAssessmentTimes);
+export const scoreSheetAssessmentInputSchema = scoreSheetAssessmentFieldsSchema;
 
 export const scoreSheetAssessmentSchema = scoreSheetAssessmentFieldsSchema.extend({
   id: z.string().uuid(),
   templateSnapshot: scoreSheetTemplateSchema,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
-}).superRefine(validateAssessmentTimes);
+});
 
 export type ScoreSheetAssessmentInput = z.infer<typeof scoreSheetAssessmentInputSchema>;
 export type ScoreSheetAssessment = z.infer<typeof scoreSheetAssessmentSchema>;

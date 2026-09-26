@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { Check, ChevronsUpDown } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +12,15 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   Select,
   SelectContent,
@@ -22,6 +33,7 @@ interface SessionApplyProgramSectionProps {
   classId: string;
   classSessions: any[] | undefined;
   allEvaluationCriteria: any[] | undefined;
+  allScoreSheetAssessments: any[] | undefined;
   selectedClassSessionId: string | null;
   isApplyProgramOpen: boolean;
   setIsApplyProgramOpen: (open: boolean) => void;
@@ -53,6 +65,7 @@ export function SessionApplyProgramSection({
   classId,
   classSessions,
   allEvaluationCriteria,
+  allScoreSheetAssessments,
   selectedClassSessionId,
   isApplyProgramOpen,
   setIsApplyProgramOpen,
@@ -80,6 +93,7 @@ export function SessionApplyProgramSection({
   setApplyScoreSheetToIdx,
 }: SessionApplyProgramSectionProps) {
   const { toast } = useToast();
+  const [scoreSheetPickerOpen, setScoreSheetPickerOpen] = useState(false);
 
   const { data: allCoursePrograms } = useQuery<any[]>({
     queryKey: ["/api/course-programs"],
@@ -96,9 +110,29 @@ export function SessionApplyProgramSection({
     const indexB = b.sessionIndex ?? Number.MAX_SAFE_INTEGER;
     return indexA !== indexB ? indexA - indexB : a.id.localeCompare(b.id);
   });
+  const normalizedScoreSheetSelection = applyScoreSheetId.includes(":")
+    ? applyScoreSheetId
+    : applyScoreSheetId
+      ? `sheet:${applyScoreSheetId}`
+      : "";
+  const [selectedScoreSheetKind, selectedScoreSheetId] = normalizedScoreSheetSelection.split(":");
+  const selectedLegacyScoreSheet = selectedScoreSheetKind === "sheet"
+    ? allScoreSheets?.find((sheet: any) => sheet.id === selectedScoreSheetId)
+    : null;
+  const selectedAssessment = selectedScoreSheetKind === "assessment"
+    ? allScoreSheetAssessments?.find((assessment: any) => assessment.id === selectedScoreSheetId)
+    : null;
+  const selectedScoreSheetLabel = selectedAssessment
+    ? `${selectedAssessment.code} — ${selectedAssessment.name}`
+    : selectedLegacyScoreSheet?.name ?? "";
 
   const applyScoreSheetMutation = useMutation({
-    mutationFn: async (data: { scoreSheetId: string; fromSessionIndex: number; toSessionIndex: number }) => {
+    mutationFn: async (data: {
+      scoreSheetId?: string;
+      scoreSheetAssessmentId?: string;
+      fromSessionIndex: number;
+      toSessionIndex: number;
+    }) => {
       return apiRequest("POST", `/api/classes/${classId}/apply-score-sheet`, data);
     },
     onSuccess: () => {
@@ -292,22 +326,81 @@ export function SessionApplyProgramSection({
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Áp dụng bảng điểm</DialogTitle>
-            <DialogDescription>Chọn bảng điểm và phạm vi buổi học để áp dụng</DialogDescription>
+            <DialogDescription>
+              Chọn bảng điểm và phạm vi buổi học để áp dụng. Với cấu hình bảng điểm, ngày thi thực tế lấy theo ngày của từng buổi.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Bảng điểm</label>
-              <Select value={applyScoreSheetId} onValueChange={setApplyScoreSheetId}>
-                <SelectTrigger data-testid="select-apply-score-sheet">
-                  <SelectValue placeholder="Chọn bảng điểm..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {(allScoreSheets || []).map((s: any) => (
-                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover open={scoreSheetPickerOpen} onOpenChange={setScoreSheetPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={scoreSheetPickerOpen}
+                    data-testid="select-apply-score-sheet"
+                    className="w-full justify-between font-normal"
+                  >
+                    <span className="truncate">{selectedScoreSheetLabel || "Chọn bảng điểm..."}</span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Tìm mã hoặc tên bảng điểm..." />
+                    <CommandList>
+                      <CommandEmpty>Không tìm thấy bảng điểm phù hợp.</CommandEmpty>
+                      {(allScoreSheets?.length ?? 0) > 0 && (
+                        <CommandGroup heading="Bảng điểm hiện có">
+                          {allScoreSheets?.map((sheet: any) => (
+                            <CommandItem
+                              key={`sheet:${sheet.id}`}
+                              value={`sheet ${sheet.name} ${sheet.id}`}
+                              onSelect={() => {
+                                setApplyScoreSheetId(`sheet:${sheet.id}`);
+                                setScoreSheetPickerOpen(false);
+                              }}
+                            >
+                              <Check className={`mr-2 h-4 w-4 ${normalizedScoreSheetSelection === `sheet:${sheet.id}` ? "opacity-100" : "opacity-0"}`} />
+                              {sheet.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      )}
+                      {(allScoreSheetAssessments?.length ?? 0) > 0 && (
+                        <CommandGroup heading="Danh sách bảng điểm">
+                          {allScoreSheetAssessments?.map((assessment: any) => (
+                            <CommandItem
+                              key={`assessment:${assessment.id}`}
+                              value={`${assessment.code} ${assessment.name} ${assessment.templateSnapshot?.name ?? ""} ${assessment.id}`}
+                              onSelect={() => {
+                                setApplyScoreSheetId(`assessment:${assessment.id}`);
+                                setScoreSheetPickerOpen(false);
+                              }}
+                            >
+                              <Check className={`mr-2 h-4 w-4 ${normalizedScoreSheetSelection === `assessment:${assessment.id}` ? "opacity-100" : "opacity-0"}`} />
+                              <span className="min-w-0">
+                                <span className="block truncate">{assessment.code} — {assessment.name}</span>
+                                <span className="block truncate text-xs text-muted-foreground">
+                                  {assessment.templateSnapshot?.name ?? "Bảng điểm mẫu"}
+                                </span>
+                              </span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      )}
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
+            {selectedAssessment && (
+              <p className="text-xs text-muted-foreground">
+                Ngày thi thực tế của mỗi buổi sẽ lấy từ ngày học đã xếp trên lịch.
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Từ buổi</label>
@@ -344,7 +437,14 @@ export function SessionApplyProgramSection({
               disabled={!applyScoreSheetId || applyScoreSheetMutation.isPending}
               onClick={() => {
                 if (!applyScoreSheetId) return;
-                applyScoreSheetMutation.mutate({ scoreSheetId: applyScoreSheetId, fromSessionIndex: applyScoreSheetFromIdx, toSessionIndex: applyScoreSheetToIdx });
+                const [kind, selectedId] = normalizedScoreSheetSelection.split(":");
+                applyScoreSheetMutation.mutate({
+                  ...(kind === "assessment"
+                    ? { scoreSheetAssessmentId: selectedId }
+                    : { scoreSheetId: selectedId }),
+                  fromSessionIndex: applyScoreSheetFromIdx,
+                  toSessionIndex: applyScoreSheetToIdx,
+                });
               }}
             >
               {applyScoreSheetMutation.isPending ? "Đang lưu..." : "Lưu lại"}
