@@ -358,7 +358,7 @@ export function ScoreConversionTemplateDialog({
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-5xl">
+      <DialogContent className="w-[98vw] max-w-[98vw] max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{template ? "Sửa bảng điểm quy đổi" : "Thêm bảng điểm quy đổi"}</DialogTitle>
           <DialogDescription>
@@ -402,6 +402,8 @@ export function ScoreConversionTemplateDialog({
             )}
           </div>
 
+          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
+          <div className="min-w-0 space-y-6">
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -696,7 +698,9 @@ export function ScoreConversionTemplateDialog({
               </div>
             )}
           </section>
+          </div>
 
+          <aside className="min-w-0">
           <section className="space-y-3 rounded-lg border p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -721,47 +725,51 @@ export function ScoreConversionTemplateDialog({
             {draft.overallRule.gradeBands.length > 0 ? (
               <div className="space-y-3">
                 {draft.overallRule.gradeBands.map((band, index) => (
-                  <div key={band.id} className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end">
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`grade-band-label-${band.id}`}>Xếp loại {index + 1}</Label>
-                      <Input
-                        id={`grade-band-label-${band.id}`}
-                        value={band.label}
-                        onChange={(event) => updateGradeBand(band.id, { label: event.target.value })}
-                        placeholder="Ví dụ: A2"
-                        maxLength={80}
-                      />
+                  <div key={band.id} className="space-y-3 rounded-md border p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium">Xếp loại {index + 1}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Xóa ngưỡng xếp loại ${band.label || index + 1}`}
+                        onClick={() => removeGradeBand(band.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`grade-band-min-${band.id}`}>Điểm từ</Label>
-                      <Input
-                        id={`grade-band-min-${band.id}`}
-                        type="number"
-                        step="any"
-                        value={band.minScore}
-                        onChange={(event) => updateGradeBand(band.id, { minScore: numericValue(event.target.value) })}
-                      />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-1.5 sm:col-span-2">
+                        <Label htmlFor={`grade-band-label-${band.id}`}>Tên xếp loại</Label>
+                        <Input
+                          id={`grade-band-label-${band.id}`}
+                          value={band.label}
+                          onChange={(event) => updateGradeBand(band.id, { label: event.target.value })}
+                          placeholder="Ví dụ: A2"
+                          maxLength={80}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`grade-band-min-${band.id}`}>Điểm từ</Label>
+                        <Input
+                          id={`grade-band-min-${band.id}`}
+                          type="number"
+                          step="any"
+                          value={band.minScore}
+                          onChange={(event) => updateGradeBand(band.id, { minScore: numericValue(event.target.value) })}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`grade-band-max-${band.id}`}>Đến</Label>
+                        <Input
+                          id={`grade-band-max-${band.id}`}
+                          type="number"
+                          step="any"
+                          value={band.maxScore}
+                          onChange={(event) => updateGradeBand(band.id, { maxScore: numericValue(event.target.value) })}
+                        />
+                      </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`grade-band-max-${band.id}`}>Đến</Label>
-                      <Input
-                        id={`grade-band-max-${band.id}`}
-                        type="number"
-                        step="any"
-                        value={band.maxScore}
-                        onChange={(event) => updateGradeBand(band.id, { maxScore: numericValue(event.target.value) })}
-                      />
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="justify-self-end"
-                      aria-label={`Xóa ngưỡng xếp loại ${band.label || index + 1}`}
-                      onClick={() => removeGradeBand(band.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
                   </div>
                 ))}
               </div>
@@ -769,6 +777,8 @@ export function ScoreConversionTemplateDialog({
               <p className="text-sm text-muted-foreground">Chưa có ngưỡng xếp loại.</p>
             )}
           </section>
+          </aside>
+          </div>
 
           {formError && <p className="text-sm text-destructive" role="alert">{formError}</p>}
 
