@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { vi } from "date-fns/locale";
-import { BarChart3, BookOpen, Pencil, Plus, Users, CheckCircle2, Clock } from "lucide-react";
+import { BarChart3, BookOpen, CalendarDays, Clock3, Pencil, Plus, Users, CheckCircle2, Clock, CircleDot } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GradeBookEditDialog } from "@/components/education/GradeBookEditDialog";
@@ -29,9 +29,102 @@ type StaffGradeBookRow = {
   updatedByName: string | null;
 };
 
+type AssignedScoreSheetAssessment = {
+  sessionId: string;
+  classId: string;
+  classCode: string;
+  className: string;
+  sessionIndex: number | null;
+  examDate: string;
+  assessmentId: string;
+  assessmentCode: string | null;
+  assessmentName: string | null;
+  templateName: string | null;
+  scoreDeadlineAt: string | null;
+};
+
+type DeadlineStatus = {
+  label: string;
+  indicator: string;
+  className: string;
+};
+
 const formatDate = (d: string | null | undefined) => {
   if (!d) return "—";
   try { return format(new Date(d), "dd/MM/yyyy"); } catch { return "—"; }
+};
+
+const formatAssessmentDate = (d: string | null | undefined) => {
+  if (!d) return "—";
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : formatDate(d);
+};
+
+const formatAssessmentDeadline = (d: string | null | undefined) => {
+  if (!d) return "—";
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(d);
+  return match ? `${match[3]}/${match[2]}/${match[1]} ${match[4]}:${match[5]}` : "—";
+};
+
+const getBangkokWallClockMs = (date: Date) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value])) as Record<string, string>;
+  return Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day),
+    Number(values.hour),
+    Number(values.minute),
+  );
+};
+
+const getDeadlineStatus = (deadline: string | null, nowWallClockMs: number): DeadlineStatus => {
+  const match = deadline && /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(deadline);
+  if (!match) {
+    return {
+      label: "Chưa có hạn trả điểm",
+      indicator: "⚪",
+      className: "border-slate-200 bg-slate-50 text-slate-600",
+    };
+  }
+
+  const [, year, month, day, hour, minute] = match;
+  const deadlineWallClockMs = Date.UTC(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+  );
+  const remainingMs = deadlineWallClockMs - nowWallClockMs;
+
+  if (remainingMs < 0) {
+    return {
+      label: "Quá hạn",
+      indicator: "🔴",
+      className: "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300",
+    };
+  }
+  if (remainingMs <= 3 * 24 * 60 * 60 * 1000) {
+    return {
+      label: "Sắp đến hạn",
+      indicator: "🟡",
+      className: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300",
+    };
+  }
+  return {
+    label: "Đúng hạn",
+    indicator: "🟢",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300",
+  };
 };
 
 const formatDateLabel = (d: string) => {
@@ -53,7 +146,23 @@ export function StaffScoreSheet() {
     },
   });
 
+  const {
+    data: assignedAssessmentsData,
+    isLoading: isLoadingAssignedAssessments,
+    isError: isAssignedAssessmentsError,
+  } = useQuery<AssignedScoreSheetAssessment[]>({
+    queryKey: ["/api/my-space/score-sheet/staff-assessments"],
+    queryFn: async () => {
+      const res = await fetch("/api/my-space/score-sheet/staff-assessments", { credentials: "include" });
+      if (!res.ok) throw new Error("Lỗi khi tải bảng điểm được giao");
+      return res.json();
+    },
+    refetchInterval: 60_000,
+  });
+
   const gradeBooks = data ?? [];
+  const assignedAssessments = assignedAssessmentsData ?? [];
+  const nowWallClockMs = getBangkokWallClockMs(new Date());
 
   // Group by timeline date: prefer sessionDate, fallback to createdAt date
   const grouped = gradeBooks.reduce<Record<string, StaffGradeBookRow[]>>((acc, book) => {
@@ -108,11 +217,106 @@ export function StaffScoreSheet() {
         </div>
       </div>
 
-      {gradeBooks.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground">
-          <BookOpen className="h-10 w-10 opacity-25" />
-          <p className="text-sm">Chưa có bảng điểm nào trong các lớp của bạn</p>
+      {isAssignedAssessmentsError && (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          Không tải được danh sách bảng điểm được giao. Vui lòng thử tải lại trang.
         </div>
+      )}
+
+      {assignedAssessments.length > 0 && (
+        <section className="space-y-3" aria-labelledby="assigned-score-assessments-heading">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 id="assigned-score-assessments-heading" className="text-base font-semibold">
+                Bảng điểm được giao
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Ngày thi được lấy theo ngày của buổi học.
+              </p>
+            </div>
+            <Badge variant="secondary" className="shrink-0 text-xs font-normal">
+              {assignedAssessments.length} buổi
+            </Badge>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {assignedAssessments.map((item) => {
+              const deadlineStatus = getDeadlineStatus(item.scoreDeadlineAt, nowWallClockMs);
+              return (
+                <article
+                  key={item.sessionId}
+                  className="flex min-w-0 flex-col gap-4 rounded-xl border border-border bg-card p-4 shadow-sm"
+                  data-testid={`card-assigned-score-assessment-${item.sessionId}`}
+                >
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">
+                        {item.assessmentName ?? "Cấu hình bảng điểm không khả dụng"}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {item.assessmentCode ? `${item.assessmentCode} · ` : ""}
+                        {item.templateName ?? "Bảng điểm từ chuyển đổi điểm"}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="shrink-0 border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                      <CircleDot className="mr-1 h-3 w-3" />
+                      Chưa nhập
+                    </Badge>
+                  </div>
+
+                  <div className="flex min-w-0 items-center gap-2 text-xs">
+                    <span className="truncate font-medium text-foreground">{item.classCode}</span>
+                    {item.className !== item.classCode && (
+                      <span className="truncate text-muted-foreground">— {item.className}</span>
+                    )}
+                    {item.sessionIndex != null && (
+                      <span className="shrink-0 text-muted-foreground">· Buổi {item.sessionIndex}</span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="min-w-0 rounded-lg bg-muted/50 px-3 py-2">
+                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+                        Ngày thi
+                      </div>
+                      <p className="mt-1 text-sm font-semibold">{formatAssessmentDate(item.examDate)}</p>
+                    </div>
+                    <div className="min-w-0 rounded-lg bg-muted/50 px-3 py-2">
+                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <Clock3 className="h-3.5 w-3.5 shrink-0" />
+                        Hạn trả điểm
+                      </div>
+                      <p className="mt-1 truncate text-sm font-semibold">
+                        {formatAssessmentDeadline(item.scoreDeadlineAt)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium ${deadlineStatus.className}`}>
+                    <span aria-hidden="true">{deadlineStatus.indicator}</span>
+                    <span>{deadlineStatus.label}</span>
+                    {item.scoreDeadlineAt && (
+                      <span className="ml-auto inline-flex items-center gap-1 font-normal opacity-80">
+                        <Clock className="h-3 w-3" />
+                        Hạn trả điểm
+                      </span>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {gradeBooks.length === 0 ? (
+        assignedAssessments.length === 0 && !isLoadingAssignedAssessments && !isAssignedAssessmentsError ? (
+          <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground">
+            <BookOpen className="h-10 w-10 opacity-25" />
+            <p className="text-sm">Chưa có bảng điểm nào trong các lớp của bạn</p>
+          </div>
+        ) : null
       ) : (
         <div className="space-y-0">
             {sortedDates.map((dateKey, dateIdx) => {
