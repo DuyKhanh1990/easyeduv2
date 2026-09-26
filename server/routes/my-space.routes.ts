@@ -1,6 +1,8 @@
 import type { Express } from "express";
 import { sendHomeworkScoreNotification } from "../lib/attendance-notification";
 import { db, pool } from "../db";
+import { z } from "zod";
+import { scoreSheetAssessmentSchema } from "@shared/score-sheet-assessment";
 import {
   students,
   staff,
@@ -33,6 +35,7 @@ import {
   freeClassDayAssignments,
   freeClassSessionContents,
   studentClasses,
+  systemSettings,
 } from "@shared/schema";
 import { storage } from "../storage";
 import { eq, and, gte, lte, sql, inArray, isNotNull, isNull, or, desc } from "drizzle-orm";
@@ -3830,6 +3833,74 @@ export function registerMySpaceRoutes(app: Express): void {
     } catch (err: any) {
       console.error("Staff score sheet error:", err);
       res.status(500).json({ message: err.message || "Lỗi khi tải bảng điểm" });
+    }
+  });
+
+  app.get("/api/my-space/score-sheet/staff-assessments", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+      const staffRecord = await getStaffForUser(user.id);
+      if (!staffRecord) return res.json([]);
+
+      const [settingsRow] = await db
+        .select({ value: systemSettings.value })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, "scoreSheetAssessments"))
+        .limit(1);
+      const assessments = settingsRow
+        ? z.array(scoreSheetAssessmentSchema).parse(JSON.parse(settingsRow.value))
+        : [];
+      const assessmentsById = new Map(assessments.map((assessment) => [assessment.id, assessment]));
+
+      const result = await db.execute(sql`
+        SELECT
+          cs.id AS session_id,
+          cs.class_id,
+          cs.score_sheet_assessment_id AS assessment_id,
+          cs.session_index,
+          cs.session_date,
+          c.class_code,
+          c.name AS class_name
+        FROM class_sessions cs
+        JOIN classes c ON c.id = cs.class_id
+        WHERE cs.score_sheet_assessment_id IS NOT NULL
+          AND (
+            ${staffRecord.id} = ANY(c.teacher_ids)
+            OR ${staffRecord.id} = ANY(c.manager_ids)
+            OR cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
+          )
+          AND EXISTS (
+            SELECT 1
+            FROM staff_assignments sa
+            WHERE sa.staff_id = ${staffRecord.id}
+              AND sa.location_id = c.location_id
+          )
+        ORDER BY cs.session_date DESC, cs.session_index DESC, c.class_code
+      `);
+
+      const mapped = result.rows.map((row: any) => {
+        const assessment = assessmentsById.get(row.assessment_id);
+        return {
+          sessionId: row.session_id,
+          classId: row.class_id,
+          classCode: row.class_code,
+          className: row.class_name,
+          sessionIndex: row.session_index,
+          examDate: row.session_date,
+          assessmentId: row.assessment_id,
+          assessmentCode: assessment?.code ?? null,
+          assessmentName: assessment?.name ?? null,
+          templateName: assessment?.templateSnapshot.name ?? null,
+          scoreDeadlineAt: assessment?.scoreDeadlineAt ?? null,
+        };
+      });
+
+      res.json(mapped);
+    } catch (err: any) {
+      console.error("Staff assigned score assessments error:", err);
+      res.status(500).json({ message: err.message || "Lỗi khi tải bảng điểm được giao" });
     }
   });
 }
