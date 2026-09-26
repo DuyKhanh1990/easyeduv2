@@ -3862,7 +3862,12 @@ export function registerMySpaceRoutes(app: Express): void {
           cs.session_index,
           cs.session_date,
           c.class_code,
-          c.name AS class_name
+          c.name AS class_name,
+          (
+            SELECT COUNT(DISTINCT ss.student_id)::int
+            FROM student_sessions ss
+            WHERE ss.class_session_id = cs.id
+          ) AS student_count
         FROM class_sessions cs
         JOIN classes c ON c.id = cs.class_id
         WHERE cs.score_sheet_assessment_id IS NOT NULL
@@ -3888,6 +3893,7 @@ export function registerMySpaceRoutes(app: Express): void {
           classCode: row.class_code,
           className: row.class_name,
           sessionIndex: row.session_index,
+          studentCount: row.student_count,
           examDate: row.session_date,
           assessmentId: row.assessment_id,
           assessmentCode: assessment?.code ?? null,

@@ -41,7 +41,22 @@ type AssignedScoreSheetAssessment = {
   assessmentName: string | null;
   templateName: string | null;
   scoreDeadlineAt: string | null;
+  studentCount: number;
 };
+
+type ScoreSheetTimelineEntry =
+  | {
+      kind: "grade-book";
+      id: string;
+      dateKey: string;
+      gradeBook: StaffGradeBookRow;
+    }
+  | {
+      kind: "conversion";
+      id: string;
+      dateKey: string;
+      assessment: AssignedScoreSheetAssessment;
+    };
 
 type DeadlineStatus = {
   label: string;
@@ -164,13 +179,28 @@ export function StaffScoreSheet() {
   const assignedAssessments = assignedAssessmentsData ?? [];
   const nowWallClockMs = getBangkokWallClockMs(new Date());
 
-  // Group by timeline date: prefer sessionDate, fallback to createdAt date
-  const grouped = gradeBooks.reduce<Record<string, StaffGradeBookRow[]>>((acc, book) => {
-    const dateKey = book.sessionDate
-      ? book.sessionDate.substring(0, 10)
-      : book.createdAt.substring(0, 10);
+  const timelineEntries: ScoreSheetTimelineEntry[] = [
+    ...gradeBooks.map((gradeBook) => ({
+      kind: "grade-book" as const,
+      id: gradeBook.id,
+      dateKey: gradeBook.sessionDate
+        ? gradeBook.sessionDate.substring(0, 10)
+        : gradeBook.createdAt.substring(0, 10),
+      gradeBook,
+    })),
+    ...assignedAssessments.map((assessment) => ({
+      kind: "conversion" as const,
+      id: assessment.sessionId,
+      dateKey: assessment.examDate.substring(0, 10),
+      assessment,
+    })),
+  ];
+
+  // One timeline for legacy grade books and conversion assessments, grouped by exam/session date.
+  const grouped = timelineEntries.reduce<Record<string, ScoreSheetTimelineEntry[]>>((acc, entry) => {
+    const dateKey = entry.dateKey;
     if (!acc[dateKey]) acc[dateKey] = [];
-    acc[dateKey].push(book);
+    acc[dateKey].push(entry);
     return acc;
   }, {});
 
