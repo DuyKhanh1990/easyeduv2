@@ -5,6 +5,7 @@ import type {
   ScoreSheetTemplate,
   ScoreSheetTemplateInput,
 } from "@shared/score-sheet-template";
+import { validateScoreConversionFormula } from "@shared/score-conversion-formula";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -35,6 +36,7 @@ import {
 } from "@/components/ui/select";
 
 type Part = ScoreSheetTemplateInput["skills"][number]["parts"][number];
+type PartFormula = ScoreSheetTemplateInput["skills"][number]["partFormula"];
 
 type ScoreSheetTemplateDialogProps = {
   open: boolean;
@@ -100,6 +102,8 @@ export function ScoreSheetTemplateDialog({
         ? nextConversion.sections.map((section) => ({
             sectionId: section.id,
             parts: current.skills.find((skill) => skill.sectionId === section.id)?.parts ?? [],
+              partFormula: current.skills.find((skill) => skill.sectionId === section.id)?.partFormula
+                ?? { method: "sum", formula: "" },
           }))
         : [],
     }));
@@ -153,6 +157,25 @@ export function ScoreSheetTemplateDialog({
     }));
   };
 
+  const updatePartFormula = (sectionId: string, update: Partial<PartFormula>) => {
+    setDraft((current) => ({
+      ...current,
+      skills: current.skills.map((skill) => skill.sectionId === sectionId
+        ? { ...skill, partFormula: { ...skill.partFormula, ...update } }
+        : skill),
+    }));
+  };
+
+  const appendPartVariable = (sectionId: string, partName: string) => {
+    const skill = draft.skills.find((item) => item.sectionId === sectionId);
+    if (!skill) return;
+    const currentFormula = skill.partFormula.formula.trim();
+    const variable = `[${partName}]`;
+    updatePartFormula(sectionId, {
+      formula: currentFormula ? `${currentFormula} + ${variable}` : `=${variable}`,
+    });
+  };
+
   const overallRuleDescription = selectedConversion
     ? selectedConversion.overallRule.method === "custom"
       ? `Công thức tổng: ${selectedConversion.overallRule.formula}`
@@ -169,6 +192,8 @@ export function ScoreSheetTemplateDialog({
         ? selectedConversion.sections.map((section) => ({
             sectionId: section.id,
             parts: draft.skills.find((skill) => skill.sectionId === section.id)?.parts ?? [],
+              partFormula: draft.skills.find((skill) => skill.sectionId === section.id)?.partFormula
+                ?? { method: "sum", formula: "" },
           }))
         : [];
       await onSave({
@@ -272,6 +297,71 @@ export function ScoreSheetTemplateDialog({
                             Thêm part
                           </Button>
                         </div>
+
+                        {parts.length > 0 && skillDraft && (
+                          <div className="mt-3 grid gap-2 rounded-md bg-muted/20 p-2 sm:grid-cols-[minmax(180px,240px)_minmax(0,1fr)] sm:items-center">
+                            <Label htmlFor={`score-part-formula-method-${section.id}`}>
+                              Công thức điểm kỹ năng
+                            </Label>
+                            <Select
+                              value={skillDraft.partFormula.method}
+                              onValueChange={(value) => updatePartFormula(section.id, {
+                                method: value as PartFormula["method"],
+                              })}
+                            >
+                              <SelectTrigger id={`score-part-formula-method-${section.id}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="sum">Tổng các part con</SelectItem>
+                                <SelectItem value="average">Trung bình các part con</SelectItem>
+                                <SelectItem value="custom">Tùy chỉnh</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            {skillDraft.partFormula.method === "custom" && (
+                              <div className="space-y-2 sm:col-span-2">
+                                <Label htmlFor={`score-part-formula-${section.id}`}>Công thức tùy chỉnh</Label>
+                                <Input
+                                  id={`score-part-formula-${section.id}`}
+                                  value={skillDraft.partFormula.formula}
+                                  onChange={(event) => updatePartFormula(section.id, {
+                                    formula: event.target.value,
+                                  })}
+                                  placeholder={`=[${parts[0].name}] + [${parts[1]?.name ?? parts[0].name}]`}
+                                  maxLength={1000}
+                                />
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="text-xs text-muted-foreground">Chèn part:</span>
+                                  {parts.map((part) => (
+                                    <Button
+                                      key={part.id}
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => appendPartVariable(section.id, part.name)}
+                                    >
+                                      [{part.name}]
+                                    </Button>
+                                  ))}
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  Dùng tên part trong dấu ngoặc vuông; hỗ trợ +, -, *, /, ngoặc và %.
+                                </p>
+                                {validateScoreConversionFormula(
+                                  skillDraft.partFormula.formula,
+                                  parts.map((part) => part.name),
+                                ) && (
+                                  <p className="text-xs text-destructive" role="alert">
+                                    {validateScoreConversionFormula(
+                                      skillDraft.partFormula.formula,
+                                      parts.map((part) => part.name),
+                                    )}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
 
                         {parts.length > 0 && (
                           <div className="mt-3 space-y-2 border-l-2 border-primary/20 pl-3">

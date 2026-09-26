@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validateScoreConversionFormula } from "./score-conversion-formula";
 
 export const scoreSheetTemplatePartSchema = z.object({
   id: z.string().uuid(),
@@ -6,9 +7,28 @@ export const scoreSheetTemplatePartSchema = z.object({
   rawMaxScore: z.number().finite().nonnegative(),
 });
 
+export const scoreSheetTemplatePartFormulaSchema = z.object({
+  method: z.enum(["sum", "average", "custom"]).default("sum"),
+  formula: z.string().trim().max(1000).default(""),
+});
+
 export const scoreSheetTemplateSkillSchema = z.object({
   sectionId: z.string().uuid(),
   parts: z.array(scoreSheetTemplatePartSchema).max(100),
+  partFormula: scoreSheetTemplatePartFormulaSchema.default({ method: "sum", formula: "" }),
+}).superRefine((skill, context) => {
+  if (skill.parts.length === 0 || skill.partFormula.method !== "custom") return;
+  const formulaError = validateScoreConversionFormula(
+    skill.partFormula.formula,
+    skill.parts.map((part) => part.name),
+  );
+  if (formulaError) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: formulaError,
+      path: ["partFormula", "formula"],
+    });
+  }
 });
 
 const scoreSheetTemplateBaseSchema = z.object({
