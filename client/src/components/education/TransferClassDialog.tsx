@@ -97,6 +97,9 @@ const formatCurrencyValue = (amount: number) =>
 
 const formatCurrency = (amount: number) => formatCurrencyValue(amount) + "đ";
 
+const formatSignedCurrency = (amount: number) =>
+  `${amount > 0 ? "+" : amount < 0 ? "-" : ""}${formatCurrency(Math.abs(amount))}`;
+
 const formatPercent = (value: number | null | undefined) => {
   if (value == null || !Number.isFinite(value) || value <= 0) return "";
   return Number.isInteger(value) ? `${value}%` : `${value.toFixed(2).replace(/\.?0+$/, "")}%`;
@@ -213,6 +216,7 @@ export function TransferClassDialog({
   const [autoInvoice, setAutoInvoice] = useState(true);
   const [invoiceCategory, setInvoiceCategory] = useState<"Hoàn học phí" | "Đặt cọc">("Hoàn học phí");
   const [refundMethod, setRefundMethod] = useState<"invoice" | "deposit">("invoice");
+  const [transferFeeAdjustmentInput, setTransferFeeAdjustmentInput] = useState("");
   const [actualSessionCount, setActualSessionCount] = useState(0);
   const [targetTransferCountManuallyEdited, setTargetTransferCountManuallyEdited] = useState(false);
   const [roundingMode, setRoundingMode] = useState<"none" | "down" | "up">("none");
@@ -394,6 +398,10 @@ export function TransferClassDialog({
     }
   }, [isOpen, currentClass?.id, student?.id, currentSessions?.length]);
 
+  useEffect(() => {
+    if (isOpen) setTransferFeeAdjustmentInput("");
+  }, [isOpen, student?.id, currentClass?.id]);
+
   // Reset target package when class changes
   useEffect(() => {
     setSelectedTargetPackageId("");
@@ -402,6 +410,7 @@ export function TransferClassDialog({
     setIsTargetDiscountDialogOpen(false);
     setOpenTargetPromotionPicker(null);
     setTargetTransferCountManuallyEdited(false);
+    setTransferFeeAdjustmentInput("");
     form.setValue("targetTransferCount", 1, { shouldValidate: false });
   }, [selectedToClassId, form]);
 
@@ -625,8 +634,17 @@ export function TransferClassDialog({
     : getPackageBaseSessionPrice(selectedTargetPackage);
   const targetTotal = targetSessionPrice * targetTransferCount;
 
-  // Financial difference
-  const diff = targetTotal - currentTotal;
+  // The manual transfer fee is a signed adjustment to the automatic difference:
+  // positive increases the amount to collect (or reduces a refund), negative
+  // reduces the amount to collect (or increases a refund).
+  const automaticDiff = targetTotal - currentTotal;
+  const parsedTransferFeeAdjustment = transferFeeAdjustmentInput.trim() === ""
+    ? 0
+    : Number(transferFeeAdjustmentInput);
+  const transferFeeAdjustment = Number.isFinite(parsedTransferFeeAdjustment)
+    ? parsedTransferFeeAdjustment
+    : 0;
+  const diff = automaticDiff + transferFeeAdjustment;
   const refundAmount = Number(Math.abs(diff).toFixed(2));
   const shouldRefundToDeposit = diff < 0 && refundMethod === "deposit";
 
@@ -669,16 +687,22 @@ export function TransferClassDialog({
     const toName = `${targetClass?.name || ""}`;
     const fromLabel = getFromSessionLabel();
     const toLabel = getToSessionLabel();
-    const suffix = diff > 0
+    const suffix = automaticDiff > 0
       ? `Do lớp ${toName} học phí cao hơn`
-      : diff < 0
+      : automaticDiff < 0
       ? `Do lớp ${toName} học phí thấp hơn`
       : `Do học phí 2 lớp bằng nhau`;
+    const adjustmentNote = transferFeeAdjustment !== 0
+      ? ` Phí chuyển lớp điều chỉnh: ${formatSignedCurrency(transferFeeAdjustment)}.`
+      : "";
+    const finalAmountNote = diff === 0
+      ? " Sau điều chỉnh không phát sinh thu hoặc hoàn thêm."
+      : ` Số tiền ${diff < 0 ? "hoàn" : "thu"} sau điều chỉnh: ${formatCurrency(Math.abs(diff))}.`;
 
     if (diff >= 0) {
-      return `Thu tiền Chuyển lớp ${fromName}, ${transferCount} buổi bắt đầu từ ${fromLabel} Sang Lớp ${toName}, ${targetTransferCount} buổi bắt đầu từ ${toLabel}. ${suffix}`;
+      return `Thu tiền Chuyển lớp ${fromName}, ${transferCount} buổi bắt đầu từ ${fromLabel} Sang Lớp ${toName}, ${targetTransferCount} buổi bắt đầu từ ${toLabel}. ${suffix}.${adjustmentNote}${finalAmountNote}`;
     } else {
-      return `Hoàn tiền Chuyển lớp ${fromName}, ${transferCount} buổi bắt đầu từ ${fromLabel} Sang Lớp ${toName}, ${targetTransferCount} buổi bắt đầu từ ${toLabel}. ${suffix}`;
+      return `Hoàn tiền Chuyển lớp ${fromName}, ${transferCount} buổi bắt đầu từ ${fromLabel} Sang Lớp ${toName}, ${targetTransferCount} buổi bắt đầu từ ${toLabel}. ${suffix}.${adjustmentNote}${finalAmountNote}`;
     }
   };
 
@@ -720,7 +744,7 @@ export function TransferClassDialog({
 
       if (shouldRefundToDeposit) {
         queryClient.invalidateQueries({ queryKey: ["/api/students", student.id, "fee-wallet"] });
-      } else if (autoInvoice) {
+      } else if (autoInvoice && refundAmount > 0) {
         const invoiceType = diff < 0 ? "Chi" : "Thu";
         const category = diff < 0 ? invoiceCategory : "Học phí";
         const amount = Math.round(Math.abs(diff));
@@ -1471,44 +1495,74 @@ export function TransferClassDialog({
 
             {/* Financial difference summary */}
             {showFinancial && (
-              <div className={`rounded-md border p-3 flex items-center justify-between text-sm font-medium ${
+              <div className={`rounded-md border p-3 space-y-3 text-sm ${
                 diff > 0
                   ? "border-orange-200 bg-orange-50 dark:bg-orange-950/30 dark:border-orange-800"
                   : diff < 0
                   ? "border-green-200 bg-green-50 dark:bg-green-950/30 dark:border-green-800"
                   : "border-muted bg-muted/40"
               }`}>
-                {diff > 0 ? (
-                  <>
-                    <div className="flex items-center gap-2 text-orange-600 dark:text-orange-400">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  {diff > 0 ? (
+                    <div className="flex items-center gap-2 font-medium text-orange-600 dark:text-orange-400">
                       <TrendingUp className="h-4 w-4" />
-                      <span>Thu thêm từ học viên</span>
+                      <span>Số tiền cần thu sau điều chỉnh</span>
                     </div>
-                    <Badge variant="outline" className="text-orange-600 border-orange-300 font-semibold text-sm">
-                      +{formatCurrency(diff)}
-                    </Badge>
-                  </>
-                ) : diff < 0 ? (
-                  <>
-                    <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                  ) : diff < 0 ? (
+                    <div className="flex items-center gap-2 font-medium text-green-600 dark:text-green-400">
                       <TrendingDown className="h-4 w-4" />
-                      <span>Hoàn tiền cho học viên</span>
+                      <span>Số tiền cần hoàn sau điều chỉnh</span>
                     </div>
-                    <Badge variant="outline" className="text-green-600 border-green-300 font-semibold text-sm">
-                      -{formatCurrency(Math.abs(diff))}
-                    </Badge>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-2 text-muted-foreground">
+                  ) : (
+                    <div className="flex items-center gap-2 font-medium text-muted-foreground">
                       <Minus className="h-4 w-4" />
-                      <span>Không phát sinh thêm hoá đơn</span>
+                      <span>Không phát sinh thu hoặc hoàn thêm</span>
                     </div>
-                    <Badge variant="outline" className="font-semibold text-sm">
-                      {formatCurrency(0)}
-                    </Badge>
-                  </>
-                )}
+                  )}
+                  <Badge
+                    variant="outline"
+                    className={`font-semibold text-sm ${
+                      diff > 0
+                        ? "text-orange-600 border-orange-300"
+                        : diff < 0
+                        ? "text-green-600 border-green-300"
+                        : ""
+                    }`}
+                  >
+                    {formatSignedCurrency(diff)}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-end">
+                  <div className="flex justify-between gap-3 text-xs">
+                    <span className="text-muted-foreground">Chênh lệch tự động:</span>
+                    <span className="font-semibold">{formatSignedCurrency(automaticDiff)}</span>
+                  </div>
+                  <div className="space-y-1">
+                    <label htmlFor="transfer-fee-adjustment" className="text-xs font-medium">
+                      Phí chuyển lớp
+                    </label>
+                    <div className="relative">
+                      <Input
+                        id="transfer-fee-adjustment"
+                        data-testid="input-transfer-fee-adjustment"
+                        type="number"
+                        step="1"
+                        inputMode="decimal"
+                        value={transferFeeAdjustmentInput}
+                        onChange={(event) => setTransferFeeAdjustmentInput(event.target.value)}
+                        placeholder="0"
+                        className="pr-8"
+                        aria-describedby="transfer-fee-adjustment-help"
+                      />
+                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                        ₫
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <p id="transfer-fee-adjustment-help" className="text-[11px] text-muted-foreground">
+                  Số cuối = chênh lệch tự động + phí chuyển lớp. Nhập số âm để giảm tiền thu hoặc tăng tiền hoàn; nhập số dương để tăng tiền thu hoặc giảm tiền hoàn.
+                </p>
               </div>
             )}
 
@@ -1591,41 +1645,46 @@ export function TransferClassDialog({
 
                 {autoInvoice && (
                   <div className="space-y-2 pt-1 border-t">
-                    <div className="grid grid-cols-2 gap-3 text-xs text-muted-foreground">
-                      <div>
-                        <span className="font-medium text-foreground">Loại phiếu: </span>
-                        {diff < 0 ? "Phiếu chi" : "Phiếu thu"}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-foreground">Loại: </span>
-                        {diff < 0 ? (
-                          <Select
-                            value={invoiceCategory}
-                            onValueChange={(v) => setInvoiceCategory(v as any)}
-                          >
-                            <SelectTrigger className="h-6 text-xs border-dashed w-auto min-w-[130px]" data-testid="select-invoice-category">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Hoàn học phí" className="text-xs">Hoàn học phí</SelectItem>
-                              <SelectItem value="Đặt cọc" className="text-xs">Đặt cọc</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <span>Học phí</span>
-                        )}
-                      </div>
-                      <div>
-                        <span className="font-medium text-foreground">Số tiền: </span>
-                        {showFinancial ? formatCurrency(Math.abs(diff)) : "—"}
-                      </div>
-                    </div>
-                    {showFinancial && (
-                      <div className="text-xs text-muted-foreground bg-muted/50 rounded p-2 italic">
-                        {buildInvoiceNote()}
-                      </div>
-                    )}
-                    {!showFinancial && (
+                    {showFinancial && refundAmount > 0 ? (
+                      <>
+                        <div className="grid grid-cols-2 gap-3 text-xs text-muted-foreground">
+                          <div>
+                            <span className="font-medium text-foreground">Loại phiếu: </span>
+                            {diff < 0 ? "Phiếu chi" : "Phiếu thu"}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-foreground">Loại: </span>
+                            {diff < 0 ? (
+                              <Select
+                                value={invoiceCategory}
+                                onValueChange={(v) => setInvoiceCategory(v as any)}
+                              >
+                                <SelectTrigger className="h-6 text-xs border-dashed w-auto min-w-[130px]" data-testid="select-invoice-category">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Hoàn học phí" className="text-xs">Hoàn học phí</SelectItem>
+                                  <SelectItem value="Đặt cọc" className="text-xs">Đặt cọc</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <span>Học phí</span>
+                            )}
+                          </div>
+                          <div>
+                            <span className="font-medium text-foreground">Số tiền: </span>
+                            {formatCurrency(refundAmount)}
+                          </div>
+                        </div>
+                        <div className="text-xs text-muted-foreground bg-muted/50 rounded p-2 italic">
+                          {buildInvoiceNote()}
+                        </div>
+                      </>
+                    ) : showFinancial ? (
+                      <p className="text-xs text-muted-foreground italic">
+                        Số tiền sau điều chỉnh bằng 0, không phát sinh hóa đơn.
+                      </p>
+                    ) : (
                       <p className="text-xs text-muted-foreground italic">
                         Chọn đầy đủ lớp mới và gói học phí để xem hoá đơn tự động
                       </p>
