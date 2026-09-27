@@ -103,10 +103,16 @@ export function AssignClassNewDialog({
   const walletQueries = useQueries({
     queries: assignedStudentIds.map(id => ({
       queryKey: ["/api/students", id, "fee-wallet"],
-      queryFn: () => fetch(`/api/students/${id}/fee-wallet`, { credentials: "include" }).then(r => r.json()),
+      queryFn: async () => {
+        const res = await fetch(`/api/students/${id}/fee-wallet`, { credentials: "include" });
+        if (!res.ok) throw new Error(`Không thể tải số dư đặt cọc của học viên ${id}`);
+        return res.json();
+      },
       enabled: phase === "schedule" && !!id,
     })),
   });
+  const isFetchingWallets = walletQueries.some(query => query.isFetching);
+  const isWalletsError = walletQueries.some(query => query.isError);
 
   const depositMap = useMemo(() => {
     const map: Record<string, number> = {};
@@ -332,7 +338,7 @@ export function AssignClassNewDialog({
           autoInvoice: true,
           promotionKeys: [],
           surchargeKeys: [],
-          useDeposit: false,
+          useDeposit: undefined,
         }))
       );
 
@@ -449,6 +455,11 @@ export function AssignClassNewDialog({
     (config) => config.autoInvoice && !config.packageId,
   );
   const hasMissingAutoInvoicePackage = missingAutoInvoicePackageConfigs.length > 0;
+  const hasAutoInvoiceConfigs = studentConfigs.some((config) => config.autoInvoice);
+  const depositUseCount = studentConfigs.filter((config) => {
+    const depositBalance = Number(depositMap[config.studentId] ?? 0);
+    return config.autoInvoice && depositBalance > 0 && (config.useDeposit ?? true);
+  }).length;
 
   const handleClose = (open: boolean) => {
     if (!open) {
@@ -465,10 +476,18 @@ export function AssignClassNewDialog({
 
   const submitSchedule = () => {
     scheduleMutation.mutate(
-      studentConfigs.map(c => ({
-        ...c,
-        selectedShiftKeys: c.shiftType === "specific" ? c.selectedShifts : undefined,
-      }))
+      studentConfigs.map(c => {
+        const depositBalance = Number(depositMap[c.studentId] ?? 0);
+        return {
+          ...c,
+          useDeposit: Boolean(
+            c.autoInvoice
+            && depositBalance > 0
+            && (c.useDeposit ?? true),
+          ),
+          selectedShiftKeys: c.shiftType === "specific" ? c.selectedShifts : undefined,
+        };
+      })
     );
   };
 
@@ -478,7 +497,24 @@ export function AssignClassNewDialog({
       return;
     }
 
-    if (studentConfigs.some(config => config.autoInvoice)) {
+    if (hasAutoInvoiceConfigs && isFetchingWallets) {
+      toast({
+        title: "Đang tải số dư đặt cọc",
+        description: "Vui lòng chờ hệ thống kiểm tra số dư ví của học viên rồi xác nhận lại.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (hasAutoInvoiceConfigs && isWalletsError) {
+      toast({
+        title: "Không thể kiểm tra số dư đặt cọc",
+        description: "Vui lòng thử lại trước khi xếp lịch có hóa đơn tự động.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (hasAutoInvoiceConfigs) {
       setIsAutoInvoiceWarningOpen(true);
       return;
     }
@@ -1087,7 +1123,7 @@ export function AssignClassNewDialog({
                                       </span>
                                       <label className="flex items-center gap-1.5 cursor-pointer select-none text-foreground font-medium">
                                         <Checkbox
-                                          checked={config.useDeposit}
+                                          checked={config.useDeposit ?? (depositBalance > 0)}
                                           onCheckedChange={(v) => updateStudentConfig(idx, { useDeposit: !!v })}
                                           data-testid={`checkbox-use-deposit-${config.studentId}`}
                                         />
@@ -1128,7 +1164,7 @@ export function AssignClassNewDialog({
                   scheduleMutation.isPending ||
                   studentConfigs.some(c =>
                     c.shiftType === "specific" && c.selectedShifts.length === 0
-                  )
+                  ) || (hasAutoInvoiceConfigs && isFetchingWallets)
                 }
                 onClick={handleScheduleConfirm}
               >
@@ -1171,6 +1207,10 @@ export function AssignClassNewDialog({
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             Bạn đang bật hoá đơn tự động. Bạn có muốn tiếp tục?
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Học viên dùng tiền đặt cọc để tự động khấu trừ hóa đơn:{" "}
+            <span className="font-semibold text-amber-700">{depositUseCount}</span>
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAutoInvoiceWarningOpen(false)}>

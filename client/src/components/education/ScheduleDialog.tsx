@@ -178,7 +178,7 @@ export function ScheduleDialog({
         autoInvoice: true,
         promotionKeys: [] as string[],
         surchargeKeys: [] as string[],
-        useDeposit: false,
+        useDeposit: undefined,
       };
     })
   );
@@ -301,7 +301,11 @@ export function ScheduleDialog({
   });
 
   // Batch: lấy wallet summary cho tất cả học viên — 1 request thay vì N
-  const { data: walletsBatch } = useQuery<Record<string, { summary: { hocPhi: number; datCoc: number; total: number } }>>({
+  const {
+    data: walletsBatch,
+    isFetching: isFetchingWallets,
+    isError: isWalletsError,
+  } = useQuery<Record<string, { summary: { hocPhi: number; datCoc: number; total: number } }>>({
     queryKey: ["/api/students/fee-wallets-batch", studentIds],
     queryFn: async () => {
       if (studentIds.length === 0) return {};
@@ -311,9 +315,12 @@ export function ScheduleDialog({
         credentials: "include",
         body: JSON.stringify({ studentIds }),
       });
+      if (!res.ok) throw new Error("Không thể tải số dư đặt cọc của học viên");
       return res.json();
     },
     enabled: isOpen && studentIds.length > 0,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   // Batch: lấy fee packages cho tất cả học viên — 1 request thay vì N
@@ -437,7 +444,7 @@ export function ScheduleDialog({
     autoInvoice: true,
     promotionKeys: [] as string[],
     surchargeKeys: [] as string[],
-    useDeposit: false,
+    useDeposit: undefined,
   });
 
   const addStudentsToSchedule = (newStudents: any[]) => {
@@ -522,6 +529,11 @@ export function ScheduleDialog({
     (config) => config.autoInvoice && !config.packageId,
   );
   const hasMissingAutoInvoicePackage = missingAutoInvoicePackageConfigs.length > 0;
+  const hasAutoInvoiceConfigs = studentConfigs.some((config) => config.autoInvoice);
+  const depositUseCount = studentConfigs.filter((config) => {
+    const depositBalance = Number(depositMap[config.studentId] ?? 0);
+    return config.autoInvoice && depositBalance > 0 && (config.useDeposit ?? true);
+  }).length;
 
   const getPackage = (packageId: string) =>
     feePackages.find((p: any) => p.id === packageId);
@@ -754,10 +766,18 @@ export function ScheduleDialog({
   };
 
   const submitSchedule = () => {
-    const configs = studentConfigs.map(c => ({
-      ...c,
-      selectedShiftKeys: c.shiftType === "specific" ? c.selectedShifts : [],
-    }));
+    const configs = studentConfigs.map(c => {
+      const depositBalance = Number(depositMap[c.studentId] ?? 0);
+      return {
+        ...c,
+        useDeposit: Boolean(
+          c.autoInvoice
+          && depositBalance > 0
+          && (c.useDeposit ?? true),
+        ),
+        selectedShiftKeys: c.shiftType === "specific" ? c.selectedShifts : [],
+      };
+    });
     onConfirm(configs, buildClassScheduleConfig());
   };
 
@@ -767,7 +787,24 @@ export function ScheduleDialog({
       return;
     }
 
-    if (studentConfigs.some(config => config.autoInvoice)) {
+    if (hasAutoInvoiceConfigs && isFetchingWallets) {
+      toast({
+        title: "Đang tải số dư đặt cọc",
+        description: "Vui lòng chờ hệ thống kiểm tra số dư ví của học viên rồi xác nhận lại.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (hasAutoInvoiceConfigs && isWalletsError) {
+      toast({
+        title: "Không thể kiểm tra số dư đặt cọc",
+        description: "Vui lòng tải lại dialog trước khi xếp lịch có hóa đơn tự động.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (hasAutoInvoiceConfigs) {
       setIsAutoInvoiceWarningOpen(true);
       return;
     }
@@ -1362,7 +1399,7 @@ export function ScheduleDialog({
                                 </span>
                                 <label className="flex items-center gap-1.5 cursor-pointer select-none text-foreground font-medium">
                                   <Checkbox
-                                    checked={config.useDeposit}
+                                    checked={config.useDeposit ?? (depositBalance > 0)}
                                     onCheckedChange={(v) => updateStudentConfig(idx, { useDeposit: !!v })}
                                     data-testid={`checkbox-use-deposit-${config.studentId}`}
                                   />
@@ -1388,7 +1425,7 @@ export function ScheduleDialog({
           <Button
             disabled={isPending || !isSchedConfigValid || studentConfigs.some(c =>
               (c.shiftType === "specific" && c.selectedShifts.length === 0)
-            )}
+            ) || (hasAutoInvoiceConfigs && isFetchingWallets)}
             onClick={handleConfirm}
           >
             {isPending ? "Đang xử lý..." : "Xác nhận xếp lịch"}
@@ -1561,6 +1598,10 @@ export function ScheduleDialog({
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             Bạn đang bật hoá đơn tự động. Bạn có muốn tiếp tục?
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Học viên dùng tiền đặt cọc để tự động khấu trừ hóa đơn:{" "}
+            <span className="font-semibold text-amber-700">{depositUseCount}</span>
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAutoInvoiceWarningOpen(false)}>
