@@ -2464,6 +2464,7 @@ export function registerClassesRoutes(app: Express): void {
         fromSessionIndex: z.number().int().min(1),
         toSessionIndex: z.number().int().min(1),
         transferCount: z.number().int().min(1),
+        targetTransferCount: z.number().int().min(1).optional(),
         refundToDepositAmount: z.number().positive().optional(),
         refundDescription: z.string().max(1000).optional(),
       });
@@ -2486,13 +2487,13 @@ export function registerClassesRoutes(app: Express): void {
           .from(classes).where(eq(classes.id, fromClassId)).limit(1);
         const [toClassInfo] = await db.select({ name: classes.name, classCode: classes.classCode })
           .from(classes).where(eq(classes.id, toClassId)).limit(1);
-        const fromSessions = await db.select({ sessionIndex: classSessions.sessionIndex, sessionDate: classSessions.sessionDate, weekday: classSessions.weekday })
-          .from(classSessions).where(and(eq(classSessions.classId, fromClassId), sql`${classSessions.sessionIndex} >= ${fromSessionIndex}`))
-           .orderBy(asc(classSessions.sessionIndex)).limit(actualTransferCount);
-        const toSessions = await db.select({ sessionIndex: classSessions.sessionIndex, sessionDate: classSessions.sessionDate, weekday: classSessions.weekday })
-          .from(classSessions).where(and(eq(classSessions.classId, toClassId), sql`${classSessions.sessionIndex} >= ${toSessionIndex}`))
-           .orderBy(asc(classSessions.sessionIndex)).limit(actualTransferCount);
-        const sessionPairs = fromSessions.map((fs, i) => ({
+         const fromSessions = await db.select({ sessionIndex: classSessions.sessionIndex, sessionDate: classSessions.sessionDate, weekday: classSessions.weekday })
+           .from(classSessions).where(inArray(classSessions.id, transferResult.fromSessionIds))
+            .orderBy(asc(classSessions.sessionIndex));
+         const toSessions = await db.select({ sessionIndex: classSessions.sessionIndex, sessionDate: classSessions.sessionDate, weekday: classSessions.weekday })
+           .from(classSessions).where(inArray(classSessions.id, transferResult.toSessionIds))
+            .orderBy(asc(classSessions.sessionIndex));
+         const sessionPairs = fromSessions.slice(0, Math.min(fromSessions.length, toSessions.length)).map((fs, i) => ({
           fromSessionIndex: fs.sessionIndex,
           fromSessionDate: fs.sessionDate,
           fromWeekday: fs.weekday ?? (fs.sessionDate ? new Date(fs.sessionDate).getDay() : 0),
@@ -2511,7 +2512,18 @@ export function registerClassesRoutes(app: Express): void {
             student: { name: studentInfo?.fullName ?? "", code: studentInfo?.code ?? "" },
             fromClass: { name: fromClassInfo?.name ?? "", classCode: fromClassInfo?.classCode ?? "" },
             toClass: { name: toClassInfo?.name ?? "", classCode: toClassInfo?.classCode ?? "" },
-             fromSessionIndex, toSessionIndex, transferCount: actualTransferCount,
+              fromSessionIndex, toSessionIndex, transferCount: actualTransferCount,
+             targetTransferCount: transferResult.targetTransferCount,
+             fromSessions: fromSessions.map((session) => ({
+               sessionIndex: session.sessionIndex,
+               sessionDate: session.sessionDate ?? "",
+               weekday: session.weekday ?? (session.sessionDate ? new Date(session.sessionDate).getDay() : 0),
+             })),
+             toSessions: toSessions.map((session) => ({
+               sessionIndex: session.sessionIndex,
+               sessionDate: session.sessionDate ?? "",
+               weekday: session.weekday ?? (session.sessionDate ? new Date(session.sessionDate).getDay() : 0),
+             })),
             sessions: sessionPairs,
           }),
         });
@@ -2544,13 +2556,13 @@ export function registerClassesRoutes(app: Express): void {
           .from(classes).where(eq(classes.id, fromClassId)).limit(1);
         const [toClassInfo] = await db.select({ name: classes.name, classCode: classes.classCode })
           .from(classes).where(eq(classes.id, toClassId)).limit(1);
-        const fromSessions = await db.select({ sessionIndex: classSessions.sessionIndex, sessionDate: classSessions.sessionDate, weekday: classSessions.weekday })
-          .from(classSessions).where(and(eq(classSessions.classId, fromClassId), sql`${classSessions.sessionIndex} >= ${fromSessionIndex}`))
-           .orderBy(asc(classSessions.sessionIndex)).limit(actualTransferCount);
-        const toSessions = await db.select({ sessionIndex: classSessions.sessionIndex, sessionDate: classSessions.sessionDate, weekday: classSessions.weekday })
-          .from(classSessions).where(and(eq(classSessions.classId, toClassId), sql`${classSessions.sessionIndex} >= ${toSessionIndex}`))
-           .orderBy(asc(classSessions.sessionIndex)).limit(actualTransferCount);
-        const sessionPairs = fromSessions.map((fs, i) => ({
+         const fromSessions = await db.select({ sessionIndex: classSessions.sessionIndex, sessionDate: classSessions.sessionDate, weekday: classSessions.weekday })
+           .from(classSessions).where(inArray(classSessions.id, transferResult.fromSessionIds))
+            .orderBy(asc(classSessions.sessionIndex));
+         const toSessions = await db.select({ sessionIndex: classSessions.sessionIndex, sessionDate: classSessions.sessionDate, weekday: classSessions.weekday })
+           .from(classSessions).where(inArray(classSessions.id, transferResult.toSessionIds))
+            .orderBy(asc(classSessions.sessionIndex));
+         const sessionPairs = fromSessions.slice(0, Math.min(fromSessions.length, toSessions.length)).map((fs, i) => ({
           fromSessionIndex: fs.sessionIndex,
           fromSessionDate: fs.sessionDate,
           fromWeekday: fs.weekday ?? (fs.sessionDate ? new Date(fs.sessionDate).getDay() : 0),
@@ -2569,7 +2581,18 @@ export function registerClassesRoutes(app: Express): void {
             student: { name: studentInfo?.fullName ?? "", code: studentInfo?.code ?? "" },
             fromClass: { name: fromClassInfo?.name ?? "", classCode: fromClassInfo?.classCode ?? "" },
             toClass: { name: toClassInfo?.name ?? "", classCode: toClassInfo?.classCode ?? "" },
-             fromSessionIndex, toSessionIndex, transferCount: actualTransferCount,
+              fromSessionIndex, toSessionIndex, transferCount: actualTransferCount,
+             targetTransferCount: transferResult.targetTransferCount,
+             fromSessions: fromSessions.map((session) => ({
+               sessionIndex: session.sessionIndex,
+               sessionDate: session.sessionDate ?? "",
+               weekday: session.weekday ?? (session.sessionDate ? new Date(session.sessionDate).getDay() : 0),
+             })),
+             toSessions: toSessions.map((session) => ({
+               sessionIndex: session.sessionIndex,
+               sessionDate: session.sessionDate ?? "",
+               weekday: session.weekday ?? (session.sessionDate ? new Date(session.sessionDate).getDay() : 0),
+             })),
             sessions: sessionPairs,
           }),
         });

@@ -255,9 +255,15 @@ export interface IStorage {
     fromSessionIndex: number;
     toSessionIndex: number;
     transferCount: number;
+    targetTransferCount?: number;
     userId: string;
     createdByName?: string | null;
-  }): Promise<{ transferCount: number }>;
+  }): Promise<{
+    transferCount: number;
+    targetTransferCount: number;
+    fromSessionIds: string[];
+    toSessionIds: string[];
+  }>;
   recalculateStudentClass(studentClassId: string): Promise<void>;
   extendStudentSessions(data: {
     classId: string;
@@ -444,9 +450,15 @@ export class DatabaseStorage implements IStorage {
     fromSessionIndex: number;
     toSessionIndex: number;
     transferCount: number;
+    targetTransferCount?: number;
     userId: string;
     createdByName?: string | null;
-  }): Promise<{ transferCount: number }> {
+  }): Promise<{
+    transferCount: number;
+    targetTransferCount: number;
+    fromSessionIds: string[];
+    toSessionIds: string[];
+  }> {
     return sessionStorage.transferStudentClass(data);
   }
 

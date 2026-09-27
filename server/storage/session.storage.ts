@@ -460,16 +460,26 @@ export async function transferStudentClass(data: {
   fromSessionIndex: number;
   toSessionIndex: number;
   transferCount: number;
+  targetTransferCount?: number;
   userId: string;
   refundToDepositAmount?: number;
   refundDescription?: string;
   createdByName?: string | null;
-}): Promise<{ transferCount: number }> {
+}): Promise<{
+  transferCount: number;
+  targetTransferCount: number;
+  fromSessionIds: string[];
+  toSessionIds: string[];
+}> {
   return db.transaction(async (tx) => {
+    const requestedTargetTransferCount = data.targetTransferCount ?? data.transferCount;
     const refundAmount = data.refundToDepositAmount == null
       ? 0
       : Number(data.refundToDepositAmount);
 
+    if (!Number.isInteger(requestedTargetTransferCount) || requestedTargetTransferCount < 1) {
+      throw new Error("Số buổi chuyển ở lớp mới không hợp lệ");
+    }
     if (!Number.isFinite(refundAmount) || refundAmount < 0) {
       throw new Error("Số tiền hoàn vào ví cọc không hợp lệ");
     }
@@ -572,19 +582,19 @@ export async function transferStudentClass(data: {
     // attendance has been recorded yet.
     const targetSessionCandidates = targetSessionPool
       .filter((session) => !existingTargetBySessionId.has(session.id))
-      .slice(0, data.transferCount);
+      .slice(0, requestedTargetTransferCount);
 
     if (targetSessionCandidates.length === 0) {
       throw new Error("Lớp mới không còn buổi học chưa có học viên để chuyển");
     }
+    if (requestedTargetTransferCount > targetSessionCandidates.length) {
+      throw new Error(
+        `Từ buổi ${data.toSessionIndex} chỉ còn ${targetSessionCandidates.length} buổi chưa có học viên để chuyển vào lớp mới`,
+      );
+    }
 
-    const effectiveTransferCount = Math.min(
-      data.transferCount,
-      oldSessionCandidates.length,
-      targetSessionCandidates.length,
-    );
-    const oldSessions = oldSessionCandidates.slice(0, effectiveTransferCount);
-    const targetClassSessions = targetSessionCandidates.slice(0, effectiveTransferCount);
+    const oldSessions = oldSessionCandidates;
+    const targetClassSessions = targetSessionCandidates;
     const studentClassId = oldSessions[0].studentClassId;
 
     let [targetStudentClass] = await tx.select()
@@ -612,23 +622,21 @@ export async function transferStudentClass(data: {
       where: eq(classes.id, data.toClassId),
     });
 
-    // FIX: Batch fetch dates của tất cả old sessions trong 1 query (thay vì N SELECT riêng lẻ)
-    const oldClassSessionIds = oldSessions.map(s => s.classSessionId);
-    const oldCsRows = await tx
-      .select({ id: classSessions.id, sessionDate: classSessions.sessionDate })
-      .from(classSessions)
-      .where(inArray(classSessions.id, oldClassSessionIds));
-    const oldCsDateMap: Record<string, string> = {};
-    for (const row of oldCsRows) oldCsDateMap[row.id] = row.sessionDate;
+    const oldFirstSession = oldSessions[0];
+    const oldLastSession = oldSessions[oldSessions.length - 1];
+    const oldRangeLabel = oldSessions.length === 1
+      ? `buổi ${oldFirstSession.sessionIndex}`
+      : `buổi ${oldFirstSession.sessionIndex}–${oldLastSession.sessionIndex} (${oldSessions.length} buổi)`;
+    const targetFirstSession = targetClassSessions[0];
+    const targetLastSession = targetClassSessions[targetClassSessions.length - 1];
+    const targetRangeLabel = targetClassSessions.length === 1
+      ? `buổi ${targetFirstSession.sessionIndex}`
+      : `buổi ${targetFirstSession.sessionIndex}–${targetLastSession.sessionIndex} (${targetClassSessions.length} buổi)`;
 
     // FIX: Tính toán tất cả records trong JS rồi bulk insert 1 lần (thay vì N INSERT riêng lẻ)
     const newSSRows = targetClassSessions
       .filter((cs) => !existingTargetBySessionId.has(cs.id))
       .map((cs) => {
-        const i = targetClassSessions.indexOf(cs);
-        const oldSession = oldSessions[i];
-        const oldDate = oldCsDateMap[oldSession.classSessionId];
-        const oldDateStr = oldDate ? format(new Date(oldDate), "d/M/yyyy") : "";
         return {
           studentId: data.studentId,
           classId: data.toClassId,
@@ -636,7 +644,7 @@ export async function transferStudentClass(data: {
           classSessionId: cs.id,
           status: "scheduled" as const,
           attendanceStatus: "pending" as const,
-          note: `Chuyển từ lớp ${fromClass?.name || data.fromClassId}\nBuổi ${oldSession.sessionIndex} - ${oldDateStr}`,
+          note: `Chuyển từ lớp ${fromClass?.name || data.fromClassId}\nĐã chuyển ${oldRangeLabel}`,
         };
       });
     if (newSSRows.length > 0) {
@@ -646,12 +654,10 @@ export async function transferStudentClass(data: {
     // FIX: Cập nhật tất cả old sessions thành "transferred" trong 1 CASE WHEN SQL
     // (thay vì N UPDATE riêng lẻ). Note khác nhau từng row nên cần CASE WHEN.
     // UUIDs là safe. Class names được escape single-quote theo chuẩn PostgreSQL ('').
-    const oldSessionUpdates = targetClassSessions.map((cs, i) => {
-      const oldSession = oldSessions[i];
-      const targetDateStr = format(new Date(cs.sessionDate), "d/M/yyyy");
+    const oldSessionUpdates = oldSessions.map((oldSession) => {
       return {
         id: oldSession.id,
-        note: `Chuyển sang lớp ${toClass?.name || data.toClassId}\nBuổi ${cs.sessionIndex} - ${targetDateStr}`,
+        note: `Chuyển sang lớp ${toClass?.name || data.toClassId}\nĐã nhận ${targetRangeLabel}`,
       };
     });
 
@@ -705,7 +711,12 @@ export async function transferStudentClass(data: {
         },
       ]);
     }
-    return { transferCount: effectiveTransferCount };
+    return {
+      transferCount: oldSessions.length,
+      targetTransferCount: targetClassSessions.length,
+      fromSessionIds: oldSessions.map((session) => session.classSessionId),
+      toSessionIds: targetClassSessions.map((session) => session.id),
+    };
   });
 }
 

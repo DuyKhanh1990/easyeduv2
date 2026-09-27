@@ -203,6 +203,11 @@ type TransferClassLogSession = {
   toSessionDate: string;
   toWeekday: number;
 };
+type TransferClassLogSessionEntry = {
+  sessionIndex: number | null;
+  sessionDate: string;
+  weekday: number;
+};
 type TransferClassLogPayload = {
   student: { name: string; code: string };
   fromClass: { name: string; classCode: string };
@@ -210,6 +215,9 @@ type TransferClassLogPayload = {
   fromSessionIndex: number;
   toSessionIndex: number;
   transferCount: number;
+  targetTransferCount?: number;
+  fromSessions?: TransferClassLogSessionEntry[];
+  toSessions?: TransferClassLogSessionEntry[];
   sessions: TransferClassLogSession[];
 };
 
@@ -1360,6 +1368,9 @@ function TransferClassLogCell({ raw }: { raw: string | null }) {
   if (!payload) return <span className="text-muted-foreground italic">—</span>;
   const { student, fromClass, toClass, sessions } = payload;
   const firstPair = sessions[0];
+  const fromSession = payload.fromSessions?.[0];
+  const toSession = payload.toSessions?.[0];
+  const hasSeparateSessionLists = Array.isArray(payload.fromSessions) && Array.isArray(payload.toSessions);
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-[11px] font-semibold text-yellow-800">
@@ -1368,13 +1379,19 @@ function TransferClassLogCell({ raw }: { raw: string | null }) {
       <span className="text-xs text-muted-foreground">
         {fromClass.name} → {toClass.name}
       </span>
-      {firstPair && (
+      {hasSeparateSessionLists ? (
+        <span className="text-xs text-muted-foreground whitespace-nowrap">
+          Lớp cũ: {payload.transferCount} buổi{fromSession ? ` từ buổi ${fromSession.sessionIndex ?? "?"}` : ""}
+          {" · "}Lớp mới: {payload.targetTransferCount ?? payload.transferCount} buổi
+          {toSession ? ` từ buổi ${toSession.sessionIndex ?? "?"}` : ""}
+        </span>
+      ) : firstPair ? (
         <span className="text-xs text-muted-foreground whitespace-nowrap">
           Buổi {firstPair.fromSessionIndex ?? "?"} ({formatTransferDate(firstPair.fromSessionDate)})
           {" → "}Buổi {firstPair.toSessionIndex ?? "?"} ({formatTransferDate(firstPair.toSessionDate)})
         </span>
-      )}
-      {sessions.length > 1 && (
+      ) : null}
+      {!hasSeparateSessionLists && sessions.length > 1 && (
         <span className="text-xs text-muted-foreground italic">+{sessions.length - 1} buổi nữa</span>
       )}
     </div>
@@ -1384,14 +1401,27 @@ function TransferClassLogCell({ raw }: { raw: string | null }) {
 function TransferClassLogDetailView({ log }: { log: ActivityLog }) {
   const payload = tryParseTransferClassLog(log.newContent);
   if (!payload) return <div className="text-xs text-muted-foreground italic">Không có dữ liệu chi tiết.</div>;
-  const { student, fromClass, toClass, fromSessionIndex, toSessionIndex, transferCount, sessions } = payload;
+  const {
+    student,
+    fromClass,
+    toClass,
+    fromSessionIndex,
+    toSessionIndex,
+    transferCount,
+    targetTransferCount = transferCount,
+    fromSessions,
+    toSessions,
+    sessions,
+  } = payload;
+  const hasSeparateSessionLists = Array.isArray(fromSessions) && Array.isArray(toSessions);
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-md px-4 py-3">
         <div className="text-xs font-semibold text-yellow-800 dark:text-yellow-300 uppercase tracking-wide mb-1">Thông tin chuyển lớp</div>
         <div className="flex flex-wrap gap-x-8 gap-y-1">
           <div className="text-xs"><span className="text-muted-foreground">Học viên: </span><span className="font-semibold">{student.name}{student.code ? ` (${student.code})` : ""}</span></div>
-          <div className="text-xs"><span className="text-muted-foreground">Số buổi chuyển: </span><span className="font-medium">{transferCount}</span></div>
+          <div className="text-xs"><span className="text-muted-foreground">Buổi chuyển khỏi lớp cũ: </span><span className="font-medium">{transferCount}</span></div>
+          <div className="text-xs"><span className="text-muted-foreground">Buổi nhận ở lớp mới: </span><span className="font-medium">{targetTransferCount}</span></div>
         </div>
       </div>
 
@@ -1410,37 +1440,62 @@ function TransferClassLogDetailView({ log }: { log: ActivityLog }) {
         </div>
       </div>
 
-      <div>
-        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Chi tiết buổi học ({sessions.length} buổi)</div>
-        <table className="w-full text-xs border-collapse">
-          <thead>
-            <tr className="bg-muted/40">
-              <th className="border border-border/40 px-2 py-1 text-left font-medium text-muted-foreground">STT</th>
-              <th className="border border-border/40 px-2 py-1 text-left font-medium text-muted-foreground">Buổi cũ</th>
-              <th className="border border-border/40 px-2 py-1 text-left font-medium text-muted-foreground">Ngày cũ</th>
-              <th className="border border-border/40 px-2 py-1 text-center font-medium text-muted-foreground">→</th>
-              <th className="border border-border/40 px-2 py-1 text-left font-medium text-muted-foreground">Buổi mới</th>
-              <th className="border border-border/40 px-2 py-1 text-left font-medium text-muted-foreground">Ngày mới</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sessions.map((pair, idx) => (
-              <tr key={idx} className={idx % 2 === 0 ? "bg-background" : "bg-muted/20"}>
-                <td className="border border-border/40 px-2 py-1 text-center text-muted-foreground">{idx + 1}</td>
-                <td className="border border-border/40 px-2 py-1 font-medium">Buổi {pair.fromSessionIndex ?? "?"}</td>
-                <td className="border border-border/40 px-2 py-1 text-muted-foreground whitespace-nowrap">
-                  {WEEKDAY_LABELS[pair.fromWeekday] ?? ""} {formatTransferDate(pair.fromSessionDate)}
-                </td>
-                <td className="border border-border/40 px-2 py-1 text-center text-muted-foreground">→</td>
-                <td className="border border-border/40 px-2 py-1 font-medium text-yellow-700 dark:text-yellow-400">Buổi {pair.toSessionIndex ?? "?"}</td>
-                <td className="border border-border/40 px-2 py-1 text-muted-foreground whitespace-nowrap">
-                  {WEEKDAY_LABELS[pair.toWeekday] ?? ""} {formatTransferDate(pair.toSessionDate)}
-                </td>
+      {hasSeparateSessionLists ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {[
+            { title: `Buổi gỡ khỏi lớp cũ (${fromSessions.length})`, items: fromSessions, tone: "text-red-700 dark:text-red-400" },
+            { title: `Buổi thêm vào lớp mới (${toSessions.length})`, items: toSessions, tone: "text-green-700 dark:text-green-400" },
+          ].map((group) => (
+            <div key={group.title}>
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{group.title}</div>
+              <div className="flex flex-wrap gap-1.5">
+                {group.items.map((session, idx) => (
+                  <span key={`${session.sessionIndex}-${session.sessionDate}-${idx}`} className={`rounded border bg-muted/20 px-2 py-1 text-xs ${group.tone}`}>
+                    Buổi {session.sessionIndex ?? "?"}
+                    {session.sessionDate && (
+                      <span className="ml-1 text-muted-foreground">
+                        {WEEKDAY_LABELS[session.weekday] ?? ""} {formatTransferDate(session.sessionDate)}
+                      </span>
+                    )}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div>
+          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Chi tiết buổi học ({sessions.length} buổi)</div>
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr className="bg-muted/40">
+                <th className="border border-border/40 px-2 py-1 text-left font-medium text-muted-foreground">STT</th>
+                <th className="border border-border/40 px-2 py-1 text-left font-medium text-muted-foreground">Buổi cũ</th>
+                <th className="border border-border/40 px-2 py-1 text-left font-medium text-muted-foreground">Ngày cũ</th>
+                <th className="border border-border/40 px-2 py-1 text-center font-medium text-muted-foreground">→</th>
+                <th className="border border-border/40 px-2 py-1 text-left font-medium text-muted-foreground">Buổi mới</th>
+                <th className="border border-border/40 px-2 py-1 text-left font-medium text-muted-foreground">Ngày mới</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {sessions.map((pair, idx) => (
+                <tr key={idx} className={idx % 2 === 0 ? "bg-background" : "bg-muted/20"}>
+                  <td className="border border-border/40 px-2 py-1 text-center text-muted-foreground">{idx + 1}</td>
+                  <td className="border border-border/40 px-2 py-1 font-medium">Buổi {pair.fromSessionIndex ?? "?"}</td>
+                  <td className="border border-border/40 px-2 py-1 text-muted-foreground whitespace-nowrap">
+                    {WEEKDAY_LABELS[pair.fromWeekday] ?? ""} {formatTransferDate(pair.fromSessionDate)}
+                  </td>
+                  <td className="border border-border/40 px-2 py-1 text-center text-muted-foreground">→</td>
+                  <td className="border border-border/40 px-2 py-1 font-medium text-yellow-700 dark:text-yellow-400">Buổi {pair.toSessionIndex ?? "?"}</td>
+                  <td className="border border-border/40 px-2 py-1 text-muted-foreground whitespace-nowrap">
+                    {WEEKDAY_LABELS[pair.toWeekday] ?? ""} {formatTransferDate(pair.toSessionDate)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -1815,7 +1870,12 @@ function countContentLines(log: ActivityLog, field: "oldContent" | "newContent")
   }
   if (log.action === "Chuyển lớp") {
     const payload = tryParseTransferClassLog(raw);
-    return payload ? Math.max(payload.sessions.length + 2, 3) : 1;
+    if (!payload) return 1;
+    const rowCount = Math.max(
+      payload.fromSessions?.length ?? payload.sessions.length,
+      payload.toSessions?.length ?? payload.sessions.length,
+    );
+    return Math.max(rowCount + 2, 3);
   }
   if (log.action === "Đổi gói học phí") {
     const payload = tryParseTuitionPackageLog(raw);

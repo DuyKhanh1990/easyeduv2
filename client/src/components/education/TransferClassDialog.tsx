@@ -67,6 +67,7 @@ const transferSchema = z.object({
   fromSessionIndex: z.coerce.number().int().min(1, "Vui lòng chọn buổi bắt đầu chuyển"),
   toSessionIndex: z.coerce.number().int().min(1, "Vui lòng chọn buổi bắt đầu ở lớp mới"),
   transferCount: z.coerce.number().int().min(1, "Số buổi chuyển phải ít nhất là 1"),
+  targetTransferCount: z.coerce.number().int().min(1, "Số buổi chuyển ở lớp mới phải ít nhất là 1"),
 });
 
 type TransferFormValues = z.infer<typeof transferSchema>;
@@ -213,6 +214,7 @@ export function TransferClassDialog({
   const [invoiceCategory, setInvoiceCategory] = useState<"Hoàn học phí" | "Đặt cọc">("Hoàn học phí");
   const [refundMethod, setRefundMethod] = useState<"invoice" | "deposit">("invoice");
   const [actualSessionCount, setActualSessionCount] = useState(0);
+  const [targetTransferCountManuallyEdited, setTargetTransferCountManuallyEdited] = useState(false);
   const [roundingMode, setRoundingMode] = useState<"none" | "down" | "up">("none");
   const { data: myPerms } = useMyPermissions();
   const canCreatePromotion = Boolean(
@@ -228,6 +230,7 @@ export function TransferClassDialog({
       fromSessionIndex: 1,
       toSessionIndex: 1,
       transferCount: 1,
+      targetTransferCount: 1,
     },
   });
 
@@ -235,6 +238,7 @@ export function TransferClassDialog({
   const fromSessionIndex = form.watch("fromSessionIndex");
   const toSessionIndex = form.watch("toSessionIndex");
   const transferCount = Number(form.watch("transferCount") || 0);
+  const targetTransferCount = Number(form.watch("targetTransferCount") || 0);
 
   // Fetch student sessions in current class
   const { data: currentSessions, isLoading: loadingCurrent } = useQuery<any[]>({
@@ -319,18 +323,10 @@ export function TransferClassDialog({
       && !targetExistingSessionIds.has(session.id);
   });
   const targetAvailableCount = targetAvailableSessions.length;
-  const effectiveTransferCount = selectedToClassId && !targetDataLoading
-    ? Math.min(transferCount, targetAvailableCount)
-    : transferCount;
   const currentAvailableSessionCount = (currentSessions ?? []).filter((session) => {
     const sessionIndex = Number(session.classSession?.sessionIndex ?? session.sessionIndex);
     return Number.isFinite(sessionIndex) && sessionIndex >= Number(fromSessionIndex);
   }).length;
-  const targetSessionShortfall =
-    Boolean(selectedToClassId)
-    && !targetDataLoading
-    && targetAvailableCount > 0
-    && targetAvailableCount < transferCount;
 
   useEffect(() => {
     if (!selectedToClassId || targetDataLoading || selectableTargetSessions.length === 0) return;
@@ -368,6 +364,26 @@ export function TransferClassDialog({
     }
   }, [fromSessionIndex, currentSessions]);
 
+  useEffect(() => {
+    if (!selectedToClassId || targetDataLoading || targetAvailableCount <= 0) return;
+    const currentValue = Number(form.getValues("targetTransferCount") || 0);
+    const suggestedValue = Math.min(Math.max(transferCount, 1), targetAvailableCount);
+    const nextValue = targetTransferCountManuallyEdited
+      ? Math.min(currentValue, targetAvailableCount)
+      : suggestedValue;
+    if (currentValue !== nextValue) {
+      form.setValue("targetTransferCount", nextValue, { shouldValidate: false });
+    }
+  }, [
+    selectedToClassId,
+    toSessionIndex,
+    targetAvailableCount,
+    targetDataLoading,
+    transferCount,
+    targetTransferCountManuallyEdited,
+    form,
+  ]);
+
   // Default to the student's actual enrolled session count, while allowing
   // the operator to adjust the denominator for the transfer calculation.
   useEffect(() => {
@@ -385,7 +401,9 @@ export function TransferClassDialog({
     setTargetPromotionRows([]);
     setIsTargetDiscountDialogOpen(false);
     setOpenTargetPromotionPicker(null);
-  }, [selectedToClassId]);
+    setTargetTransferCountManuallyEdited(false);
+    form.setValue("targetTransferCount", 1, { shouldValidate: false });
+  }, [selectedToClassId, form]);
 
   // Auto-select fee package of target class (use class's feePackageId or first from course)
   const targetClass = availableClasses?.find((c) => c.id === selectedToClassId);
@@ -605,7 +623,7 @@ export function TransferClassDialog({
   const targetSessionPrice = targetPackageSessionCount > 0
     ? Number((targetTotalAfterDiscount / targetPackageSessionCount).toFixed(2))
     : getPackageBaseSessionPrice(selectedTargetPackage);
-  const targetTotal = targetSessionPrice * effectiveTransferCount;
+  const targetTotal = targetSessionPrice * targetTransferCount;
 
   // Financial difference
   const diff = targetTotal - currentTotal;
@@ -658,9 +676,9 @@ export function TransferClassDialog({
       : `Do học phí 2 lớp bằng nhau`;
 
     if (diff >= 0) {
-      return `Thu tiền Chuyển lớp ${fromName}, ${transferCount} buổi bắt đầu từ ${fromLabel} Sang Lớp ${toName}, ${effectiveTransferCount} buổi bắt đầu từ ${toLabel}. ${suffix}`;
+      return `Thu tiền Chuyển lớp ${fromName}, ${transferCount} buổi bắt đầu từ ${fromLabel} Sang Lớp ${toName}, ${targetTransferCount} buổi bắt đầu từ ${toLabel}. ${suffix}`;
     } else {
-      return `Hoàn tiền Chuyển lớp ${fromName}, ${transferCount} buổi bắt đầu từ ${fromLabel} Sang Lớp ${toName}, ${effectiveTransferCount} buổi bắt đầu từ ${toLabel}. ${suffix}`;
+      return `Hoàn tiền Chuyển lớp ${fromName}, ${transferCount} buổi bắt đầu từ ${fromLabel} Sang Lớp ${toName}, ${targetTransferCount} buổi bắt đầu từ ${toLabel}. ${suffix}`;
     }
   };
 
@@ -686,6 +704,13 @@ export function TransferClassDialog({
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${currentClass?.id}/sessions`] });
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${currentClass?.id}`] });
       queryClient.invalidateQueries({ queryKey: ["/api/classes", currentClass?.id] });
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${selectedToClassId}/active-students`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${selectedToClassId}/sessions`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${selectedToClassId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/classes", selectedToClassId] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/classes", selectedToClassId, "student", student?.id, "sessions"],
+      });
       queryClient.invalidateQueries({
         predicate: (q) => {
           const key = q.queryKey[0];
@@ -737,11 +762,11 @@ export function TransferClassDialog({
   const onSubmit = (values: TransferFormValues) => {
     if (
       currentAvailableSessionCount > 0
-      && transferCount > currentAvailableSessionCount
+      && values.transferCount > currentAvailableSessionCount
     ) {
       toast({
         title: "Số buổi chuyển không hợp lệ",
-        description: `Từ buổi ${fromSessionIndex} chỉ còn ${currentAvailableSessionCount} buổi có thể chuyển.`,
+        description: `Từ buổi ${fromSessionIndex} chỉ còn ${currentAvailableSessionCount} buổi có thể chuyển khỏi lớp cũ.`,
         variant: "destructive",
       });
       return;
@@ -750,6 +775,18 @@ export function TransferClassDialog({
       toast({
         title: "Không thể chuyển lớp",
         description: "Lớp mới không còn buổi chưa có mặt từ buổi bắt đầu đã chọn.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (
+      selectedToClassId
+      && !targetDataLoading
+      && values.targetTransferCount > targetAvailableCount
+    ) {
+      toast({
+        title: "Số buổi lớp mới không hợp lệ",
+        description: `Từ buổi ${toSessionIndex} chỉ còn ${targetAvailableCount} buổi có thể chuyển vào lớp mới.`,
         variant: "destructive",
       });
       return;
@@ -772,17 +809,14 @@ export function TransferClassDialog({
       });
       return;
     }
-    transferMutation.mutate({
-      ...values,
-      transferCount: effectiveTransferCount,
-    });
+    transferMutation.mutate(values);
   };
 
   const isPending = transferMutation.isPending || createInvoiceMutation.isPending;
 
   if (!student || !currentClass) return null;
 
-  const showFinancial = selectedToClassId && currentSessionPrice > 0 && targetSessionPrice > 0 && effectiveTransferCount > 0;
+  const showFinancial = selectedToClassId && currentSessionPrice > 0 && targetSessionPrice > 0 && targetTransferCount > 0;
 
   return (
     <>
@@ -1121,16 +1155,45 @@ export function TransferClassDialog({
                         </FormItem>
                       )}
                     />
+
+                    <FormField
+                      control={form.control}
+                      name="targetTransferCount"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Số buổi chuyển ở lớp mới</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={targetAvailableCount > 0 ? targetAvailableCount : undefined}
+                              step={1}
+                              value={field.value ?? ""}
+                              onChange={(event) => {
+                                setTargetTransferCountManuallyEdited(true);
+                                const rawValue = event.target.value;
+                                const numericValue = Number(rawValue);
+                                const value = rawValue === ""
+                                  ? ""
+                                  : targetAvailableCount > 0
+                                  ? Math.min(numericValue, targetAvailableCount)
+                                  : numericValue;
+                                field.onChange(value);
+                              }}
+                              disabled={!selectedToClassId || targetDataLoading || targetAvailableCount === 0}
+                              data-testid="input-target-transfer-count"
+                            />
+                          </FormControl>
+                          <p className="text-xs text-muted-foreground">
+                            {selectedToClassId && !targetDataLoading
+                              ? `Tối đa ${targetAvailableCount} buổi còn lại từ buổi bắt đầu đã chọn.`
+                              : "Chọn lớp và buổi bắt đầu để xem số buổi tối đa."}
+                          </p>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   </div>
-                  {targetSessionShortfall && (
-                    <div className="flex items-start gap-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
-                      <span className="font-semibold">Cảnh báo:</span>
-                      <span>
-                        Lớp mới có {targetAvailableCount} buổi có thể chuyển ít hơn số buổi lớp cũ đang chọn.
-                        Hệ thống sẽ chỉ chuyển {targetAvailableCount} buổi sang lớp mới.
-                      </span>
-                    </div>
-                  )}
                   {selectedToClassId && !targetDataLoading && targetAvailableCount === 0 && (
                     <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
                       Lớp mới không còn buổi chưa có mặt từ buổi bắt đầu đã chọn.
@@ -1391,10 +1454,10 @@ export function TransferClassDialog({
                     <div className="flex justify-between border-t pt-1.5 mt-1">
                       <span className="font-medium">Thành tiền:</span>
                       <span className="font-semibold text-foreground">
-                        {effectiveTransferCount > 0 && targetSessionPrice > 0 ? (
+                        {targetTransferCount > 0 && targetSessionPrice > 0 ? (
                           <span className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                             <span className="text-[11px] font-normal text-muted-foreground whitespace-nowrap">
-                              ({formatCurrencyValue(targetSessionPrice)} x {effectiveTransferCount})
+                              ({formatCurrencyValue(targetSessionPrice)} x {targetTransferCount})
                             </span>
                             <span>{formatCurrency(targetTotal)}</span>
                           </span>
