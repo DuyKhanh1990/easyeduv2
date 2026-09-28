@@ -294,6 +294,9 @@ export function TransferClassDialog({
 
   const hasTransferSchedule = (classItem: any) => Number(classItem?.totalSessions ?? 0) > 0;
 
+  const isTransferableSourceSession = (session: any) =>
+    session.status !== "transferred" && session.status !== "cancelled";
+
   // Fetch sessions for the selected target class
   const { data: targetSessions, isLoading: loadingTarget } = useQuery<any[]>({
     queryKey: ["/api/classes", selectedToClassId, "sessions"],
@@ -329,7 +332,9 @@ export function TransferClassDialog({
   const targetAvailableCount = targetAvailableSessions.length;
   const currentAvailableSessionCount = (currentSessions ?? []).filter((session) => {
     const sessionIndex = Number(session.classSession?.sessionIndex ?? session.sessionIndex);
-    return Number.isFinite(sessionIndex) && sessionIndex >= Number(fromSessionIndex);
+    return isTransferableSourceSession(session)
+      && Number.isFinite(sessionIndex)
+      && sessionIndex >= Number(fromSessionIndex);
   }).length;
 
   useEffect(() => {
@@ -361,7 +366,9 @@ export function TransferClassDialog({
     if (!idx) return;
     const remaining = currentSessions.filter((s) => {
       const sessionIndex = s.classSession?.sessionIndex ?? s.sessionIndex;
-      return sessionIndex != null && Number(sessionIndex) >= idx;
+      return isTransferableSourceSession(s)
+        && sessionIndex != null
+        && Number(sessionIndex) >= idx;
     }).length;
     if (remaining > 0) {
       form.setValue("transferCount", remaining, { shouldValidate: false });
@@ -898,7 +905,7 @@ export function TransferClassDialog({
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {currentSessions?.map((s) => {
+                              {currentSessions?.filter(isTransferableSourceSession).map((s) => {
                                 const sessionIndex = s.classSession?.sessionIndex ?? s.sessionIndex;
                                 const sessionDate = s.classSession?.sessionDate ?? s.sessionDate;
                                 if (sessionIndex == null || !sessionDate) return null;

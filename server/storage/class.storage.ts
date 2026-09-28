@@ -5,7 +5,7 @@ import {
   staff, students, studentLocations, shiftTemplates,
   courseFeePackages, financePromotions, invoices, invoiceItems,
 } from "./base";
-import { sessionContents, activityLogs, publicHolidays } from "@shared/schema";
+import { attendanceFeeRules, sessionContents, activityLogs, publicHolidays } from "@shared/schema";
 import { studentWalletTransactions } from "@shared/schema";
 import { calculateAutoInvoiceDepositTotals } from "@shared/invoice-deposit-accounting";
 import { distributeInvoiceFeeToSessions } from "./invoice-session-allocation.storage";
@@ -1310,6 +1310,13 @@ export async function getClassStudents(classId: string, status: string): Promise
     )),
   ]);
 
+  const feeRules = await db
+    .select({ attendanceStatus: attendanceFeeRules.attendanceStatus })
+    .from(attendanceFeeRules)
+    .where(eq(attendanceFeeRules.deductsFee, true));
+  const attendedStatuses = new Set(feeRules.map((rule) => rule.attendanceStatus));
+  if (attendedStatuses.size === 0) attendedStatuses.add("present");
+
   // Build per-student maps
   type SessionRow = { id: string; classSessionId: string; status: string; attendanceStatus: string; sessionDate: string };
   const sessionsByStudent = new Map<string, SessionRow[]>();
@@ -1331,10 +1338,15 @@ export async function getClassStudents(classId: string, status: string): Promise
   }
 
   return studentClassesWithDetails.map((sc) => {
-    const sessions = sessionsByStudent.get(sc.studentId) ?? [];
+    const allSessions = sessionsByStudent.get(sc.studentId) ?? [];
+    const sessions = allSessions.filter(
+      (session) => session.status !== "transferred" && session.status !== "cancelled",
+    );
     const dates = sessions.map(s => s.sessionDate);
-    const actualStartDate = dates.length > 0 ? dates[0] : sc.startDate;
-    const actualEndDate = dates.length > 0 ? dates[dates.length - 1] : sc.endDate;
+    const actualStartDate = dates.length > 0 ? dates[0] : allSessions.length > 0 ? null : sc.startDate;
+    const actualEndDate = dates.length > 0 ? dates[dates.length - 1] : allSessions.length > 0 ? null : sc.endDate;
+    const attendedSessions = sessions.filter((session) => attendedStatuses.has(session.attendanceStatus)).length;
+    const totalSessions = sessions.length;
 
     const studentInvoices = invoicesByStudent.get(sc.studentId) ?? [];
     const hasInvoice = studentInvoices.length > 0;
@@ -1346,8 +1358,10 @@ export async function getClassStudents(classId: string, status: string): Promise
       endDate: actualEndDate,
       hasInvoice,
       debt,
-      // Use actual session count from student_sessions records (not the stale stored value)
-      totalSessions: sessions.length,
+      // Counts and dates come only from sessions still belonging to this enrollment.
+      totalSessions,
+      attendedSessions,
+      remainingSessions: Math.max(0, totalSessions - attendedSessions),
       // Full session list for makeup filter (classSessionId, status, attendanceStatus)
       studentSessions: sessions,
     };

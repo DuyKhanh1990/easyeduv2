@@ -92,7 +92,10 @@ export async function recalculateStudentClass(studentClassId: string, tx?: any):
   })
   .from(studentSessions)
   .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
-  .where(eq(studentSessions.studentClassId, studentClassId));
+  .where(and(
+    eq(studentSessions.studentClassId, studentClassId),
+    sql`${studentSessions.status} NOT IN ('transferred', 'cancelled')`,
+  ));
 
   const result = stats[0];
   if (result) {
@@ -202,7 +205,10 @@ export async function batchRecalculateStudentClasses(
   })
   .from(studentSessions)
   .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
-  .where(inArray(studentSessions.studentClassId, scIds))
+  .where(and(
+    inArray(studentSessions.studentClassId, scIds),
+    sql`${studentSessions.status} NOT IN ('transferred', 'cancelled')`,
+  ))
   .groupBy(studentSessions.studentClassId);
 
   const statsMap: Record<string, typeof allStats[number]> = {};
@@ -528,6 +534,7 @@ export async function transferStudentClass(data: {
       eq(studentSessions.studentId, data.studentId),
       eq(studentSessions.classId, data.fromClassId),
       sql`${classSessions.sessionIndex} >= ${data.fromSessionIndex}`,
+      sql`${studentSessions.status} NOT IN ('transferred', 'cancelled')`,
     ))
     .orderBy(asc(classSessions.sessionIndex))
     .limit(data.transferCount);
