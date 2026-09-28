@@ -8,7 +8,7 @@ import { scoreSheetAssessmentSchema } from "@shared/score-sheet-assessment";
 import { db, pool } from "../db";
 import { classSessions, studentSessions, freeClassRegistrations, freeClassDayAssignments, students, classes, studentClasses, staff, staffAssignments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, invoiceItems, courseFeePackages, financePromotions, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
 import { eq, and, sql, inArray, avg, between, gte, lte, gt, desc, asc, or, ilike, isNotNull, isNull, ne } from "drizzle-orm";
-import { sendAttendanceNotification, sendReviewNotification, sendContentNotification } from "../lib/attendance-notification";
+import { sendAttendanceNotificationWithLimit, sendReviewNotification, sendContentNotification } from "../lib/attendance-notification";
 import { enforceAttendanceTimeLimit, getStaffRoleIds } from "../lib/attendance-limit";
 import { sendNotificationToMany } from "../lib/notification";
 import { emitToUser } from "../lib/ws-hub";
@@ -3100,18 +3100,29 @@ export function registerClassesRoutes(app: Express): void {
   app.patch(api.studentSessions.updateAttendance.path, async (req, res) => {
     try {
       const { status, note, attendance_status, attendance_note } = req.body;
-      const effectiveStatus = status ?? attendance_status;
-      const effectiveNote = note ?? attendance_note;
+      const studentSessionId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const rawStatus = status ?? attendance_status;
+      const rawNote = note ?? attendance_note;
+      if (
+        !studentSessionId ||
+        typeof rawStatus !== "string" ||
+        !rawStatus.trim() ||
+        (rawNote !== undefined && rawNote !== null && typeof rawNote !== "string")
+      ) {
+        return res.status(400).json({ message: "Thông tin điểm danh không hợp lệ." });
+      }
+      const effectiveStatus = rawStatus;
+      const effectiveNote = typeof rawNote === "string" ? rawNote : undefined;
       const userId = (req as any).user?.id ?? null;
       const userFullName = await resolveStaffFullName(userId);
 
       // Enforce attendance time limit
       const [ssForLimit] = await db.select({ classSessionId: studentSessions.classSessionId })
-        .from(studentSessions).where(eq(studentSessions.id, req.params.id)).limit(1);
+        .from(studentSessions).where(eq(studentSessions.id, studentSessionId)).limit(1);
       if (ssForLimit) await checkAttendanceLimitForSession(ssForLimit.classSessionId, req);
 
-      const { statusChanged } = await storage.updateStudentAttendance(req.params.id, effectiveStatus, effectiveNote, userId, userFullName);
-      if (statusChanged) sendAttendanceNotification(req.params.id, effectiveStatus, userId).catch(console.error);
+      const { statusChanged } = await storage.updateStudentAttendance(studentSessionId, effectiveStatus, effectiveNote, userId, userFullName);
+      if (statusChanged) sendAttendanceNotificationWithLimit(studentSessionId, effectiveStatus, userId).catch(console.error);
       res.json({ success: true });
     } catch (err: any) {
       res.status(err.status ?? 400).json({ message: err.message });
@@ -3162,7 +3173,7 @@ export function registerClassesRoutes(app: Express): void {
       }
 
       const { statusChanged: attendanceChanged } = await storage.updateStudentAttendance(student_session_id, attendance_status, attendance_note, userId, userFullName);
-      if (attendanceChanged) sendAttendanceNotification(student_session_id, attendance_status, userId).catch(console.error);
+      if (attendanceChanged) sendAttendanceNotificationWithLimit(student_session_id, attendance_status, userId).catch(console.error);
 
       // Create activity log
       if (attendanceLogData && userId) {
@@ -3217,7 +3228,7 @@ export function registerClassesRoutes(app: Express): void {
 
       const changedStudents = await storage.bulkUpdateAttendance(session_id, studentList, userId, userFullName);
       for (const student of changedStudents) {
-        sendAttendanceNotification(student.studentSessionId, student.newStatus, userId).catch(console.error);
+        sendAttendanceNotificationWithLimit(student.studentSessionId, student.newStatus, userId).catch(console.error);
       }
 
       // Log only the changes confirmed by the locked transaction.

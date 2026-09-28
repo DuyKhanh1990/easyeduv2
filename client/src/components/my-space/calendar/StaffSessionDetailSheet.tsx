@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { MyCalendarSession } from "@/types/my-calendar";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { applyBulkAttendance } from "@/lib/attendance-bulk";
 import { useToast } from "@/hooks/use-toast";
 import { Users, Loader2, Star, ChevronDown, LibraryBig } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -105,6 +106,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const [isBulkAttendanceOpen, setIsBulkAttendanceOpen] = useState(false);
+  const [isBulkAttendanceSaving, setIsBulkAttendanceSaving] = useState(false);
   const [isRemoveOpen, setIsRemoveOpen] = useState(false);
   const [isBulkReviewOpen, setIsBulkReviewOpen] = useState(false);
 
@@ -295,6 +297,103 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
   const selectedStudentSessions = studentSessions.filter((ss: any) =>
     selectedStudentIds.includes(ss.studentId)
   );
+  async function handleBulkAttendance(status: string) {
+    if (isBulkAttendanceSaving || isFreeSession) return;
+    if (!classSessionId || selectedStudentIds.length === 0) {
+      toast({
+        title: "Không thể điểm danh",
+        description: "Không tìm thấy buổi học hoặc danh sách học viên đã chọn.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const selectedRows = selectedStudentIds
+      .map((studentId) => studentSessions.find((ss: any) => ss.studentId === studentId))
+      .filter(Boolean) as any[];
+    if (selectedRows.length !== selectedStudentIds.length) {
+      toast({
+        title: "Không thể điểm danh",
+        description: "Một số học viên không còn trong danh sách của buổi học. Hãy tải lại rồi thử lại.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const noteBySessionId: Record<string, string> = {};
+    for (const row of selectedRows) {
+      noteBySessionId[row.id] = localNotes[row.id] ?? row.attendanceNote ?? "";
+    }
+
+    setIsBulkAttendanceSaving(true);
+    try {
+      const result = await applyBulkAttendance(
+        selectedRows.map((row) => ({ id: row.id, classSessionId })),
+        status,
+        (sessionId, students) => apiRequest(
+          "POST",
+          "/api/student-sessions/bulk-attendance",
+          {
+            session_id: sessionId,
+            students: students.map((student) => ({
+              ...student,
+              attendanceNote: noteBySessionId[student.studentSessionId] ?? "",
+            })),
+          },
+        ),
+        async () => {
+          throw new Error("Lớp tự do cần dùng luồng điểm danh riêng.");
+        },
+      );
+
+      if (result.failures.length > 0) {
+        const failedSessionIds = new Set(result.failures.map((failure) => failure.id));
+        const failedStudentIds = new Set(
+          selectedRows
+            .filter((row) => failedSessionIds.has(row.id))
+            .map((row) => row.studentId),
+        );
+        setSelectedStudentIds((previous) =>
+          previous.filter((studentId) => failedStudentIds.has(studentId)),
+        );
+        toast({
+          title: "Chưa lưu được điểm danh",
+          description: `${result.failures.length} học viên vẫn được giữ chọn để thử lại. ${result.failures[0]?.message ?? "Hãy thử lại."}`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      void queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey[0] as string;
+          return typeof key === "string" && (
+            key.includes("/student-sessions") ||
+            key.includes("/all-student-sessions") ||
+            key === "/api/my-space/calendar/staff" ||
+            key === "/api/schedule" ||
+            (key === "/api/my-space/calendar/staff/session" && query.queryKey[1] === classSessionId)
+          );
+        },
+      });
+      setSelectedStudentIds([]);
+      setIsBulkAttendanceOpen(false);
+      setIsActionMenuOpen(false);
+      toast({
+        title: "Đã điểm danh hàng loạt",
+        description: `Đã cập nhật ${result.updatedIds.length} học viên.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Không thể hoàn tất điểm danh",
+        description: error?.message || "Hãy thử lại. Các học viên vẫn được giữ chọn.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsBulkAttendanceSaving(false);
+    }
+  }
+
   const removeStudentClassId = selectedStudentSessions[0]?.studentClassId ?? "";
   const removeStudentClassIds = Object.fromEntries(
     selectedStudentSessions
@@ -773,7 +872,12 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
       </Dialog>
 
       {/* Bulk attendance dialog */}
-      <Dialog open={isBulkAttendanceOpen} onOpenChange={setIsBulkAttendanceOpen}>
+      <Dialog
+        open={isBulkAttendanceOpen}
+        onOpenChange={(open) => {
+          if (!isBulkAttendanceSaving) setIsBulkAttendanceOpen(open);
+        }}
+      >
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
             <DialogTitle>Điểm danh hàng loạt</DialogTitle>
@@ -787,22 +891,10 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                 key={status}
                 variant="outline"
                 className={`w-full justify-start text-${color}-600 border-${color}-200 hover:bg-${color}-50 dark:hover:bg-${color}-950/30`}
-                onClick={() => {
-                  selectedStudentIds.forEach((studentId) => {
-                    const ss = studentSessions.find((s: any) => s.studentId === studentId);
-                    if (ss) {
-                      updateAttendanceMutation.mutate({
-                        id: ss.id,
-                        status,
-                        note: localNotes[ss.id] ?? ss.attendanceNote ?? "",
-                      });
-                    }
-                  });
-                  setIsBulkAttendanceOpen(false);
-                  setIsActionMenuOpen(false);
-                }}
+                disabled={isBulkAttendanceSaving}
+                onClick={() => void handleBulkAttendance(status)}
               >
-                {label}
+                {isBulkAttendanceSaving ? "Đang lưu..." : label}
               </Button>
             ))}
           </div>

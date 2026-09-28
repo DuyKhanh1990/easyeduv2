@@ -213,6 +213,39 @@ export async function sendAttendanceNotification(
   }
 }
 
+const MAX_ACTIVE_ATTENDANCE_NOTIFICATIONS = 2;
+let activeAttendanceNotifications = 0;
+const attendanceNotificationWaiters: Array<() => void> = [];
+
+async function withAttendanceNotificationSlot(task: () => Promise<void>): Promise<void> {
+  if (activeAttendanceNotifications < MAX_ACTIVE_ATTENDANCE_NOTIFICATIONS) {
+    activeAttendanceNotifications += 1;
+  } else {
+    await new Promise<void>((resolve) => attendanceNotificationWaiters.push(resolve));
+  }
+
+  try {
+    await task();
+  } finally {
+    const next = attendanceNotificationWaiters.shift();
+    if (next) {
+      next();
+    } else {
+      activeAttendanceNotifications -= 1;
+    }
+  }
+}
+
+export function sendAttendanceNotificationWithLimit(
+  studentSessionId: string,
+  newStatus: string,
+  actorUserId: string | null | undefined,
+): Promise<void> {
+  return withAttendanceNotificationSlot(() =>
+    sendAttendanceNotification(studentSessionId, newStatus, actorUserId)
+  );
+}
+
 const CONTENT_TYPE_SHORT: Record<string, string> = {
   "Bài học": "Bài học",
   "Bài tập về nhà": "BTVN",
