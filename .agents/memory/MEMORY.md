@@ -40,7 +40,7 @@
 - [Student discussion edit audit](student-discussion-edit-audit.md) — giữ tác giả gốc và lưu riêng người sửa/thời điểm sửa để hiển thị lịch sử minh bạch.
 - [Admin Hub connection testing](admin-hub-connection-testing.md) — cross-domain claim cần endpoint public và mã được sinh trong cùng môi trường/database.
 - [Class session ordering](class-session-ordering.md) — thứ tự buổi phải theo ngày/giờ; lưu buổi sẽ đánh lại sessionIndex nhưng giữ nguyên ID và dữ liệu gắn với ID.
-- [Transferred session accounting](transferred-session-counts.md) — giữ lịch sử chuyển, loại khỏi số buổi hiện tại và lưu riêng gói/đơn giá đích; hóa đơn chênh lệch không phân bổ vào buổi.
+- [Transferred session accounting](transferred-session-counts.md) — chuyển tín dụng theo tổng giá trị từng buổi nguồn; buổi đích giữ đơn giá riêng, khoản thu chênh lệch thuộc lớp mới.
 - [Web Push tenant scope](web-push-tenant-scope.md) — dùng chung VAPID keys, nhưng subscription luôn scope theo centerConfig.id + userId và phải push schema từng database.
 - [Harbor npm lockfile URLs](harbor-npm-lockfile-urls.md) — Docker build ngoài Replit phải đổi cả package-firewall.replit.local và .internal về npmjs.org trước npm ci.
 - [Staff password display](staff-password-display.md) — giữ hash đăng nhập và ciphertext riêng để dialog staff có thể hiển thị mật khẩu khi được phép.
