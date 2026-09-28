@@ -907,6 +907,15 @@ function renderInvoiceCell(
       return <td key="paidBy" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{inv.paidByName || "—"}</td>;
     case "paidAt":
       return <EditableInvoiceDateCell invoice={inv} field="paidAt" canEdit={canEdit} isSelected={isSelected} isOdd={isOdd} />;
+    case "paymentMethod": {
+      const method = inv.paymentMethod?.trim();
+      const label = method === "cash"
+        ? "Tiền mặt"
+        : method === "transfer"
+          ? "Chuyển khoản"
+          : method || "—";
+      return <td key="paymentMethod" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{label}</td>;
+    }
     case "updater":
       return <td key="updater" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{inv.updaterName || "—"}</td>;
     case "updatedAt":

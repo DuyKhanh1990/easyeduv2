@@ -35,6 +35,7 @@ export const ALL_COLUMNS: ColumnDef[] = [
   { key: "createdAt",   label: "Ngày tạo",            sortKey: "createdAt",   defaultVisible: true },
   { key: "paidBy",      label: "Người thanh toán",                            defaultVisible: false },
   { key: "paidAt",      label: "Ngày thanh toán",     sortKey: "paidAt",      defaultVisible: false },
+  { key: "paymentMethod", label: "Hình thức TT",                              defaultVisible: true },
   { key: "updater",     label: "Người cập nhật",                              defaultVisible: false },
   { key: "updatedAt",   label: "Ngày cập nhật",       sortKey: "updatedAt",   defaultVisible: false },
   { key: "commission",  label: "Hoa hồng",            sortKey: "commission",  defaultVisible: false, align: "right" },
