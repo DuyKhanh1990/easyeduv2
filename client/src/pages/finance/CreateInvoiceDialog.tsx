@@ -27,6 +27,7 @@ import { useStaff } from "@/hooks/use-staff";
 import { useAuth } from "@/hooks/use-auth";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { fmtMoney, getTodayVietnamDate, isInvoicePaidLike } from "@/types/invoice-types";
+import { isLegacyAutoInvoiceDepositDoubleCount } from "@shared/invoice-deposit-accounting";
 import { FinancePromotionDialog, type FinancePromotionType } from "./components/FinancePromotionDialog";
 
 interface Product {
@@ -457,7 +458,12 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     setDueDate(inv.dueDate ? inv.dueDate.split("T")[0] : format(getTodayVietnamDate(), "yyyy-MM-dd"));
     // When a payment schedule exists, paid info is captured per-installment — don't double-count paidAmount
     const hasSchedule = Array.isArray(inv.paymentSchedule) && inv.paymentSchedule.length > 0;
-    setDirectPaidAmount(hasSchedule ? 0 : (parseFloat(inv.paidAmount) || 0));
+    const legacyDepositWasCountedAsPayment = isLegacyAutoInvoiceDepositDoubleCount(inv);
+    setDirectPaidAmount(
+      hasSchedule || legacyDepositWasCountedAsPayment
+        ? 0
+        : (parseFloat(inv.paidAmount) || 0),
+    );
     const storedInvoiceBaseTotal = Math.max(
       0,
       (parseFloat(inv.totalAmount) || 0)
@@ -921,12 +927,13 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     setPaymentSchedule(prev => {
       const difference = finalTotal - directPaidAmount - prev.reduce((sum, entry) => sum + entry.amount, 0);
 
-      // A direct partial payment starts the schedule automatically at ĐỢT 2.
+      // A direct payment starts at ĐỢT 2; a deposit deduction starts the
+      // remaining balance at ĐỢT 1.
       if (prev.length === 0) {
-        if (directPaidAmount > 0 && difference > 0) {
+        if ((directPaidAmount > 0 || deduction > 0) && difference > 0) {
           return [{
             id: `auto-${Date.now()}`,
-            label: "ĐỢT 2",
+            label: directPaidAmount > 0 ? "ĐỢT 2" : "ĐỢT 1",
             code: `PT-${Date.now()}`,
             amount: difference,
             due: getTodayVietnamDate(),

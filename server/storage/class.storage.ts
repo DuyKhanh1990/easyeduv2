@@ -7,6 +7,7 @@ import {
 } from "./base";
 import { sessionContents, activityLogs, publicHolidays } from "@shared/schema";
 import { studentWalletTransactions } from "@shared/schema";
+import { calculateAutoInvoiceDepositTotals } from "@shared/invoice-deposit-accounting";
 import { distributeInvoiceFeeToSessions } from "./invoice-session-allocation.storage";
 import { getNextLocationCode } from "./finance.storage";
 import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
@@ -1860,6 +1861,8 @@ export async function scheduleClassStudents(classId: string, configs: any[], use
           }).returning();
 
           if (newInvoice) {
+            let notificationGrandTotal = grandTotal;
+            let notificationStatus = "unpaid";
             const qty = sessions.length > 0 ? sessions.length : 1;
             const unitPrice = pkg.type === "buổi" ? feePerSession : totalAmountFixed;
             await tx.insert(invoiceItems).values({
@@ -1924,16 +1927,18 @@ export async function scheduleClassStudents(classId: string, configs: any[], use
                   createdBy: userId || null,
                 });
 
-                // 3. Update invoice: record deduction, paidAmount, remainingAmount
-                const newPaid = deductionAmt;
-                const newRemaining = Math.max(0, grandTotal - deductionAmt);
-                const newStatus = newRemaining === 0 ? "paid" : "unpaid";
+                // The deposit reduces the invoice total; it is not a second
+                // payment against the already-reduced amount.
+                const depositTotals = calculateAutoInvoiceDepositTotals(grandTotal, depositBalance);
+                notificationGrandTotal = depositTotals.grandTotal;
+                notificationStatus = depositTotals.status;
                 await tx.update(invoices)
                   .set({
-                    deduction: deductionAmt.toFixed(2),
-                    paidAmount: newPaid.toFixed(2),
-                    remainingAmount: newRemaining.toFixed(2),
-                    status: newStatus,
+                    grandTotal: depositTotals.grandTotal.toFixed(2),
+                    deduction: depositTotals.deduction.toFixed(2),
+                    paidAmount: depositTotals.paidAmount.toFixed(2),
+                    remainingAmount: depositTotals.remainingAmount.toFixed(2),
+                    status: depositTotals.status,
                   })
                   .where(eq(invoices.id, newInvoice.id));
               }
@@ -1944,9 +1949,9 @@ export async function scheduleClassStudents(classId: string, configs: any[], use
               studentId: sid,
               classId,
               code: newInvoice.code ?? null,
-              grandTotal: newInvoice.grandTotal ?? grandTotal.toString(),
+              grandTotal: notificationGrandTotal.toString(),
               note: newInvoice.description ?? null,
-              status: newInvoice.status ?? "unpaid",
+              status: notificationStatus,
             });
           }
         }
