@@ -256,6 +256,8 @@ export interface IStorage {
     toSessionIndex: number;
     transferCount: number;
     targetTransferCount?: number;
+    targetPackageId?: string | null;
+    targetSessionPrice?: number;
     userId: string;
     createdByName?: string | null;
   }): Promise<{
@@ -451,6 +453,8 @@ export class DatabaseStorage implements IStorage {
     toSessionIndex: number;
     transferCount: number;
     targetTransferCount?: number;
+    targetPackageId?: string | null;
+    targetSessionPrice?: number;
     userId: string;
     createdByName?: string | null;
   }): Promise<{

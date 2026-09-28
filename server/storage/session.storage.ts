@@ -467,6 +467,8 @@ export async function transferStudentClass(data: {
   toSessionIndex: number;
   transferCount: number;
   targetTransferCount?: number;
+  targetPackageId?: string | null;
+  targetSessionPrice?: number;
   userId: string;
   refundToDepositAmount?: number;
   refundDescription?: string;
@@ -629,6 +631,45 @@ export async function transferStudentClass(data: {
       where: eq(classes.id, data.toClassId),
     });
 
+    const resolvedTargetPackageId = data.targetPackageId ?? toClass?.feePackageId ?? null;
+    let targetFeePackage: typeof courseFeePackages.$inferSelect | undefined;
+    if (resolvedTargetPackageId) {
+      [targetFeePackage] = await tx.select()
+        .from(courseFeePackages)
+        .where(eq(courseFeePackages.id, resolvedTargetPackageId))
+        .limit(1);
+      if (!targetFeePackage) {
+        throw new Error("Không tìm thấy gói học phí của lớp mới");
+      }
+      const packageBelongsToTargetClass =
+        targetFeePackage.id === toClass?.feePackageId
+        || (!!toClass?.courseId && targetFeePackage.courseId === toClass.courseId);
+      if (!packageBelongsToTargetClass) {
+        throw new Error("Gói học phí đã chọn không thuộc khóa học của lớp mới");
+      }
+    }
+
+    if (
+      data.targetSessionPrice !== undefined
+      && (!Number.isFinite(data.targetSessionPrice) || data.targetSessionPrice < 0)
+    ) {
+      throw new Error("Đơn giá buổi học của lớp mới không hợp lệ");
+    }
+
+    const packageSessionCount = Number(targetFeePackage?.sessions ?? 0);
+    const packageTotal = Number(targetFeePackage?.totalAmount ?? targetFeePackage?.fee ?? 0);
+    const isCoursePackage = ["khoá", "khóa"].includes(
+      String(targetFeePackage?.type ?? "").toLocaleLowerCase("vi"),
+    );
+    const baseTargetSessionPrice = targetFeePackage
+      ? isCoursePackage && packageSessionCount > 0
+        ? packageTotal / packageSessionCount
+        : Number(targetFeePackage.fee ?? 0)
+      : null;
+    const storedTargetSessionPrice = targetFeePackage
+      ? Number((data.targetSessionPrice ?? baseTargetSessionPrice ?? 0).toFixed(2))
+      : null;
+
     const oldFirstSession = oldSessions[0];
     const oldLastSession = oldSessions[oldSessions.length - 1];
     const oldRangeLabel = oldSessions.length === 1
@@ -641,9 +682,25 @@ export async function transferStudentClass(data: {
       : `buổi ${targetFirstSession.sessionIndex}–${targetLastSession.sessionIndex} (${targetClassSessions.length} buổi)`;
 
     // FIX: Tính toán tất cả records trong JS rồi bulk insert 1 lần (thay vì N INSERT riêng lẻ)
+    const existingTargetOrderRows = await tx.select({
+      sessionOrder: studentSessions.sessionOrder,
+    })
+      .from(studentSessions)
+      .where(and(
+        eq(studentSessions.studentId, data.studentId),
+        eq(studentSessions.classId, data.toClassId),
+        sql`${studentSessions.status} NOT IN ('transferred', 'cancelled')`,
+      ));
+    const firstNewSessionOrder = Math.max(
+      0,
+      ...existingTargetOrderRows
+        .map((row) => Number(row.sessionOrder))
+        .filter((order) => Number.isFinite(order) && order > 0),
+    ) + 1;
+
     const newSSRows = targetClassSessions
       .filter((cs) => !existingTargetBySessionId.has(cs.id))
-      .map((cs) => {
+      .map((cs, index) => {
         return {
           studentId: data.studentId,
           classId: data.toClassId,
@@ -651,6 +708,11 @@ export async function transferStudentClass(data: {
           classSessionId: cs.id,
           status: "scheduled" as const,
           attendanceStatus: "pending" as const,
+          packageId: targetFeePackage?.id ?? null,
+          packageType: targetFeePackage?.type ?? null,
+          sessionPrice: storedTargetSessionPrice?.toFixed(2) ?? null,
+          sessionSource: "transfer",
+          sessionOrder: firstNewSessionOrder + index,
           note: `Chuyển từ lớp ${fromClass?.name || data.fromClassId}\nĐã chuyển ${oldRangeLabel}`,
         };
       });
@@ -1831,6 +1893,7 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
       attendanceStatus: true,
       packageId: true,
       sessionPrice: true,
+      sessionSource: true,
     },
     with: {
       classSession: {

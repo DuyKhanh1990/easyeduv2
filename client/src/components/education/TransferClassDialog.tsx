@@ -399,11 +399,11 @@ export function TransferClassDialog({
   // the operator to adjust the denominator for the transfer calculation.
   useEffect(() => {
     if (!isOpen || !currentClass?.id || !student?.id) return;
-    const registeredCount = currentSessions?.length ?? 0;
+    const registeredCount = (currentSessions ?? []).filter(isTransferableSourceSession).length;
     if (registeredCount > 0) {
       setActualSessionCount(registeredCount);
     }
-  }, [isOpen, currentClass?.id, student?.id, currentSessions?.length]);
+  }, [isOpen, currentClass?.id, student?.id, currentSessions]);
 
   useEffect(() => {
     if (isOpen) setTransferFeeAdjustmentInput("");
@@ -574,16 +574,17 @@ export function TransferClassDialog({
   });
 
   // Current class fee info from student's sessions
-  const currentSession = currentSessions?.find((s) => {
+  const activeCurrentSessions = (currentSessions ?? []).filter(isTransferableSourceSession);
+  const currentSession = activeCurrentSessions.find((s) => {
     const idx = s.classSession?.sessionIndex ?? s.sessionIndex;
     return Number(idx) === Number(fromSessionIndex);
-  }) ?? currentSessions?.[0];
+  }) ?? activeCurrentSessions[0];
   const currentFeePackage = currentSession?.feePackage;
   const currentStoredSessionPrice = currentSession ? Number(currentSession.sessionPrice ?? 0) : 0;
   // For an enrolled student, the invoice allocation is based on the actual
   // number of registered sessions, which can differ from the package template
   // (e.g. a 20-session course package applied to 49 enrolled sessions).
-  const currentRegisteredSessionCount = currentSessions?.length ?? 0;
+  const currentRegisteredSessionCount = activeCurrentSessions.length;
   const currentSessionCount = actualSessionCount > 0
     ? actualSessionCount
     : currentRegisteredSessionCount > 0
@@ -604,7 +605,9 @@ export function TransferClassDialog({
   const currentAllocatedSessionPrice = Number(currentSession?.pricing?.allocatedFee ?? 0);
   const hasCurrentPackagePrice = !!currentFeePackage && currentBaseSessionPrice > 0;
   const currentNetTotal = Math.max(0, currentBaseTotal - currentDiscountAmount);
-  const currentSessionPrice = currentSessionCount > 0 && (currentAllocatedSessionPrice > 0 || currentNetTotal > 0)
+  const currentSessionPrice = currentSession?.sessionSource === "transfer"
+    ? currentStoredSessionPrice
+    : currentSessionCount > 0 && (currentAllocatedSessionPrice > 0 || currentNetTotal > 0)
     ? Number((currentNetTotal / currentSessionCount).toFixed(2))
     : hasCurrentPackagePrice
     ? Math.max(0, currentBaseSessionPrice - currentDiscountPerSession)
@@ -674,7 +677,7 @@ export function TransferClassDialog({
   };
 
   const getFromSessionLabel = () => {
-    const s = currentSessions?.find((s) => {
+    const s = activeCurrentSessions.find((s) => {
       const idx = s.classSession?.sessionIndex ?? s.sessionIndex;
       return Number(idx) === Number(fromSessionIndex);
     });
@@ -702,14 +705,17 @@ export function TransferClassDialog({
     const adjustmentNote = !autoInvoice && transferFeeAdjustment !== 0
       ? ` Phí chuyển lớp điều chỉnh: ${formatSignedCurrency(transferFeeAdjustment)}.`
       : "";
+    const packagePriceDetails = selectedTargetPackage
+      ? ` Gói lớp cũ: ${currentFeePackage?.name ?? fromName}, ${formatCurrency(currentSessionPrice)}/buổi × ${transferCount} = ${formatCurrency(currentTotal)}; gói lớp mới: ${selectedTargetPackage.name}, ${formatCurrency(targetSessionPrice)}/buổi × ${targetTransferCount} = ${formatCurrency(targetTotal)}.`
+      : "";
     const finalAmountNote = diff === 0
       ? " Sau điều chỉnh không phát sinh thu hoặc hoàn thêm."
       : ` Số tiền ${diff < 0 ? "hoàn" : "thu"} sau điều chỉnh: ${formatCurrency(Math.abs(diff))}.`;
 
     if (diff >= 0) {
-      return `Thu tiền Chuyển lớp ${fromName}, ${transferCount} buổi bắt đầu từ ${fromLabel} Sang Lớp ${toName}, ${targetTransferCount} buổi bắt đầu từ ${toLabel}. ${suffix}.${adjustmentNote}${finalAmountNote}`;
+      return `Thu tiền Chuyển lớp ${fromName}, ${transferCount} buổi bắt đầu từ ${fromLabel} Sang Lớp ${toName}, ${targetTransferCount} buổi bắt đầu từ ${toLabel}. ${suffix}.${packagePriceDetails}${adjustmentNote}${finalAmountNote}`;
     } else {
-      return `Hoàn tiền Chuyển lớp ${fromName}, ${transferCount} buổi bắt đầu từ ${fromLabel} Sang Lớp ${toName}, ${targetTransferCount} buổi bắt đầu từ ${toLabel}. ${suffix}.${adjustmentNote}${finalAmountNote}`;
+      return `Hoàn tiền Chuyển lớp ${fromName}, ${transferCount} buổi bắt đầu từ ${fromLabel} Sang Lớp ${toName}, ${targetTransferCount} buổi bắt đầu từ ${toLabel}. ${suffix}.${packagePriceDetails}${adjustmentNote}${finalAmountNote}`;
     }
   };
 
@@ -726,6 +732,10 @@ export function TransferClassDialog({
     mutationFn: async (values: TransferFormValues) => {
       await apiRequest("POST", "/api/students/transfer-class", {
         ...values,
+        targetPackageId: selectedTargetPackage?.id,
+        targetSessionPrice: selectedTargetPackage
+          ? Number(targetSessionPrice.toFixed(2))
+          : undefined,
         refundToDepositAmount: shouldRefundToDeposit ? refundAmount : undefined,
         refundDescription: shouldRefundToDeposit ? buildInvoiceNote() : undefined,
       });
@@ -766,7 +776,21 @@ export function TransferClassDialog({
           paidAmount: "0",
           status: "unpaid",
           description: buildInvoiceNote(),
-          items: [],
+          items: [{
+            packageId: selectedTargetPackage?.id ?? null,
+            packageName: selectedTargetPackage?.name ?? "Chênh lệch chuyển lớp",
+            // This is only the net adjustment, not tuition for a set of
+            // sessions, so it must not be distributed across class sessions.
+            packageType: null,
+            unitPrice: amount.toString(),
+            quantity: 1,
+            promotionKeys: [],
+            surchargeKeys: [],
+            promotionAmount: "0",
+            surchargeAmount: "0",
+            subtotal: amount.toString(),
+            category,
+          }],
           paymentSchedule: [],
         });
       }

@@ -2465,6 +2465,8 @@ export function registerClassesRoutes(app: Express): void {
         toSessionIndex: z.number().int().min(1),
         transferCount: z.number().int().min(1),
         targetTransferCount: z.number().int().min(1).optional(),
+        targetPackageId: z.string().uuid().nullable().optional(),
+        targetSessionPrice: z.number().min(0).optional(),
         refundToDepositAmount: z.number().positive().optional(),
         refundDescription: z.string().max(1000).optional(),
       });
