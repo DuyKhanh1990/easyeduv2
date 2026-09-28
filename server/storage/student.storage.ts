@@ -23,6 +23,7 @@ import type {
   StudentComment, InsertStudentComment,
   User,
 } from "./base";
+import { studentWalletTransactions } from "@shared/schema";
 
 // ==========================================
 // STUDENT METHODS
@@ -1742,31 +1743,51 @@ export async function getStudentClasses(
       FROM student_sessions ss
       WHERE ss.student_id = '${escapedStudentId}'
         AND ss.class_id IN (${classIdList})
+        AND ss.status NOT IN ('transferred', 'cancelled')
     ),
     session_allocs AS (
       SELECT isa.student_session_id, SUM(isa.allocated_amount) AS total_alloc
       FROM invoice_session_allocations isa
       INNER JOIN target_sessions ts ON ts.id = isa.student_session_id
+      INNER JOIN invoices i ON i.id = isa.invoice_id AND i.status <> 'cancelled'
       GROUP BY isa.student_session_id
+    ),
+    session_adjustments AS (
+      SELECT DISTINCT ON (tpa.student_session_id)
+        tpa.student_session_id,
+        tpa.effective_amount
+      FROM tuition_package_session_adjustments tpa
+      INNER JOIN target_sessions ts ON ts.id = tpa.student_session_id
+      ORDER BY tpa.student_session_id, tpa.applied_sequence DESC
+    ),
+    effective_sessions AS (
+      SELECT
+        ts.id,
+        ts.class_id,
+        ts.attendance_status,
+        COALESCE(sa.effective_amount, sal.total_alloc, ts.session_price, 0) AS effective_fee
+      FROM target_sessions ts
+      LEFT JOIN session_adjustments sa ON sa.student_session_id = ts.id
+      LEFT JOIN session_allocs sal ON sal.student_session_id = ts.id
     )
     SELECT
-      ts.class_id,
-      COUNT(ts.id) AS total_sessions,
-      COUNT(CASE WHEN ts.attendance_status IS NULL
-                   OR ts.attendance_status IN ('pending','scheduled') THEN 1 END) AS not_attended_count,
+      es.class_id,
+      COUNT(es.id) AS total_sessions,
+      COUNT(CASE WHEN es.attendance_status IS NULL
+                   OR es.attendance_status IN ('pending','scheduled') THEN 1 END) AS not_attended_count,
+      COALESCE(SUM(es.effective_fee), 0) AS session_value_total,
       COALESCE(SUM(
         CASE WHEN afr.deducts_fee = true
-        THEN COALESCE(sa.total_alloc, ts.session_price, 0)
+        THEN es.effective_fee
         END
       ), 0) AS attended_fee_total
-    FROM target_sessions ts
-    LEFT JOIN attendance_fee_rules afr ON afr.attendance_status = ts.attendance_status
-    LEFT JOIN session_allocs sa ON sa.student_session_id = ts.id
-    GROUP BY ts.class_id
+    FROM effective_sessions es
+    LEFT JOIN attendance_fee_rules afr ON afr.attendance_status = es.attendance_status
+    GROUP BY es.class_id
   `;
 
   // ── Q5: invoice paid totals per class ──────────────────────────────────────
-  const [statsResult, freeStatsResult, freeInvoiceItemRows, allInvoices] = await Promise.all([
+  const [statsResult, freeStatsResult, freeInvoiceItemRows, allInvoices, transferAllocationRows, transferRefundInvoices] = await Promise.all([
     db.execute(sql.raw(statsQueryStr)),
     db.execute(sql.raw(`
       SELECT
@@ -1810,14 +1831,47 @@ export async function getStudentClasses(
         inArray(invoices.classId, allClassIds),
         eq(invoices.type, "Thu"),
       )),
+    db.select({
+      classId: studentWalletTransactions.classId,
+      type: studentWalletTransactions.type,
+      amount: studentWalletTransactions.amount,
+    })
+      .from(studentWalletTransactions)
+      .where(and(
+        eq(studentWalletTransactions.studentId, studentId),
+        inArray(studentWalletTransactions.classId, allClassIds),
+        eq(studentWalletTransactions.category, "Học phí"),
+        sql`(
+          ${studentWalletTransactions.invoiceCode} LIKE 'CLS-TR-%'
+          OR ${studentWalletTransactions.action} LIKE 'Hoàn tiền chuyển lớp: trừ ví học phí%'
+        )`,
+      )),
+    db.select({
+      classId: invoices.classId,
+      paidAmount: invoices.paidAmount,
+    })
+      .from(invoices)
+      .where(and(
+        eq(invoices.studentId, studentId),
+        inArray(invoices.classId, allClassIds),
+        eq(invoices.type, "Chi"),
+        sql`${invoices.description} ILIKE '%Chuyển lớp%'`,
+      )),
   ]);
 
-  const statsByClassId = new Map<string, { totalSessions: number; attendedSessions: number; notAttendedCount: number; attendedFeeTotal: number }>();
+  const statsByClassId = new Map<string, {
+    totalSessions: number;
+    attendedSessions: number;
+    notAttendedCount: number;
+    sessionValueTotal: number;
+    attendedFeeTotal: number;
+  }>();
   for (const row of statsResult.rows as any[]) {
     statsByClassId.set(row.class_id, {
       totalSessions:    Number(row.total_sessions    || 0),
       attendedSessions: Number(row.total_sessions || 0) - Number(row.not_attended_count || 0),
       notAttendedCount: Number(row.not_attended_count || 0),
+      sessionValueTotal: Number(row.session_value_total || 0),
       attendedFeeTotal: Number(row.attended_fee_total || 0),
     });
   }
@@ -1840,6 +1894,22 @@ export async function getStudentClasses(
   }
 
   const invoicePaidByClassId = new Map<string, number>();
+  const classTransferAdjustmentByClassId = new Map<string, number>();
+  for (const row of transferAllocationRows) {
+    if (!row.classId) continue;
+    const amount = Number(row.amount || 0) * (row.type === "credit" ? 1 : -1);
+    classTransferAdjustmentByClassId.set(
+      row.classId,
+      (classTransferAdjustmentByClassId.get(row.classId) ?? 0) + amount,
+    );
+  }
+  for (const row of transferRefundInvoices) {
+    if (!row.classId) continue;
+    classTransferAdjustmentByClassId.set(
+      row.classId,
+      (classTransferAdjustmentByClassId.get(row.classId) ?? 0) - Number(row.paidAmount || 0),
+    );
+  }
   const invoiceSummaryByClassId = new Map<string, {
     count: number;
     codes: string[];
@@ -1880,6 +1950,7 @@ export async function getStudentClasses(
       totalSessions: 0,
       attendedSessions: 0,
       notAttendedCount: 0,
+      sessionValueTotal: 0,
       attendedFeeTotal: 0,
     };
     const freeStats = freeStatsByClassId.get(classRec.id);
@@ -1905,6 +1976,12 @@ export async function getStudentClasses(
       attendedSessions,
       notAttendedCount,
       attendedFeeTotal: isFreeClass ? attendedSessions * freeSessionFee : stats.attendedFeeTotal,
+      sessionValueTotal: isFreeClass
+        ? totalSessions * freeSessionFee
+        : stats.sessionValueTotal,
+      classFundedAmount:
+        (invoicePaidByClassId.get(classRec.id) ?? 0)
+        + (classTransferAdjustmentByClassId.get(classRec.id) ?? 0),
       invoiceSummary: invoiceSummary ? {
         count: invoiceSummary.count,
         codes: invoiceSummary.codes,

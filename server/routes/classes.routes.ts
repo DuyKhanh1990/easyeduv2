@@ -2467,6 +2467,7 @@ export function registerClassesRoutes(app: Express): void {
         targetTransferCount: z.number().int().min(1).optional(),
         targetPackageId: z.string().uuid().nullable().optional(),
         targetSessionPrice: z.number().min(0).optional(),
+        roundingMode: z.enum(["none", "down", "up"]).optional(),
         refundToDepositAmount: z.number().positive().optional(),
         refundDescription: z.string().max(1000).optional(),
       });
@@ -2516,6 +2517,7 @@ export function registerClassesRoutes(app: Express): void {
             toClass: { name: toClassInfo?.name ?? "", classCode: toClassInfo?.classCode ?? "" },
               fromSessionIndex, toSessionIndex, transferCount: actualTransferCount,
              targetTransferCount: transferResult.targetTransferCount,
+             sourceCreditAmount: transferResult.sourceCreditAmount,
              fromSessions: fromSessions.map((session) => ({
                sessionIndex: session.sessionIndex,
                sessionDate: session.sessionDate ?? "",
@@ -2585,6 +2587,7 @@ export function registerClassesRoutes(app: Express): void {
             toClass: { name: toClassInfo?.name ?? "", classCode: toClassInfo?.classCode ?? "" },
               fromSessionIndex, toSessionIndex, transferCount: actualTransferCount,
              targetTransferCount: transferResult.targetTransferCount,
+             sourceCreditAmount: transferResult.sourceCreditAmount,
              fromSessions: fromSessions.map((session) => ({
                sessionIndex: session.sessionIndex,
                sessionDate: session.sessionDate ?? "",

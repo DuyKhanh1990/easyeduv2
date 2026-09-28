@@ -1,4 +1,5 @@
 import { between } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 
 import {
   db,
@@ -469,6 +470,7 @@ export async function transferStudentClass(data: {
   targetTransferCount?: number;
   targetPackageId?: string | null;
   targetSessionPrice?: number;
+  roundingMode?: "none" | "down" | "up";
   userId: string;
   refundToDepositAmount?: number;
   refundDescription?: string;
@@ -476,6 +478,7 @@ export async function transferStudentClass(data: {
 }): Promise<{
   transferCount: number;
   targetTransferCount: number;
+  sourceCreditAmount: number;
   fromSessionIds: string[];
   toSessionIds: string[];
 }> {
@@ -529,9 +532,16 @@ export async function transferStudentClass(data: {
       studentClassId: studentSessions.studentClassId,
       sessionIndex: classSessions.sessionIndex,
       classSessionId: studentSessions.classSessionId,
+      sessionPrice: studentSessions.sessionPrice,
+      packageType: studentSessions.packageType,
+      packageFee: courseFeePackages.fee,
+      packageFeeType: courseFeePackages.type,
+      packageSessions: courseFeePackages.sessions,
+      packageTotalAmount: courseFeePackages.totalAmount,
     })
     .from(studentSessions)
     .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
+    .leftJoin(courseFeePackages, eq(studentSessions.packageId, courseFeePackages.id))
     .where(and(
       eq(studentSessions.studentId, data.studentId),
       eq(studentSessions.classId, data.fromClassId),
@@ -630,6 +640,84 @@ export async function transferStudentClass(data: {
     const toClass = await tx.query.classes.findFirst({
       where: eq(classes.id, data.toClassId),
     });
+
+    const movedSessionIds = oldSessions.map((session) => session.id);
+    const [sourceAllocations, sourceAdjustments, sourceDefaultPackages] = await Promise.all([
+      tx.select({
+        studentSessionId: invoiceSessionAllocations.studentSessionId,
+        allocatedAmount: invoiceSessionAllocations.allocatedAmount,
+      })
+        .from(invoiceSessionAllocations)
+        .innerJoin(invoices, eq(invoiceSessionAllocations.invoiceId, invoices.id))
+        .where(and(
+          inArray(invoiceSessionAllocations.studentSessionId, movedSessionIds),
+          sql`${invoices.status} <> 'cancelled'`,
+        )),
+      tx.select({
+        studentSessionId: tuitionPackageSessionAdjustments.studentSessionId,
+        effectiveAmount: tuitionPackageSessionAdjustments.effectiveAmount,
+        appliedSequence: tuitionPackageSessionAdjustments.appliedSequence,
+      })
+        .from(tuitionPackageSessionAdjustments)
+        .where(inArray(tuitionPackageSessionAdjustments.studentSessionId, movedSessionIds)),
+      fromClass?.feePackageId
+        ? tx.select()
+            .from(courseFeePackages)
+            .where(eq(courseFeePackages.id, fromClass.feePackageId))
+            .limit(1)
+        : Promise.resolve([]),
+    ]);
+
+    const allocatedAmountBySession = new Map<string, number>();
+    for (const allocation of sourceAllocations) {
+      allocatedAmountBySession.set(
+        allocation.studentSessionId,
+        (allocatedAmountBySession.get(allocation.studentSessionId) ?? 0) + Number(allocation.allocatedAmount || 0),
+      );
+    }
+    const adjustmentAmountBySession = new Map<string, number>();
+    sourceAdjustments
+      .sort((left, right) => left.appliedSequence - right.appliedSequence)
+      .forEach((adjustment) => {
+        adjustmentAmountBySession.set(adjustment.studentSessionId, Number(adjustment.effectiveAmount));
+      });
+    const sourceDefaultPackage = sourceDefaultPackages[0];
+    const sourceCreditBeforeRounding = oldSessions.reduce((total, session) => {
+      if (adjustmentAmountBySession.has(session.id)) {
+        return total + (adjustmentAmountBySession.get(session.id) ?? 0);
+      }
+      if (allocatedAmountBySession.has(session.id)) {
+        return total + (allocatedAmountBySession.get(session.id) ?? 0);
+      }
+      if (session.sessionPrice != null) {
+        return total + Number(session.sessionPrice);
+      }
+
+      const packageType = String(
+        session.packageType
+          ?? session.packageFeeType
+          ?? sourceDefaultPackage?.type
+          ?? "",
+      ).toLocaleLowerCase("vi");
+      const fee = Number(session.packageFee ?? sourceDefaultPackage?.fee ?? 0);
+      const sessionCount = Number(session.packageSessions ?? sourceDefaultPackage?.sessions ?? 0);
+      const packageTotal = Number(
+        session.packageTotalAmount
+          ?? sourceDefaultPackage?.totalAmount
+          ?? fee,
+      );
+      const isCoursePackage = packageType === "course" || packageType.includes("kho");
+      const fallbackSessionValue = isCoursePackage
+        ? (sessionCount > 0 ? packageTotal / sessionCount : 0)
+        : fee;
+      return total + (Number.isFinite(fallbackSessionValue) ? fallbackSessionValue : 0);
+    }, 0);
+    const roundedSourceCredit = data.roundingMode === "down"
+      ? Math.floor(sourceCreditBeforeRounding)
+      : data.roundingMode === "up"
+      ? Math.ceil(sourceCreditBeforeRounding)
+      : sourceCreditBeforeRounding;
+    const sourceCreditAmount = Number(Math.max(0, roundedSourceCredit).toFixed(2));
 
     const resolvedTargetPackageId = data.targetPackageId ?? toClass?.feePackageId ?? null;
     let targetFeePackage: typeof courseFeePackages.$inferSelect | undefined;
@@ -740,6 +828,47 @@ export async function transferStudentClass(data: {
       ));
     }
 
+    if (sourceCreditAmount > 0) {
+      const transferCode = `CLS-TR-${randomUUID()}`;
+      const amount = sourceCreditAmount.toFixed(2);
+      const amountLabel = `${sourceCreditAmount.toLocaleString("vi-VN")} đ`;
+      const fromClassName = fromClass?.name || data.fromClassId;
+      const toClassName = toClass?.name || data.toClassId;
+      const description =
+        `Điều chuyển ${amountLabel} giá trị học phí từ lớp ${fromClassName} sang lớp ${toClassName}`;
+
+      // Paired entries preserve the overall tuition-wallet balance while
+      // moving the paid allocation from the source class to the destination.
+      await tx.insert(studentWalletTransactions).values([
+        {
+          studentId: data.studentId,
+          type: "debit",
+          amount,
+          category: "Học phí",
+          action: `Chuyển phân bổ học phí lớp: trừ ${amountLabel} khỏi lớp ${fromClassName}`,
+          classId: data.fromClassId,
+          className: fromClassName,
+          invoiceCode: transferCode,
+          invoiceDescription: description,
+          createdBy: data.userId,
+          createdByName: data.createdByName ?? null,
+        },
+        {
+          studentId: data.studentId,
+          type: "credit",
+          amount,
+          category: "Học phí",
+          action: `Chuyển phân bổ học phí lớp: cộng ${amountLabel} vào lớp ${toClassName}`,
+          classId: data.toClassId,
+          className: toClassName,
+          invoiceCode: transferCode,
+          invoiceDescription: description,
+          createdBy: data.userId,
+          createdByName: data.createdByName ?? null,
+        },
+      ]);
+    }
+
     if (studentClassId) await recalculateStudentClass(studentClassId, tx);
     await recalculateStudentClass(targetStudentClass.id, tx);
 
@@ -749,7 +878,7 @@ export async function transferStudentClass(data: {
       const description = data.refundDescription?.trim()
         || `Hoàn tiền chuyển lớp vào ví cọc học viên`;
       const amountLabel = refundAmount.toLocaleString("vi-VN") + " đ";
-      const className = fromClass?.name || data.fromClassId;
+      const className = toClass?.name || data.toClassId;
 
       await tx.insert(studentWalletTransactions).values([
         {
@@ -758,7 +887,7 @@ export async function transferStudentClass(data: {
           amount,
           category: "Học phí",
           action: `Hoàn tiền chuyển lớp: trừ ví học phí ${amountLabel}, chuyển vào ví đặt cọc`,
-          classId: data.fromClassId,
+          classId: data.toClassId,
           className,
           invoiceCode: transferCode,
           invoiceDescription: description,
@@ -771,7 +900,7 @@ export async function transferStudentClass(data: {
           amount,
           category: "Đặt cọc",
           action: `Hoàn tiền chuyển lớp: cộng ví đặt cọc ${amountLabel}, trừ từ ví học phí`,
-          classId: data.fromClassId,
+          classId: data.toClassId,
           className,
           invoiceCode: transferCode,
           invoiceDescription: description,
@@ -783,6 +912,7 @@ export async function transferStudentClass(data: {
     return {
       transferCount: oldSessions.length,
       targetTransferCount: targetClassSessions.length,
+      sourceCreditAmount,
       fromSessionIds: oldSessions.map((session) => session.classSessionId),
       toSessionIds: targetClassSessions.map((session) => session.id),
     };

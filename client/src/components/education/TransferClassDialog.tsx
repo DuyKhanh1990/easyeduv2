@@ -605,14 +605,41 @@ export function TransferClassDialog({
   const currentAllocatedSessionPrice = Number(currentSession?.pricing?.allocatedFee ?? 0);
   const hasCurrentPackagePrice = !!currentFeePackage && currentBaseSessionPrice > 0;
   const currentNetTotal = Math.max(0, currentBaseTotal - currentDiscountAmount);
-  const currentSessionPrice = currentSession?.sessionSource === "transfer"
+  const fallbackCurrentSessionPrice = currentSession?.sessionSource === "transfer"
     ? currentStoredSessionPrice
     : currentSessionCount > 0 && (currentAllocatedSessionPrice > 0 || currentNetTotal > 0)
     ? Number((currentNetTotal / currentSessionCount).toFixed(2))
     : hasCurrentPackagePrice
     ? Math.max(0, currentBaseSessionPrice - currentDiscountPerSession)
     : currentStoredSessionPrice;
-  const exactCurrentTotal = currentSessionPrice * transferCount;
+  const getEffectiveSourceSessionPrice = (session: any) => {
+    const allocatedFee = session?.pricing?.allocatedFee;
+    if (allocatedFee != null && Number.isFinite(Number(allocatedFee))) {
+      return Math.max(0, Number(allocatedFee));
+    }
+    if (session?.sessionPrice != null && Number.isFinite(Number(session.sessionPrice))) {
+      return Math.max(0, Number(session.sessionPrice));
+    }
+    const sessionDiscount = Number(session?.pricing?.discountAmount ?? currentDiscountPerSession);
+    const fallback = currentBaseSessionPrice > 0
+      ? currentBaseSessionPrice - sessionDiscount
+      : fallbackCurrentSessionPrice;
+    return Math.max(0, Number.isFinite(fallback) ? fallback : 0);
+  };
+  const currentSessionPrice = currentSession
+    ? getEffectiveSourceSessionPrice(currentSession)
+    : fallbackCurrentSessionPrice;
+  const selectedSourceSessions = activeCurrentSessions
+    .filter((session) => Number(session.classSession?.sessionIndex ?? session.sessionIndex ?? 0) >= Number(fromSessionIndex))
+    .sort((left, right) =>
+      Number(left.classSession?.sessionIndex ?? left.sessionIndex ?? 0)
+      - Number(right.classSession?.sessionIndex ?? right.sessionIndex ?? 0),
+    )
+    .slice(0, transferCount);
+  const exactCurrentTotal = selectedSourceSessions.reduce(
+    (total, session) => total + getEffectiveSourceSessionPrice(session),
+    0,
+  );
   const currentTotal = roundingMode === "down"
     ? Math.floor(exactCurrentTotal)
     : roundingMode === "up"
@@ -706,7 +733,7 @@ export function TransferClassDialog({
       ? ` Phí chuyển lớp điều chỉnh: ${formatSignedCurrency(transferFeeAdjustment)}.`
       : "";
     const packagePriceDetails = selectedTargetPackage
-      ? ` Gói lớp cũ: ${currentFeePackage?.name ?? fromName}, ${formatCurrency(currentSessionPrice)}/buổi × ${transferCount} = ${formatCurrency(currentTotal)}; gói lớp mới: ${selectedTargetPackage.name}, ${formatCurrency(targetSessionPrice)}/buổi × ${targetTransferCount} = ${formatCurrency(targetTotal)}.`
+      ? ` Gói lớp cũ: ${currentFeePackage?.name ?? fromName}, tổng giá thực tế của ${transferCount} buổi được chuyển = ${formatCurrency(currentTotal)}; gói lớp mới: ${selectedTargetPackage.name}, ${formatCurrency(targetSessionPrice)}/buổi × ${targetTransferCount} = ${formatCurrency(targetTotal)}.`
       : "";
     const finalAmountNote = diff === 0
       ? " Sau điều chỉnh không phát sinh thu hoặc hoàn thêm."
@@ -736,6 +763,7 @@ export function TransferClassDialog({
         targetSessionPrice: selectedTargetPackage
           ? Number(targetSessionPrice.toFixed(2))
           : undefined,
+        roundingMode,
         refundToDepositAmount: shouldRefundToDeposit ? refundAmount : undefined,
         refundDescription: shouldRefundToDeposit ? buildInvoiceNote() : undefined,
       });
@@ -768,8 +796,8 @@ export function TransferClassDialog({
         await createInvoiceMutation.mutateAsync({
           type: invoiceType,
           studentId: student.id,
-          classId: currentClass.id,
-          locationId: currentClass.locationId || undefined,
+          classId: selectedToClassId,
+          locationId: targetClass?.locationId || undefined,
           category,
           totalAmount: amount.toString(),
           grandTotal: amount.toString(),
@@ -794,6 +822,13 @@ export function TransferClassDialog({
           paymentSchedule: [],
         });
       }
+
+      queryClient.invalidateQueries({
+        queryKey: [`/api/students/${student.id}/classes`],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/students", student.id, "fee-wallet"],
+      });
 
       toast({
         title: "Thành công",
@@ -871,7 +906,9 @@ export function TransferClassDialog({
 
   if (!student || !currentClass) return null;
 
-  const showFinancial = selectedToClassId && currentSessionPrice > 0 && targetSessionPrice > 0 && targetTransferCount > 0;
+  const showFinancial = selectedToClassId
+    && (currentTotal > 0 || targetTotal > 0)
+    && targetTransferCount > 0;
 
   return (
     <>
@@ -1032,7 +1069,7 @@ export function TransferClassDialog({
                       </div>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Đơn giá sau giảm:</span>
+                      <span className="text-muted-foreground">Đơn giá buổi đầu tiên:</span>
                       <span className="font-medium">
                         {currentSessionPrice > 0 ? formatCurrency(currentSessionPrice) + "/buổi" : "—"}
                       </span>
@@ -1041,16 +1078,16 @@ export function TransferClassDialog({
                       <span className="font-medium">Thành tiền:</span>
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-foreground">
-                          {transferCount > 0 && currentSessionPrice > 0 ? (
+                          {transferCount > 0 && selectedSourceSessions.length > 0 ? (
                             <span className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                               <span className="text-[11px] font-normal text-muted-foreground whitespace-nowrap">
-                                ({formatCurrencyValue(currentSessionPrice)} x {transferCount})
+                                ({transferCount} buổi theo giá thực tế từng buổi)
                               </span>
                               <span>{formatCurrency(currentTotal)}</span>
                             </span>
                           ) : "—"}
                         </span>
-                        {transferCount > 0 && currentSessionPrice > 0 && (
+                        {transferCount > 0 && selectedSourceSessions.length > 0 && (
                           <Select
                             value={roundingMode}
                             onValueChange={(value) => setRoundingMode(value as "none" | "down" | "up")}

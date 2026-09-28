@@ -258,11 +258,13 @@ export interface IStorage {
     targetTransferCount?: number;
     targetPackageId?: string | null;
     targetSessionPrice?: number;
+    roundingMode?: "none" | "down" | "up";
     userId: string;
     createdByName?: string | null;
   }): Promise<{
     transferCount: number;
     targetTransferCount: number;
+    sourceCreditAmount: number;
     fromSessionIds: string[];
     toSessionIds: string[];
   }>;
@@ -455,11 +457,13 @@ export class DatabaseStorage implements IStorage {
     targetTransferCount?: number;
     targetPackageId?: string | null;
     targetSessionPrice?: number;
+    roundingMode?: "none" | "down" | "up";
     userId: string;
     createdByName?: string | null;
   }): Promise<{
     transferCount: number;
     targetTransferCount: number;
+    sourceCreditAmount: number;
     fromSessionIds: string[];
     toSessionIds: string[];
   }> {
