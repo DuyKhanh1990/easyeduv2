@@ -43,6 +43,18 @@ function scoringPolicyLabel(policy: ScoreSheetAssessment["scoringPolicy"]): stri
   return policy === "highest" ? "Lấy điểm cao nhất" : "Lấy điểm gần nhất";
 }
 
+function scoreDeadlineLabel(assessment: ScoreSheetAssessment): string {
+  if (assessment.scoreDeadlineAt) return formatLocalDateTime(assessment.scoreDeadlineAt);
+  const minutes = assessment.templateSnapshot.scoreDeadlineOffsetMinutes;
+  const days = Math.floor(minutes / (24 * 60));
+  const hours = Math.floor((minutes % (24 * 60)) / 60);
+  const duration = [
+    days > 0 ? `${days} ngày` : "",
+    hours > 0 ? `${hours} giờ` : "",
+  ].filter(Boolean).join(" ");
+  return `${duration || "0 giờ"} sau giờ bắt đầu buổi học`;
+}
+
 export default function ScoreConversion() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -421,7 +433,7 @@ export default function ScoreConversion() {
                             <td className="px-4 py-3">
                               {assessment.templateSnapshot.code} — {assessment.templateSnapshot.name}
                             </td>
-                            <td className="px-4 py-3">{formatLocalDateTime(assessment.scoreDeadlineAt)}</td>
+                            <td className="px-4 py-3">{scoreDeadlineLabel(assessment)}</td>
                             <td className="px-4 py-3">{assessment.attemptCount}</td>
                             <td className="px-4 py-3">{scoringPolicyLabel(assessment.scoringPolicy)}</td>
                           </tr>

@@ -2,7 +2,10 @@ import type { Express } from "express";
 import { sendHomeworkScoreNotification } from "../lib/attendance-notification";
 import { db, pool } from "../db";
 import { z } from "zod";
-import { scoreSheetAssessmentSchema } from "@shared/score-sheet-assessment";
+import {
+  resolveScoreSheetAssessmentDeadlineAt,
+  scoreSheetAssessmentSchema,
+} from "@shared/score-sheet-assessment";
 import {
   parseScoreConversionTemplatesJson,
   scoreConversionTemplateSchema,
@@ -3947,6 +3950,7 @@ export function registerMySpaceRoutes(app: Express): void {
           cs.score_sheet_assessment_id AS assessment_id,
           cs.session_index,
           cs.session_date,
+          st.start_time AS session_start_time,
           c.class_code,
           c.name AS class_name,
           (
@@ -3969,6 +3973,7 @@ export function registerMySpaceRoutes(app: Express): void {
           ) AS completed_student_count
         FROM class_sessions cs
         JOIN classes c ON c.id = cs.class_id
+        LEFT JOIN shift_templates st ON st.id = cs.shift_template_id
         WHERE cs.score_sheet_assessment_id IS NOT NULL
           AND (
             ${staffRecord.id} = ANY(c.teacher_ids)
@@ -4000,7 +4005,13 @@ export function registerMySpaceRoutes(app: Express): void {
           assessmentCode: assessment?.code ?? null,
           assessmentName: assessment?.name ?? null,
           templateName: assessment?.templateSnapshot.name ?? null,
-          scoreDeadlineAt: assessment?.scoreDeadlineAt ?? null,
+          scoreDeadlineAt: assessment
+            ? resolveScoreSheetAssessmentDeadlineAt(
+                assessment,
+                row.session_date,
+                row.session_start_time,
+              )
+            : null,
           attemptCount: assessment?.attemptCount ?? 1,
           scoringPolicy: assessment?.scoringPolicy ?? "latest",
           hasConversion: !!assessment?.templateSnapshot.scoreConversionTemplateId,
@@ -4128,9 +4139,13 @@ export function registerMySpaceRoutes(app: Express): void {
         if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
 
         const access = await db.execute(sql`
-          SELECT cs.score_sheet_assessment_id AS assessment_id
+          SELECT
+            cs.score_sheet_assessment_id AS assessment_id,
+            cs.session_date,
+            st.start_time AS session_start_time
           FROM class_sessions cs
           JOIN classes c ON c.id = cs.class_id
+          LEFT JOIN shift_templates st ON st.id = cs.shift_template_id
           WHERE cs.id = ${sessionId.data}::uuid
             AND cs.score_sheet_assessment_id IS NOT NULL
             AND (
@@ -4183,7 +4198,11 @@ export function registerMySpaceRoutes(app: Express): void {
             name: assessment.name,
             attemptCount: assessment.attemptCount,
             scoringPolicy: assessment.scoringPolicy,
-            scoreDeadlineAt: assessment.scoreDeadlineAt,
+            scoreDeadlineAt: resolveScoreSheetAssessmentDeadlineAt(
+              assessment,
+              access.rows[0].session_date as string,
+              access.rows[0].session_start_time as string | null,
+            ),
             templateSnapshot: assessment.templateSnapshot,
             conversionTemplateSnapshot: assessment.conversionTemplateSnapshot,
           },

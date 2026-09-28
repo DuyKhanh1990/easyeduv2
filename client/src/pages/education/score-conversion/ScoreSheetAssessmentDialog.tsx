@@ -34,10 +34,17 @@ function emptyDraft(): ScoreSheetAssessmentInput {
     code: "",
     name: "",
     scoreSheetTemplateId: "",
-    scoreDeadlineAt: "",
-    attemptCount: 1,
-    scoringPolicy: "highest",
   };
+}
+
+function formatDeadlineOffset(minutes: number): string {
+  const days = Math.floor(minutes / (24 * 60));
+  const hours = Math.floor((minutes % (24 * 60)) / 60);
+  const parts = [
+    days > 0 ? `${days} ngày` : "",
+    hours > 0 ? `${hours} giờ` : "",
+  ].filter(Boolean);
+  return parts.length > 0 ? `${parts.join(" ")} sau giờ bắt đầu buổi học` : "ngay khi buổi học bắt đầu";
 }
 
 function formulaMethodLabel(method: string): string {
@@ -89,7 +96,7 @@ export function ScoreSheetAssessmentDialog({
         <DialogHeader>
           <DialogTitle>Thêm bảng điểm</DialogTitle>
           <DialogDescription>
-            Tạo cấu hình dùng chung. Ngày thi thực tế sẽ lấy theo ngày của buổi học khi gán bảng điểm.
+            Tạo bảng điểm để gán vào buổi học. Hạn trả điểm và chính sách chấm được lấy từ bảng điểm mẫu.
           </DialogDescription>
         </DialogHeader>
         <form className="space-y-4" onSubmit={handleSubmit}>
@@ -149,55 +156,36 @@ export function ScoreSheetAssessmentDialog({
                 </p>
               )}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="score-assessment-deadline">Hạn trả điểm</Label>
-              <Input
-                id="score-assessment-deadline"
-                type="datetime-local"
-                value={draft.scoreDeadlineAt}
-                onChange={(event) => setDraft((current) => ({
-                  ...current,
-                  scoreDeadlineAt: event.target.value,
-                }))}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="score-assessment-attempt-count">Số lần chấm bài</Label>
-              <Input
-                id="score-assessment-attempt-count"
-                type="number"
-                min="1"
-                step="1"
-                value={draft.attemptCount}
-                onChange={(event) => setDraft((current) => ({
-                  ...current,
-                  attemptCount: event.target.value === "" ? 0 : Number(event.target.value),
-                }))}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="score-assessment-policy">Chính sách tính điểm</Label>
-              <Select
-                value={draft.scoringPolicy}
-                onValueChange={(value) => setDraft((current) => ({
-                  ...current,
-                  scoringPolicy: value as ScoreSheetAssessmentInput["scoringPolicy"],
-                }))}
-              >
-                <SelectTrigger id="score-assessment-policy">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="highest">Lấy điểm cao nhất</SelectItem>
-                  <SelectItem value="latest">Lấy điểm gần nhất</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
           </section>
 
           {selectedTemplate && (
+            <>
+              <section className="space-y-2 rounded-lg border bg-muted/20 p-4">
+                <h3 className="font-semibold">Cấu hình lấy từ bảng điểm mẫu</h3>
+                <div className="grid gap-2 text-sm sm:grid-cols-2">
+                  <p>
+                    <span className="text-muted-foreground">Hạn trả điểm: </span>
+                    {formatDeadlineOffset(selectedTemplate.scoreDeadlineOffsetMinutes)}
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">Số lần chấm: </span>
+                    {selectedTemplate.attemptCount}
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">Chính sách tính điểm: </span>
+                    {selectedTemplate.scoringPolicy === "highest" ? "Lấy điểm cao nhất" : "Lấy điểm gần nhất"}
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">Tiêu chí đánh giá: </span>
+                    {selectedTemplate.evaluationCriteriaIds.length || "Chưa chọn"}
+                    {selectedTemplate.evaluationCriteriaIds.length > 0 ? " tiêu chí" : ""}
+                  </p>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Khi gán vào buổi học, hạn trả điểm sẽ được tính từ giờ bắt đầu ca học của buổi đó.
+                </p>
+              </section>
+
             <section className="space-y-3 rounded-lg border bg-card p-4">
               <div>
                 <h3 className="font-semibold">Cấu trúc kỹ năng của bảng điểm mẫu</h3>
@@ -243,6 +231,7 @@ export function ScoreSheetAssessmentDialog({
                 </div>
               )}
             </section>
+            </>
           )}
 
           {formError && <p className="text-sm text-destructive" role="alert">{formError}</p>}

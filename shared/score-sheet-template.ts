@@ -17,6 +17,8 @@ export const scoreSheetTemplateOverallRuleSchema = z.object({
   formula: z.string().trim().max(1000).default(""),
 });
 
+export const scoreSheetScoringPolicySchema = z.enum(["highest", "latest"]);
+
 export const scoreSheetTemplateSkillSchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().trim().max(120).default(""),
@@ -44,6 +46,10 @@ const scoreSheetTemplateBaseSchema = z.object({
   scoreConversionTemplateId: z.string().uuid().nullable(),
   skills: z.array(scoreSheetTemplateSkillSchema).max(20),
   overallRule: scoreSheetTemplateOverallRuleSchema.optional(),
+  scoreDeadlineOffsetMinutes: z.number().int().min(0).max((10 * 365 * 24 + 23) * 60).default(1440),
+  attemptCount: z.number().int().min(1).max(100).default(1),
+  scoringPolicy: scoreSheetScoringPolicySchema.default("highest"),
+  evaluationCriteriaIds: z.array(z.string().uuid()).max(100).default([]),
 });
 
 function validateScoreSheetTemplate(

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
 import type { ScoreConversionTemplate } from "@shared/score-conversion";
 import type {
@@ -27,6 +28,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
+import { apiRequest } from "@/lib/queryClient";
 import {
   Select,
   SelectContent,
@@ -74,6 +77,10 @@ function emptyDraft(): ScoreSheetTemplateInput {
     scoreConversionTemplateId: null,
     skills: [],
     overallRule: DEFAULT_OVERALL_RULE,
+    scoreDeadlineOffsetMinutes: 1440,
+    attemptCount: 1,
+    scoringPolicy: "highest",
+    evaluationCriteriaIds: [],
   };
 }
 
@@ -91,6 +98,14 @@ export function ScoreSheetTemplateDialog({
   const [draft, setDraft] = useState<ScoreSheetTemplateInput>(emptyDraft);
   const [formError, setFormError] = useState("");
   const [pendingConversionTemplateId, setPendingConversionTemplateId] = useState<string | null | undefined>();
+  const evaluationCriteriaQuery = useQuery<any[]>({
+    queryKey: ["/api/evaluation-criteria"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/evaluation-criteria");
+      return response.json();
+    },
+    enabled: open,
+  });
 
   useEffect(() => {
     if (!open || conversionTemplatesLoading) return;
@@ -114,6 +129,10 @@ export function ScoreSheetTemplateDialog({
             parts: skill.parts.map((part) => ({ ...part })),
             partFormula: skill.partFormula ?? DEFAULT_PART_FORMULA,
           })),
+          scoreDeadlineOffsetMinutes: template.scoreDeadlineOffsetMinutes ?? 1440,
+          attemptCount: template.attemptCount ?? 1,
+          scoringPolicy: template.scoringPolicy ?? "highest",
+          evaluationCriteriaIds: template.evaluationCriteriaIds ?? [],
         }
       : emptyDraft());
     setFormError("");
@@ -251,6 +270,23 @@ export function ScoreSheetTemplateDialog({
   };
 
   const overallRule = draft.overallRule ?? DEFAULT_OVERALL_RULE;
+  const deadlineOffsetMinutes = draft.scoreDeadlineOffsetMinutes ?? 0;
+  const deadlineDays = Math.floor(deadlineOffsetMinutes / (24 * 60));
+  const deadlineHours = Math.floor((deadlineOffsetMinutes % (24 * 60)) / 60);
+  const updateDeadlinePart = (part: "days" | "hours", rawValue: string) => {
+    setDraft((current) => {
+      const currentOffset = current.scoreDeadlineOffsetMinutes ?? 0;
+      const currentDays = Math.floor(currentOffset / (24 * 60));
+      const currentHours = Math.floor((currentOffset % (24 * 60)) / 60);
+      const parsed = rawValue === "" ? 0 : Math.max(0, Math.trunc(Number(rawValue) || 0));
+      const nextDays = part === "days" ? parsed : currentDays;
+      const nextHours = part === "hours" ? Math.min(23, parsed) : currentHours;
+      return {
+        ...current,
+        scoreDeadlineOffsetMinutes: nextDays * 24 * 60 + nextHours * 60,
+      };
+    });
+  };
   const updateOverallRule = (update: Partial<OverallRule>) => {
     setDraft((current) => ({
       ...current,
@@ -438,6 +474,102 @@ export function ScoreSheetTemplateDialog({
                       </p>
                     )}
                   </div>
+                )}
+              </div>
+            </section>
+
+            <section className="grid gap-4 rounded-lg border bg-white p-4 sm:grid-cols-2">
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Hạn trả điểm sau ngày thi</Label>
+                <div className="grid max-w-md grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="score-sheet-template-deadline-days" className="text-xs text-muted-foreground">Ngày</Label>
+                    <Input
+                      id="score-sheet-template-deadline-days"
+                      type="number"
+                      min="0"
+                      max="3650"
+                      step="1"
+                      value={deadlineDays}
+                      onChange={(event) => updateDeadlinePart("days", event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="score-sheet-template-deadline-hours" className="text-xs text-muted-foreground">Giờ</Label>
+                    <Input
+                      id="score-sheet-template-deadline-hours"
+                      type="number"
+                      min="0"
+                      max="23"
+                      step="1"
+                      value={deadlineHours}
+                      onChange={(event) => updateDeadlinePart("hours", event.target.value)}
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Hạn được tính từ giờ bắt đầu của buổi học được gán bảng điểm. Ví dụ: 1 ngày 1 giờ.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="score-sheet-template-attempt-count">Số lần chấm bài</Label>
+                <Input
+                  id="score-sheet-template-attempt-count"
+                  type="number"
+                  min="1"
+                  max="100"
+                  step="1"
+                  value={draft.attemptCount}
+                  onChange={(event) => setDraft((current) => ({
+                    ...current,
+                    attemptCount: event.target.value === "" ? 0 : Number(event.target.value),
+                  }))}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="score-sheet-template-scoring-policy">Chính sách tính điểm</Label>
+                <Select
+                  value={draft.scoringPolicy}
+                  onValueChange={(value) => setDraft((current) => ({
+                    ...current,
+                    scoringPolicy: value as ScoreSheetTemplateInput["scoringPolicy"],
+                  }))}
+                >
+                  <SelectTrigger id="score-sheet-template-scoring-policy">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="highest">Lấy điểm cao nhất</SelectItem>
+                    <SelectItem value="latest">Lấy điểm gần nhất</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Tiêu chí đánh giá</Label>
+                <SearchableMultiSelect
+                  options={(evaluationCriteriaQuery.data ?? []).map((criterion: any) => ({
+                    value: String(criterion.id),
+                    label: criterion.name,
+                  }))}
+                  value={draft.evaluationCriteriaIds}
+                  onChange={(evaluationCriteriaIds) => setDraft((current) => ({
+                    ...current,
+                    evaluationCriteriaIds,
+                  }))}
+                  placeholder="Chọn tiêu chí đánh giá (tuỳ chọn)"
+                  searchPlaceholder="Tìm kiếm tiêu chí..."
+                />
+                {evaluationCriteriaQuery.isLoading && (
+                  <p className="text-xs text-muted-foreground">Đang tải tiêu chí đánh giá...</p>
+                )}
+                {evaluationCriteriaQuery.isError && (
+                  <p className="text-xs text-destructive">
+                    Không thể tải tiêu chí đánh giá. Hãy thử đóng rồi mở lại dialog.
+                  </p>
                 )}
               </div>
             </section>
