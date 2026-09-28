@@ -40,6 +40,7 @@ export type NavItem = {
   href: string;
   icon: any;
   permissionHref?: string;
+  defaultVisible?: boolean;
   subTabs?: SubTab[];
 };
 
@@ -220,6 +221,7 @@ export const navigation: NavEntry[] = [
         href: "/score-conversion",
         icon: BarChart3,
         permissionHref: "/assessments#list",
+        defaultVisible: false,
       },
       {
         name: "Cấu hình Education",

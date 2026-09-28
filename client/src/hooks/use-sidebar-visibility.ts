@@ -7,11 +7,11 @@ const LOCAL_SYNC_EVENT = "sidebar-visibility-changed";
 const SERVER_UPDATE_EVENT = "sidebar-visibility-server-update";
 const SERVER_URL = "/api/system-settings/sidebar-visibility";
 
-function buildDefaultVisibility(): Record<string, boolean> {
+export function buildDefaultVisibility(): Record<string, boolean> {
   const defaults: Record<string, boolean> = {};
   for (const entry of navigation) {
     if ("href" in entry) {
-      defaults[`item:${entry.href}`] = true;
+      defaults[`item:${entry.href}`] = entry.defaultVisible ?? true;
       if (entry.subTabs) {
         for (const sub of entry.subTabs) {
           defaults[`subtab:${entry.href}:${sub.value}`] = true;
@@ -25,7 +25,7 @@ function buildDefaultVisibility(): Record<string, boolean> {
     } else if ("module" in entry) {
       defaults[`module:${entry.module}`] = true;
       for (const item of entry.items) {
-        defaults[`item:${item.href}`] = true;
+        defaults[`item:${item.href}`] = item.defaultVisible ?? true;
         if (item.subTabs) {
           for (const sub of item.subTabs) {
             defaults[`subtab:${item.href}:${sub.value}`] = true;
@@ -42,7 +42,7 @@ function buildDefaultVisibility(): Record<string, boolean> {
   return defaults;
 }
 
-function mergeWithDefaults(serverData: Record<string, boolean>): Record<string, boolean> {
+export function mergeWithDefaults(serverData: Record<string, boolean>): Record<string, boolean> {
   return { ...buildDefaultVisibility(), ...serverData };
 }
 
