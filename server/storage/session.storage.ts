@@ -21,6 +21,10 @@ import type {
 import { getClass } from "./class.storage";
 import { getNextLocationCode } from "./finance.storage";
 import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
+import {
+  calculateClassTransferSourceCredit,
+  calculateClassTransferTargetSessionPrice,
+} from "./class-transfer-accounting";
 
 const RENEWAL_WEEKDAY_LABELS = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
 
@@ -642,17 +646,15 @@ export async function transferStudentClass(data: {
     });
 
     const movedSessionIds = oldSessions.map((session) => session.id);
-    const [sourceAllocations, sourceAdjustments, sourceDefaultPackages] = await Promise.all([
+  const [sourceAllocations, sourceAdjustments, sourceDefaultPackages] = await Promise.all([
       tx.select({
         studentSessionId: invoiceSessionAllocations.studentSessionId,
         allocatedAmount: invoiceSessionAllocations.allocatedAmount,
+        invoiceStatus: invoices.status,
       })
         .from(invoiceSessionAllocations)
         .innerJoin(invoices, eq(invoiceSessionAllocations.invoiceId, invoices.id))
-        .where(and(
-          inArray(invoiceSessionAllocations.studentSessionId, movedSessionIds),
-          sql`${invoices.status} <> 'cancelled'`,
-        )),
+        .where(inArray(invoiceSessionAllocations.studentSessionId, movedSessionIds)),
       tx.select({
         studentSessionId: tuitionPackageSessionAdjustments.studentSessionId,
         effectiveAmount: tuitionPackageSessionAdjustments.effectiveAmount,
@@ -668,56 +670,14 @@ export async function transferStudentClass(data: {
         : Promise.resolve([]),
     ]);
 
-    const allocatedAmountBySession = new Map<string, number>();
-    for (const allocation of sourceAllocations) {
-      allocatedAmountBySession.set(
-        allocation.studentSessionId,
-        (allocatedAmountBySession.get(allocation.studentSessionId) ?? 0) + Number(allocation.allocatedAmount || 0),
-      );
-    }
-    const adjustmentAmountBySession = new Map<string, number>();
-    sourceAdjustments
-      .sort((left, right) => left.appliedSequence - right.appliedSequence)
-      .forEach((adjustment) => {
-        adjustmentAmountBySession.set(adjustment.studentSessionId, Number(adjustment.effectiveAmount));
-      });
     const sourceDefaultPackage = sourceDefaultPackages[0];
-    const sourceCreditBeforeRounding = oldSessions.reduce((total, session) => {
-      if (adjustmentAmountBySession.has(session.id)) {
-        return total + (adjustmentAmountBySession.get(session.id) ?? 0);
-      }
-      if (allocatedAmountBySession.has(session.id)) {
-        return total + (allocatedAmountBySession.get(session.id) ?? 0);
-      }
-      if (session.sessionPrice != null) {
-        return total + Number(session.sessionPrice);
-      }
-
-      const packageType = String(
-        session.packageType
-          ?? session.packageFeeType
-          ?? sourceDefaultPackage?.type
-          ?? "",
-      ).toLocaleLowerCase("vi");
-      const fee = Number(session.packageFee ?? sourceDefaultPackage?.fee ?? 0);
-      const sessionCount = Number(session.packageSessions ?? sourceDefaultPackage?.sessions ?? 0);
-      const packageTotal = Number(
-        session.packageTotalAmount
-          ?? sourceDefaultPackage?.totalAmount
-          ?? fee,
-      );
-      const isCoursePackage = packageType === "course" || packageType.includes("kho");
-      const fallbackSessionValue = isCoursePackage
-        ? (sessionCount > 0 ? packageTotal / sessionCount : 0)
-        : fee;
-      return total + (Number.isFinite(fallbackSessionValue) ? fallbackSessionValue : 0);
-    }, 0);
-    const roundedSourceCredit = data.roundingMode === "down"
-      ? Math.floor(sourceCreditBeforeRounding)
-      : data.roundingMode === "up"
-      ? Math.ceil(sourceCreditBeforeRounding)
-      : sourceCreditBeforeRounding;
-    const sourceCreditAmount = Number(Math.max(0, roundedSourceCredit).toFixed(2));
+  const sourceCreditAmount = calculateClassTransferSourceCredit({
+    sessions: oldSessions,
+    allocations: sourceAllocations,
+    adjustments: sourceAdjustments,
+    defaultPackage: sourceDefaultPackage,
+    roundingMode: data.roundingMode,
+  });
 
     const resolvedTargetPackageId = data.targetPackageId ?? toClass?.feePackageId ?? null;
     let targetFeePackage: typeof courseFeePackages.$inferSelect | undefined;
@@ -744,19 +704,10 @@ export async function transferStudentClass(data: {
       throw new Error("Đơn giá buổi học của lớp mới không hợp lệ");
     }
 
-    const packageSessionCount = Number(targetFeePackage?.sessions ?? 0);
-    const packageTotal = Number(targetFeePackage?.totalAmount ?? targetFeePackage?.fee ?? 0);
-    const isCoursePackage = ["khoá", "khóa"].includes(
-      String(targetFeePackage?.type ?? "").toLocaleLowerCase("vi"),
-    );
-    const baseTargetSessionPrice = targetFeePackage
-      ? isCoursePackage && packageSessionCount > 0
-        ? packageTotal / packageSessionCount
-        : Number(targetFeePackage.fee ?? 0)
-      : null;
-    const storedTargetSessionPrice = targetFeePackage
-      ? Number((data.targetSessionPrice ?? baseTargetSessionPrice ?? 0).toFixed(2))
-      : null;
+  const storedTargetSessionPrice = calculateClassTransferTargetSessionPrice(
+    targetFeePackage,
+    data.targetSessionPrice,
+  );
 
     const oldFirstSession = oldSessions[0];
     const oldLastSession = oldSessions[oldSessions.length - 1];

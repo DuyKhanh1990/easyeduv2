@@ -24,6 +24,7 @@ import type {
   User,
 } from "./base";
 import { studentWalletTransactions } from "@shared/schema";
+import { calculateClassFundedAmounts } from "./class-transfer-accounting";
 
 // ==========================================
 // STUDENT METHODS
@@ -1894,22 +1895,11 @@ export async function getStudentClasses(
   }
 
   const invoicePaidByClassId = new Map<string, number>();
-  const classTransferAdjustmentByClassId = new Map<string, number>();
-  for (const row of transferAllocationRows) {
-    if (!row.classId) continue;
-    const amount = Number(row.amount || 0) * (row.type === "credit" ? 1 : -1);
-    classTransferAdjustmentByClassId.set(
-      row.classId,
-      (classTransferAdjustmentByClassId.get(row.classId) ?? 0) + amount,
-    );
-  }
-  for (const row of transferRefundInvoices) {
-    if (!row.classId) continue;
-    classTransferAdjustmentByClassId.set(
-      row.classId,
-      (classTransferAdjustmentByClassId.get(row.classId) ?? 0) - Number(row.paidAmount || 0),
-    );
-  }
+  const classFundedByClassId = calculateClassFundedAmounts({
+    paidInvoices: allInvoices,
+    transferWalletEntries: transferAllocationRows,
+    paidRefundInvoices: transferRefundInvoices,
+  });
   const invoiceSummaryByClassId = new Map<string, {
     count: number;
     codes: string[];
@@ -1979,9 +1969,7 @@ export async function getStudentClasses(
       sessionValueTotal: isFreeClass
         ? totalSessions * freeSessionFee
         : stats.sessionValueTotal,
-      classFundedAmount:
-        (invoicePaidByClassId.get(classRec.id) ?? 0)
-        + (classTransferAdjustmentByClassId.get(classRec.id) ?? 0),
+      classFundedAmount: classFundedByClassId.get(classRec.id) ?? 0,
       invoiceSummary: invoiceSummary ? {
         count: invoiceSummary.count,
         codes: invoiceSummary.codes,
