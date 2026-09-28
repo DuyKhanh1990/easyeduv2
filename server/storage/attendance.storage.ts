@@ -1,6 +1,6 @@
 import {
   db,
-  eq, and, inArray, sql,
+  eq, and, inArray, sql, asc,
   classSessions, studentSessions, classes,
 } from "./base";
 
@@ -11,32 +11,35 @@ import {
   tuitionPackageSessionAdjustments,
 } from "@shared/schema";
 import { recalculateStudentClass, batchRecalculateStudentClasses } from "./session.storage";
-import { createWalletEntry } from "./wallet.storage";
 
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
-async function getFeeDeductingStatuses(): Promise<Set<string>> {
-  const rules = await db
+async function getFeeDeductingStatuses(executor: any = db): Promise<Set<string>> {
+  const rules = await executor
     .select({ attendanceStatus: attendanceFeeRules.attendanceStatus })
     .from(attendanceFeeRules)
     .where(eq(attendanceFeeRules.deductsFee, true));
-  return new Set(rules.map((r) => r.attendanceStatus));
+  return new Set(rules.map((r: any) => r.attendanceStatus));
 }
 
-async function getClassName(classId: string | null | undefined): Promise<string | null> {
+async function getClassName(classId: string | null | undefined, executor: any = db): Promise<string | null> {
   if (!classId) return null;
-  const [row] = await db.select({ name: classes.name }).from(classes).where(eq(classes.id, classId)).limit(1);
+  const [row] = await executor.select({ name: classes.name }).from(classes).where(eq(classes.id, classId)).limit(1);
   return row?.name ?? null;
 }
 
-async function getEffectiveSessionPrice(studentSessionId: string, fallbackPrice: number): Promise<number> {
+async function getEffectiveSessionPrice(
+  studentSessionId: string,
+  fallbackPrice: number,
+  executor: any = db,
+): Promise<number> {
   const [allocations, overrides] = await Promise.all([
-    db
+    executor
       .select({ amount: invoiceSessionAllocations.allocatedAmount })
       .from(invoiceSessionAllocations)
       .where(eq(invoiceSessionAllocations.studentSessionId, studentSessionId)),
-    db
+    executor
       .select({ amount: tuitionPackageSessionAdjustments.effectiveAmount })
       .from(tuitionPackageSessionAdjustments)
       .where(eq(tuitionPackageSessionAdjustments.studentSessionId, studentSessionId))
@@ -45,9 +48,13 @@ async function getEffectiveSessionPrice(studentSessionId: string, fallbackPrice:
   ]);
   if (overrides.length > 0) return Number(overrides[0].amount);
   const base = allocations.length > 0
-    ? allocations.reduce((sum, row) => sum + Number(row.amount), 0)
+    ? allocations.reduce((sum: number, row: any) => sum + Number(row.amount), 0)
     : fallbackPrice;
   return base;
+}
+
+function attendanceError(message: string, status: number): Error & { status: number } {
+  return Object.assign(new Error(message), { status });
 }
 
 // ---------------------------------------------------------------------------
@@ -84,19 +91,21 @@ export async function updateStudentAttendance(
       sessionOrder: studentSessions.sessionOrder,
     })
     .from(studentSessions)
-    .where(eq(studentSessions.id, id));
+    .where(eq(studentSessions.id, id))
+    .for("update");
 
     if (session) {
       const [classSession] = await tx.select({ status: classSessions.status })
         .from(classSessions)
-        .where(eq(classSessions.id, session.classSessionId));
+        .where(eq(classSessions.id, session.classSessionId))
+        .for("share");
 
       if (classSession?.status === "cancelled") {
-        throw new Error("Không thể điểm danh cho buổi học đã bị huỷ");
+        throw attendanceError("Không thể điểm danh cho buổi học đã bị huỷ", 409);
       }
 
       if (status === "makeup_scheduled" && session.attendanceStatus !== "makeup_scheduled") {
-        throw new Error("Trạng thái Đã xếp bù chỉ được cập nhật tự động sau nghiệp vụ xếp bù");
+        throw attendanceError("Trạng thái Đã xếp bù chỉ được cập nhật tự động sau nghiệp vụ xếp bù", 400);
       }
     }
 
@@ -147,47 +156,35 @@ export async function updateStudentAttendance(
     }
 
     // ── Wallet transaction for fee deduction / reversal ─────────────────────
-    if (session) {
-      const deductingStatuses = await getFeeDeductingStatuses();
+    if (session && isStatusProvided) {
+      const deductingStatuses = await getFeeDeductingStatuses(tx);
       const oldDeducts = deductingStatuses.has(session.attendanceStatus);
       const newDeducts = deductingStatuses.has(status);
 
       const rawSessionPrice = parseFloat(session.sessionPrice ?? "0") || 0;
-      const sessionPrice = await getEffectiveSessionPrice(id, rawSessionPrice);
+      const sessionPrice = await getEffectiveSessionPrice(id, rawSessionPrice, tx);
 
       if (sessionPrice > 0 && oldDeducts !== newDeducts) {
-        const className = await getClassName(session.classId);
+        const className = await getClassName(session.classId, tx);
         const [classSession] = await tx
           .select({ sessionIndex: classSessions.sessionIndex })
           .from(classSessions)
           .where(eq(classSessions.id, session.classSessionId));
         const sessionLabel = classSession?.sessionIndex ? `Buổi ${classSession.sessionIndex}` : "Buổi học";
 
-        if (newDeducts) {
-          await createWalletEntry({
-            studentId: session.studentId,
-            type: "debit",
-            amount: sessionPrice,
-            category: "Học phí",
-            action: `Trừ học phí ${sessionLabel}, do điểm danh có trừ tiền`,
-            classId: session.classId,
-            className,
-            createdBy: userId ?? null,
-            createdByName: userFullName ?? null,
-          });
-        } else {
-          await createWalletEntry({
-            studentId: session.studentId,
-            type: "credit",
-            amount: sessionPrice,
-            category: "Học phí",
-            action: `Cộng tiền học phí ${sessionLabel}, do điểm danh không trừ tiền`,
-            classId: session.classId,
-            className,
-            createdBy: userId ?? null,
-            createdByName: userFullName ?? null,
-          });
-        }
+        await tx.insert(studentWalletTransactions).values({
+          studentId: session.studentId,
+          type: newDeducts ? "debit" : "credit",
+          amount: sessionPrice.toFixed(2),
+          category: "Học phí",
+          action: newDeducts
+            ? `Trừ học phí ${sessionLabel}, do điểm danh có trừ tiền`
+            : `Cộng tiền học phí ${sessionLabel}, do điểm danh không trừ tiền`,
+          classId: session.classId ?? null,
+          className,
+          createdBy: userId ?? null,
+          createdByName: userFullName ?? null,
+        });
       }
     }
   });
@@ -197,13 +194,32 @@ export async function updateStudentAttendance(
 // ---------------------------------------------------------------------------
 // bulkUpdateAttendance
 // ---------------------------------------------------------------------------
+export type StudentAttendanceBulkChange = {
+  studentSessionId: string;
+  studentId: string;
+  classId: string | null;
+  oldStatus: string | null;
+  newStatus: string;
+};
+
 export async function bulkUpdateAttendance(
   sessionId: string,
   students: { studentSessionId: string; attendanceStatus: string; attendanceNote?: string }[],
   userId?: string | null,
   userFullName?: string | null,
-): Promise<void> {
-  if (students.length === 0) return;
+): Promise<StudentAttendanceBulkChange[]> {
+  if (students.length === 0) return [];
+
+  const studentBySessionId = new Map<string, typeof students[number]>();
+  for (const student of students) {
+    if (!student.studentSessionId || !student.attendanceStatus) {
+      throw attendanceError("Thông tin điểm danh không hợp lệ.", 400);
+    }
+    if (studentBySessionId.has(student.studentSessionId)) {
+      throw attendanceError("Danh sách điểm danh có học viên bị lặp.", 400);
+    }
+    studentBySessionId.set(student.studentSessionId, student);
+  }
 
   // ── 1. Kiểm tra buổi học có bị huỷ không ──────────────────────────────
   const [classSession] = await db.select({
@@ -211,20 +227,26 @@ export async function bulkUpdateAttendance(
     sessionIndex: classSessions.sessionIndex,
   })
     .from(classSessions)
-    .where(eq(classSessions.id, sessionId));
+    .where(eq(classSessions.id, sessionId))
+    .limit(1);
 
   if (classSession?.status === "cancelled") {
-    throw new Error("Không thể điểm danh cho buổi học đã bị huỷ");
+    throw attendanceError("Không thể điểm danh cho buổi học đã bị huỷ.", 409);
+  }
+  if (!classSession) {
+    throw attendanceError("Không tìm thấy buổi học.", 404);
   }
 
-  // ── 2. Fetch song song: fee rules + trạng thái cũ của tất cả học viên ─
-  const studentSessionIds = students.map((s) => s.studentSessionId);
-  const newStatusMap = new Map(students.map((s) => [s.studentSessionId, s.attendanceStatus]));
+  // ── 2. Fetch rules and the existing attendance rows ───────────────────
+  const studentSessionIds = Array.from(studentBySessionId.keys());
+  const newStatusMap = new Map(
+    students.map((s) => [s.studentSessionId, s.attendanceStatus]),
+  );
 
-  const [deductingStatuses, existingSessions] = await Promise.all([
-    getFeeDeductingStatuses(),
-    // Batch SELECT: 1 query thay vì N query
-    db.select({
+  const deductingStatuses = await getFeeDeductingStatuses();
+  // Batch SELECT: 1 query thay vì N query. Keep reads sequential so each
+  // bulk request occupies at most one pool connection at a time.
+  const existingSessions = await db.select({
       id: studentSessions.id,
       studentClassId: studentSessions.studentClassId,
       studentId: studentSessions.studentId,
@@ -233,11 +255,11 @@ export async function bulkUpdateAttendance(
       sessionPrice: studentSessions.sessionPrice,
     })
       .from(studentSessions)
-      .where(inArray(studentSessions.id, studentSessionIds)),
-  ]);
+      .where(inArray(studentSessions.id, studentSessionIds));
 
   // ── 3. Gom thông tin cần thiết từ kết quả batch ────────────────────────
   const studentClassIdsSet = new Set<string>();
+  const changedRows: StudentAttendanceBulkChange[] = [];
   const sessionInfos: Array<{
     studentSessionId: string;
     newStatus: string;
@@ -274,25 +296,23 @@ export async function bulkUpdateAttendance(
     ? `Buổi ${classSession.sessionIndex}`
     : "Buổi học";
 
-  const [className, allocationRows, packageAdjustmentRows] = await Promise.all([
-    classId ? getClassName(classId) : Promise.resolve(null),
-    db
-      .select({
-        studentSessionId: invoiceSessionAllocations.studentSessionId,
-        allocatedAmount: invoiceSessionAllocations.allocatedAmount,
-      })
-      .from(invoiceSessionAllocations)
-      .where(inArray(invoiceSessionAllocations.studentSessionId, studentSessionIds)),
-    db
-      .select({
-        studentSessionId: tuitionPackageSessionAdjustments.studentSessionId,
-        allocatedAmount: tuitionPackageSessionAdjustments.effectiveAmount,
-        appliedSequence: tuitionPackageSessionAdjustments.appliedSequence,
-      })
-      .from(tuitionPackageSessionAdjustments)
-      .where(inArray(tuitionPackageSessionAdjustments.studentSessionId, studentSessionIds))
-      .orderBy(tuitionPackageSessionAdjustments.appliedSequence),
-  ]);
+  const className = classId ? await getClassName(classId) : null;
+  const allocationRows = await db
+    .select({
+      studentSessionId: invoiceSessionAllocations.studentSessionId,
+      allocatedAmount: invoiceSessionAllocations.allocatedAmount,
+    })
+    .from(invoiceSessionAllocations)
+    .where(inArray(invoiceSessionAllocations.studentSessionId, studentSessionIds));
+  const packageAdjustmentRows = await db
+    .select({
+      studentSessionId: tuitionPackageSessionAdjustments.studentSessionId,
+      allocatedAmount: tuitionPackageSessionAdjustments.effectiveAmount,
+      appliedSequence: tuitionPackageSessionAdjustments.appliedSequence,
+    })
+    .from(tuitionPackageSessionAdjustments)
+    .where(inArray(tuitionPackageSessionAdjustments.studentSessionId, studentSessionIds))
+    .orderBy(tuitionPackageSessionAdjustments.appliedSequence);
 
   const allocationMap = new Map<string, number>();
   for (const row of allocationRows) {
@@ -311,24 +331,85 @@ export async function bulkUpdateAttendance(
   // Cả hai thao tác trong cùng 1 transaction — nếu ghi ví lỗi thì
   // điểm danh cũng rollback, đảm bảo không bao giờ lệch nhau.
   await db.transaction(async (tx) => {
-    // 5a. Batch UPDATE attendance
-    for (const student of students) {
+    const [currentClassSession] = await tx
+      .select({ status: classSessions.status })
+      .from(classSessions)
+      .where(eq(classSessions.id, sessionId))
+      .for("share");
+    if (!currentClassSession) {
+      throw attendanceError("Không tìm thấy buổi học.", 404);
+    }
+    if (currentClassSession.status === "cancelled") {
+      throw attendanceError("Không thể điểm danh cho buổi học đã bị huỷ.", 409);
+    }
+
+    const lockedSessions = await tx
+      .select({
+        id: studentSessions.id,
+        studentClassId: studentSessions.studentClassId,
+        studentId: studentSessions.studentId,
+        classId: studentSessions.classId,
+        attendanceStatus: studentSessions.attendanceStatus,
+        sessionPrice: studentSessions.sessionPrice,
+      })
+      .from(studentSessions)
+      .where(and(
+        eq(studentSessions.classSessionId, sessionId),
+        inArray(studentSessions.id, studentSessionIds),
+      ))
+      .orderBy(asc(studentSessions.id))
+      .for("update");
+
+    if (lockedSessions.length !== studentSessionIds.length) {
+      throw attendanceError("Một số học viên không thuộc buổi học này hoặc không còn trong danh sách.", 400);
+    }
+
+    const lockedSessionInfos = lockedSessions.map((session) => ({
+      studentSessionId: session.id,
+      studentClassId: session.studentClassId,
+      studentId: session.studentId,
+      classId: session.classId,
+      sessionPrice: session.sessionPrice,
+      oldStatus: session.attendanceStatus ?? null,
+      newStatus: newStatusMap.get(session.id)!,
+    }));
+    const changedSessionInfos = lockedSessionInfos.filter((info) => info.oldStatus !== info.newStatus);
+
+    if (changedSessionInfos.some((info) =>
+      info.newStatus === "makeup_scheduled" && info.oldStatus !== "makeup_scheduled"
+    )) {
+      throw attendanceError("Trạng thái Đã xếp bù chỉ được cập nhật tự động sau nghiệp vụ xếp bù.", 400);
+    }
+
+    // 5a. Write every selected row from the locked current state.
+    for (const info of lockedSessionInfos) {
+      const student = studentBySessionId.get(info.studentSessionId)!;
       await tx.update(studentSessions)
         .set({
-          attendanceStatus: student.attendanceStatus,
+          attendanceStatus: info.newStatus,
           ...(student.attendanceNote !== undefined && { attendanceNote: student.attendanceNote }),
           attendanceAt: new Date(),
           updatedAt: new Date(),
         })
         .where(and(
-          eq(studentSessions.id, student.studentSessionId),
+          eq(studentSessions.id, info.studentSessionId),
           eq(studentSessions.classSessionId, sessionId),
         ));
+
+      if (info.oldStatus !== info.newStatus) {
+        changedRows.push({
+          studentSessionId: info.studentSessionId,
+          studentId: info.studentId,
+          classId: info.classId,
+          oldStatus: info.oldStatus,
+          newStatus: info.newStatus,
+        });
+      }
     }
 
     // 5b. Ghi ví trong cùng transaction — mỗi học viên có số tiền/lịch sử riêng
-    for (const info of sessionInfos) {
-      const oldDeducts = deductingStatuses.has(info.oldStatus);
+    for (const info of changedSessionInfos) {
+      const oldDeducts = deductingStatuses.has(info.oldStatus ?? "");
       const newDeducts = deductingStatuses.has(info.newStatus);
 
       // Nếu trạng thái không đổi chiều trừ/không trừ → bỏ qua
@@ -354,6 +435,7 @@ export async function bulkUpdateAttendance(
         createdBy: userId ?? null,
         createdByName: userFullName ?? null,
       });
+
     }
   });
 
@@ -361,6 +443,11 @@ export async function bulkUpdateAttendance(
   // Nếu bước này lỗi, lần cập nhật tiếp theo sẽ recalculate lại;
   // điểm danh và ví đã được commit atomically ở bước 5.
   if (studentClassIdsSet.size > 0 && classId) {
-    await batchRecalculateStudentClasses(Array.from(studentClassIdsSet), classId);
+    try {
+      await batchRecalculateStudentClasses(Array.from(studentClassIdsSet), classId);
+    } catch (error) {
+      console.error("[BulkAttendance] Student class recalculation failed:", error);
+    }
   }
+  return changedRows;
 }

@@ -3444,8 +3444,18 @@ export function registerMobileRoutes(app: Express) {
         students?: Array<{ studentSessionId: string; attendanceStatus: string; attendanceNote?: string }>;
       };
 
-      if (!Array.isArray(studentList) || studentList.length === 0) {
-        return res.status(400).json({ message: "Thiếu danh sách học viên (students)" });
+      if (!Array.isArray(studentList) || studentList.length === 0 || studentList.length > 500) {
+        return res.status(400).json({ message: "Danh sách học viên không hợp lệ (tối đa 500)." });
+      }
+      if (studentList.some((student) =>
+        !student
+        || typeof student.studentSessionId !== "string"
+        || !student.studentSessionId.trim()
+        || typeof student.attendanceStatus !== "string"
+        || !student.attendanceStatus.trim()
+        || (student.attendanceNote !== undefined && typeof student.attendanceNote !== "string")
+      )) {
+        return res.status(400).json({ message: "Thông tin điểm danh không hợp lệ." });
       }
 
       // Enforce attendance time limit
@@ -3458,15 +3468,20 @@ export function registerMobileRoutes(app: Express) {
         attendanceStatus: s.attendanceStatus,
         attendanceNote: s.attendanceNote,
       }));
-      await bulkUpdateAttendance(classSessionId, payload, user.id, staffRecord.fullName);
-      for (const s of studentList) {
-        sendAttendanceNotification(s.studentSessionId, s.attendanceStatus, user.id).catch(console.error);
+      const changedStudents = await bulkUpdateAttendance(classSessionId, payload, user.id, staffRecord.fullName);
+      for (const s of changedStudents) {
+        sendAttendanceNotification(s.studentSessionId, s.newStatus, user.id).catch(console.error);
       }
 
       return res.json({ success: true });
     } catch (err: any) {
       console.error("[Mobile] staff/attendance/bulk error:", err);
-      return res.status(err.status ?? 500).json({ message: err.message || "Lỗi khi cập nhật điểm danh hàng loạt" });
+      const status = err.status ?? 500;
+      return res.status(status).json({
+        message: status >= 500
+          ? "Chưa thể lưu điểm danh. Hãy thử lại."
+          : err.message || "Lỗi khi cập nhật điểm danh hàng loạt.",
+      });
     }
   });
 

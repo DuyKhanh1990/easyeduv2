@@ -19,18 +19,18 @@ if (!connectionString) {
   );
 }
 
-// Pool sizing rationale for 500 concurrent exam takers:
-// - Peak load: ~500 simultaneous submissions → each needs a DB connection briefly
-// - pg Pool queues requests when all connections are busy (waitingCount)
-// - max=100: enough headroom for burst, stays under typical PG max_connections (100–200)
-// - min=10: keep 10 warm connections so dashboard burst (9 parallel queries) after login
-//   doesn't need to create new connections on the fly
-// - idleTimeoutMillis=30000: increased to retain warm connections longer between requests
-// - connectionTimeoutMillis=10000: more lenient timeout during high-concurrency peaks
+// Keep each app process within a predictable database connection budget. Requests
+// queue in pg Pool under load rather than opening an unbounded number of clients.
+// Set APP_DB_POOL_MAX (1-20) to match the shared database budget and replica count.
+const requestedPoolMax = Number(process.env.APP_DB_POOL_MAX);
+const poolMax = Number.isInteger(requestedPoolMax) && requestedPoolMax >= 1 && requestedPoolMax <= 20
+  ? requestedPoolMax
+  : 8;
+
 export const pool = new Pool({
   connectionString,
-  max: 100,
-  min: 10,
+  max: poolMax,
+  min: 0,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
   keepAlive: true,

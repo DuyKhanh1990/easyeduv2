@@ -314,48 +314,86 @@ export function registerAttendanceRoutes(app: Express): void {
       }
 
       const userId = req.user?.id ?? null;
+      let savedRegistrationId: string | null = registration.id;
       await db.transaction(async (tx) => {
+        const [lockedEnrollment] = await tx
+          .select({ totalSessions: studentClasses.totalSessions })
+          .from(studentClasses)
+          .where(eq(studentClasses.id, registration.studentClassId))
+          .for("update");
+        if (!lockedEnrollment) {
+          throw Object.assign(new Error("Không tìm thấy thông tin đăng ký lớp học."), { status: 404 });
+        }
+        const totalSessions = lockedEnrollment.totalSessions;
+        let currentStatus = registration.status;
+        let currentRegistrationDate = String(registration.registrationDate ?? "");
+
         if (isVirtual) {
-          if (requestedStatus === "pending" && requestedNote === undefined) {
-            return;
-          }
-
-          if (nextStatus === "attended" && Number(registration.totalSessions || 0) > 0) {
-            const [attended] = await tx
-              .select({ count: sql<number>`count(*)::int` })
-              .from(freeClassRegistrations)
-              .where(and(
-                eq(freeClassRegistrations.studentClassId, registration.studentClassId),
-                eq(freeClassRegistrations.status, "attended"),
-              ));
-            if (Number(attended?.count || 0) >= Number(registration.totalSessions)) {
-              throw new Error("Học viên đã sử dụng hết số buổi");
-            }
-          }
-
-          const [created] = await tx
-            .insert(freeClassRegistrations)
-            .values({
-              classId: registration.classId,
-              studentClassId: registration.studentClassId,
-              studentId: registration.studentId,
-              registrationDate: registration.registrationDate,
-              status: "registered",
-              registeredBy: userId,
-              ...(requestedNote !== undefined
-                ? { note: typeof requestedNote === "string" ? requestedNote.trim() || null : null }
-                : {}),
+          const [existingVirtualRegistration] = await tx
+            .select({
+              id: freeClassRegistrations.id,
+              status: freeClassRegistrations.status,
+              registrationDate: freeClassRegistrations.registrationDate,
             })
-            .returning({ id: freeClassRegistrations.id });
+            .from(freeClassRegistrations)
+            .where(and(
+              eq(freeClassRegistrations.studentClassId, registration.studentClassId),
+              eq(freeClassRegistrations.registrationDate, currentRegistrationDate),
+            ))
+            .limit(1)
+            .for("update");
 
-          registration.id = created.id;
-          registration.status = "registered";
+          if (existingVirtualRegistration) {
+            savedRegistrationId = existingVirtualRegistration.id;
+            currentStatus = existingVirtualRegistration.status;
+            currentRegistrationDate = String(
+              existingVirtualRegistration.registrationDate ?? currentRegistrationDate,
+            );
+          } else if (requestedStatus === "pending" && requestedNote === undefined) {
+            return;
+          } else {
+            const [created] = await tx
+              .insert(freeClassRegistrations)
+              .values({
+                classId: registration.classId,
+                studentClassId: registration.studentClassId,
+                studentId: registration.studentId,
+                registrationDate: currentRegistrationDate,
+                status: "registered",
+                registeredBy: userId,
+                ...(requestedNote !== undefined
+                  ? { note: typeof requestedNote === "string" ? requestedNote.trim() || null : null }
+                  : {}),
+              })
+              .returning({ id: freeClassRegistrations.id });
+            savedRegistrationId = created.id;
+            currentStatus = "registered";
+          }
+        } else {
+          const [lockedRegistration] = await tx
+            .select({
+              id: freeClassRegistrations.id,
+              status: freeClassRegistrations.status,
+              registrationDate: freeClassRegistrations.registrationDate,
+            })
+            .from(freeClassRegistrations)
+            .where(eq(freeClassRegistrations.id, registration.id!))
+            .limit(1)
+            .for("update");
+          if (!lockedRegistration) {
+            throw Object.assign(new Error("Không tìm thấy buổi học lớp tự do."), { status: 404 });
+          }
+          savedRegistrationId = lockedRegistration.id;
+          currentStatus = lockedRegistration.status;
+          currentRegistrationDate = String(
+            lockedRegistration.registrationDate ?? currentRegistrationDate,
+          );
         }
 
         if (
           nextStatus === "attended"
-          && registration.status !== "attended"
-          && Number(registration.totalSessions || 0) > 0
+          && currentStatus !== "attended"
+          && Number(totalSessions || 0) > 0
         ) {
           const [attended] = await tx
             .select({ count: sql<number>`count(*)::int` })
@@ -364,11 +402,12 @@ export function registerAttendanceRoutes(app: Express): void {
               eq(freeClassRegistrations.studentClassId, registration.studentClassId),
               eq(freeClassRegistrations.status, "attended"),
             ));
-          if (Number(attended?.count || 0) >= Number(registration.totalSessions)) {
-            throw new Error("Học viên đã sử dụng hết số buổi");
+          if (Number(attended?.count || 0) >= Number(totalSessions)) {
+            throw Object.assign(new Error("Học viên đã sử dụng hết số buổi."), { status: 409 });
           }
         }
 
+        if (!savedRegistrationId) return;
         await tx
           .update(freeClassRegistrations)
           .set({
@@ -380,14 +419,14 @@ export function registerAttendanceRoutes(app: Express): void {
               : {}),
             updatedAt: new Date(),
           })
-          .where(eq(freeClassRegistrations.id, registration.id!));
+          .where(eq(freeClassRegistrations.id, savedRegistrationId));
 
         await recordFreeClassWalletTransition(tx, {
           studentId: registration.studentId,
           classId: registration.classId,
-          registrationDate: String(registration.registrationDate ?? ""),
-          totalSessions: registration.totalSessions,
-          oldStatus: registration.status,
+          registrationDate: currentRegistrationDate,
+          totalSessions,
+          oldStatus: currentStatus,
           newStatus: nextStatus,
           createdBy: userId,
           createdByName: (req.user as any)?.fullName ?? (req.user as any)?.username ?? null,
@@ -406,16 +445,20 @@ export function registerAttendanceRoutes(app: Express): void {
             attendedSessions: Number(attended?.count || 0),
             remainingSessions: Math.max(
               0,
-              Number(registration.totalSessions || 0) - Number(attended?.count || 0),
+              Number(totalSessions || 0) - Number(attended?.count || 0),
             ),
             updatedAt: new Date(),
           })
           .where(eq(studentClasses.id, registration.studentClassId));
       });
 
-      res.json({ success: true, registrationId, status: nextStatus });
+      res.json({ success: true, registrationId: savedRegistrationId ?? registrationId, status: nextStatus });
     } catch (err: any) {
-      res.status(err.status ?? 400).json({ message: err.message || "Không thể cập nhật điểm danh lớp tự do." });
+      res.status(err.status ?? 500).json({
+        message: err.status
+          ? err.message
+          : "Không thể cập nhật điểm danh lớp tự do. Hãy thử lại.",
+      });
     }
   });
 
@@ -706,6 +749,8 @@ export function registerAttendanceRoutes(app: Express): void {
         const teacherName = teacherIds.map((id: string) => staffNameMap.get(id) || "").filter(Boolean).join(", ");
         return {
           id: r.id,
+          recordType: "regular",
+          classSessionId: r.classSessionId,
           studentId: r.studentId,
           classId: r.classId,
           studentCode: r.studentCode,

@@ -3191,92 +3191,99 @@ export function registerClassesRoutes(app: Express): void {
 
   app.post(api.studentSessions.bulkAttendance.path, async (req, res) => {
     try {
-      const { session_id, students: studentList } = req.body;
+      const { session_id, students: studentList } = req.body ?? {};
+      if (typeof session_id !== "string" || !session_id.trim()) {
+        return res.status(400).json({ message: "Thiếu buổi học cần điểm danh." });
+      }
+      if (!Array.isArray(studentList) || studentList.length === 0 || studentList.length > 500) {
+        return res.status(400).json({ message: "Danh sách điểm danh không hợp lệ (tối đa 500 học viên)." });
+      }
+      if (studentList.some((student: any) =>
+        !student
+        || typeof student.studentSessionId !== "string"
+        || !student.studentSessionId.trim()
+        || typeof student.attendanceStatus !== "string"
+        || !student.attendanceStatus.trim()
+        || (student.attendanceNote !== undefined && typeof student.attendanceNote !== "string")
+      )) {
+        return res.status(400).json({ message: "Thông tin điểm danh không hợp lệ." });
+      }
+
       const userId = (req as any).user?.id ?? null;
       const userFullName = await resolveStaffFullName(userId);
 
       // Enforce attendance time limit (session_id is the classSessionId directly)
       await checkAttendanceLimitForSession(session_id, req);
 
-      // Pre-fetch for activity log
-      let bulkLogData: any = null;
-      try {
-        if (Array.isArray(studentList) && studentList.length > 0) {
-          const studentSessionIds = studentList.map((s: any) => s.studentSessionId);
-          const ssRows = await db.select({
-            id: studentSessions.id,
-            studentId: studentSessions.studentId,
-            classId: studentSessions.classId,
-            oldStatus: studentSessions.attendanceStatus,
-          }).from(studentSessions).where(inArray(studentSessions.id, studentSessionIds));
+      const changedStudents = await storage.bulkUpdateAttendance(session_id, studentList, userId, userFullName);
+      for (const student of changedStudents) {
+        sendAttendanceNotification(student.studentSessionId, student.newStatus, userId).catch(console.error);
+      }
 
-          const allStudentIds = [...new Set(ssRows.map(r => r.studentId).filter(Boolean))] as string[];
-          const studentInfoMap = new Map<string, { fullName: string; code: string }>();
-          if (allStudentIds.length > 0) {
-            const sRows = await db.select({ id: students.id, fullName: students.fullName, code: students.code })
-              .from(students).where(inArray(students.id, allStudentIds));
-            for (const s of sRows) studentInfoMap.set(s.id, { fullName: s.fullName ?? "", code: s.code ?? "" });
-          }
-
-          const [csRow] = await db.select({
-            sessionIndex: classSessions.sessionIndex,
-            weekday: classSessions.weekday,
-            sessionDate: classSessions.sessionDate,
-            startTime: shiftTemplates.startTime,
-            classId: classSessions.classId,
-          }).from(classSessions)
+      // Log only the changes confirmed by the locked transaction.
+      if (changedStudents.length > 0 && userId) {
+        try {
+          const allStudentIds = [...new Set(changedStudents.map((student) => student.studentId))];
+          const sRows = await db
+            .select({ id: students.id, fullName: students.fullName, code: students.code })
+            .from(students)
+            .where(inArray(students.id, allStudentIds));
+          const studentInfoMap = new Map(
+            sRows.map((student) => [student.id, { fullName: student.fullName ?? "", code: student.code ?? "" }]),
+          );
+          const [csRow] = await db
+            .select({
+              sessionIndex: classSessions.sessionIndex,
+              weekday: classSessions.weekday,
+              sessionDate: classSessions.sessionDate,
+              startTime: shiftTemplates.startTime,
+              classId: classSessions.classId,
+            })
+            .from(classSessions)
             .leftJoin(shiftTemplates, eq(classSessions.shiftTemplateId, shiftTemplates.id))
-            .where(eq(classSessions.id, session_id)).limit(1);
+            .where(eq(classSessions.id, session_id))
+            .limit(1);
+          const classId = csRow?.classId ?? changedStudents[0]?.classId;
+          if (!classId) throw new Error("Không xác định được lớp của buổi học.");
 
-          const ssMap = new Map(ssRows.map(r => [r.id, r]));
-          const studentChanges = studentList.map((s: any) => {
-            const ss = ssMap.get(s.studentSessionId);
-            const info = ss ? studentInfoMap.get(ss.studentId) : null;
+          const studentChanges = changedStudents.map((student) => {
+            const info = studentInfoMap.get(student.studentId);
             return {
               name: info?.fullName ?? "",
               code: info?.code ?? "",
-              oldStatus: ss?.oldStatus ?? "scheduled",
-              newStatus: s.attendanceStatus,
+              oldStatus: student.oldStatus ?? "scheduled",
+              newStatus: student.newStatus,
             };
           });
-
-          bulkLogData = {
-            classId: csRow?.classId ?? ssRows[0]?.classId,
-            session: { index: csRow?.sessionIndex, weekday: csRow?.weekday, sessionDate: csRow?.sessionDate, startTime: csRow?.startTime ?? null },
-            students: studentChanges,
+          const session = {
+            index: csRow?.sessionIndex,
+            weekday: csRow?.weekday,
+            sessionDate: csRow?.sessionDate,
+            startTime: csRow?.startTime ?? null,
           };
-        }
-      } catch (logPrefetchErr) {
-        console.error("[BulkAttendance] Pre-fetch log error:", logPrefetchErr);
-      }
-
-      await storage.bulkUpdateAttendance(session_id, studentList, userId, userFullName);
-      for (const s of (studentList ?? [])) {
-        sendAttendanceNotification(s.studentSessionId, s.attendanceStatus, userId).catch(console.error);
-      }
-
-      // Create activity log
-      if (bulkLogData && userId) {
-        try {
           const [locRow] = await db.select({ locationId: classes.locationId })
-            .from(classes).where(eq(classes.id, bulkLogData.classId)).limit(1);
-          const { session, students: studs } = bulkLogData;
+            .from(classes).where(eq(classes.id, classId)).limit(1);
           await createActivityLog({
             userId,
             locationId: locRow?.locationId ?? null,
-            classId: bulkLogData.classId,
+            classId,
             action: "Điểm danh hàng loạt",
             oldContent: null,
-            newContent: JSON.stringify({ session, students: studs }),
+            newContent: JSON.stringify({ session, students: studentChanges }),
           });
         } catch (logErr) {
           console.error("[BulkAttendance] Activity log error:", logErr);
         }
       }
 
-      res.json({ success: true });
+      res.json({ success: true, updatedCount: changedStudents.length });
     } catch (err: any) {
-      res.status(err.status ?? 400).json({ message: err.message });
+      const status = err.status ?? 500;
+      res.status(status).json({
+        message: err.status
+          ? err.message
+          : "Chưa thể lưu điểm danh. Hãy thử lại; các học viên chưa xác nhận sẽ được giữ lại.",
+      });
     }
   });
 

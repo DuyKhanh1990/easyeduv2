@@ -51,6 +51,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { StoreDateRangePicker, DateRange } from "@/pages/store/StoreDateRangePicker";
+import { applyBulkAttendance } from "@/lib/attendance-bulk";
 import { apiRequest } from "@/lib/queryClient";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { useToast } from "@/hooks/use-toast";
@@ -75,6 +76,7 @@ type StudentAttendance = {
   id: string;
   recordType?: "regular" | "free";
   freeRegistrationId?: string;
+  classSessionId?: string;
   studentClassId?: string;
   studentId: string;
   classId: string;
@@ -146,6 +148,7 @@ export function Attendance() {
   const [expandedClasses, setExpandedClasses] = useState<string[]>([""]);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [isBulkAttendanceOpen, setIsBulkAttendanceOpen] = useState(false);
+  const [isBulkSaving, setIsBulkSaving] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
 
@@ -968,21 +971,58 @@ export function Attendance() {
                   key={status}
                   variant="outline"
                   className={`w-full justify-start gap-2 ${cfg.text} hover:${cfg.bg} border-border/70`}
+                  disabled={isBulkSaving}
                   onClick={async () => {
-                    setIsBulkAttendanceOpen(false);
+                    if (isBulkSaving) return;
+                    setIsBulkSaving(true);
                     try {
-                      await Promise.all(
-                         selectedRecords.map((record) =>
-                           updateAttendanceMutation.mutateAsync({ record, attendanceStatus: status })
-                        )
+                      const result = await applyBulkAttendance(
+                        selectedRecords,
+                        status,
+                        (classSessionId, students) => apiRequest(
+                          "POST",
+                          "/api/student-sessions/bulk-attendance",
+                          { session_id: classSessionId, students },
+                        ),
+                        (registrationId, attendanceStatus) => apiRequest(
+                          "PATCH",
+                          `/api/attendance/free/${encodeURIComponent(registrationId)}`,
+                          { attendance_status: attendanceStatus },
+                        ),
                       );
-                    } catch {}
-                    await queryClient.invalidateQueries({ queryKey: ["/api/attendance"] });
-                    setSelectedRows(new Set());
+                      await queryClient.invalidateQueries({ queryKey: ["/api/attendance"] });
+
+                      const failedIds = new Set(result.failures.map((failure) => failure.id));
+                      setSelectedRows((previous) =>
+                        new Set(Array.from(previous).filter((id) => failedIds.has(id))),
+                      );
+                      setIsBulkAttendanceOpen(false);
+
+                      if (result.failures.length === 0) {
+                        toast({
+                          title: "Điểm danh thành công",
+                          description: `Đã cập nhật ${result.updatedIds.length} học viên.`,
+                        });
+                      } else {
+                        toast({
+                          title: "Một số học viên chưa được cập nhật",
+                          description: `Đã lưu ${result.updatedIds.length}/${selectedRecords.length}. ${result.failures[0]?.message ?? "Hãy thử lại."} Các dòng lỗi vẫn được giữ chọn.`,
+                          variant: "destructive",
+                        });
+                      }
+                    } catch (error: any) {
+                      toast({
+                        title: "Không thể hoàn tất điểm danh",
+                        description: error?.message || "Hãy thử lại. Các học viên vẫn được giữ chọn.",
+                        variant: "destructive",
+                      });
+                    } finally {
+                      setIsBulkSaving(false);
+                    }
                   }}
                 >
                   <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />
-                  {cfg.label}
+                  {isBulkSaving ? "Đang lưu..." : cfg.label}
                 </Button>
                ))
              })()}
