@@ -59,6 +59,9 @@ export function ActiveTabContent({ classId, activeStudents, canDelete = true }: 
     queryKey: [`/api/classes/${classId}/student/${selectedActiveStudent?.id}/sessions`],
     enabled: !!selectedActiveStudent,
   });
+  const visibleStudentSessions = (studentSessions ?? []).filter(
+    (session) => session.status !== "transferred",
+  );
 
   const { data: invoiceSummaries = [] } = useQuery<InvoiceSummary[]>({
     queryKey: [`/api/classes/${classId}/invoice-summary`],
@@ -293,7 +296,7 @@ export function ActiveTabContent({ classId, activeStudents, canDelete = true }: 
             <div className="min-h-0 flex-1 overflow-hidden p-4 mb-8">
               <ScrollArea className="h-full">
                 <div className="grid grid-cols-10 gap-3">
-                  {studentSessions?.map((session, index) => {
+                  {visibleStudentSessions.map((session, index) => {
                     const date = new Date(session.classSession?.sessionDate);
                     const isPast = date < new Date() && !isSameDay(date, new Date());
                     const isToday = isSameDay(date, new Date());

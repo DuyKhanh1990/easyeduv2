@@ -1827,6 +1827,7 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
     columns: {
       id: true,
       classSessionId: true,
+      status: true,
       attendanceStatus: true,
       packageId: true,
       sessionPrice: true,
