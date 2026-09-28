@@ -692,7 +692,7 @@ export function TransferClassDialog({
       : automaticDiff < 0
       ? `Do lớp ${toName} học phí thấp hơn`
       : `Do học phí 2 lớp bằng nhau`;
-    const adjustmentNote = transferFeeAdjustment !== 0
+    const adjustmentNote = !autoInvoice && transferFeeAdjustment !== 0
       ? ` Phí chuyển lớp điều chỉnh: ${formatSignedCurrency(transferFeeAdjustment)}.`
       : "";
     const finalAmountNote = diff === 0
