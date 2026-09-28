@@ -2359,6 +2359,8 @@ export function registerConfigRoutes(app: Express): void {
           st.start_time AS session_start_time,
           c.class_code,
           c.name AS class_name,
+          loc.name AS location_name,
+          assigned_teachers.teacher_names,
           (
             SELECT COUNT(DISTINCT ss.student_id)::int
             FROM student_sessions ss
@@ -2380,6 +2382,18 @@ export function registerConfigRoutes(app: Express): void {
         FROM class_sessions cs
         JOIN classes c ON c.id = cs.class_id
         LEFT JOIN shift_templates st ON st.id = cs.shift_template_id
+        LEFT JOIN locations loc ON loc.id = c.location_id
+        LEFT JOIN LATERAL (
+          SELECT string_agg(DISTINCT teacher.full_name, ', ' ORDER BY teacher.full_name) AS teacher_names
+          FROM unnest(
+            COALESCE(
+              NULLIF(cs.teacher_ids, '{}'::uuid[]),
+              c.teacher_ids,
+              '{}'::uuid[]
+            )
+          ) AS assigned_teacher(id)
+          JOIN staff teacher ON teacher.id = assigned_teacher.id
+        ) assigned_teachers ON TRUE
         WHERE cs.score_sheet_assessment_id IS NOT NULL
         ORDER BY cs.session_date DESC, cs.session_index DESC, c.class_code
       `);
@@ -2392,6 +2406,8 @@ export function registerConfigRoutes(app: Express): void {
           classId: row.class_id,
           classCode: row.class_code,
           className: row.class_name,
+          locationName: row.location_name ?? null,
+          teacherNames: row.teacher_names ?? null,
           sessionIndex: row.session_index,
           studentCount: row.student_count ?? 0,
           enteredStudentCount: row.entered_student_count ?? 0,

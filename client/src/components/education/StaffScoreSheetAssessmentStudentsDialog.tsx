@@ -26,6 +26,8 @@ export type StaffAssignedScoreSheetAssessment = {
   classId: string;
   classCode: string;
   className: string;
+  locationName?: string | null;
+  teacherNames?: string | null;
   sessionIndex: number | null;
   examDate: string;
   assessmentId: string;

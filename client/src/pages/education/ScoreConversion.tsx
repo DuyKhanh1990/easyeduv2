@@ -9,8 +9,10 @@ import {
   CircleDot,
   Clock3,
   Eye,
+  MapPin,
   Pencil,
   Plus,
+  UserRound,
   Users,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -543,6 +545,26 @@ export default function ScoreConversion() {
                                         · Buổi {assessment.sessionIndex}
                                       </span>
                                     )}
+                                  </div>
+                                  <div className="mt-1 space-y-0.5 text-[10px] text-muted-foreground">
+                                    <p
+                                      className="flex min-w-0 items-center gap-1"
+                                      title={assessment.locationName ?? "Chưa xác định cơ sở"}
+                                    >
+                                      <MapPin className="h-3 w-3 shrink-0" />
+                                      <span className="truncate">
+                                        Cơ sở: {assessment.locationName ?? "Chưa xác định"}
+                                      </span>
+                                    </p>
+                                    <p
+                                      className="flex min-w-0 items-center gap-1"
+                                      title={assessment.teacherNames ?? "Chưa phân công giáo viên"}
+                                    >
+                                      <UserRound className="h-3 w-3 shrink-0" />
+                                      <span className="truncate">
+                                        Giáo viên: {assessment.teacherNames ?? "Chưa phân công"}
+                                      </span>
+                                    </p>
                                   </div>
                                 </div>
 
