@@ -17,6 +17,19 @@ export const scoreSheetTemplateOverallRuleSchema = z.object({
   formula: z.string().trim().max(1000).default(""),
 });
 
+export const SCORE_SHEET_SKILL_COLORS = [
+  "#2563EB",
+  "#7C3AED",
+  "#DB2777",
+  "#EA580C",
+  "#059669",
+  "#0891B2",
+  "#4F46E5",
+  "#64748B",
+] as const;
+export const DEFAULT_SCORE_SHEET_SKILL_COLOR = SCORE_SHEET_SKILL_COLORS[0];
+export const scoreSheetSkillColorSchema = z.enum(SCORE_SHEET_SKILL_COLORS);
+
 export const scoreSheetScoringPolicySchema = z.enum(["highest", "latest"]);
 
 export const scoreSheetTemplateSkillSchema = z.object({
@@ -25,7 +38,22 @@ export const scoreSheetTemplateSkillSchema = z.object({
   sectionId: z.string().uuid().nullable().default(null),
   parts: z.array(scoreSheetTemplatePartSchema).max(100),
   partFormula: scoreSheetTemplatePartFormulaSchema.default({ method: "sum", formula: "" }),
-}).superRefine((skill, context) => {
+  rawMaxScore: z.number().finite().nonnegative().optional(),
+  color: scoreSheetSkillColorSchema.default(DEFAULT_SCORE_SHEET_SKILL_COLOR),
+}).transform((skill) => ({
+  ...skill,
+  rawMaxScore: skill.rawMaxScore
+    ?? skill.parts.reduce((total, part) => total + part.rawMaxScore, 0),
+})).superRefine((skill, context) => {
+  const partsRawMaxTotal = skill.parts.reduce((total, part) => total + part.rawMaxScore, 0);
+  if (partsRawMaxTotal > skill.rawMaxScore + 1e-9) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Tổng điểm thô tối đa của các part (${partsRawMaxTotal}) không được vượt quá điểm tối đa của kỹ năng (${skill.rawMaxScore}).`,
+      path: ["parts"],
+    });
+  }
+
   if (skill.parts.length === 0 || skill.partFormula.method !== "custom") return;
   const formulaError = validateScoreConversionFormula(
     skill.partFormula.formula,

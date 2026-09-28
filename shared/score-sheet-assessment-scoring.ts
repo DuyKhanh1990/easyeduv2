@@ -57,6 +57,18 @@ function getSkillId(skill: ScoreSheetSkill, index: number): string {
   return id;
 }
 
+function getSkillRawMaxScore(
+  skill: ScoreSheetSkill,
+  conversionSectionsById: Map<string, ScoreConversionTemplate["sections"][number]>,
+): number | null {
+  const section = skill.sectionId ? conversionSectionsById.get(skill.sectionId) : undefined;
+  if (section) {
+    const configuredMaximum = skill.rawMaxScore > 0 ? skill.rawMaxScore : section.rawMaxScore;
+    return Math.min(configuredMaximum, section.rawMaxScore);
+  }
+  return skill.rawMaxScore > 0 ? skill.rawMaxScore : null;
+}
+
 function aggregateScores(
   rule: { method: "sum" | "average" | "custom"; formula?: string },
   values: Array<{ name: string; score: number | null }>,
@@ -133,9 +145,9 @@ function validateAttemptValues(
     if (skill.parts.length > 0) {
       throw new Error(`Kỹ năng “${skill.name || "không tên"}” cần nhập điểm theo từng phần.`);
     }
-    const section = skill.sectionId ? conversionSectionsById.get(skill.sectionId) : null;
-    if (score !== null && section && score > section.rawMaxScore) {
-      throw new Error(`Điểm của “${skill.name || section.name}” không được vượt quá ${section.rawMaxScore}.`);
+    const rawMaxScore = getSkillRawMaxScore(skill, conversionSectionsById);
+    if (score !== null && rawMaxScore !== null && score > rawMaxScore) {
+      throw new Error(`Điểm của “${skill.name || "kỹ năng"}” không được vượt quá ${rawMaxScore}.`);
     }
   }
 
@@ -191,6 +203,11 @@ export function calculateScoreSheetAssessmentAttemptResult(args: {
           ));
         }
       }
+    }
+
+    const rawMaxScore = getSkillRawMaxScore(skill, conversionSectionsById);
+    if (rawScore !== null && rawMaxScore !== null && rawScore > rawMaxScore) {
+      throw new Error(`Điểm thô của “${skill.name || "kỹ năng"}” không được vượt quá ${rawMaxScore}.`);
     }
 
     const sectionId = skill.sectionId ?? null;

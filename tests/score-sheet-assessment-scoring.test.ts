@@ -10,6 +10,7 @@ const conversionId = "11111111-1111-4111-8111-111111111111";
 const sectionId = "22222222-2222-4222-8222-222222222222";
 const skillId = "33333333-3333-4333-8333-333333333333";
 const partId = "44444444-4444-4444-8444-444444444444";
+const secondPartId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const lowMappingId = "55555555-5555-4555-8555-555555555555";
 const highMappingId = "66666666-6666-4666-8666-666666666666";
 const gradeBandId = "77777777-7777-4777-8777-777777777777";
@@ -60,6 +61,8 @@ const template: ScoreSheetTemplate = {
     sectionId,
     parts: [{ id: partId, name: "Part 1", rawMaxScore: 10 }],
     partFormula: { method: "sum", formula: "" },
+    rawMaxScore: 10,
+    color: "#2563EB",
   }],
   overallRule: { method: "sum", formula: "" },
   createdAt: "2026-01-01T00:00:00.000Z",
@@ -157,5 +160,56 @@ describe("score-sheet assessment scoring", () => {
       conversionTemplate,
       values: values(11),
     })).toThrow("không được vượt quá 10");
+  });
+
+  it("rejects a calculated skill score above its parent maximum", () => {
+    const multiPartTemplate: ScoreSheetTemplate = {
+      ...template,
+      skills: [{
+        ...template.skills[0],
+        rawMaxScore: 10,
+        parts: [
+          { id: partId, name: "Part 1", rawMaxScore: 5 },
+          { id: secondPartId, name: "Part 2", rawMaxScore: 5 },
+        ],
+        partFormula: { method: "custom", formula: "=[Part 1] * 3 + [Part 2]" },
+      }],
+    };
+
+    expect(() => calculateScoreSheetAssessmentAttemptResult({
+      template: multiPartTemplate,
+      conversionTemplate,
+      values: {
+        partScores: { [skillId]: { [partId]: 5, [secondPartId]: 5 } },
+        skillScores: {},
+        notes: {},
+      },
+    })).toThrow("không được vượt quá 10");
+  });
+
+  it("limits direct skill scores by the configured parent maximum", () => {
+    const directTemplate: ScoreSheetTemplate = {
+      ...template,
+      scoreConversionTemplateId: null,
+      skills: [{
+        id: skillId,
+        name: "Writing",
+        sectionId: null,
+        parts: [],
+        partFormula: { method: "sum", formula: "" },
+        rawMaxScore: 5,
+        color: "#2563EB",
+      }],
+    };
+
+    expect(() => calculateScoreSheetAssessmentAttemptResult({
+      template: directTemplate,
+      conversionTemplate: null,
+      values: {
+        partScores: {},
+        skillScores: { [skillId]: 6 },
+        notes: {},
+      },
+    })).toThrow("không được vượt quá 5");
   });
 });

@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Trash2 } from "lucide-react";
+import { BookOpen, Plus, Trash2 } from "lucide-react";
 import type { ScoreConversionTemplate } from "@shared/score-conversion";
 import type {
   ScoreSheetTemplate,
   ScoreSheetTemplateInput,
+} from "@shared/score-sheet-template";
+import {
+  DEFAULT_SCORE_SHEET_SKILL_COLOR,
+  SCORE_SHEET_SKILL_COLORS,
 } from "@shared/score-sheet-template";
 import { validateScoreConversionFormula } from "@shared/score-conversion-formula";
 import { Button } from "@/components/ui/button";
@@ -45,6 +49,16 @@ type OverallRule = NonNullable<ScoreSheetTemplateInput["overallRule"]>;
 
 const DEFAULT_OVERALL_RULE: OverallRule = { method: "average", formula: "" };
 const DEFAULT_PART_FORMULA: PartFormula = { method: "sum", formula: "" };
+
+function skillColorAt(index: number): Skill["color"] {
+  return SCORE_SHEET_SKILL_COLORS[index % SCORE_SHEET_SKILL_COLORS.length]
+    ?? DEFAULT_SCORE_SHEET_SKILL_COLOR;
+}
+
+function conversionSkillMaxScore(skill: Skill | undefined, section: ScoreConversionTemplate["sections"][number]) {
+  if (!skill || (skill.rawMaxScore === 0 && skill.parts.length === 0)) return section.rawMaxScore;
+  return skill.rawMaxScore;
+}
 
 function skillIdentifier(skill: Skill): string {
   return skill.id ?? skill.sectionId ?? "";
@@ -122,13 +136,22 @@ export function ScoreSheetTemplateDialog({
             : linkedConversion
               ? { method: linkedConversion.overallRule.method, formula: linkedConversion.overallRule.formula }
               : DEFAULT_OVERALL_RULE,
-          skills: template.skills.map((skill) => ({
-            id: skill.id ?? skill.sectionId ?? crypto.randomUUID(),
-            name: linkedConversion?.sections.find((section) => section.id === skill.sectionId)?.name ?? skill.name,
-            sectionId: skill.sectionId,
-            parts: skill.parts.map((part) => ({ ...part })),
-            partFormula: skill.partFormula ?? DEFAULT_PART_FORMULA,
-          })),
+          skills: template.skills.map((skill, skillIndex) => {
+            const conversionSection = linkedConversion?.sections.find(
+              (section) => section.id === skill.sectionId,
+            );
+            return {
+              id: skill.id ?? skill.sectionId ?? crypto.randomUUID(),
+              name: conversionSection?.name ?? skill.name,
+              sectionId: skill.sectionId,
+              parts: skill.parts.map((part) => ({ ...part })),
+              partFormula: skill.partFormula ?? DEFAULT_PART_FORMULA,
+              rawMaxScore: conversionSection
+                ? conversionSkillMaxScore(skill, conversionSection)
+                : skill.rawMaxScore ?? skill.parts.reduce((total, part) => total + part.rawMaxScore, 0),
+              color: skill.color ?? skillColorAt(skillIndex),
+            };
+          }),
           scoreDeadlineOffsetMinutes: template.scoreDeadlineOffsetMinutes ?? 1440,
           attemptCount: template.attemptCount ?? 1,
           scoringPolicy: template.scoringPolicy ?? "highest",
@@ -149,19 +172,21 @@ export function ScoreSheetTemplateDialog({
       ...current,
       scoreConversionTemplateId: conversionTemplateId,
       skills: nextConversion
-        ? nextConversion.sections.map((section) => ({
-            id: section.id,
-            name: section.name,
-            sectionId: section.id,
-            parts: current.skills.find((skill) =>
+        ? nextConversion.sections.map((section, index) => {
+            const existingSkill = current.skills.find((skill) =>
               skill.sectionId === section.id
               || (!skill.sectionId && skill.name.trim().toLocaleLowerCase() === section.name.trim().toLocaleLowerCase()),
-            )?.parts ?? [],
-            partFormula: current.skills.find((skill) =>
-              skill.sectionId === section.id
-              || (!skill.sectionId && skill.name.trim().toLocaleLowerCase() === section.name.trim().toLocaleLowerCase()),
-            )?.partFormula ?? DEFAULT_PART_FORMULA,
-          }))
+            );
+            return {
+              id: section.id,
+              name: section.name,
+              sectionId: section.id,
+              parts: existingSkill?.parts ?? [],
+              partFormula: existingSkill?.partFormula ?? DEFAULT_PART_FORMULA,
+              rawMaxScore: conversionSkillMaxScore(existingSkill, section),
+              color: existingSkill?.color ?? skillColorAt(index),
+            };
+          })
         : current.skills.map((skill) => ({
             ...skill,
             id: skill.id ?? skill.sectionId ?? crypto.randomUUID(),
@@ -195,6 +220,8 @@ export function ScoreSheetTemplateDialog({
           sectionId: null,
           parts: [],
           partFormula: DEFAULT_PART_FORMULA,
+          rawMaxScore: 0,
+          color: skillColorAt(current.skills.length),
         },
       ],
     }));
@@ -318,6 +345,8 @@ export function ScoreSheetTemplateDialog({
           sectionId: section.id,
           parts: savedSkill?.parts ?? [],
           partFormula: savedSkill?.partFormula ?? DEFAULT_PART_FORMULA,
+          rawMaxScore: conversionSkillMaxScore(savedSkill, section),
+          color: savedSkill?.color ?? skillColorAt(index),
           conversionSection: section,
           skillIndex: index,
         };
@@ -329,6 +358,10 @@ export function ScoreSheetTemplateDialog({
         skillIndex: index,
       }));
 
+  const hasInvalidSkillMaximums = visibleSkills.some((skill) =>
+    skill.parts.reduce((total, part) => total + part.rawMaxScore, 0) > skill.rawMaxScore + 1e-9
+    || (!!skill.conversionSection && skill.rawMaxScore > skill.conversionSection.rawMaxScore + 1e-9),
+  );
   const overallFormulaError = overallRule.method === "custom" && visibleSkills.length > 0
     ? validateScoreConversionFormula(overallRule.formula, visibleSkills.map((skill) => skill.name))
     : null;
@@ -338,7 +371,7 @@ export function ScoreSheetTemplateDialog({
     setFormError("");
     try {
       const skills = selectedConversion
-        ? selectedConversion.sections.map((section) => {
+        ? selectedConversion.sections.map((section, index) => {
             const savedSkill = draft.skills.find((skill) => skill.sectionId === section.id);
             return {
               id: section.id,
@@ -346,6 +379,8 @@ export function ScoreSheetTemplateDialog({
               sectionId: section.id,
               parts: savedSkill?.parts ?? [],
               partFormula: savedSkill?.partFormula ?? DEFAULT_PART_FORMULA,
+              rawMaxScore: conversionSkillMaxScore(savedSkill, section),
+              color: savedSkill?.color ?? skillColorAt(index),
             };
           })
         : draft.skills.map((skill) => ({
@@ -369,14 +404,16 @@ export function ScoreSheetTemplateDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-h-[92vh] w-[95vw] max-w-5xl overflow-y-auto bg-slate-100">
-          <DialogHeader>
+        <DialogContent className="flex h-[98vh] max-h-[98vh] w-[98vw] max-w-[98vw] flex-col gap-0 overflow-hidden bg-slate-100 p-0">
+          <DialogHeader className="shrink-0 border-b bg-white px-5 py-4 pr-14 sm:px-6">
             <DialogTitle>{template ? "Sửa bảng điểm mẫu" : "Thêm bảng điểm mẫu"}</DialogTitle>
             <DialogDescription>
               Tạo cấu trúc bảng điểm và tùy chọn liên kết với một bảng quy đổi quốc tế.
             </DialogDescription>
           </DialogHeader>
-          <form className="space-y-4" onSubmit={handleSubmit}>
+          <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit}>
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4 sm:px-6">
+              <div className="grid items-start gap-4 lg:grid-cols-2">
             <section className="grid gap-4 rounded-lg border bg-white p-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="score-sheet-template-code">Mã bảng điểm</Label>
@@ -573,6 +610,7 @@ export function ScoreSheetTemplateDialog({
                 )}
               </div>
             </section>
+              </div>
 
             <section className="space-y-3 rounded-lg border bg-white p-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -609,14 +647,30 @@ export function ScoreSheetTemplateDialog({
                 <div className="space-y-3">
                   {visibleSkills.map((skill) => {
                     const parts = skill.parts;
+                    const partMaximumTotal = parts.reduce((total, part) => total + part.rawMaxScore, 0);
+                    const exceedsSkillMaximum = partMaximumTotal > skill.rawMaxScore + 1e-9;
+                    const exceedsConversionMaximum = !!skill.conversionSection
+                      && skill.rawMaxScore > skill.conversionSection.rawMaxScore + 1e-9;
                     const partFormulaError = skill.partFormula.method === "custom" && parts.length > 0
                       ? validateScoreConversionFormula(skill.partFormula.formula, parts.map((part) => part.name))
                       : null;
                     return (
-                      <div key={skill.id} className="rounded-lg border bg-white p-3">
-                        <div className="flex flex-wrap items-end justify-between gap-3">
+                      <div
+                        key={skill.id}
+                        className="rounded-lg border border-l-4 bg-white p-3"
+                        style={{ borderLeftColor: skill.color }}
+                      >
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span
+                            aria-hidden="true"
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+                            style={{ backgroundColor: `${skill.color}1A`, color: skill.color }}
+                          >
+                            <BookOpen className="h-5 w-5" />
+                          </span>
+
                           {skill.conversionSection ? (
-                            <div className="min-w-0">
+                            <div className="min-w-[220px] flex-1">
                               <h4 className="font-medium">
                                 {skill.skillIndex + 1}. {skill.name}
                               </h4>
@@ -628,7 +682,7 @@ export function ScoreSheetTemplateDialog({
                               </p>
                             </div>
                           ) : (
-                            <div className="min-w-0 flex-1 space-y-1">
+                            <div className="min-w-[220px] flex-1 space-y-1">
                               <Label htmlFor={`score-manual-skill-name-${skill.id}`}>Tên kỹ năng</Label>
                               <Input
                                 id={`score-manual-skill-name-${skill.id}`}
@@ -637,9 +691,35 @@ export function ScoreSheetTemplateDialog({
                                 placeholder="Nhập tên kỹ năng"
                                 maxLength={120}
                                 required
+                                style={{ borderColor: `${skill.color}80` }}
                               />
                             </div>
                           )}
+
+                          <div
+                            role="group"
+                            aria-label={`Màu của kỹ năng ${skill.name || skill.skillIndex + 1}`}
+                            className="flex items-center gap-1.5 rounded-lg border bg-muted/20 px-2 py-1.5"
+                          >
+                            {SCORE_SHEET_SKILL_COLORS.map((color, colorIndex) => (
+                              <button
+                                key={color}
+                                type="button"
+                                title={`Màu ${colorIndex + 1}`}
+                                aria-label={`Chọn màu ${colorIndex + 1} cho kỹ năng ${skill.name || skill.skillIndex + 1}`}
+                                aria-pressed={skill.color === color}
+                                onClick={() => updateSkill(skill.id, { color })}
+                                className={`h-5 w-5 rounded-full border border-black/10 transition ${
+                                  skill.color === color ? "ring-2 ring-offset-2" : "hover:scale-110"
+                                }`}
+                                style={{
+                                  backgroundColor: color,
+                                  ...(skill.color === color ? { outlineColor: color } : {}),
+                                }}
+                              />
+                            ))}
+                          </div>
+
                           <div className="flex shrink-0 items-center gap-2">
                             <Button
                               type="button"
@@ -661,6 +741,54 @@ export function ScoreSheetTemplateDialog({
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="mt-3 grid gap-3 rounded-md bg-muted/20 p-3 sm:grid-cols-[220px_minmax(0,1fr)] sm:items-end">
+                          <div className="space-y-1">
+                            <Label htmlFor={`score-skill-max-${skill.id}`}>Điểm thô tối đa</Label>
+                            <Input
+                              id={`score-skill-max-${skill.id}`}
+                              type="number"
+                              min="0"
+                              max={skill.conversionSection?.rawMaxScore}
+                              step="any"
+                              value={skill.rawMaxScore}
+                              onChange={(event) => {
+                                const enteredMaximum = numericValue(event.target.value);
+                                updateSkill(skill.id, {
+                                  rawMaxScore: skill.conversionSection
+                                    ? Math.min(enteredMaximum, skill.conversionSection.rawMaxScore)
+                                    : enteredMaximum,
+                                });
+                              }}
+                              required
+                            />
+                          </div>
+                          <div aria-live="polite">
+                            <p className={`text-sm ${exceedsSkillMaximum ? "font-medium text-destructive" : "text-muted-foreground"}`}>
+                              Tổng điểm thô tối đa các part:{" "}
+                              <span className="font-semibold tabular-nums">
+                                {partMaximumTotal.toLocaleString("vi-VN")} / {skill.rawMaxScore.toLocaleString("vi-VN")}
+                              </span>
+                            </p>
+                            {exceedsSkillMaximum ? (
+                              <p className="mt-1 text-xs text-destructive" role="alert">
+                                Tổng điểm các part không được vượt quá điểm thô tối đa của kỹ năng cha.
+                              </p>
+                            ) : exceedsConversionMaximum ? (
+                              <p className="mt-1 text-xs text-destructive" role="alert">
+                                Điểm tối đa không được vượt quá giới hạn của thang quy đổi.
+                              </p>
+                            ) : parts.length > 0 ? (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Giới hạn còn lại cho các part: {(skill.rawMaxScore - partMaximumTotal).toLocaleString("vi-VN")}.
+                              </p>
+                            ) : (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Điểm nhập trực tiếp của kỹ năng cũng bị giới hạn ở mức này.
+                              </p>
                             )}
                           </div>
                         </div>
@@ -754,11 +882,18 @@ export function ScoreSheetTemplateDialog({
                                     id={`score-part-max-${part.id}`}
                                     type="number"
                                     min="0"
+                                    max={Math.max(0, skill.rawMaxScore - (partMaximumTotal - part.rawMaxScore))}
                                     step="any"
                                     value={part.rawMaxScore}
-                                    onChange={(event) => updatePart(skill.id, part.id, {
-                                      rawMaxScore: numericValue(event.target.value),
-                                    })}
+                                    onChange={(event) => {
+                                      const remainingForPart = Math.max(
+                                        0,
+                                        skill.rawMaxScore - (partMaximumTotal - part.rawMaxScore),
+                                      );
+                                      updatePart(skill.id, part.id, {
+                                        rawMaxScore: Math.min(numericValue(event.target.value), remainingForPart),
+                                      });
+                                    }}
                                     required
                                   />
                                 </div>
@@ -782,12 +917,13 @@ export function ScoreSheetTemplateDialog({
               )}
             </section>
 
-            {formError && <p className="text-sm text-destructive" role="alert">{formError}</p>}
-            <DialogFooter>
+              {formError && <p className="text-sm text-destructive" role="alert">{formError}</p>}
+            </div>
+            <DialogFooter className="shrink-0 border-t bg-white px-5 py-3 sm:px-6">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
                 Hủy
               </Button>
-              <Button type="submit" disabled={saving}>
+              <Button type="submit" disabled={saving || hasInvalidSkillMaximums}>
                 {saving ? "Đang lưu..." : "Lưu bảng điểm mẫu"}
               </Button>
             </DialogFooter>

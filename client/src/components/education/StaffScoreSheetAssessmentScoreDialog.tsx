@@ -373,12 +373,25 @@ export function StaffScoreSheetAssessmentScoreDialog({
                 const skillName = skill.name || section?.name || `Kỹ năng ${index + 1}`;
                 const notesForSkill = currentValues.notes[skillId] ?? {};
                 const rawUnit = section?.rawUnit || "điểm";
+                const maxRawScore = section
+                  ? Math.min(
+                    skill.rawMaxScore > 0 ? skill.rawMaxScore : section.rawMaxScore,
+                    section.rawMaxScore,
+                  )
+                  : skill.rawMaxScore > 0 ? skill.rawMaxScore : null;
 
                 return (
-                  <section key={skillId} className="overflow-hidden rounded-xl border bg-card shadow-sm">
+                  <section
+                    key={skillId}
+                    className="overflow-hidden rounded-xl border border-l-4 bg-card shadow-sm"
+                    style={{ borderLeftColor: skill.color }}
+                  >
                     <div className="flex flex-wrap items-start justify-between gap-3 border-b bg-muted/30 px-4 py-3">
                       <div className="flex min-w-0 items-start gap-3">
-                        <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-semibold text-violet-700 dark:bg-violet-900/50 dark:text-violet-200">
+                        <span
+                          className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+                          style={{ backgroundColor: `${skill.color}1A`, color: skill.color }}
+                        >
                           {String(index + 1).padStart(2, "0")}
                         </span>
                         <div className="min-w-0">
@@ -387,7 +400,8 @@ export function StaffScoreSheetAssessmentScoreDialog({
                             {skill.parts.length > 0
                               ? displayMethod(skill.partFormula.method)
                               : "Nhập trực tiếp điểm thô"}
-                            {section && ` · Thang điểm ${section.rawMinScore}–${section.rawMaxScore} ${section.rawUnit}`}
+                            {` · Tối đa ${formatScore(maxRawScore)} ${rawUnit}`}
+                            {section && ` · Thang quy đổi ${section.rawMinScore}–${section.rawMaxScore} ${section.rawUnit}`}
                           </p>
                         </div>
                       </div>
@@ -481,20 +495,25 @@ export function StaffScoreSheetAssessmentScoreDialog({
                           <Input
                             type="number"
                             min={0}
-                            max={section?.rawMaxScore}
+                            max={maxRawScore ?? undefined}
                             step="any"
                             value={currentValues.skillScores[skillId] ?? ""}
                             onChange={(event) => {
                               const raw = event.target.value;
-                              const score = raw === "" ? null : Number(raw);
+                              let score = raw === "" ? null : Number(raw);
                               if (score !== null && !Number.isFinite(score)) return;
+                              if (score !== null && maxRawScore !== null) {
+                                score = Math.min(score, maxRawScore);
+                              }
                               updateDraft((current) => ({
                                 ...current,
                                 skillScores: { ...current.skillScores, [skillId]: score },
                               }));
                             }}
                             aria-label={`${skillName}: điểm kỹ năng`}
-                            placeholder={section ? `Điểm từ 0 đến ${section.rawMaxScore}` : "Nhập điểm thô"}
+                            placeholder={maxRawScore === null
+                              ? "Nhập điểm thô"
+                              : `Điểm từ 0 đến ${maxRawScore}`}
                             className="tabular-nums"
                           />
                           <Input
