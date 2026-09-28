@@ -2343,6 +2343,14 @@ export function registerStudentsRoutes(app: Express): void {
           gb.score_sheet_id,
           gb.created_at,
           c.name AS class_name,
+           (
+             SELECT gbc.comment
+             FROM class_grade_book_student_comments gbc
+             WHERE gbc.grade_book_id = gb.id
+               AND gbc.student_id = ${studentId}
+             ORDER BY gbc.updated_at DESC
+             LIMIT 1
+           ) AS grading_comment,
           (
             SELECT json_agg(json_build_object(
               'categoryName', sc.name,
@@ -2378,10 +2386,11 @@ export function registerStudentsRoutes(app: Express): void {
           classId: row.class_id,
           finalScore,
           scores,
+           gradingComment: row.grading_comment ?? null,
           refId: row.id,
           createdAt: row.created_at,
         };
-      }).filter((entry) => entry.scores.length > 0);
+       }).filter((entry) => entry.scores.length > 0 || Boolean(entry.gradingComment?.trim()));
 
       // 2. BTVN and bài kiểm tra where student has a score
       const contentResult = await db.execute(sql`

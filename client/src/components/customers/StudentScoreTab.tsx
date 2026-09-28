@@ -39,17 +39,34 @@ function ScoreDetailDialog({
   onClose: () => void;
 }) {
   if (!entry) return null;
+  const isGradeBookEntry = entry.type === "Bảng điểm";
+  const comment = entry.gradingComment?.trim() ?? "";
+
+  const commentContent = comment
+    ? comment.startsWith("<")
+      ? (
+        <div
+          className="prose prose-sm max-w-none break-words leading-relaxed"
+          dangerouslySetInnerHTML={{ __html: comment }}
+        />
+      )
+      : <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{comment}</p>
+    : <p className="text-sm italic text-muted-foreground">Chưa có nhận xét cho bảng điểm này.</p>;
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-md z-[300]">
-        <DialogHeader>
+      <DialogContent
+        className={isGradeBookEntry
+          ? "z-[300] flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-3xl flex-col overflow-hidden p-0"
+          : "z-[300] max-h-[calc(100dvh-2rem)] max-w-md overflow-y-auto"}
+      >
+        <DialogHeader className={isGradeBookEntry ? "shrink-0 px-5 pt-5 pb-4" : ""}>
           <DialogTitle className="text-sm font-semibold leading-snug pr-6">
             {entry.title}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-3 text-sm">
+        <div className={`space-y-3 text-sm ${isGradeBookEntry ? "shrink-0 border-y px-5 py-4" : ""}`}>
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground w-24 shrink-0">Lớp học</span>
             <span className="font-medium">{entry.className}</span>
@@ -63,47 +80,70 @@ function ScoreDetailDialog({
             </span>
           </div>
 
-          {entry.type === "Bảng điểm" && entry.scores.length > 0 && (
-            <div>
-              <p className="text-muted-foreground mb-2">Chi tiết điểm</p>
-              <div className="border rounded-md overflow-hidden">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="bg-muted/40">
-                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Tiêu chí</th>
-                      <th className="text-right px-3 py-2 font-medium text-muted-foreground">Điểm</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {entry.scores.map((s, i) => (
-                      <tr key={i} className="border-t">
-                        <td className="px-3 py-2">{s.categoryName}</td>
-                        <td className="px-3 py-2 text-right font-medium">{s.score ?? "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {(entry.type === "BTVN" || entry.type === "Bài kiểm tra") && (
+          {!isGradeBookEntry && (entry.type === "BTVN" || entry.type === "Bài kiểm tra") && (
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground w-24 shrink-0">Điểm</span>
               <span className="font-semibold text-base">{entry.finalScore ?? "—"}</span>
             </div>
           )}
 
-          {entry.gradingComment && (
-            <div>
-              <p className="text-muted-foreground mb-1">Nhận xét</p>
-              <div
-                className="bg-muted/40 rounded-md px-3 py-2 text-xs leading-relaxed prose prose-xs max-w-none"
-                dangerouslySetInnerHTML={{ __html: entry.gradingComment }}
-              />
-            </div>
-          )}
         </div>
+
+        {isGradeBookEntry ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden sm:flex-row">
+            <section className="flex min-h-0 min-w-0 flex-1 flex-col border-b sm:border-b-0 sm:border-r">
+              <div className="shrink-0 border-b bg-muted/40 px-4 py-3">
+                <p className="text-xs font-semibold">Chi tiết điểm</p>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                {entry.scores.length > 0 ? (
+                  <div className="overflow-hidden rounded-md border">
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 z-10 bg-muted/40">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Tiêu chí</th>
+                          <th className="px-3 py-2 text-right font-medium text-muted-foreground">Điểm</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {entry.scores.map((score, index) => (
+                          <tr key={`${score.categoryName}-${index}`} className="border-t">
+                            <td className="px-3 py-2">{score.categoryName}</td>
+                            <td className="px-3 py-2 text-right font-medium">{score.score ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-sm italic text-muted-foreground">Chưa có điểm được nhập.</p>
+                )}
+              </div>
+            </section>
+
+            <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+              <div className="shrink-0 border-b bg-muted/40 px-4 py-3">
+                <p className="text-xs font-semibold">Nhận xét của giáo viên</p>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                {commentContent}
+              </div>
+            </section>
+          </div>
+        ) : (
+          entry.gradingComment && (
+            <div className="mt-3">
+              <p className="mb-1 text-muted-foreground">Nhận xét</p>
+              <div className="rounded-md bg-muted/40 px-3 py-2 text-xs leading-relaxed prose prose-xs max-w-none">
+                {entry.gradingComment.trimStart().startsWith("<") ? (
+                  <div dangerouslySetInnerHTML={{ __html: entry.gradingComment }} />
+                ) : (
+                  <p className="whitespace-pre-wrap">{entry.gradingComment}</p>
+                )}
+              </div>
+            </div>
+          )
+        )}
       </DialogContent>
     </Dialog>
   );
