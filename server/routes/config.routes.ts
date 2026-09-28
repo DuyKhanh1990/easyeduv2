@@ -18,6 +18,7 @@ import {
   type ScoreSheetTemplateInput,
 } from "@shared/score-sheet-template";
 import {
+  resolveScoreSheetAssessmentDeadlineAt,
   scoreSheetAssessmentInputSchema,
   scoreSheetAssessmentSchema,
   type ScoreSheetAssessment,
@@ -2333,6 +2334,91 @@ export function registerConfigRoutes(app: Express): void {
   });
 
   // ─── Score Sheet Assessments ────────────────────────────────────────────────
+  app.get("/api/score-sheet-assessments/assigned", async (req, res) => {
+    try {
+      const permissions = await getScoreConversionPermissions(req);
+      if (
+        !permissions.canView
+        && !permissions.canViewAll
+        && !permissions.canCreate
+        && !permissions.canEdit
+        && !permissions.canDelete
+      ) {
+        return res.status(403).json({ message: "Bạn không có quyền xem danh sách bảng điểm." });
+      }
+
+      const assessments = await readScoreSheetAssessments();
+      const assessmentsById = new Map(assessments.map((assessment) => [assessment.id, assessment]));
+      const result = await db.execute(sql`
+        SELECT
+          cs.id AS session_id,
+          cs.class_id,
+          cs.score_sheet_assessment_id AS assessment_id,
+          cs.session_index,
+          cs.session_date,
+          st.start_time AS session_start_time,
+          c.class_code,
+          c.name AS class_name,
+          (
+            SELECT COUNT(DISTINCT ss.student_id)::int
+            FROM student_sessions ss
+            WHERE ss.class_session_id = cs.id
+          ) AS student_count,
+          (
+            SELECT COUNT(DISTINCT attempt.student_id)::int
+            FROM score_sheet_assessment_student_attempts attempt
+            WHERE attempt.assessment_id = cs.score_sheet_assessment_id
+              AND attempt.class_session_id = cs.id
+          ) AS entered_student_count,
+          (
+            SELECT COUNT(DISTINCT attempt.student_id)::int
+            FROM score_sheet_assessment_student_attempts attempt
+            WHERE attempt.assessment_id = cs.score_sheet_assessment_id
+              AND attempt.class_session_id = cs.id
+              AND attempt.result @> '{"inputComplete":true}'::jsonb
+          ) AS completed_student_count
+        FROM class_sessions cs
+        JOIN classes c ON c.id = cs.class_id
+        LEFT JOIN shift_templates st ON st.id = cs.shift_template_id
+        WHERE cs.score_sheet_assessment_id IS NOT NULL
+        ORDER BY cs.session_date DESC, cs.session_index DESC, c.class_code
+      `);
+
+      const mapped = result.rows.flatMap((row: any) => {
+        const assessment = assessmentsById.get(row.assessment_id);
+        if (!assessment?.templateSnapshot.scoreConversionTemplateId) return [];
+        return [{
+          sessionId: row.session_id,
+          classId: row.class_id,
+          classCode: row.class_code,
+          className: row.class_name,
+          sessionIndex: row.session_index,
+          studentCount: row.student_count ?? 0,
+          enteredStudentCount: row.entered_student_count ?? 0,
+          completedStudentCount: row.completed_student_count ?? 0,
+          examDate: row.session_date,
+          assessmentId: row.assessment_id,
+          assessmentCode: assessment.code,
+          assessmentName: assessment.name,
+          templateName: assessment.templateSnapshot.name,
+          scoreDeadlineAt: resolveScoreSheetAssessmentDeadlineAt(
+            assessment,
+            row.session_date,
+            row.session_start_time,
+          ),
+          attemptCount: assessment.attemptCount,
+          scoringPolicy: assessment.scoringPolicy,
+          hasConversion: true,
+        }];
+      });
+
+      res.json(mapped);
+    } catch (err: any) {
+      console.error("Assigned score conversion assessments error:", err);
+      res.status(500).json({ message: err.message || "Lỗi khi tải danh sách bảng điểm Quy đổi" });
+    }
+  });
+
   app.get("/api/score-sheet-assessments", async (req, res) => {
     try {
       // Session assignment uses this list in the same way as /api/score-sheets.

@@ -30,13 +30,8 @@ import type {
   ScoreSheetTemplate,
   ScoreSheetTemplateInput,
 } from "@shared/score-sheet-template";
-import type {
-  ScoreSheetAssessment,
-  ScoreSheetAssessmentInput,
-} from "@shared/score-sheet-assessment";
 import { ScoreConversionTemplateDialog } from "./score-conversion/ScoreConversionTemplateDialog";
 import { ScoreSheetTemplateDialog } from "./score-conversion/ScoreSheetTemplateDialog";
-import { ScoreSheetAssessmentDialog } from "./score-conversion/ScoreSheetAssessmentDialog";
 import {
   StaffScoreSheetAssessmentStudentsDialog,
   type StaffAssignedScoreSheetAssessment,
@@ -47,9 +42,7 @@ const TEMPLATE_ENDPOINT = "/api/score-conversion-templates";
 const TEMPLATE_QUERY_KEY = [TEMPLATE_ENDPOINT];
 const SCORE_SHEET_TEMPLATE_ENDPOINT = "/api/score-sheet-templates";
 const SCORE_SHEET_TEMPLATE_QUERY_KEY = [SCORE_SHEET_TEMPLATE_ENDPOINT];
-const SCORE_SHEET_ASSESSMENT_ENDPOINT = "/api/score-sheet-assessments";
-const SCORE_SHEET_ASSESSMENT_QUERY_KEY = [SCORE_SHEET_ASSESSMENT_ENDPOINT];
-const ASSIGNED_SCORE_SHEET_ASSESSMENT_ENDPOINT = "/api/my-space/score-sheet/staff-assessments";
+const ASSIGNED_SCORE_SHEET_ASSESSMENT_ENDPOINT = "/api/score-sheet-assessments/assigned";
 const ASSIGNED_SCORE_SHEET_ASSESSMENT_QUERY_KEY = [ASSIGNED_SCORE_SHEET_ASSESSMENT_ENDPOINT];
 
 type DeadlineStatus = {
@@ -146,7 +139,6 @@ export default function ScoreConversion() {
   const [editingTemplate, setEditingTemplate] = useState<ScoreConversionTemplate | null>(null);
   const [scoreSheetDialogOpen, setScoreSheetDialogOpen] = useState(false);
   const [editingScoreSheetTemplate, setEditingScoreSheetTemplate] = useState<ScoreSheetTemplate | null>(null);
-  const [scoreSheetAssessmentDialogOpen, setScoreSheetAssessmentDialogOpen] = useState(false);
   const [selectedAssessment, setSelectedAssessment] = useState<StaffAssignedScoreSheetAssessment | null>(null);
   const assessmentPermissions = myPermissions?.permissions["/assessments#list"];
   const canCreate = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canCreate);
@@ -229,18 +221,6 @@ export default function ScoreConversion() {
     },
   });
 
-  const createScoreSheetAssessmentMutation = useMutation({
-    mutationFn: async (draft: ScoreSheetAssessmentInput) => {
-      const response = await apiRequest("POST", SCORE_SHEET_ASSESSMENT_ENDPOINT, draft);
-      return response.json() as Promise<ScoreSheetAssessment>;
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: SCORE_SHEET_ASSESSMENT_QUERY_KEY });
-      setScoreSheetAssessmentDialogOpen(false);
-      toast({ title: "Đã tạo bảng điểm" });
-    },
-  });
-
   const openCreateDialog = () => {
     setEditingTemplate(null);
     setDialogOpen(true);
@@ -270,10 +250,6 @@ export default function ScoreConversion() {
       id: editingScoreSheetTemplate?.id ?? null,
       draft,
     });
-  };
-
-  const handleCreateScoreSheetAssessment = async (draft: ScoreSheetAssessmentInput) => {
-    await createScoreSheetAssessmentMutation.mutateAsync(draft);
   };
 
   return (
@@ -480,14 +456,6 @@ export default function ScoreConversion() {
             </Card>
           </TabsContent>
           <TabsContent value="scores" className="space-y-4">
-            {canCreate && (
-              <div className="flex justify-end">
-                <Button onClick={() => setScoreSheetAssessmentDialogOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Thêm mới
-                </Button>
-              </div>
-            )}
             {assignedScoreSheetAssessmentsQuery.isLoading ? (
               <div className="flex min-h-48 items-center justify-center text-sm text-muted-foreground">
                 Đang tải danh sách bảng điểm Quy đổi...
@@ -651,14 +619,6 @@ export default function ScoreConversion() {
         saving={saveScoreSheetTemplateMutation.isPending}
         onOpenChange={setScoreSheetDialogOpen}
         onSave={handleSaveScoreSheetTemplate}
-      />
-      <ScoreSheetAssessmentDialog
-        open={scoreSheetAssessmentDialogOpen}
-        templates={scoreSheetTemplatesQuery.data ?? []}
-        templatesLoading={scoreSheetTemplatesQuery.isLoading}
-        saving={createScoreSheetAssessmentMutation.isPending}
-        onOpenChange={setScoreSheetAssessmentDialogOpen}
-        onSave={handleCreateScoreSheetAssessment}
       />
       <StaffScoreSheetAssessmentStudentsDialog
         assessment={selectedAssessment}
