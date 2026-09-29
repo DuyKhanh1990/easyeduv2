@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 import { ExamTakingDialog } from "@/pages/courses/dialogs/ExamTakingDialog";
+import { useLanguage } from "@/hooks/use-language";
 
 interface SessionContentDialogProps {
   isOpen: boolean;
@@ -94,6 +95,14 @@ const CONTENT_TYPES = [
   { key: "Bài kiểm tra", label: "Bài kiểm tra" },
 ];
 
+function translateContentType(t: (key: string) => string, type: string) {
+  if (type === "Bài học") return t("mySpace.calendar.contentLesson");
+  if (type === "Bài tập về nhà") return t("mySpace.calendar.contentHomework");
+  if (type === "Giáo trình") return t("mySpace.calendar.contentCurriculum");
+  if (type === "Bài kiểm tra") return t("mySpace.calendar.contentTest");
+  return type;
+}
+
 function parseAttachment(att: string): { name: string; url: string | null } {
   if (att.includes("||")) {
     const sepIdx = att.indexOf("||");
@@ -158,6 +167,7 @@ interface ContentViewDialogProps {
 }
 
 export function ContentViewDialog({ isOpen, onOpenChange, contentId, fallbackContent }: ContentViewDialogProps) {
+  const { t } = useLanguage();
   const [viewerFile, setViewerFile] = useState<{ url: string; name: string } | null>(null);
   const roleCanDownload = useCanDownloadFiles();
   const [fetchedContent, setFetchedContent] = useState<CourseContent | null>(null);
@@ -289,7 +299,7 @@ export function ContentViewDialog({ isOpen, onOpenChange, contentId, fallbackCon
               )}
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>Đóng</Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>{t("mySpace.calendar.closeDialog")}</Button>
             </DialogFooter>
           </>
         )}
@@ -332,6 +342,7 @@ function PersonalContentTable({
   onRemoveItem,
   onUpdateDueDate,
 }: PersonalContentTableProps) {
+  const { t } = useLanguage();
   const getStudentContent = (studentId: string, contentType: string) => {
     return selectedItems.filter(
       (item) =>
@@ -350,11 +361,11 @@ function PersonalContentTable({
                 <Checkbox />
               </th>
               <th className="px-4 py-3 text-left font-semibold text-sm">
-                Tên học viên
+                {t("mySpace.calendar.studentName")}
               </th>
               {CONTENT_TYPES.map((type) => (
                 <th key={type.key} className="px-4 py-3 text-left font-semibold text-sm">
-                  {type.label}
+                  {translateContentType(t, type.key)}
                 </th>
               ))}
             </tr>
@@ -401,7 +412,7 @@ function PersonalContentTable({
                               </div>
                               {isHomework && (
                                 <div className="flex items-center gap-1">
-                                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">Hạn nộp:</span>
+                                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">{t("mySpace.calendar.dueDate")}</span>
                                   <input
                                     type="datetime-local"
                                     value={item.dueDate ? toLocalDatetimeValue(item.dueDate) : ""}
@@ -421,7 +432,7 @@ function PersonalContentTable({
             ) : (
               <tr>
                 <td colSpan={CONTENT_TYPES.length + 2} className="px-4 py-8 text-center text-muted-foreground">
-                  Không có học viên
+                  {t("mySpace.calendar.noStudentsToAdd")}
                 </td>
               </tr>
             )}
@@ -441,6 +452,7 @@ function ContentTypeCard({
   onViewItem,
   onUpdateDueDate,
 }: ContentTypeCardProps) {
+  const { t } = useLanguage();
   const isHomework = type === "Bài tập về nhà";
   return (
     <div className="border rounded-lg p-4 space-y-3 flex flex-col h-full">
@@ -451,7 +463,7 @@ function ContentTypeCard({
           size="sm"
           onClick={onAddClick}
           data-testid={`button-add-${type}`}
-          title="Thêm từ thư viện nội dung"
+          title={t("mySpace.calendar.addFromLibrary")}
         >
           <Plus className="h-4 w-4" />
         </Button>
@@ -461,7 +473,7 @@ function ContentTypeCard({
         <div className="space-y-2 pr-4">
           {selectedItems.length === 0 ? (
             <p className="text-xs text-muted-foreground py-2">
-              Chưa chọn nội dung
+              {t("mySpace.calendar.noContentSelected")}
             </p>
           ) : (
             selectedItems.map((item) => (
@@ -484,7 +496,7 @@ function ContentTypeCard({
                     onClick={() => onViewItem(item)}
                     className="h-6 w-6 p-0 flex-shrink-0 text-muted-foreground hover:text-primary"
                     data-testid={`button-view-${item.dbId || item.id}`}
-                    title="Xem nội dung"
+                     title={t("mySpace.calendar.viewContent")}
                   >
                     <Eye className="h-4 w-4" />
                   </Button>
@@ -500,7 +512,7 @@ function ContentTypeCard({
                 </div>
                 {isHomework && (
                   <div className="flex items-center gap-1.5 pl-0.5">
-                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">Hạn nộp:</span>
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">{t("mySpace.calendar.dueDate")}</span>
                     <input
                       type="datetime-local"
                       value={item.dueDate ? toLocalDatetimeValue(item.dueDate) : ""}
@@ -535,6 +547,7 @@ function ContentLibraryDialog({
   programId,
   alreadySelectedIds,
 }: ContentLibraryDialogProps) {
+  const { t } = useLanguage();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
 
@@ -604,14 +617,14 @@ function ContentLibraryDialog({
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col gap-0 p-0">
         <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
-          <DialogTitle>Thư viện nội dung — {contentType}</DialogTitle>
+          <DialogTitle>{t("mySpace.calendar.contentLibrary")} — {translateContentType(t, contentType)}</DialogTitle>
         </DialogHeader>
 
         <div className="px-6 pt-4 pb-2 shrink-0">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Tìm kiếm nội dung..."
+              placeholder={t("mySpace.calendar.searchContent")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9"
@@ -626,7 +639,7 @@ function ContentLibraryDialog({
           </div>
         ) : filteredContents.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground flex-1">
-            Không có {contentType} nào trong thư viện
+            {t("mySpace.calendar.noContentInLibrary").replace("nội dung", translateContentType(t, contentType).toLowerCase())}
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto px-6 min-h-0">
@@ -654,17 +667,17 @@ function ContentLibraryDialog({
                       <div className="flex items-center gap-2">
                         <p className="font-medium text-sm">{content.title}</p>
                         {alreadyAdded && (
-                          <Badge variant="secondary" className="text-xs">Đã thêm</Badge>
+                           <Badge variant="secondary" className="text-xs">{t("mySpace.calendar.added")}</Badge>
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground line-clamp-2">
                         {content.content
                           ? <RichContentPreview text={content.content} maxLength={120} />
-                          : "Không có mô tả"}
+                           : t("mySpace.calendar.noDescription")}
                       </p>
                       {getProgramName(content.programId) && (
                         <p className="text-xs text-muted-foreground mt-1">
-                          Chương trình: {getProgramName(content.programId)}
+                           {t("mySpace.calendar.studyProgram")}: {getProgramName(content.programId)}
                         </p>
                       )}
                     </div>
@@ -681,14 +694,14 @@ function ContentLibraryDialog({
             onClick={() => onOpenChange(false)}
             data-testid="button-cancel-library"
           >
-            Huỷ
+             {t("mySpace.calendar.cancel")}
           </Button>
           <Button
             onClick={handleConfirm}
             disabled={selectedIds.size === 0}
             data-testid="button-confirm-library"
           >
-            Thêm ({selectedIds.size})
+             {`${t("mySpace.calendar.add")} (${selectedIds.size})`}
           </Button>
         </div>
       </DialogContent>
@@ -704,6 +717,7 @@ interface ExamPickerDialogProps {
 }
 
 function ExamPickerDialog({ isOpen, onOpenChange, onSelectItems, alreadySelectedIds }: ExamPickerDialogProps) {
+  const { t } = useLanguage();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
 
@@ -766,7 +780,7 @@ function ExamPickerDialog({ isOpen, onOpenChange, onSelectItems, alreadySelected
         <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <BookOpenCheck className="h-5 w-5 text-primary" />
-            Chọn bài kiểm tra
+             {t("mySpace.calendar.contentTest")}
           </DialogTitle>
         </DialogHeader>
 
@@ -774,7 +788,7 @@ function ExamPickerDialog({ isOpen, onOpenChange, onSelectItems, alreadySelected
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Tìm theo tên hoặc mã bài kiểm tra..."
+               placeholder={t("mySpace.calendar.searchExam")}
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="pl-9"
@@ -789,7 +803,7 @@ function ExamPickerDialog({ isOpen, onOpenChange, onSelectItems, alreadySelected
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground flex-1">
-            Không có bài kiểm tra nào
+             {t("mySpace.calendar.noExams")}
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto px-6 min-h-0">
@@ -820,11 +834,11 @@ function ExamPickerDialog({ isOpen, onOpenChange, onSelectItems, alreadySelected
                           )}
                           {exam.status === "published" && (
                             <Badge className="text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-0">
-                              Đã xuất bản
+                               {t("mySpace.calendar.published")}
                             </Badge>
                           )}
                           {alreadyAdded && (
-                            <Badge variant="secondary" className="text-xs">Đã thêm</Badge>
+                             <Badge variant="secondary" className="text-xs">{t("mySpace.calendar.added")}</Badge>
                           )}
                         </div>
                         <div className="flex gap-3 mt-1 text-xs text-muted-foreground">
@@ -841,10 +855,10 @@ function ExamPickerDialog({ isOpen, onOpenChange, onSelectItems, alreadySelected
 
         <div className="flex justify-end gap-2 px-6 py-4 border-t shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel-exam-picker">
-            Huỷ
+             {t("mySpace.calendar.cancel")}
           </Button>
           <Button onClick={handleConfirm} disabled={selectedIds.size === 0} data-testid="button-confirm-exam-picker">
-            Thêm ({selectedIds.size})
+             {`${t("mySpace.calendar.add")} (${selectedIds.size})`}
           </Button>
         </div>
       </DialogContent>
@@ -853,6 +867,7 @@ function ExamPickerDialog({ isOpen, onOpenChange, onSelectItems, alreadySelected
 }
 
 export function ExamViewerFromId({ examId, classId, open, onClose }: { examId: string; classId?: string; open: boolean; onClose: () => void }) {
+  const { t } = useLanguage();
   const { data: exams = [], isLoading: examsLoading } = useQuery<any[]>({
     queryKey: ["/api/exams"],
     enabled: open && !!examId,
@@ -884,7 +899,7 @@ export function ExamViewerFromId({ examId, classId, open, onClose }: { examId: s
     return (
       <Dialog open={open} onOpenChange={o => { if (!o) onClose(); }}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Đang tải bài kiểm tra...</DialogTitle></DialogHeader>
+           <DialogHeader><DialogTitle>{t("mySpace.calendar.loadingExam")}</DialogTitle></DialogHeader>
           <div className="flex justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
@@ -900,20 +915,20 @@ export function ExamViewerFromId({ examId, classId, open, onClose }: { examId: s
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <BookOpenCheck className="h-5 w-5 text-red-500" />
-              {exam?.name ?? "Bài kiểm tra"}
+              {exam?.name ?? t("mySpace.calendar.contentTest")}
             </DialogTitle>
           </DialogHeader>
           <div className="py-6 flex flex-col items-center gap-3 text-center">
             <div className="w-14 h-14 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
               <BookOpenCheck className="h-7 w-7 text-red-500" />
             </div>
-            <p className="text-base font-semibold text-foreground">Đã vượt quá số lần làm bài</p>
+             <p className="text-base font-semibold text-foreground">{t("mySpace.calendar.examAttemptsExceeded")}</p>
             <p className="text-sm text-muted-foreground">
               Bạn đã làm bài kiểm tra này <strong>{attemptCount}</strong> lần. Số lần làm tối đa là <strong>{maxAttempts}</strong>.
             </p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={onClose} className="w-full">Đóng</Button>
+              <Button variant="outline" onClick={onClose} className="w-full">{t("mySpace.calendar.closeDialog")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -924,9 +939,9 @@ export function ExamViewerFromId({ examId, classId, open, onClose }: { examId: s
     return (
       <Dialog open={open} onOpenChange={o => { if (!o) onClose(); }}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Không tìm thấy bài kiểm tra</DialogTitle></DialogHeader>
+           <DialogHeader><DialogTitle>{t("mySpace.calendar.examNotFound")}</DialogTitle></DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={onClose}>Đóng</Button>
+             <Button variant="outline" onClick={onClose}>{t("mySpace.calendar.closeDialog")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -964,6 +979,7 @@ export function SessionContentDialog({
   freeSessionDate,
   freeStudents,
 }: SessionContentDialogProps) {
+  const { t } = useLanguage();
   const { toast } = useToast();
   const isFreeSession = !!freeClassId && !!freeSessionDate;
   const freeContentPath = isFreeSession
@@ -1246,8 +1262,8 @@ export function SessionContentDialog({
         queryClient.invalidateQueries({ queryKey: ["/api/my-space/calendar/staff/session", classSessionId] });
         queryClient.invalidateQueries({ queryKey: ["/api/my-space/calendar/student/session", classSessionId] });
         toast({
-          title: "Lưu thành công",
-          description: "Nội dung buổi học đã được lưu",
+          title: t("mySpace.calendar.saved"),
+          description: t("mySpace.calendar.sessionContentSaved"),
         });
         onOpenChange(false);
         return;
@@ -1338,14 +1354,14 @@ export function SessionContentDialog({
       }
 
       toast({
-        title: "Lưu thành công",
-        description: "Nội dung buổi học đã được lưu",
+        title: t("mySpace.calendar.saved"),
+        description: t("mySpace.calendar.sessionContentSaved"),
       });
       onOpenChange(false);
     } catch (error) {
       toast({
-        title: "Lỗi",
-        description: "Không thể lưu nội dung buổi học",
+        title: t("mySpace.calendar.error"),
+        description: t("mySpace.calendar.saveContentFailed"),
         variant: "destructive",
       });
     }
@@ -1426,13 +1442,13 @@ export function SessionContentDialog({
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-[95vw] h-[95vh] flex flex-col p-0">
           <DialogHeader className="px-6 pt-6 pb-0 border-b">
-            <DialogTitle>Nội dung buổi học</DialogTitle>
+            <DialogTitle>{t("mySpace.calendar.sessionContent")}</DialogTitle>
           </DialogHeader>
 
           {isLoadingExisting ? (
             <div className="flex items-center justify-center flex-1">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-sm text-muted-foreground">Đang tải nội dung...</span>
+              <span className="ml-2 text-sm text-muted-foreground">{t("mySpace.calendar.loadingContent")}</span>
             </div>
           ) : (
             <Tabs
@@ -1453,7 +1469,7 @@ export function SessionContentDialog({
                         : "bg-background border-border text-foreground hover:bg-muted/50"
                     )}
                   >
-                    {tab === "common" ? "Nội dung chung" : "Nội dung cá nhân"}
+                    {tab === "common" ? t("mySpace.calendar.contentGeneral") : t("mySpace.calendar.contentPersonal")}
                   </button>
                 ))}
               </div>
@@ -1464,7 +1480,7 @@ export function SessionContentDialog({
                     <ContentTypeCard
                       key={contentType.key}
                       type={contentType.key}
-                      label={contentType.label}
+                       label={translateContentType(t, contentType.key)}
                       selectedItems={getContentsByType(selectedCommon, contentType.key)}
                       onAddClick={() => handleAddContent(contentType.key, "common")}
                       onRemoveItem={handleRemoveCommonItem}
@@ -1503,14 +1519,14 @@ export function SessionContentDialog({
               onClick={() => onOpenChange(false)}
               data-testid="button-close-content-dialog"
             >
-              Đóng
+              {t("mySpace.calendar.closeDialog")}
             </Button>
             <Button
               onClick={handleSave}
               disabled={isSaving || isLoadingExisting}
               data-testid="button-save-content-dialog"
             >
-              Lưu
+              {t("mySpace.calendar.save")}
             </Button>
           </div>
         </DialogContent>

@@ -552,7 +552,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                             )}
                             disabled={selectedStudentIds.length === 0}
                           >
-                            Hành động
+                            {t("mySpace.calendar.actions")}
                             <ChevronDown className="h-3 w-3" />
                           </Button>
                         </PopoverTrigger>
@@ -567,7 +567,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                                 setIsBulkAttendanceOpen(true);
                               }}
                             >
-                              Điểm danh hàng loạt
+                               {t("mySpace.calendar.bulkAttendance")}
                             </Button>
                             <Button
                               variant="ghost"
@@ -578,7 +578,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                                 setIsBulkReviewOpen(true);
                               }}
                             >
-                              Nhận xét hàng loạt
+                               {t("mySpace.calendar.bulkReview")}
                             </Button>
                             <Button
                               variant="ghost"
@@ -589,7 +589,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                                 setIsRemoveOpen(true);
                               }}
                             >
-                              Xóa học viên
+                               {t("mySpace.calendar.removeStudent")}
                             </Button>
                           </div>
                         </PopoverContent>
@@ -606,7 +606,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                       onClick={() => setLibraryDialogOpen(true)}
                     >
                       <LibraryBig className="h-3 w-3 mr-1" />
-                      Thêm nội dung
+                      {t("mySpace.calendar.addContent")}
                     </Button>
                   )}
 
@@ -617,7 +617,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                     data-testid="btn-assign-content-detail"
                     onClick={() => setContentDialogOpen(true)}
                   >
-                    Giao nội dung
+                    {t("mySpace.calendar.assignContent")}
                   </Button>
                 </div>
               </div>
@@ -628,7 +628,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                 </div>
               ) : studentSessions.length === 0 ? (
                 <div className="text-center py-10 text-sm text-muted-foreground">
-                  Chưa có học viên trong buổi học này
+                  {t("mySpace.calendar.noStudentsToAdd")}
                 </div>
               ) : (
                 <div className="overflow-x-auto rounded-xl border border-border">

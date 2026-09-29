@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Star } from "lucide-react";
 import { RichEditor } from "@/components/ui/rich-editor";
+import { useLanguage } from "@/hooks/use-language";
 
 interface SubCriteriaItem {
   id: string;
@@ -142,6 +143,7 @@ export function ReviewDialog({
   onSaved,
 }: ReviewDialogProps) {
   const { toast } = useToast();
+  const { t } = useLanguage();
   const isBulk = studentSessionIds.length > 1;
 
   const [comments, setComments] = useState<ReviewMap>({});
@@ -259,21 +261,21 @@ export function ReviewDialog({
       });
       onSaved?.(reviewData, savedPublished);
       toast({
-        title: "Đã lưu nhận xét",
+        title: t("mySpace.calendar.reviewSaved"),
         description: published
-          ? "Nhận xét đã được lưu và công bố tới học viên."
-          : "Nhận xét đã được lưu (chưa công bố).",
+          ? t("mySpace.calendar.reviewPublished")
+          : t("mySpace.calendar.reviewSavedInternal"),
       });
       onOpenChange(false);
     },
     onError: () => {
-      toast({ title: "Lỗi", description: "Không thể lưu nhận xét", variant: "destructive" });
+      toast({ title: t("mySpace.calendar.error"), description: t("mySpace.calendar.saveReviewFailed"), variant: "destructive" });
     },
   });
 
   const title = isBulk
-    ? `Nhận xét hàng loạt (${studentSessionIds.length} học viên)`
-    : `Nhận xét: ${studentNames[0] || "Học viên"}`;
+    ? `${t("mySpace.calendar.bulkReviewTitle")} (${studentSessionIds.length} ${t("mySpace.calendar.student").toLowerCase()})`
+    : `${t("mySpace.calendar.reviewTitle")}: ${studentNames[0] || t("mySpace.calendar.student")}`;
 
   const hasContent = criteria.length > 0 && teachers.length > 0;
 
@@ -287,7 +289,7 @@ export function ReviewDialog({
           </DialogTitle>
           {isBulk && (
             <p className="text-xs text-muted-foreground mt-1">
-              Nhận xét sẽ được áp dụng cho tất cả học viên đã chọn
+              {t("mySpace.calendar.bulkReviewNotice")}
             </p>
           )}
         </DialogHeader>
@@ -295,8 +297,8 @@ export function ReviewDialog({
         {!hasContent ? (
           <div className="py-6 text-center text-sm text-muted-foreground">
             {criteria.length === 0
-              ? "Lớp học chưa có tiêu chí đánh giá nào. Vui lòng thêm tiêu chí trong cài đặt lớp học."
-              : "Buổi học chưa có giáo viên nào."}
+              ? t("mySpace.calendar.noEvaluationCriteria")
+              : t("mySpace.calendar.noTeachers")}
           </div>
         ) : teachers.length === 1 ? (
           <CriteriaForm
@@ -348,12 +350,12 @@ export function ReviewDialog({
           <div className="flex items-center justify-between py-2 border-t mt-2">
             <div className="space-y-0.5">
               <Label htmlFor="publish-switch" className="text-sm font-medium cursor-pointer">
-                Công bố
+                {t("mySpace.calendar.publish")}
               </Label>
               <p className="text-[11px] text-muted-foreground">
                 {published
-                  ? "Nhận xét sẽ được gửi tới tài khoản học viên khi lưu"
-                  : "Lưu nội bộ, chưa gửi tới học viên"}
+                  ? t("mySpace.calendar.publishHint")
+                  : t("mySpace.calendar.internalReviewHint")}
               </p>
             </div>
             <Switch
@@ -367,7 +369,7 @@ export function ReviewDialog({
 
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Huỷ
+            {t("mySpace.calendar.cancel")}
           </Button>
           {hasContent && (
             <Button
@@ -375,7 +377,7 @@ export function ReviewDialog({
               disabled={reviewMutation.isPending}
               data-testid="button-save-review"
             >
-              {reviewMutation.isPending ? "Đang lưu..." : published ? "Lưu & Công bố" : "Lưu"}
+              {reviewMutation.isPending ? t("mySpace.calendar.loading") : published ? t("mySpace.calendar.saveAndPublish") : t("mySpace.calendar.save")}
             </Button>
           )}
         </DialogFooter>
@@ -417,7 +419,7 @@ function CriteriaForm({
             }
           />
           <span className="text-xs font-medium text-foreground">{sc.name}</span>
-          <span className="ml-auto text-[11px] text-muted-foreground">Đạt</span>
+          <span className="ml-auto text-[11px] text-muted-foreground">{t("mySpace.calendar.passed")}</span>
         </label>
       ) : (
         <>
@@ -430,7 +432,7 @@ function CriteriaForm({
                 [teacherId]: { ...prev[teacherId], [sc.id]: val },
               }))
             }
-            placeholder={`Nhận xét về ${sc.name}...`}
+            placeholder={`${t("mySpace.calendar.reviewPlaceholder")} ${sc.name}...`}
           />
         </>
       )}
@@ -482,7 +484,7 @@ function CriteriaForm({
                   [teacherId]: { ...prev[teacherId], [c.id]: val },
                 }))
               }
-              placeholder={`Nhận xét về ${c.name}...`}
+              placeholder={`${t("mySpace.calendar.reviewPlaceholder")} ${c.name}...`}
             />
           )}
         </div>

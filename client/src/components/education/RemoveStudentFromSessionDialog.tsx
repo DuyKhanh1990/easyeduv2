@@ -14,6 +14,7 @@ import { AlertCircle, Trash2 } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/hooks/use-language";
 
 interface RemoveStudentFromSessionDialogProps {
   isOpen: boolean;
@@ -51,6 +52,7 @@ export function RemoveStudentFromSessionDialog({
   const [toSessionOrder, setToSessionOrder] = useState(initialToSessionOrder);
   const [customToSession, setCustomToSession] = useState(initialToSessionOrder);
   const { toast } = useToast();
+  const { t } = useLanguage();
 
   useEffect(() => {
     if (!isOpen) {
@@ -81,10 +83,10 @@ export function RemoveStudentFromSessionDialog({
     mutationFn: async () => {
       const validStudentIds = studentIds.filter(id => id);
       if (!validStudentIds.length) {
-        throw new Error("Không tìm thấy ID học viên hợp lệ");
+         throw new Error(t("mySpace.calendar.invalidStudentId"));
       }
       if (!studentClassId) {
-        throw new Error("Không tìm thấy ID lớp học hợp lệ");
+         throw new Error(t("mySpace.calendar.invalidClassId"));
       }
       const res = await apiRequest("POST", "/api/students/remove-from-sessions", {
         studentIds: validStudentIds,
@@ -110,8 +112,8 @@ export function RemoveStudentFromSessionDialog({
     },
     onError: (error: Error) => {
       toast({
-        title: "Lỗi",
-        description: error.message || "Không thể kiểm tra buổi học",
+        title: t("mySpace.calendar.error"),
+        description: error.message || t("mySpace.calendar.checkSessionFailed"),
         variant: "destructive"
       });
     }
@@ -124,10 +126,10 @@ export function RemoveStudentFromSessionDialog({
     }) => {
       const validStudentIds = studentIds.filter(id => id);
       if (!validStudentIds.length) {
-        throw new Error("Không tìm thấy ID học viên hợp lệ");
+         throw new Error(t("mySpace.calendar.invalidStudentId"));
       }
       if (!studentClassId) {
-        throw new Error("Không tìm thấy ID lớp học hợp lệ");
+         throw new Error(t("mySpace.calendar.invalidClassId"));
       }
       await apiRequest("POST", "/api/students/remove-from-sessions-confirm", {
         studentIds: validStudentIds,
@@ -146,10 +148,10 @@ export function RemoveStudentFromSessionDialog({
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/active-students`] });
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/waiting-students`] });
       toast({
-        title: "Thành công",
+        title: t("mySpace.calendar.success"),
         description: quickDeleteAll
-          ? "Đã xoá toàn bộ lịch học của học viên thành công"
-          : "Đã xoá học viên khỏi buổi học thành công",
+          ? t("mySpace.calendar.removedAllSchedule")
+          : t("mySpace.calendar.removedStudentFromSession"),
       });
       onOpenChange(false);
       setShowWarning(false);
@@ -157,8 +159,8 @@ export function RemoveStudentFromSessionDialog({
     },
     onError: (error: Error) => {
       toast({
-        title: "Lỗi",
-        description: error.message || "Không thể xoá học viên khỏi buổi học",
+        title: t("mySpace.calendar.error"),
+        description: error.message || t("mySpace.calendar.removeStudentFailed"),
         variant: "destructive"
       });
     }
@@ -193,8 +195,8 @@ export function RemoveStudentFromSessionDialog({
     },
     onError: (error: Error) => {
       toast({
-        title: "Lỗi",
-        description: error.message || "Không thể kiểm tra học viên còn buổi học",
+        title: t("mySpace.calendar.error"),
+        description: error.message || t("mySpace.calendar.checkRemainingSessionsFailed"),
         variant: "destructive",
       });
     },
@@ -245,10 +247,10 @@ export function RemoveStudentFromSessionDialog({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-destructive">
               <Trash2 className="h-5 w-5" />
-              Chọn phạm vi xoá học viên
+              {t("mySpace.calendar.removeScopeTitle")}
             </DialogTitle>
             <DialogDescription>
-              Chọn kiểu xoá phù hợp với nhu cầu của bạn
+              {t("mySpace.calendar.removeScopeDescription")}
             </DialogDescription>
           </DialogHeader>
 
@@ -260,7 +262,7 @@ export function RemoveStudentFromSessionDialog({
               <div className="flex items-start space-x-3">
                 <div className="w-4 h-4 mt-1 border-2 border-gray-300 rounded-full flex-shrink-0" style={{ borderColor: deletionScope === "current" ? "#ef4444" : undefined, backgroundColor: deletionScope === "current" ? "#ef4444" : "transparent" }} />
                 <div className="flex-1">
-                  <p className="font-medium">Xoá buổi hiện tại</p>
+                  <p className="font-medium">{t("mySpace.calendar.removeCurrent")}</p>
                   <p className="text-xs text-muted-foreground">Chỉ xoá từ buổi {initialFromSessionOrder}</p>
                 </div>
               </div>
@@ -273,7 +275,7 @@ export function RemoveStudentFromSessionDialog({
               <div className="flex items-start space-x-3">
                 <div className="w-4 h-4 mt-1 border-2 border-gray-300 rounded-full flex-shrink-0" style={{ borderColor: deletionScope === "toEnd" ? "#ef4444" : undefined, backgroundColor: deletionScope === "toEnd" ? "#ef4444" : "transparent" }} />
                 <div className="flex-1">
-                  <p className="font-medium">Xoá đến hết lịch</p>
+                  <p className="font-medium">{t("mySpace.calendar.removeToEnd")}</p>
                   <p className="text-xs text-muted-foreground">Xoá từ buổi {initialFromSessionOrder} đến buổi {maxSessionOrder}</p>
                 </div>
               </div>
@@ -286,8 +288,8 @@ export function RemoveStudentFromSessionDialog({
               <div className="flex items-start space-x-3">
                 <div className="w-4 h-4 mt-1 border-2 border-gray-300 rounded-full flex-shrink-0" style={{ borderColor: deletionScope === "range" ? "#ef4444" : undefined, backgroundColor: deletionScope === "range" ? "#ef4444" : "transparent" }} />
                 <div className="flex-1">
-                  <p className="font-medium">Xoá khoảng tùy chỉnh</p>
-                  <p className="text-xs text-muted-foreground">Chọn khoảng buổi học cụ thể</p>
+                  <p className="font-medium">{t("mySpace.calendar.removeCustomRange")}</p>
+                  <p className="text-xs text-muted-foreground">{t("mySpace.calendar.chooseSessionRange")}</p>
                   {deletionScope === "range" && (
                     <div className="mt-3 flex gap-2">
                       <select 
@@ -317,13 +319,13 @@ export function RemoveStudentFromSessionDialog({
               variant="outline"
               onClick={() => onOpenChange(false)}
             >
-              Hủy bỏ
+              {t("mySpace.calendar.cancelAction")}
             </Button>
             <Button
               variant="destructive"
               onClick={handleDeleteClick}
             >
-              Tiếp tục
+              {t("mySpace.calendar.continueAction")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -334,12 +336,12 @@ export function RemoveStudentFromSessionDialog({
           <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-destructive">
               <Trash2 className="h-5 w-5" />
-                {quickDeleteAll ? "Xoá toàn bộ lịch học" : "Xoá học viên khỏi buổi học"}
+                {quickDeleteAll ? t("mySpace.calendar.removeAllSchedule") : t("mySpace.calendar.removeStudentFromSession")}
             </DialogTitle>
             <DialogDescription>
               {quickDeleteAll
-                ? "Hệ thống sẽ xóa toàn bộ lịch học của học viên trong lớp học này."
-                : `Bạn chắc chắn muốn xoá ${studentIds.length} học viên khỏi ${fromSessionOrder === toSessionOrder ? "buổi này" : `buổi ${fromSessionOrder} đến buổi ${toSessionOrder}`}?`}
+                ? t("mySpace.calendar.removeAllScheduleDescription")
+                : `${t("mySpace.calendar.confirmRemoveStudents")} ${studentIds.length} ${t("mySpace.calendar.student").toLowerCase()} ${t("mySpace.calendar.fromSession")} ${fromSessionOrder === toSessionOrder ? t("mySpace.calendar.thisSession") : `${t("mySpace.calendar.session")} ${fromSessionOrder} ${t("mySpace.calendar.toSession")} ${toSessionOrder}`}?`}
             </DialogDescription>
           </DialogHeader>
 
@@ -352,24 +354,24 @@ export function RemoveStudentFromSessionDialog({
                 <div className="flex items-start space-x-2">
                   <RadioGroupItem value="waiting" id="quick-delete-waiting" className="mt-1" />
                   <Label htmlFor="quick-delete-waiting" className="cursor-pointer flex-1">
-                    Xóa và chuyển về danh sách chờ
+                    {t("mySpace.calendar.moveToWaiting")}
                   </Label>
                 </div>
                 <div className="flex items-start space-x-2">
                   <RadioGroupItem value="remove" id="quick-delete-remove" className="mt-1" />
                   <Label htmlFor="quick-delete-remove" className="cursor-pointer flex-1">
-                    Xóa hẳn học viên khỏi lớp
+                    {t("mySpace.calendar.deleteFromClass")}
                   </Label>
                 </div>
               </RadioGroup>
               <p className="text-sm text-muted-foreground">
-                Hành động này không thể hoàn tác.
+                {t("mySpace.calendar.deleteWarning")}
               </p>
             </div>
           ) : (
             <div className="py-4">
               <p className="text-sm text-muted-foreground mb-4">
-                Hành động này không thể hoàn tác
+                {t("mySpace.calendar.deleteWarning")}
               </p>
             </div>
           )}
@@ -380,7 +382,7 @@ export function RemoveStudentFromSessionDialog({
               onClick={() => onOpenChange(false)}
               disabled={checkAttendanceMutation.isPending || deleteMutation.isPending}
             >
-              {quickDeleteAll ? "Hủy" : "Hủy bỏ"}
+              {quickDeleteAll ? t("mySpace.calendar.cancel") : t("mySpace.calendar.cancelAction")}
             </Button>
             <Button
               variant="destructive"
@@ -388,10 +390,10 @@ export function RemoveStudentFromSessionDialog({
               disabled={checkAttendanceMutation.isPending || deleteMutation.isPending}
             >
               {deleteMutation.isPending
-                ? "Đang xoá..."
+                ? t("mySpace.calendar.deleting")
                 : checkAttendanceMutation.isPending
-                ? "Đang kiểm tra..."
-                : quickDeleteAll ? "Đồng ý" : "Xoá"}
+                ? t("mySpace.calendar.checking")
+                : quickDeleteAll ? t("mySpace.calendar.confirm") : t("mySpace.calendar.delete")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -407,10 +409,10 @@ export function RemoveStudentFromSessionDialog({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-amber-600">
               <AlertCircle className="h-5 w-5" />
-              Cảnh báo: Có buổi học đã điểm danh
+              {t("mySpace.calendar.attendedSessionsWarning")}
             </DialogTitle>
             <DialogDescription>
-              Một số buổi học trong khoảng này đã được điểm danh. Bạn muốn xoá như thế nào?
+              {t("mySpace.calendar.attendedSessionsQuestion")}
             </DialogDescription>
           </DialogHeader>
 
@@ -420,8 +422,8 @@ export function RemoveStudentFromSessionDialog({
                 <RadioGroupItem value="all" id="delete-all" />
                 <Label htmlFor="delete-all" className="cursor-pointer flex-1">
                   <div>
-                    <p className="font-medium">Xoá tất cả</p>
-                    <p className="text-xs text-muted-foreground">Xoá tất cả buổi học trong khoảng, bao gồm cả buổi đã điểm danh</p>
+                    <p className="font-medium">{t("mySpace.calendar.deleteAll")}</p>
+                    <p className="text-xs text-muted-foreground">{t("mySpace.calendar.deleteAllDescription")}</p>
                   </div>
                 </Label>
               </div>
@@ -429,8 +431,8 @@ export function RemoveStudentFromSessionDialog({
                 <RadioGroupItem value="unattended" id="delete-unattended" />
                 <Label htmlFor="delete-unattended" className="cursor-pointer flex-1">
                   <div>
-                    <p className="font-medium">Chỉ xoá buổi chưa điểm danh</p>
-                    <p className="text-xs text-muted-foreground">Chỉ xoá các buổi học viên chưa điểm danh, giữ lại các buổi đã điểm danh</p>
+                    <p className="font-medium">{t("mySpace.calendar.deleteOnlyUnattended")}</p>
+                    <p className="text-xs text-muted-foreground">{t("mySpace.calendar.deleteOnlyUnattendedDescription")}</p>
                   </div>
                 </Label>
               </div>
@@ -446,14 +448,14 @@ export function RemoveStudentFromSessionDialog({
               }}
               disabled={deleteMutation.isPending}
             >
-              Hủy bỏ
+              {t("mySpace.calendar.cancelAction")}
             </Button>
             <Button
               variant="destructive"
               onClick={() => executeDelete(deleteOption === "unattended")}
               disabled={deleteMutation.isPending}
             >
-              {deleteMutation.isPending ? "Đang xoá..." : "Xác nhận"}
+              {deleteMutation.isPending ? t("mySpace.calendar.deleting") : t("mySpace.calendar.confirm")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -469,10 +471,10 @@ export function RemoveStudentFromSessionDialog({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-amber-600">
               <AlertCircle className="h-5 w-5" />
-              Học viên không còn buổi học
+              {t("mySpace.calendar.noRemainingSessions")}
             </DialogTitle>
             <DialogDescription className="text-foreground pt-2">
-              Sau khi xóa lịch đã chọn, các học viên sau sẽ không còn buổi học nào trong lớp:
+              {t("mySpace.calendar.noRemainingSessionsDescription")}
             </DialogDescription>
           </DialogHeader>
 
@@ -485,7 +487,7 @@ export function RemoveStudentFromSessionDialog({
               ))}
             </div>
             <p className="text-xs text-muted-foreground mt-3">
-              Vui lòng chọn cách xử lý cho các học viên này.
+              {t("mySpace.calendar.chooseOrphanAction")}
             </p>
           </div>
 
@@ -496,7 +498,7 @@ export function RemoveStudentFromSessionDialog({
               onClick={() => executeOrphanDelete("waiting")}
               disabled={deleteMutation.isPending}
             >
-              Xóa và chuyển về danh sách chờ
+              {t("mySpace.calendar.moveToWaiting")}
             </Button>
             <Button
               variant="destructive"
@@ -504,7 +506,7 @@ export function RemoveStudentFromSessionDialog({
               onClick={() => executeOrphanDelete("remove")}
               disabled={deleteMutation.isPending}
             >
-              {deleteMutation.isPending ? "Đang xử lý..." : "Xóa hẳn học viên khỏi lớp"}
+              {deleteMutation.isPending ? t("mySpace.calendar.processing") : t("mySpace.calendar.deleteFromClass")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -34,6 +34,7 @@ import { useToast } from "@/hooks/use-toast";
 import { insertCourseProgramContentSchema, type CourseProgram } from "@shared/schema";
 import { FileAttachmentInput, type AttachedFile } from "@/components/ui/file-attachment-input";
 import { parseAttachment } from "@/lib/file-utils";
+import { useLanguage } from "@/hooks/use-language";
 
 interface LibraryContentDialogProps {
   open?: boolean;
@@ -50,6 +51,7 @@ export function LibraryContentDialog({ open: controlledOpen, onOpenChange: contr
   };
 
   const { toast } = useToast();
+  const { t } = useLanguage();
 
   const { data: programs = [] } = useQuery<CourseProgram[]>({
     queryKey: ["/api/course-programs"],
@@ -93,10 +95,10 @@ export function LibraryContentDialog({ open: controlledOpen, onOpenChange: contr
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/course-program-contents"] });
-      toast({ title: "Thành công", description: "Đã thêm nội dung vào thư viện" });
+      toast({ title: t("mySpace.calendar.saved"), description: t("mySpace.calendar.addToLibrary") });
       setOpen(false);
     },
-    onError: () => toast({ title: "Lỗi", description: "Không thể lưu nội dung", variant: "destructive" }),
+    onError: () => toast({ title: t("mySpace.calendar.error"), description: t("mySpace.calendar.saveContentFailed"), variant: "destructive" }),
   });
 
   return (
@@ -106,10 +108,10 @@ export function LibraryContentDialog({ open: controlledOpen, onOpenChange: contr
         <Form {...form}>
           <form onSubmit={form.handleSubmit((data) => mutation.mutate(data))} className="flex flex-col flex-1 min-h-0">
             <DialogHeader className="shrink-0 flex flex-row items-center justify-between space-y-0 pb-2 border-b">
-              <DialogTitle className="text-xl font-display">Thêm nội dung thư viện</DialogTitle>
+              <DialogTitle className="text-xl font-display">{t("mySpace.calendar.libraryTitle")}</DialogTitle>
               <Button type="submit" size="sm" className="ml-4 shrink-0" disabled={mutation.isPending}>
                 {mutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}
-                Thêm vào thư viện
+                {t("mySpace.calendar.addToLibrary")}
               </Button>
             </DialogHeader>
 
@@ -120,17 +122,17 @@ export function LibraryContentDialog({ open: controlledOpen, onOpenChange: contr
                   name="type"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Loại nội dung *</FormLabel>
+                       <FormLabel>{t("mySpace.calendar.contentType")} *</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value || "Bài học"}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Chọn loại" />
+                         <SelectValue placeholder={t("mySpace.calendar.selectContentType")} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="Bài học">Bài học</SelectItem>
-                          <SelectItem value="Bài tập về nhà">Bài tập về nhà</SelectItem>
-                          <SelectItem value="Giáo trình">Giáo trình</SelectItem>
+                         <SelectItem value="Bài học">{t("mySpace.calendar.contentLesson")}</SelectItem>
+                         <SelectItem value="Bài tập về nhà">{t("mySpace.calendar.contentHomework")}</SelectItem>
+                         <SelectItem value="Giáo trình">{t("mySpace.calendar.contentCurriculum")}</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -142,18 +144,18 @@ export function LibraryContentDialog({ open: controlledOpen, onOpenChange: contr
                   name="programId"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Chương trình học</FormLabel>
+                       <FormLabel>{t("mySpace.calendar.studyProgram")}</FormLabel>
                       <Select
                         onValueChange={(v) => field.onChange(v === "__none__" ? null : v)}
                         value={field.value || "__none__"}
                       >
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Chưa gán" />
+                           <SelectValue placeholder={t("mySpace.calendar.unassigned")} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="__none__">Chưa gán</SelectItem>
+                           <SelectItem value="__none__">{t("mySpace.calendar.unassigned")}</SelectItem>
                           {programs.map((p) => (
                             <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                           ))}
@@ -170,9 +172,9 @@ export function LibraryContentDialog({ open: controlledOpen, onOpenChange: contr
                 name="title"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Tên nội dung *</FormLabel>
+                       <FormLabel>{t("mySpace.calendar.contentTitle")} *</FormLabel>
                     <FormControl>
-                      <Input placeholder="Nhập tên nội dung" {...field} />
+                       <Input placeholder={t("mySpace.calendar.enterContentTitle")} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -184,11 +186,11 @@ export function LibraryContentDialog({ open: controlledOpen, onOpenChange: contr
                 name="content"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Mô tả nội dung</FormLabel>
+                   <FormLabel>{t("mySpace.calendar.contentDescription")}</FormLabel>
                     <RichEditor
                       value={field.value || ""}
                       onChange={field.onChange}
-                      placeholder="Nhập mô tả chi tiết, hoặc paste ảnh trực tiếp vào đây..."
+                       placeholder={t("mySpace.calendar.enterContentDescription")}
                     />
                     <FormMessage />
                   </FormItem>
@@ -200,7 +202,7 @@ export function LibraryContentDialog({ open: controlledOpen, onOpenChange: contr
                 name="attachments"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Đính kèm file</FormLabel>
+                     <FormLabel>{t("mySpace.calendar.attachments")}</FormLabel>
                     <FileAttachmentInput
                       value={(field.value || [])
                         .map(parseAttachment)
@@ -226,13 +228,13 @@ export function LibraryContentDialog({ open: controlledOpen, onOpenChange: contr
                         className="w-4 h-4"
                       />
                       <label htmlFor="lib-allow-download-cal" className="text-sm font-medium cursor-pointer select-none">
-                        Cho phép tải file đính kèm
+                         {t("mySpace.calendar.allowDownload")}
                       </label>
-                      <span className="text-xs text-muted-foreground">(để trống = theo mặc định vai trò)</span>
+                       <span className="text-xs text-muted-foreground">{t("mySpace.calendar.roleDefault")}</span>
                     </div>
                     {field.value !== null && field.value !== undefined && (
                       <button type="button" onClick={() => field.onChange(null)} className="text-[11px] text-muted-foreground/70 hover:text-muted-foreground underline ml-7">
-                        Xoá ghi đè, dùng mặc định vai trò
+                         {t("mySpace.calendar.removeOverride")}
                       </button>
                     )}
                   </FormItem>

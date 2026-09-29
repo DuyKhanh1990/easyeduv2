@@ -31,6 +31,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/hooks/use-language";
 
 interface AddStudentToSessionDialogProps {
   open: boolean;
@@ -63,6 +64,7 @@ export function AddStudentToSessionDialog({
 }: AddStudentToSessionDialogProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { t } = useLanguage();
 
   // Just-added students (created via quick-add, shown at top, pre-selected)
   const [justAdded, setJustAdded] = useState<any[]>([]);
@@ -131,13 +133,13 @@ export function AddStudentToSessionDialog({
 
   const handleQuickCreate = async () => {
     if (!qForm.fullName.trim()) {
-      toast({ title: "Lỗi", description: "Vui lòng nhập Tên học viên", variant: "destructive" }); return;
+      toast({ title: t("mySpace.calendar.error"), description: t("mySpace.calendar.enterName"), variant: "destructive" }); return;
     }
     if (!qForm.code.trim()) {
-      toast({ title: "Lỗi", description: "Vui lòng nhập Mã", variant: "destructive" }); return;
+      toast({ title: t("mySpace.calendar.error"), description: t("mySpace.calendar.enterCode"), variant: "destructive" }); return;
     }
     if (!qForm.locationId) {
-      toast({ title: "Lỗi", description: "Vui lòng chọn Cơ sở", variant: "destructive" }); return;
+      toast({ title: t("mySpace.calendar.error"), description: t("mySpace.calendar.chooseBranchError"), variant: "destructive" }); return;
     }
     setQuickSaving(true);
     try {
@@ -161,9 +163,9 @@ export function AddStudentToSessionDialog({
       setJustAdded(prev => [candidate, ...prev]);
       onSelectionChange([created.id, ...selectedIds]);
       setIsQuickOpen(false);
-      toast({ title: "Đã tạo", description: `"${created.fullName}" đã thêm vào danh sách` });
+      toast({ title: t("mySpace.calendar.created"), description: `"${created.fullName}" ${t("mySpace.calendar.addedToList")}` });
     } catch (err: any) {
-      toast({ title: "Lỗi", description: err.message || "Không thể tạo học viên", variant: "destructive" });
+      toast({ title: t("mySpace.calendar.error"), description: err.message || t("mySpace.calendar.cannotCreateStudent"), variant: "destructive" });
     } finally {
       setQuickSaving(false);
     }
@@ -217,16 +219,16 @@ export function AddStudentToSessionDialog({
           className="h-7 px-2 text-[10px] flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white border-blue-600"
         >
           <UserPlus className="h-3 w-3" />
-          Thêm học viên
+          {t("mySpace.calendar.addStudent")}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <div className="flex items-center justify-between pr-6">
-            <DialogTitle>Thêm học viên vào buổi học</DialogTitle>
+            <DialogTitle>{t("mySpace.calendar.addStudentToSession")}</DialogTitle>
             <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setIsQuickOpen(true)}>
               <Plus className="mr-1.5 h-3.5 w-3.5" />
-              Thêm mới học viên
+              {t("mySpace.calendar.addNewStudent")}
             </Button>
           </div>
         </DialogHeader>
@@ -234,81 +236,81 @@ export function AddStudentToSessionDialog({
         {/* Nested quick-add dialog */}
         <Dialog open={isQuickOpen} onOpenChange={setIsQuickOpen}>
           <DialogContent className="max-w-xl z-[200]">
-            <DialogHeader><DialogTitle>Thêm mới học viên nhanh</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>{t("mySpace.calendar.quickAddStudent")}</DialogTitle></DialogHeader>
             <div className="space-y-4 py-2">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Cơ sở <span className="text-destructive">*</span></Label>
+                  <Label className="text-sm font-medium">{t("mySpace.calendar.branch")} <span className="text-destructive">*</span></Label>
                   <Select value={qForm.locationId} onValueChange={v => setQF("locationId", v)}>
-                    <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Chọn cơ sở..." /></SelectTrigger>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue placeholder={t("mySpace.calendar.selectBranch")} /></SelectTrigger>
                     <SelectContent>
                       {(locationsList as any[]).map((l: any) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Phân loại</Label>
+                  <Label className="text-sm font-medium">{t("mySpace.calendar.category")}</Label>
                   <Select value={qForm.type} onValueChange={v => setQF("type", v)}>
                     <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Học viên">Học viên</SelectItem>
-                      <SelectItem value="Phụ huynh">Phụ huynh</SelectItem>
+                      <SelectItem value="Học viên">{t("mySpace.calendar.student")}</SelectItem>
+                      <SelectItem value="Phụ huynh">{t("mySpace.calendar.parent")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Mã <span className="text-destructive">*</span></Label>
+                  <Label className="text-sm font-medium">{t("mySpace.calendar.code")} <span className="text-destructive">*</span></Label>
                   <Input className="h-9 text-sm" value={qForm.code} onChange={e => setQF("code", e.target.value)} placeholder="VD: HV-01" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Tên <span className="text-destructive">*</span></Label>
+                  <Label className="text-sm font-medium">{t("mySpace.calendar.name")} <span className="text-destructive">*</span></Label>
                   <Input className="h-9 text-sm" value={qForm.fullName} onChange={e => setQF("fullName", e.target.value)} placeholder="Họ và tên..." />
                 </div>
               </div>
               <div className="border-t pt-3">
-                <p className="text-xs text-muted-foreground mb-3 font-medium uppercase tracking-wide">Thông tin bổ sung</p>
+                <p className="text-xs text-muted-foreground mb-3 font-medium uppercase tracking-wide">{t("mySpace.calendar.additionalInfo")}</p>
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <div className="space-y-1.5">
-                    <Label className="text-sm font-medium">Tài khoản</Label>
+                    <Label className="text-sm font-medium">{t("mySpace.calendar.username")}</Label>
                     <Input className="h-9 text-sm" value={qForm.username} onChange={e => setQForm(f => ({ ...f, username: e.target.value }))} placeholder="Tự sinh theo Mã" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-sm font-medium">Mật khẩu</Label>
+                    <Label className="text-sm font-medium">{t("mySpace.calendar.password")}</Label>
                     <Input className="h-9 text-sm" value={qForm.password} onChange={e => setQF("password", e.target.value)} placeholder="123456" />
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-3 mb-3">
                   <div className="space-y-1.5">
-                    <Label className="text-sm font-medium">Sinh nhật</Label>
+                    <Label className="text-sm font-medium">{t("mySpace.calendar.birthday")}</Label>
                     <Input type="date" className="h-9 text-sm" value={qForm.dateOfBirth} onChange={e => setQF("dateOfBirth", e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-sm font-medium">Số điện thoại</Label>
+                    <Label className="text-sm font-medium">{t("mySpace.calendar.phone")}</Label>
                     <Input className="h-9 text-sm" value={qForm.phone} onChange={e => setQF("phone", e.target.value)} placeholder="SĐT..." />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-sm font-medium">Email</Label>
+                    <Label className="text-sm font-medium">{t("mySpace.calendar.email")}</Label>
                     <Input className="h-9 text-sm" value={qForm.email} onChange={e => setQF("email", e.target.value)} placeholder="Email..." />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label className="text-sm font-medium">Họ tên Phụ huynh 1</Label>
+                    <Label className="text-sm font-medium">{t("mySpace.calendar.parentName")}</Label>
                     <Input className="h-9 text-sm" value={qForm.parentName} onChange={e => setQF("parentName", e.target.value)} placeholder="Tên phụ huynh..." />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-sm font-medium">SĐT Phụ huynh 1</Label>
+                    <Label className="text-sm font-medium">{t("mySpace.calendar.parentPhone")}</Label>
                     <Input className="h-9 text-sm" value={qForm.parentPhone} onChange={e => setQF("parentPhone", e.target.value)} placeholder="SĐT phụ huynh..." />
                   </div>
                 </div>
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsQuickOpen(false)} disabled={quickSaving}>Hủy</Button>
+              <Button variant="outline" onClick={() => setIsQuickOpen(false)} disabled={quickSaving}>{t("mySpace.calendar.cancel")}</Button>
               <Button onClick={handleQuickCreate} disabled={quickSaving}>
-                {quickSaving ? "Đang lưu..." : "Lưu & thêm vào danh sách"}
+                {quickSaving ? t("mySpace.calendar.bulkAttendanceSaving") : t("mySpace.calendar.saveAndAdd")}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -318,7 +320,7 @@ export function AddStudentToSessionDialog({
           <div className="relative">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Tìm theo tên / mã học viên..."
+              placeholder={t("mySpace.calendar.searchStudent")}
               className="pl-8"
               value={searchTerm}
               onChange={(e) => onSearchChange(e.target.value)}
@@ -334,9 +336,9 @@ export function AddStudentToSessionDialog({
                       onCheckedChange={(checked) => handleToggleAll(!!checked)}
                     />
                   </TableHead>
-                  <TableHead>Tên</TableHead>
-                  <TableHead>Mã</TableHead>
-                  <TableHead>Trạng thái</TableHead>
+                  <TableHead>{t("mySpace.calendar.name")}</TableHead>
+                  <TableHead>{t("mySpace.calendar.code")}</TableHead>
+                  <TableHead>{t("mySpace.calendar.status")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -353,7 +355,7 @@ export function AddStudentToSessionDialog({
                     <TableCell className="text-primary">{student.code}</TableCell>
                     <TableCell>
                       <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">
-                        Mới tạo
+                         {t("mySpace.calendar.newlyCreated")}
                       </span>
                     </TableCell>
                   </TableRow>
@@ -381,15 +383,15 @@ export function AddStudentToSessionDialog({
                         <TableCell>
                           {isInactive ? (
                             <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                              Không hoạt động
+                               {t("mySpace.calendar.inactive")}
                             </span>
                           ) : student.source === "enrolled" ? (
                             <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-                              Đã trong lớp
+                               {t("mySpace.calendar.alreadyInClass")}
                             </span>
                           ) : (
                             <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                              Chưa vào lớp
+                               {t("mySpace.calendar.notInClass")}
                             </span>
                           )}
                         </TableCell>
@@ -399,13 +401,13 @@ export function AddStudentToSessionDialog({
                 ) : isLoading ? (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                      Đang tải...
+                      {t("mySpace.calendar.loading")}
                     </TableCell>
                   </TableRow>
                 ) : justAdded.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                      Không có học viên nào để thêm
+                      {t("mySpace.calendar.noStudentsToAdd")}
                     </TableCell>
                   </TableRow>
                 ) : null}
@@ -415,10 +417,10 @@ export function AddStudentToSessionDialog({
         </div>
         <div className="flex gap-2 justify-end">
           <Button variant="outline" onClick={handleCancel}>
-            Hủy
+             {t("mySpace.calendar.cancel")}
           </Button>
           <Button disabled={selectedIds.length === 0} onClick={handleConfirm}>
-            {`Thêm vào buổi (${selectedIds.length})`}
+             {`${t("mySpace.calendar.addToSession")} (${selectedIds.length})`}
           </Button>
         </div>
       </DialogContent>
