@@ -1004,6 +1004,15 @@ const navMap: Record<string, string> = {
   "Đào tạo": "Training",
   "Tài chính": "Finance",
   "Báo cáo": "Reports",
+  "Báo cáo Thu - Chi": "Income & Expense Report",
+  "Phân bổ Thu - Chi": "Income & Expense Allocation",
+  "Doanh thu lớp học": "Class Revenue",
+  "Doanh thu nhân sự": "Staff Revenue",
+  "Phân bổ học phí": "Tuition Allocation",
+  "Thời gian giảng dạy": "Teaching Time",
+  "Báo cáo Học viên mới": "New Students Report",
+  "Báo cáo Chuyển đổi": "Conversion Report",
+  "Lịch sử cuộc gọi": "Call History",
 };
 
 const enCalendar: Record<string, string> = {

@@ -1008,7 +1008,7 @@ export function Settings() {
           <TabsContent value="system">
             {myPerms && !myPerms.isSuperAdmin ? (
               <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">
-                Bạn không có quyền truy cập trang này.
+                {t("settings.common.accessDenied")}
               </div>
             ) : (
               <Tabs value={systemTab} onValueChange={setSystemTab} className="w-full">
@@ -1047,8 +1047,8 @@ export function Settings() {
                 canEdit={permTabRaw.canEdit}
               />
               <div className="mt-2 font-['Roboto'] text-[11px] leading-4 text-blue-600">
-                <div>{t("settings.permissions.view")}: view data created by or assigned to you, depending on the module.</div>
-                <div>{t("settings.permissions.viewAll")}: view data created by others, usually within the same branch.</div>
+                <div>{t("settings.permissions.view")}: {t("settings.permissions.viewDataDescription")}</div>
+                <div>{t("settings.permissions.viewAll")}: {t("settings.permissions.viewAllDataDescription")}</div>
               </div>
             </div>
           </TabsContent>
@@ -1149,7 +1149,7 @@ function ModulesManager() {
                             onClick={() => toggleExpandItem(item.href)}
                           >
                             <item.icon className="w-4 h-4 text-muted-foreground shrink-0" />
-                            <span className="text-sm text-foreground">{tNav(item.name)}</span>
+                            <span className="text-sm text-foreground">{item.name}</span>
                             <span className="text-xs text-muted-foreground ml-1">({item.subTabs!.length} tab)</span>
                             {itemExpanded
                               ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
@@ -1935,6 +1935,101 @@ const PERM_DESCRIPTIONS: Record<string, string> = {
   "/tong-luong#default-config": "Xem: nhân sự có quyền xem cấu hình lương mặc định. Sửa: nhân sự có quyền chỉnh sửa các thông số cấu hình lương mặc định và bảng thuế TNCN.",
 };
 
+const PERM_DESCRIPTIONS_EN: Record<string, string> = {
+  "/": "View: access the system overview dashboard.",
+  "/chat": "View: access and use internal messaging. Create: add members to chat groups. Delete: remove members from chat groups.",
+  "/zalo": "View: access and manage the connected Zalo OA page.",
+  "/news-feed": "View / View All: view posts in the assigned branch. Create: publish posts. Edit: edit, pin, and unpin posts. Delete: delete posts.",
+  "/#khach-hang": "View / View All: view the Customers tab in the Dashboard. Uncheck to hide the tab.",
+  "/#dao-tao": "View / View All: view the Education tab in the Dashboard. Uncheck to hide the tab.",
+  "/#tai-chinh": "View / View All: view the Finance tab in the Dashboard. Uncheck to hide the tab.",
+  "/#bao-cao": "View / View All: view the Reports tab in the Dashboard. Uncheck to hide the tab.",
+  "/#bao-cao/thu-chi": "View / View All: view the Income and Expense report.",
+  "/#bao-cao/phan-bo": "View / View All: view the Income and Expense Allocation report.",
+  "/#bao-cao/doanh-thu-lop-hoc": "View / View All: view the Class Revenue report.",
+  "/#bao-cao/doanh-thu-nhan-su": "View / View All: view the Staff Revenue report.",
+  "/#bao-cao/phan-bo-hoc-phi": "View / View All: view the Tuition Allocation report.",
+  "/#bao-cao/thoi-gian-giang-day": "View / View All: view the Teaching Time report.",
+  "/#bao-cao/hoc-vien-moi": "View / View All: view the New Students report.",
+  "/#bao-cao/chuyen-doi": "View / View All: view the Conversion report.",
+  "/#bao-cao/lich-su-cuoc-goi": "View / View All: view the Omicall Call History report.",
+  "/my-space/calendar": "Personal Calendar is enabled by default for all staff in system departments.",
+  "/my-space/assignments": "Assignments are enabled by default for all staff and students in system departments.",
+  "/my-space/score-sheet": "Score Sheets are enabled by default for all staff and students in system departments.",
+  "/my-space/invoices": "View: students and staff can view their own invoices. Uncheck View to hide the My Invoices tab.",
+  "/my-space/payroll": "View: staff can view their own payroll. Uncheck View to hide the My Payroll tab.",
+  "/tasks#list": "View is enabled by default for all staff. View All: view all tasks in the branch. Create: create tasks.",
+  "/tasks#config": "View: view task configuration. View All: view all configurations. Create / Edit / Delete: manage task types, statuses, and priorities.",
+  "/customers": "View: view assigned customers. View All: view all customers in the branch. Create / Edit / Delete: manage customer records.",
+  "/customers/crm-config#relationships": "View: view relationships created by you. View All: view all relationships. Create / Edit / Delete: manage customer relationships.",
+  "/customers/crm-config#reject-reasons": "View: view rejection reasons. View All: view all reasons. Create / Edit / Delete: manage customer intake rejection reasons.",
+  "/customers/crm-config#sources": "View: view customer sources. View All: view all sources. Create / Edit / Delete: manage customer acquisition sources.",
+  "/customers/crm-config#additional-info": "View: view additional information fields. View All: view all fields. Create / Edit / Delete: manage custom fields in customer profiles.",
+  "/customers/crm-config#required-info": "Edit: view the Required Information tab and choose fields required when creating a customer.",
+  "/staff": "View: view staff profiles you manage. View All: view all staff profiles in the branch. Create / Edit / Delete: manage staff profiles.",
+  "/shifts#register": "View: view your teaching shift registrations. View All: view all staff registrations. Create / Edit / Delete: manage teaching shift registrations.",
+  "/shifts#board": "View / View All: view the staff work assignment board. This page is read-only.",
+  "/shifts#assign": "View: view shift assignments. View All: view all assignments. Create / Edit / Delete: manage staff work assignments.",
+  "/shifts#config": "View: view work shift settings. View All: view all settings. Create / Edit / Delete: manage work shift configurations.",
+  "/teacher-salary#salary-tables": "View: view your teaching salary tables. View All: view all salary tables. Create / Edit / Delete: manage teaching salary tables.",
+  "/teacher-salary#salary-packages": "View: view salary packages. View All: view all packages. Create / Edit / Delete: manage teaching salary packages.",
+  "/teacher-salary#staff-config": "View: view staff salary configuration. View All: view all configurations. Create / Edit / Delete: manage salary packages for teachers and assistants.",
+  "/learning-overview#overview": "View / View All: view the learning progress overview. This page is read-only.",
+  "/learning-overview#students-ending": "View / View All: view students whose schedules are ending soon. This page is read-only.",
+  "/learning-overview#classes-ending": "View / View All: view classes that are ending soon. This page is read-only.",
+  "/learning-overview#cho-bu-bao-luu": "View / View All: view students waiting for makeup classes or on hold. This page is read-only.",
+  "/learning-overview#bang-diem": "View / View All: view the consolidated score sheets for all students. This page is read-only.",
+  "/learning-overview#bai-tap-ve-nha": "View / View All: view homework by class. This page is read-only.",
+  "/learning-overview#nhan-xet-hoc-vien": "View / View All: view student feedback by session. This page is read-only.",
+  "/learning-overview#cham-cong-giao-vien": "View / View All: view teacher attendance by teaching session. This page is read-only.",
+  "/learning-overview#xin-nghi": "View: view and create student leave requests for selected branches, students, and schedules.",
+  "/classes": "View: view classes you manage. View All: view all classes in the branch. Create / Edit / Delete: manage classes, teachers, and students.",
+  "/schedule": "View: view class schedules. View All: view all schedules. Create / Edit / Delete: manage class schedules.",
+  "/attendance": "View: view attendance for sessions you manage. View All: view all attendance. Create / Edit: record and update student attendance.",
+  "/courses#courses": "View: view courses. View All: view all courses. Create / Edit / Delete: manage course content.",
+  "/courses#programs": "View: view study programs. View All: view all programs. Create / Edit / Delete: manage programs and content allocation.",
+  "/courses#library": "View: view the content library. View All: view all content. Create / Edit / Delete: manage library resources and lessons.",
+  "/assessments#list": "View: view exams. View All: view all exams. Create / Edit / Delete: manage exams.",
+  "/assessments#question-bank": "View: view the question bank. View All: view all questions. Create / Edit / Delete: manage questions by topic and subject.",
+  "/assessments#results": "View / View All: view student exam results. This page does not support Create or Delete.",
+  "/education-config#classrooms": "View: view classrooms. View All: view all classrooms. Create / Edit / Delete: manage classrooms at each branch.",
+  "/education-config#subjects": "View: view subjects. View All: view all subjects. Create / Edit / Delete: manage teaching subjects.",
+  "/education-config#evaluation": "View: view evaluation criteria. View All: view all criteria. Create / Edit / Delete: manage student evaluation criteria.",
+  "/education-config#shifts": "View: view class shifts. View All: view all shifts. Create / Edit / Delete: manage daily class shifts.",
+  "/education-config#attendance-fee": "View: view attendance fee rules. View All: view all rules. Create / Edit / Delete: manage fee deductions for absent students.",
+  "/education-config#score-sheets": "View: view score sheet templates. View All: view all templates. Create / Edit / Delete: manage score sheet templates.",
+  "/education-config#online-learning": "View: view online learning settings. View All: view all settings. Create / Edit / Delete: manage online learning platform settings.",
+  "/store#nhap-kho": "View: view stock receipt notes. View All: view all stock receipts in the branch. Create / Edit / Delete: manage stock receipts.",
+  "/store#xuat-kho": "View: view stock issue notes. View All: view all stock issues. Create / Edit / Delete: manage stock issues.",
+  "/store#chuyen-kho": "View: view stock transfer notes. View All: view all transfers. Create / Edit / Delete: manage stock transfers between warehouses.",
+  "/store#ton-kho": "View / View All: view inventory reports by product and branch. This page is read-only.",
+  "/store#san-pham": "View: view products. View All: view all products. Create / Edit / Delete: manage product information.",
+  "/store#cau-hinh": "View: view warehouse settings. View All: view all settings. Create / Edit / Delete: manage categories, units, and warehouse settings.",
+  "/notification-logs": "View: view notification history related to your customers. View All: view all notification history in the branch.",
+  "/invoices": "View: view related invoices. View All: view all invoices in the branch. Create / Edit / Delete: manage tuition invoices.",
+  "/finance-config#promotions": "View: view promotions and surcharges. View All: view all items. Create / Edit / Delete: manage promotions and surcharges.",
+  "/finance-config#categories": "View: view income and expense categories. View All: view all categories. Create / Edit / Delete: manage finance categories.",
+  "/finance-config#voucher": "View: view voucher settings. View All: view all voucher settings.",
+  "/settings#locations": "View: view branches. View All: view all branches. Create / Edit / Delete: administrators can manage branch information.",
+  "/settings#departments": "View: view departments and roles. View All: view all departments and roles. Create / Edit / Delete: administrators can manage departments and staff roles.",
+  "/settings#system": "View: view system settings. View All: view all settings. Create / Edit / Delete: administrators can manage system configuration values.",
+  "/settings#permissions": "View: view role permissions. View All: view all role permissions. Create / Edit: administrators can grant and revoke role access. Permission records cannot be deleted.",
+  "/settings#ai-accounts": "View: view AI accounts. View All: view all accounts. Create / Edit / Delete: administrators can manage AI accounts such as OpenAI and Gemini.",
+  "/settings#providers": "View: view provider connections. View All: view all connections. Create / Edit / Delete: administrators can manage external service connections.",
+  "/settings#holidays": "View / View All: view public holidays. Create / Edit / Delete: administrators can manage public holidays for the year.",
+  "/don-tu": "View: view your own requests. View All: view all requests in the branch. Create: create requests. Edit: approve or reject requests. Delete: delete requests.",
+  "/cham-cong": "View: view your own attendance. View All: view all staff attendance. Edit: upload attendance files and record attendance in bulk.",
+  "/tong-luong#salary-sheets": "View / View All: view salary sheets. Create: create salary sheets. Edit: finalize, reopen, and pay salary sheets. Delete: delete draft salary sheets.",
+  "/tong-luong#staff-config": "View / View All: view staff salary configuration. Create / Edit / Delete: manage individual staff salary configurations.",
+  "/tong-luong#default-config": "View: view default salary settings. Edit: update default salary settings and personal income tax rules.",
+};
+
+function getPermissionDescription(resource: string, lang: "vi" | "en"): string | undefined {
+  return lang === "en"
+    ? PERM_DESCRIPTIONS_EN[resource] ?? PERM_DESCRIPTIONS[resource]
+    : PERM_DESCRIPTIONS[resource];
+}
+
 type PermissionsManagerProps = {
   canViewAll: boolean;
   canCreate: boolean;
@@ -2213,7 +2308,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
   const normalizedPermissionSearch = permissionSearch.trim().toLocaleLowerCase();
   const matchesPermission = (name: string, resource: string) => {
     if (!normalizedPermissionSearch) return true;
-    return `${name} ${resource} ${PERM_DESCRIPTIONS[resource] ?? ""}`
+    return `${name} ${resource} ${PERM_DESCRIPTIONS[resource] ?? ""} ${PERM_DESCRIPTIONS_EN[resource] ?? ""}`
       .toLocaleLowerCase()
       .includes(normalizedPermissionSearch);
   };
@@ -2302,11 +2397,11 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
     const allChecked = isModuleAllChecked(mod);
     const value = !allChecked;
     if (value && !canCreate) {
-      toast({ title: "Không có quyền", description: "Bạn không có quyền cấp thêm quyền.", variant: "destructive" });
+      toast({ title: t("settings.permissions.noAccess"), description: t("settings.permissions.grantDenied"), variant: "destructive" });
       return;
     }
     if (!value && !canEdit) {
-      toast({ title: "Không có quyền", description: "Bạn không có quyền thu hồi quyền.", variant: "destructive" });
+      toast({ title: t("settings.permissions.noAccess"), description: t("settings.permissions.revokeDenied"), variant: "destructive" });
       return;
     }
     const resources = getModuleResources(mod);
@@ -2486,7 +2581,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                               )}
                             >
                               <dashItem.icon className="w-4 h-4 text-muted-foreground shrink-0" />
-                              <span className="text-sm text-foreground">{dashItem.name}</span>
+                              <span className="text-sm text-foreground">{tNav(dashItem.name)}</span>
                               <span className="text-xs text-muted-foreground ml-1">({t("settings.permissions.tabsCount", { count: 4 })})</span>
                               {isDashExpanded
                                 ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
@@ -2545,9 +2640,9 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                         ))}
                                       </div>
                                     </div>
-                                    {PERM_DESCRIPTIONS[baoCaoResource] && (
+                                    {getPermissionDescription(baoCaoResource, lang) && (
                                       <div className="px-5 pb-2 pl-24 -mt-1">
-                                        <p className="text-[11px] text-muted-foreground/65 italic leading-relaxed">{PERM_DESCRIPTIONS[baoCaoResource]}</p>
+                                        <p className="text-[11px] text-muted-foreground/65 italic leading-relaxed">{getPermissionDescription(baoCaoResource, lang)}</p>
                                       </div>
                                     )}
 
@@ -2614,9 +2709,9 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                       ))}
                                     </div>
                                   </div>
-                                  {PERM_DESCRIPTIONS[subResource] && (
+                                  {getPermissionDescription(subResource, lang) && (
                                     <div className="px-5 pb-2 pl-24 -mt-1">
-                                      <p className="text-[11px] text-muted-foreground/65 italic leading-relaxed">{PERM_DESCRIPTIONS[subResource]}</p>
+                                      <p className="text-[11px] text-muted-foreground/65 italic leading-relaxed">{getPermissionDescription(subResource, lang)}</p>
                                     </div>
                                   )}
                                 </div>
@@ -2643,7 +2738,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                         <div className="flex items-center px-5 py-3 bg-muted/20 hover:bg-muted/30 transition-colors">
                           <div className="flex items-center gap-2 pl-8 flex-1">
                             <item.icon className="w-4 h-4 text-muted-foreground shrink-0" />
-                            <span className="text-sm text-foreground">{item.name}</span>
+                            <span className="text-sm text-foreground">{tNav(item.name)}</span>
                           </div>
                           <div className="flex items-center gap-0 shrink-0">
                             {PERM_COLS.map(col => (
@@ -2662,9 +2757,9 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                             ))}
                           </div>
                         </div>
-                        {PERM_DESCRIPTIONS[item.href] && (
+                        {getPermissionDescription(item.href, lang) && (
                           <div className="px-5 pb-2.5 pt-0 pl-[4.5rem]">
-                            <p className="text-[11px] text-muted-foreground/65 italic leading-relaxed">{PERM_DESCRIPTIONS[item.href]}</p>
+                            <p className="text-[11px] text-muted-foreground/65 italic leading-relaxed">{getPermissionDescription(item.href, lang)}</p>
                           </div>
                         )}
                       </div>
@@ -2693,7 +2788,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                       <span className={cn("font-semibold text-sm uppercase tracking-wider", mod.color)}>
                         {tNav(mod.module)}
                       </span>
-                      <span className="text-xs text-muted-foreground ml-1">({mod.items.length} mục)</span>
+                      <span className="text-xs text-muted-foreground ml-1">({t("settings.permissions.itemsCount", { count: mod.items.length })})</span>
                       {isExpanded
                         ? <ChevronDown className="w-4 h-4 text-muted-foreground ml-1" />
                         : <ChevronRight className="w-4 h-4 text-muted-foreground ml-1" />
@@ -2703,7 +2798,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                     <div
                       className="flex items-center gap-1.5 mr-4 px-2 py-1 rounded-md hover:bg-muted/50 cursor-pointer select-none"
                       onClick={(e) => { e.stopPropagation(); handleToggleModuleAll(mod); }}
-                      title="Tích chọn nhanh tất cả quyền trong nhóm này"
+                      title={t("settings.permissions.quickSelectAll")}
                     >
                       <Checkbox
                         data-testid={`perm-module-all-${mod.module}`}
@@ -2753,7 +2848,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                   >
                                     <item.icon className="w-4 h-4 text-muted-foreground shrink-0" />
                                     <span className="text-sm text-foreground">{tNav(item.name)}</span>
-                                    <span className="text-xs text-muted-foreground ml-1">({permittedSubTabs.length} tab)</span>
+                                    <span className="text-xs text-muted-foreground ml-1">({t("settings.permissions.tabsCount", { count: permittedSubTabs.length })})</span>
                                     {itemExpanded
                                       ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
                                       : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
@@ -2762,7 +2857,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                 ) : (
                                   <div className="flex items-center gap-2">
                                     <item.icon className="w-4 h-4 text-muted-foreground shrink-0" />
-                                    <span className="text-sm text-foreground">{item.name}</span>
+                                    <span className="text-sm text-foreground">{tNav(item.name)}</span>
                                     {isStudentDefaultLocked && (
                                     <span className="text-xs text-muted-foreground italic">{t("settings.permissions.default")}</span>
                                     )}
@@ -2816,9 +2911,9 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                             </div>
 
                             {/* Item description */}
-                            {!hasSubTabs && PERM_DESCRIPTIONS[item.href] && (
+                            {!hasSubTabs && getPermissionDescription(item.href, lang) && (
                               <div className="px-5 pb-2.5 pt-0 pl-[4.5rem]">
-                                <p className="text-[11px] text-muted-foreground/65 italic leading-relaxed">{PERM_DESCRIPTIONS[item.href]}</p>
+                                <p className="text-[11px] text-muted-foreground/65 italic leading-relaxed">{getPermissionDescription(item.href, lang)}</p>
                               </div>
                             )}
 
@@ -2828,7 +2923,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                 {permittedSubTabs.map(sub => {
                                   const subResource = `${item.href}#${sub.value}`;
                                   const subPerms = getResourcePerm(subResource);
-                                  const subDesc = PERM_DESCRIPTIONS[subResource];
+                                  const subDesc = getPermissionDescription(subResource, lang);
                                   return (
                                     <div key={sub.value}>
                                       <div className="flex items-center px-5 py-2.5 hover:bg-muted/20 transition-colors">
@@ -5402,6 +5497,7 @@ function BidvPanel() {
 
 function HolidaysManager({ canAdd, canEdit, canDelete }: { canAdd: boolean; canEdit: boolean; canDelete: boolean }) {
   const { toast } = useToast();
+  const { t } = useLanguage();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState({ name: "", startDate: "", endDate: "", description: "" });
@@ -5431,23 +5527,23 @@ function HolidaysManager({ canAdd, canEdit, canDelete }: { canAdd: boolean; canE
   };
 
   const handleSave = async () => {
-    if (!form.name.trim()) { toast({ title: "Lỗi", description: "Vui lòng nhập tên nghỉ lễ.", variant: "destructive" }); return; }
-    if (!form.startDate || !form.endDate) { toast({ title: "Lỗi", description: "Vui lòng chọn khoảng thời gian.", variant: "destructive" }); return; }
-    if (form.endDate < form.startDate) { toast({ title: "Lỗi", description: "Ngày kết thúc phải sau ngày bắt đầu.", variant: "destructive" }); return; }
+    if (!form.name.trim()) { toast({ title: t("settings.common.error"), description: t("settings.holidays.requiredName"), variant: "destructive" }); return; }
+    if (!form.startDate || !form.endDate) { toast({ title: t("settings.common.error"), description: t("settings.holidays.requiredPeriod"), variant: "destructive" }); return; }
+    if (form.endDate < form.startDate) { toast({ title: t("settings.common.error"), description: t("settings.holidays.invalidPeriod"), variant: "destructive" }); return; }
     setSaving(true);
     try {
       if (editing) {
         await apiRequest("PUT", `/api/public-holidays/${editing.id}`, form);
-        toast({ title: "Thành công", description: "Đã cập nhật ngày nghỉ lễ." });
+        toast({ title: t("settings.common.success"), description: t("settings.common.updatedHoliday") });
       } else {
         await apiRequest("POST", "/api/public-holidays", form);
-        toast({ title: "Thành công", description: "Đã thêm ngày nghỉ lễ." });
+        toast({ title: t("settings.common.success"), description: t("settings.common.createdHoliday") });
       }
       setDialogOpen(false);
       setEditing(null);
       refetch();
     } catch (err: any) {
-      toast({ title: "Lỗi", description: err.message, variant: "destructive" });
+      toast({ title: t("settings.common.error"), description: err.message, variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -5457,10 +5553,10 @@ function HolidaysManager({ canAdd, canEdit, canDelete }: { canAdd: boolean; canE
     setDeletingId(id);
     try {
       await apiRequest("DELETE", `/api/public-holidays/${id}`);
-      toast({ title: "Thành công", description: "Đã xóa ngày nghỉ lễ." });
+      toast({ title: t("settings.common.success"), description: t("settings.common.deletedHoliday") });
       refetch();
     } catch (err: any) {
-      toast({ title: "Lỗi", description: err.message, variant: "destructive" });
+      toast({ title: t("settings.common.error"), description: err.message, variant: "destructive" });
     } finally {
       setDeletingId(null);
     }
@@ -5479,10 +5575,10 @@ function HolidaysManager({ canAdd, canEdit, canDelete }: { canAdd: boolean; canE
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold flex items-center gap-2"><CalendarDays className="w-5 h-5" />Danh sách Ngày nghỉ lễ</h2>
+        <h2 className="text-xl font-semibold flex items-center gap-2"><CalendarDays className="w-5 h-5" />{t("settings.holidays.title")}</h2>
         {canAdd && (
           <Button onClick={openAdd} size="sm">
-            <Plus className="w-4 h-4 mr-1.5" />Thêm ngày nghỉ lễ
+            <Plus className="w-4 h-4 mr-1.5" />{t("settings.holidays.add")}
           </Button>
         )}
       </div>
@@ -5490,20 +5586,20 @@ function HolidaysManager({ canAdd, canEdit, canDelete }: { canAdd: boolean; canE
       <Dialog open={dialogOpen} onOpenChange={(v) => { setDialogOpen(v); if (!v) setEditing(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{editing ? "Sửa ngày nghỉ lễ" : "Thêm ngày nghỉ lễ"}</DialogTitle>
-            <DialogDescription>Nhập thông tin ngày nghỉ lễ.</DialogDescription>
+            <DialogTitle>{editing ? t("settings.holidays.edit") : t("settings.holidays.new")}</DialogTitle>
+            <DialogDescription>{t("settings.holidays.dialogDesc")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
-              <label className="block text-sm font-medium mb-1.5">Tên nghỉ lễ <span className="text-destructive">*</span></label>
+               <label className="block text-sm font-medium mb-1.5">{t("settings.holidays.name")} <span className="text-destructive">*</span></label>
               <Input
                 value={form.name}
                 onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                placeholder="Ví dụ: Tết Nguyên Đán"
+                 placeholder={t("settings.holidays.namePlaceholder")}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1.5">Khoảng thời gian <span className="text-destructive">*</span></label>
+               <label className="block text-sm font-medium mb-1.5">{t("settings.holidays.period")} <span className="text-destructive">*</span></label>
               <div className="flex items-center gap-2">
                 <Input
                   type="date"
@@ -5521,40 +5617,43 @@ function HolidaysManager({ canAdd, canEdit, canDelete }: { canAdd: boolean; canE
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1.5">Mô tả</label>
+               <label className="block text-sm font-medium mb-1.5">{t("settings.holidays.description")}</label>
               <Input
                 value={form.description}
                 onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
-                placeholder="Tùy chọn..."
+                 placeholder={t("settings.holidays.descriptionPlaceholder")}
               />
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Hủy</Button>
+             <Button variant="outline" onClick={() => setDialogOpen(false)}>{t("settings.holidays.cancel")}</Button>
             <Button onClick={handleSave} disabled={saving}>
               {saving && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
-              {editing ? "Cập nhật" : "Thêm mới"}
+               {editing ? t("settings.locations.update") : t("settings.holidays.addAction")}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
       {isLoading ? (
-        <div className="flex items-center justify-center h-32"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+        <div className="flex items-center justify-center gap-2 h-32 text-sm text-muted-foreground">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span>{t("settings.holidays.loading")}</span>
+        </div>
       ) : holidays.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-32 text-sm text-muted-foreground gap-2">
           <CalendarDays className="w-8 h-8 opacity-30" />
-          <span>Chưa có ngày nghỉ lễ nào.</span>
+          <span>{t("settings.holidays.empty")}</span>
         </div>
       ) : (
         <div className="rounded-md border overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-muted/50">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Tên nghỉ lễ</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Khoảng thời gian</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Mô tả</th>
-                <th className="text-right px-4 py-3 font-medium text-muted-foreground">Thao tác</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">{t("settings.holidays.name")}</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">{t("settings.holidays.dateRange")}</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">{t("settings.holidays.description")}</th>
+                <th className="text-right px-4 py-3 font-medium text-muted-foreground">{t("settings.holidays.actions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -5562,7 +5661,7 @@ function HolidaysManager({ canAdd, canEdit, canDelete }: { canAdd: boolean; canE
                 <tr key={h.id} className={cn("border-t", i % 2 === 0 ? "bg-background" : "bg-muted/20")}>
                   <td className="px-4 py-3 font-medium">{h.name}</td>
                   <td className="px-4 py-3 text-muted-foreground">{formatDateRange(h.startDate, h.endDate)}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{h.description || "—"}</td>
+                   <td className="px-4 py-3 text-muted-foreground">{h.description || t("settings.holidays.noDescription")}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
                       {canEdit && (
