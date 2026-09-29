@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/hooks/use-language";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChevronDown } from "lucide-react";
 import { STATUS_CONFIG } from "@/types/invoice-types";
@@ -23,7 +24,10 @@ export function ScheduleStatusDropdown({
 }) {
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
-  const currentLabel = STATUS_CONFIG[currentStatus]?.label ?? STATUS_CONFIG.unpaid.label;
+  const { t } = useLanguage();
+  const getStatusLabel = (status: string) =>
+    status === "paid" ? t("finance.paidStatus") : status === "confirmed" ? t("finance.tab.confirmed") : t("finance.unpaidStatus");
+  const currentLabel = getStatusLabel(currentStatus);
   const currentClass = STATUS_CONFIG[currentStatus]?.className ?? STATUS_CONFIG.unpaid.className;
   const statusOptions = ["unpaid", "paid", "confirmed"] as const;
 
@@ -48,7 +52,7 @@ export function ScheduleStatusDropdown({
                   { scheduleId, status },
                   {
                     onSuccess: () => setOpen(false),
-                    onError: () => toast({ title: "Lỗi cập nhật trạng thái", variant: "destructive" }),
+                    onError: () => toast({ title: t("finance.updateError"), variant: "destructive" }),
                   }
                 )
               }
@@ -57,7 +61,7 @@ export function ScheduleStatusDropdown({
               data-testid={`schedule-status-${status}-${scheduleId}`}
             >
               <span className={`w-2 h-2 rounded-full ${status === "paid" ? "bg-green-500" : status === "confirmed" ? "bg-blue-700" : "bg-yellow-500"}`} />
-              {STATUS_CONFIG[status].label}
+              {getStatusLabel(status)}
             </button>
           ))}
         </div>

@@ -14,6 +14,7 @@ import { Search, Merge, X } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/hooks/use-language";
 import { type InvoiceRow, type ScheduleItem, STATUS_CONFIG, isInvoicePaidLike, parseNum, fmtMoney } from "@/types/invoice-types";
 import { format } from "date-fns";
 import type { BulkCollectPrintData } from "./BulkCollectPrintPreview";
@@ -30,9 +31,9 @@ interface BulkCollectDialogProps {
 }
 
 const PAYMENT_METHODS = [
-  { value: "cash",     label: "Tiền mặt" },
-  { value: "transfer", label: "Chuyển khoản" },
-  { value: "other",    label: "Khác" },
+  { value: "cash",     labelKey: "finance.cash" },
+  { value: "transfer", labelKey: "finance.transfer" },
+  { value: "other",    labelKey: "finance.other" },
 ];
 
 export function BulkCollectDialog({
@@ -44,6 +45,7 @@ export function BulkCollectDialog({
   invoiceType,
 }: BulkCollectDialogProps) {
   const { toast } = useToast();
+  const { t } = useLanguage();
 
   const [search, setSearch] = useState("");
   const [checkedIds, setCheckedIds] = useState<Set<string>>(
@@ -138,7 +140,7 @@ export function BulkCollectDialog({
       const ids = unpaidInvoices.map(inv => inv.id);
       const scheduleIds = unpaidSchedules.map(s => s.id);
       if (ids.length === 0 && scheduleIds.length === 0)
-        throw new Error("Không có hoá đơn nào cần thu");
+        throw new Error(t("finance.noInvoiceData"));
       const res = await apiRequest("POST", "/api/finance/invoices/bulk-collect", {
         ids,
         scheduleIds,
@@ -176,8 +178,8 @@ export function BulkCollectDialog({
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
       const { ok, failed } = data.summary ?? {};
       toast({
-        title: `Gộp phiếu ${invoiceType === "Thu" ? "thu" : "chi"} thành công`,
-        description: `Đã xử lý ${ok ?? 0} phiếu${failed > 0 ? `, thất bại ${failed} phiếu` : ""}.`,
+        title: t("finance.bulkCollectSuccess", { type: invoiceType === "Thu" ? t("finance.incomeWord") : t("finance.expenseWord") }),
+        description: t("finance.bulkCollectProcessed", { count: ok ?? 0, failed: failed > 0 ? `, ${failed} ${t("finance.receipts")}` : "" }),
         variant: failed > 0 ? "destructive" : "default",
       });
       const printItems = data._print?.items ?? [];
@@ -196,8 +198,8 @@ export function BulkCollectDialog({
     },
     onError: (err: any) => {
       toast({
-        title: "Lỗi gộp phiếu",
-        description: err?.message ?? "Vui lòng thử lại",
+        title: t("finance.bulkCollectError"),
+        description: err?.message ?? t("finance.tryAgain"),
         variant: "destructive",
       });
     },
@@ -215,7 +217,7 @@ export function BulkCollectDialog({
         <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle className="text-lg font-semibold flex items-center gap-2">
             <Merge className="h-5 w-5 text-purple-600" />
-            Gộp phiếu {invoiceType === "Thu" ? "thu" : "chi"}
+            {t("finance.bulkCollectTitle", { type: invoiceType === "Thu" ? t("finance.incomeWord") : t("finance.expenseWord") })}
           </DialogTitle>
 
           <div className="grid grid-cols-4 gap-3 mt-3">
@@ -223,19 +225,19 @@ export function BulkCollectDialog({
               <div className="text-2xl font-bold text-foreground">
                 {initialInvoices.length + allSchedules.length}
               </div>
-              <div className="text-xs text-muted-foreground mt-0.5">Tổng phiếu</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{t("finance.totalReceipts")}</div>
             </div>
             <div className="bg-green-50 rounded-lg p-3 text-center">
               <div className="text-2xl font-bold text-green-600">{alreadyPaidCount}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">Đã thanh toán</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{t("finance.paid")}</div>
             </div>
             <div className="bg-amber-50 rounded-lg p-3 text-center">
               <div className="text-2xl font-bold text-amber-600">{notPaidCount}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">Chưa thanh toán</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{t("finance.unpaidStatus")}</div>
             </div>
             <div className="bg-purple-50 rounded-lg p-3 text-center">
               <div className="text-2xl font-bold text-purple-700">{uncheckedToPay}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">Sẽ thu gộp</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{t("finance.willCollect")}</div>
             </div>
           </div>
         </DialogHeader>
@@ -247,7 +249,7 @@ export function BulkCollectDialog({
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
-                  placeholder="Tìm kiếm phiếu..."
+                  placeholder={t("finance.searchInvoices")}
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   className="pl-8 h-8 text-sm"
@@ -260,10 +262,10 @@ export function BulkCollectDialog({
                 <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
                   <tr className="border-b">
                     <th className="p-2 w-8"></th>
-                    <th className="p-2 text-left font-semibold text-muted-foreground">Mã phiếu</th>
-                    <th className="p-2 text-left font-semibold text-muted-foreground">Mô tả</th>
-                    <th className="p-2 text-right font-semibold text-muted-foreground">Số tiền</th>
-                    <th className="p-2 text-center font-semibold text-muted-foreground">Trạng thái</th>
+                    <th className="p-2 text-left font-semibold text-muted-foreground">{t("finance.receiptCode")}</th>
+                    <th className="p-2 text-left font-semibold text-muted-foreground">{t("finance.description")}</th>
+                    <th className="p-2 text-right font-semibold text-muted-foreground">{t("finance.amount")}</th>
+                    <th className="p-2 text-center font-semibold text-muted-foreground">{t("finance.status")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -318,7 +320,7 @@ export function BulkCollectDialog({
                         </td>
                         <td className="p-2 whitespace-nowrap">
                           <span className="font-mono font-medium text-purple-700">{s.code ?? "—"}</span>
-                          <span className="ml-1.5 text-[10px] text-blue-600 bg-blue-50 border border-blue-100 px-1 py-0.5 rounded">đợt</span>
+                          <span className="ml-1.5 text-[10px] text-blue-600 bg-blue-50 border border-blue-100 px-1 py-0.5 rounded">{t("finance.installmentShort")}</span>
                         </td>
                         <td className="p-2 text-muted-foreground max-w-[140px]">
                           <span className="line-clamp-2">{s.label || "—"}</span>
@@ -337,7 +339,7 @@ export function BulkCollectDialog({
                   {filtered.length === 0 && filteredSchedules.length === 0 && (
                     <tr>
                       <td colSpan={5} className="py-8 text-center text-muted-foreground">
-                        Không tìm thấy phiếu nào
+                        {t("finance.noReceiptsFound")}
                       </td>
                     </tr>
                   )}
@@ -352,13 +354,13 @@ export function BulkCollectDialog({
               {/* Total summary */}
               <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-center">
                 <div className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
-                  Tổng tiền sau khi gộp
+                  {t("finance.bulkTotalAfter")}
                 </div>
                 <div className="text-3xl font-bold text-purple-700">
                   {fmtMoney(totalAmount)}
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">
-                  {uncheckedToPay} phiếu {invoiceType === "Thu" ? "thu" : "chi"} sẽ được gộp
+                  {t("finance.receiptsWillBeCollected", { count: uncheckedToPay, type: invoiceType === "Thu" ? t("finance.incomeWord") : t("finance.expenseWord") })}
                 </div>
               </div>
 
@@ -366,7 +368,7 @@ export function BulkCollectDialog({
               {(checkedInvoices.length > 0 || checkedSchedules.length > 0) && (
                 <div className="rounded-lg border overflow-hidden">
                   <div className="px-3 py-2 bg-muted/50 border-b text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Chi tiết phiếu được chọn
+                    {t("finance.selectedReceiptDetails")}
                   </div>
                   <div className="divide-y max-h-40 overflow-y-auto">
                     {checkedInvoices.map(inv => (
@@ -409,7 +411,7 @@ export function BulkCollectDialog({
                           <span className="text-xs text-muted-foreground truncate">
                             {s.label || ""}
                           </span>
-                          <span className="text-[10px] text-blue-600 bg-blue-50 border border-blue-100 px-1 py-0.5 rounded shrink-0">đợt</span>
+                          <span className="text-[10px] text-blue-600 bg-blue-50 border border-blue-100 px-1 py-0.5 rounded shrink-0">{t("finance.installmentShort")}</span>
                         </div>
                         <span className="text-xs font-semibold shrink-0">
                           {fmtMoney(parseNum(s.amount))}
@@ -423,11 +425,11 @@ export function BulkCollectDialog({
               {/* Payment form */}
               <div className="space-y-3">
                 <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b pb-1">
-                  Thông tin thanh toán
+                  {t("finance.paymentInfo")}
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Ngày {invoiceType === "Thu" ? "thu" : "chi"}</label>
+                  <label className="text-sm font-medium">{t("finance.collectionDate", { type: invoiceType === "Thu" ? t("finance.incomeWord") : t("finance.expenseWord") })}</label>
                   <Input
                     type="date"
                     value={paymentDate}
@@ -437,14 +439,14 @@ export function BulkCollectDialog({
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Hình thức thanh toán</label>
+                  <label className="text-sm font-medium">{t("finance.paymentMethod")}</label>
                   <Select value={paymentMethod} onValueChange={setPaymentMethod}>
                     <SelectTrigger className="h-9">
-                      <SelectValue placeholder="Chọn hình thức..." />
+                    <SelectValue placeholder={t("finance.choosePaymentMethod")} />
                     </SelectTrigger>
                     <SelectContent>
                       {PAYMENT_METHODS.map(m => (
-                        <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                        <SelectItem key={m.value} value={m.value}>{t(m.labelKey)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -452,10 +454,10 @@ export function BulkCollectDialog({
 
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">
-                    Người {invoiceType === "Thu" ? "thu" : "chi"} <span className="text-muted-foreground font-normal">(tuỳ chọn)</span>
+                    {t("finance.collector", { type: invoiceType === "Thu" ? t("finance.incomeWord") : t("finance.expenseWord") })} <span className="text-muted-foreground font-normal">{t("finance.optional")}</span>
                   </label>
                   <Input
-                    placeholder="Nhập tên người thu..."
+                    placeholder={t("finance.collectorPlaceholder")}
                     value={collectorName}
                     onChange={e => setCollectorName(e.target.value)}
                     className="h-9"
@@ -464,10 +466,10 @@ export function BulkCollectDialog({
 
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">
-                    Ghi chú <span className="text-muted-foreground font-normal">(tuỳ chọn)</span>
+                    {t("finance.note")} <span className="text-muted-foreground font-normal">{t("finance.optional")}</span>
                   </label>
                   <Textarea
-                    placeholder="Nhập ghi chú cho các phiếu..."
+                    placeholder={t("finance.receiptNotePlaceholder")}
                     value={note}
                     onChange={e => setNote(e.target.value)}
                     className="h-20 resize-none text-sm"
@@ -481,13 +483,13 @@ export function BulkCollectDialog({
         {/* Footer */}
         <div className="px-6 py-4 border-t shrink-0 flex items-center justify-between gap-4 bg-muted/30">
           <div className="text-sm text-muted-foreground">
-            Đã chọn <span className="font-semibold text-foreground">{uncheckedToPay}</span> phiếu
+            {t("finance.selectedReceipts")} <span className="font-semibold text-foreground">{uncheckedToPay}</span> {t("finance.receipts")}
             {" · "}
             Tổng <span className="font-semibold text-purple-700">{fmtMoney(totalAmount)}</span>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={onClose} disabled={isPending}>
-              Hủy
+              {t("finance.cancel")}
             </Button>
             <Button
               className="bg-purple-600 hover:bg-purple-700 gap-2"
@@ -495,7 +497,7 @@ export function BulkCollectDialog({
               onClick={() => collectMutation.mutate()}
             >
               <Merge className="h-4 w-4" />
-              {isPending ? "Đang xử lý..." : `Gộp & in Phiếu ${invoiceType === "Thu" ? "thu" : "chi"}`}
+              {isPending ? t("finance.processing") : t("finance.bulkCollectButton", { type: invoiceType === "Thu" ? t("finance.incomeWord") : t("finance.expenseWord") })}
             </Button>
           </div>
         </div>

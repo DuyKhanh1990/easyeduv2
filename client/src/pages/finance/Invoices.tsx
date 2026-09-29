@@ -104,6 +104,27 @@ const TABS: { key: TabKey; labelKey: string; statusFilter?: string; color: strin
   { key: "print-template",   labelKey: "finance.tab.printTemplate",                              color: "#0891b2" },
 ];
 
+function invoiceStatusLabel(status: string, t: (key: string) => string): string {
+  const keyByStatus: Record<string, string> = {
+    paid: "finance.paidStatus",
+    confirmed: "finance.tab.confirmed",
+    unpaid: "finance.unpaidStatus",
+    debt: "finance.tab.debt",
+    partial: "finance.partialPayment",
+    cancelled: "finance.statusCancelled",
+  };
+  return t(keyByStatus[status] ?? "finance.unpaidStatus");
+}
+
+function einvoiceStatusLabel(status: string, t: (key: string) => string): string {
+  const keyByStatus: Record<string, string> = {
+    none: "finance.einvoiceNotSigned",
+    draft: "finance.einvoicePending",
+    published: "finance.einvoiceSigned",
+  };
+  return t(keyByStatus[status] ?? "finance.einvoiceNotSigned");
+}
+
 function MultiSelectFilter({
   label, options, selected, onChange, withSearch,
 }: {
@@ -637,7 +658,7 @@ async function downloadInvoiceListExcel(
       parseNum(invoice.grandTotal),
       parseNum(invoice.paidAmount),
       parseNum(invoice.remainingAmount),
-      STATUS_CONFIG[invoice.status]?.label ?? invoice.status,
+      invoiceStatusLabel(invoice.status, t),
       invoice.dueDate ? fmtDate(invoice.dueDate) : "",
       invoice.paymentMethod ? (paymentMethodLabels[invoice.paymentMethod] ?? invoice.paymentMethod) : "",
       invoice.creatorName ?? "",
@@ -713,7 +734,7 @@ function renderInvoiceCell(
     case "settleCode":
       return <td key="settleCode" className="p-3 whitespace-nowrap"><span className="text-xs text-slate-400">{inv.settleCode || "—"}</span></td>;
     case "type":
-      return <td key="type" className="p-3"><span className={`text-[11px] px-2.5 py-1 rounded-full font-bold tracking-wide ${inv.type === "Thu" ? "bg-sky-100 text-sky-700 border border-sky-200" : "bg-orange-100 text-orange-700 border border-orange-200"}`}>{inv.type}</span></td>;
+      return <td key="type" className="p-3"><span className={`text-[11px] px-2.5 py-1 rounded-full font-bold tracking-wide ${inv.type === "Thu" ? "bg-sky-100 text-sky-700 border border-sky-200" : "bg-orange-100 text-orange-700 border border-orange-200"}`}>{inv.type === "Thu" ? t("finance.invoiceTypeIncome") : t("finance.invoiceTypeExpense")}</span></td>;
     case "name":
       return (
         <td key="name" className={`p-3 font-medium whitespace-nowrap sticky left-10 z-10 will-change-transform ${nameBg} min-w-[160px] border-r border-slate-100`}>
@@ -876,7 +897,7 @@ function renderInvoiceCell(
               updateStatusMutation={updateScheduleStatusMutation}
             />
           ) : inv.hasSchedules ? (
-            <Badge className={`text-xs font-medium ${status.className}`}>{status.label}</Badge>
+            <Badge className={`text-xs font-medium ${status.className}`}>{invoiceStatusLabel(inv.status, t)}</Badge>
           ) : (
             <InvoiceStatusDropdown invoiceId={inv.id} currentStatus={inv.status} updateStatusMutation={updateStatusMutation} />
           )}
@@ -895,7 +916,7 @@ function renderInvoiceCell(
             className={`inline-flex items-center text-xs px-2 py-0.5 rounded-md font-medium ${st.className}`}
             title={inv.einvoiceMessage ?? undefined}
           >
-            {st.label}
+            {einvoiceStatusLabel(key, t)}
           </span>
         </td>
       );
@@ -1652,7 +1673,7 @@ export default function Invoices() {
     },
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
-      const label = STATUS_CONFIG[vars.status]?.label ?? t("finance.tab.unpaid");
+      const label = invoiceStatusLabel(vars.status, t);
       const totalTargets = vars.invoiceIds.length + vars.scheduleIds.length;
       toast({
         title: t("finance.updateSuccess"),

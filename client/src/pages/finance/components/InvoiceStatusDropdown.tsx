@@ -1,16 +1,9 @@
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/hooks/use-language";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChevronDown } from "lucide-react";
 import { STATUS_CONFIG } from "@/types/invoice-types";
-
-// The invoice status menu always contains the three user-selectable invoice
-// states, regardless of the current list tab.
-const INVOICE_STATUS_OPTIONS = (["unpaid", "paid", "confirmed"] as const).map(value => ({
-  value,
-  label: STATUS_CONFIG[value].label,
-  className: STATUS_CONFIG[value].className,
-}));
 
 interface UpdateStatusMutation {
   mutate: (
@@ -31,7 +24,13 @@ export function InvoiceStatusDropdown({
 }) {
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
-  const current = INVOICE_STATUS_OPTIONS.find(o => o.value === currentStatus) ?? INVOICE_STATUS_OPTIONS[0];
+  const { t } = useLanguage();
+  const statusOptions = (["unpaid", "paid", "confirmed"] as const).map(value => ({
+    value,
+    label: value === "paid" ? t("finance.paidStatus") : value === "confirmed" ? t("finance.tab.confirmed") : t("finance.unpaidStatus"),
+    className: STATUS_CONFIG[value].className,
+  }));
+  const current = statusOptions.find(o => o.value === currentStatus) ?? statusOptions[0];
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -46,7 +45,7 @@ export function InvoiceStatusDropdown({
       </PopoverTrigger>
       <PopoverContent className="w-48 p-1" align="start">
         <div className="space-y-0.5">
-          {INVOICE_STATUS_OPTIONS.map(opt => (
+          {statusOptions.map(opt => (
             <button
               key={opt.value}
               onClick={() =>
@@ -54,7 +53,7 @@ export function InvoiceStatusDropdown({
                   { invoiceId, status: opt.value },
                   {
                     onSuccess: () => setOpen(false),
-                    onError: () => toast({ title: "Lỗi cập nhật trạng thái", variant: "destructive" }),
+                    onError: () => toast({ title: t("finance.updateError"), variant: "destructive" }),
                   }
                 )
               }

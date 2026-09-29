@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Pencil, Trash2, Plus, FileText, Star } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/hooks/use-language";
 import { apiRequest } from "@/lib/queryClient";
 import type { InvoicePrintTemplateRow } from "@shared/schema";
 import { fmtDate as formatInvoiceDate } from "@/types/invoice-types";
@@ -25,17 +26,17 @@ import {
 
 type TemplateWithCreator = InvoicePrintTemplateRow & { creatorName?: string | null };
 
-const PAGE_SIZE_LABELS: Record<string, string> = {
-  A4: "A4 (210 × 297mm)",
-  A5: "A5 (148 × 210mm)",
-  K80: "K80 – Hoá đơn nhiệt (80mm)",
+const PAGE_SIZE_KEYS: Record<string, string> = {
+  A4: "finance.paperA4",
+  A5: "finance.paperA5",
+  K80: "finance.paperK80",
 };
 
-const INVOICE_TYPE_LABELS: Record<string, string> = {
-  Thu: "Phiếu thu",
-  Chi: "Phiếu chi",
-  ThuGop: "Phiếu thu gộp",
-  ChiGop: "Phiếu chi gộp",
+const INVOICE_TYPE_KEYS: Record<string, string> = {
+  Thu: "finance.templateReceipt",
+  Chi: "finance.templateExpense",
+  ThuGop: "finance.templateBulkReceipt",
+  ChiGop: "finance.templateBulkExpense",
 };
 
 interface CreateDialogProps {
@@ -44,14 +45,15 @@ interface CreateDialogProps {
   onCreated: (template: InvoicePrintTemplateRow) => void;
 }
 
-const SCOPE_LABELS: Record<string, string> = {
-  general: "Áp dụng chung",
-  single: "Áp dụng hoá đơn 1 đợt",
-  multi: "Áp dụng hoá đơn nhiều đợt",
+const SCOPE_KEYS: Record<string, string> = {
+  general: "finance.templateScopeGeneral",
+  single: "finance.templateScopeSingle",
+  multi: "finance.templateScopeMulti",
 };
 
 function CreateTemplateDialog({ open, onOpenChange, onCreated }: CreateDialogProps) {
   const { toast } = useToast();
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [pageSize, setPageSize] = useState("A4");
@@ -66,7 +68,7 @@ function CreateTemplateDialog({ open, onOpenChange, onCreated }: CreateDialogPro
     },
     onSuccess: (template) => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoice-print-templates"] });
-      toast({ title: "Đã tạo mẫu hoá đơn" });
+      toast({ title: t("finance.templateCreated") });
       setName("");
       setPageSize("A4");
       setInvoiceType("Thu");
@@ -76,7 +78,7 @@ function CreateTemplateDialog({ open, onOpenChange, onCreated }: CreateDialogPro
       onCreated(template);
     },
     onError: (err: any) => {
-      toast({ title: "Lỗi", description: err.message, variant: "destructive" });
+      toast({ title: t("finance.error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -106,11 +108,11 @@ function CreateTemplateDialog({ open, onOpenChange, onCreated }: CreateDialogPro
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Tạo mẫu hoá đơn mới</DialogTitle>
+          <DialogTitle>{t("finance.templateCreateTitle")}</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-4 pt-2">
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium">Bắt đầu từ</label>
+            <label className="text-sm font-medium">{t("finance.templateStartFrom")}</label>
             <Select value={presetKey} onValueChange={handlePresetChange}>
               <SelectTrigger data-testid="select-template-preset">
                 <SelectValue />
@@ -125,72 +127,72 @@ function CreateTemplateDialog({ open, onOpenChange, onCreated }: CreateDialogPro
             </Select>
             {presetKey !== "blank" && (
               <p className="text-[11px] text-muted-foreground">
-                Mẫu có sẵn nội dung — bạn có thể chỉnh sửa lại trong trình thiết kế.
+                {t("finance.templatePresetHint")}
               </p>
             )}
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium">Tên hoá đơn</label>
+            <label className="text-sm font-medium">{t("finance.templateName")}</label>
             <Input
-              placeholder="Nhập tên mẫu hoá đơn..."
+              placeholder={t("finance.templateNamePlaceholder")}
               value={name}
               onChange={e => setName(e.target.value)}
               data-testid="input-template-name"
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium">Loại hoá đơn</label>
+            <label className="text-sm font-medium">{t("finance.templateType")}</label>
             <Select value={invoiceType} onValueChange={setInvoiceType}>
               <SelectTrigger data-testid="select-template-invoice-type">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="Thu">Phiếu thu</SelectItem>
-                <SelectItem value="Chi">Phiếu chi</SelectItem>
-                <SelectItem value="ThuGop">Phiếu thu gộp</SelectItem>
-                <SelectItem value="ChiGop">Phiếu chi gộp</SelectItem>
+                <SelectItem value="Thu">{t("finance.templateReceipt")}</SelectItem>
+                <SelectItem value="Chi">{t("finance.templateExpense")}</SelectItem>
+                <SelectItem value="ThuGop">{t("finance.templateBulkReceipt")}</SelectItem>
+                <SelectItem value="ChiGop">{t("finance.templateBulkExpense")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium">Phạm vi áp dụng</label>
+            <label className="text-sm font-medium">{t("finance.templateScope")}</label>
             <Select value={scope} onValueChange={setScope}>
               <SelectTrigger data-testid="select-template-scope">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="general">Áp dụng chung</SelectItem>
-                <SelectItem value="single">Áp dụng hoá đơn 1 đợt</SelectItem>
-                <SelectItem value="multi">Áp dụng hoá đơn nhiều đợt</SelectItem>
+                <SelectItem value="general">{t("finance.templateScopeGeneral")}</SelectItem>
+                <SelectItem value="single">{t("finance.templateScopeSingle")}</SelectItem>
+                <SelectItem value="multi">{t("finance.templateScopeMulti")}</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-[11px] text-muted-foreground">
-              {scope === "general" && "Áp dụng cho tất cả phiếu của loại hoá đơn đã chọn."}
-              {scope === "single" && "Hệ thống tự nhận diện các hoá đơn có 1 đợt để áp dụng."}
-              {scope === "multi" && "Hệ thống tự nhận diện các hoá đơn có từ 2 đợt trở lên để áp dụng."}
+              {scope === "general" && t("finance.templateScopeGeneralDesc")}
+              {scope === "single" && t("finance.templateScopeSingleDesc")}
+              {scope === "multi" && t("finance.templateScopeMultiDesc")}
             </p>
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium">Khổ giấy</label>
+            <label className="text-sm font-medium">{t("finance.templatePaperSize")}</label>
             <Select value={pageSize} onValueChange={setPageSize}>
               <SelectTrigger data-testid="select-template-page-size">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {Object.entries(PAGE_SIZE_LABELS).map(([key, label]) => (
-                  <SelectItem key={key} value={key}>{label}</SelectItem>
+                {Object.entries(PAGE_SIZE_KEYS).map(([key, labelKey]) => (
+                  <SelectItem key={key} value={key}>{t(labelKey)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div className="flex justify-end gap-2 pt-1">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>Huỷ</Button>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>{t("finance.cancel")}</Button>
             <Button
               disabled={!name.trim() || createMutation.isPending}
               onClick={handleConfirm}
               data-testid="button-create-template-confirm"
             >
-              {createMutation.isPending ? "Đang tạo..." : "Tạo mẫu"}
+              {createMutation.isPending ? t("finance.templateCreating") : t("finance.templateCreate")}
             </Button>
           </div>
         </div>
@@ -206,6 +208,7 @@ interface Props {
 
 export function InvoiceTemplateList({ open, onOpenChange }: Props) {
   const { toast } = useToast();
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<InvoicePrintTemplateRow | null>(null);
@@ -219,11 +222,11 @@ export function InvoiceTemplateList({ open, onOpenChange }: Props) {
     mutationFn: (id: string) => apiRequest("DELETE", `/api/finance/invoice-print-templates/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoice-print-templates"] });
-      toast({ title: "Đã xoá mẫu hoá đơn" });
+      toast({ title: t("finance.templateDeleted") });
       setDeleteTarget(null);
     },
     onError: (err: any) => {
-      toast({ title: "Lỗi", description: err.message, variant: "destructive" });
+      toast({ title: t("finance.error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -244,7 +247,7 @@ export function InvoiceTemplateList({ open, onOpenChange }: Props) {
             <div className="flex items-center justify-between pr-6">
               <DialogTitle className="flex items-center gap-2">
                 <FileText className="h-5 w-5 text-primary" />
-                Mẫu in hoá đơn
+                {t("finance.printTemplates")}
               </DialogTitle>
               <Button
                 size="sm"
@@ -252,85 +255,85 @@ export function InvoiceTemplateList({ open, onOpenChange }: Props) {
                 onClick={() => setCreateOpen(true)}
                 data-testid="button-add-template"
               >
-                <Plus className="h-4 w-4" /> Thêm mẫu
+                <Plus className="h-4 w-4" /> {t("finance.templateAdd")}
               </Button>
             </div>
           </DialogHeader>
 
           <div className="mt-2 overflow-auto">
             {isLoading ? (
-              <div className="py-12 text-center text-sm text-muted-foreground">Đang tải...</div>
+              <div className="py-12 text-center text-sm text-muted-foreground">{t("finance.loadingData")}</div>
             ) : templates.length === 0 ? (
               <div className="py-12 text-center text-sm text-muted-foreground">
-                Chưa có mẫu hoá đơn nào. Nhấn <b>Thêm mẫu</b> để tạo mới.
+                {t("finance.templateNoData")}
               </div>
             ) : (
               <div className="border rounded-lg overflow-hidden">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-muted/40 border-b">
-                      <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Tên hoá đơn</th>
-                      <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Loại hoá đơn</th>
-                      <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Phạm vi áp dụng</th>
-                      <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Khổ giấy</th>
-                      <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Người tạo</th>
-                      <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Ngày tạo</th>
-                      <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Thao tác</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">{t("finance.templateNameColumn")}</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">{t("finance.templateTypeColumn")}</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">{t("finance.templateScopeColumn")}</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">{t("finance.templatePaperColumn")}</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">{t("finance.templateCreatorColumn")}</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">{t("finance.templateCreatedColumn")}</th>
+                      <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">{t("finance.templateActionsColumn")}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {templates.map((t, idx) => (
+                    {templates.map((template, idx) => (
                       <tr
-                        key={t.id}
+                        key={template.id}
                         className={`border-b last:border-b-0 hover:bg-muted/20 transition-colors ${idx % 2 === 0 ? "" : "bg-muted/10"}`}
-                        data-testid={`row-template-${t.id}`}
+                        data-testid={`row-template-${template.id}`}
                       >
-                        <td className="px-4 py-3 font-medium" data-testid={`text-template-name-${t.id}`}>
+                        <td className="px-4 py-3 font-medium" data-testid={`text-template-name-${template.id}`}>
                           <div className="flex items-center gap-1.5">
-                            {t.name}
-                            {t.isDefault && (
-                              <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" title="Mẫu mặc định" />
+                            {template.name}
+                            {template.isDefault && (
+                              <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" title={t("finance.templateDefault")} />
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3" data-testid={`text-template-type-${t.id}`}>
+                        <td className="px-4 py-3" data-testid={`text-template-type-${template.id}`}>
                           <Badge
                             variant="outline"
-                            className={t.invoiceType === "Thu"
+                            className={template.invoiceType === "Thu"
                               ? "border-green-500 text-green-700 bg-green-50"
                               : "border-red-400 text-red-700 bg-red-50"
                             }
                           >
-                            {INVOICE_TYPE_LABELS[t.invoiceType] ?? t.invoiceType}
+                            {INVOICE_TYPE_KEYS[template.invoiceType] ? t(INVOICE_TYPE_KEYS[template.invoiceType]) : template.invoiceType}
                           </Badge>
                         </td>
-                        <td className="px-4 py-3 text-muted-foreground text-xs" data-testid={`text-template-scope-${t.id}`}>
-                          {SCOPE_LABELS[(t as any).scope ?? "general"] ?? "Áp dụng chung"}
+                        <td className="px-4 py-3 text-muted-foreground text-xs" data-testid={`text-template-scope-${template.id}`}>
+                          {SCOPE_KEYS[(template as any).scope ?? "general"] ? t(SCOPE_KEYS[(template as any).scope ?? "general"]) : t("finance.templateScopeGeneral")}
                         </td>
-                        <td className="px-4 py-3 text-muted-foreground" data-testid={`text-template-pagesize-${t.id}`}>
-                          {PAGE_SIZE_LABELS[t.pageSize] ?? t.pageSize}
+                        <td className="px-4 py-3 text-muted-foreground" data-testid={`text-template-pagesize-${template.id}`}>
+                          {PAGE_SIZE_KEYS[template.pageSize] ? t(PAGE_SIZE_KEYS[template.pageSize]) : template.pageSize}
                         </td>
-                        <td className="px-4 py-3 text-muted-foreground" data-testid={`text-template-creator-${t.id}`}>
-                          {t.creatorName ?? "—"}
+                        <td className="px-4 py-3 text-muted-foreground" data-testid={`text-template-creator-${template.id}`}>
+                          {template.creatorName ?? "—"}
                         </td>
-                        <td className="px-4 py-3 text-muted-foreground" data-testid={`text-template-created-${t.id}`}>
-                          {formatInvoiceDate(t.createdAt)}
+                        <td className="px-4 py-3 text-muted-foreground" data-testid={`text-template-created-${template.id}`}>
+                          {formatInvoiceDate(template.createdAt)}
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
                             <button
-                              onClick={() => setEditingTemplate(t)}
+                              onClick={() => setEditingTemplate(template)}
                               className="p-1.5 rounded hover:bg-primary/10 text-primary transition-colors"
-                              title="Sửa mẫu"
-                              data-testid={`button-edit-template-${t.id}`}
+                              title={t("finance.templateEdit")}
+                              data-testid={`button-edit-template-${template.id}`}
                             >
                               <Pencil className="h-4 w-4" />
                             </button>
                             <button
-                              onClick={() => setDeleteTarget(t)}
+                              onClick={() => setDeleteTarget(template)}
                               className="p-1.5 rounded hover:bg-red-50 text-red-500 transition-colors"
-                              title="Xoá mẫu"
-                              data-testid={`button-delete-template-${t.id}`}
+                              title={t("finance.templateDelete")}
+                              data-testid={`button-delete-template-${template.id}`}
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
@@ -375,19 +378,19 @@ export function InvoiceTemplateList({ open, onOpenChange }: Props) {
       <AlertDialog open={!!deleteTarget} onOpenChange={v => !v && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Xoá mẫu hoá đơn?</AlertDialogTitle>
+            <AlertDialogTitle>{t("finance.templateDeleteTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              Bạn có chắc muốn xoá mẫu <b>{deleteTarget?.name}</b>? Hành động này không thể hoàn tác.
+              {t("finance.templateDeleteConfirm", { name: deleteTarget?.name ?? "" })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Huỷ</AlertDialogCancel>
+            <AlertDialogCancel>{t("finance.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               data-testid="button-confirm-delete-template"
             >
-              Xoá
+              {t("finance.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

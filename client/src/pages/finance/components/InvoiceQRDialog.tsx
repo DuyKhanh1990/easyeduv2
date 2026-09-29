@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Copy, CheckCircle2, Building2, CreditCard, User, QrCode, Landmark } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/hooks/use-language";
 import { type InvoiceRow, STATUS_CONFIG, isInvoicePaidLike, parseNum, fmtMoney, fmtDate } from "@/types/invoice-types";
 
 interface InvoiceQRDialogProps {
@@ -31,6 +32,7 @@ import { getBankCode, sanitizeForBank } from "./qr-utils";
 
 export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialogProps) {
   const { toast } = useToast();
+  const { t } = useLanguage();
   const [copied, setCopied] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [tab, setTab] = useState<Tab>("standard");
@@ -55,7 +57,7 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
     queryKey: ["/api/bidv/location-qr-status", effectiveLocationId],
     queryFn: async () => {
       const res = await fetch(`/api/bidv/location-qr-status?locationId=${effectiveLocationId}`);
-      if (!res.ok) throw new Error("Không lấy được trạng thái QR BIDV");
+      if (!res.ok) throw new Error(t("finance.bidvConfigNotReady"));
       return res.json();
     },
     enabled: !!effectiveLocationId && open,
@@ -102,7 +104,7 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
     queryKey: ["/api/bidv/virtual-account", invoiceScheduleId ?? invoice?.id],
     queryFn: async () => {
       const res = await fetch(`/api/bidv/virtual-account?${bidvQueryParam}`);
-      if (!res.ok) throw new Error("Không lấy được Virtual Account");
+      if (!res.ok) throw new Error(t("finance.bidvConfigNotReady"));
       return res.json();
     },
     enabled: !!(invoiceScheduleId ?? invoice?.id) && open && tab === "bidv" && isBidvQrEnabled,
@@ -123,10 +125,10 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
   const handleCopy = useCallback((text: string, label: string) => {
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
-      toast({ title: "Đã sao chép", description: `${label}: ${text}` });
+      toast({ title: t("finance.copied"), description: `${label}: ${text}` });
       setTimeout(() => setCopied(false), 2000);
     });
-  }, [toast]);
+  }, [t, toast]);
 
   useEffect(() => {
     if (!open) { setTab("standard"); return; }
@@ -146,7 +148,7 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
         <DialogHeader className="px-6 pt-5 pb-0">
           <DialogTitle className="text-lg font-bold flex items-center gap-2">
             <CreditCard className="h-5 w-5 text-purple-600" />
-            THANH TOÁN HÓA ĐƠN
+            {t("finance.invoicePaymentTitle")}
           </DialogTitle>
           {/* Tab selector */}
           <div className="flex gap-1 mt-3 border-b border-border">
@@ -158,7 +160,7 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
                   : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
-              Chuyển khoản thường
+              {t("finance.qrStandardTransfer")}
             </button>
             {isBidvQrEnabled && (
               <button
@@ -170,7 +172,7 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
                 }`}
               >
                 <Landmark className="h-3.5 w-3.5" />
-                BIDV — Thanh toán tự động
+                {t("finance.qrBidvAutomatic")}
               </button>
             )}
           </div>
@@ -183,23 +185,23 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2 text-sm">
                   <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                  <span className="text-muted-foreground">Học viên:</span>
+                  <span className="text-muted-foreground">{t("finance.student")}:</span>
                   <span className="font-semibold">{invoice.name || "—"}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <CreditCard className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                  <span className="text-muted-foreground">Mã hóa đơn:</span>
+                  <span className="text-muted-foreground">{t("finance.invoiceCode")}:</span>
                   <span className="font-semibold text-primary">{invoice.code}</span>
                 </div>
               </div>
               <div className="h-px bg-border" />
               <div className="space-y-2">
                 <div className="flex items-baseline gap-2">
-                  <span className="text-muted-foreground text-sm">Số tiền:</span>
+                  <span className="text-muted-foreground text-sm">{t("finance.amount")}:</span>
                   <span className="text-xl font-bold text-red-600" data-testid="text-qr-amount">{fmtMoney(grandTotal)}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
-                  <span className="text-muted-foreground">Hạn thanh toán:</span>
+                  <span className="text-muted-foreground">{t("finance.dueDate")}:</span>
                   <span className="font-medium">{fmtDate(invoice.dueDate)}</span>
                 </div>
               </div>
@@ -207,37 +209,37 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2 text-sm">
                   <Building2 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                  <span className="text-muted-foreground">Ngân hàng:</span>
+                  <span className="text-muted-foreground">{t("finance.bank")}:</span>
                   <span className="font-semibold">{bankName}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
-                  <span className="text-muted-foreground pl-6">Số tài khoản:</span>
+                  <span className="text-muted-foreground pl-6">{t("finance.bankAccount")}:</span>
                   <span className="font-semibold font-mono">{bankAccount}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
-                  <span className="text-muted-foreground pl-6">Chủ tài khoản:</span>
+                  <span className="text-muted-foreground pl-6">{t("finance.accountHolder")}:</span>
                   <span className="font-semibold uppercase">{accountHolder}</span>
                 </div>
               </div>
               <div className="h-px bg-border" />
               <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">Nội dung chuyển khoản:</p>
+                <p className="text-sm text-muted-foreground">{t("finance.transferContent")}:</p>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 bg-muted px-3 py-2 rounded-md font-bold font-mono text-sm tracking-wide select-all" data-testid="text-transfer-content">
                     {transferContent}
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => handleCopy(transferContent, "Nội dung")} className="h-9 gap-1.5 shrink-0" data-testid="button-copy-content">
-                    {copied ? <><CheckCircle2 className="h-4 w-4 text-green-600" /> Đã copy</> : <><Copy className="h-4 w-4" /> Copy</>}
+                  <Button variant="outline" size="sm" onClick={() => handleCopy(transferContent, t("finance.content"))} className="h-9 gap-1.5 shrink-0" data-testid="button-copy-content">
+                    {copied ? <><CheckCircle2 className="h-4 w-4 text-green-600" /> {t("finance.copied")}</> : <><Copy className="h-4 w-4" /> {t("finance.copy")}</>}
                   </Button>
                 </div>
               </div>
               <div className="h-px bg-border" />
               <div className="flex items-center gap-2 text-sm">
-                <span className="text-muted-foreground">Trạng thái:</span>
+                <span className="text-muted-foreground">{t("finance.status")}:</span>
                 {status && (
                   <Badge className={`text-xs font-medium ${status.className}`} data-testid="badge-qr-status">
                     {invoice.status === "unpaid" ? "⏳ " : isInvoicePaidLike(invoice.status) ? "✅ " : ""}
-                    {status.label}
+                    {invoiceStatusLabel(invoice.status, t)}
                   </Badge>
                 )}
               </div>
@@ -247,16 +249,16 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
             <div className="flex-[2] flex flex-col items-center justify-center gap-4 px-6 py-8 bg-muted/20">
               <div className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground mb-1">
                 <QrCode className="h-4 w-4" />
-                Quét QR để thanh toán
+                {t("finance.qrScanToPay")}
               </div>
               <div className="border border-border bg-white rounded-xl p-3 shadow-sm" data-testid="qr-code-container">
-                <img key={refreshKey} src={vietQrUrl} alt="QR thanh toán" className="w-56 h-56 object-contain rounded"
+                <img key={refreshKey} src={vietQrUrl} alt={t("finance.paymentQrAlt")} className="w-56 h-56 object-contain rounded"
                   onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
               </div>
-              <p className="text-xs text-center text-muted-foreground">Quét bằng app ngân hàng để thanh toán</p>
+              <p className="text-xs text-center text-muted-foreground">{t("finance.qrBankAppHint")}</p>
               <div className="space-y-1 text-xs text-center">
-                <p className="flex items-center gap-1 text-green-600"><CheckCircle2 className="h-3.5 w-3.5" />Tự động điền số tiền</p>
-                <p className="flex items-center gap-1 text-green-600"><CheckCircle2 className="h-3.5 w-3.5" />Tự động điền nội dung</p>
+                <p className="flex items-center gap-1 text-green-600"><CheckCircle2 className="h-3.5 w-3.5" />{t("finance.qrAutoFillAmount")}</p>
+                <p className="flex items-center gap-1 text-green-600"><CheckCircle2 className="h-3.5 w-3.5" />{t("finance.qrAutoFillContent")}</p>
               </div>
             </div>
           </div>
