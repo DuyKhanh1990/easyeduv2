@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, ReactNode } from "react";
 import { mySpaceTranslations } from "@/i18n/my-space";
+import { settingsTranslations } from "@/i18n/settings";
 
 export type Language = "vi" | "en";
 
@@ -1130,8 +1131,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   const t = (key: string, params?: Record<string, string | number>): string => {
     const raw = lang === "en"
-      ? enCalendar[key] ?? mySpaceTranslations.en[key] ?? translations["en"][key] ?? translations["vi"][key] ?? key
-      : translations["vi"][key] ?? mySpaceTranslations.vi[key] ?? key;
+      ? enCalendar[key] ?? mySpaceTranslations.en[key] ?? settingsTranslations.en[key as keyof typeof settingsTranslations.en] ?? translations["en"][key] ?? translations["vi"][key] ?? key
+      : translations["vi"][key] ?? mySpaceTranslations.vi[key] ?? settingsTranslations.vi[key as keyof typeof settingsTranslations.vi] ?? key;
     return params
       ? Object.entries(params).reduce((value, [name, replacement]) => value.replaceAll(`{{${name}}}`, String(replacement)), raw)
       : raw;

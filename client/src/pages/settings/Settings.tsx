@@ -52,6 +52,7 @@ import { apiRequest, queryClient, getAuthHeaders } from "@/lib/queryClient";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EducationConfigHistoryTab } from "@/pages/education/EducationConfigHistoryTab";
+import { useLanguage } from "@/hooks/use-language";
 
 const SETTINGS_HREF = "/settings";
 const SETTINGS_HISTORY_RESOURCES = {
@@ -90,6 +91,7 @@ function displayRoleCodePrefix(prefix: string | null | undefined, roleName: stri
 }
 
 export function Settings() {
+  const { t, tNav, lang } = useLanguage();
   const { data: locations, isLoading: locationsLoading } = useLocations();
   const createLocation = useCreateLocation();
   const updateLocation = useUpdateLocation();
@@ -232,22 +234,22 @@ export function Settings() {
       const payload = { ...data, bankAccounts: JSON.stringify(banks) };
       if (editingLoc) {
         await updateLocation.mutateAsync({ id: editingLoc.id, data: payload });
-        toast({ title: "Thành công", description: "Đã cập nhật cơ sở." });
+        toast({ title: t("settings.common.success"), description: t("settings.common.updatedLocation") });
       } else {
         await createLocation.mutateAsync(payload);
-        toast({ title: "Thành công", description: "Đã thêm cơ sở mới." });
+        toast({ title: t("settings.common.success"), description: t("settings.common.createdLocation") });
       }
       setLocDialogOpen(false);
       setEditingLoc(null);
       setBanks([]);
     } catch (error: any) {
-      toast({ title: "Lỗi", description: error.message || "Thao tác thất bại.", variant: "destructive" });
+      toast({ title: t("settings.common.error"), description: error.message || t("settings.common.operationFailed"), variant: "destructive" });
     }
   };
 
   const handleLogoUpload = async (file: File) => {
     if (!file.type.startsWith("image/")) {
-      toast({ title: "Chỉ chấp nhận file ảnh", variant: "destructive" });
+      toast({ title: t("settings.common.imageOnly"), variant: "destructive" });
       return;
     }
     setUploadingLogo(true);
@@ -260,7 +262,7 @@ export function Settings() {
       const url = data.files?.[0]?.url;
       if (url) locForm.setValue("logoUrl", url);
     } catch {
-      toast({ title: "Tải ảnh lên thất bại", variant: "destructive" });
+      toast({ title: t("settings.common.uploadFailed"), variant: "destructive" });
     } finally {
       setUploadingLogo(false);
     }
@@ -268,7 +270,7 @@ export function Settings() {
 
   const handleBankQrUpload = async (file: File) => {
     if (!file.type.startsWith("image/")) {
-      toast({ title: "Chỉ chấp nhận file ảnh", variant: "destructive" });
+      toast({ title: t("settings.common.imageOnly"), variant: "destructive" });
       return;
     }
     setUploadingBankQr(true);
@@ -281,7 +283,7 @@ export function Settings() {
       const url = data.files?.[0]?.url;
       if (url) setBankForm(f => ({ ...f, qrUrl: url }));
     } catch {
-      toast({ title: "Tải ảnh lên thất bại", variant: "destructive" });
+      toast({ title: t("settings.common.uploadFailed"), variant: "destructive" });
     } finally {
       setUploadingBankQr(false);
     }
@@ -309,9 +311,9 @@ export function Settings() {
     if (!locDeleteTarget) return;
     try {
       await deleteLocation.mutateAsync(locDeleteTarget.id);
-      toast({ title: "Thành công", description: `Đã xoá cơ sở "${locDeleteTarget.name}".` });
+      toast({ title: t("settings.common.success"), description: t("settings.common.deletedLocation", { name: locDeleteTarget.name }) });
     } catch (error: any) {
-      toast({ title: "Lỗi", description: error.message, variant: "destructive" });
+      toast({ title: t("settings.common.error"), description: error.message, variant: "destructive" });
     } finally {
       setLocDeleteTarget(null);
     }
@@ -329,16 +331,16 @@ export function Settings() {
         // Based on use-departments.ts (assuming it follows the pattern)
         // If not, I should check the hook.
         await updateDept.mutateAsync({ id: editingDept.id, data });
-        toast({ title: "Thành công", description: "Đã cập nhật phòng ban." });
+        toast({ title: t("settings.common.success"), description: t("settings.common.updatedDepartment") });
       } else {
         await createDept.mutateAsync(data);
-        toast({ title: "Thành công", description: "Đã thêm phòng ban." });
+        toast({ title: t("settings.common.success"), description: t("settings.common.createdDepartment") });
       }
       setDeptDialogOpen(false);
       setEditingDept(null);
       deptForm.reset();
     } catch (error: any) {
-      toast({ title: "Lỗi", description: error.message, variant: "destructive" });
+      toast({ title: t("settings.common.error"), description: error.message, variant: "destructive" });
     }
   };
 
@@ -368,17 +370,17 @@ export function Settings() {
     try {
       if (editingRole) {
         await updateRole.mutateAsync({ id: editingRole.id, data });
-        toast({ title: "Thành công", description: "Đã cập nhật vai trò." });
+        toast({ title: t("settings.common.success"), description: t("settings.common.updatedRole") });
       } else {
         await createRole.mutateAsync(data);
-        toast({ title: "Thành công", description: "Đã thêm vai trò." });
+        toast({ title: t("settings.common.success"), description: t("settings.common.createdRole") });
       }
       setRoleDialogOpen(false);
       setEditingRole(null);
       roleForm.reset({ name: "", description: "", departmentId: selectedDeptId || "" });
       rolePrefixAutoRef.current = true;
     } catch (error: any) {
-      toast({ title: "Lỗi", description: error.message, variant: "destructive" });
+      toast({ title: t("settings.common.error"), description: error.message, variant: "destructive" });
     }
   };
 
@@ -410,33 +412,33 @@ export function Settings() {
 
         <Tabs value={settingsTab} onValueChange={handleSettingsTabChange} className="w-full">
           <div className="flex flex-wrap gap-2 mb-4 sticky top-0 z-10 bg-[#ECEEF4] py-2 -mx-1 px-1">
-            {canViewLoc && <button onClick={() => handleSettingsTabChange("locations")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all", settingsTab === "locations" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}>Cơ sở</button>}
-            {canViewDept && <button onClick={() => handleSettingsTabChange("departments")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all", settingsTab === "departments" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}>Phòng ban & Vai trò</button>}
+            {canViewLoc && <button onClick={() => handleSettingsTabChange("locations")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all", settingsTab === "locations" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}>{t("settings.tabs.locations")}</button>}
+            {canViewDept && <button onClick={() => handleSettingsTabChange("departments")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all", settingsTab === "departments" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}>{t("settings.tabs.departments")}</button>}
             {myPerms?.isSuperAdmin && <button onClick={() => handleSettingsTabChange("system")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all", settingsTab === "system" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}>Quản lý hệ thống</button>}
-            {canViewPermTab && <button onClick={() => handleSettingsTabChange("permissions")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all", settingsTab === "permissions" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}>Quản lý phân quyền</button>}
+            {canViewPermTab && <button onClick={() => handleSettingsTabChange("permissions")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all", settingsTab === "permissions" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}>{t("settings.tabs.permissions")}</button>}
             {myPerms?.isSuperAdmin && <button onClick={() => handleSettingsTabChange("ai-accounts")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-1", settingsTab === "ai-accounts" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}><Bot className="w-3 h-3" />Tài khoản AI</button>}
             {myPerms?.isSuperAdmin && <button onClick={() => handleSettingsTabChange("providers")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all", settingsTab === "providers" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}>Kết nối nhà cung cấp</button>}
-            {canViewHolidays && <button onClick={() => handleSettingsTabChange("holidays")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-1", settingsTab === "holidays" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}><CalendarDays className="w-3 h-3" />Ngày nghỉ lễ</button>}
+            {canViewHolidays && <button onClick={() => handleSettingsTabChange("holidays")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-1", settingsTab === "holidays" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}><CalendarDays className="w-3 h-3" />{t("settings.tabs.holidays")}</button>}
              {myPerms?.isSuperAdmin && <button onClick={() => handleSettingsTabChange("history")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all", settingsTab === "history" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}>Lịch sử</button>}
           </div>
 
           <TabsContent value="locations">
             {/* ... locations content ... */}
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-semibold">Danh sách Cơ sở</h2>
+              <h2 className="text-xl font-semibold">{t("settings.locations.title")}</h2>
               <Dialog open={locDialogOpen} onOpenChange={(val) => { setLocDialogOpen(val); if(!val) setEditingLoc(null); }}>
                 {locPerm.canAdd && (
                   <DialogTrigger asChild>
-                    <Button data-testid="button-add-location">
+                      <Button data-testid="button-add-location">
                       <Plus className="w-4 h-4 mr-2" />
-                      Thêm cơ sở
+                       {t("settings.locations.add")}
                     </Button>
                   </DialogTrigger>
                 )}
                 <DialogContent className="w-[95vw] max-w-[95vw] max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
-                    <DialogTitle>{editingLoc ? "Sửa cơ sở" : "Thêm cơ sở mới"}</DialogTitle>
-                    <DialogDescription>Nhập thông tin chi tiết cho cơ sở.</DialogDescription>
+                    <DialogTitle>{editingLoc ? t("settings.locations.edit") : t("settings.locations.new")}</DialogTitle>
+                    <DialogDescription>{t("settings.locations.dialogDesc")}</DialogDescription>
                   </DialogHeader>
 
                   <Form {...locForm}>
@@ -445,29 +447,29 @@ export function Settings() {
 
                         {/* ===== LEFT: Basic Info ===== */}
                         <div className="space-y-4">
-                          <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide border-b pb-2">Thông tin cơ bản</h3>
+                          <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide border-b pb-2">{t("settings.locations.basicInfo")}</h3>
                           <div className="grid grid-cols-2 gap-4">
                             <FormField control={locForm.control} name="name" render={({ field }) => (
-                              <FormItem><FormLabel>Tên cơ sở *</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                              <FormItem><FormLabel>{t("settings.locations.name")}</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                             )} />
                             <FormField control={locForm.control} name="code" render={({ field }) => (
-                              <FormItem><FormLabel>Mã cơ sở *</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                              <FormItem><FormLabel>{t("settings.locations.code")}</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                             )} />
                           </div>
                           <div className="grid grid-cols-2 gap-4">
                             <FormField control={locForm.control} name="phone" render={({ field }) => (
-                              <FormItem><FormLabel>Số điện thoại</FormLabel><FormControl><Input {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>
+                              <FormItem><FormLabel>{t("settings.locations.phone")}</FormLabel><FormControl><Input {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>
                             )} />
                             <FormField control={locForm.control} name="email" render={({ field }) => (
                               <FormItem><FormLabel>Email</FormLabel><FormControl><Input {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>
                             )} />
                           </div>
                           <FormField control={locForm.control} name="address" render={({ field }) => (
-                            <FormItem><FormLabel>Địa chỉ</FormLabel><FormControl><Input {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>
+                            <FormItem><FormLabel>{t("settings.locations.address")}</FormLabel><FormControl><Input {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>
                           )} />
                           {locForm.watch("isMain") && (
                             <div className="space-y-2">
-                              <label className="text-sm font-medium flex items-center gap-1"><ImageIcon className="w-4 h-4" /> Logo trung tâm</label>
+                              <label className="text-sm font-medium flex items-center gap-1"><ImageIcon className="w-4 h-4" /> {t("settings.locations.logo")}</label>
                               <div className="flex items-center gap-4">
                                 <div
                                   onClick={() => !uploadingLogo && logoInputRef.current?.click()}
@@ -485,12 +487,12 @@ export function Settings() {
                                   ) : (
                                     <div className="flex flex-col items-center gap-1 text-muted-foreground">
                                       <Camera className="w-5 h-5" />
-                                      <span className="text-[10px]">Tải ảnh</span>
+                                      <span className="text-[10px]">{t("settings.locations.uploadImage")}</span>
                                     </div>
                                   )}
                                 </div>
                                 {locForm.watch("logoUrl") && (
-                                  <Button type="button" variant="ghost" size="sm" className="text-destructive text-xs h-7" onClick={() => locForm.setValue("logoUrl", "")}>Xoá logo</Button>
+                                  <Button type="button" variant="ghost" size="sm" className="text-destructive text-xs h-7" onClick={() => locForm.setValue("logoUrl", "")}>{t("settings.locations.removeLogo")}</Button>
                                 )}
                               </div>
                               <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f); e.target.value = ""; }} />
@@ -499,7 +501,7 @@ export function Settings() {
                           <FormField control={locForm.control} name="isMain" render={({ field }) => (
                             <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
                               <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} disabled={hasMainLocation && !field.value && !editingLoc?.isMain} /></FormControl>
-                              <div className="space-y-1 leading-none"><FormLabel>Cơ sở chính</FormLabel><p className="text-sm text-muted-foreground">Chỉ được phép có một cơ sở chính duy nhất.</p></div>
+                              <div className="space-y-1 leading-none"><FormLabel>{t("settings.locations.main")}</FormLabel><p className="text-sm text-muted-foreground">{t("settings.locations.mainHint")}</p></div>
                             </FormItem>
                           )} />
                         </div>
@@ -507,7 +509,7 @@ export function Settings() {
                         {/* ===== RIGHT: Bank Info ===== */}
                         <div className="space-y-3">
                           <div className="flex items-center justify-between border-b pb-2">
-                            <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Thông tin ngân hàng</h3>
+                            <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">{t("settings.locations.bankInfo")}</h3>
                             <Button
                               type="button"
                               size="sm"
@@ -521,7 +523,7 @@ export function Settings() {
                               }}
                             >
                               <Plus className="w-3.5 h-3.5" />
-                              Thêm mới ngân hàng
+                              {t("settings.locations.addBank")}
                             </Button>
                           </div>
 
@@ -529,8 +531,8 @@ export function Settings() {
                           {banks.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-10 text-muted-foreground text-sm border-2 border-dashed rounded-lg gap-2">
                               <Building className="w-8 h-8 opacity-30" />
-                              <p>Chưa có thông tin ngân hàng</p>
-                              <p className="text-xs opacity-70">Nhấn "Thêm mới ngân hàng" để cấu hình</p>
+                               <p>{t("settings.locations.noBank")}</p>
+                               <p className="text-xs opacity-70">{t("settings.locations.addBankHint")}</p>
                             </div>
                           ) : (
                             <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
@@ -538,15 +540,15 @@ export function Settings() {
                                 <div key={idx} className="bg-muted/30 rounded-lg p-3 border flex items-start justify-between gap-2 group" data-testid={`card-bank-${idx}`}>
                                   <div className="space-y-0.5 text-sm flex-1 min-w-0">
                                     <div className="flex gap-2">
-                                      <span className="text-muted-foreground w-[90px] shrink-0">Ngân hàng:</span>
+                                      <span className="text-muted-foreground w-[90px] shrink-0">{t("settings.locations.bank")}:</span>
                                       <span className="font-semibold truncate">{bank.bankName || "—"}</span>
                                     </div>
                                     <div className="flex gap-2">
-                                      <span className="text-muted-foreground w-[90px] shrink-0">Số tài khoản:</span>
+                                      <span className="text-muted-foreground w-[90px] shrink-0">{t("settings.locations.account")}:</span>
                                       <span className="font-mono font-medium truncate">{bank.bankAccount || "—"}</span>
                                     </div>
                                     <div className="flex gap-2">
-                                      <span className="text-muted-foreground w-[90px] shrink-0">Chủ tài khoản:</span>
+                                      <span className="text-muted-foreground w-[90px] shrink-0">{t("settings.locations.holder")}:</span>
                                       <span className="font-medium uppercase truncate">{bank.accountHolder || "—"}</span>
                                     </div>
                                   </div>
@@ -586,7 +588,7 @@ export function Settings() {
                       <div className="mt-6 flex justify-end">
                         <Button type="submit" size="sm" className="px-8" disabled={createLocation.isPending || updateLocation.isPending} data-testid="button-submit-location">
                           {(createLocation.isPending || updateLocation.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                          {editingLoc ? "Cập nhật" : "Lưu cơ sở"}
+                          {editingLoc ? t("settings.locations.update") : t("settings.locations.save")}
                         </Button>
                       </div>
                     </form>
@@ -598,18 +600,18 @@ export function Settings() {
                       <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                           <Building className="w-4 h-4 text-primary" />
-                          {editingBankIdx !== null ? "Chỉnh sửa ngân hàng" : "Thêm mới ngân hàng"}
+                          {editingBankIdx !== null ? t("settings.locations.saveChanges") : t("settings.locations.addBank")}
                         </DialogTitle>
-                        <DialogDescription>Nhập thông tin tài khoản ngân hàng.</DialogDescription>
+                         <DialogDescription>{t("settings.locations.bankDialogDesc")}</DialogDescription>
                       </DialogHeader>
 
                       <div className="space-y-4 py-2 max-h-[65vh] overflow-y-auto pr-1">
                         <div>
-                          <label className="block text-sm font-medium mb-1.5">Ngân hàng</label>
+                           <label className="block text-sm font-medium mb-1.5">{t("settings.locations.bank")}</label>
                           <input
                             list="bank-list-options-popup"
                             className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-background"
-                            placeholder="Nhập hoặc chọn ngân hàng..."
+                             placeholder={t("settings.locations.bankPlaceholder")}
                             value={bankForm.bankName}
                             onChange={e => setBankForm(f => ({ ...f, bankName: e.target.value }))}
                             data-testid="popup-input-bank-name"
@@ -626,14 +628,14 @@ export function Settings() {
                             <option value="VietinBank" />
                             <option value="Agribank" />
                           </datalist>
-                          <p className="text-xs text-muted-foreground mt-1">Có thể nhập tự do nếu không có trong danh sách</p>
+                           <p className="text-xs text-muted-foreground mt-1">{t("settings.locations.freeBankHint")}</p>
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium mb-1.5">Số tài khoản</label>
+                           <label className="block text-sm font-medium mb-1.5">{t("settings.locations.account")}</label>
                           <input
                             className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-background"
-                            placeholder="Nhập số tài khoản..."
+                             placeholder={t("settings.locations.accountPlaceholder")}
                             value={bankForm.bankAccount}
                             onChange={e => setBankForm(f => ({ ...f, bankAccount: e.target.value }))}
                             data-testid="popup-input-bank-account"
@@ -641,10 +643,10 @@ export function Settings() {
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium mb-1.5">Chủ tài khoản</label>
+                           <label className="block text-sm font-medium mb-1.5">{t("settings.locations.holder")}</label>
                           <input
                             className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-background"
-                            placeholder="Nhập tên chủ tài khoản..."
+                             placeholder={t("settings.locations.holderPlaceholder")}
                             value={bankForm.accountHolder}
                             onChange={e => setBankForm(f => ({ ...f, accountHolder: e.target.value }))}
                             data-testid="popup-input-account-holder"
@@ -652,7 +654,7 @@ export function Settings() {
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium mb-1.5 flex items-center gap-1"><QrCode className="w-4 h-4" /> Mã QR ngân hàng</label>
+                           <label className="block text-sm font-medium mb-1.5 flex items-center gap-1"><QrCode className="w-4 h-4" /> {t("settings.locations.qr")}</label>
                           <div className="flex items-center gap-3">
                             <div
                               onClick={() => !uploadingBankQr && bankQrInputRef.current?.click()}
@@ -670,15 +672,15 @@ export function Settings() {
                               ) : (
                                 <div className="flex flex-col items-center gap-1 text-muted-foreground">
                                   <QrCode className="w-5 h-5" />
-                                  <span className="text-[10px]">Tải ảnh</span>
+                                   <span className="text-[10px]">{t("settings.locations.uploadImage")}</span>
                                 </div>
                               )}
                             </div>
                             <div className="text-xs text-muted-foreground">
-                              <p>Tải lên ảnh mã QR thanh toán</p>
-                              <p>của tài khoản ngân hàng này</p>
+                               <p>{t("settings.locations.qrDesc1")}</p>
+                               <p>{t("settings.locations.qrDesc2")}</p>
                               {bankForm.qrUrl && (
-                                <button type="button" className="text-destructive mt-1 hover:underline" onClick={() => setBankForm(f => ({ ...f, qrUrl: "" }))}>Xoá ảnh</button>
+                                <button type="button" className="text-destructive mt-1 hover:underline" onClick={() => setBankForm(f => ({ ...f, qrUrl: "" }))}>{t("settings.locations.removeImage")}</button>
                               )}
                             </div>
                           </div>
@@ -688,16 +690,16 @@ export function Settings() {
                         {/* Preview */}
                         {(bankForm.bankName || bankForm.bankAccount || bankForm.accountHolder) && (
                           <div className="bg-muted/40 rounded-lg p-3 border space-y-1 text-sm">
-                            <p className="text-xs text-muted-foreground font-medium uppercase mb-1.5">Xem trước</p>
-                            <div className="flex gap-2"><span className="text-muted-foreground min-w-[110px]">Ngân hàng:</span><span className="font-medium">{bankForm.bankName || "—"}</span></div>
-                            <div className="flex gap-2"><span className="text-muted-foreground min-w-[110px]">Số tài khoản:</span><span className="font-mono font-medium">{bankForm.bankAccount || "—"}</span></div>
-                            <div className="flex gap-2"><span className="text-muted-foreground min-w-[110px]">Chủ tài khoản:</span><span className="font-medium uppercase">{bankForm.accountHolder || "—"}</span></div>
+                            <p className="text-xs text-muted-foreground font-medium uppercase mb-1.5">{t("settings.locations.preview")}</p>
+                            <div className="flex gap-2"><span className="text-muted-foreground min-w-[110px]">{t("settings.locations.bank")}:</span><span className="font-medium">{bankForm.bankName || "—"}</span></div>
+                            <div className="flex gap-2"><span className="text-muted-foreground min-w-[110px]">{t("settings.locations.account")}:</span><span className="font-mono font-medium">{bankForm.bankAccount || "—"}</span></div>
+                            <div className="flex gap-2"><span className="text-muted-foreground min-w-[110px]">{t("settings.locations.holder")}:</span><span className="font-medium uppercase">{bankForm.accountHolder || "—"}</span></div>
                             {bankForm.qrUrl && <div className="pt-1"><img src={bankForm.qrUrl} alt="QR" className="w-16 h-16 object-contain rounded border" /></div>}
                           </div>
                         )}
 
                         <div className="flex justify-end gap-2 pt-2">
-                          <Button variant="outline" size="sm" onClick={() => setBankPopupOpen(false)}>Huỷ</Button>
+                          <Button variant="outline" size="sm" onClick={() => setBankPopupOpen(false)}>{t("settings.locations.cancel")}</Button>
                           <Button
                             size="sm"
                             data-testid="popup-button-save-bank"
@@ -712,7 +714,7 @@ export function Settings() {
                               setEditingBankIdx(null);
                             }}
                           >
-                            {editingBankIdx !== null ? "Lưu thay đổi" : "Thêm ngân hàng"}
+                            {editingBankIdx !== null ? t("settings.locations.saveChanges") : t("settings.locations.addBankAction")}
                           </Button>
                         </div>
                       </div>
@@ -723,7 +725,7 @@ export function Settings() {
             </div>
 
             <div className="space-y-4">
-              {locationsLoading ? <div className="text-center py-8">Đang tải...</div> : locations?.map((loc) => (
+              {locationsLoading ? <div className="text-center py-8">{t("settings.locations.loading")}</div> : locations?.map((loc) => (
                 <Card key={loc.id} className="hover-elevate">
                   <CardContent className="flex items-center justify-between p-6">
                     <div className="flex gap-4 items-start">
@@ -731,7 +733,7 @@ export function Settings() {
                       <div>
                         <div className="flex items-center gap-3">
                           <h3 className="font-bold text-lg">{loc.name}</h3>
-                          {loc.isMain && <Badge>Cơ sở chính</Badge>}
+                          {loc.isMain && <Badge>{t("settings.locations.mainBadge")}</Badge>}
                         </div>
                         <p className="text-sm text-muted-foreground">{loc.address}</p>
                         <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
@@ -755,16 +757,16 @@ export function Settings() {
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>
-                  {locDeleteInUse ? "Không thể xóa cơ sở" : `Xóa cơ sở "${locDeleteTarget?.name}"?`}
+                  {locDeleteInUse ? t("settings.locations.deleteBlockedTitle") : t("settings.locations.deleteTitle", { name: locDeleteTarget?.name ?? "" })}
                 </AlertDialogTitle>
                 <AlertDialogDescription>
                   {locDeleteInUse
-                    ? `Cơ sở "${locDeleteTarget?.name}" đang được gán với dữ liệu trên hệ thống (nhân viên, lớp học, học viên…), không thể xóa được. Hãy gỡ toàn bộ dữ liệu liên quan trước khi xóa cơ sở.`
-                    : `Bạn có chắc chắn muốn xóa cơ sở "${locDeleteTarget?.name}" ra khỏi hệ thống? Khi xóa xong sẽ không hoàn tác lại được.`}
+                    ? t("settings.locations.deleteBlockedDesc", { name: locDeleteTarget?.name ?? "" })
+                    : t("settings.locations.deleteDesc", { name: locDeleteTarget?.name ?? "" })}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>{locDeleteInUse ? "Đóng" : "Huỷ"}</AlertDialogCancel>
+                <AlertDialogCancel>{locDeleteInUse ? t("settings.locations.close") : t("settings.locations.cancel")}</AlertDialogCancel>
                 {(!locDeleteInUse || myPerms?.isSuperAdmin) && (
                   <AlertDialogAction
                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
@@ -772,7 +774,7 @@ export function Settings() {
                     disabled={deleteLocation.isPending}
                   >
                     {deleteLocation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
-                    {locDeleteInUse ? "Vẫn xóa (Admin)" : "Xóa"}
+                    {locDeleteInUse ? t("settings.locations.forceDelete") : t("settings.locations.delete")}
                   </AlertDialogAction>
                 )}
               </AlertDialogFooter>
@@ -785,24 +787,24 @@ export function Settings() {
               <div className="md:col-span-5 space-y-4">
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between py-4">
-                    <CardTitle className="text-lg font-semibold">Danh sách Phòng ban</CardTitle>
+                    <CardTitle className="text-lg font-semibold">{t("settings.departments.title")}</CardTitle>
                     <Dialog open={deptDialogOpen} onOpenChange={(val) => { setDeptDialogOpen(val); if(!val) setEditingDept(null); }}>
                       {deptPerm.canAdd && (
                         <DialogTrigger asChild>
                           <Button variant="outline" size="sm">
                             <Plus className="w-4 h-4 mr-1" />
-                            Thêm
+                            {t("settings.departments.add")}
                           </Button>
                         </DialogTrigger>
                       )}
                       <DialogContent>
-                        <DialogHeader><DialogTitle>{editingDept ? "Sửa phòng ban" : "Thêm phòng ban mới"}</DialogTitle></DialogHeader>
+                        <DialogHeader><DialogTitle>{editingDept ? t("settings.departments.edit") : t("settings.departments.new")}</DialogTitle></DialogHeader>
                         <Form {...deptForm}>
                           <form onSubmit={deptForm.handleSubmit(onDeptSubmit)} className="space-y-4">
                             <FormField control={deptForm.control} name="name" render={({ field }) => (
-                              <FormItem><FormLabel>Tên phòng ban *</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                              <FormItem><FormLabel>{t("settings.departments.name")}</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                             )} />
-                            <Button type="submit" className="w-full">{editingDept ? "Cập nhật" : "Lưu phòng ban"}</Button>
+                            <Button type="submit" className="w-full">{editingDept ? t("settings.locations.update") : t("settings.departments.new")}</Button>
                           </form>
                         </Form>
                       </DialogContent>
@@ -811,7 +813,7 @@ export function Settings() {
                   <CardContent className="p-0">
                     <div className="divide-y">
                       {deptsLoading ? (
-                        <div className="p-4 text-center text-muted-foreground">Đang tải...</div>
+                        <div className="p-4 text-center text-muted-foreground">{t("settings.departments.loading")}</div>
                       ) : (
                         departments?.map((dept) => (
                           <div
@@ -824,7 +826,7 @@ export function Settings() {
                               <span className={`font-medium ${selectedDeptId === dept.id ? 'text-primary' : 'text-foreground'}`}>
                                 {dept.name}
                               </span>
-                              {dept.isSystem && <Badge variant="secondary" className="text-[10px] h-4 px-1">Mặc định</Badge>}
+                              {dept.isSystem && <Badge variant="secondary" className="text-[10px] h-4 px-1">{t("settings.departments.default")}</Badge>}
                             </div>
                             <div className="flex items-center gap-1">
                               {!dept.isSystem ? (
@@ -851,7 +853,7 @@ export function Settings() {
                                       className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        if (confirm("Xoá phòng ban này sẽ xoá tất cả vai trò liên quan?")) {
+                                        if (confirm(t("settings.departments.deleteConfirm"))) {
                                           deleteDept.mutate(dept.id);
                                           if (selectedDeptId === dept.id) setSelectedDeptId(null);
                                         }
@@ -880,43 +882,43 @@ export function Settings() {
                   <Card>
                     <CardHeader className="flex flex-row items-center justify-between py-4">
                       <div>
-                        <CardTitle className="text-lg font-semibold">Vai trò: {selectedDept.name}</CardTitle>
-                        <p className="text-sm text-muted-foreground mt-1">Quản lý các chức danh trong phòng ban này</p>
+                        <CardTitle className="text-lg font-semibold">{t("settings.roles.title", { name: selectedDept.name })}</CardTitle>
+                        <p className="text-sm text-muted-foreground mt-1">{t("settings.roles.description")}</p>
                       </div>
                       <Dialog open={roleDialogOpen} onOpenChange={(val) => { setRoleDialogOpen(val); if(!val) setEditingRole(null); }}>
                         {deptPerm.canAdd && (
                           <DialogTrigger asChild>
                             <Button size="sm">
                               <Plus className="w-4 h-4 mr-1" />
-                              Thêm vai trò
+                              {t("settings.roles.add")}
                             </Button>
                           </DialogTrigger>
                         )}
                         <DialogContent>
-                          <DialogHeader><DialogTitle>{editingRole ? "Sửa vai trò" : `Thêm vai trò mới vào ${selectedDept.name}`}</DialogTitle></DialogHeader>
+                          <DialogHeader><DialogTitle>{editingRole ? t("settings.roles.edit") : t("settings.roles.new", { name: selectedDept.name })}</DialogTitle></DialogHeader>
                           <Form {...roleForm}>
                             <form onSubmit={roleForm.handleSubmit(onRoleSubmit)} className="space-y-4">
                                <FormField control={roleForm.control} name="name" render={({ field }) => (
                                  <FormItem>
-                                   <FormLabel>Tên vai trò *</FormLabel>
+                                    <FormLabel>{t("settings.roles.name")}</FormLabel>
                                    <FormControl><Input {...field} disabled={Boolean(editingRole?.isSystem)} /></FormControl>
                                    <FormMessage />
                                  </FormItem>
                               )} />
                                <FormField control={roleForm.control} name="codePrefix" render={({ field }) => (
                                  <FormItem>
-                                   <FormLabel>Mã mặc định</FormLabel>
+                                    <FormLabel>{t("settings.roles.codePrefix")}</FormLabel>
                                    <FormControl>
                                      <Input
                                        {...field}
-                                       placeholder="VD: HV- hoặc KT-"
+                                        placeholder={t("settings.roles.codePrefixPlaceholder")}
                                        onChange={(event) => {
                                          rolePrefixAutoRef.current = false;
                                          field.onChange(event);
                                        }}
                                      />
                                    </FormControl>
-                                   <p className="text-xs text-muted-foreground">Tiền tố mã cho user tạo mới theo vai trò này.</p>
+                                    <p className="text-xs text-muted-foreground">{t("settings.roles.codePrefixHint")}</p>
                                    <FormMessage />
                                  </FormItem>
                                )} />
@@ -926,12 +928,12 @@ export function Settings() {
                                      <Checkbox checked={Boolean(field.value)} onCheckedChange={field.onChange} />
                                    </FormControl>
                                    <div className="space-y-1">
-                                     <FormLabel className="cursor-pointer">Tạo mã theo cơ sở và vai trò</FormLabel>
-                                     <p className="text-xs text-muted-foreground">Dạng mã: Mã mặc định - Mã cơ sở - số thứ tự.</p>
+                                      <FormLabel className="cursor-pointer">{t("settings.roles.byLocation")}</FormLabel>
+                                      <p className="text-xs text-muted-foreground">{t("settings.roles.byLocationHint")}</p>
                                    </div>
                                  </FormItem>
                                )} />
-                              <Button type="submit" className="w-full">{editingRole ? "Cập nhật" : "Lưu vai trò"}</Button>
+                               <Button type="submit" className="w-full">{editingRole ? t("settings.locations.update") : t("settings.roles.save")}</Button>
                             </form>
                           </Form>
                         </DialogContent>
@@ -941,7 +943,7 @@ export function Settings() {
                       <div className="space-y-2">
                         {selectedDept.roles.length === 0 ? (
                           <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
-                            Chưa có vai trò nào được tạo.
+                            {t("settings.roles.noRoles")}
                           </div>
                         ) : (
                           selectedDept.roles.map(role => (
@@ -949,7 +951,7 @@ export function Settings() {
                               <div className="flex items-center gap-2">
                                 <ShieldCheck className="w-4 h-4 text-muted-foreground" />
                                 <span>{role.name}</span>
-                                {role.isSystem && <Badge variant="secondary" className="text-[10px] h-4 px-1">Mặc định</Badge>}
+                                {role.isSystem && <Badge variant="secondary" className="text-[10px] h-4 px-1">{t("settings.departments.default")}</Badge>}
                               </div>
                               <div className="flex items-center gap-1">
                                  <>
@@ -973,7 +975,7 @@ export function Settings() {
                                         size="icon"
                                         className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
                                         onClick={() => {
-                                          if (confirm("Bạn có chắc muốn xoá vai trò này?")) {
+                                          if (confirm(t("settings.roles.deleteConfirm"))) {
                                             deleteRole.mutate(role.id);
                                           }
                                         }}
@@ -996,7 +998,7 @@ export function Settings() {
                 ) : (
                   <div className="h-full flex flex-col items-center justify-center p-12 text-muted-foreground bg-muted/20 border-2 border-dashed rounded-xl">
                     <Users className="w-12 h-12 mb-4 opacity-20" />
-                    <p>Chọn một phòng ban để xem và quản lý vai trò</p>
+                    <p>{t("settings.roles.selectDepartment")}</p>
                   </div>
                 )}
               </div>
@@ -1045,8 +1047,8 @@ export function Settings() {
                 canEdit={permTabRaw.canEdit}
               />
               <div className="mt-2 font-['Roboto'] text-[11px] leading-4 text-blue-600">
-                <div>Xem: xem dữ liệu mình tạo ra hoặc mình được phụ trách tùy module.</div>
-                <div>Xem all: xem được dữ liệu của người khác tạo ra thường là cùng cơ sở.</div>
+                <div>{t("settings.permissions.view")}: view data created by or assigned to you, depending on the module.</div>
+                <div>{t("settings.permissions.viewAll")}: view data created by others, usually within the same branch.</div>
               </div>
             </div>
           </TabsContent>
@@ -1147,7 +1149,7 @@ function ModulesManager() {
                             onClick={() => toggleExpandItem(item.href)}
                           >
                             <item.icon className="w-4 h-4 text-muted-foreground shrink-0" />
-                            <span className="text-sm text-foreground">{item.name}</span>
+                            <span className="text-sm text-foreground">{tNav(item.name)}</span>
                             <span className="text-xs text-muted-foreground ml-1">({item.subTabs!.length} tab)</span>
                             {itemExpanded
                               ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
@@ -1761,15 +1763,15 @@ function StorageManager() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PERM_COLS = [
-  { key: "canView", label: "Xem" },
-  { key: "canViewAll", label: "Xem all" },
-  { key: "canCreate", label: "Thêm" },
-  { key: "canEdit", label: "Sửa" },
-  { key: "canDelete", label: "Xoá" },
+  { key: "canView", labelKey: "settings.permissions.view" },
+  { key: "canViewAll", labelKey: "settings.permissions.viewAll" },
+  { key: "canCreate", labelKey: "settings.permissions.create" },
+  { key: "canEdit", labelKey: "settings.permissions.edit" },
+  { key: "canDelete", labelKey: "settings.permissions.delete" },
 ] as const;
 
 const VIEW_ONLY_COLS = [
-  { key: "canView" as const, label: "Xem" },
+  { key: "canView" as const, labelKey: "settings.permissions.view" },
 ];
 
 const DASHBOARD_REPORTS = [
@@ -1941,6 +1943,7 @@ type PermissionsManagerProps = {
 
 function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManagerProps) {
   const { toast } = useToast();
+  const { t, tNav, lang } = useLanguage();
   const { data: departments } = useDepartments();
   const { data: myPerms } = useMyPermissions();
   const { isModuleVisible, isItemVisible, isSubTabVisible, isSubTabItemVisible } = useSidebarVisibility();
@@ -2040,7 +2043,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
       });
     },
     onError: () => {
-      toast({ title: "Lỗi", description: "Không thể lưu quyền.", variant: "destructive" });
+      toast({ title: t("settings.common.error"), description: t("settings.permissions.saveError"), variant: "destructive" });
     },
   });
 
@@ -2077,35 +2080,35 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
     const current = getResourcePerm(resource);
     const toggling = !current[permKey];
     if (toggling && !canCreate) {
-      toast({ title: "Không có quyền", description: "Bạn không có quyền cấp thêm quyền.", variant: "destructive" });
+      toast({ title: t("settings.permissions.noAccess"), description: t("settings.permissions.grantDenied"), variant: "destructive" });
       return;
     }
     if (!toggling && !canEdit) {
-      toast({ title: "Không có quyền", description: "Bạn không có quyền thu hồi quyền.", variant: "destructive" });
+      toast({ title: t("settings.permissions.noAccess"), description: t("settings.permissions.revokeDenied"), variant: "destructive" });
       return;
     }
     if (VIEW_ONLY_RESOURCES.has(resource) && permKey !== "canView") {
-      toast({ title: "Chỉ hỗ trợ quyền Xem", description: "Trang này chỉ hỗ trợ quyền Xem.", variant: "destructive" });
+      toast({ title: t("settings.permissions.viewOnlyTitle"), description: t("settings.permissions.viewOnlyDesc"), variant: "destructive" });
       return;
     }
     if (EDIT_ONLY_RESOURCES.has(resource) && permKey !== "canEdit") {
-      toast({ title: "Chỉ hỗ trợ quyền Sửa", description: "Tính năng này chỉ hỗ trợ quyền Sửa.", variant: "destructive" });
+      toast({ title: t("settings.permissions.editOnlyTitle"), description: t("settings.permissions.editOnlyDesc"), variant: "destructive" });
       return;
     }
     if (resource === "/chat" && !CHAT_ALLOWED_PERM_KEYS.has(permKey)) {
-      toast({ title: "Không khả dụng", description: "Chat chỉ hỗ trợ quyền Xem, Thêm (thêm thành viên) và Xoá (xoá thành viên).", variant: "destructive" });
+      toast({ title: t("settings.permissions.unavailable"), description: t("settings.permissions.chatDesc"), variant: "destructive" });
       return;
     }
     if (READ_ONLY_RESOURCES.has(resource) && (permKey === "canCreate" || permKey === "canEdit" || permKey === "canDelete")) {
-      toast({ title: "Trang chỉ đọc", description: "Trang này chỉ hỗ trợ quyền Xem và Xem all.", variant: "destructive" });
+      toast({ title: t("settings.permissions.readOnlyTitle"), description: t("settings.permissions.readOnlyDesc"), variant: "destructive" });
       return;
     }
     if (NO_EDIT_DELETE_RESOURCES.has(resource) && (permKey === "canEdit" || permKey === "canDelete")) {
-      toast({ title: "Không khả dụng", description: "Trang này không hỗ trợ quyền Sửa và Xoá.", variant: "destructive" });
+      toast({ title: t("settings.permissions.unavailable"), description: t("settings.permissions.noEditDeleteDesc"), variant: "destructive" });
       return;
     }
     if (NO_CREATE_RESOURCES.has(resource) && permKey === "canCreate") {
-      toast({ title: "Không khả dụng", description: "Trang này không hỗ trợ quyền Thêm.", variant: "destructive" });
+      toast({ title: t("settings.permissions.unavailable"), description: t("settings.permissions.noCreateDesc"), variant: "destructive" });
       return;
     }
     let updated = { ...current, [permKey]: toggling };
@@ -2113,20 +2116,20 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
     if (toggling) {
       if (permKey === "canDelete") {
         if (!updated.canView && !updated.canViewAll) {
-          toast({ title: "Yêu cầu quyền Xem", description: "Phải tích ít nhất một trong hai quyền Xem hoặc Xem all trước khi bật quyền Xoá.", variant: "destructive" });
+          toast({ title: t("settings.permissions.requireViewTitle"), description: t("settings.permissions.requireDeleteDesc"), variant: "destructive" });
           return;
         }
         updated.canCreate = true;
         updated.canEdit = true;
       } else if (permKey === "canEdit") {
         if (!updated.canView && !updated.canViewAll) {
-          toast({ title: "Yêu cầu quyền Xem", description: "Phải tích ít nhất một trong hai quyền Xem hoặc Xem all trước khi bật quyền Sửa.", variant: "destructive" });
+          toast({ title: t("settings.permissions.requireViewTitle"), description: t("settings.permissions.requireEditDesc"), variant: "destructive" });
           return;
         }
         updated.canCreate = true;
       } else if (permKey === "canCreate") {
         if (!updated.canView && !updated.canViewAll) {
-          toast({ title: "Yêu cầu quyền Xem", description: "Phải tích ít nhất một trong hai quyền Xem hoặc Xem all trước khi bật quyền Thêm.", variant: "destructive" });
+          toast({ title: t("settings.permissions.requireViewTitle"), description: t("settings.permissions.requireCreateDesc"), variant: "destructive" });
           return;
         }
       }
@@ -2340,12 +2343,12 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
       {/* Left sidebar: Departments + Roles */}
       <div className="w-56 shrink-0 border-r bg-muted/20 flex flex-col">
         <div className="px-4 py-3 border-b bg-muted/30">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Phòng ban & Vai trò</p>
-          <p className="text-xs text-muted-foreground mt-0.5">Chọn vai trò để phân quyền</p>
+           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.permissions.departmentRole")}</p>
+           <p className="text-xs text-muted-foreground mt-0.5">{t("settings.permissions.chooseRole")}</p>
         </div>
         <div className="flex-1 overflow-y-auto">
           {(!displayedDepts || displayedDepts.length === 0) && (
-            <p className="text-sm text-muted-foreground italic p-4">Chưa có phòng ban nào. Hãy tạo ở tab Phòng ban & Vai trò.</p>
+            <p className="text-sm text-muted-foreground italic p-4">{t("settings.permissions.noDepartments")}</p>
           )}
           {displayedDepts?.map(dept => (
             <div key={dept.id}>
@@ -2369,7 +2372,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
               {selectedDeptId === dept.id && (
                 <div className="bg-muted/10">
                   {dept.roles.length === 0 && (
-                    <p className="text-xs text-muted-foreground italic pl-10 py-2">Chưa có vai trò nào.</p>
+                    <p className="text-xs text-muted-foreground italic pl-10 py-2">{t("settings.permissions.noRoles")}</p>
                   )}
                   {dept.roles.map((role, idx) => (
                     <button
@@ -2405,7 +2408,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
       <div className="flex-1 min-w-0 overflow-y-auto p-4">
         {!selectedDeptId && (
           <div className="flex items-center justify-center h-40 text-sm text-muted-foreground italic">
-            Chọn một phòng ban và vai trò bên trái để thiết lập quyền.
+            {t("settings.permissions.chooseDepartmentRole")}
           </div>
         )}
         {selectedDeptId && selectedDept && (
@@ -2416,14 +2419,14 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                 <Input
                   value={permissionSearch}
                   onChange={(event) => setPermissionSearch(event.target.value)}
-                  placeholder="Tìm quyền theo tên, key hoặc mô tả..."
-                  aria-label="Tìm kiếm quyền"
+                  placeholder={t("settings.permissions.searchPlaceholder")}
+                  aria-label={t("settings.permissions.searchLabel")}
                   className="pl-9 h-9 bg-background"
                 />
               </div>
               {normalizedPermissionSearch && permissionFilteredModules.length === 0 && permissionFilteredStandaloneItems.length === 0 && (
                 <p className="text-xs text-muted-foreground mt-2">
-                  Không tìm thấy quyền phù hợp với “{permissionSearch}”.
+                  {t("settings.permissions.noResults", { query: permissionSearch })}
                 </p>
               )}
             </div>
@@ -2432,7 +2435,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
           {permsLoading && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
               <Loader2 className="w-4 h-4 animate-spin" />
-              Đang tải quyền...
+              {t("settings.permissions.loading")}
             </div>
           )}
           {!permsLoading && permissionFilteredStandaloneItems.length > 0 && (
@@ -2445,14 +2448,14 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                       <LayoutGrid className="w-5 h-5 text-primary" />
                     </div>
                     <span className="font-semibold text-sm uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                      TRANG CHÍNH
+                      {t("settings.permissions.mainPages")}
                     </span>
-                    <span className="text-xs text-muted-foreground ml-1">({standaloneItems.length} mục)</span>
+                      <span className="text-xs text-muted-foreground ml-1">({t("settings.permissions.itemsCount", { count: standaloneItems.length })})</span>
                   </div>
                   <div className="flex items-center gap-0">
                     {PERM_COLS.map(col => (
                       <div key={col.key} className="w-20 text-center text-xs font-semibold text-muted-foreground">
-                        {col.label}
+                         {t(col.labelKey)}
                       </div>
                     ))}
                   </div>
@@ -2484,7 +2487,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                             >
                               <dashItem.icon className="w-4 h-4 text-muted-foreground shrink-0" />
                               <span className="text-sm text-foreground">{dashItem.name}</span>
-                              <span className="text-xs text-muted-foreground ml-1">(4 tab)</span>
+                              <span className="text-xs text-muted-foreground ml-1">({t("settings.permissions.tabsCount", { count: 4 })})</span>
                               {isDashExpanded
                                 ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
                                 : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
@@ -2521,8 +2524,8 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                           )}
                                         >
                                           <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 shrink-0" />
-                                          <span className="text-sm text-muted-foreground">{sub.name}</span>
-                                          <span className="text-xs text-muted-foreground ml-1">({DASHBOARD_REPORTS.length} báo cáo)</span>
+                                          <span className="text-sm text-muted-foreground">{tNav(sub.name)}</span>
+                                          <span className="text-xs text-muted-foreground ml-1">({t("settings.permissions.reportsCount", { count: DASHBOARD_REPORTS.length })})</span>
                                           {isBaoCaoExpanded
                                             ? <ChevronDown className="w-3 h-3 text-muted-foreground" />
                                             : <ChevronRight className="w-3 h-3 text-muted-foreground" />
@@ -2564,7 +2567,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                               <div className="flex items-center px-5 py-2 hover:bg-muted/20 transition-colors">
                                                 <div className="flex items-center gap-2 pl-24 flex-1">
                                                   <div className="w-1 h-1 rounded-full bg-muted-foreground/30 shrink-0" />
-                                                  <span className="text-sm text-muted-foreground">{report.name}</span>
+                                                  <span className="text-sm text-muted-foreground">{tNav(report.name)}</span>
                                                 </div>
                                                 <div className="flex items-center gap-0 shrink-0">
                                                   {VIEW_ONLY_COLS.map(col => (
@@ -2596,7 +2599,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                   <div className="flex items-center px-5 py-2.5 hover:bg-muted/20 transition-colors">
                                     <div className="flex items-center gap-2 pl-16 flex-1">
                                       <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 shrink-0" />
-                                      <span className="text-sm text-muted-foreground">{sub.name}</span>
+                                      <span className="text-sm text-muted-foreground">{tNav(sub.name)}</span>
                                     </div>
                                     <div className="flex items-center gap-0 shrink-0">
                                       {VIEW_ONLY_COLS.map(col => (
@@ -2688,7 +2691,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                         <mod.icon className="w-5 h-5 text-primary" />
                       </div>
                       <span className={cn("font-semibold text-sm uppercase tracking-wider", mod.color)}>
-                        {mod.module}
+                        {tNav(mod.module)}
                       </span>
                       <span className="text-xs text-muted-foreground ml-1">({mod.items.length} mục)</span>
                       {isExpanded
@@ -2709,13 +2712,13 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                         onClick={(e) => e.stopPropagation()}
                         className="w-4 h-4"
                       />
-                      <span className="text-xs font-semibold text-muted-foreground">All</span>
+                      <span className="text-xs font-semibold text-muted-foreground">{t("settings.permissions.all")}</span>
                     </div>
                     {/* Permission column headers */}
                     <div className="flex items-center gap-0">
                       {PERM_COLS.map(col => (
                         <div key={col.key} className="w-20 text-center text-xs font-semibold text-muted-foreground">
-                          {col.label}
+                          {t(col.labelKey)}
                         </div>
                       ))}
                     </div>
@@ -2749,7 +2752,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                     )}
                                   >
                                     <item.icon className="w-4 h-4 text-muted-foreground shrink-0" />
-                                    <span className="text-sm text-foreground">{item.name}</span>
+                                    <span className="text-sm text-foreground">{tNav(item.name)}</span>
                                     <span className="text-xs text-muted-foreground ml-1">({permittedSubTabs.length} tab)</span>
                                     {itemExpanded
                                       ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
@@ -2761,7 +2764,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                     <item.icon className="w-4 h-4 text-muted-foreground shrink-0" />
                                     <span className="text-sm text-foreground">{item.name}</span>
                                     {isStudentDefaultLocked && (
-                                      <span className="text-xs text-muted-foreground italic">(mặc định)</span>
+                                    <span className="text-xs text-muted-foreground italic">{t("settings.permissions.default")}</span>
                                     )}
                                   </div>
                                 )}
@@ -2831,7 +2834,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                       <div className="flex items-center px-5 py-2.5 hover:bg-muted/20 transition-colors">
                                         <div className="flex items-center gap-2 pl-16 flex-1">
                                           <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 shrink-0" />
-                                          <span className="text-sm text-muted-foreground">{sub.name}</span>
+                                          <span className="text-sm text-muted-foreground">{tNav(sub.name)}</span>
                                         </div>
                                         <div className="flex items-center gap-0 shrink-0">
                                           {PERM_COLS.map(col => {
@@ -2885,17 +2888,17 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                     <div className="p-2 rounded-lg bg-primary/10">
                       <Download className="w-5 h-5 text-primary" />
                     </div>
-                    <span className="font-semibold text-sm uppercase tracking-wider text-muted-foreground">Quyền hệ thống</span>
+                    <span className="font-semibold text-sm uppercase tracking-wider text-muted-foreground">{t("settings.permissions.system")}</span>
                   </div>
                   <div className="flex items-center gap-0">
                     {VIEW_ONLY_COLS.map(col => (
                       <div key={col.key} className="w-20 text-center text-xs font-semibold text-muted-foreground">
-                        {col.label}
+                        {t(col.labelKey)}
                       </div>
                     ))}
                     {PERM_COLS.slice(1).map(col => (
                       <div key={col.key} className="w-20 text-center text-xs font-semibold text-muted-foreground/30">
-                        {col.label}
+                        {t(col.labelKey)}
                       </div>
                     ))}
                   </div>
@@ -2905,7 +2908,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                     <div className="flex items-center px-5 py-3 bg-muted/20 hover:bg-muted/30 transition-colors">
                       <div className="flex items-center gap-2 pl-8 flex-1">
                         <Download className="w-4 h-4 text-muted-foreground shrink-0" />
-                        <span className="text-sm text-foreground">Tải file đính kèm</span>
+                        <span className="text-sm text-foreground">{t("settings.permissions.downloadFiles")}</span>
                       </div>
                       <div className="flex items-center gap-0 shrink-0">
                         <div className="w-20 flex justify-center">
@@ -2925,7 +2928,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                     </div>
                     <div className="px-5 pb-2.5 pt-0 pl-[4.5rem]">
                       <p className="text-[11px] text-muted-foreground/65 italic leading-relaxed">
-                        Xem: vai trò được phép tải xuống các file đính kèm (ảnh, tài liệu, video...) khi xem nội dung trên hệ thống.
+                         {t("settings.permissions.downloadFilesDesc")}
                       </p>
                     </div>
                   </div>
@@ -2936,7 +2939,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
         </div>
             )}
             {!selectedRoleId && roles.length > 0 && (
-              <div className="text-sm text-muted-foreground italic py-4">Chọn một vai trò bên trái để xem và thiết lập quyền.</div>
+              <div className="text-sm text-muted-foreground italic py-4">{t("settings.permissions.chooseRoleEmpty")}</div>
             )}
           </>
         )}
