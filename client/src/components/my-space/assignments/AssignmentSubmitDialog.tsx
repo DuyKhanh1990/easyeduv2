@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
 import { RichEditor } from "@/components/ui/rich-editor";
 import { RichContentRenderer } from "@/components/ui/rich-content-renderer";
+import { useLanguage } from "@/hooks/use-language";
 
 const WEEKDAY_LABELS: Record<number, string> = {
   0: "Chủ Nhật", 1: "Thứ Hai", 2: "Thứ Ba", 3: "Thứ Tư",
@@ -86,6 +87,7 @@ interface Props {
 
 export function AssignmentSubmitDialog({ row, open, viewOnly = false, isStaff = false, onClose, onGraded }: Props) {
   const { toast } = useToast();
+  const { t } = useLanguage();
   const [viewerFile, setViewerFile] = useState<{ url: string; name: string } | null>(null);
   const canDownload = useCanDownloadFiles();
   const [submissionText, setSubmissionText] = useState(row.submissionContent ?? "");
@@ -131,11 +133,11 @@ export function AssignmentSubmitDialog({ row, open, viewOnly = false, isStaff = 
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/my-space/assignments/student"] });
-      toast({ title: "Nộp bài thành công", description: "Bài tập của bạn đã được gửi đi." });
+      toast({ title: t("mySpace.assignments.submitSuccess"), description: t("mySpace.assignments.submitSuccessDescription") });
       onClose();
     },
     onError: (err: any) => {
-      toast({ title: "Lỗi", description: err.message || "Không thể nộp bài.", variant: "destructive" });
+      toast({ title: t("mySpace.assignments.error"), description: err.message || t("mySpace.assignments.submitError"), variant: "destructive" });
     },
   });
 
@@ -146,12 +148,12 @@ export function AssignmentSubmitDialog({ row, open, viewOnly = false, isStaff = 
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/my-space/assignments/staff"] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-space/assignments/student"] });
-      toast({ title: "Chấm bài thành công", description: "Điểm và nhận xét đã được lưu." });
+      toast({ title: t("mySpace.assignments.gradeSuccess"), description: t("mySpace.assignments.gradeSuccessDescription") });
       onGraded?.();
       onClose();
     },
     onError: (err: any) => {
-      toast({ title: "Lỗi", description: err.message || "Không thể chấm bài.", variant: "destructive" });
+      toast({ title: t("mySpace.assignments.error"), description: err.message || t("mySpace.assignments.gradeError"), variant: "destructive" });
     },
   });
 
@@ -171,7 +173,7 @@ export function AssignmentSubmitDialog({ row, open, viewOnly = false, isStaff = 
       setSubmissionText(newText);
       setTimeout(() => autoResizeTextarea(contentTextareaRef.current), 0);
     } catch {
-      toast({ title: "Lỗi upload ảnh", variant: "destructive" });
+      toast({ title: t("mySpace.assignments.uploadImageError"), variant: "destructive" });
     } finally {
       setIsUploading(false);
     }
@@ -188,7 +190,7 @@ export function AssignmentSubmitDialog({ row, open, viewOnly = false, isStaff = 
       setSubmissionText(current + (current ? "\n" : "") + urls);
       setTimeout(() => autoResizeTextarea(contentTextareaRef.current), 0);
     } catch {
-      toast({ title: "Lỗi upload ảnh", variant: "destructive" });
+      toast({ title: t("mySpace.assignments.uploadImageError"), variant: "destructive" });
     } finally {
       setIsUploading(false);
       e.target.value = "";
@@ -228,7 +230,7 @@ export function AssignmentSubmitDialog({ row, open, viewOnly = false, isStaff = 
 
   const handleGrade = () => {
     if (!row.studentSessionContentId) {
-      toast({ title: "Lỗi", description: "Không tìm thấy bài nộp để chấm.", variant: "destructive" });
+      toast({ title: t("mySpace.assignments.error"), description: t("mySpace.assignments.noSubmissionToGrade"), variant: "destructive" });
       return;
     }
     gradeHomework.mutate({

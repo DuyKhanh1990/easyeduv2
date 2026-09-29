@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, MessageSquare, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { RichEditor } from "@/components/ui/rich-editor";
+import { useLanguage } from "@/hooks/use-language";
 
 export interface ExamCommentDialogProps {
   open: boolean;
@@ -35,6 +36,7 @@ export function ExamCommentDialog({
   onSaved,
 }: ExamCommentDialogProps) {
   const { toast } = useToast();
+  const { t } = useLanguage();
   const [isEditing, setIsEditing] = useState(startInEditMode || !initialComment);
   const [commentVal, setCommentVal] = useState(initialComment || "");
 
@@ -50,11 +52,11 @@ export function ExamCommentDialog({
       apiRequest("PATCH", `/api/exam-submissions/${submissionId}`, { comment }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/my-space/assignments/staff"] });
-      toast({ title: "Đã lưu nhận xét" });
+      toast({ title: t("mySpace.assignments.commentSaved") });
       setIsEditing(false);
       onSaved?.();
     },
-    onError: () => toast({ title: "Lỗi lưu nhận xét", variant: "destructive" }),
+    onError: () => toast({ title: t("mySpace.assignments.commentSaveError"), variant: "destructive" }),
   });
 
   return (
@@ -63,7 +65,7 @@ export function ExamCommentDialog({
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2 text-base">
             <MessageSquare className="w-4 h-4 text-amber-500" />
-            Nhận xét bài kiểm tra
+            {t("mySpace.assignments.examComment")}
             <span className="text-muted-foreground text-sm font-normal">— {studentName}</span>
           </DialogTitle>
           <p className="text-xs text-muted-foreground mt-0.5">{examTitle}</p>
@@ -74,13 +76,13 @@ export function ExamCommentDialog({
             <RichEditor
               value={commentVal}
               onChange={setCommentVal}
-              placeholder="Nhập nhận xét cho học viên..."
+              placeholder={t("mySpace.assignments.enterStudentComment")}
               minHeight="120px"
             />
           ) : (
             <div
               className="prose prose-sm max-w-none rounded-md border border-border bg-muted/20 px-4 py-3 min-h-[80px]"
-              dangerouslySetInnerHTML={{ __html: commentVal || "<p class='text-muted-foreground text-sm'>Chưa có nhận xét</p>" }}
+              dangerouslySetInnerHTML={{ __html: commentVal || `<p class='text-muted-foreground text-sm'>${t("mySpace.assignments.noComment")}</p>` }}
             />
           )}
         </div>
@@ -99,25 +101,25 @@ export function ExamCommentDialog({
                   }
                 }}
               >
-                Hủy
+                {t("mySpace.assignments.cancel")}
               </Button>
               <Button
                 onClick={() => mutation.mutate(commentVal)}
                 disabled={mutation.isPending}
               >
                 {mutation.isPending ? (
-                  <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />Đang lưu...</>
-                ) : "Lưu nhận xét"}
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />{t("mySpace.assignments.saving")}</>
+                ) : t("mySpace.assignments.saveComment")}
               </Button>
             </>
           ) : (
             <>
               <Button variant="outline" onClick={onClose}>
-                Đóng
+                {t("mySpace.assignments.close")}
               </Button>
               <Button variant="secondary" onClick={() => setIsEditing(true)}>
                 <Pencil className="w-3.5 h-3.5 mr-1.5" />
-                Chỉnh sửa
+                {t("mySpace.assignments.edit")}
               </Button>
             </>
           )}

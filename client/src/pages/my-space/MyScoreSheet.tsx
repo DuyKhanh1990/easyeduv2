@@ -3,8 +3,10 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useMySpaceUserType } from "@/hooks/use-my-space-user-type";
 import { StudentScoreSheet } from "./StudentScoreSheet";
 import { StaffScoreSheet } from "./StaffScoreSheet";
+import { useLanguage } from "@/hooks/use-language";
 
 export default function MyScoreSheet() {
+  const { t } = useLanguage();
   const { data, isLoading } = useMySpaceUserType();
 
   return (
@@ -24,7 +26,7 @@ export default function MyScoreSheet() {
         <div className="max-w-5xl mx-auto px-4 py-6">
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-muted-foreground">
             <BarChart3 className="h-10 w-10 opacity-25" />
-            <p className="text-sm">Tài khoản chưa được liên kết với học viên hoặc nhân viên</p>
+            <p className="text-sm">{t("mySpace.scoreSheet.noLinkedAccount")}</p>
           </div>
         </div>
       )}

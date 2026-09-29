@@ -25,6 +25,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { useLanguage } from "@/hooks/use-language";
 
 type MainTab = "don-tu" | "thuong-phat" | "tam-ung";
 type ViewerType = "staff" | "student" | "parent";
@@ -112,17 +113,17 @@ type StaffLeaveForm = {
   reason: string;
 };
 
-const LEAVE_TYPES: Record<string, { label: string; icon: typeof Umbrella; color: string }> = {
-  nghi_phep: { label: "Nghỉ phép", icon: Umbrella, color: "bg-violet-100 text-violet-700 border-violet-200" },
-  nghi_co_luong: { label: "Nghỉ phép năm", icon: CalendarDays, color: "bg-blue-100 text-blue-700 border-blue-200" },
-  tang_ca: { label: "Tăng ca", icon: Timer, color: "bg-amber-100 text-amber-700 border-amber-200" },
-  student_leave: { label: "Xin nghỉ học", icon: Umbrella, color: "bg-sky-100 text-sky-700 border-sky-200" },
+const LEAVE_TYPES: Record<string, { key: string; icon: typeof Umbrella; color: string }> = {
+  nghi_phep: { key: "leave", icon: Umbrella, color: "bg-violet-100 text-violet-700 border-violet-200" },
+  nghi_co_luong: { key: "annualLeave", icon: CalendarDays, color: "bg-blue-100 text-blue-700 border-blue-200" },
+  tang_ca: { key: "overtime", icon: Timer, color: "bg-amber-100 text-amber-700 border-amber-200" },
+  student_leave: { key: "studentLeave", icon: Umbrella, color: "bg-sky-100 text-sky-700 border-sky-200" },
 };
 
-const STATUS: Record<string, { label: string; color: string; dot: string }> = {
-  pending: { label: "Chờ duyệt", color: "bg-yellow-100 text-yellow-700 border-yellow-200", dot: "bg-yellow-400" },
-  approved: { label: "Đã duyệt", color: "bg-emerald-100 text-emerald-700 border-emerald-200", dot: "bg-emerald-500" },
-  rejected: { label: "Từ chối", color: "bg-red-100 text-red-600 border-red-200", dot: "bg-red-500" },
+const STATUS: Record<string, { key: string; color: string; dot: string }> = {
+  pending: { key: "pending", color: "bg-yellow-100 text-yellow-700 border-yellow-200", dot: "bg-yellow-400" },
+  approved: { key: "approved", color: "bg-emerald-100 text-emerald-700 border-emerald-200", dot: "bg-emerald-500" },
+  rejected: { key: "rejected", color: "bg-red-100 text-red-600 border-red-200", dot: "bg-red-500" },
 };
 
 function formatDate(value?: string | null) {
@@ -155,8 +156,9 @@ function calculateOvertimeHours(fromTime: string, toTime: string) {
   return minutes > 0 ? Number((minutes / 60).toFixed(2)) : 0;
 }
 
-function getLeaveType(type: string) {
-  return LEAVE_TYPES[type] ?? { label: type, icon: FileText, color: "bg-slate-100 text-slate-600 border-slate-200" };
+function getLeaveType(type: string, t: (key: string) => string) {
+  const item = LEAVE_TYPES[type];
+  return item ? { ...item, label: t(`mySpace.donTu.${item.key}`) } : { key: type, label: type, icon: FileText, color: "bg-slate-100 text-slate-600 border-slate-200" };
 }
 
 function getRequestType(request: LeaveRequest, viewerType: ViewerType) {
@@ -185,6 +187,8 @@ function EmptyState({ message }: { message: string }) {
 }
 
 export default function MyDonTu() {
+  const { t } = useLanguage();
+  const tr = (key: string) => t(`mySpace.donTu.${key}`);
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [mainTab, setMainTab] = useState<MainTab>("don-tu");
@@ -212,7 +216,7 @@ export default function MyDonTu() {
     queryKey: ["/api/my-space/don-tu"],
     queryFn: async () => {
       const response = await fetch("/api/my-space/don-tu", { credentials: "include" });
-      if (!response.ok) throw new Error("Không thể tải dữ liệu đơn từ");
+      if (!response.ok) throw new Error(tr("loadError"));
       return response.json();
     },
   });
@@ -226,7 +230,7 @@ export default function MyDonTu() {
     queryKey: ["/api/student-leave-requests/self/context"],
     queryFn: async () => {
       const response = await fetch("/api/student-leave-requests/self/context", { credentials: "include" });
-      if (!response.ok) throw new Error("Không thể tải thông tin học viên");
+      if (!response.ok) throw new Error(tr("studentLoadError"));
       return response.json();
     },
     enabled: studentLeaveDialogOpen && isStudentArea,
@@ -253,7 +257,7 @@ export default function MyDonTu() {
         endDate: leaveEndDate,
       });
       const response = await fetch(`/api/student-leave-requests/self/schedules?${params.toString()}`, { credentials: "include" });
-      if (!response.ok) throw new Error("Không thể tải lịch học");
+      if (!response.ok) throw new Error(tr("loadScheduleError"));
       return response.json();
     },
     enabled: studentLeaveDialogOpen && isStudentArea && Boolean(activeLeaveStudentId && leaveStartDate && leaveEndDate && leaveStartDate <= leaveEndDate),
@@ -269,11 +273,11 @@ export default function MyDonTu() {
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/my-space/don-tu"] });
-      toast({ title: "Đã gửi đơn xin nghỉ" });
+      toast({ title: tr("sentStudentLeave") });
       closeStudentLeaveDialog();
     },
     onError: (error: Error) => {
-      toast({ title: "Không thể gửi đơn xin nghỉ", description: error.message, variant: "destructive" });
+      toast({ title: tr("sendStudentLeaveError"), description: error.message, variant: "destructive" });
     },
   });
 
@@ -291,11 +295,11 @@ export default function MyDonTu() {
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/my-space/don-tu"] });
-      toast({ title: "Đã tạo đơn nghỉ phép" });
+      toast({ title: tr("createdLeave") });
       setStaffLeaveDialogOpen(false);
     },
     onError: (error: Error) => {
-      toast({ title: "Không thể tạo đơn nghỉ phép", description: error.message, variant: "destructive" });
+      toast({ title: tr("createLeaveError"), description: error.message, variant: "destructive" });
     },
   });
 
@@ -318,18 +322,18 @@ export default function MyDonTu() {
 
   function submitStaffLeaveRequest() {
     if (!staffLeaveForm.fromDate || !staffLeaveForm.toDate) {
-      toast({ title: "Vui lòng nhập thời gian xin nghỉ", variant: "destructive" });
+      toast({ title: tr("enterLeavePeriod"), variant: "destructive" });
       return;
     }
     if (staffLeaveForm.fromDate > staffLeaveForm.toDate) {
-      toast({ title: "Ngày bắt đầu không được sau ngày kết thúc", variant: "destructive" });
+      toast({ title: tr("invalidDateRange"), variant: "destructive" });
       return;
     }
     if (
       staffLeaveForm.type === "tang_ca"
       && calculateOvertimeHours(staffLeaveForm.overtimeFrom, staffLeaveForm.overtimeTo) <= 0
     ) {
-      toast({ title: "Thời gian tăng ca không hợp lệ", variant: "destructive" });
+      toast({ title: tr("invalidOvertime"), variant: "destructive" });
       return;
     }
     createStaffLeaveMutation.mutate();
@@ -365,15 +369,15 @@ export default function MyDonTu() {
 
   function submitStudentLeaveRequest() {
     if (!activeLeaveStudentId || !leaveStartDate || !leaveEndDate) {
-      toast({ title: "Vui lòng nhập thời gian xin nghỉ", variant: "destructive" });
+      toast({ title: tr("enterLeavePeriod"), variant: "destructive" });
       return;
     }
     if (leaveStartDate > leaveEndDate) {
-      toast({ title: "Ngày bắt đầu không được sau ngày kết thúc", variant: "destructive" });
+      toast({ title: tr("invalidDateRange"), variant: "destructive" });
       return;
     }
     if ((studentLeaveSchedulesQuery.data?.length ?? 0) > 0 && selectedLeaveScheduleIds.size === 0) {
-      toast({ title: "Vui lòng chọn ít nhất một lịch học muốn xin nghỉ", variant: "destructive" });
+      toast({ title: tr("chooseSchedule"), variant: "destructive" });
       return;
     }
     createStudentLeaveMutation.mutate();
@@ -398,10 +402,10 @@ export default function MyDonTu() {
   const advanceTotal = (data?.advances ?? []).reduce((sum, record) => sum + Number(record.amount || 0), 0);
 
   const tabs = [
-    { id: "don-tu" as const, label: "Đơn từ", icon: FileText },
+    { id: "don-tu" as const, label: tr("requests"), icon: FileText },
     ...(isStaff ? [
-      { id: "thuong-phat" as const, label: "Thưởng / Phạt", icon: Gift },
-      { id: "tam-ung" as const, label: "Tạm ứng", icon: Wallet },
+      { id: "thuong-phat" as const, label: tr("rewardsPenalties"), icon: Gift },
+      { id: "tam-ung" as const, label: tr("advances"), icon: Wallet },
     ] : []),
   ];
 
@@ -411,11 +415,11 @@ export default function MyDonTu() {
         <div className="shrink-0 bg-slate-600 px-6 pt-4 shadow-lg">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h1 className="text-base font-semibold text-white">Đơn từ của tôi</h1>
+                  <h1 className="text-base font-semibold text-white">{tr("title")}</h1>
               <p className="mt-0.5 text-xs text-slate-200">
                 {isStaff
-                  ? `Thông tin cá nhân${data?.profile?.fullName ? ` · ${data.profile.fullName}` : ""}`
-                  : viewerType === "parent" ? "Đơn từ của các học viên đã liên kết" : "Đơn từ của học viên"}
+                  ? `${tr("personalInfo")}${data?.profile?.fullName ? ` · ${data.profile.fullName}` : ""}`
+                  : viewerType === "parent" ? tr("linkedStudents") : tr("studentRequests")}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
@@ -427,7 +431,7 @@ export default function MyDonTu() {
                   data-testid="button-open-staff-leave-request"
                 >
                   <Plus className="h-4 w-4" />
-                  Thêm mới
+                  {tr("add")}
                 </Button>
               ) : isStudentArea && (
                 <Button
@@ -437,10 +441,10 @@ export default function MyDonTu() {
                   data-testid="button-open-student-leave-request"
                 >
                   <Plus className="h-4 w-4" />
-                  Thêm mới
+                  {tr("add")}
                 </Button>
               )}
-              <PageGuideButton pageTitle="Đơn từ của tôi" />
+              <PageGuideButton pageTitle={tr("title")} />
             </div>
           </div>
           <div className="mt-4 flex items-end gap-1 overflow-x-auto">
@@ -461,17 +465,17 @@ export default function MyDonTu() {
         </div>
 
         {isLoading ? (
-          <div className="flex flex-1 items-center justify-center text-sm text-slate-400">Đang tải dữ liệu...</div>
+          <div className="flex flex-1 items-center justify-center text-sm text-slate-400">{tr("loading")}</div>
         ) : isError ? (
-          <div className="flex flex-1 items-center justify-center text-sm text-red-500">Không thể tải dữ liệu đơn từ.</div>
+          <div className="flex flex-1 items-center justify-center text-sm text-red-500">{tr("loadError")}</div>
         ) : mainTab === "don-tu" ? (
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2 sm:gap-3 sm:p-4 md:p-5">
             <div className="grid shrink-0 grid-cols-2 gap-2 sm:gap-3 md:grid-cols-4">
               {[
-                { label: "Tổng số đơn", value: data?.leaveRequests.length ?? 0, icon: FileText, color: "text-violet-600", bg: "bg-violet-50 border-violet-200" },
-                { label: "Chờ duyệt", value: pendingCount, icon: Clock3, color: "text-amber-600", bg: "bg-amber-50 border-amber-200" },
-                { label: "Đã duyệt", value: approvedCount, icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200" },
-                { label: "Từ chối", value: (data?.leaveRequests ?? []).filter((request) => request.status === "rejected").length, icon: XCircle, color: "text-red-600", bg: "bg-red-50 border-red-200" },
+                { label: tr("totalRequests"), value: data?.leaveRequests.length ?? 0, icon: FileText, color: "text-violet-600", bg: "bg-violet-50 border-violet-200" },
+                { label: tr("pending"), value: pendingCount, icon: Clock3, color: "text-amber-600", bg: "bg-amber-50 border-amber-200" },
+                { label: tr("approved"), value: approvedCount, icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200" },
+                { label: tr("rejected"), value: (data?.leaveRequests ?? []).filter((request) => request.status === "rejected").length, icon: XCircle, color: "text-red-600", bg: "bg-red-50 border-red-200" },
               ].map(({ label, value, icon: Icon, color, bg }) => (
                 <div key={label} className={cn("rounded-xl border p-2 sm:p-3", bg)}>
                   <div className="flex items-center gap-1.5">
@@ -486,40 +490,40 @@ export default function MyDonTu() {
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950">
               <div className="grid shrink-0 grid-cols-2 gap-2 border-b border-slate-100 bg-slate-50/60 px-2 py-2 dark:border-gray-800 dark:bg-gray-900/50 sm:flex sm:flex-wrap sm:items-center sm:px-4 sm:py-3">
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="h-8 w-full bg-white text-xs sm:w-36"><SelectValue placeholder="Trạng thái" /></SelectTrigger>
+                  <SelectTrigger className="h-8 w-full bg-white text-xs sm:w-36"><SelectValue placeholder={tr("status")} /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Tất cả trạng thái</SelectItem>
-                    <SelectItem value="pending">Chờ duyệt</SelectItem>
-                    <SelectItem value="approved">Đã duyệt</SelectItem>
-                    <SelectItem value="rejected">Từ chối</SelectItem>
+                    <SelectItem value="all">{tr("allStatuses")}</SelectItem>
+                    <SelectItem value="pending">{tr("pending")}</SelectItem>
+                    <SelectItem value="approved">{tr("approved")}</SelectItem>
+                    <SelectItem value="rejected">{tr("rejected")}</SelectItem>
                   </SelectContent>
                 </Select>
                 <Select value={typeFilter} onValueChange={setTypeFilter}>
-                  <SelectTrigger className="h-8 w-full bg-white text-xs sm:w-36"><SelectValue placeholder="Loại đơn" /></SelectTrigger>
+                  <SelectTrigger className="h-8 w-full bg-white text-xs sm:w-36"><SelectValue placeholder={tr("requestType")} /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Tất cả loại đơn</SelectItem>
-                    {Object.entries(LEAVE_TYPES).map(([value, item]) => <SelectItem key={value} value={value}>{item.label}</SelectItem>)}
+                    <SelectItem value="all">{tr("allRequestTypes")}</SelectItem>
+                    {Object.entries(LEAVE_TYPES).map(([value, item]) => <SelectItem key={value} value={value}>{tr(item.key)}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 {viewerType === "parent" && linkedStudents.length > 0 && (
                   <Select value={studentFilter} onValueChange={setStudentFilter}>
-                    <SelectTrigger className="col-span-2 h-8 w-full bg-white text-xs sm:col-span-1 sm:w-48"><SelectValue placeholder="Học viên" /></SelectTrigger>
+                    <SelectTrigger className="col-span-2 h-8 w-full bg-white text-xs sm:col-span-1 sm:w-48"><SelectValue placeholder={tr("student")} /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Tất cả học viên</SelectItem>
+                      <SelectItem value="all">{tr("allStudents")}</SelectItem>
                       {linkedStudents.map((student) => <SelectItem key={student.id} value={student.id}>{student.fullName || student.code}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 )}
-                <span className="col-span-2 justify-self-end text-xs text-slate-400 sm:ml-auto">{filteredLeaveRequests.length} đơn từ</span>
+                <span className="col-span-2 justify-self-end text-xs text-slate-400 sm:ml-auto">{filteredLeaveRequests.length} {tr("requestCount")}</span>
               </div>
               <div className="min-h-0 flex-1 overflow-auto">
-                {filteredLeaveRequests.length === 0 ? <EmptyState message="Chưa có đơn từ phù hợp" /> : (
+                {filteredLeaveRequests.length === 0 ? <EmptyState message={tr("noMatchingRequests")} /> : (
                   <>
                     <div className="space-y-2 p-2 md:hidden">
                       {filteredLeaveRequests.map((request) => {
                         const requestType = getRequestType(request, viewerType);
-                        const type = getLeaveType(requestType);
-                        const status = STATUS[request.status] ?? { label: request.status, color: "bg-slate-100 text-slate-600 border-slate-200", dot: "bg-slate-400" };
+        const type = getLeaveType(requestType, t);
+        const status = STATUS[request.status] ?? { key: request.status, color: "bg-slate-100 text-slate-600 border-slate-200", dot: "bg-slate-400" };
                         const TypeIcon = type.icon;
                         const ownerName = isStaff ? (data?.profile?.fullName || data?.profile?.code || "Tôi") : request.studentName;
                         const startDate = getRequestStartDate(request);
@@ -531,11 +535,11 @@ export default function MyDonTu() {
                             <div className="flex items-start justify-between gap-2">
                               <span className={cn("inline-flex max-w-[62%] items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold", type.color)}>
                                 <TypeIcon className="h-3 w-3 shrink-0" />
-                                <span className="truncate">{type.label}</span>
+                                 <span className="truncate">{type.label}</span>
                               </span>
                               <span className={cn("inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold", status.color)}>
                                 <span className={cn("h-1.5 w-1.5 rounded-full", status.dot)} />
-                                {status.label}
+                                 {tr(status.key)}
                               </span>
                             </div>
                             {viewerType !== "student" && (
@@ -543,7 +547,7 @@ export default function MyDonTu() {
                             )}
                             <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-t border-slate-100 pt-2.5 dark:border-gray-800">
                               <div className="min-w-0">
-                                <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Thời gian</p>
+                                 <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">{tr("time")}</p>
                                 <p className="mt-0.5 text-xs font-medium text-slate-600">
                                   {requestType === "tang_ca" && request.overtimeFrom && request.overtimeTo
                                     ? `${formatDate(startDate)} · ${request.overtimeFrom}–${request.overtimeTo}`
@@ -552,17 +556,17 @@ export default function MyDonTu() {
                               </div>
                               <div className="text-right">
                                 <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                                  {requestType === "student_leave" ? "Số buổi" : "Số giờ"}
+                                  {requestType === "student_leave" ? tr("sessions") : tr("hours")}
                                 </p>
                                 <p className="mt-0.5 text-xs font-bold text-slate-600">
                                   {requestType === "student_leave"
-                                    ? (scheduleCount > 0 ? `${scheduleCount} buổi` : "—")
+                                     ? (scheduleCount > 0 ? `${scheduleCount} ${tr("session")}` : "—")
                                     : request.hours ? `${request.hours}${requestType === "tang_ca" ? "h" : ""}` : "—"}
                                 </p>
                               </div>
                             </div>
                             <div className="mt-2 border-t border-slate-100 pt-2 dark:border-gray-800">
-                              <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Lý do / Ghi chú</p>
+                               <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">{tr("reasonNotes")}</p>
                               <p className="mt-0.5 break-words text-xs text-slate-600">{reason || "—"}</p>
                               {request.status === "rejected" && (request.adminNote || request.rejectionReason) && (
                                 <p className="mt-1 break-words text-[10px] italic text-red-500">↳ {request.adminNote || request.rejectionReason}</p>
@@ -577,19 +581,19 @@ export default function MyDonTu() {
                       <table className="w-full min-w-0 table-fixed border-collapse">
                         <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-900">
                           <tr>
-                            {viewerType !== "student" && <th className="w-[18%] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{isStaff ? "Người gửi" : "Học viên"}</th>}
-                            <th className="w-[18%] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Loại đơn</th>
-                            <th className="w-[22%] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Thời gian</th>
-                            <th className="w-[12%] px-3 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">{viewerType === "student" || viewerType === "parent" ? "Số buổi" : "Số giờ"}</th>
-                            <th className="w-[15%] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Trạng thái</th>
-                            <th className="w-[25%] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Lý do / Ghi chú</th>
+                            {viewerType !== "student" && <th className="w-[18%] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{isStaff ? tr("sender") : tr("student")}</th>}
+                            <th className="w-[18%] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{tr("requestType")}</th>
+                            <th className="w-[22%] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{tr("time")}</th>
+                            <th className="w-[12%] px-3 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">{viewerType === "student" || viewerType === "parent" ? tr("sessions") : tr("hours")}</th>
+                            <th className="w-[15%] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{tr("status")}</th>
+                            <th className="w-[25%] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{tr("reasonNotes")}</th>
                           </tr>
                         </thead>
                         <tbody>
                           {filteredLeaveRequests.map((request, index) => {
                             const requestType = getRequestType(request, viewerType);
-                            const type = getLeaveType(requestType);
-                            const status = STATUS[request.status] ?? { label: request.status, color: "bg-slate-100 text-slate-600 border-slate-200", dot: "bg-slate-400" };
+                        const type = getLeaveType(requestType, t);
+                        const status = STATUS[request.status] ?? { key: request.status, color: "bg-slate-100 text-slate-600 border-slate-200", dot: "bg-slate-400" };
                             const TypeIcon = type.icon;
                             const ownerName = isStaff ? (data?.profile?.fullName || data?.profile?.code || "Tôi") : request.studentName;
                             const startDate = getRequestStartDate(request);
@@ -603,8 +607,8 @@ export default function MyDonTu() {
                                   <span className={cn("inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold", type.color)}><TypeIcon className="h-3 w-3 shrink-0" /><span className="truncate">{type.label}</span></span>
                                 </td>
                                 <td className="break-words px-3 py-3 text-xs font-medium text-slate-600">{requestType === "tang_ca" && request.overtimeFrom && request.overtimeTo ? `${formatDate(startDate)} · ${request.overtimeFrom}–${request.overtimeTo}` : `${formatDate(startDate)} – ${formatDate(endDate)}`}</td>
-                                <td className="break-words px-3 py-3 text-center text-xs font-bold text-slate-600">{requestType === "student_leave" ? (scheduleCount > 0 ? `${scheduleCount} buổi` : "—") : request.hours ? `${request.hours}${requestType === "tang_ca" ? "h" : ""}` : "—"}</td>
-                                <td className="px-3 py-3"><span className={cn("inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold", status.color)}><span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", status.dot)} /><span className="truncate">{status.label}</span></span></td>
+                                <td className="break-words px-3 py-3 text-center text-xs font-bold text-slate-600">{requestType === "student_leave" ? (scheduleCount > 0 ? `${scheduleCount} ${tr("session")}` : "—") : request.hours ? `${request.hours}${requestType === "tang_ca" ? "h" : ""}` : "—"}</td>
+                                 <td className="px-3 py-3"><span className={cn("inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold", status.color)}><span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", status.dot)} /><span className="truncate">{tr(status.key)}</span></span></td>
                                 <td className="break-words px-3 py-3 text-xs text-slate-600"><p className="line-clamp-2" title={reason ?? ""}>{reason || "—"}</p>{request.status === "rejected" && (request.adminNote || request.rejectionReason) && <p className="mt-0.5 line-clamp-2 text-[10px] italic text-red-500">↳ {request.adminNote || request.rejectionReason}</p>}</td>
                               </tr>
                             );
@@ -620,28 +624,28 @@ export default function MyDonTu() {
         ) : mainTab === "thuong-phat" ? (
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-4 md:p-5">
             <div className="grid shrink-0 grid-cols-2 gap-3">
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4"><p className="text-xs font-medium text-slate-500">Tổng thưởng</p><p className="mt-1 text-xl font-bold text-emerald-700">{formatMoney(rewardTotal)}</p></div>
-              <div className="rounded-xl border border-red-200 bg-red-50 p-4"><p className="text-xs font-medium text-slate-500">Tổng phạt</p><p className="mt-1 text-xl font-bold text-red-600">{formatMoney(penaltyTotal)}</p></div>
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4"><p className="text-xs font-medium text-slate-500">{tr("totalReward")}</p><p className="mt-1 text-xl font-bold text-emerald-700">{formatMoney(rewardTotal)}</p></div>
+              <div className="rounded-xl border border-red-200 bg-red-50 p-4"><p className="text-xs font-medium text-slate-500">{tr("totalPenalty")}</p><p className="mt-1 text-xl font-bold text-red-600">{formatMoney(penaltyTotal)}</p></div>
             </div>
             <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950">
               <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-3 dark:border-gray-800">
-                {(["all", "reward", "penalty"] as const).map((value) => <button key={value} onClick={() => setRewardFilter(value)} className={cn("rounded-full border px-3 py-1 text-xs font-medium", rewardFilter === value ? value === "reward" ? "border-emerald-200 bg-emerald-100 text-emerald-700" : value === "penalty" ? "border-red-200 bg-red-100 text-red-600" : "border-violet-200 bg-violet-100 text-violet-700" : "border-slate-200 bg-white text-slate-500")}>{value === "all" ? "Tất cả" : value === "reward" ? "Thưởng" : "Phạt"}</button>)}
+                {(["all", "reward", "penalty"] as const).map((value) => <button key={value} onClick={() => setRewardFilter(value)} className={cn("rounded-full border px-3 py-1 text-xs font-medium", rewardFilter === value ? value === "reward" ? "border-emerald-200 bg-emerald-100 text-emerald-700" : value === "penalty" ? "border-red-200 bg-red-100 text-red-600" : "border-violet-200 bg-violet-100 text-violet-700" : "border-slate-200 bg-white text-slate-500")}>{value === "all" ? tr("all") : value === "reward" ? tr("reward") : tr("penalty")}</button>)}
               </div>
-              {filteredRewards.length === 0 ? <EmptyState message="Chưa có phiếu thưởng / phạt" /> : (
+              {filteredRewards.length === 0 ? <EmptyState message={tr("noRewards")} /> : (
                 <table className="w-full min-w-[620px] border-collapse">
-                  <thead className="bg-slate-100 dark:bg-slate-900"><tr><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">Loại</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">Ngày</th><th className="px-4 py-3 text-right text-xs font-semibold uppercase text-slate-500">Số tiền</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">Lý do</th></tr></thead>
-                  <tbody>{filteredRewards.map((record, index) => <tr key={record.id} className={cn(index % 2 ? "bg-slate-50/60" : "bg-white", "border-b border-slate-100")}><td className="px-4 py-3 text-xs font-semibold">{record.type === "reward" ? <span className="inline-flex items-center gap-1 text-emerald-600"><Gift className="h-3.5 w-3.5" />Thưởng</span> : <span className="inline-flex items-center gap-1 text-red-600"><AlertTriangle className="h-3.5 w-3.5" />Phạt</span>}</td><td className="px-4 py-3 text-xs text-slate-600">{formatDate(record.date)}</td><td className={cn("px-4 py-3 text-right text-xs font-bold", record.type === "reward" ? "text-emerald-700" : "text-red-600")}>{formatMoney(record.amount)}</td><td className="max-w-[320px] truncate px-4 py-3 text-xs text-slate-600">{record.reason || "—"}</td></tr>)}</tbody>
+              <thead className="bg-slate-100 dark:bg-slate-900"><tr><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("type")}</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("date")}</th><th className="px-4 py-3 text-right text-xs font-semibold uppercase text-slate-500">{tr("amount")}</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("reason")}</th></tr></thead>
+                  <tbody>{filteredRewards.map((record, index) => <tr key={record.id} className={cn(index % 2 ? "bg-slate-50/60" : "bg-white", "border-b border-slate-100")}><td className="px-4 py-3 text-xs font-semibold">{record.type === "reward" ? <span className="inline-flex items-center gap-1 text-emerald-600"><Gift className="h-3.5 w-3.5" />{tr("reward")}</span> : <span className="inline-flex items-center gap-1 text-red-600"><AlertTriangle className="h-3.5 w-3.5" />{tr("penalty")}</span>}</td><td className="px-4 py-3 text-xs text-slate-600">{formatDate(record.date)}</td><td className={cn("px-4 py-3 text-right text-xs font-bold", record.type === "reward" ? "text-emerald-700" : "text-red-600")}>{formatMoney(record.amount)}</td><td className="max-w-[320px] truncate px-4 py-3 text-xs text-slate-600">{record.reason || "—"}</td></tr>)}</tbody>
                 </table>
               )}
             </div>
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-4 md:p-5">
-            <div className="shrink-0 rounded-xl border border-violet-200 bg-violet-50 p-4"><p className="text-xs font-medium text-slate-500">Tổng tạm ứng</p><p className="mt-1 text-xl font-bold text-violet-700">{formatMoney(advanceTotal)}</p></div>
+            <div className="shrink-0 rounded-xl border border-violet-200 bg-violet-50 p-4"><p className="text-xs font-medium text-slate-500">{tr("totalAdvance")}</p><p className="mt-1 text-xl font-bold text-violet-700">{formatMoney(advanceTotal)}</p></div>
             <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950">
-              {(data?.advances ?? []).length === 0 ? <EmptyState message="Chưa có phiếu tạm ứng" /> : (
+              {(data?.advances ?? []).length === 0 ? <EmptyState message={tr("noAdvances")} /> : (
                 <table className="w-full min-w-[620px] border-collapse">
-                  <thead className="bg-slate-100 dark:bg-slate-900"><tr><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">Ngày</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">Hạn hoàn chứng từ</th><th className="px-4 py-3 text-right text-xs font-semibold uppercase text-slate-500">Số tiền</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">Lý do</th></tr></thead>
+                  <thead className="bg-slate-100 dark:bg-slate-900"><tr><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("date")}</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("documentDueDate")}</th><th className="px-4 py-3 text-right text-xs font-semibold uppercase text-slate-500">{tr("amount")}</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("reason")}</th></tr></thead>
                   <tbody>{data?.advances.map((record, index) => <tr key={record.id} className={cn(index % 2 ? "bg-slate-50/60" : "bg-white", "border-b border-slate-100")}><td className="px-4 py-3 text-xs text-slate-600">{formatDate(record.date)}</td><td className="px-4 py-3 text-xs text-slate-600">{formatDate(record.documentDueDate)}</td><td className="px-4 py-3 text-right text-xs font-bold text-violet-700">{formatMoney(record.amount)}</td><td className="max-w-[320px] truncate px-4 py-3 text-xs text-slate-600">{record.reason || "—"}</td></tr>)}</tbody>
                 </table>
               )}
@@ -653,24 +657,24 @@ export default function MyDonTu() {
       <Dialog open={studentLeaveDialogOpen} onOpenChange={(open) => open ? setStudentLeaveDialogOpen(true) : closeStudentLeaveDialog()}>
         <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Thêm đơn xin nghỉ</DialogTitle>
+            <DialogTitle>{tr("addStudentLeave")}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
             {studentLeaveContextQuery.isLoading ? (
               <div className="flex items-center justify-center gap-2 rounded-lg border bg-muted/20 px-4 py-8 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Đang nhận diện thông tin học viên...
+                {tr("loadingStudent")}
               </div>
             ) : studentLeaveContextQuery.isError ? (
               <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                Không thể tải thông tin học viên và cơ sở được gán.
+                {tr("studentLoadError")}
               </div>
             ) : (
               <>
                 {viewerType === "parent" && leaveContextStudents.length > 1 && (
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Học viên</label>
+                    <label className="text-sm font-medium">{tr("student")}</label>
                     <select
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                       value={activeLeaveStudentId}
@@ -691,7 +695,7 @@ export default function MyDonTu() {
 
                 <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-2">
                   <div>
-                    <p className="text-xs text-muted-foreground">Học viên</p>
+                    <p className="text-xs text-muted-foreground">{tr("student")}</p>
                     <p className="mt-1 text-sm font-medium">
                       {activeLeaveStudent?.fullName || data?.profile?.fullName || "—"}
                       {(activeLeaveStudent?.code || data?.profile?.code) && (
@@ -702,22 +706,22 @@ export default function MyDonTu() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Cơ sở được gán</p>
+                    <p className="text-xs text-muted-foreground">{tr("assignedLocation")}</p>
                     <p className="mt-1 text-sm font-medium">
                       {activeLeaveStudent?.locations.length
                         ? activeLeaveStudent.locations.map((location) => location.name).join(", ")
-                        : "Chưa được gán cơ sở"}
+                        : tr("noLocation")}
                     </p>
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">
-                    Thời gian xin nghỉ <span className="text-red-500">*</span>
+                    <label className="text-sm font-medium">
+                     {tr("leavePeriod")} <span className="text-red-500">*</span>
                   </label>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">Bắt đầu</label>
+                      <label className="text-xs text-muted-foreground">{tr("start")}</label>
                       <Input
                         type="date"
                         value={leaveStartDate}
@@ -730,7 +734,7 @@ export default function MyDonTu() {
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">Kết thúc</label>
+                      <label className="text-xs text-muted-foreground">{tr("end")}</label>
                       <Input
                         type="date"
                         value={leaveEndDate}
@@ -747,9 +751,9 @@ export default function MyDonTu() {
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
-                    <label className="text-sm font-medium">Lịch học thực tế</label>
+                    <label className="text-sm font-medium">{tr("actualSchedule")}</label>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      {selectedLeaveScheduleIds.size > 0 && <span>Đã chọn {selectedLeaveScheduleIds.size} buổi</span>}
+                      {selectedLeaveScheduleIds.size > 0 && <span>{tr("selectedSessions").replace("{count}", String(selectedLeaveScheduleIds.size))}</span>}
                       {studentLeaveSchedulesQuery.isFetching && <Loader2 className="h-4 w-4 animate-spin" />}
                     </div>
                   </div>
@@ -786,21 +790,21 @@ export default function MyDonTu() {
                     ) : (
                       <div className="px-4 py-6 text-center text-sm text-muted-foreground">
                         {leaveStartDate && leaveEndDate
-                          ? "Không có lịch học trong khoảng thời gian này."
-                          : "Chọn thời gian để hệ thống tải lịch học thực tế."}
+                          ? tr("noSchedules")
+                          : tr("chooseTime")}
                       </div>
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Chọn những buổi học mà học viên muốn xin nghỉ trong khoảng thời gian đã chọn.
+                    {tr("chooseSchedules")}
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Mô tả</label>
+                  <label className="text-sm font-medium">{tr("description")}</label>
                   <Textarea
                     rows={3}
-                    placeholder="Nhập lý do xin nghỉ..."
+                    placeholder={tr("leaveReasonPlaceholder")}
                     value={leaveDescription}
                     onChange={(event) => setLeaveDescription(event.target.value)}
                     disabled={createStudentLeaveMutation.isPending}
@@ -813,7 +817,7 @@ export default function MyDonTu() {
 
           <DialogFooter>
             <Button variant="outline" onClick={closeStudentLeaveDialog} disabled={createStudentLeaveMutation.isPending}>
-              Hủy
+              {tr("cancel")}
             </Button>
             <Button
               onClick={submitStudentLeaveRequest}
@@ -830,7 +834,7 @@ export default function MyDonTu() {
               data-testid="button-save-student-leave-request"
             >
               {createStudentLeaveMutation.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-              Gửi đơn
+              {tr("sendRequest")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -839,20 +843,20 @@ export default function MyDonTu() {
       <Dialog open={staffLeaveDialogOpen} onOpenChange={(open) => open ? setStaffLeaveDialogOpen(true) : closeStaffLeaveDialog()}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Thêm đơn mới</DialogTitle>
+            <DialogTitle>{tr("addRequest")}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
             <div className="rounded-lg border bg-muted/20 px-3 py-2.5">
-              <p className="text-xs text-muted-foreground">Nhân sự</p>
+              <p className="text-xs text-muted-foreground">{tr("staff")}</p>
               <p className="mt-1 text-sm font-semibold text-foreground">
-                {data?.profile?.fullName || "Đang tải..."}
+                {data?.profile?.fullName || tr("loading")}
                 {data?.profile?.code && <span className="ml-1 font-normal text-muted-foreground">({data.profile.code})</span>}
               </p>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Loại đơn</label>
+              <label className="text-sm font-medium">{tr("requestType")}</label>
               <Select
                 value={staffLeaveForm.type}
                 onValueChange={(value) => setStaffLeaveForm((current) => ({
@@ -862,19 +866,19 @@ export default function MyDonTu() {
                 disabled={createStaffLeaveMutation.isPending}
               >
                 <SelectTrigger className="h-10 w-full">
-                  <SelectValue placeholder="Chọn loại đơn" />
+                  <SelectValue placeholder={tr("chooseRequestType")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="nghi_phep">Nghỉ phép</SelectItem>
-                  <SelectItem value="nghi_co_luong">Nghỉ phép năm</SelectItem>
-                  <SelectItem value="tang_ca">Tăng ca</SelectItem>
+                  <SelectItem value="nghi_phep">{tr("leave")}</SelectItem>
+                  <SelectItem value="nghi_co_luong">{tr("annualLeave")}</SelectItem>
+                  <SelectItem value="tang_ca">{tr("overtime")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Từ ngày</label>
+                <label className="text-sm font-medium">{tr("fromDate")}</label>
                 <Input
                   type="date"
                   value={staffLeaveForm.fromDate}
@@ -883,7 +887,7 @@ export default function MyDonTu() {
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Đến ngày</label>
+                <label className="text-sm font-medium">{tr("toDate")}</label>
                 <Input
                   type="date"
                   value={staffLeaveForm.toDate}
@@ -896,7 +900,7 @@ export default function MyDonTu() {
             {staffLeaveForm.type === "tang_ca" && (
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Từ giờ</label>
+                  <label className="text-sm font-medium">{tr("fromTime")}</label>
                   <Input
                     type="time"
                     value={staffLeaveForm.overtimeFrom}
@@ -905,7 +909,7 @@ export default function MyDonTu() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Đến giờ</label>
+                  <label className="text-sm font-medium">{tr("toTime")}</label>
                   <Input
                     type="time"
                     value={staffLeaveForm.overtimeTo}
@@ -917,10 +921,10 @@ export default function MyDonTu() {
             )}
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Lý do</label>
+              <label className="text-sm font-medium">{tr("reason")}</label>
               <Textarea
                 rows={4}
-                placeholder="Nhập lý do..."
+                placeholder={tr("reasonPlaceholder")}
                 value={staffLeaveForm.reason}
                 onChange={(event) => setStaffLeaveForm((current) => ({ ...current, reason: event.target.value }))}
                 disabled={createStaffLeaveMutation.isPending}
@@ -930,11 +934,11 @@ export default function MyDonTu() {
 
           <DialogFooter>
             <Button variant="outline" onClick={closeStaffLeaveDialog} disabled={createStaffLeaveMutation.isPending}>
-              Hủy
+              {tr("cancel")}
             </Button>
             <Button onClick={submitStaffLeaveRequest} disabled={createStaffLeaveMutation.isPending}>
               {createStaffLeaveMutation.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-              Tạo đơn
+              {tr("createRequest")}
             </Button>
           </DialogFooter>
         </DialogContent>

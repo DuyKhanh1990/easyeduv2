@@ -75,7 +75,7 @@ export function StaffCalendar() {
   const saveTestContentMutation = useMutation({
     mutationFn: async ({ id, body }: { id: string; body: object }) => {
       const res = await apiRequest("PUT", `/api/test-sessions/${id}`, body);
-      if (!res.ok) throw new Error("Lưu thất bại");
+      if (!res.ok) throw new Error(t("mySpace.calendar.saveFailed"));
       return res.json();
     },
     onSuccess: (_data, vars) => {
@@ -150,7 +150,7 @@ export function StaffCalendar() {
               )}
             >
               <List className="h-3.5 w-3.5" />
-              Lịch ngày
+               {t("mySpace.calendar.dayView")}
             </button>
             <button
               onClick={() => setView("month")}
@@ -161,7 +161,7 @@ export function StaffCalendar() {
               )}
             >
               <Calendar className="h-3.5 w-3.5" />
-              Tháng
+               {t("mySpace.calendar.monthView")}
             </button>
           </div>
           <button

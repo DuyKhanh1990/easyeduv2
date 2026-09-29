@@ -7,6 +7,7 @@ import { PageGuideButton } from "@/components/guides/PageGuideDialog";
 import { cn } from "@/lib/utils";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { InvoiceQRDialog } from "@/pages/finance/components/InvoiceQRDialog";
+import { useLanguage } from "@/hooks/use-language";
 
 interface InvoiceCard {
   id: string;
@@ -27,35 +28,35 @@ interface InvoiceCard {
   isSchedule: boolean;
 }
 
-const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  unpaid:    { label: "Chưa thanh toán", color: "text-orange-500 font-semibold" },
-  partial:   { label: "Thanh toán một phần", color: "text-yellow-600 font-semibold" },
-  paid:      { label: "Đã thanh toán", color: "text-green-600 font-semibold" },
-  debt:      { label: "Nợ", color: "text-red-500 font-semibold" },
-  cancelled: { label: "Đã huỷ", color: "text-muted-foreground line-through" },
-};
-
 const PAGE_SIZES = [20, 30, 50];
 
-function formatCurrency(amount: string | number) {
+function formatCurrency(amount: string | number, lang: "vi" | "en") {
   const num = typeof amount === "string" ? parseFloat(amount) : amount;
-  return num.toLocaleString("vi-VN") + " đ";
+  return lang === "vi"
+    ? num.toLocaleString("vi-VN") + " đ"
+    : num.toLocaleString("en-US", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
 }
 
-function formatDateTime(iso: string) {
+function formatDateTime(iso: string, lang: "vi" | "en") {
   const d = new Date(iso);
   const day = String(d.getDate()).padStart(2, "0");
   const month = String(d.getMonth() + 1).padStart(2, "0");
   const year = d.getFullYear();
   const hour = String(d.getHours()).padStart(2, "0");
   const min = String(d.getMinutes()).padStart(2, "0");
-  return `${day}/${month}/${year} ${hour}:${min}`;
+  return lang === "vi"
+    ? `${day}/${month}/${year} ${hour}:${min}`
+    : `${month}/${day}/${year} ${hour}:${min}`;
 }
 
-function formatDate(dateStr: string | null) {
+function formatDate(dateStr: string | null, lang: "vi" | "en") {
   if (!dateStr) return "—";
   const d = new Date(dateStr + "T00:00:00");
-  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  return lang === "vi"
+    ? `${day}/${month}/${d.getFullYear()}`
+    : `${month}/${day}/${d.getFullYear()}`;
 }
 
 // Map InvoiceCard → shape đủ dùng cho InvoiceQRDialog
@@ -82,14 +83,28 @@ function toQrInvoice(inv: InvoiceCard): any {
   };
 }
 
-function InvoiceCardItem({ inv, highlighted, refCallback, onQrClick }: {
+function InvoiceCardItem({ inv, highlighted, refCallback, onQrClick, t, lang }: {
   inv: InvoiceCard;
   highlighted?: boolean;
   refCallback?: (el: HTMLDivElement | null) => void;
   onQrClick?: (inv: InvoiceCard) => void;
+  t: (key: string) => string;
+  lang: "vi" | "en";
 }) {
-  const status = STATUS_CONFIG[inv.status] ?? { label: inv.status, color: "text-muted-foreground" };
-  const typeLabel = inv.type === "Chi" ? "Phiếu chi" : "Phiếu thu";
+  const statusKey = `mySpace.invoices.status.${inv.status}`;
+  const status = {
+    label: t(statusKey) === statusKey ? inv.status : t(statusKey),
+    color: {
+      unpaid: "text-orange-500 font-semibold",
+      partial: "text-yellow-600 font-semibold",
+      paid: "text-green-600 font-semibold",
+      debt: "text-red-500 font-semibold",
+      cancelled: "text-muted-foreground line-through",
+    }[inv.status] ?? "text-muted-foreground",
+  };
+  const typeLabel = inv.type === "Chi"
+    ? t("mySpace.invoices.type.expense")
+    : t("mySpace.invoices.type.income");
   const amount = parseFloat(inv.amount);
   const amountColor = inv.type === "Chi" ? "text-red-500" : "text-green-600";
 
@@ -114,45 +129,45 @@ function InvoiceCardItem({ inv, highlighted, refCallback, onQrClick }: {
           )}
         </p>
         <p className="text-sm text-muted-foreground">
-          Tên: <span className="text-foreground">{inv.studentName || "—"}</span>
+          {t("mySpace.invoices.name")} <span className="text-foreground">{inv.studentName || "—"}</span>
         </p>
         <p className="text-sm text-muted-foreground">
-          Số hóa đơn: <span className="text-foreground">{inv.code || "—"}</span>
+          {t("mySpace.invoices.invoiceNumber")} <span className="text-foreground">{inv.code || "—"}</span>
         </p>
         <p className="text-sm text-muted-foreground">
-          Ngày tạo: <span className="text-foreground">{formatDateTime(inv.createdAt)}</span>
+          {t("mySpace.invoices.createdDate")} <span className="text-foreground">{formatDateTime(inv.createdAt, lang)}</span>
         </p>
         <p className="text-sm text-muted-foreground">
-          Hạn Thanh toán: <span className="text-foreground">{formatDate(inv.dueDate)}</span>
+          {t("mySpace.invoices.dueDate")} <span className="text-foreground">{formatDate(inv.dueDate, lang)}</span>
         </p>
         {inv.description && (
           <p className="text-sm text-muted-foreground">
-            Mô tả: <span className="text-foreground">{inv.description}</span>
+            {t("mySpace.invoices.description")} <span className="text-foreground">{inv.description}</span>
           </p>
         )}
       </div>
 
       <div className="flex flex-col items-start sm:items-end gap-1.5 shrink-0">
         <p className={cn("text-xl font-bold tabular-nums", amountColor)}>
-          {formatCurrency(amount)}
+          {formatCurrency(amount, lang)}
         </p>
         <p className="text-sm text-muted-foreground">
-          Danh mục: <span className="text-foreground">{inv.category || "—"}</span>
+          {t("mySpace.invoices.category")} <span className="text-foreground">{inv.category || "—"}</span>
         </p>
         <p className="text-sm text-muted-foreground">
-          Loại: <span className="text-foreground">{typeLabel}</span>
+          {t("mySpace.invoices.type")} <span className="text-foreground">{typeLabel}</span>
         </p>
         <p className="text-sm text-muted-foreground">
-          Trạng thái: <span className={status.color}>{status.label}</span>
+          {t("mySpace.invoices.status")} <span className={status.color}>{status.label}</span>
         </p>
         {inv.type !== "Chi" && (inv.status === "unpaid" || inv.status === "partial" || inv.status === "debt") && (
           <button
             onClick={() => onQrClick?.(inv)}
             className="mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-medium transition-colors"
-            title="Xem mã QR thanh toán"
+             title={t("mySpace.invoices.paymentQrTitle")}
           >
             <QrCode className="h-3.5 w-3.5" />
-            Quét QR thanh toán
+             {t("mySpace.invoices.paymentQr")}
           </button>
         )}
       </div>
@@ -161,6 +176,7 @@ function InvoiceCardItem({ inv, highlighted, refCallback, onQrClick }: {
 }
 
 export default function MyInvoices() {
+  const { t, lang } = useLanguage();
   const search = useSearch();
   const targetInvoiceId = new URLSearchParams(search).get("invoiceId");
 
@@ -175,7 +191,7 @@ export default function MyInvoices() {
     queryKey: ["/api/my-space/invoices"],
     queryFn: async () => {
       const res = await fetch("/api/my-space/invoices", { credentials: "include" });
-      if (!res.ok) throw new Error("Lỗi tải hoá đơn");
+       if (!res.ok) throw new Error(t("mySpace.invoices.loadError"));
       return res.json();
     },
     staleTime: 0,
@@ -236,8 +252,8 @@ export default function MyInvoices() {
         <div className="max-w-3xl mx-auto px-4 py-6">
           <div className="flex flex-col items-center justify-center gap-4 py-24 text-center">
             <ShieldOff className="h-12 w-12 text-muted-foreground" />
-            <h2 className="text-lg font-semibold text-foreground">Không có quyền truy cập</h2>
-            <p className="text-sm text-muted-foreground">Bạn không có quyền xem Hoá đơn của tôi. Vui lòng liên hệ quản trị viên.</p>
+             <h2 className="text-lg font-semibold text-foreground">{t("mySpace.invoices.accessDenied")}</h2>
+             <p className="text-sm text-muted-foreground">{t("mySpace.invoices.accessDeniedDescription")}</p>
           </div>
         </div>
       </DashboardLayout>
@@ -251,9 +267,9 @@ export default function MyInvoices() {
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-primary" />
-            <h1 className="text-xl font-bold text-foreground">Hoá đơn của tôi</h1>
+             <h1 className="text-xl font-bold text-foreground">{t("mySpace.invoices.title")}</h1>
           </div>
-          <PageGuideButton pageTitle="Hoá đơn của tôi" className="shrink-0" />
+           <PageGuideButton pageTitle={t("mySpace.invoices.title")} className="shrink-0" />
         </div>
 
         {/* Summary cards */}
@@ -261,15 +277,15 @@ export default function MyInvoices() {
           {/* Thẻ Phiếu thu */}
           <div className="bg-card border border-border rounded-2xl px-5 py-4 shadow-sm space-y-3" data-testid="summary-thu">
             <p className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-              <Receipt className="h-4 w-4 text-primary" /> Phiếu thu
+               <Receipt className="h-4 w-4 text-primary" /> {t("mySpace.invoices.summary.income")}
             </p>
             <div className="flex items-center gap-3" data-testid="summary-thu-paid">
               <div className="flex items-center justify-center w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 shrink-0">
                 <CheckCircle2 className="h-4 w-4 text-green-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Đã thanh toán</p>
-                <p className="text-base font-bold text-green-600 tabular-nums">{formatCurrency(thuDaThanhToan)}</p>
+                 <p className="text-xs text-muted-foreground">{t("mySpace.invoices.summary.incomePaid")}</p>
+                 <p className="text-base font-bold text-green-600 tabular-nums">{formatCurrency(thuDaThanhToan, lang)}</p>
               </div>
             </div>
             <div className="flex items-center gap-3" data-testid="summary-thu-unpaid">
@@ -277,8 +293,8 @@ export default function MyInvoices() {
                 <Clock className="h-4 w-4 text-orange-500" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Chưa thanh toán</p>
-                <p className="text-base font-bold text-orange-500 tabular-nums">{formatCurrency(thuChuaThanhToan)}</p>
+                 <p className="text-xs text-muted-foreground">{t("mySpace.invoices.summary.incomeUnpaid")}</p>
+                 <p className="text-base font-bold text-orange-500 tabular-nums">{formatCurrency(thuChuaThanhToan, lang)}</p>
               </div>
             </div>
           </div>
@@ -286,15 +302,15 @@ export default function MyInvoices() {
           {/* Thẻ Phiếu chi */}
           <div className="bg-card border border-border rounded-2xl px-5 py-4 shadow-sm space-y-3" data-testid="summary-chi">
             <p className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-              <TrendingDown className="h-4 w-4 text-blue-500" /> Phiếu chi
+               <TrendingDown className="h-4 w-4 text-blue-500" /> {t("mySpace.invoices.summary.expense")}
             </p>
             <div className="flex items-center gap-3" data-testid="summary-chi-paid">
               <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 shrink-0">
                 <CheckCircle2 className="h-4 w-4 text-blue-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Đã nhận</p>
-                <p className="text-base font-bold text-blue-600 tabular-nums">{formatCurrency(chiDaNhan)}</p>
+                 <p className="text-xs text-muted-foreground">{t("mySpace.invoices.summary.expensePaid")}</p>
+                 <p className="text-base font-bold text-blue-600 tabular-nums">{formatCurrency(chiDaNhan, lang)}</p>
               </div>
             </div>
             <div className="flex items-center gap-3" data-testid="summary-chi-unpaid">
@@ -302,8 +318,8 @@ export default function MyInvoices() {
                 <AlertCircle className="h-4 w-4 text-red-500" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Chưa nhận</p>
-                <p className="text-base font-bold text-red-500 tabular-nums">{formatCurrency(chiChuaNhan)}</p>
+                 <p className="text-xs text-muted-foreground">{t("mySpace.invoices.summary.expenseUnpaid")}</p>
+                 <p className="text-base font-bold text-red-500 tabular-nums">{formatCurrency(chiChuaNhan, lang)}</p>
               </div>
             </div>
           </div>
@@ -313,13 +329,13 @@ export default function MyInvoices() {
         <div className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
           {/* Header row: title + pagination controls */}
           <div className="px-5 py-3 border-b border-border flex items-center justify-between gap-3 flex-wrap">
-            <p className="font-semibold text-foreground whitespace-nowrap">Danh sách hoá đơn liên quan</p>
+             <p className="font-semibold text-foreground whitespace-nowrap">{t("mySpace.invoices.listTitle")}</p>
 
             {/* Pagination controls */}
             <div className="flex items-center gap-2 text-sm">
               {/* Page size selector */}
               <div className="flex items-center gap-1 text-muted-foreground">
-                <span className="hidden sm:inline text-xs">Hiển thị:</span>
+                 <span className="hidden sm:inline text-xs">{t("mySpace.invoices.display")}</span>
                 {PAGE_SIZES.map((s) => (
                   <button
                     key={s}
@@ -367,20 +383,20 @@ export default function MyInvoices() {
             {isLoading && (
               <div className="flex items-center justify-center py-16 gap-3 text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin" />
-                <span className="text-sm">Đang tải hoá đơn...</span>
+                 <span className="text-sm">{t("mySpace.invoices.loading")}</span>
               </div>
             )}
 
             {isError && (
               <div className="text-center py-14 text-sm text-red-500">
-                Không thể tải danh sách hoá đơn. Vui lòng thử lại.
+                 {t("mySpace.invoices.loadError")}
               </div>
             )}
 
             {!isLoading && !isError && invoiceList.length === 0 && (
               <div className="flex flex-col items-center justify-center py-14 gap-3 text-muted-foreground">
                 <Receipt className="h-10 w-10 opacity-25" />
-                <p className="text-sm">Bạn hiện tại không có hoá đơn nào</p>
+                 <p className="text-sm">{t("mySpace.invoices.empty")}</p>
               </div>
             )}
 
@@ -394,6 +410,8 @@ export default function MyInvoices() {
                   highlighted={isHighlighted}
                   refCallback={(el) => { invoiceRefs.current[key] = el; }}
                   onQrClick={(inv) => setQrInvoice(toQrInvoice(inv))}
+                   t={t}
+                   lang={lang}
                 />
               );
             })}

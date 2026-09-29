@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { calculateTotalSalary } from "@/hooks/use-teacher-salary";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useLanguage } from "@/hooks/use-language";
 
 /* ─────────────────────── helpers ─────────────────────── */
 
@@ -25,8 +26,8 @@ function getFirstDayOfWeek(year: number, month: number): number {
   return d === 0 ? 6 : d - 1;
 }
 
-function formatMoney(n: number) {
-  return n.toLocaleString("vi-VN") + "đ";
+function formatMoney(n: number, lang: "vi" | "en" = "vi") {
+  return n.toLocaleString(lang === "en" ? "en-US" : "vi-VN") + "đ";
 }
 
 function formatMoneyShort(n: number) {
@@ -83,7 +84,7 @@ function getAttStatus(tongCong: number, workedHours: number): AttStatus | null {
 }
 
 const STATUS_CONFIG: Record<AttStatus, {
-  label: string;
+  labelKey: string;
   badgeClass: string;
   dotClass: string;
   bgClass: string;
@@ -91,7 +92,7 @@ const STATUS_CONFIG: Record<AttStatus, {
   icon: any;
 }> = {
   ok: {
-    label: "Đủ công",
+    labelKey: "mySpace.payroll.status.full",
     badgeClass: "bg-emerald-500",
     dotClass: "bg-emerald-400",
     bgClass: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800",
@@ -99,7 +100,7 @@ const STATUS_CONFIG: Record<AttStatus, {
     icon: CheckCircle2,
   },
   overtime: {
-    label: "Tăng ca",
+    labelKey: "mySpace.payroll.status.overtime",
     badgeClass: "bg-violet-500",
     dotClass: "bg-violet-400",
     bgClass: "bg-violet-50 dark:bg-violet-950/30 border-violet-200 dark:border-violet-800",
@@ -107,7 +108,7 @@ const STATUS_CONFIG: Record<AttStatus, {
     icon: Zap,
   },
   half: {
-    label: "Nửa công",
+    labelKey: "mySpace.payroll.status.half",
     badgeClass: "bg-amber-500",
     dotClass: "bg-amber-400",
     bgClass: "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800",
@@ -115,7 +116,7 @@ const STATUS_CONFIG: Record<AttStatus, {
     icon: Clock,
   },
   late: {
-    label: "Thiếu giờ",
+    labelKey: "mySpace.payroll.status.insufficient",
     badgeClass: "bg-rose-500",
     dotClass: "bg-rose-400",
     bgClass: "bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800",
@@ -134,6 +135,7 @@ function CalendarDay({
   isToday: boolean;
   isWeekend: boolean;
 }) {
+  const { t } = useLanguage();
   const status = att ? getAttStatus(att.tongCong, att.workedHours) : null;
   const cfg = status ? STATUS_CONFIG[status] : null;
 
@@ -167,7 +169,7 @@ function CalendarDay({
             <span className="text-[13px] font-bold leading-none text-white">
               {att.tongCong % 1 === 0 ? att.tongCong.toFixed(0) : att.tongCong.toFixed(1)}
             </span>
-            <span className="text-[9px] font-medium text-white/90">công</span>
+            <span className="text-[9px] font-medium text-white/90">{t("mySpace.payroll.unit.workday")}</span>
           </div>
           {/* Time range */}
           {att.timeIn && att.timeOut && (
@@ -178,7 +180,7 @@ function CalendarDay({
           {/* Status label */}
           <div className={cn("flex items-center justify-center gap-0.5", cfg.textClass)}>
             <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", cfg.dotClass)} />
-            <span className="text-[9px] font-medium">{cfg.label}</span>
+            <span className="text-[9px] font-medium">{t(cfg.labelKey)}</span>
           </div>
         </div>
       )}
@@ -198,8 +200,9 @@ function SalaryCard({
   deduct?: boolean;
   highlight?: boolean;
 }) {
+  const { lang } = useLanguage();
   const display = unit === "đ"
-    ? value === 0 ? "—" : formatMoney(value)
+    ? value === 0 ? "—" : formatMoney(value, lang)
     : value === 0 ? "—" : String(value);
 
   return (
@@ -218,7 +221,7 @@ function SalaryCard({
         highlight && "text-sm font-bold",
         value === 0 ? "text-muted-foreground/50" : deduct ? "text-rose-500" : accent ? "text-primary" : "text-foreground",
       )}>
-        {deduct && value > 0 ? `− ${formatMoney(value)}` : display}
+        {deduct && value > 0 ? `− ${formatMoney(value, lang)}` : display}
       </span>
     </div>
   );
@@ -227,6 +230,7 @@ function SalaryCard({
 /* ─────────────────────── Attendance Stats ─────────────── */
 
 function AttendanceStats({ rows }: { rows: AttendanceDay[] }) {
+  const { t } = useLanguage();
   const total = rows.reduce((s, r) => s + r.tongCong, 0);
   const days = rows.length;
   const overtime = rows.filter(r => getAttStatus(r.tongCong, r.workedHours) === "overtime").length;
@@ -236,10 +240,10 @@ function AttendanceStats({ rows }: { rows: AttendanceDay[] }) {
   }).length;
 
   const stats = [
-    { label: "Tổng công", value: total % 1 === 0 ? total.toFixed(0) : total.toFixed(2), unit: "công", color: "text-emerald-600", bg: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800", icon: BadgeCheck },
-    { label: "Ngày làm", value: String(days), unit: "ngày", color: "text-blue-600", bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800", icon: CalendarDays },
-    { label: "Tăng ca", value: String(overtime), unit: "ngày", color: "text-violet-600", bg: "bg-violet-50 dark:bg-violet-950/30 border-violet-200 dark:border-violet-800", icon: Zap },
-    { label: "Thiếu giờ", value: String(late), unit: "ngày", color: "text-amber-600", bg: "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800", icon: Clock },
+    { label: t("mySpace.payroll.stats.totalWorkdays"), value: total % 1 === 0 ? total.toFixed(0) : total.toFixed(2), unit: t("mySpace.payroll.unit.workday"), color: "text-emerald-600", bg: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800", icon: BadgeCheck },
+    { label: t("mySpace.payroll.stats.workedDays"), value: String(days), unit: t("mySpace.payroll.unit.day"), color: "text-blue-600", bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800", icon: CalendarDays },
+    { label: t("mySpace.payroll.stats.overtime"), value: String(overtime), unit: t("mySpace.payroll.unit.day"), color: "text-violet-600", bg: "bg-violet-50 dark:bg-violet-950/30 border-violet-200 dark:border-violet-800", icon: Zap },
+    { label: t("mySpace.payroll.stats.insufficientHours"), value: String(late), unit: t("mySpace.payroll.unit.day"), color: "text-amber-600", bg: "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800", icon: Clock },
   ];
 
   return (
@@ -263,6 +267,7 @@ function AttendanceStats({ rows }: { rows: AttendanceDay[] }) {
 /* ─────────────────────── Payroll Calendar ─────────────── */
 
 function PayrollCalendar({ year, month }: { year: number; month: number }) {
+  const { t, lang } = useLanguage();
   const daysInMonth = getDaysInMonth(year, month);
   const firstDow = getFirstDayOfWeek(year, month);
   const today = new Date();
@@ -386,7 +391,7 @@ function PayrollCalendar({ year, month }: { year: number; month: number }) {
               <Wallet className={cn("w-4 h-4 shrink-0", hasHr ? "text-white" : "text-muted-foreground")} />
               <div>
                 <h3 className={cn("text-sm font-bold", hasHr ? "text-white" : "text-foreground")}>
-                  Bảng tổng lương
+                   {t("mySpace.payroll.totalPayroll")}
                 </h3>
                 {hrSummary?.sheetName && (
                   <p className="text-[10px] text-emerald-100 truncate">{hrSummary.sheetName}</p>
@@ -401,30 +406,30 @@ function PayrollCalendar({ year, month }: { year: number; month: number }) {
             ) : hasHr ? (
               <div className="p-4 space-y-0.5">
                 {/* Thu nhập */}
-                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Thu nhập</p>
-                <SalaryCard label="Lương cơ bản" value={hrSummary!.luongCB} />
-                <SalaryCard label="Số công" value={hrSummary!.soCong} unit="" />
-                <SalaryCard label="Công thức" value={hrSummary!.congThuc} unit="" />
-                <SalaryCard label="Lương theo công" value={hrSummary!.luongTheoCong} />
-                <SalaryCard label="Phụ cấp" value={hrSummary!.phuCap} />
-                <SalaryCard label="Thưởng" value={hrSummary!.thuong} />
-                <SalaryCard label="Phạt" value={hrSummary!.phat} deduct />
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">{t("mySpace.payroll.income")}</p>
+                <SalaryCard label={t("mySpace.payroll.baseSalary")} value={hrSummary!.luongCB} />
+                <SalaryCard label={t("mySpace.payroll.workdays")} value={hrSummary!.soCong} unit="" />
+                <SalaryCard label={t("mySpace.payroll.workFormula")} value={hrSummary!.congThuc} unit="" />
+                <SalaryCard label={t("mySpace.payroll.salaryByWorkday")} value={hrSummary!.luongTheoCong} />
+                <SalaryCard label={t("mySpace.payroll.allowance")} value={hrSummary!.phuCap} />
+                <SalaryCard label={t("mySpace.payroll.bonus")} value={hrSummary!.thuong} />
+                <SalaryCard label={t("mySpace.payroll.penalty")} value={hrSummary!.phat} deduct />
                 {hrSummary!.luongDungLop > 0 && (
-                  <SalaryCard label="Lương đứng lớp" value={hrSummary!.luongDungLop} />
+                  <SalaryCard label={t("mySpace.payroll.teachingSalary")} value={hrSummary!.luongDungLop} />
                 )}
 
                 {/* Tổng lương */}
                 <div className="border-t border-border/50 pt-2 mt-2">
-                  <SalaryCard label="TỔNG LƯƠNG" value={tongLuong} accent highlight />
+                  <SalaryCard label={t("mySpace.payroll.totalSalary")} value={tongLuong} accent highlight />
                 </div>
 
                 {/* Khấu trừ — luôn hiển thị đủ các mục */}
-                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5 mt-3">Khấu trừ</p>
-                <SalaryCard label="BHXH" value={hrSummary!.bhxh} deduct />
-                <SalaryCard label="BHYT" value={hrSummary!.bhyt} deduct />
-                <SalaryCard label="BHTN" value={hrSummary!.bhtn} deduct />
-                <SalaryCard label="Thuế TNCN" value={hrSummary!.thueTNCN} deduct />
-                <SalaryCard label="Tạm ứng" value={hrSummary!.tamUng} deduct />
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5 mt-3">{t("mySpace.payroll.deductions")}</p>
+                <SalaryCard label={t("mySpace.payroll.socialInsurance")} value={hrSummary!.bhxh} deduct />
+                <SalaryCard label={t("mySpace.payroll.healthInsurance")} value={hrSummary!.bhyt} deduct />
+                <SalaryCard label={t("mySpace.payroll.unemploymentInsurance")} value={hrSummary!.bhtn} deduct />
+                <SalaryCard label={t("mySpace.payroll.personalIncomeTax")} value={hrSummary!.thueTNCN} deduct />
+                <SalaryCard label={t("mySpace.payroll.advance")} value={hrSummary!.tamUng} deduct />
 
                 {/* Thực nhận */}
                 <div className={cn(
@@ -432,18 +437,18 @@ function PayrollCalendar({ year, month }: { year: number; month: number }) {
                   thucNhan > 0 ? "bg-emerald-50 dark:bg-emerald-950/30" : "bg-muted/20",
                 )}>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-foreground">THỰC NHẬN</span>
+                    <span className="text-xs font-bold text-foreground">{t("mySpace.payroll.netPay")}</span>
                     <span className={cn(
                       "text-base font-extrabold tabular-nums",
                       thucNhan > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground",
                     )}>
-                      {formatMoney(thucNhan)}
+                      {formatMoney(thucNhan, lang)}
                     </span>
                   </div>
                   {hrSummary!.daChi && (
                     <div className="flex items-center gap-1 mt-1">
                       <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                      <span className="text-[10px] text-emerald-600 font-medium">Đã chi trả</span>
+                      <span className="text-[10px] text-emerald-600 font-medium">{t("mySpace.payroll.paid")}</span>
                     </div>
                   )}
                 </div>
@@ -455,7 +460,7 @@ function PayrollCalendar({ year, month }: { year: number; month: number }) {
                     <Lock className="w-4.5 h-4.5 text-amber-500" />
                   </div>
                   <p className="text-[11px] text-center text-muted-foreground leading-relaxed">
-                    Bảng lương tháng này chưa được công bố hoặc chưa có dữ liệu.
+                     {t("mySpace.payroll.notPublished")}
                   </p>
                 </div>
               </div>
@@ -464,14 +469,14 @@ function PayrollCalendar({ year, month }: { year: number; month: number }) {
 
           {/* Quick legend */}
           <div className="rounded-xl border border-border/60 p-3 bg-muted/10">
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Chú thích</p>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">{t("mySpace.payroll.legend")}</p>
             <div className="space-y-1.5">
               {(Object.entries(STATUS_CONFIG) as [AttStatus, typeof STATUS_CONFIG[AttStatus]][]).map(([key, cfg]) => {
                 const Icon = cfg.icon;
                 return (
                   <div key={key} className="flex items-center gap-2">
                     <span className={cn("w-2 h-2 rounded-full shrink-0", cfg.badgeClass)} />
-                    <span className="text-[10px] text-muted-foreground">{cfg.label}</span>
+                    <span className="text-[10px] text-muted-foreground">{t(cfg.labelKey)}</span>
                   </div>
                 );
               })}
@@ -510,7 +515,8 @@ type PublishedPayrollRow = {
 
 function computeTongSoTeacher(
   sessions: SessionInfo[],
-  pkg: any | null | undefined
+  pkg: any | null | undefined,
+  t: (key: string) => string,
 ): { value: string; subtext?: string } {
   const total = sessions.length;
 
@@ -526,7 +532,7 @@ function computeTongSoTeacher(
     if (total === 0) return { value: "—" };
     const uncounted = total - countedSessions.length;
     if (uncounted === 0) return { value: "—" };
-    return { value: `${uncounted} chưa điểm danh` };
+    return { value: `${uncounted} ${t("mySpace.payroll.notCheckedIn")}` };
   }
 
   switch (pkg.type) {
@@ -541,7 +547,7 @@ function computeTongSoTeacher(
       const uncounted = total - countedSessions.length;
       return {
         value: display,
-        subtext: uncounted > 0 ? `${uncounted} chưa điểm danh` : undefined,
+        subtext: uncounted > 0 ? `${uncounted} ${t("mySpace.payroll.notCheckedIn")}` : undefined,
       };
     }
     case "theo-buoi":
@@ -553,20 +559,20 @@ function computeTongSoTeacher(
       }, 0);
       const uncounted = total - countedSessions.length;
       return {
-        value: `${sessionCount} buổi`,
-        subtext: uncounted > 0 ? `${uncounted} chưa điểm danh` : undefined,
+        value: `${sessionCount} ${t("mySpace.payroll.unit.session")}`,
+        subtext: uncounted > 0 ? `${uncounted} ${t("mySpace.payroll.notCheckedIn")}` : undefined,
       };
     }
     case "theo-so-hv": {
       const hv = countedSessions.reduce((sum, s) => sum + s.attendedCount, 0);
       const uncounted = total - countedSessions.length;
       return {
-        value: `${hv} hv`,
-        subtext: uncounted > 0 ? `${uncounted} chưa điểm danh` : undefined,
+        value: `${hv} ${t("mySpace.payroll.unit.student")}`,
+        subtext: uncounted > 0 ? `${uncounted} ${t("mySpace.payroll.notCheckedIn")}` : undefined,
       };
     }
     default:
-      return { value: total > 0 ? `${total} buổi` : "—" };
+      return { value: total > 0 ? `${total} ${t("mySpace.payroll.unit.session")}` : "—" };
   }
 }
 
@@ -586,6 +592,7 @@ function SalaryTableGrid({
   rows: PublishedPayrollRow[];
   packageMap: Map<string, any>;
 }) {
+  const { t, lang } = useLanguage();
   const dateRange = useMemo(() => {
     try {
       const start = meta.startDate ? parseISO(meta.startDate) : null;
@@ -605,10 +612,10 @@ function SalaryTableGrid({
   }, 0);
 
   const displayStart = meta.startDate
-    ? new Date(meta.startDate).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" })
+    ? new Date(meta.startDate).toLocaleDateString(lang === "en" ? "en-US" : "vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" })
     : "";
   const displayEnd = meta.endDate
-    ? new Date(meta.endDate).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" })
+    ? new Date(meta.endDate).toLocaleDateString(lang === "en" ? "en-US" : "vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" })
     : "";
 
   const numDateCols = dateRange.length > 0 ? dateRange.length : 8;
@@ -648,19 +655,19 @@ function SalaryTableGrid({
                 className="sticky left-0 z-30 text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap bg-white dark:bg-gray-950"
                 style={{ width: COL_CLASS, minWidth: COL_CLASS, boxShadow: "1px 0 0 0 hsl(var(--border))" }}
               >
-                Tên lớp
+                 {t("mySpace.payroll.className")}
               </th>
               <th
                 className="text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap"
                 style={{ width: COL_PKG, minWidth: COL_PKG, boxShadow: "1px 0 0 0 hsl(var(--border))" }}
               >
-                Gói lương
+                 {t("mySpace.payroll.salaryPackage")}
               </th>
               <th
                 className="text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap"
                 style={{ width: COL_ROLE, minWidth: COL_ROLE, boxShadow: "1px 0 0 0 hsl(var(--border))" }}
               >
-                Vai trò
+                 {t("mySpace.payroll.role")}
               </th>
 
               {dateRange.length > 0
@@ -696,13 +703,13 @@ function SalaryTableGrid({
                 className="sticky right-[110px] z-30 text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap bg-white dark:bg-gray-950"
                 style={{ width: COL_TONG_SO, minWidth: COL_TONG_SO, boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
               >
-                Tổng số
+                 {t("mySpace.payroll.totalCount")}
               </th>
               <th
                 className="sticky right-0 z-30 text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap bg-white dark:bg-gray-950"
                 style={{ width: COL_TONG_LUONG, minWidth: COL_TONG_LUONG, boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
               >
-                Tổng lương
+                 {t("mySpace.payroll.totalSalary")}
               </th>
             </tr>
           </thead>
@@ -711,7 +718,7 @@ function SalaryTableGrid({
             {rows.map((row) => {
               const pkg = row.packageId ? packageMap.get(row.packageId) : null;
               const totalSalary = pkg ? calculateTotalSalary(row as any, pkg) : null;
-              const tongSo = computeTongSoTeacher(row.sessions, pkg);
+               const tongSo = computeTongSoTeacher(row.sessions, pkg, t);
               const isUnassigned = !row.packageId;
 
               return (
@@ -732,7 +739,7 @@ function SalaryTableGrid({
                   >
                     {pkg
                       ? <span className="text-foreground">{pkg.name}</span>
-                      : <span className="text-amber-500 italic text-[11px]">Chưa gắn</span>}
+                       : <span className="text-amber-500 italic text-[11px]">{t("mySpace.payroll.notAssigned")}</span>}
                   </td>
 
                   <td
@@ -820,7 +827,7 @@ function SalaryTableGrid({
                     ) : (
                       <div>
                         <span className={cn("font-medium", isUnassigned ? "text-[11px] text-orange-500" : "text-foreground")}>
-                          {tongSo.value}
+                    {tongSo.value}
                         </span>
                         {tongSo.subtext && (
                           <div className="text-[10px] text-orange-500">{tongSo.subtext}</div>
@@ -834,7 +841,7 @@ function SalaryTableGrid({
                     style={{ boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
                   >
                     {totalSalary !== null && totalSalary > 0 ? (
-                      <span className="font-semibold text-emerald-600">{formatMoney(totalSalary)}</span>
+                       <span className="font-semibold text-emerald-600">{formatMoney(totalSalary, lang)}</span>
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}
@@ -848,7 +855,7 @@ function SalaryTableGrid({
                 colSpan={3 + numDateCols}
                 className="sticky left-0 px-4 py-2.5 text-xs text-right text-foreground border-t border-border bg-gray-50 dark:bg-gray-900"
               >
-                Tổng cộng
+                 {t("mySpace.payroll.total")}
               </td>
               <td
                 className="sticky right-[110px] z-10 border-l border-t border-border px-3 py-2.5 text-center text-xs bg-gray-50 dark:bg-gray-900"
@@ -858,7 +865,7 @@ function SalaryTableGrid({
                 className="sticky right-0 z-10 border-l border-t border-border px-3 py-2.5 text-center text-sm font-bold text-emerald-600 bg-gray-50 dark:bg-gray-900"
                 style={{ boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
               >
-                {formatMoney(grandTotal)}
+                 {formatMoney(grandTotal, lang)}
               </td>
             </tr>
           </tbody>
@@ -868,6 +875,7 @@ function SalaryTableGrid({
 }
 
 function SalaryDungLop() {
+  const { t } = useLanguage();
   const { data: publishedRows = [], isLoading, isError } = useQuery<PublishedPayrollRow[]>({
     queryKey: ["/api/my-space/payroll/published-rows"],
   });
@@ -908,7 +916,7 @@ function SalaryDungLop() {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-3">
         <AlertCircle className="w-8 h-8 text-red-400" />
-        <p className="text-sm text-muted-foreground">Lỗi khi tải bảng lương. Vui lòng thử lại.</p>
+        <p className="text-sm text-muted-foreground">{t("mySpace.payroll.errorLoading")}</p>
       </div>
     );
   }
@@ -920,9 +928,9 @@ function SalaryDungLop() {
           <Lock className="w-6 h-6 text-amber-500" />
         </div>
         <div className="text-center max-w-sm">
-          <p className="text-sm font-semibold text-foreground mb-1">Bảng lương chưa được công bố</p>
+          <p className="text-sm font-semibold text-foreground mb-1">{t("mySpace.payroll.notPublishedTitle")}</p>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Bộ phận kế toán chưa công bố bảng lương đứng lớp cho tháng này. Vui lòng quay lại sau.
+            {t("mySpace.payroll.notPublishedDescription")}
           </p>
         </div>
       </div>
@@ -948,13 +956,14 @@ function SalaryDungLop() {
 type Tab = "tong" | "dung-lop";
 
 export default function MyPayroll() {
+  const { t } = useLanguage();
   const [tab, setTab] = useState<Tab>("tong");
 
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [monthIndex, setMonthIndex] = useState(now.getMonth());
 
-  const monthLabel = `Tháng ${String(monthIndex + 1).padStart(2, "0")}/${year}`;
+  const monthLabel = `${t("mySpace.payroll.month")} ${String(monthIndex + 1).padStart(2, "0")}/${year}`;
 
   const goPrev = () => {
     if (monthIndex === 0) { setYear(y => y - 1); setMonthIndex(11); }
@@ -977,8 +986,8 @@ export default function MyPayroll() {
                 <Wallet className="w-4.5 h-4.5 text-white" />
               </div>
               <div>
-                <h1 className="text-lg font-bold text-foreground leading-tight">Bảng lương của tôi</h1>
-                <p className="text-xs text-muted-foreground">Chấm công & lương tổng hợp</p>
+                <h1 className="text-lg font-bold text-foreground leading-tight">{t("mySpace.payroll.title")}</h1>
+                <p className="text-xs text-muted-foreground">{t("mySpace.payroll.subtitle")}</p>
               </div>
             </div>
 
@@ -1008,8 +1017,8 @@ export default function MyPayroll() {
           {/* Tabs */}
           <div className="flex gap-0 px-6">
             {([
-              { key: "tong", label: "Bảng lương tổng", icon: Wallet },
-              { key: "dung-lop", label: "Bảng lương đứng lớp", icon: TableProperties },
+              { key: "tong", label: t("mySpace.payroll.totalTab"), icon: Wallet },
+              { key: "dung-lop", label: t("mySpace.payroll.teachingTab"), icon: TableProperties },
             ] as { key: Tab; label: string; icon: any }[]).map(({ key, label, icon: Icon }) => (
               <button
                 key={key}

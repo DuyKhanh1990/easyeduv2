@@ -1,11 +1,13 @@
 import { ClipboardList } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useMySpaceUserType } from "@/hooks/use-my-space-user-type";
+import { useLanguage } from "@/hooks/use-language";
 import { StudentAssignments } from "./StudentAssignments";
 import { StaffAssignments } from "./StaffAssignments";
 
 export default function MyAssignments() {
   const { data, isLoading } = useMySpaceUserType();
+  const { t } = useLanguage();
 
   return (
     <DashboardLayout>
@@ -26,8 +28,8 @@ export default function MyAssignments() {
             <ClipboardList className="h-10 w-10 opacity-25" />
             <p className="text-sm">
               {data?.reason === "not_in_daotao"
-                ? "Tài khoản không thuộc Phòng Đào tạo nên không có quyền xem trang này"
-                : "Tài khoản chưa được liên kết với học viên hoặc nhân viên"}
+                ? t("mySpace.assignments.accessDenied")
+                : t("mySpace.assignments.notLinked")}
             </p>
           </div>
         </div>

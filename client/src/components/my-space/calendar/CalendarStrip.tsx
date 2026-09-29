@@ -1,8 +1,7 @@
 import { useRef, useEffect } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const WEEKDAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+import { useLanguage } from "@/hooks/use-language";
 
 function getDaysInMonth(year: number, month: number) {
   const days: Date[] = [];
@@ -27,6 +26,10 @@ interface CalendarStripProps {
 }
 
 export function CalendarStrip({ year, month, selectedDate, onSelectDate, datesWithSessions }: CalendarStripProps) {
+  const { lang } = useLanguage();
+  const WEEKDAY_LABELS = lang === "en"
+    ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    : ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
   const scrollRef = useRef<HTMLDivElement>(null);
   const today = toDateString(new Date());
   const days = getDaysInMonth(year, month);

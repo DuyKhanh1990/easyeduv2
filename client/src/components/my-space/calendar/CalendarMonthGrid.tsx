@@ -3,8 +3,7 @@ import { cn } from "@/lib/utils";
 import { getClassCalendarColor } from "@/lib/class-calendar-colors";
 import { getAttendanceStatus } from "@/lib/attendance-status";
 import type { MyCalendarSessionLight } from "@/types/my-calendar";
-
-const WEEKDAY_LABELS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+import { useLanguage } from "@/hooks/use-language";
 
 interface CalendarMonthGridProps {
   year: number;
@@ -56,6 +55,10 @@ export function CalendarMonthGrid({
   onSessionClick,
   mode,
 }: CalendarMonthGridProps) {
+  const { t, lang } = useLanguage();
+  const WEEKDAY_LABELS = lang === "en"
+    ? ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    : ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
   const monthStart = startOfMonth(new Date(year, month, 1));
   const monthEnd = endOfMonth(monthStart);
   const days = eachDayOfInterval({
@@ -156,11 +159,11 @@ export function CalendarMonthGrid({
                       </div>
                       <div className="truncate text-[8px] font-medium leading-tight sm:text-[9px]">
                         {session.isFreeSession
-                          ? "Lịch linh hoạt"
+                           ? t("mySpace.calendar.flexibleSchedule")
                           : `${session.startTime?.slice(0, 5)} – ${session.endTime?.slice(0, 5)}`}
                       </div>
                       <div className="hidden truncate text-[9px] leading-tight opacity-75 sm:block">
-                        {session.learningFormat === "online" || session.onlineLink ? "Online" : "Offline"}
+                        {session.learningFormat === "online" || session.onlineLink ? t("mySpace.calendar.online") : t("mySpace.calendar.offline")}
                       {mode === "student" && session.attendanceStatus
                         ? ` · ${getAttendanceStatus(session.attendanceStatus).label}`
                         : ""}

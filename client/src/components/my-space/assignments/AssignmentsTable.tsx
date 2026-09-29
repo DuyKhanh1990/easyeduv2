@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ExamTakingDialog } from "@/pages/courses/dialogs/ExamTakingDialog";
 import { ExamCommentDialog } from "./ExamCommentDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useLanguage } from "@/hooks/use-language";
 
 const WEEKDAY_LABELS: Record<number, string> = {
   0: "Chủ Nhật", 1: "Thứ Hai", 2: "Thứ Ba", 3: "Thứ Tư",
@@ -30,8 +31,8 @@ function formatTime(t: string) {
   return t ? t.substring(0, 5) : "";
 }
 
-function formatMonthLabel(year: number, month: number) {
-  return `Tháng ${String(month + 1).padStart(2, "0")}/${year}`;
+function formatMonthLabel(year: number, month: number, t: (key: string) => string) {
+  return `${t("mySpace.assignments.month")} ${String(month + 1).padStart(2, "0")}/${year}`;
 }
 
 const DAY_SHORT: Record<number, string> = {
@@ -151,13 +152,14 @@ function CommentRichContent({ text }: { text: string }) {
 
 function CommentPopover({ comment }: { comment: string }) {
   const [open, setOpen] = useState(false);
+  const { t } = useLanguage();
 
   return (
     <>
       <button
         onClick={() => setOpen(true)}
         className="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/20 text-amber-600 dark:text-amber-400 transition-colors"
-        title="Xem nhận xét"
+        title={t("mySpace.assignments.viewComment")}
         data-testid="button-view-comment"
       >
         <Eye className="w-4 h-4" />
@@ -165,7 +167,7 @@ function CommentPopover({ comment }: { comment: string }) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Nhận xét</DialogTitle>
+            <DialogTitle>{t("mySpace.assignments.commentTitle")}</DialogTitle>
           </DialogHeader>
           <div className="overflow-y-auto flex-1 pr-1">
             <CommentRichContent text={comment} />
@@ -370,6 +372,7 @@ function AssignmentMobileCard({
 export function AssignmentsTable({
   rows, month, isLoading, isStaff = false, year, monthIndex, onPrevMonth, onNextMonth, onToday, onDateRangeChange, onExamClick, highlightDate,
 }: Props) {
+  const { t } = useLanguage();
   const [, navigate] = useLocation();
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [dateFrom, setDateFrom] = useState(() => {
@@ -495,14 +498,14 @@ export function AssignmentsTable({
   }
 
   const COLS = [
-    { label: "TÊN LỚP",    minW: "min-w-[160px]", sticky: false },
-    { label: "HỌC VIÊN",   minW: "min-w-[120px]", sticky: false },
-    { label: "BÀI TẬP",   minW: "min-w-[200px]", sticky: false },
-    { label: "LOẠI",       minW: "min-w-[110px]", sticky: false },
-    { label: "TRẠNG THÁI", minW: "min-w-[100px]", sticky: false },
-    { label: "BÀI NỘP",   minW: "min-w-[80px]",  sticky: false },
-    { label: "ĐIỂM",       minW: "min-w-[70px]",  sticky: true,  right: "right-[96px]" },
-    { label: "NHẬN XÉT",  minW: "min-w-[96px]",  sticky: true,  right: "right-0" },
+    { label: t("mySpace.assignments.class"), minW: "min-w-[160px]", sticky: false },
+    { label: t("mySpace.assignments.student"), minW: "min-w-[120px]", sticky: false },
+    { label: t("mySpace.assignments.assignment"), minW: "min-w-[200px]", sticky: false },
+    { label: t("mySpace.assignments.type"), minW: "min-w-[110px]", sticky: false },
+    { label: t("mySpace.assignments.status"), minW: "min-w-[100px]", sticky: false },
+    { label: t("mySpace.assignments.submission"), minW: "min-w-[80px]", sticky: false },
+    { label: t("mySpace.assignments.score"), minW: "min-w-[70px]", sticky: true, right: "right-[96px]" },
+    { label: t("mySpace.assignments.comment"), minW: "min-w-[96px]", sticky: true, right: "right-0" },
   ];
 
   return (
@@ -512,9 +515,9 @@ export function AssignmentsTable({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <BookOpen className="h-5 w-5 shrink-0 text-green-600" />
-            <h1 className="truncate text-lg font-bold text-foreground sm:text-xl">Bài tập về nhà</h1>
+            <h1 className="truncate text-lg font-bold text-foreground sm:text-xl">{t("mySpace.assignments.title")}</h1>
           </div>
-          <p className="text-sm text-muted-foreground mt-0.5">{formatMonthLabel(year, monthIndex)}</p>
+          <p className="text-sm text-muted-foreground mt-0.5">{formatMonthLabel(year, monthIndex, t)}</p>
         </div>
         <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
           <button
@@ -536,7 +539,7 @@ export function AssignmentsTable({
             onClick={onToday}
             className="min-h-10 rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-secondary/70"
           >
-            Hôm nay
+            {t("mySpace.assignments.today")}
           </button>
         </div>
       </div>
@@ -556,7 +559,7 @@ export function AssignmentsTable({
                   : "text-muted-foreground hover:bg-secondary/60"
               )}
             >
-              {s === "all" ? "Tất cả" : s === "submitted" ? "Đã nộp" : "Chưa nộp"}
+              {s === "all" ? t("mySpace.assignments.all") : s === "submitted" ? t("mySpace.assignments.submitted") : t("mySpace.assignments.notSubmitted")}
             </button>
           ))}
         </div>
@@ -566,7 +569,7 @@ export function AssignmentsTable({
         {/* Date range */}
         <div className="grid min-w-0 grid-cols-2 gap-2 text-sm text-muted-foreground sm:flex sm:items-center">
           <label className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-            <span>Từ</span>
+            <span>{t("mySpace.assignments.from")}</span>
           <input
             data-testid="input-date-from"
             type="date"
@@ -576,7 +579,7 @@ export function AssignmentsTable({
           />
           </label>
           <label className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-            <span>Đến</span>
+            <span>{t("mySpace.assignments.to")}</span>
           <input
             data-testid="input-date-to"
             type="date"
@@ -600,7 +603,7 @@ export function AssignmentsTable({
               )}
             >
               <Filter className="h-3.5 w-3.5" />
-              Bộ lọc
+              {t("mySpace.assignments.filters")}
               {activeFilterCount > 0 && (
                 <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-600 text-white text-[10px] font-bold">
                   {activeFilterCount}

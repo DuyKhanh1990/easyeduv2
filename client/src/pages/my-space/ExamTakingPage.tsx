@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button";
 import { ExamTakingDialog } from "@/pages/courses/dialogs/ExamTakingDialog";
 import { queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { useLanguage } from "@/hooks/use-language";
 
 export function ExamTakingPage() {
   const { id: examId } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
+  const { t } = useLanguage();
 
   const searchParams = new URLSearchParams(window.location.search);
   const classId = searchParams.get("classId") || undefined;
@@ -49,7 +51,7 @@ export function ExamTakingPage() {
       <div className="fixed inset-0 flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Đang tải bài kiểm tra...</p>
+          <p className="text-sm text-muted-foreground">{t("mySpace.exam.loading")}</p>
         </div>
       </div>
     );
@@ -68,10 +70,10 @@ export function ExamTakingPage() {
             <AlertCircle className="h-7 w-7 text-muted-foreground" />
           </div>
           <div>
-            <h2 className="text-base font-semibold">Không tìm thấy bài kiểm tra</h2>
-            <p className="text-sm text-muted-foreground mt-1">Bài kiểm tra không tồn tại hoặc bạn không có quyền truy cập.</p>
+            <h2 className="text-base font-semibold">{t("mySpace.exam.notFound")}</h2>
+            <p className="text-sm text-muted-foreground mt-1">{t("mySpace.exam.noAccess")}</p>
           </div>
-          <Button onClick={handleClose} className="w-full">Quay lại</Button>
+          <Button onClick={handleClose} className="w-full">{t("mySpace.exam.back")}</Button>
         </div>
       </div>
     );
@@ -85,13 +87,12 @@ export function ExamTakingPage() {
             <BookOpenCheck className="h-7 w-7 text-red-500" />
           </div>
           <div>
-            <h2 className="text-base font-semibold">{exam?.name ?? "Bài kiểm tra"}</h2>
+            <h2 className="text-base font-semibold">{exam?.name ?? t("mySpace.exam.defaultTitle")}</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              Bạn đã làm bài kiểm tra này <strong>{attemptCount}</strong> lần.{" "}
-              Số lần làm tối đa là <strong>{maxAttempts}</strong>.
+              {t("mySpace.exam.attemptLimit").replace("__COUNT__", String(attemptCount)).replace("__MAX__", String(maxAttempts))}
             </p>
           </div>
-          <Button onClick={handleClose} className="w-full">Quay lại</Button>
+          <Button onClick={handleClose} className="w-full">{t("mySpace.exam.back")}</Button>
         </div>
       </div>
     );

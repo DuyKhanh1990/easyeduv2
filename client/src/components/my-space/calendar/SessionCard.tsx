@@ -10,6 +10,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { getAttendanceStatus } from "@/lib/attendance-status";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useLanguage } from "@/hooks/use-language";
 
 const CONTENT_TYPE_LABELS: Record<string, string> = {
   lesson: "Bài học",
@@ -122,6 +123,7 @@ function OnlineLinkButton({
   onlineEndedAt,
   onRecorded,
 }: OnlineLinkButtonProps) {
+  const { t: translate, lang } = useLanguage();
   const platformName = getOnlinePlatformName(onlineLink);
   const [localClickedAt, setLocalClickedAt] = useState<string | null>(onlineClickedAt ?? null);
   const [localEndedAt, setLocalEndedAt] = useState<string | null>(onlineEndedAt ?? null);
@@ -224,26 +226,26 @@ function OnlineLinkButton({
             ) : (
               <LogOut className="h-3.5 w-3.5" />
             )}
-            Kết thúc học online
+             {translate("mySpace.calendar.endOnline")}
           </button>
         )}
       </div>
       {!canJoin && !localClickedAt && onlineRule && (
         <span className="text-[11px] text-muted-foreground">
-          Nút sẽ mở lúc{" "}
+           {translate("mySpace.calendar.openAt")}{" "}
           {(() => {
             const [h, m] = startTime.split(":").map(Number);
             const t = new Date(sessionDate + "T00:00:00");
             t.setHours(h, m - onlineRule.earlyEntryMinutes, 0, 0);
-            return t.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+             return t.toLocaleTimeString(lang === "en" ? "en-US" : "vi-VN", { hour: "2-digit", minute: "2-digit" });
           })()}
         </span>
       )}
       {localClickedAt && (
         <span className="text-[11px] text-orange-500 font-medium">
-          Đã vào lúc {new Date(localClickedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+           {translate("mySpace.calendar.enteredAt")} {new Date(localClickedAt).toLocaleTimeString(lang === "en" ? "en-US" : "vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
           {localEndedAt && (
-            <> · Kết thúc lúc {new Date(localEndedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</>
+             <> · {translate("mySpace.calendar.endedAt")} {new Date(localEndedAt).toLocaleTimeString(lang === "en" ? "en-US" : "vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</>
           )}
         </span>
       )}
@@ -304,6 +306,7 @@ interface SessionCardDetailProps {
 }
 
 function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDetailProps) {
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
   const [showFeedback, setShowFeedback] = useState(false);
   const [viewingContentId, setViewingContentId] = useState<string | null>(null);
@@ -419,7 +422,7 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
         <div className="flex flex-col items-start justify-between gap-2 sm:flex-row">
           <div className="space-y-1 min-w-0">
             <p className="text-sm text-muted-foreground">
-              Thời gian: <span className="font-bold text-foreground">{session.isFreeSession ? "Lịch linh hoạt" : `${session.startTime} - ${session.endTime}`}</span>
+              {t("mySpace.calendar.time")} <span className="font-bold text-foreground">{session.isFreeSession ? t("mySpace.calendar.flexibleSchedule") : `${session.startTime} - ${session.endTime}`}</span>
             </p>
             <p className="font-bold text-foreground text-base">
               Lớp: {session.classCode === "TEST" ? session.className : session.classCode}
@@ -481,7 +484,7 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
         {/* General content */}
         {hasGeneralContent && (
           <div className="space-y-1.5 border-t border-border/50 pt-3">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Nội dung chung</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t("mySpace.calendar.contentGeneral")}</p>
             <ContentRow label="Bài học" items={generalLessons} onViewItem={handleViewItem} />
             <ContentRow label="BTVN" items={generalHomework} onViewItem={handleViewItem} />
             {generalOther.map((item) => (
@@ -493,7 +496,7 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
         {/* Personal content */}
         {hasPersonalContent && (
           <div className="space-y-1.5 border-t border-border/50 pt-3">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Nội dung cá nhân</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t("mySpace.calendar.contentPersonal")}</p>
             <ContentRow label="Bài học" items={personalLessons} onViewItem={handleViewItem} />
             <ContentRow label="BTVN" items={personalHomework} onViewItem={handleViewItem} />
             {personalOther.map((item) => (
@@ -504,7 +507,7 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
 
         {/* Review row */}
         <div className="flex flex-wrap items-center gap-2 border-t border-border/50 pt-3">
-          <span className="text-sm text-muted-foreground">Nhận xét:</span>
+          <span className="text-sm text-muted-foreground">{t("mySpace.calendar.feedback")}</span>
           {hasReview ? (
             <button
               onClick={() => setShowFeedback(true)}
@@ -512,10 +515,10 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
               data-testid="btn-view-feedback"
             >
               <Eye className="h-4 w-4" />
-              <span>Xem nhận xét</span>
+              <span>{t("mySpace.calendar.viewFeedback")}</span>
             </button>
           ) : (
-            <span className="text-sm text-muted-foreground italic">Chưa có nhận xét</span>
+              <span className="text-sm text-muted-foreground italic">{t("mySpace.calendar.noFeedback")}</span>
           )}
         </div>
       </div>

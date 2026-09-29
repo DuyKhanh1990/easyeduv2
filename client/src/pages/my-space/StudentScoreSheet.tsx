@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { vi } from "date-fns/locale";
+import { enUS, vi } from "date-fns/locale";
 import { BarChart3, BookOpen, Eye, MessageSquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useLanguage } from "@/hooks/use-language";
 
 type ScoreEntry = {
   categoryId: string;
@@ -48,13 +49,14 @@ const formatDate = (d: string | null | undefined) => {
   try { return format(new Date(d), "dd/MM/yyyy"); } catch { return "—"; }
 };
 
-const formatDateLabel = (d: string) => {
+const formatDateLabel = (d: string, lang: "vi" | "en") => {
   try {
-    return format(new Date(d), "EEEE, dd/MM/yyyy", { locale: vi });
+    return format(new Date(d), "EEEE, dd/MM/yyyy", { locale: lang === "vi" ? vi : enUS });
   } catch { return d; }
 };
 
 export function StudentScoreSheet() {
+  const { t, lang } = useLanguage();
   const [selected, setSelected] = useState<GradeBookRow | null>(null);
 
   const { data, isLoading } = useQuery<GradeBookRow[]>({
@@ -88,9 +90,9 @@ export function StudentScoreSheet() {
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
           <BarChart3 className="h-5 w-5 shrink-0 text-violet-500 sm:h-6 sm:w-6" />
-          <h1 className="text-lg font-semibold sm:text-xl">Bảng điểm của tôi</h1>
+          <h1 className="text-lg font-semibold sm:text-xl">{t("mySpace.scoreSheet.title")}</h1>
           </div>
-          <PageGuideButton pageTitle="Bảng điểm của tôi" className="shrink-0" />
+          <PageGuideButton pageTitle={t("mySpace.scoreSheet.title")} className="shrink-0" />
         </div>
         <div className="h-48 rounded-xl bg-secondary/50 animate-pulse" />
       </div>
@@ -103,20 +105,20 @@ export function StudentScoreSheet() {
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <BarChart3 className="h-5 w-5 shrink-0 text-violet-500 sm:h-6 sm:w-6" />
-          <h1 className="truncate text-lg font-semibold sm:text-xl">Bảng điểm của tôi</h1>
+          <h1 className="truncate text-lg font-semibold sm:text-xl">{t("mySpace.scoreSheet.title")}</h1>
           {gradeBooks.length > 0 && (
             <Badge variant="secondary" className="text-xs font-normal">
-              {gradeBooks.length} bảng điểm
+              {gradeBooks.length} {t("mySpace.scoreSheet.count")}
             </Badge>
           )}
         </div>
-        <PageGuideButton pageTitle="Bảng điểm của tôi" className="shrink-0" />
+        <PageGuideButton pageTitle={t("mySpace.scoreSheet.title")} className="shrink-0" />
       </div>
 
       {gradeBooks.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground">
           <BookOpen className="h-10 w-10 opacity-25" />
-          <p className="text-sm">Chưa có bảng điểm nào được ghi nhận</p>
+          <p className="text-sm">{t("mySpace.scoreSheet.studentEmpty")}</p>
         </div>
       ) : (
         <div className="space-y-0">
@@ -138,7 +140,7 @@ export function StudentScoreSheet() {
                 <div className="flex-1 pb-6 min-w-0">
                   {/* Date label */}
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400 mb-2 capitalize">
-                    {formatDateLabel(dateKey)}
+                    {formatDateLabel(dateKey, lang)}
                   </p>
 
                   <div className="space-y-2">
@@ -169,7 +171,7 @@ export function StudentScoreSheet() {
                               )}
                               {book.sessionIndex != null && (
                                 <span className="text-[11px] text-muted-foreground/60 whitespace-nowrap">
-                                  · Buổi {book.sessionIndex}
+                                  · {t("mySpace.scoreSheet.session")} {book.sessionIndex}
                                 </span>
                               )}
                             </div>
@@ -193,20 +195,20 @@ export function StudentScoreSheet() {
                                 {lastScore.score}
                               </span>
                             ) : (
-                              <span className="text-xs text-muted-foreground">Chưa có</span>
+                              <span className="text-xs text-muted-foreground">{t("mySpace.scoreSheet.noScore")}</span>
                             )}
                             {hasComment && (
-                              <MessageSquare className="h-3.5 w-3.5 text-amber-500 shrink-0" title="Có nhận xét" />
+                              <MessageSquare className="h-3.5 w-3.5 text-amber-500 shrink-0" title={t("mySpace.scoreSheet.hasComment")} />
                             )}
                           </div>
 
                           {/* Col 4: Creator + date */}
                           <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
                             <p className="text-[11px] text-muted-foreground whitespace-nowrap truncate">
-                              Tạo: {book.createdByName ?? "—"} · {formatDate(book.createdAt)}
+                              {t("mySpace.scoreSheet.created")}: {book.createdByName ?? "—"} · {formatDate(book.createdAt)}
                             </p>
                             <p className="text-[11px] text-muted-foreground/70 whitespace-nowrap truncate">
-                              Cập nhật: {formatDate(book.updatedAt)}
+                              {t("mySpace.scoreSheet.updated")}: {formatDate(book.updatedAt)}
                             </p>
                           </div>
 
@@ -251,7 +253,7 @@ export function StudentScoreSheet() {
               )}
               {selected?.studentName && (
                 <Badge variant="outline" className="text-xs font-normal bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700">
-                  HV: {selected.studentName}
+                  {t("mySpace.scoreSheet.student")}: {selected.studentName}
                 </Badge>
               )}
             </div>
@@ -264,8 +266,8 @@ export function StudentScoreSheet() {
                 <Table>
                   <TableHeader className="sticky top-0 bg-background z-10">
                     <TableRow>
-                      <TableHead className="text-xs font-semibold">Tiêu chí</TableHead>
-                      <TableHead className="text-xs font-semibold text-right">Điểm</TableHead>
+                      <TableHead className="text-xs font-semibold">{t("mySpace.scoreSheet.criteria")}</TableHead>
+                      <TableHead className="text-xs font-semibold text-right">{t("mySpace.scoreSheet.score")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -291,7 +293,7 @@ export function StudentScoreSheet() {
               ) : (
                 <div className="p-6">
                   <p className="text-sm text-muted-foreground italic">
-                    Chưa có điểm được nhập cho bảng điểm này.
+                    {t("mySpace.scoreSheet.noScores")}
                   </p>
                 </div>
               )}
@@ -302,7 +304,7 @@ export function StudentScoreSheet() {
               <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
                 <div className="flex items-center gap-1.5 text-muted-foreground px-4 py-3 border-b bg-secondary/30 shrink-0">
                   <MessageSquare className="h-4 w-4 shrink-0" />
-                  <p className="text-xs font-semibold">Nhận xét của giáo viên</p>
+                  <p className="text-xs font-semibold">{t("mySpace.scoreSheet.teacherComment")}</p>
                 </div>
                 <div className="flex-1 overflow-y-auto p-4">
                   {selected.teacherComment.trimStart().startsWith("<") ? (

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { vi } from "date-fns/locale";
+import { enUS, vi } from "date-fns/locale";
 import { BarChart3, BookOpen, CalendarDays, Clock3, Eye, Pencil, Plus, Users, CheckCircle2, Clock, CircleDot } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import {
   type StaffAssignedScoreSheetAssessment,
 } from "@/components/education/StaffScoreSheetAssessmentStudentsDialog";
 import { PageGuideButton } from "@/components/guides/PageGuideDialog";
+import { useLanguage } from "@/hooks/use-language";
 
 type StaffGradeBookRow = {
   id: string;
@@ -48,7 +49,7 @@ type ScoreSheetTimelineEntry =
     };
 
 type DeadlineStatus = {
-  label: string;
+  labelKey: "notDue" | "overdue" | "dueSoon" | "onTime";
   indicator: string;
   className: string;
 };
@@ -94,7 +95,7 @@ const getDeadlineStatus = (deadline: string | null, nowWallClockMs: number): Dea
   const match = deadline && /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(deadline);
   if (!match) {
     return {
-      label: "Chưa có hạn trả điểm",
+      labelKey: "notDue",
       indicator: "⚪",
       className: "border-slate-200 bg-slate-50 text-slate-600",
     };
@@ -112,32 +113,33 @@ const getDeadlineStatus = (deadline: string | null, nowWallClockMs: number): Dea
 
   if (remainingMs < 0) {
     return {
-      label: "Quá hạn",
+      labelKey: "overdue",
       indicator: "🔴",
       className: "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300",
     };
   }
   if (remainingMs <= 3 * 24 * 60 * 60 * 1000) {
     return {
-      label: "Sắp đến hạn",
+      labelKey: "dueSoon",
       indicator: "🟡",
       className: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300",
     };
   }
   return {
-    label: "Đúng hạn",
+    labelKey: "onTime",
     indicator: "🟢",
     className: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300",
   };
 };
 
-const formatDateLabel = (d: string) => {
+const formatDateLabel = (d: string, lang: "vi" | "en") => {
   try {
-    return format(new Date(d), "EEEE, dd/MM/yyyy", { locale: vi });
+    return format(new Date(d), "EEEE, dd/MM/yyyy", { locale: lang === "vi" ? vi : enUS });
   } catch { return d; }
 };
 
 export function StaffScoreSheet() {
+  const { t, lang } = useLanguage();
   const [editingBook, setEditingBook] = useState<StaffGradeBookRow | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedAssessment, setSelectedAssessment] = useState<StaffAssignedScoreSheetAssessment | null>(null);
@@ -202,9 +204,9 @@ export function StaffScoreSheet() {
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
           <BarChart3 className="h-5 w-5 shrink-0 text-violet-500 sm:h-6 sm:w-6" />
-          <h1 className="text-lg font-semibold sm:text-xl">Bảng điểm của tôi</h1>
+          <h1 className="text-lg font-semibold sm:text-xl">{t("mySpace.scoreSheet.title")}</h1>
           </div>
-          <PageGuideButton pageTitle="Bảng điểm của tôi" className="shrink-0" />
+          <PageGuideButton pageTitle={t("mySpace.scoreSheet.title")} className="shrink-0" />
         </div>
         <div className="h-48 rounded-xl bg-secondary/50 animate-pulse" />
       </div>
@@ -217,10 +219,10 @@ export function StaffScoreSheet() {
       <div className="flex items-center gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <BarChart3 className="h-5 w-5 shrink-0 text-violet-500 sm:h-6 sm:w-6" />
-          <h1 className="truncate text-lg font-semibold sm:text-xl">Bảng điểm của tôi</h1>
+          <h1 className="truncate text-lg font-semibold sm:text-xl">{t("mySpace.scoreSheet.title")}</h1>
           {timelineEntries.length > 0 && (
             <Badge variant="secondary" className="text-xs font-normal">
-              {timelineEntries.length} bảng điểm
+              {timelineEntries.length} {t("mySpace.scoreSheet.count")}
             </Badge>
           )}
         </div>
@@ -231,15 +233,15 @@ export function StaffScoreSheet() {
             data-testid="button-add-grade-book-staff"
           >
             <Plus className="h-4 w-4 mr-1" />
-            Thêm bảng điểm
+            {t("mySpace.scoreSheet.add")}
           </Button>
-          <PageGuideButton pageTitle="Bảng điểm của tôi" className="shrink-0" />
+          <PageGuideButton pageTitle={t("mySpace.scoreSheet.title")} className="shrink-0" />
         </div>
       </div>
 
       {isAssignedAssessmentsError && (
         <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-          Không tải được danh sách bảng điểm được giao. Vui lòng thử tải lại trang.
+          {t("mySpace.scoreSheet.assignedLoadError")}
         </div>
       )}
 
@@ -247,7 +249,7 @@ export function StaffScoreSheet() {
         !isLoadingAssignedAssessments && !isAssignedAssessmentsError ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground">
             <BookOpen className="h-10 w-10 opacity-25" />
-            <p className="text-sm">Chưa có bảng điểm nào trong các lớp của bạn</p>
+            <p className="text-sm">{t("mySpace.scoreSheet.staffEmpty")}</p>
           </div>
         ) : null
       ) : (
@@ -270,7 +272,7 @@ export function StaffScoreSheet() {
                 <div className="flex-1 pb-6 min-w-0">
                   {/* Date label */}
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400 mb-2 capitalize">
-                    {formatDateLabel(dateKey)}
+                    {formatDateLabel(dateKey, lang)}
                   </p>
 
                   <div className="space-y-2">
@@ -280,17 +282,17 @@ export function StaffScoreSheet() {
                         const deadlineStatus = getDeadlineStatus(assessment.scoreDeadlineAt, nowWallClockMs);
                         const scoreProgressLabel = assessment.studentCount > 0
                           && assessment.completedStudentCount >= assessment.studentCount
-                          ? "Đã nhập đủ điểm"
+                          ? t("mySpace.scoreSheet.enteredAll")
                           : assessment.enteredStudentCount > 0
-                            ? `${assessment.enteredStudentCount}/${assessment.studentCount} đã nhập`
-                            : "Chưa nhập";
+                            ? `${assessment.enteredStudentCount}/${assessment.studentCount} ${t("mySpace.scoreSheet.enteredProgress")}`
+                            : t("mySpace.scoreSheet.notEntered");
                         return (
                           <div
                             key={`conversion:${entry.id}`}
                             role="button"
                             tabIndex={0}
                             aria-haspopup="dialog"
-                            aria-label={`Xem danh sách học viên: ${assessment.assessmentName ?? "Bảng điểm Quy đổi"} - ${assessment.classCode}`}
+                            aria-label={`${t("mySpace.scoreSheet.viewStudents")}: ${assessment.assessmentName ?? t("mySpace.scoreSheet.conversionSheet")} - ${assessment.classCode}`}
                             onClick={() => setSelectedAssessment(assessment)}
                             onKeyDown={(event) => {
                               if (event.key === "Enter" || event.key === " ") {
@@ -303,7 +305,7 @@ export function StaffScoreSheet() {
                           >
                             <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
                               <p className="text-sm font-semibold text-foreground truncate leading-tight">
-                                {assessment.assessmentName ?? "Cấu hình bảng điểm không khả dụng"}
+                                {assessment.assessmentName ?? t("mySpace.scoreSheet.unavailableSheet")}
                               </p>
                               <div className="flex items-center gap-1 mt-0.5">
                                 <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
@@ -316,7 +318,7 @@ export function StaffScoreSheet() {
                                 )}
                                 {assessment.sessionIndex != null && (
                                   <span className="text-[11px] text-muted-foreground/60 whitespace-nowrap">
-                                    · Buổi {assessment.sessionIndex}
+                                    · {t("mySpace.scoreSheet.session")} {assessment.sessionIndex}
                                   </span>
                                 )}
                               </div>
@@ -324,7 +326,7 @@ export function StaffScoreSheet() {
 
                             <div className="flex min-w-0 flex-col items-start gap-1">
                               <Badge variant="outline" className="text-[11px] whitespace-nowrap">
-                                Bảng điểm Quy đổi
+                                {t("mySpace.scoreSheet.conversionSheet")}
                               </Badge>
                               {assessment.assessmentCode && (
                                 <span className="max-w-full truncate text-[10px] text-muted-foreground">
@@ -335,7 +337,7 @@ export function StaffScoreSheet() {
 
                             <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
                               <Users className="h-3.5 w-3.5 shrink-0" />
-                              <span>{assessment.studentCount ?? 0} HV</span>
+                              <span>{assessment.studentCount ?? 0} {t("mySpace.scoreSheet.studentCount")}</span>
                             </div>
 
                             <div className="flex min-w-0 flex-col items-start gap-1">
@@ -344,25 +346,25 @@ export function StaffScoreSheet() {
                                 {scoreProgressLabel}
                               </span>
                               <span className={`inline-flex items-center gap-1 rounded border px-1 text-[10px] font-medium whitespace-nowrap ${deadlineStatus.className}`}>
-                                {deadlineStatus.indicator} {deadlineStatus.label}
+                                {deadlineStatus.indicator} {t(`mySpace.scoreSheet.${deadlineStatus.labelKey}`)}
                               </span>
                             </div>
 
                             <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
                               <p className="flex items-center gap-1 text-[11px] text-muted-foreground whitespace-nowrap">
                                 <CalendarDays className="h-3 w-3 shrink-0" />
-                                Ngày thi: {formatAssessmentDate(assessment.examDate)}
+                                {t("mySpace.scoreSheet.examDate")}: {formatAssessmentDate(assessment.examDate)}
                               </p>
                               <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground/70 whitespace-nowrap">
                                 <Clock3 className="h-3 w-3 shrink-0" />
-                                Hạn trả: {formatAssessmentDeadline(assessment.scoreDeadlineAt)}
+                                {t("mySpace.scoreSheet.scoreDeadline")}: {formatAssessmentDeadline(assessment.scoreDeadlineAt)}
                               </p>
                             </div>
 
                             <div className="col-span-2 flex justify-end border-t border-border/60 pt-2 sm:col-span-3 md:col-span-4 xl:col-span-1 xl:border-0 xl:pt-0">
                               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">
                                 <Eye className="h-3.5 w-3.5" />
-                                Xem
+                                {t("mySpace.scoreSheet.view")}
                               </span>
                             </div>
                           </div>
@@ -392,7 +394,7 @@ export function StaffScoreSheet() {
                               )}
                               {book.sessionIndex != null && (
                                 <span className="text-[11px] text-muted-foreground/60 whitespace-nowrap">
-                                  · Buổi {book.sessionIndex}
+                                  · {t("mySpace.scoreSheet.session")} {book.sessionIndex}
                                 </span>
                               )}
                             </div>
@@ -412,7 +414,7 @@ export function StaffScoreSheet() {
                           {/* Col 3: Students */}
                           <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
                             <Users className="h-3.5 w-3.5 shrink-0" />
-                            <span>{book.studentCount ?? 0} HV</span>
+                            <span>{book.studentCount ?? 0} {t("mySpace.scoreSheet.studentCount")}</span>
                           </div>
 
                           {/* Col 4: Status */}
@@ -420,12 +422,12 @@ export function StaffScoreSheet() {
                             {book.published ? (
                               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-green-700 dark:text-green-400 whitespace-nowrap">
                                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                                Đã công bố
+                                {t("mySpace.scoreSheet.published")}
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground whitespace-nowrap">
                                 <Clock className="h-3.5 w-3.5 shrink-0" />
-                                Chưa công bố
+                                {t("mySpace.scoreSheet.unpublished")}
                               </span>
                             )}
                           </div>
@@ -433,10 +435,10 @@ export function StaffScoreSheet() {
                           {/* Col 5: Creator / updater */}
                           <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
                             <p className="text-[11px] text-muted-foreground whitespace-nowrap truncate">
-                              Tạo: {book.createdByName ?? "—"} · {formatDate(book.createdAt)}
+                              {t("mySpace.scoreSheet.created")}: {book.createdByName ?? "—"} · {formatDate(book.createdAt)}
                             </p>
                             <p className="text-[11px] text-muted-foreground/70 whitespace-nowrap truncate">
-                              Cập nhật: {book.updatedByName ?? "—"} · {formatDate(book.updatedAt)}
+                              {t("mySpace.scoreSheet.updated")}: {book.updatedByName ?? "—"} · {formatDate(book.updatedAt)}
                             </p>
                           </div>
 
@@ -450,7 +452,7 @@ export function StaffScoreSheet() {
                               data-testid={`btn-edit-grade-book-${book.id}`}
                             >
                               <Pencil className="h-3.5 w-3.5" />
-                              Sửa
+                              {t("mySpace.scoreSheet.edit")}
                             </Button>
                           </div>
                         </div>

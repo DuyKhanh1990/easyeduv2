@@ -113,7 +113,7 @@ function ClassSessionsTable({ classId, classCode, className: classNameLabel, pag
     setFeedbackLoading(true);
     setFeedbackOpen(true);
     setFeedbackSessionDate(
-      new Date(sessionDate + "T00:00:00").toLocaleDateString("vi-VN", { weekday: "long", day: "2-digit", month: "2-digit" })
+      new Date(sessionDate + "T00:00:00").toLocaleDateString(lang === "en" ? "en-US" : "vi-VN", { weekday: "long", day: "2-digit", month: "2-digit" })
     );
     try {
       const res = await fetch(`/api/my-space/calendar/student/session/${classSessionId}`, { credentials: "include" });
@@ -200,7 +200,7 @@ function ClassSessionsTable({ classId, classCode, className: classNameLabel, pag
                     className="mt-3 flex min-h-10 w-full items-center justify-center gap-1.5 border-t border-border pt-3 text-xs font-medium text-primary"
                   >
                     <Eye className="h-3.5 w-3.5" />
-                    Xem nhận xét
+                    {t("mySpace.calendar.student.viewFeedback")}
                   </button>
                 )}
               </article>
@@ -265,7 +265,7 @@ function ClassSessionsTable({ classId, classCode, className: classNameLabel, pag
                           className="flex items-center gap-1.5 text-primary text-xs font-medium hover:text-primary/70 transition-colors cursor-pointer"
                         >
                           <Eye className="h-3.5 w-3.5" />
-                          Xem nhận xét
+                          {t("mySpace.calendar.student.viewFeedback")}
                         </button>
                       ) : (
                         <span className="text-muted-foreground text-xs">—</span>
@@ -282,7 +282,7 @@ function ClassSessionsTable({ classId, classCode, className: classNameLabel, pag
       {/* Pagination footer */}
       <div className="flex flex-col items-start justify-between gap-3 pt-1 sm:flex-row sm:items-center">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span>Hiển thị</span>
+          <span>{t("mySpace.calendar.student.showing")}</span>
           <Select
             value={String(pageSize)}
             onValueChange={(v) => { onPageSizeChange(Number(v)); onPageChange(1); }}
@@ -296,10 +296,10 @@ function ClassSessionsTable({ classId, classCode, className: classNameLabel, pag
               ))}
             </SelectContent>
           </Select>
-          <span>/ trang</span>
+          <span>{t("mySpace.calendar.student.perPage")}</span>
           {total > 0 && (
             <span className="ml-1">
-              ({startItem}–{endItem} / {total} buổi)
+              ({startItem}–{endItem} / {total} {t("mySpace.calendar.student.table.session").toLowerCase()})
             </span>
           )}
         </div>
@@ -346,6 +346,7 @@ function ClassSessionsTable({ classId, classCode, className: classNameLabel, pag
 // ─── List view ───────────────────────────────────────────────────────────────
 
 function StudentListView() {
+  const { t } = useLanguage();
   const { data: classList, isLoading, isError } = useQuery<ClassMeta[]>({
     queryKey: ["/api/my-space/calendar/student/classes"],
     queryFn: async () => {
@@ -383,13 +384,13 @@ function StudentListView() {
     );
   }
   if (isError) {
-    return <div className="text-center py-10 text-sm text-red-500">Không thể tải danh sách. Vui lòng thử lại.</div>;
+    return <div className="text-center py-10 text-sm text-red-500">{t("mySpace.calendar.student.errorClasses")}</div>;
   }
   if (classes.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground">
         <CalendarDays className="h-10 w-10 opacity-25" />
-        <p className="text-sm">Chưa có buổi học nào được ghi nhận</p>
+        <p className="text-sm">{t("mySpace.calendar.student.noClasses")}</p>
       </div>
     );
   }
@@ -567,17 +568,17 @@ function StudentCalendarView({ viewMode }: { viewMode: "calendar" | "month" }) {
                 ? "bg-primary/10 text-primary border-primary/20"
                 : "bg-secondary text-muted-foreground border-border"
             )}>
-              {sessionsForDate.length > 0 ? `${sessionsForDate.length} CA HỌC` : "KHÔNG CÓ LỊCH"}
+              {sessionsForDate.length > 0 ? `${sessionsForDate.length} ${t("mySpace.calendar.sessionCount")}` : t("mySpace.calendar.noSchedule")}
             </span>
           </div>
 
           {isLoading && <div className="space-y-3">{[1, 2].map(i => <div key={i} className="h-36 rounded-2xl bg-secondary/50 animate-pulse" />)}</div>}
-          {isError && <div className="text-center py-10 text-sm text-red-500">Không thể tải lịch. Vui lòng thử lại.</div>}
+          {isError && <div className="text-center py-10 text-sm text-red-500">{t("mySpace.calendar.errorLoad")}</div>}
 
           {!isLoading && !isError && sessionsForDate.length === 0 && (
             <div className="flex flex-col items-center justify-center py-14 gap-3 text-muted-foreground">
               <CalendarDays className="h-10 w-10 opacity-25" />
-              <p className="text-sm">Không có buổi học nào trong ngày này</p>
+              <p className="text-sm">{t("mySpace.calendar.staff.noSessions")}</p>
             </div>
           )}
           {!isLoading && !isError && sessionsForDate.length > 0 && (
@@ -642,7 +643,7 @@ export function StudentCalendar() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
           <CalendarDays className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-bold text-foreground">Lịch cá nhân</h1>
+          <h1 className="text-xl font-bold text-foreground">{t("mySpace.calendar.title")}</h1>
         </div>
 
         {/* View toggle */}

@@ -4,6 +4,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { TeacherReview, ReviewCriteriaGroup } from "@/types/my-calendar";
 import { MessageSquare, Loader2, Star, ChevronDown, ChevronUp } from "lucide-react";
+import { useLanguage } from "@/hooks/use-language";
 
 const CRITERIA_COLORS = [
   { bg: "bg-orange-50 dark:bg-orange-950/30", border: "border-orange-200 dark:border-orange-800", icon: "bg-orange-100 dark:bg-orange-900", text: "text-orange-600 dark:text-orange-400" },
@@ -27,6 +28,7 @@ function StarDisplay({ rating }: { rating: number }) {
 }
 
 function CriteriaCard({ group, colorIdx }: { group: ReviewCriteriaGroup; colorIdx: number }) {
+  const { t } = useLanguage();
   const [expanded, setExpanded] = useState(true);
   const color = CRITERIA_COLORS[colorIdx % CRITERIA_COLORS.length];
   const hasContent = group.items.some((i) => i.comment || i.inputType === "checkbox");
@@ -83,7 +85,7 @@ function CriteriaCard({ group, colorIdx }: { group: ReviewCriteriaGroup; colorId
 
       {expanded && !hasContent && (
         <div className="px-4 pb-3 border-t border-inherit">
-          <p className="text-xs text-muted-foreground italic mt-2">Chưa có nhận xét</p>
+          <p className="text-xs text-muted-foreground italic mt-2">{t("mySpace.calendar.noFeedback")}</p>
         </div>
       )}
     </div>
@@ -97,13 +99,14 @@ function ReviewItemRow({
   item: ReviewCriteriaGroup["items"][number];
   color: (typeof CRITERIA_COLORS)[number];
 }) {
+  const { t } = useLanguage();
   if (item.inputType === "checkbox") {
     return (
       <div className="flex items-center gap-2 rounded-lg bg-white/70 dark:bg-black/20 px-3 py-2.5 text-sm shadow-sm">
         <Checkbox checked={item.checked === true} disabled />
-        <span className="text-foreground">{item.subCriteriaName || "Tiêu chí"}</span>
+        <span className="text-foreground">{item.subCriteriaName || t("mySpace.calendar.criteria")}</span>
         <span className="ml-auto text-xs font-medium text-muted-foreground">
-          {item.checked === true ? "Đạt" : "Chưa đạt"}
+          {item.checked === true ? t("mySpace.calendar.criteriaPassed") : t("mySpace.calendar.criteriaNotPassed")}
         </span>
       </div>
     );
@@ -111,25 +114,26 @@ function ReviewItemRow({
 
   return (
     <div className="rounded-lg bg-white/70 dark:bg-black/20 px-3 py-2.5 shadow-sm">
-      <p className={cn("text-sm font-semibold", color.text)}>{item.subCriteriaName || "Tiêu chí"}</p>
+      <p className={cn("text-sm font-semibold", color.text)}>{item.subCriteriaName || t("mySpace.calendar.criteria")}</p>
       {item.comment ? (
         <div
           className="mt-1 text-sm text-foreground leading-relaxed review-html-content"
           dangerouslySetInnerHTML={{ __html: item.comment }}
         />
       ) : (
-        <p className="mt-1 text-xs text-muted-foreground italic">Chưa có nhận xét</p>
+        <p className="mt-1 text-xs text-muted-foreground italic">{t("mySpace.calendar.noFeedback")}</p>
       )}
     </div>
   );
 }
 
 function TeacherReviewContent({ review }: { review: TeacherReview }) {
+  const { t } = useLanguage();
   return (
     <div className="space-y-3">
       {review.criteria.length > 0 && (
         <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-0.5">
-          Đánh giá theo tiêu chí
+          {t("mySpace.calendar.feedbackCriteria")}
         </p>
       )}
       {review.criteria.map((group, gi) => (
@@ -149,6 +153,7 @@ interface FeedbackModalProps {
 }
 
 export function FeedbackModal({ open, onClose, reviewData, className, sessionDate, loading }: FeedbackModalProps) {
+  const { t } = useLanguage();
   const [activeTeacher, setActiveTeacher] = useState(0);
   const validReviews = Array.isArray(reviewData) ? reviewData.filter((t) => t.criteria.length > 0) : [];
   const currentReview = validReviews[activeTeacher];
@@ -163,10 +168,10 @@ export function FeedbackModal({ open, onClose, reviewData, className, sessionDat
               <div className="w-8 h-8 rounded-lg bg-primary/15 flex items-center justify-center">
                 <MessageSquare className="h-4 w-4 text-primary" />
               </div>
-              Nhận xét từ Giáo viên
+              {t("mySpace.calendar.feedbackFromTeacher")}
             </DialogTitle>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Lớp <span className="font-medium text-foreground">{className}</span> · {sessionDate}
+              {t("mySpace.calendar.session")} <span className="font-medium text-foreground">{className}</span> · {sessionDate}
             </p>
           </DialogHeader>
 
@@ -196,14 +201,14 @@ export function FeedbackModal({ open, onClose, reviewData, className, sessionDat
           {loading ? (
             <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
-              <span className="text-sm">Đang tải nhận xét...</span>
+               <span className="text-sm">{t("mySpace.calendar.loadingFeedback")}</span>
             </div>
           ) : validReviews.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground">
               <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
                 <MessageSquare className="h-5 w-5 opacity-40" />
               </div>
-              <p className="text-sm">Chưa có nhận xét</p>
+               <p className="text-sm">{t("mySpace.calendar.noFeedback")}</p>
             </div>
           ) : currentReview ? (
             <TeacherReviewContent review={currentReview} />
@@ -213,7 +218,7 @@ export function FeedbackModal({ open, onClose, reviewData, className, sessionDat
         {/* Footer */}
         {!loading && validReviews.length > 0 && (
           <div className="border-t px-6 py-3 bg-muted/30 flex items-center justify-center">
-            <p className="text-xs text-muted-foreground">💙 Cảm ơn thầy/cô đã nhận xét!</p>
+             <p className="text-xs text-muted-foreground">{t("mySpace.calendar.feedbackThanks")}</p>
           </div>
         )}
       </DialogContent>
