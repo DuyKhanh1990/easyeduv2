@@ -28,6 +28,7 @@ import {
 import { useStaffSessionDetail } from "@/hooks/use-staff-session-detail";
 import { apiRequest, getAuthHeaders } from "@/lib/queryClient";
 import type { TestSession } from "@/components/education/TestSessionDetailDialog";
+import { useLanguage } from "@/hooks/use-language";
 
 const CONTENT_TYPE_LABELS: Record<string, string> = {
   "Bài học": "Bài học",
@@ -102,6 +103,7 @@ function StaffOnlineLinkButton({
   initialCheckInAt,
   initialCheckOutAt,
 }: StaffOnlineLinkButtonProps) {
+  const { t, lang } = useLanguage();
   const platformName = getOnlinePlatformName(onlineLink);
   const [clickedAt, setClickedAt] = useState<string | null>(initialCheckInAt ?? null);
   const [endedAt, setEndedAt] = useState<string | null>(initialCheckOutAt ?? null);
@@ -213,7 +215,7 @@ function StaffOnlineLinkButton({
             )}
           >
             <LogOut className="h-3.5 w-3.5" />
-            Kết thúc học online
+            {t("mySpace.calendar.endOnline")}
           </button>
         )}
       </div>
@@ -232,7 +234,7 @@ function StaffOnlineLinkButton({
         <span className="text-[11px] text-orange-500 font-medium">
           Đã vào lúc {new Date(clickedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
           {endedAt && (
-            <> · Kết thúc lúc {new Date(endedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</>
+          <> · {t("mySpace.calendar.endedAt")} {new Date(endedAt).toLocaleTimeString(lang === "en" ? "en-US" : "vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</>
           )}
         </span>
       )}
@@ -241,20 +243,21 @@ function StaffOnlineLinkButton({
 }
 
 function AttendanceStatus({ enrolledCount, pendingCount }: { enrolledCount: number; pendingCount: number }) {
+  const { t } = useLanguage();
   const attendedCount = enrolledCount - pendingCount;
   const allPending = pendingCount === enrolledCount || enrolledCount === 0;
   const partial = attendedCount > 0 && pendingCount > 0;
   const allDone = attendedCount > 0 && pendingCount === 0;
 
   if (allPending) {
-    return <span className="text-sm text-muted-foreground font-medium">Chưa điểm danh</span>;
+    return <span className="text-sm text-muted-foreground font-medium">{t("mySpace.calendar.attendancePending")}</span>;
   }
 
   if (allDone) {
     return (
       <div className="flex items-center gap-1.5">
         <CheckCircle2 className="h-4 w-4 text-green-600" />
-        <span className="text-sm text-green-600 font-semibold">Đã điểm danh</span>
+        <span className="text-sm text-green-600 font-semibold">{t("mySpace.calendar.attendanceDone")}</span>
       </div>
     );
   }
@@ -265,13 +268,13 @@ function AttendanceStatus({ enrolledCount, pendingCount }: { enrolledCount: numb
         <TooltipTrigger asChild>
           <div className="flex items-center gap-1.5 cursor-default">
             <CheckCircle2 className="h-4 w-4 text-green-600" />
-            <span className="text-sm text-green-600 font-semibold">Đã điểm danh</span>
+            <span className="text-sm text-green-600 font-semibold">{t("mySpace.calendar.attendanceDone")}</span>
             {partial && <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />}
           </div>
         </TooltipTrigger>
         {partial && (
           <TooltipContent side="top">
-            <p>Đã điểm danh {attendedCount}/{enrolledCount} học viên</p>
+            <p>{t("mySpace.calendar.checkInSummary").replace("{count}", String(attendedCount)).replace("{total}", String(enrolledCount))}</p>
           </TooltipContent>
         )}
       </Tooltip>
@@ -280,12 +283,13 @@ function AttendanceStatus({ enrolledCount, pendingCount }: { enrolledCount: numb
 }
 
 function ReviewStatus({ reviewedCount, enrolledCount, reviewPublished }: { reviewedCount: number; enrolledCount: number; reviewPublished: boolean }) {
+  const { t } = useLanguage();
   const allPending = reviewedCount === 0;
   const allDone = reviewedCount > 0 && reviewedCount >= enrolledCount;
   const partial = reviewedCount > 0 && reviewedCount < enrolledCount;
 
   if (allPending) {
-    return <span className="text-sm text-muted-foreground font-medium">Chưa nhận xét</span>;
+    return <span className="text-sm text-muted-foreground font-medium">{t("mySpace.calendar.noFeedback")}</span>;
   }
 
   return (
@@ -294,7 +298,7 @@ function ReviewStatus({ reviewedCount, enrolledCount, reviewPublished }: { revie
         <TooltipTrigger asChild>
           <div className="flex items-center gap-1.5 cursor-default">
             <MessageSquareText className="h-4 w-4 text-green-600" />
-            <span className="text-sm text-green-600 font-semibold">Đã nhận xét</span>
+            <span className="text-sm text-green-600 font-semibold">{t("mySpace.calendar.markedReview")}</span>
             {partial && <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />}
             {allDone && (
               reviewPublished
@@ -305,7 +309,7 @@ function ReviewStatus({ reviewedCount, enrolledCount, reviewPublished }: { revie
         </TooltipTrigger>
         {partial && (
           <TooltipContent side="top">
-            <p>Đã nhận xét {reviewedCount}/{enrolledCount} học viên</p>
+            <p>{t("mySpace.calendar.reviewSummary").replace("{count}", String(reviewedCount)).replace("{total}", String(enrolledCount))}</p>
           </TooltipContent>
         )}
       </Tooltip>
@@ -334,6 +338,7 @@ interface StaffSessionCardProps {
 }
 
 export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAddTestContent, onlineRule, staffId, highlighted }: StaffSessionCardProps) {
+  const { t } = useLanguage();
   const [contentDialogOpen, setContentDialogOpen] = useState(false);
   const [libraryDialogOpen, setLibraryDialogOpen] = useState(false);
   const [viewingContentId, setViewingContentId] = useState<string | null>(null);
@@ -381,12 +386,12 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
         <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
           <div className="space-y-1 min-w-0">
             <p className="text-sm text-muted-foreground">
-              Thời gian: <span className="font-bold text-foreground">{session.isFreeSession ? "Lịch linh hoạt" : `${session.startTime.slice(0, 5)} - ${session.endTime.slice(0, 5)}`}</span>
+              {t("mySpace.calendar.time")} <span className="font-bold text-foreground">{session.isFreeSession ? t("mySpace.calendar.flexibleSchedule") : `${session.startTime.slice(0, 5)} - ${session.endTime.slice(0, 5)}`}</span>
               {testEnded && (
-                <span className="ml-2 text-xs font-semibold text-red-500 bg-red-50 dark:bg-red-950/30 px-2 py-0.5 rounded-full">Đã kết thúc</span>
+                <span className="ml-2 text-xs font-semibold text-red-500 bg-red-50 dark:bg-red-950/30 px-2 py-0.5 rounded-full">{t("mySpace.calendar.ended")}</span>
               )}
             </p>
-            <p className="font-bold text-foreground text-base">Lớp: TEST</p>
+            <p className="font-bold text-foreground text-base">{t("mySpace.calendar.class")} TEST</p>
             {session.className && session.className !== "TEST" && (
               <p className="text-sm text-muted-foreground">{session.className}</p>
             )}
@@ -407,7 +412,7 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
             data-testid={`btn-add-test-${session.classSessionId}`}
           >
             <ClipboardPlus className="h-4 w-4" />
-            <span>Thêm bài test</span>
+            <span>{t("mySpace.calendar.addTest")}</span>
           </button>
         </div>
 
@@ -418,7 +423,7 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
               <div key={e.id} className="flex items-center gap-1.5 text-xs text-foreground">
                 <BookOpen className="h-3.5 w-3.5 text-blue-500 shrink-0" />
                 <span className="font-medium">{e.name || e.code}</span>
-                <span className="text-muted-foreground">(Bài kiểm tra)</span>
+                <span className="text-muted-foreground">({t("mySpace.calendar.testContent")})</span>
               </div>
             ))}
             {assignedAssignments.map(a => (
@@ -450,13 +455,13 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
           <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
             <div className="space-y-1 min-w-0">
               <p className="text-sm text-muted-foreground">
-                Thời gian: <span className="font-bold text-foreground">Lịch linh hoạt</span>
+                {t("mySpace.calendar.time")} <span className="font-bold text-foreground">{t("mySpace.calendar.flexibleSchedule")}</span>
               </p>
-              <p className="font-bold text-foreground text-base">Lớp: {session.classCode}</p>
+              <p className="font-bold text-foreground text-base">{t("mySpace.calendar.class")} {session.classCode}</p>
               {!isLoading && !isError && (
                 <>
                   <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                    <span>Sĩ số: <span className="font-medium text-foreground">{enrolledCount}</span></span>
+                    <span>{t("mySpace.calendar.enrollment")} <span className="font-medium text-foreground">{enrolledCount}</span></span>
                     <span className="text-border">·</span>
                     <span className={cn(
                       "font-medium",
@@ -490,14 +495,14 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
                 data-testid={`btn-assign-free-content-${session.classSessionId}`}
               >
                 <BookOpen className="h-4 w-4" />
-                <span>Giao nội dung</span>
+                <span>{t("mySpace.calendar.assignContentShort")}</span>
               </button>
             </div>
           </div>
         {isLoading && (
           <div className="flex items-center gap-2 border-t border-border/50 pt-3 text-sm text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            <span>Đang tải học viên...</span>
+                <span>{t("mySpace.calendar.loadStudents")}</span>
           </div>
         )}
         {isError && (
@@ -594,16 +599,16 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
       <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
         <div className="space-y-1 min-w-0">
           <p className="text-sm text-muted-foreground">
-            Thời gian: <span className="font-bold text-foreground">{session.isFreeSession ? "Lịch linh hoạt" : `${session.startTime.slice(0, 5)} - ${session.endTime.slice(0, 5)}`}</span>
+            {t("mySpace.calendar.time")} <span className="font-bold text-foreground">{session.isFreeSession ? t("mySpace.calendar.flexibleSchedule") : `${session.startTime.slice(0, 5)} - ${session.endTime.slice(0, 5)}`}</span>
             {isCancelled && (
-              <span className="ml-2 text-xs font-semibold text-red-500 bg-red-50 dark:bg-red-950/30 px-2 py-0.5 rounded-full">Đã huỷ</span>
+              <span className="ml-2 text-xs font-semibold text-red-500 bg-red-50 dark:bg-red-950/30 px-2 py-0.5 rounded-full">{t("mySpace.calendar.cancelled")}</span>
             )}
           </p>
-          <p className="font-bold text-foreground text-base">Lớp: {session.classCode}</p>
+          <p className="font-bold text-foreground text-base">{t("mySpace.calendar.class")} {session.classCode}</p>
           {!isLoading && !isError && (
             <>
               <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                <span>Sĩ số: <span className="font-medium text-foreground">{enrolledCount}</span></span>
+                <span>{t("mySpace.calendar.enrollment")} <span className="font-medium text-foreground">{enrolledCount}</span></span>
                 <span className="text-border">·</span>
                 <span className={cn("font-medium", (session.learningFormat === "online" || !!session.onlineLink) ? "text-blue-600" : "text-foreground")}>
                   {(session.learningFormat === "online" || !!session.onlineLink) ? "Online" : "Offline"}
@@ -628,7 +633,7 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
             data-testid={`btn-add-library-content-${session.classSessionId}`}
           >
             <LibraryBig className="h-4 w-4" />
-            <span>Thêm nội dung</span>
+            <span>{t("mySpace.calendar.addContentShort")}</span>
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); setContentDialogOpen(true); }}
@@ -636,7 +641,7 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
             data-testid={`btn-assign-content-${session.classSessionId}`}
           >
             <BookOpen className="h-4 w-4" />
-            <span>Giao nội dung</span>
+            <span>{t("mySpace.calendar.assignContentShort")}</span>
           </button>
         </div>
       </div>
@@ -662,19 +667,19 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
       {isLoading && (
         <div className="flex items-center gap-2 border-t border-border/50 pt-3 text-muted-foreground text-sm">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          <span>Đang tải...</span>
+          <span>{t("mySpace.calendar.loadDetails")}</span>
         </div>
       )}
 
       {/* Error state */}
       {isError && (
-        <p className="text-xs text-red-500 border-t border-border/50 pt-3">Không thể tải chi tiết buổi dạy</p>
+        <p className="text-xs text-red-500 border-t border-border/50 pt-3">{t("mySpace.calendar.notLoadDetails")}</p>
       )}
 
       {/* General contents */}
       {!isLoading && !isError && generalContents.length > 0 && (
         <div className="border-t border-border/50 pt-3 space-y-1.5">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Nội dung chung</p>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t("mySpace.calendar.contentGeneral")}</p>
           <div className="space-y-1">
             {generalContents.map((c) => (
               <div key={c.id} className="flex items-start gap-2 text-sm">

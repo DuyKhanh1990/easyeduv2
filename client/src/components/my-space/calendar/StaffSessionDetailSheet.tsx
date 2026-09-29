@@ -34,6 +34,7 @@ import { LibraryContentDialog } from "@/components/courses/LibraryContentDialog"
 import { AddStudentToSessionDialog } from "@/components/education/AddStudentToSessionDialog";
 import { ReviewDialog } from "@/components/education/ReviewDialog";
 import { RemoveStudentFromSessionDialog } from "@/components/education/RemoveStudentFromSessionDialog";
+import { useLanguage } from "@/hooks/use-language";
 
 const WEEKDAY_LABELS: Record<number, string> = {
   0: "Chủ Nhật",
@@ -98,6 +99,7 @@ interface StaffSessionDetailSheetProps {
 }
 
 export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetailSheetProps) {
+  const { t } = useLanguage();
   const { toast } = useToast();
   const [contentDialogOpen, setContentDialogOpen] = useState(false);
   const [libraryDialogOpen, setLibraryDialogOpen] = useState(false);
@@ -191,10 +193,10 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
           );
         },
       });
-      toast({ title: "Đã thêm học viên vào buổi học" });
+      toast({ title: t("mySpace.calendar.addStudentSuccess") });
     },
     onError: () => {
-      toast({ title: "Lỗi", description: "Không thể thêm học viên", variant: "destructive" });
+      toast({ title: t("mySpace.calendar.error"), description: t("mySpace.calendar.addStudentFailed"), variant: "destructive" });
     },
   });
 
@@ -216,7 +218,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
       });
     },
     onError: (err: any) => {
-      toast({ title: "Lỗi", description: err?.message || "Không thể cập nhật điểm danh", variant: "destructive" });
+      toast({ title: t("mySpace.calendar.error"), description: err?.message || t("mySpace.calendar.updateAttendanceFailed"), variant: "destructive" });
     },
   });
 
@@ -230,7 +232,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
       status: "registered" | "attended" | "reserved";
       note?: string;
     }) => {
-      if (!session?.classId) throw new Error("Không tìm thấy lớp tự do");
+       if (!session?.classId) throw new Error(t("mySpace.calendar.notFoundClass"));
       await apiRequest("PATCH", `/api/classes/${session.classId}/free-schedule`, {
         studentClassId,
         date: session.sessionDate,
@@ -275,7 +277,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
       });
     },
     onError: (err: any) => {
-      toast({ title: "Lỗi", description: err?.message || "Không thể cập nhật điểm danh", variant: "destructive" });
+      toast({ title: t("mySpace.calendar.error"), description: err?.message || t("mySpace.calendar.updateAttendanceFailed"), variant: "destructive" });
     },
   });
 
@@ -301,8 +303,8 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
     if (isBulkAttendanceSaving || isFreeSession) return;
     if (!classSessionId || selectedStudentIds.length === 0) {
       toast({
-        title: "Không thể điểm danh",
-        description: "Không tìm thấy buổi học hoặc danh sách học viên đã chọn.",
+         title: t("mySpace.calendar.toastCannotAttendance"),
+         description: t("mySpace.calendar.toastMissingSession"),
         variant: "destructive",
       });
       return;
@@ -313,8 +315,8 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
       .filter(Boolean) as any[];
     if (selectedRows.length !== selectedStudentIds.length) {
       toast({
-        title: "Không thể điểm danh",
-        description: "Một số học viên không còn trong danh sách của buổi học. Hãy tải lại rồi thử lại.",
+         title: t("mySpace.calendar.toastCannotAttendance"),
+         description: t("mySpace.calendar.toastStaleStudents"),
         variant: "destructive",
       });
       return;
@@ -357,7 +359,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
           previous.filter((studentId) => failedStudentIds.has(studentId)),
         );
         toast({
-          title: "Chưa lưu được điểm danh",
+           title: t("mySpace.calendar.bulkAttendanceSaveFailed"),
           description: `${result.failures.length} học viên vẫn được giữ chọn để thử lại. ${result.failures[0]?.message ?? "Hãy thử lại."}`,
           variant: "destructive",
         });
@@ -380,12 +382,12 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
       setIsBulkAttendanceOpen(false);
       setIsActionMenuOpen(false);
       toast({
-        title: "Đã điểm danh hàng loạt",
-        description: `Đã cập nhật ${result.updatedIds.length} học viên.`,
+         title: t("mySpace.calendar.bulkAttendanceSaved"),
+         description: t("mySpace.calendar.toastBulkSavedDescription").replace("{count}", String(result.updatedIds.length)),
       });
     } catch (error: any) {
       toast({
-        title: "Không thể hoàn tất điểm danh",
+         title: t("mySpace.calendar.completeAttendanceFailed"),
         description: error?.message || "Hãy thử lại. Các học viên vẫn được giữ chọn.",
         variant: "destructive",
       });
@@ -417,7 +419,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
               <div className="grid grid-cols-1 gap-y-2 text-sm sm:grid-cols-2 sm:gap-x-10">
                 <div className="space-y-2">
                   <div className="flex gap-2">
-                    <span className="text-muted-foreground w-24 shrink-0">Thời gian:</span>
+                    <span className="text-muted-foreground w-24 shrink-0">{t("mySpace.calendar.time")}</span>
                     <span className="font-medium text-foreground">
                       {isFreeSession
                         ? `Lịch linh hoạt · ${weekdayLabel} ${dateLabel}`
@@ -425,35 +427,35 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                     </span>
                   </div>
                   <div className="flex gap-2">
-                    <span className="text-muted-foreground w-24 shrink-0">Cơ sở:</span>
+                    <span className="text-muted-foreground w-24 shrink-0">{t("mySpace.calendar.location")}</span>
                     <span className="font-medium text-foreground">{session.locationName || "—"}</span>
                   </div>
                   <div className="flex gap-2">
-                    <span className="text-muted-foreground w-24 shrink-0">Buổi học:</span>
+                    <span className="text-muted-foreground w-24 shrink-0">{t("mySpace.calendar.session")}</span>
                     <span className="font-medium text-foreground">
                       {isFreeSession
-                        ? <span className="text-emerald-700">Lớp tự do</span>
+                        ? <span className="text-emerald-700">{t("mySpace.calendar.freeClass")}</span>
                         : session.sessionIndex != null
                           ? `${session.sessionIndex}/${session.totalSessions ?? "?"}`
                           : "—"}
                     </span>
                   </div>
                   <div className="flex gap-2">
-                    <span className="text-muted-foreground w-24 shrink-0">Phòng học:</span>
-                    <span className="font-medium text-muted-foreground italic">Trống</span>
+                    <span className="text-muted-foreground w-24 shrink-0">{t("mySpace.calendar.room")}</span>
+                    <span className="font-medium text-muted-foreground italic">{t("mySpace.calendar.empty")}</span>
                   </div>
                   <div className="flex gap-2">
-                    <span className="text-muted-foreground w-24 shrink-0">Giáo viên:</span>
+                    <span className="text-muted-foreground w-24 shrink-0">{t("mySpace.calendar.teacher")}</span>
                     <span className="font-medium text-foreground">
                       {session.teacherNames.length > 0 ? session.teacherNames.join(", ") : "—"}
                     </span>
                   </div>
                   <div className="flex gap-2">
-                    <span className="text-muted-foreground w-24 shrink-0">Học viên:</span>
+                    <span className="text-muted-foreground w-24 shrink-0">{t("mySpace.calendar.students")}</span>
                     <span className="font-medium text-foreground">{session.enrolledCount ?? 0}</span>
                   </div>
                   {!isFreeSession && <div className="flex gap-2">
-                    <span className="text-muted-foreground w-24 shrink-0">Hình thức:</span>
+                    <span className="text-muted-foreground w-24 shrink-0">{t("mySpace.calendar.format")}</span>
                     <span className={cn("font-medium", (session.learningFormat === "online" || !!session.onlineLink) ? "text-blue-600" : "text-foreground")}>
                       {(session.learningFormat === "online" || !!session.onlineLink) ? "Online" : "Offline"}
                     </span>
@@ -480,7 +482,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                             ))}
                           </div>
                         ) : (
-                          <span className="text-muted-foreground italic">Trống</span>
+                          <span className="text-muted-foreground italic">{t("mySpace.calendar.empty")}</span>
                         )}
                       </div>
                     );
@@ -647,10 +649,10 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                             ? ss.attendanceStatus
                             : "registered";
                           const freeStatusLabel = freeStatus === "attended"
-                            ? "Có học"
+                            ? t("mySpace.calendar.attendancePresent")
                             : freeStatus === "reserved"
-                              ? "Bảo lưu"
-                              : "Chưa điểm danh";
+                              ? t("mySpace.calendar.attendancePaused")
+                              : t("mySpace.calendar.attendancePending");
                           const freeStatusClass = freeStatus === "attended"
                             ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                             : freeStatus === "reserved"
@@ -703,16 +705,16 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                                     <SelectValue>{freeStatusLabel}</SelectValue>
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="registered">Chưa điểm danh</SelectItem>
-                                    <SelectItem value="attended">Có học</SelectItem>
-                                    <SelectItem value="reserved">Bảo lưu</SelectItem>
+                                    <SelectItem value="registered">{t("mySpace.calendar.attendancePending")}</SelectItem>
+                                    <SelectItem value="attended">{t("mySpace.calendar.attendancePresent")}</SelectItem>
+                                    <SelectItem value="reserved">{t("mySpace.calendar.attendancePaused")}</SelectItem>
                                   </SelectContent>
                                 </Select>
                               </td>
                               <td className="px-4 py-3">
                                 <Input
                                   className="h-7 text-xs border-border/60 bg-transparent w-full"
-                                  placeholder="Ghi chú..."
+                                  placeholder={t("mySpace.calendar.notePlaceholder")}
                                   value={freeStudent?.note ?? ""}
                                   onChange={(event) => {
                                     setFreeStudentRows((current) =>
@@ -880,7 +882,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
       >
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
-            <DialogTitle>Điểm danh hàng loạt</DialogTitle>
+            <DialogTitle>{t("mySpace.calendar.actionBulkAttendance")}</DialogTitle>
             <DialogDescription>
               Chọn trạng thái điểm danh cho {selectedStudentIds.length} học viên được chọn
             </DialogDescription>
@@ -894,7 +896,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                 disabled={isBulkAttendanceSaving}
                 onClick={() => void handleBulkAttendance(status)}
               >
-                {isBulkAttendanceSaving ? "Đang lưu..." : label}
+                {isBulkAttendanceSaving ? t("mySpace.calendar.bulkAttendanceSaving") : label}
               </Button>
             ))}
           </div>
@@ -1021,7 +1023,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
             {viewContent?.description ? (
               <RichContentRenderer text={viewContent.description} />
             ) : (
-              <p className="text-muted-foreground italic">Không có mô tả</p>
+              <p className="text-muted-foreground italic">{t("mySpace.calendar.notAvailable")}</p>
             )}
           </div>
         </DialogContent>

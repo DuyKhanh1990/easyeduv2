@@ -28,8 +28,8 @@ export default function MyCalendar() {
             <CalendarDays className="h-10 w-10 opacity-25" />
             <p className="text-sm">
               {data?.reason === "not_in_daotao"
-                ? t("calendar.page.notInDaoTao")
-                : t("calendar.page.notLinked")}
+                 ? t("mySpace.calendar.notInTraining")
+                 : t("mySpace.calendar.notLinked")}
             </p>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, ReactNode } from "react";
+import { mySpaceTranslations } from "@/i18n/my-space";
 
 export type Language = "vi" | "en";
 
@@ -900,6 +901,7 @@ const navMap: Record<string, string> = {
   "Bảng điểm của tôi": "My Score Sheet",
   "Hoá đơn của tôi": "My Invoices",
   "Bảng lương của tôi": "My Payroll",
+  "Đơn từ của tôi": "My Requests",
 
   // ── CÔNG VIỆC items ──────────────────────────────────────────
   "Công việc": "Tasks",
@@ -1123,9 +1125,9 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   const t = (key: string): string => {
     if (lang === "en") {
-      return enCalendar[key] ?? translations["en"][key] ?? translations["vi"][key] ?? key;
+      return enCalendar[key] ?? mySpaceTranslations.en[key] ?? translations["en"][key] ?? translations["vi"][key] ?? key;
     }
-    return translations["vi"][key] ?? key;
+    return translations["vi"][key] ?? mySpaceTranslations.vi[key] ?? key;
   };
 
   const tNav = (viText: string): string => {

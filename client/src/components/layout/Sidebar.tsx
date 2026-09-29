@@ -218,7 +218,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps = {}) {
           <div className="flex items-center gap-1">
             <NotificationBell />
             <ChatButton />
-            {isSuperAdmin && <LanguageToggle />}
+            <LanguageToggle />
           </div>
         )}
         {isMobileSidebar && (
