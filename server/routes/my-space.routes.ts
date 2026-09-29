@@ -111,6 +111,96 @@ async function getScoreSheetAssessmentScoringConfig(assessmentId: string, querya
   };
 }
 
+type ScoreSheetAssessmentSessionAccess = {
+  assessmentId: string;
+  sessionDate: string | Date | null;
+  sessionStartTime: string | null;
+  assessment: NonNullable<Awaited<ReturnType<typeof getScoreSheetAssessmentScoringConfig>>> | null;
+};
+
+async function hasScoreConversionPermission(req: any, action: "view" | "edit"): Promise<boolean> {
+  if (req.isSuperAdmin) return true;
+  const permissions = await storage.getEffectivePermissions(req.roleIds ?? [], "/assessments#list");
+  if (action === "edit") return permissions.canEdit;
+  return Boolean(
+    permissions.canView
+    || permissions.canViewAll
+    || permissions.canCreate
+    || permissions.canEdit
+    || permissions.canDelete,
+  );
+}
+
+async function getAuthorizedScoreSheetSession(
+  req: any,
+  sessionId: string,
+  options: { queryable?: any; lock?: boolean; permission?: "view" | "edit" } = {},
+): Promise<ScoreSheetAssessmentSessionAccess | null> {
+  const queryable = options.queryable ?? db;
+  const staffRecord = await getStaffForUser(req.user.id);
+  let accessRow: Record<string, unknown> | undefined;
+  let accessThroughStaff = false;
+  const lockClause = options.lock ? sql`FOR UPDATE OF cs` : sql``;
+
+  if (staffRecord) {
+    const staffAccess = await queryable.execute(sql`
+      SELECT
+        cs.score_sheet_assessment_id AS assessment_id,
+        cs.session_date,
+        st.start_time AS session_start_time
+      FROM class_sessions cs
+      JOIN classes c ON c.id = cs.class_id
+      LEFT JOIN shift_templates st ON st.id = cs.shift_template_id
+      WHERE cs.id = ${sessionId}::uuid
+        AND cs.score_sheet_assessment_id IS NOT NULL
+        AND (
+          ${staffRecord.id} = ANY(c.teacher_ids)
+          OR ${staffRecord.id} = ANY(c.manager_ids)
+          OR cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM staff_assignments sa
+          WHERE sa.staff_id = ${staffRecord.id}
+            AND sa.location_id = c.location_id
+        )
+      LIMIT 1
+      ${lockClause}
+    `);
+    accessRow = staffAccess.rows[0];
+    accessThroughStaff = Boolean(accessRow);
+  }
+
+  if (!accessRow && await hasScoreConversionPermission(req, options.permission ?? "view")) {
+    const conversionAccess = await queryable.execute(sql`
+      SELECT
+        cs.score_sheet_assessment_id AS assessment_id,
+        cs.session_date,
+        st.start_time AS session_start_time
+      FROM class_sessions cs
+      LEFT JOIN shift_templates st ON st.id = cs.shift_template_id
+      WHERE cs.id = ${sessionId}::uuid
+        AND cs.score_sheet_assessment_id IS NOT NULL
+      LIMIT 1
+      ${lockClause}
+    `);
+    accessRow = conversionAccess.rows[0];
+  }
+
+  if (!accessRow) return null;
+
+  const assessmentId = String(accessRow.assessment_id);
+  const assessment = await getScoreSheetAssessmentScoringConfig(assessmentId, queryable);
+  if (!accessThroughStaff && !assessment?.templateSnapshot.scoreConversionTemplateId) return null;
+
+  return {
+    assessmentId,
+    sessionDate: accessRow.session_date == null ? null : accessRow.session_date as string | Date,
+    sessionStartTime: accessRow.session_start_time == null ? null : accessRow.session_start_time as string,
+    assessment,
+  };
+}
+
 async function isStaffInDaotaoDept(staffId: string): Promise<boolean> {
   const [row] = await db
     .select({ id: staffAssignments.id })
@@ -3996,75 +4086,12 @@ export function registerMySpaceRoutes(app: Express): void {
       const sessionId = z.string().uuid().safeParse(req.params.sessionId);
       if (!sessionId.success) return res.status(400).json({ message: "Buổi thi không hợp lệ" });
 
-      const staffRecord = await getStaffForUser(user.id);
-      const scoreConversionPermissions = req.isSuperAdmin
-        ? null
-        : await storage.getEffectivePermissions(req.roleIds ?? [], "/assessments#list");
-      const canViewConvertedAssessments = Boolean(
-        req.isSuperAdmin
-        || scoreConversionPermissions?.canView
-        || scoreConversionPermissions?.canViewAll
-        || scoreConversionPermissions?.canCreate
-        || scoreConversionPermissions?.canEdit
-        || scoreConversionPermissions?.canDelete,
-      );
-      if (!staffRecord && !canViewConvertedAssessments) {
-        return res.status(403).json({ message: "Tài khoản không có quyền xem bảng điểm." });
-      }
-
-      let accessRow: { assessment_id: string } | undefined;
-      if (staffRecord) {
-        const staffAccess = await db.execute(sql`
-          SELECT cs.id, cs.score_sheet_assessment_id AS assessment_id
-          FROM class_sessions cs
-          JOIN classes c ON c.id = cs.class_id
-          WHERE cs.id = ${sessionId.data}::uuid
-            AND cs.score_sheet_assessment_id IS NOT NULL
-            AND (
-              ${staffRecord.id} = ANY(c.teacher_ids)
-              OR ${staffRecord.id} = ANY(c.manager_ids)
-              OR cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
-            )
-            AND EXISTS (
-              SELECT 1
-              FROM staff_assignments sa
-              WHERE sa.staff_id = ${staffRecord.id}
-                AND sa.location_id = c.location_id
-            )
-          LIMIT 1
-        `);
-        const staffAccessRow = staffAccess.rows[0];
-        if (staffAccessRow) {
-          accessRow = { assessment_id: String(staffAccessRow.assessment_id) };
-        }
-      }
-
-      let assessment: Awaited<ReturnType<typeof getScoreSheetAssessmentScoringConfig>> = null;
-      if (!accessRow && canViewConvertedAssessments) {
-        const conversionAccess = await db.execute(sql`
-          SELECT cs.id, cs.score_sheet_assessment_id AS assessment_id
-          FROM class_sessions cs
-          WHERE cs.id = ${sessionId.data}::uuid
-            AND cs.score_sheet_assessment_id IS NOT NULL
-          LIMIT 1
-        `);
-        const conversionAccessRow = conversionAccess.rows[0];
-        if (conversionAccessRow) {
-          const candidate = { assessment_id: String(conversionAccessRow.assessment_id) };
-          const candidateAssessment = await getScoreSheetAssessmentScoringConfig(candidate.assessment_id);
-          if (candidateAssessment?.templateSnapshot.scoreConversionTemplateId) {
-            accessRow = candidate;
-            assessment = candidateAssessment;
-          }
-        }
-      }
-
-      if (!accessRow) {
+      const access = await getAuthorizedScoreSheetSession(req, sessionId.data);
+      if (!access) {
         return res.status(404).json({ message: "Không tìm thấy buổi thi hoặc bạn không có quyền xem" });
       }
 
-      const assessmentId = String(accessRow.assessment_id);
-      assessment ??= await getScoreSheetAssessmentScoringConfig(assessmentId);
+      const { assessmentId, assessment } = access;
       if (!assessment) {
         return res.status(409).json({ message: "Cấu hình bảng điểm được giao không còn khả dụng." });
       }
@@ -4139,33 +4166,8 @@ export function registerMySpaceRoutes(app: Express): void {
           return res.status(400).json({ message: "Buổi thi hoặc học viên không hợp lệ." });
         }
 
-        const staffRecord = await getStaffForUser(user.id);
-        if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
-
-        const access = await db.execute(sql`
-          SELECT
-            cs.score_sheet_assessment_id AS assessment_id,
-            cs.session_date,
-            st.start_time AS session_start_time
-          FROM class_sessions cs
-          JOIN classes c ON c.id = cs.class_id
-          LEFT JOIN shift_templates st ON st.id = cs.shift_template_id
-          WHERE cs.id = ${sessionId.data}::uuid
-            AND cs.score_sheet_assessment_id IS NOT NULL
-            AND (
-              ${staffRecord.id} = ANY(c.teacher_ids)
-              OR ${staffRecord.id} = ANY(c.manager_ids)
-              OR cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
-            )
-            AND EXISTS (
-              SELECT 1
-              FROM staff_assignments sa
-              WHERE sa.staff_id = ${staffRecord.id}
-                AND sa.location_id = c.location_id
-            )
-          LIMIT 1
-        `);
-        if (access.rows.length === 0) {
+        const access = await getAuthorizedScoreSheetSession(req, sessionId.data);
+        if (!access) {
           return res.status(404).json({ message: "Không tìm thấy buổi thi hoặc bạn không có quyền xem." });
         }
 
@@ -4179,8 +4181,7 @@ export function registerMySpaceRoutes(app: Express): void {
           .limit(1);
         if (!membership) return res.status(404).json({ message: "Học viên không thuộc buổi thi này." });
 
-        const assessmentId = String(access.rows[0].assessment_id);
-        const assessment = await getScoreSheetAssessmentScoringConfig(assessmentId);
+        const { assessmentId, assessment } = access;
         if (!assessment) {
           return res.status(409).json({ message: "Cấu hình bảng điểm được giao không còn khả dụng." });
         }
@@ -4204,8 +4205,8 @@ export function registerMySpaceRoutes(app: Express): void {
             scoringPolicy: assessment.scoringPolicy,
             scoreDeadlineAt: resolveScoreSheetAssessmentDeadlineAt(
               assessment,
-              access.rows[0].session_date as string,
-              access.rows[0].session_start_time as string | null,
+              access.sessionDate ?? "",
+              access.sessionStartTime,
             ),
             templateSnapshot: assessment.templateSnapshot,
             conversionTemplateSnapshot: assessment.conversionTemplateSnapshot,
@@ -4246,38 +4247,19 @@ export function registerMySpaceRoutes(app: Express): void {
           return res.status(400).json({ message: values.error.errors[0]?.message ?? "Thông tin điểm chưa hợp lệ." });
         }
 
-        const staffRecord = await getStaffForUser(user.id);
-        if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
-
         const saved = await db.transaction(async (tx) => {
-          const access = await tx.execute(sql`
-            SELECT cs.id, cs.score_sheet_assessment_id AS assessment_id
-            FROM class_sessions cs
-            JOIN classes c ON c.id = cs.class_id
-            WHERE cs.id = ${sessionId.data}::uuid
-              AND cs.score_sheet_assessment_id IS NOT NULL
-              AND (
-                ${staffRecord.id} = ANY(c.teacher_ids)
-                OR ${staffRecord.id} = ANY(c.manager_ids)
-                OR cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
-              )
-              AND EXISTS (
-                SELECT 1
-                FROM staff_assignments sa
-                WHERE sa.staff_id = ${staffRecord.id}
-                  AND sa.location_id = c.location_id
-              )
-            LIMIT 1
-            FOR UPDATE OF cs
-          `);
-          if (access.rows.length === 0) {
+          const access = await getAuthorizedScoreSheetSession(req, sessionId.data, {
+            queryable: tx,
+            lock: true,
+            permission: "edit",
+          });
+          if (!access) {
             const error: any = new Error("Không tìm thấy buổi thi hoặc bạn không có quyền nhập điểm.");
             error.status = 404;
             throw error;
           }
 
-          const assessmentId = String(access.rows[0].assessment_id);
-          const assessment = await getScoreSheetAssessmentScoringConfig(assessmentId, tx);
+          const { assessmentId, assessment } = access;
           if (!assessment) {
             const error: any = new Error("Cấu hình bảng điểm được giao không còn khả dụng.");
             error.status = 409;

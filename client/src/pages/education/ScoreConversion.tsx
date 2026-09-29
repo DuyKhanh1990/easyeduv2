@@ -776,6 +776,7 @@ export default function ScoreConversion() {
       <StaffScoreSheetAssessmentStudentsDialog
         assessment={selectedAssessment}
         open={!!selectedAssessment}
+        canManageScores={canEdit}
         onOpenChange={(open) => {
           if (!open) setSelectedAssessment(null);
         }}

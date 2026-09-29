@@ -72,12 +72,14 @@ type StaffScoreSheetAssessmentStudentsDialogProps = {
   assessment: StaffAssignedScoreSheetAssessment | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  canManageScores?: boolean;
 };
 
 export function StaffScoreSheetAssessmentStudentsDialog({
   assessment,
   open,
   onOpenChange,
+  canManageScores = true,
 }: StaffScoreSheetAssessmentStudentsDialogProps) {
   const rosterQuery = useQuery<AssessmentRosterStudent[]>({
     queryKey: [
@@ -172,13 +174,15 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                     <TableHead className="min-w-[100px]">Kết quả</TableHead>
                     <TableHead className="min-w-[110px]">Tình trạng</TableHead>
                     <TableHead className="min-w-[110px]">Công bố</TableHead>
-                    <TableHead className="min-w-[90px] text-center">Quản lý</TableHead>
+                    {canManageScores && (
+                      <TableHead className="min-w-[90px] text-center">Quản lý</TableHead>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {students.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
+                      <TableCell colSpan={canManageScores ? 10 : 9} className="h-24 text-center text-muted-foreground">
                         Buổi thi chưa có học viên.
                       </TableCell>
                     </TableRow>
@@ -215,19 +219,21 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                         <TableCell>
                           <Badge variant="secondary" className="font-normal">Chưa công bố</Badge>
                         </TableCell>
-                        <TableCell className="text-center">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => setEditingStudent(student)}
-                            title={`Nhập điểm cho ${student.fullName}`}
-                            aria-label={`Quản lý kết quả của ${student.fullName}`}
-                            data-testid={`btn-manage-assessment-score-${student.studentId}`}
-                          >
-                            <Settings2 className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
+                        {canManageScores && (
+                          <TableCell className="text-center">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => setEditingStudent(student)}
+                              title={`Nhập điểm cho ${student.fullName}`}
+                              aria-label={`Quản lý kết quả của ${student.fullName}`}
+                              data-testid={`btn-manage-assessment-score-${student.studentId}`}
+                            >
+                              <Settings2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))
                   )}
