@@ -100,6 +100,17 @@ interface StaffSessionDetailSheetProps {
 
 export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetailSheetProps) {
   const { t } = useLanguage();
+  const attendanceLabel = (status: string | null | undefined) => {
+    switch (status) {
+      case "present": return t("mySpace.calendar.attendancePresent");
+      case "absent": return t("mySpace.calendar.attendanceAbsent");
+      case "makeup_wait": return t("mySpace.calendar.attendanceMakeupWait");
+      case "makeup_scheduled": return t("mySpace.calendar.attendanceMakeupScheduled");
+      case "makeup_done": return t("mySpace.calendar.attendanceMakeupDone");
+      case "paused": return t("mySpace.calendar.attendancePaused");
+      default: return t("mySpace.calendar.attendancePending");
+    }
+  };
   const { toast } = useToast();
   const [contentDialogOpen, setContentDialogOpen] = useState(false);
   const [libraryDialogOpen, setLibraryDialogOpen] = useState(false);
@@ -457,7 +468,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                   {!isFreeSession && <div className="flex gap-2">
                     <span className="text-muted-foreground w-24 shrink-0">{t("mySpace.calendar.format")}</span>
                     <span className={cn("font-medium", (session.learningFormat === "online" || !!session.onlineLink) ? "text-blue-600" : "text-foreground")}>
-                      {(session.learningFormat === "online" || !!session.onlineLink) ? "Online" : "Offline"}
+                       {(session.learningFormat === "online" || !!session.onlineLink) ? t("mySpace.calendar.online") : t("mySpace.calendar.offline")}
                     </span>
                   </div>}
                 </div>
@@ -467,7 +478,12 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                     const matched = (session.generalContents ?? []).filter((c) => alts.includes(c.type));
                     return (
                       <div key={key} className="flex gap-2">
-                        <span className="text-muted-foreground w-28 shrink-0">{key}:</span>
+                         <span className="text-muted-foreground w-28 shrink-0">
+                           {key === "Bài học" ? t("mySpace.calendar.contentLesson")
+                             : key === "Bài tập về nhà" ? t("mySpace.calendar.contentHomework")
+                             : key === "Giáo trình" ? t("mySpace.calendar.contentCurriculum")
+                             : t("mySpace.calendar.contentTest")}:
+                         </span>
                         {matched.length > 0 ? (
                           <div className="flex flex-col gap-0.5 min-w-0">
                             {matched.map((c) => (
@@ -496,7 +512,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
               <div className="mb-3 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
                   <Users className="h-4 w-4 text-primary" />
-                  Danh sách học viên buổi
+                   {t("mySpace.calendar.students")}
                 </h3>
                 <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
                   {!isFreeSession && (
@@ -636,10 +652,10 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                             }}
                           />
                         </th>
-                        <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground text-xs w-[25%]">Tên học viên</th>
-                        <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground text-xs w-[25%]">Điểm danh</th>
-                        <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground text-xs w-[25%]">Ghi chú</th>
-                        <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground text-xs w-[20%]">Nhận xét</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground text-xs w-[25%]">{t("mySpace.calendar.studentName")}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground text-xs w-[25%]">{t("mySpace.calendar.studentAttendance")}</th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground text-xs w-[25%]">{t("mySpace.calendar.note")}</th>
+                        <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground text-xs w-[20%]">{t("mySpace.calendar.studentReview")}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
@@ -751,12 +767,12 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                                   {hasReview ? (
                                     <>
                                       <Star className="h-3.5 w-3.5 fill-amber-400" />
-                                      <span className="text-xs font-medium">Đã nhận xét</span>
+                                       <span className="text-xs font-medium">{t("mySpace.calendar.reviewed")}</span>
                                     </>
                                   ) : (
                                     <>
                                       <span className="text-base leading-none">+</span>
-                                      Thêm
+                                       {t("mySpace.calendar.addContentShort")}
                                     </>
                                   )}
                                 </button>
@@ -812,7 +828,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                                 <SelectContent>
                                    {ATTENDANCE_OPTIONS.filter((o) => o.value !== "makeup_scheduled").map((o) => (
                                     <SelectItem key={o.value} value={o.value} className={cn("text-xs", o.className)}>
-                                      {o.label}
+                                       {attendanceLabel(o.value)}
                                     </SelectItem>
                                   ))}
                                 </SelectContent>
@@ -821,7 +837,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                             <td className="px-4 py-3">
                               <Input
                                 className="h-7 text-xs border-border/60 bg-transparent w-full"
-                                placeholder="Ghi chú..."
+                                 placeholder={t("mySpace.calendar.notePlaceholder")}
                                 value={localNote}
                                 onChange={(e) => setLocalNotes((prev) => ({ ...prev, [ss.id]: e.target.value }))}
                                 onBlur={() => {
@@ -845,7 +861,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                                   data-testid={`btn-review-${ss.id}`}
                                 >
                                   <Star className="h-3.5 w-3.5 fill-amber-400" />
-                                  <span className="text-xs font-medium">Đã nhận xét</span>
+                                   <span className="text-xs font-medium">{t("mySpace.calendar.reviewed")}</span>
                                 </button>
                               ) : (
                                 <button
@@ -857,7 +873,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                                   }}
                                 >
                                   <span className="text-base leading-none">+</span>
-                                  Thêm
+                                   {t("mySpace.calendar.addContentShort")}
                                 </button>
                               )}
                             </td>
@@ -888,7 +904,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-4">
-            {BULK_ATTENDANCE_OPTIONS.map(({ status, label, color }) => (
+            {BULK_ATTENDANCE_OPTIONS.map(({ status, color }) => (
               <Button
                 key={status}
                 variant="outline"
@@ -896,7 +912,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                 disabled={isBulkAttendanceSaving}
                 onClick={() => void handleBulkAttendance(status)}
               >
-                {isBulkAttendanceSaving ? t("mySpace.calendar.bulkAttendanceSaving") : label}
+                {isBulkAttendanceSaving ? t("mySpace.calendar.bulkAttendanceSaving") : attendanceLabel(status)}
               </Button>
             ))}
           </div>

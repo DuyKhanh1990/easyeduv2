@@ -198,7 +198,7 @@ export function StudentScoreSheet() {
                               <span className="text-xs text-muted-foreground">{t("mySpace.scoreSheet.noScore")}</span>
                             )}
                             {hasComment && (
-                              <MessageSquare className="h-3.5 w-3.5 text-amber-500 shrink-0" title={t("mySpace.scoreSheet.hasComment")} />
+                              <MessageSquare className="h-3.5 w-3.5 text-amber-500 shrink-0" aria-label={t("mySpace.scoreSheet.hasComment")} />
                             )}
                           </div>
 

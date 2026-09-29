@@ -458,7 +458,7 @@ function parseDateParam(search: string): Date | null {
 
 function StudentCalendarView({ viewMode }: { viewMode: "calendar" | "month" }) {
   const search = useSearch();
-  const { lang } = useLanguage();
+  const { lang, t } = useLanguage();
   const initDate = parseDateParam(search) ?? new Date();
   const today = new Date();
   const [year, setYear] = useState(initDate.getFullYear());
@@ -519,7 +519,7 @@ function StudentCalendarView({ viewMode }: { viewMode: "calendar" | "month" }) {
           data-testid="btn-today"
           className="text-sm px-4 py-1.5 rounded-full border border-border bg-background hover:bg-secondary transition-colors font-medium"
         >
-          Hôm nay
+           {t("mySpace.calendar.today")}
         </button>
       </div>
 
@@ -617,7 +617,7 @@ function StudentCalendarView({ viewMode }: { viewMode: "calendar" | "month" }) {
         <DialogContent className="max-w-[min(95vw,900px)] max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle className="text-base">
-              Chi tiết buổi học
+               {t("mySpace.calendar.details")}
             </DialogTitle>
           </DialogHeader>
           {monthSession && (
@@ -636,6 +636,7 @@ function StudentCalendarView({ viewMode }: { viewMode: "calendar" | "month" }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function StudentCalendar() {
+  const { t } = useLanguage();
   const [view, setView] = useState<"calendar" | "month" | "list">("calendar");
 
   return (
@@ -659,7 +660,7 @@ export function StudentCalendar() {
             )}
           >
             <List className="h-3.5 w-3.5" />
-            Danh sách
+             {t("mySpace.calendar.listView")}
           </button>
           <button
             onClick={() => setView("calendar")}
@@ -672,7 +673,7 @@ export function StudentCalendar() {
             )}
           >
             <Calendar className="h-3.5 w-3.5" />
-            Lịch
+             {t("mySpace.calendar.calendarView")}
           </button>
           <button
             onClick={() => setView("month")}
@@ -685,7 +686,7 @@ export function StudentCalendar() {
             )}
           >
             <CalendarDays className="h-3.5 w-3.5" />
-            Tháng
+             {t("mySpace.calendar.monthView")}
           </button>
         </div>
       </div>

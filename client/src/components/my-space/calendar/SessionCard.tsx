@@ -261,9 +261,11 @@ function formatAvailableTime(time: string) {
   return `${String(hour12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${period}`;
 }
 
-function formatSessionDateLong(date: string) {
+function formatSessionDateLong(date: string, lang: string) {
   const d = new Date(date + "T00:00:00");
-  const days = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
+  const days = lang === "en"
+    ? ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+    : ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
   return `${days[d.getDay()]} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 
@@ -306,7 +308,7 @@ interface SessionCardDetailProps {
 }
 
 function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDetailProps) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const queryClient = useQueryClient();
   const [showFeedback, setShowFeedback] = useState(false);
   const [viewingContentId, setViewingContentId] = useState<string | null>(null);
@@ -376,7 +378,11 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
         const data = await res.json();
         setIsOpeningContent(false);
         if (!data.allowed) {
-          setAttemptError(`Bạn đã hết lượt làm bài. (${data.attemptsUsed}/${data.maxAttempts} lần)`);
+          setAttemptError(
+            t("mySpace.exam.attemptLimit")
+              .replace("__COUNT__", String(data.attemptsUsed))
+              .replace("__MAX__", String(data.maxAttempts)),
+          );
           return;
         }
       } catch {
@@ -425,14 +431,14 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
               {t("mySpace.calendar.time")} <span className="font-bold text-foreground">{session.isFreeSession ? t("mySpace.calendar.flexibleSchedule") : `${session.startTime} - ${session.endTime}`}</span>
             </p>
             <p className="font-bold text-foreground text-base">
-              Lớp: {session.classCode === "TEST" ? session.className : session.classCode}
+              {t("mySpace.calendar.class")} {session.classCode === "TEST" ? session.className : session.classCode}
             </p>
             <p className="text-sm text-muted-foreground">
-              GV: <span className="font-medium text-foreground">{session.teacherNames.join(", ") || "—"}</span>
+                {t("mySpace.calendar.teacher")} <span className="font-medium text-foreground">{session.teacherNames.join(", ") || "—"}</span>
             </p>
             {session.studentName && (
               <p className="text-sm text-muted-foreground">
-                HV:{" "}
+                {t("mySpace.calendar.studentName")}:{" "}
                 <span className="font-medium text-foreground">
                   {session.studentName}
                   {session.studentCode && ` (${session.studentCode})`}
@@ -446,7 +452,7 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
           <div className="flex shrink-0 flex-row items-center gap-2 sm:flex-col sm:items-end">
             {isTestSessionEnded && (
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400">
-                Đã kết thúc
+                {t("mySpace.calendar.ended")}
               </span>
             )}
             {attendance && (
@@ -458,7 +464,7 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
               "text-sm font-medium",
               isOnline ? "text-blue-500" : "text-muted-foreground"
             )}>
-              {isOnline ? "Online" : "Offline"}
+              {isOnline ? t("mySpace.calendar.online") : t("mySpace.calendar.offline")}
             </span>
           </div>
         </div>
@@ -485,8 +491,8 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
         {hasGeneralContent && (
           <div className="space-y-1.5 border-t border-border/50 pt-3">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t("mySpace.calendar.contentGeneral")}</p>
-            <ContentRow label="Bài học" items={generalLessons} onViewItem={handleViewItem} />
-            <ContentRow label="BTVN" items={generalHomework} onViewItem={handleViewItem} />
+            <ContentRow label={t("mySpace.calendar.contentLesson")} items={generalLessons} onViewItem={handleViewItem} />
+            <ContentRow label={t("mySpace.calendar.contentHomework")} items={generalHomework} onViewItem={handleViewItem} />
             {generalOther.map((item) => (
               <ContentRow key={item.id} label={CONTENT_TYPE_LABELS[item.type] ?? item.type} items={[item]} onViewItem={handleViewItem} />
             ))}
@@ -497,8 +503,8 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
         {hasPersonalContent && (
           <div className="space-y-1.5 border-t border-border/50 pt-3">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t("mySpace.calendar.contentPersonal")}</p>
-            <ContentRow label="Bài học" items={personalLessons} onViewItem={handleViewItem} />
-            <ContentRow label="BTVN" items={personalHomework} onViewItem={handleViewItem} />
+            <ContentRow label={t("mySpace.calendar.contentLesson")} items={personalLessons} onViewItem={handleViewItem} />
+            <ContentRow label={t("mySpace.calendar.contentHomework")} items={personalHomework} onViewItem={handleViewItem} />
             {personalOther.map((item) => (
               <ContentRow key={item.id} label={CONTENT_TYPE_LABELS[item.type] ?? item.type} items={[item]} onViewItem={handleViewItem} />
             ))}
@@ -547,20 +553,20 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
       <Dialog open={!!countdownTarget} onOpenChange={v => { if (!v) setCountdownTarget(null); }}>
         <DialogContent className="w-[calc(100%-2rem)] max-w-sm text-center">
           <DialogHeader>
-            <DialogTitle className="text-base">Bài test chưa mở</DialogTitle>
+            <DialogTitle className="text-base">{t("mySpace.calendar.contentTest")} — {t("mySpace.calendar.openAt")}</DialogTitle>
           </DialogHeader>
           <div className="py-2 space-y-3">
             <p className="text-sm text-muted-foreground line-clamp-2 font-medium">{countdownTarget?.title}</p>
             <p className="text-sm text-muted-foreground">
-              Sẽ được bắt đầu lúc <span className="font-semibold text-foreground">{countdownTarget ? formatAvailableTime(countdownTarget.availableAt) : ""}</span>,{" "}
-              {countdownTarget ? formatSessionDateLong(countdownTarget.date) : ""}
+              {t("mySpace.calendar.openAt")} <span className="font-semibold text-foreground">{countdownTarget ? formatAvailableTime(countdownTarget.availableAt) : ""}</span>,{" "}
+              {countdownTarget ? formatSessionDateLong(countdownTarget.date, lang) : ""}
             </p>
             {countdownTarget && (
               <CountdownClock targetDate={countdownTarget.date} targetTime={countdownTarget.availableAt} />
             )}
           </div>
           <DialogFooter className="justify-center">
-            <Button variant="outline" onClick={() => setCountdownTarget(null)}>Đóng</Button>
+            <Button variant="outline" onClick={() => setCountdownTarget(null)}>{t("mySpace.calendar.close")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -569,11 +575,11 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
       <Dialog open={!!attemptError} onOpenChange={v => { if (!v) setAttemptError(null); }}>
         <DialogContent className="w-[calc(100%-2rem)] max-w-sm text-center">
           <DialogHeader>
-            <DialogTitle className="text-base">Không thể mở bài</DialogTitle>
+            <DialogTitle className="text-base">{t("mySpace.assignments.errorLoadExam")}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground py-2">{attemptError}</p>
           <DialogFooter className="justify-center">
-            <Button variant="outline" onClick={() => setAttemptError(null)}>Đóng</Button>
+            <Button variant="outline" onClick={() => setAttemptError(null)}>{t("mySpace.calendar.close")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -582,18 +588,18 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
       <Dialog open={showEndedPopup} onOpenChange={v => { if (!v) setShowEndedPopup(false); }}>
         <DialogContent className="w-[calc(100%-2rem)] max-w-sm text-center">
           <DialogHeader>
-            <DialogTitle className="text-base">Lịch test đã kết thúc</DialogTitle>
+            <DialogTitle className="text-base">{t("mySpace.calendar.ended")}</DialogTitle>
           </DialogHeader>
           <div className="py-3 space-y-2">
             <p className="text-sm text-muted-foreground">
-              Buổi kiểm tra <span className="font-semibold text-foreground">{session.className}</span> đã kết thúc lúc{" "}
+              {t("mySpace.calendar.testContent")} <span className="font-semibold text-foreground">{session.className}</span> {t("mySpace.calendar.ended").toLowerCase()} lúc{" "}
               <span className="font-semibold text-foreground">{session.endTime}</span> ngày{" "}
-              <span className="font-semibold text-foreground">{formatSessionDateLong(sessionDate)}</span>.
+              <span className="font-semibold text-foreground">{formatSessionDateLong(sessionDate, lang)}</span>.
             </p>
-            <p className="text-sm text-muted-foreground">Nội dung không còn khả dụng.</p>
+            <p className="text-sm text-muted-foreground">{t("mySpace.calendar.notAvailable")}</p>
           </div>
           <DialogFooter className="justify-center">
-            <Button variant="outline" onClick={() => setShowEndedPopup(false)}>Đóng</Button>
+            <Button variant="outline" onClick={() => setShowEndedPopup(false)}>{t("mySpace.calendar.close")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

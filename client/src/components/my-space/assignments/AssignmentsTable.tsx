@@ -82,7 +82,7 @@ function isVideoUrl(url: string) {
   return /\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(url);
 }
 
-function CommentRichContent({ text }: { text: string }) {
+function CommentRichContent({ text, imageAlt }: { text: string; imageAlt: string }) {
   if (text.trim().startsWith("<")) {
     return (
       <div
@@ -123,7 +123,7 @@ function CommentRichContent({ text }: { text: string }) {
             <img
               key={i}
               src={trimmed}
-              alt="ảnh đính kèm"
+               alt={imageAlt}
               className="w-full rounded-lg object-contain max-h-64"
               onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
             />
@@ -170,7 +170,7 @@ function CommentPopover({ comment }: { comment: string }) {
             <DialogTitle>{t("mySpace.assignments.commentTitle")}</DialogTitle>
           </DialogHeader>
           <div className="overflow-y-auto flex-1 pr-1">
-            <CommentRichContent text={comment} />
+            <CommentRichContent text={comment} imageAlt={t("mySpace.assignments.imageAlt")} />
           </div>
         </DialogContent>
       </Dialog>
@@ -199,6 +199,7 @@ function AssignmentMobileCard({
   onViewExamComment,
   onEditExamComment,
 }: AssignmentMobileCardProps) {
+  const { t } = useLanguage();
   const isExam = row.itemType === "Bài kiểm tra";
   const remaining = isExam && row.maxAttempts != null
     ? row.maxAttempts - (row.attemptsUsed ?? 0)
@@ -219,7 +220,7 @@ function AssignmentMobileCard({
             {row.className}
             {row.sessionIndex != null && (
               <span className="ml-1 font-normal text-muted-foreground">
-                (Buổi {row.sessionIndex})
+                ({t("mySpace.assignments.sessionLabel")} {row.sessionIndex})
               </span>
             )}
           </p>
@@ -236,7 +237,7 @@ function AssignmentMobileCard({
               : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400",
           )}
         >
-          {row.submissionStatus === "submitted" ? "Đã nộp" : "Chưa nộp"}
+          {row.submissionStatus === "submitted" ? t("mySpace.assignments.submitted") : t("mySpace.assignments.notSubmitted")}
         </span>
       </div>
 
@@ -244,7 +245,7 @@ function AssignmentMobileCard({
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
             <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Bài tập
+              {t("mySpace.assignments.assignmentLabel")}
             </p>
             {locked ? (
               <span className="block break-words text-sm font-medium text-muted-foreground">
@@ -262,7 +263,7 @@ function AssignmentMobileCard({
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               {row.isPersonalized && !isExam && (
                 <span className="inline-flex items-center rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900/40 dark:text-blue-400">
-                  Cá nhân
+                  {t("mySpace.assignments.personal")}
                 </span>
               )}
               {isExam && row.maxAttempts != null && (
@@ -270,7 +271,7 @@ function AssignmentMobileCard({
                   "text-[10px] font-medium",
                   locked ? "text-red-500 dark:text-red-400" : "text-orange-500 dark:text-orange-400",
                 )}>
-                  Còn {Math.max(0, remaining!)} lượt{locked && " — Đã hết lượt"}
+                  {t("mySpace.assignments.remainingAttempts").replace("__COUNT__", String(Math.max(0, remaining!)))}{locked && t("mySpace.assignments.noAttempts")}
                 </span>
               )}
               {!isExam && row.dueDate && (
@@ -278,7 +279,7 @@ function AssignmentMobileCard({
                   "text-[10px] font-medium",
                   isPastDue ? "text-red-500 dark:text-red-400" : "text-orange-500 dark:text-orange-400",
                 )}>
-                  Hạn: {formatDueDate(row.dueDate)}
+                  {t("mySpace.assignments.due").replace("__DATE__", formatDueDate(row.dueDate))}
                 </span>
               )}
             </div>
@@ -291,29 +292,29 @@ function AssignmentMobileCard({
                 : "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400",
             )}
           >
-            {isExam ? "Bài kiểm tra" : "BTVN"}
+            {isExam ? t("mySpace.assignments.exam") : t("mySpace.assignments.homework")}
           </span>
         </div>
       </div>
 
       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 rounded-lg bg-muted/30 p-2.5 sm:grid-cols-4">
         <div className="min-w-0">
-          <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Học viên</dt>
+           <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("mySpace.assignments.student")}</dt>
           <dd className="mt-0.5 truncate text-xs font-medium text-foreground" title={row.studentName}>
             {row.studentName || "—"}
           </dd>
         </div>
         <div>
-          <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Mã HV</dt>
+           <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("mySpace.assignments.studentCode")}</dt>
           <dd className="mt-0.5 truncate text-xs text-foreground">{row.studentCode || "—"}</dd>
         </div>
         <div>
-          <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Điểm</dt>
+           <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("mySpace.assignments.score")}</dt>
           <dd className="mt-0.5 text-xs font-semibold text-foreground">{row.score ?? "—"}</dd>
         </div>
         <div>
-          <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Nhận xét</dt>
-          <dd className="mt-0.5 text-xs text-foreground">{row.comment ? "Có nhận xét" : "—"}</dd>
+           <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("mySpace.assignments.comment")}</dt>
+           <dd className="mt-0.5 text-xs text-foreground">{row.comment ? t("mySpace.assignments.commentExists") : "—"}</dd>
         </div>
       </dl>
 
@@ -323,22 +324,22 @@ function AssignmentMobileCard({
             <button
               onClick={() => onViewSubmission(row)}
               className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-blue-600 transition-colors hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20"
-              title={isStaff ? "Xem bài & chấm điểm" : "Xem bài đã nộp"}
+              title={isStaff ? t("mySpace.assignments.viewAndGrade") : t("mySpace.assignments.viewSubmitted")}
               data-testid={`button-view-submission-mobile-${index}`}
             >
               <Eye className="h-4 w-4" />
-              {isStaff ? "Xem & chấm" : "Xem bài nộp"}
+              {isStaff ? t("mySpace.assignments.viewAndGradeShort") : t("mySpace.assignments.viewSubmission")}
             </button>
           )}
           {isExam && isStaff && row.submissionStatus === "submitted" && row.submissionId && (
             <button
               onClick={() => onViewExamSubmission(row)}
               className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-blue-600 transition-colors hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20"
-              title="Xem bài làm của học viên"
+              title={t("mySpace.assignments.viewStudentExam")}
               data-testid={`button-view-exam-submission-mobile-${index}`}
             >
               <Eye className="h-4 w-4" />
-              Xem bài làm
+              {t("mySpace.assignments.viewExamWork")}
             </button>
           )}
           {isExam && isStaff && row.submissionId && (
@@ -346,19 +347,19 @@ function AssignmentMobileCard({
               <button
                 onClick={() => onViewExamComment(row)}
                 className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-amber-600 transition-colors hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/20"
-                title="Xem nhận xét"
+                title={t("mySpace.assignments.viewComment")}
               >
                 <Eye className="h-4 w-4" />
-                Xem nhận xét
+                {t("mySpace.assignments.viewComment")}
               </button>
             ) : (
               <button
                 onClick={() => onEditExamComment(row)}
                 className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary/70 hover:text-foreground"
-                title="Thêm nhận xét"
+                title={t("mySpace.assignments.addComment")}
               >
                 <MessageSquare className="h-4 w-4" />
-                Nhận xét
+                {t("mySpace.assignments.addComment")}
               </button>
             )
           )}
@@ -613,7 +614,7 @@ export function AssignmentsTable({
           </PopoverTrigger>
           <PopoverContent align="end" className="w-[calc(100vw-2rem)] rounded-xl border border-border p-0 shadow-lg sm:w-[420px]">
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-              <span className="text-sm font-semibold text-foreground">Bộ lọc</span>
+               <span className="text-sm font-semibold text-foreground">{t("mySpace.assignments.filterPanelTitle")}</span>
               {activeFilterCount > 0 && (
                 <button
                   onClick={clearFilters}
@@ -621,7 +622,7 @@ export function AssignmentsTable({
                   data-testid="btn-clear-filters"
                 >
                   <X className="h-3 w-3" />
-                  Xóa bộ lọc
+                   {t("mySpace.assignments.clearFilters")}
                 </button>
               )}
             </div>
@@ -630,11 +631,11 @@ export function AssignmentsTable({
               {/* Date range inside filter */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Từ — Đến
+                   {t("mySpace.assignments.dateRange")}
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
-                    <span className="text-[11px] text-muted-foreground">Từ</span>
+                     <span className="text-[11px] text-muted-foreground">{t("mySpace.assignments.from")}</span>
                     <input
                       data-testid="filter-input-date-from"
                       type="date"
@@ -644,7 +645,7 @@ export function AssignmentsTable({
                     />
                   </div>
                   <div className="space-y-1">
-                    <span className="text-[11px] text-muted-foreground">Đến</span>
+                     <span className="text-[11px] text-muted-foreground">{t("mySpace.assignments.to")}</span>
                     <input
                       data-testid="filter-input-date-to"
                       type="date"
@@ -659,7 +660,7 @@ export function AssignmentsTable({
               {/* Class filter */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Lớp học
+                   {t("mySpace.assignments.classFilter")}
                 </label>
                 <select
                   data-testid="filter-select-class"
@@ -667,7 +668,7 @@ export function AssignmentsTable({
                   onChange={(e) => setFilterClass(e.target.value)}
                   className="w-full border border-border rounded-lg px-2 py-1.5 text-sm text-foreground bg-background"
                 >
-                  <option value="">— Tất cả lớp —</option>
+                   <option value="">{t("mySpace.assignments.allClasses")}</option>
                   {uniqueClasses.map((cls) => (
                     <option key={cls} value={cls}>{cls}</option>
                   ))}
@@ -677,7 +678,7 @@ export function AssignmentsTable({
               {/* Student filter */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Học viên
+                   {t("mySpace.assignments.studentFilter")}
                 </label>
                 <select
                   data-testid="filter-select-student"
@@ -685,7 +686,7 @@ export function AssignmentsTable({
                   onChange={(e) => setFilterStudent(e.target.value)}
                   className="w-full border border-border rounded-lg px-2 py-1.5 text-sm text-foreground bg-background"
                 >
-                  <option value="">— Tất cả học viên —</option>
+                   <option value="">{t("mySpace.assignments.allStudents")}</option>
                   {uniqueStudents.map(([id, name]) => (
                     <option key={id} value={id}>{name}</option>
                   ))}
@@ -970,7 +971,7 @@ export function AssignmentsTable({
                             <p className="font-medium text-foreground leading-tight">
                               {row.className}
                               {row.sessionIndex != null && (
-                                <span className="ml-1 text-xs font-normal text-muted-foreground">(Buổi {row.sessionIndex})</span>
+                                <span className="ml-1 text-xs font-normal text-muted-foreground">({t("mySpace.assignments.sessionLabel")} {row.sessionIndex})</span>
                               )}
                             </p>
                             <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -1020,7 +1021,7 @@ export function AssignmentsTable({
                                     )}
                                     {!isExam && row.isPersonalized && (
                                       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400 whitespace-nowrap">
-                                        Cá nhân
+                                         {t("mySpace.assignments.personal")}
                                       </span>
                                     )}
                                   </div>
@@ -1029,8 +1030,8 @@ export function AssignmentsTable({
                                       "text-[10px] font-medium",
                                       locked ? "text-red-500 dark:text-red-400" : "text-orange-500 dark:text-orange-400"
                                     )}>
-                                      Số lần làm: {Math.max(0, remaining!)}
-                                      {locked && " — Đã hết lượt"}
+                                       {t("mySpace.assignments.remainingAttempts").replace("Còn ", "").replace("__COUNT__", String(Math.max(0, remaining!)))}
+                                       {locked && t("mySpace.assignments.noAttempts")}
                                     </span>
                                   )}
                                   {!isExam && row.dueDate && (
@@ -1038,7 +1039,7 @@ export function AssignmentsTable({
                                       "text-[10px] font-medium",
                                       isPastDue ? "text-red-500 dark:text-red-400" : "text-orange-500 dark:text-orange-400"
                                     )}>
-                                      Hạn nộp: {formatDueDate(row.dueDate)}
+                                       {t("mySpace.assignments.due").replace("__DATE__", formatDueDate(row.dueDate))}
                                     </span>
                                   )}
                                 </div>
@@ -1054,7 +1055,7 @@ export function AssignmentsTable({
                                   : "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
                               )}
                             >
-                              {isExam ? "Bài kiểm tra" : "BTVN"}
+                              {isExam ? t("mySpace.assignments.exam") : t("mySpace.assignments.homework")}
                             </span>
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap">
@@ -1067,7 +1068,7 @@ export function AssignmentsTable({
                                   : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400"
                               )}
                             >
-                              {row.submissionStatus === "submitted" ? "Đã nộp" : "Chưa nộp"}
+                              {row.submissionStatus === "submitted" ? t("mySpace.assignments.submitted") : t("mySpace.assignments.notSubmitted")}
                             </span>
                           </td>
                           <td className="px-4 py-3 text-center">
@@ -1075,7 +1076,7 @@ export function AssignmentsTable({
                               <button
                                 onClick={() => openRow(row, !isStaff)}
                                 className="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 dark:text-blue-400 transition-colors"
-                                title={isStaff ? "Xem bài & chấm điểm" : "Xem bài đã nộp"}
+                                 title={isStaff ? t("mySpace.assignments.viewAndGrade") : t("mySpace.assignments.viewSubmitted")}
                                 data-testid={`button-view-submission-${idx}`}
                               >
                                 <Eye className="w-4 h-4" />
@@ -1084,7 +1085,7 @@ export function AssignmentsTable({
                               <button
                                 onClick={() => setViewingExamInfo({ examId: row.examId!, submissionId: row.submissionId! })}
                                 className="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 dark:text-blue-400 transition-colors"
-                                title="Xem bài làm của học viên"
+                                 title={t("mySpace.assignments.viewStudentExam")}
                                 data-testid={`button-view-exam-submission-${idx}`}
                               >
                                 <Eye className="w-4 h-4" />
@@ -1114,7 +1115,7 @@ export function AssignmentsTable({
                                     startInEditMode: false,
                                   })}
                                   className="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/20 text-amber-600 dark:text-amber-400 transition-colors"
-                                  title="Xem nhận xét"
+                                   title={t("mySpace.assignments.viewComment")}
                                 >
                                   <Eye className="w-4 h-4" />
                                 </button>
@@ -1130,7 +1131,7 @@ export function AssignmentsTable({
                                   })}
                                 >
                                   <MessageSquare className="w-3.5 h-3.5" />
-                                  Nhận xét
+                                   {t("mySpace.assignments.addComment")}
                                 </button>
                               )
                             ) : row.comment ? (
