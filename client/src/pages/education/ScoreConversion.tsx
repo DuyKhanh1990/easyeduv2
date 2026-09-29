@@ -6,6 +6,8 @@ import {
   BarChart3,
   BookOpen,
   CalendarDays,
+  CheckCircle2,
+  Circle,
   CircleDot,
   Clock3,
   Eye,
@@ -526,7 +528,7 @@ export default function ScoreConversion() {
                                     setSelectedAssessment(assessment);
                                   }
                                 }}
-                                className="grid min-w-0 cursor-pointer grid-cols-2 items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(160px,1fr)_160px_60px_120px_minmax(180px,1fr)_56px] xl:items-center xl:gap-x-4 xl:gap-y-0"
+                                className="grid min-w-0 cursor-pointer grid-cols-2 items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(160px,1fr)_160px_150px_minmax(180px,1fr)_56px] xl:items-center xl:gap-x-4 xl:gap-y-0"
                                 data-testid={`row-score-conversion-assessment-${assessment.sessionId}`}
                               >
                                 <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
@@ -581,21 +583,18 @@ export default function ScoreConversion() {
                                   )}
                                 </div>
 
-                                <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-                                  <Users className="h-3.5 w-3.5 shrink-0" />
-                                  <span>{assessment.studentCount} HV</span>
-                                </div>
-
                                 <div className="flex min-w-0 flex-col items-start gap-1">
+                                  <span className="inline-flex items-center gap-1 whitespace-nowrap text-[10px] font-medium text-muted-foreground">
+                                    <Users className="h-3.5 w-3.5 shrink-0" />
+                                    {assessment.studentCount} học viên
+                                  </span>
                                   <span className="inline-flex items-center gap-1 whitespace-nowrap text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
-                                    <CircleDot className="h-3.5 w-3.5 shrink-0" />
+                                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                                     Đã nhập điểm: {completedStudentCount}
                                   </span>
-                                  <span className="whitespace-nowrap text-[10px] font-medium text-muted-foreground">
+                                  <span className="inline-flex items-center gap-1 whitespace-nowrap text-[10px] font-medium text-muted-foreground">
+                                    <Circle className="h-3.5 w-3.5 shrink-0" />
                                     Chưa nhập điểm: {notCompletedStudentCount}
-                                  </span>
-                                  <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded border px-1 text-[10px] font-medium ${deadlineStatus.className}`}>
-                                    {deadlineStatus.indicator} {deadlineStatus.label}
                                   </span>
                                 </div>
 
@@ -608,6 +607,9 @@ export default function ScoreConversion() {
                                     <Clock3 className="h-3 w-3 shrink-0" />
                                     Hạn trả: {formatAssessmentDeadline(assessment.scoreDeadlineAt)}
                                   </p>
+                                  <span className={`mt-1 inline-flex items-center gap-1 whitespace-nowrap rounded border px-1 text-[10px] font-medium ${deadlineStatus.className}`}>
+                                    {deadlineStatus.indicator} {deadlineStatus.label}
+                                  </span>
                                 </div>
 
                                 <div className="col-span-2 flex justify-end border-t border-border/60 pt-2 sm:col-span-3 md:col-span-4 xl:col-span-1 xl:border-0 xl:pt-0">
