@@ -41,6 +41,7 @@ import {
 import { ClipboardList, MessageSquarePlus, Trash2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/hooks/use-language";
 
 interface GradeBookCreateDialogProps {
   open: boolean;
@@ -49,10 +50,11 @@ interface GradeBookCreateDialogProps {
 }
 
 const NONE_VALUE = "__none__";
-const DAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+const DAY_LABEL_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
 export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreateDialogProps) {
   const { toast } = useToast();
+  const { t } = useLanguage();
 
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [title, setTitle] = useState("");
@@ -71,7 +73,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
     queryKey: ["/api/my-space/classes/staff"],
     queryFn: async () => {
       const res = await fetch("/api/my-space/classes/staff", { credentials: "include" });
-      if (!res.ok) throw new Error("Lỗi tải danh sách lớp");
+      if (!res.ok) throw new Error(t("mySpace.scoreSheet.loadClassesError"));
       return res.json();
     },
     enabled: open,
@@ -241,26 +243,26 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${selectedClassId}/grade-books`] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff"] });
-      toast({ title: "Thêm bảng điểm thành công" });
+      toast({ title: t("mySpace.scoreSheet.createSuccess") });
       onSaved?.();
       onClose();
     },
     onError: (err: any) => {
-      toast({ title: "Lỗi", description: err.message, variant: "destructive" });
+      toast({ title: t("mySpace.scoreSheet.error"), description: err.message, variant: "destructive" });
     },
   });
 
   const handleSubmit = () => {
     if (!selectedClassId) {
-      toast({ title: "Vui lòng chọn lớp học", variant: "destructive" });
+      toast({ title: t("mySpace.scoreSheet.chooseClass"), variant: "destructive" });
       return;
     }
     if (!title.trim()) {
-      toast({ title: "Vui lòng nhập tiêu đề", variant: "destructive" });
+      toast({ title: t("mySpace.scoreSheet.enterTitle"), variant: "destructive" });
       return;
     }
     if (!selectedScoreSheetId) {
-      toast({ title: "Vui lòng chọn bảng điểm", variant: "destructive" });
+      toast({ title: t("mySpace.scoreSheet.chooseScoreSheet"), variant: "destructive" });
       return;
     }
 
@@ -321,18 +323,18 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
       <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
         <DialogContent className="w-screen h-screen max-w-none rounded-none m-0 flex flex-col p-0 gap-0">
           <DialogHeader className="px-6 pt-5 pb-4 border-b shrink-0">
-            <DialogTitle>Thêm bảng điểm</DialogTitle>
+            <DialogTitle>{t("mySpace.scoreSheet.createTitle")}</DialogTitle>
           </DialogHeader>
 
           <div className="flex flex-1 min-h-0">
             <div className="w-[24%] border-r p-5 flex flex-col gap-4 overflow-y-auto shrink-0">
               <div className="space-y-1.5">
                 <Label>
-                  Lớp học <span className="text-destructive">*</span>
+                  {t("mySpace.scoreSheet.class")} <span className="text-destructive">*</span>
                 </Label>
                 <Select value={selectedClassId} onValueChange={setSelectedClassId}>
                   <SelectTrigger data-testid="select-create-gradebook-class">
-                    <SelectValue placeholder="Chọn lớp học" />
+                    <SelectValue placeholder={t("mySpace.scoreSheet.selectClass")} />
                   </SelectTrigger>
                   <SelectContent>
                     {(staffClasses || []).map((c: any) => (
@@ -347,11 +349,11 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
 
               <div className="space-y-1.5">
                 <Label>
-                  Tiêu đề <span className="text-destructive">*</span>
+                  {t("mySpace.scoreSheet.titleLabel")} <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   data-testid="input-create-gradebook-title"
-                  placeholder="Nhập tiêu đề bảng điểm"
+                  placeholder={t("mySpace.scoreSheet.titlePlaceholder")}
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   disabled={!selectedClassId}
@@ -359,26 +361,26 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
               </div>
 
               <div className="space-y-1.5">
-                <Label>Buổi học</Label>
+                <Label>{t("mySpace.scoreSheet.session")}</Label>
                 <Select
                   value={selectedSessionId}
                   onValueChange={setSelectedSessionId}
                   disabled={!selectedClassId}
                 >
                   <SelectTrigger data-testid="select-create-gradebook-session">
-                    <SelectValue placeholder="Tất cả học viên lớp" />
+                    <SelectValue placeholder={t("mySpace.scoreSheet.allStudentsInClass")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={NONE_VALUE}>— Tất cả học viên lớp —</SelectItem>
+                    <SelectItem value={NONE_VALUE}>{t("mySpace.scoreSheet.allStudentsInClassOption")}</SelectItem>
                     {(sessions || [])
                       .filter((s: any) => s.status !== "cancelled")
                       .map((s: any) => {
                         const d = s.sessionDate ? new Date(s.sessionDate) : null;
-                        const dow = d ? DAY_LABELS[d.getDay()] : "";
+                        const dow = d ? t(`mySpace.scoreSheet.weekday.${DAY_LABEL_KEYS[d.getDay()]}`) : "";
                         const dateStr = d ? format(d, "dd/MM/yyyy") : "";
                         return (
                           <SelectItem key={s.id} value={s.id}>
-                            Buổi {s.sessionIndex ?? ""} – {dow} {dateStr}
+                            {t("mySpace.scoreSheet.sessionOption")} {s.sessionIndex ?? ""} – {dow} {dateStr}
                           </SelectItem>
                         );
                       })}
@@ -388,7 +390,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
 
               <div className="space-y-1.5">
                 <Label>
-                  Bảng điểm <span className="text-destructive">*</span>
+                  {t("mySpace.scoreSheet.scoreSheet")} <span className="text-destructive">*</span>
                 </Label>
                 <Select
                   value={selectedScoreSheetId}
@@ -396,14 +398,14 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
                   disabled={!selectedClassId}
                 >
                   <SelectTrigger data-testid="select-create-gradebook-scoresheet">
-                    <SelectValue placeholder="Chọn bảng điểm" />
+                    <SelectValue placeholder={t("mySpace.scoreSheet.selectScoreSheet")} />
                   </SelectTrigger>
                   <SelectContent>
                     {(allScoreSheets || []).map((s: any) => (
                       <SelectItem key={s.id} value={s.id}>
                         {s.name}
-                        {s.id === selectedClass?.scoreSheetId ? " (Mặc định lớp)" : ""}
-                        {selectedSession?.scoreSheetId === s.id ? " (Buổi học)" : ""}
+                        {s.id === selectedClass?.scoreSheetId ? ` (${t("mySpace.scoreSheet.defaultClass")})` : ""}
+                        {selectedSession?.scoreSheetId === s.id ? ` (${t("mySpace.scoreSheet.session")})` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -413,7 +415,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
               {selectedScoreSheet && (
                 <div className="mt-2 p-3 bg-muted rounded-lg">
                   <p className="text-[11px] font-medium text-muted-foreground mb-1">
-                    Danh mục trong bảng điểm:
+                    {t("mySpace.scoreSheet.categoriesInSheet")}:
                   </p>
                   {categories.length > 0 ? (
                     <ul className="space-y-1">
@@ -426,7 +428,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
                       ))}
                     </ul>
                   ) : (
-                    <p className="text-[11px] text-muted-foreground italic">Bảng điểm chưa có danh mục</p>
+                    <p className="text-[11px] text-muted-foreground italic">{t("mySpace.scoreSheet.noCategories")}</p>
                   )}
                 </div>
               )}
@@ -436,27 +438,27 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
               {!selectedClassId ? (
                 <div className="flex flex-col items-center justify-center h-full text-center p-8">
                   <ClipboardList className="h-10 w-10 text-muted-foreground opacity-20 mb-3" />
-                  <p className="text-sm text-muted-foreground">Chọn lớp học để bắt đầu nhập điểm</p>
+                  <p className="text-sm text-muted-foreground">{t("mySpace.scoreSheet.selectClassToEnterScores")}</p>
                 </div>
               ) : !selectedScoreSheetId ? (
                 <div className="flex flex-col items-center justify-center h-full text-center p-8">
                   <ClipboardList className="h-10 w-10 text-muted-foreground opacity-20 mb-3" />
-                  <p className="text-sm text-muted-foreground">Chọn bảng điểm để nhập điểm cho học viên</p>
+                  <p className="text-sm text-muted-foreground">{t("mySpace.scoreSheet.selectSheetToEnterScores")}</p>
                 </div>
               ) : categories.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center p-8">
-                  <p className="text-sm text-muted-foreground">Bảng điểm này chưa có danh mục điểm</p>
+                  <p className="text-sm text-muted-foreground">{t("mySpace.scoreSheet.noScoreCategories")}</p>
                 </div>
               ) : (
                 <div>
                   {removedStudentIds.size > 0 && (
                     <div className="flex items-center gap-2 px-4 py-2 border-b border-border/40 bg-muted/30">
                       <span className="text-xs text-muted-foreground">
-                        {removedStudentIds.size} học viên đã được loại khỏi bảng điểm
+                        {removedStudentIds.size} {t("mySpace.scoreSheet.removedFromSheet")}
                       </span>
                       <Select onValueChange={restoreStudent}>
                         <SelectTrigger className="h-7 w-auto min-w-[170px] text-xs">
-                          <SelectValue placeholder="Thêm lại học viên" />
+                        <SelectValue placeholder={t("mySpace.scoreSheet.restoreStudent")} />
                         </SelectTrigger>
                         <SelectContent>
                           {allStudents
@@ -477,7 +479,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
                                   {student.fullName ||
                                     student.full_name ||
                                     student.student?.fullName ||
-                                    "Học viên"}
+                                    t("mySpace.scoreSheet.studentLabel")}
                                 </SelectItem>
                               );
                             })}
@@ -489,7 +491,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
                   <TableHeader className="sticky top-0 bg-background z-10">
                     <TableRow>
                       <TableHead className="min-w-[180px] sticky left-0 bg-background z-20 border-r">
-                        Học viên
+                        {t("mySpace.scoreSheet.studentLabel")}
                       </TableHead>
                       {categories.map((cat: any) => {
                         const isComp = computedCategoryIds.has(cat.id);
@@ -505,7 +507,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
                         );
                       })}
                       <TableHead className="w-[80px] text-center sticky right-0 bg-background z-20 border-l shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.06)]">
-                        Thao tác
+                        {t("mySpace.scoreSheet.actions")}
                       </TableHead>
                     </TableRow>
                   </TableHeader>
@@ -516,7 +518,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
                           colSpan={categories.length + 2}
                           className="text-center text-sm text-muted-foreground py-8"
                         >
-                          Không có học viên
+                          {t("mySpace.scoreSheet.noStudents")}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -525,7 +527,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
                         const actualStudentId =
                           student.studentId || student.student?.id || student.id;
                         const name =
-                          student.fullName || student.full_name || student.student?.fullName || `Học viên ${idx + 1}`;
+                          student.fullName || student.full_name || student.student?.fullName || `${t("mySpace.scoreSheet.studentLabel")} ${idx + 1}`;
                         return (
                           <TableRow key={studentId}>
                             <TableCell className="sticky left-0 bg-background border-r font-medium text-[13px]">
@@ -558,7 +560,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
                                     setCommentStudentName(name);
                                     setCommentDialogOpen(true);
                                   }}
-                                  title="Viết nhận xét"
+                                   title={t("mySpace.scoreSheet.writeComment")}
                                 >
                                   <MessageSquarePlus className="h-3.5 w-3.5" />
                                 </Button>
@@ -567,7 +569,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
                                   size="icon"
                                   className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
                                   onClick={() => requestRemoveStudent(actualStudentId, name)}
-                                  title="Xoá học viên khỏi bảng điểm"
+                                   title={t("mySpace.scoreSheet.removeStudent")}
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </Button>
@@ -594,22 +596,22 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
               <Label htmlFor="create-published-switch" className="cursor-pointer select-none">
                 {published ? (
                   <span className="text-green-600 dark:text-green-400 font-medium">
-                    Công bố – Gửi bảng điểm đến học viên
+                    {t("mySpace.scoreSheet.publishAndSend")}
                   </span>
                 ) : (
-                  <span className="text-muted-foreground">Không công bố – Lưu trong hệ thống</span>
+                  <span className="text-muted-foreground">{t("mySpace.scoreSheet.saveInSystem")}</span>
                 )}
               </Label>
             </div>
             <Button variant="outline" onClick={onClose}>
-              Huỷ
+              {t("mySpace.scoreSheet.cancel")}
             </Button>
             <Button
               onClick={handleSubmit}
               disabled={createMutation.isPending}
               data-testid="button-create-gradebook-submit"
             >
-              {createMutation.isPending ? "Đang lưu..." : "Lưu bảng điểm"}
+              {createMutation.isPending ? t("mySpace.scoreSheet.saving") : t("mySpace.scoreSheet.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -623,15 +625,16 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Xóa học viên khỏi bảng điểm?</AlertDialogTitle>
+            <AlertDialogTitle>{t("mySpace.scoreSheet.removeTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              Bạn có chắc muốn loại {pendingRemoval?.name || "học viên này"} khỏi bảng điểm không?
-              Dữ liệu điểm và nhận xét sẽ được giữ lại để có thể thêm lại.
+              {t("mySpace.scoreSheet.removeConfirmPrefix")} {pendingRemoval?.name || t("mySpace.scoreSheet.studentLabel")} {t("mySpace.scoreSheet.removeConfirmSuffix")}
+              <br />
+              {t("mySpace.scoreSheet.removeDataKept")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Hủy</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmRemoveStudent}>Đồng ý</AlertDialogAction>
+            <AlertDialogCancel>{t("mySpace.scoreSheet.cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmRemoveStudent}>{t("mySpace.scoreSheet.confirm")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -639,12 +642,12 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
       <Dialog open={commentDialogOpen} onOpenChange={setCommentDialogOpen}>
         <DialogContent className="max-w-[672px] max-h-[90vh] flex flex-col">
           <DialogHeader className="shrink-0">
-            <DialogTitle>Nhận xét học viên</DialogTitle>
+            <DialogTitle>{t("mySpace.scoreSheet.commentTitle")}</DialogTitle>
           </DialogHeader>
           <div className="flex-1 min-h-0 overflow-y-auto space-y-3 py-2 pr-1">
             <p className="text-sm font-medium">{commentStudentName}</p>
             <RichEditor
-              placeholder="Nhập nhận xét cho học viên..."
+              placeholder={t("mySpace.scoreSheet.commentPlaceholder")}
               minHeight="200px"
               maxHeight="50vh"
               value={studentComments[commentStudentId] || ""}
@@ -655,9 +658,9 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
           </div>
           <DialogFooter className="shrink-0">
             <Button variant="outline" onClick={() => setCommentDialogOpen(false)}>
-              Huỷ
+              {t("mySpace.scoreSheet.cancel")}
             </Button>
-            <Button onClick={() => setCommentDialogOpen(false)}>Lưu nhận xét</Button>
+            <Button onClick={() => setCommentDialogOpen(false)}>{t("mySpace.scoreSheet.saveComment")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

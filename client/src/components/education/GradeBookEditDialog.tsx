@@ -36,6 +36,7 @@ import {
 import { ClipboardList, MessageSquarePlus, Trash2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/hooks/use-language";
 
 interface GradeBookEditDialogProps {
   open: boolean;
@@ -59,6 +60,7 @@ export function GradeBookEditDialog({
   onSaved,
 }: GradeBookEditDialogProps) {
   const { toast } = useToast();
+  const { t } = useLanguage();
 
   const [title, setTitle] = useState(book.title);
   const [published, setPublished] = useState(book.published);
@@ -324,12 +326,12 @@ export function GradeBookEditDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/grade-books`] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff"] });
-      toast({ title: "Cập nhật bảng điểm thành công" });
+       toast({ title: t("mySpace.scoreSheet.updateSuccess") });
       onSaved?.();
       onClose();
     },
     onError: (err: any) => {
-      toast({ title: "Lỗi", description: err.message, variant: "destructive" });
+       toast({ title: t("mySpace.scoreSheet.error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -342,13 +344,13 @@ export function GradeBookEditDialog({
 
   const handleSubmit = () => {
     if (!title.trim()) {
-      toast({ title: "Vui lòng nhập tiêu đề", variant: "destructive" });
+       toast({ title: t("mySpace.scoreSheet.enterTitle"), variant: "destructive" });
       return;
     }
     if (published && !hasData) {
       toast({
-        title: "Không thể công bố bảng điểm trống",
-        description: "Cần nhập ít nhất một điểm hoặc nhận xét trước khi công bố.",
+         title: t("mySpace.scoreSheet.publishEmptyTitle"),
+         description: t("mySpace.scoreSheet.publishEmptyDescription"),
         variant: "destructive",
       });
       return;
@@ -361,26 +363,26 @@ export function GradeBookEditDialog({
       <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
         <DialogContent className="w-screen h-screen max-w-none rounded-none m-0 flex flex-col p-0 gap-0">
           <DialogHeader className="px-6 pt-5 pb-4 border-b shrink-0">
-            <DialogTitle>Sửa bảng điểm — {book.title}</DialogTitle>
+            <DialogTitle>{t("mySpace.scoreSheet.editTitle")} — {book.title}</DialogTitle>
           </DialogHeader>
 
           <div className="flex flex-1 min-h-0">
             {/* Left sidebar */}
             <div className="w-64 border-r p-5 flex flex-col gap-4 overflow-y-auto shrink-0">
               <div className="space-y-1.5">
-                <Label htmlFor="edit-title">Tiêu đề</Label>
+                <Label htmlFor="edit-title">{t("mySpace.scoreSheet.titleLabel")}</Label>
                 <Input
                   id="edit-title"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Nhập tiêu đề"
+                  placeholder={t("mySpace.scoreSheet.titlePlaceholder")}
                 />
               </div>
 
               {selectedScoreSheet && (
                 <div className="p-3 bg-muted rounded-lg">
                   <p className="text-[11px] font-medium text-muted-foreground mb-1">
-                    Bảng điểm: {selectedScoreSheet.name}
+                    {t("mySpace.scoreSheet.scoreSheet")}: {selectedScoreSheet.name}
                   </p>
                   {categories.length > 0 && (
                     <ul className="space-y-1">
@@ -401,77 +403,77 @@ export function GradeBookEditDialog({
             <div className="flex-1 overflow-auto">
               {loadingEdit ? (
                 <div className="flex items-center justify-center h-full">
-                  <p className="text-sm text-muted-foreground">Đang tải dữ liệu...</p>
+                  <p className="text-sm text-muted-foreground">{t("mySpace.scoreSheet.loadingData")}</p>
                 </div>
               ) : categories.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center p-8">
                   <ClipboardList className="h-10 w-10 text-muted-foreground opacity-20 mb-3" />
-                  <p className="text-sm text-muted-foreground">Bảng điểm này chưa có danh mục điểm</p>
+                  <p className="text-sm text-muted-foreground">{t("mySpace.scoreSheet.noScoreCategories")}</p>
                 </div>
               ) : (
               <div>
                 {(removedStudents.length > 0 || newStudents.length > 0) && (
                   <div className="flex items-center gap-2 px-4 py-2 border-b border-border/40 bg-muted/30">
                     <span className="text-xs text-muted-foreground">
-                      {removedStudents.length > 0 && `${removedStudents.length} học viên đã loại`}
+                      {removedStudents.length > 0 && `${removedStudents.length} ${t("mySpace.scoreSheet.removedCount")}`}
                       {removedStudents.length > 0 && newStudents.length > 0 && " · "}
-                      {newStudents.length > 0 && `${newStudents.length} học viên mới`}
+                      {newStudents.length > 0 && `${newStudents.length} ${t("mySpace.scoreSheet.newCount")}`}
                     </span>
                     <Popover>
                       <PopoverTrigger asChild>
                         <Button variant="outline" className="h-7 min-w-[190px] text-xs justify-between">
-                          Thêm học viên vào bảng
+                          {t("mySpace.scoreSheet.addStudentsToSheet")}
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent align="start" className="w-[320px] p-2">
                         <div className="max-h-64 overflow-y-auto space-y-1">
                           {removedStudents.length > 0 && (
                             <p className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">
-                              Học viên đã loại
+                              {t("mySpace.scoreSheet.removedStudents")}
                             </p>
                           )}
                           {removedStudents.map((student: any) => {
                             const studentId =
                               student.studentId || student.student?.id || student.id;
                             const name =
-                              student.fullName || student.full_name || student.student?.fullName || "Học viên";
+                              student.fullName || student.full_name || student.student?.fullName || t("mySpace.scoreSheet.studentLabel");
                             return (
                               <label key={`restore-${studentId}`} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted">
                                 <Checkbox
                                   checked={pendingStudentIds.has(studentId)}
                                   onCheckedChange={(checked) => togglePendingStudent(studentId, checked === true)}
                                 />
-                                <span>[Đã loại] {name}</span>
+                                <span>[{t("mySpace.scoreSheet.removedStudents")}] {name}</span>
                               </label>
                             );
                           })}
                           {newStudents.length > 0 && (
                             <p className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">
-                              Học viên active mới
+                              {t("mySpace.scoreSheet.newActiveStudents")}
                             </p>
                           )}
                           {newStudents.map((student: any) => {
                             const studentId =
                               student.studentId || student.student?.id || student.id;
                             const name =
-                              student.fullName || student.full_name || student.student?.fullName || "Học viên";
+                              student.fullName || student.full_name || student.student?.fullName || t("mySpace.scoreSheet.studentLabel");
                             return (
                               <label key={`new-${studentId}`} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted">
                                 <Checkbox
                                   checked={pendingStudentIds.has(studentId)}
                                   onCheckedChange={(checked) => togglePendingStudent(studentId, checked === true)}
                                 />
-                                <span>[Mới vào lớp] {name}</span>
+                                <span>[{t("mySpace.scoreSheet.newActiveStudents")}] {name}</span>
                               </label>
                             );
                           })}
                         </div>
                         <div className="mt-2 flex items-center justify-between border-t pt-2">
                           <span className="text-xs text-muted-foreground">
-                            Đã chọn: {pendingStudentIds.size}
+                            {t("mySpace.scoreSheet.selectedCount")}: {pendingStudentIds.size}
                           </span>
                           <Button size="sm" className="h-7 text-xs" disabled={pendingStudentIds.size === 0} onClick={addPendingStudents}>
-                            Thêm đã chọn
+                            {t("mySpace.scoreSheet.addSelected")}
                           </Button>
                         </div>
                       </PopoverContent>
@@ -482,7 +484,7 @@ export function GradeBookEditDialog({
                 <TableHeader className="sticky top-0 bg-background z-10">
                     <TableRow>
                       <TableHead className="min-w-[180px] sticky left-0 bg-background z-20 border-r">
-                        Học viên
+                        {t("mySpace.scoreSheet.studentLabel")}
                       </TableHead>
                       {categories.map((cat: any) => {
                         const isComp = computedCategoryIds.has(cat.id);
@@ -498,7 +500,7 @@ export function GradeBookEditDialog({
                         );
                       })}
                       <TableHead className="w-[80px] text-center sticky right-0 bg-background z-20 border-l">
-                        Thao tác
+                        {t("mySpace.scoreSheet.actions")}
                       </TableHead>
                     </TableRow>
                   </TableHeader>
@@ -506,7 +508,7 @@ export function GradeBookEditDialog({
                     {displayedStudents.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={categories.length + 2} className="text-center text-sm text-muted-foreground py-8">
-                          Không có học viên
+                          {t("mySpace.scoreSheet.noStudents")}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -514,7 +516,7 @@ export function GradeBookEditDialog({
                         const studentId = student.id || student.studentId;
                         const actualStudentId =
                           student.studentId || student.student?.id || student.id;
-                        const name = student.fullName || student.full_name || student.student?.fullName || `Học viên ${idx + 1}`;
+                        const name = student.fullName || student.full_name || student.student?.fullName || `${t("mySpace.scoreSheet.studentLabel")} ${idx + 1}`;
                         return (
                           <TableRow key={studentId}>
                             <TableCell className="sticky left-0 bg-background border-r font-medium text-[13px]">
@@ -541,7 +543,7 @@ export function GradeBookEditDialog({
                                   size="icon"
                                   className={`h-7 w-7 ${studentComments[studentId]?.trim() ? "text-orange-500 hover:text-orange-600" : "text-muted-foreground"}`}
                                   onClick={() => { setCommentStudentId(studentId); setCommentStudentName(name); setCommentDialogOpen(true); }}
-                                  title="Nhận xét"
+                                   title={t("mySpace.scoreSheet.writeComment")}
                                 >
                                   <MessageSquarePlus className="h-3.5 w-3.5" />
                                 </Button>
@@ -550,7 +552,7 @@ export function GradeBookEditDialog({
                                   size="icon"
                                   className="h-7 w-7 text-destructive hover:text-destructive"
                                   onClick={() => requestRemoveStudent(actualStudentId, name)}
-                                  title="Xoá học viên"
+                                   title={t("mySpace.scoreSheet.removeStudent")}
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </Button>
@@ -584,18 +586,18 @@ export function GradeBookEditDialog({
                 className={`select-none leading-tight ${hasData ? "cursor-pointer" : "cursor-not-allowed"}`}
               >
                 {published ? (
-                  <span className="text-[12px] font-medium text-green-600 dark:text-green-400">Công bố</span>
+                  <span className="text-[12px] font-medium text-green-600 dark:text-green-400">{t("mySpace.scoreSheet.publishedLabel")}</span>
                 ) : hasData ? (
-                  <span className="text-[12px] text-muted-foreground">Chưa công bố</span>
+                  <span className="text-[12px] text-muted-foreground">{t("mySpace.scoreSheet.unpublishedLabel")}</span>
                 ) : (
-                  <span className="text-[11px] italic text-muted-foreground/60">Cần có điểm / nhận xét</span>
+                  <span className="text-[11px] italic text-muted-foreground/60">{t("mySpace.scoreSheet.needsScoresOrComments")}</span>
                 )}
               </Label>
             </div>
 
-            <Button variant="outline" onClick={onClose}>Huỷ</Button>
+            <Button variant="outline" onClick={onClose}>{t("mySpace.scoreSheet.cancel")}</Button>
             <Button onClick={handleSubmit} disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? "Đang lưu..." : "Cập nhật bảng điểm"}
+              {updateMutation.isPending ? t("mySpace.scoreSheet.saving") : t("mySpace.scoreSheet.update")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -609,15 +611,16 @@ export function GradeBookEditDialog({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Xóa học viên khỏi bảng điểm?</AlertDialogTitle>
+            <AlertDialogTitle>{t("mySpace.scoreSheet.removeTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              Bạn có chắc muốn loại {pendingRemoval?.name || "học viên này"} khỏi bảng điểm không?
-              Dữ liệu điểm và nhận xét sẽ được giữ lại để có thể thêm lại.
+              {t("mySpace.scoreSheet.removeConfirmPrefix")} {pendingRemoval?.name || t("mySpace.scoreSheet.studentLabel")} {t("mySpace.scoreSheet.removeConfirmSuffix")}
+              <br />
+              {t("mySpace.scoreSheet.removeDataKept")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Hủy</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmRemoveStudent}>Đồng ý</AlertDialogAction>
+            <AlertDialogCancel>{t("mySpace.scoreSheet.cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmRemoveStudent}>{t("mySpace.scoreSheet.confirm")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -626,12 +629,12 @@ export function GradeBookEditDialog({
       <Dialog open={commentDialogOpen} onOpenChange={setCommentDialogOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
           <DialogHeader className="shrink-0">
-            <DialogTitle>Nhận xét học viên</DialogTitle>
+            <DialogTitle>{t("mySpace.scoreSheet.commentTitle")}</DialogTitle>
           </DialogHeader>
           <div className="flex-1 min-h-0 overflow-y-auto space-y-3 py-2 pr-1">
             <p className="text-sm font-medium">{commentStudentName}</p>
             <RichEditor
-              placeholder="Nhập nhận xét cho học viên..."
+              placeholder={t("mySpace.scoreSheet.commentPlaceholder")}
               minHeight="200px"
               maxHeight="50vh"
               value={studentComments[commentStudentId] || ""}
@@ -641,8 +644,8 @@ export function GradeBookEditDialog({
             />
           </div>
           <DialogFooter className="shrink-0">
-            <Button variant="outline" onClick={() => setCommentDialogOpen(false)}>Huỷ</Button>
-            <Button onClick={() => setCommentDialogOpen(false)}>Lưu nhận xét</Button>
+            <Button variant="outline" onClick={() => setCommentDialogOpen(false)}>{t("mySpace.scoreSheet.cancel")}</Button>
+            <Button onClick={() => setCommentDialogOpen(false)}>{t("mySpace.scoreSheet.saveComment")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

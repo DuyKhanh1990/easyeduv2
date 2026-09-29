@@ -148,7 +148,7 @@ export function StaffScoreSheet() {
     queryKey: ["/api/my-space/score-sheet/staff"],
     queryFn: async () => {
       const res = await fetch("/api/my-space/score-sheet/staff", { credentials: "include" });
-      if (!res.ok) throw new Error("Lỗi khi tải bảng điểm");
+      if (!res.ok) throw new Error(t("mySpace.scoreSheet.loadError"));
       return res.json();
     },
   });
@@ -161,7 +161,7 @@ export function StaffScoreSheet() {
     queryKey: ["/api/my-space/score-sheet/staff-assessments"],
     queryFn: async () => {
       const res = await fetch("/api/my-space/score-sheet/staff-assessments", { credentials: "include" });
-      if (!res.ok) throw new Error("Lỗi khi tải bảng điểm được giao");
+      if (!res.ok) throw new Error(t("mySpace.scoreSheet.assignedLoadError"));
       return res.json();
     },
     refetchInterval: 60_000,
@@ -300,7 +300,7 @@ export function StaffScoreSheet() {
                                 setSelectedAssessment(assessment);
                               }
                             }}
-                            className="grid min-w-0 cursor-pointer grid-cols-2 items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(160px,1fr)_160px_60px_120px_minmax(180px,1fr)_56px] xl:items-center xl:gap-x-4 xl:gap-y-0"
+                            className="grid min-w-0 cursor-pointer grid-cols-2 items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(160px,1fr)_160px_96px_120px_minmax(180px,1fr)_56px] xl:items-center xl:gap-x-4 xl:gap-y-0"
                             data-testid={`row-staff-conversion-assessment-${assessment.sessionId}`}
                           >
                             <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
@@ -337,7 +337,7 @@ export function StaffScoreSheet() {
 
                             <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
                               <Users className="h-3.5 w-3.5 shrink-0" />
-                              <span>{assessment.studentCount ?? 0} {t("mySpace.scoreSheet.studentCount")}</span>
+                              <span className="whitespace-nowrap">{assessment.studentCount ?? 0} {t("mySpace.scoreSheet.studentCount")}</span>
                             </div>
 
                             <div className="flex min-w-0 flex-col items-start gap-1">
@@ -375,7 +375,7 @@ export function StaffScoreSheet() {
                       return (
                         <div
                           key={`grade-book:${book.id}`}
-                          className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(160px,1fr)_160px_60px_120px_minmax(180px,1fr)_56px] xl:items-center xl:gap-x-4 xl:gap-y-0"
+                          className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(160px,1fr)_160px_96px_120px_minmax(180px,1fr)_56px] xl:items-center xl:gap-x-4 xl:gap-y-0"
                           data-testid={`row-staff-grade-book-${book.id}`}
                         >
                           {/* Col 1: Title + class */}
@@ -414,7 +414,7 @@ export function StaffScoreSheet() {
                           {/* Col 3: Students */}
                           <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
                             <Users className="h-3.5 w-3.5 shrink-0" />
-                            <span>{book.studentCount ?? 0} {t("mySpace.scoreSheet.studentCount")}</span>
+                            <span className="whitespace-nowrap">{book.studentCount ?? 0} {t("mySpace.scoreSheet.studentCount")}</span>
                           </div>
 
                           {/* Col 4: Status */}
