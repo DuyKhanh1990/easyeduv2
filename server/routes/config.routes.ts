@@ -2373,7 +2373,7 @@ export function registerConfigRoutes(app: Express): void {
             FROM score_sheet_assessment_student_attempts attempt
             WHERE attempt.assessment_id = cs.score_sheet_assessment_id
               AND attempt.class_session_id = cs.id
-          ) AS entered_student_count,
+          ) AS entered_student_count
         FROM class_sessions cs
         JOIN classes c ON c.id = cs.class_id
         LEFT JOIN shift_templates st ON st.id = cs.shift_template_id
