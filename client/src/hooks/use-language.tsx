@@ -6,7 +6,7 @@ export type Language = "vi" | "en";
 interface LanguageContextType {
   lang: Language;
   setLang: (lang: Language) => void;
-  t: (key: string) => string;
+  t: (key: string, params?: Record<string, string | number>) => string;
   tNav: (viText: string) => string;
 }
 
@@ -1123,11 +1123,13 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     setLangState(newLang);
   };
 
-  const t = (key: string): string => {
-    if (lang === "en") {
-      return enCalendar[key] ?? mySpaceTranslations.en[key] ?? translations["en"][key] ?? translations["vi"][key] ?? key;
-    }
-    return translations["vi"][key] ?? mySpaceTranslations.vi[key] ?? key;
+  const t = (key: string, params?: Record<string, string | number>): string => {
+    const raw = lang === "en"
+      ? enCalendar[key] ?? mySpaceTranslations.en[key] ?? translations["en"][key] ?? translations["vi"][key] ?? key
+      : translations["vi"][key] ?? mySpaceTranslations.vi[key] ?? key;
+    return params
+      ? Object.entries(params).reduce((value, [name, replacement]) => value.replaceAll(`{{${name}}}`, String(replacement)), raw)
+      : raw;
   };
 
   const tNav = (viText: string): string => {

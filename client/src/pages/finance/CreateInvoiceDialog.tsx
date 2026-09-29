@@ -299,7 +299,7 @@ function AdjustmentRowsEditor({
                 type="button"
                 className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
                 onClick={() => onRemove(row.id)}
-                aria-label={`Xóa dòng ${isPromotion ? "khuyến mãi" : "phụ thu"}`}
+                aria-label={t("finance.create.removeAdjustment", { type: isPromotion ? t("finance.promotion").toLowerCase() : t("finance.surcharge").toLowerCase() })}
               >
                 <X className="h-4 w-4" />
               </button>
@@ -606,7 +606,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       onClose();
     },
     onError: (err: any) => {
-      toast({ title: "Lỗi khi lưu", description: err.message, variant: "destructive" });
+      toast({ title: t("finance.create.saveError"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -778,10 +778,10 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       }
       setQuickCreateType(null);
       setQuickCreateTarget(null);
-      toast({ title: `Đã thêm ${quickCreateType === "promotion" ? "khuyến mãi" : "phụ thu"}` });
+      toast({ title: t("finance.create.addedAdjustment", { label: quickCreateType === "promotion" ? t("finance.promotion").toLowerCase() : t("finance.surcharge").toLowerCase() }) });
     },
     onError: (err: any) => {
-      toast({ title: "Lỗi khi thêm mới", description: err.message, variant: "destructive" });
+      toast({ title: t("finance.create.addError"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -1276,8 +1276,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     const amount = Math.max(0, Number(splitAmount) || 0);
     if (amount <= 0 || amount >= source.amount) {
       toast({
-        title: "Số tiền tách không hợp lệ",
-        description: `Số tiền tách phải lớn hơn 0 và nhỏ hơn ${fmtMoney(source.amount)}.`,
+         title: t("finance.create.invalidSplitAmount"),
+         description: t("finance.create.splitAmountHint", { amount: fmtMoney(source.amount) }),
         variant: "destructive",
       });
       return;
@@ -1333,23 +1333,23 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   };
 
   const handleSave = () => {
-    if (!locationId) { toast({ title: "Vui lòng chọn Cơ sở", variant: "destructive" }); return; }
-    if (products.some(p => !p.categoryId)) { toast({ title: "Vui lòng chọn Danh mục cho tất cả sản phẩm", variant: "destructive" }); return; }
-    if (!studentId && !subjectName.trim()) { toast({ title: "Vui lòng chọn hoặc nhập Tên", variant: "destructive" }); return; }
+    if (!locationId) { toast({ title: t("finance.create.branchRequiredError"), variant: "destructive" }); return; }
+    if (products.some(p => !p.categoryId)) { toast({ title: t("finance.create.categoryRequiredError"), variant: "destructive" }); return; }
+    if (!studentId && !subjectName.trim()) { toast({ title: t("finance.create.nameRequiredError"), variant: "destructive" }); return; }
     if (paymentSchedule.length > 0) {
       const allocated = directPaidAmount + paymentSchedule.reduce((sum, entry) => sum + entry.amount, 0);
       if (Math.abs(allocated - finalTotal) > 0.01) {
         toast({
-          title: "Lịch thanh toán chưa khớp tổng tiền",
-          description: `Các đợt đang phân bổ ${fmtMoney(allocated)} trên tổng ${fmtMoney(finalTotal)}.`,
+           title: t("finance.create.scheduleMismatch"),
+           description: t("finance.create.scheduleMismatchDescription", { allocated: fmtMoney(allocated), total: fmtMoney(finalTotal) }),
           variant: "destructive",
         });
         return;
       }
       if (paymentSchedule.some(entry => entry.amount <= 0)) {
         toast({
-          title: "Số tiền đợt thanh toán không hợp lệ",
-          description: "Mỗi đợt thanh toán phải có số tiền lớn hơn 0.",
+           title: t("finance.create.invalidScheduleAmount"),
+           description: t("finance.create.positiveScheduleAmount"),
           variant: "destructive",
         });
         return;
@@ -1501,7 +1501,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     <span className={selectedOption ? "truncate" : "text-muted-foreground"}>
                       {selectedOption
                         ? (isPromotion ? formatPromotionLabel(selectedOption) : selectedOption.name)
-                        : `Chọn ${isPromotion ? "khuyến mãi" : "phụ thu"}...`}
+                        : t("finance.create.chooseAdjustment", { type: isPromotion ? t("finance.promotion").toLowerCase() : t("finance.surcharge").toLowerCase() })}
                     </span>
                     <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   </button>
@@ -1512,7 +1512,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     <Input
                       value={search}
                       onChange={e => setSearch(e.target.value)}
-                      placeholder={`Tìm theo tên hoặc mã ${isPromotion ? "khuyến mãi" : "phụ thu"}...`}
+                      placeholder={t("finance.create.searchAdjustment", { type: isPromotion ? t("finance.promotion").toLowerCase() : t("finance.surcharge").toLowerCase() })}
                       className="h-8 pl-7 text-xs"
                       autoFocus
                       onKeyDown={e => e.stopPropagation()}
@@ -1521,11 +1521,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                   <div className="max-h-64 overflow-y-auto space-y-1">
                     {options.length === 0 ? (
                       <p className="py-3 text-center text-xs text-muted-foreground">
-                        Chưa có {isPromotion ? "khuyến mãi" : "phụ thu"}
+                        {t("finance.create.noAdjustment", { type: isPromotion ? t("finance.promotion").toLowerCase() : t("finance.surcharge").toLowerCase() })}
                       </p>
                     ) : filteredOptions.length === 0 ? (
                       <p className="py-3 text-center text-xs text-muted-foreground">
-                        Không tìm thấy {isPromotion ? "khuyến mãi" : "phụ thu"} phù hợp
+                        {t("finance.create.adjustmentNotFound", { type: isPromotion ? t("finance.promotion").toLowerCase() : t("finance.surcharge").toLowerCase() })}
                       </p>
                     ) : filteredOptions.map((o: any) => {
                       const val = parseFloat(o.valueAmount || "0");
@@ -1563,8 +1563,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                   onChange={e => updateInvoiceAdjustmentRow(kind, row.id, { valueType: e.target.value as ManualAdjustment["valueType"] })}
                   className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
                 >
-                  <option value="amount">Số tiền</option>
-                  <option value="percent">Phần trăm</option>
+                  <option value="amount">{t("finance.create.amountType")}</option>
+                  <option value="percent">{t("finance.create.percentType")}</option>
                 </select>
                 <div className="relative min-w-0 flex-1">
                   <Input
@@ -1572,7 +1572,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     min={0}
                     value={row.value || ""}
                     onChange={e => updateInvoiceAdjustmentRow(kind, row.id, { value: Math.max(0, Number(e.target.value) || 0) })}
-                    placeholder="Nhập nhanh..."
+                  placeholder={t("finance.create.quickEnter")}
                     className="h-8 pr-8 text-xs"
                   />
                   <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
@@ -1583,7 +1583,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                   type="button"
                   className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
                   onClick={() => removeInvoiceAdjustmentRow(kind, row.id)}
-                  aria-label={`Xóa dòng ${isPromotion ? "khuyến mãi" : "phụ thu"}`}
+                aria-label={t("finance.create.removeAdjustment", { type: isPromotion ? t("finance.promotion").toLowerCase() : t("finance.surcharge").toLowerCase() })}
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -1596,10 +1596,10 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
           className="text-xs font-medium text-purple-600 hover:text-purple-700"
           onClick={() => addInvoiceAdjustmentRow(kind)}
         >
-          + Thêm
+          + {t("finance.add")}
         </button>
         <div className="flex justify-between border-t pt-3 text-xs font-semibold">
-          <span>Tổng {isPromotion ? "khuyến mãi" : "phụ thu"} toàn đơn</span>
+          <span>{t("finance.create.totalAdjustment", { type: isPromotion ? t("finance.promotion").toLowerCase() : t("finance.surcharge").toLowerCase() })}</span>
           <span className={isPromotion ? "text-green-600" : "text-orange-600"}>
             {isPromotion ? "-" : "+"}{fmtMoney(total)}
           </span>
@@ -1615,7 +1615,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         <DialogHeader className="px-6 py-4 border-b flex-shrink-0">
           <DialogTitle className="flex items-center gap-2 text-xs font-semibold">
             <CreditCard className="h-4 w-4 text-purple-600" />
-            {isEdit ? `Chỉnh sửa phiếu ${editData?.code ?? ""}` : "Tạo phiếu thu / chi"}
+            {isEdit ? `${t("finance.editInvoice")} ${editData?.code ?? ""}` : t("finance.create.enterInvoice")}
           </DialogTitle>
         </DialogHeader>
 
@@ -1759,11 +1759,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                 <Select value={account} onValueChange={setAccount}>
                   <SelectTrigger className="h-9" data-testid="select-account"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="111">111 - Tiền mặt</SelectItem>
-                    <SelectItem value="112">112 - Tiền gửi ngân hàng</SelectItem>
-                    <SelectItem value="131">131 - Phải thu khách hàng</SelectItem>
-                    <SelectItem value="141">141 - Tạm ứng</SelectItem>
-                    <SelectItem value="338">338 - Phải trả khác</SelectItem>
+                    <SelectItem value="111">111 - {t("finance.create.accountCash")}</SelectItem>
+                    <SelectItem value="112">112 - {t("finance.create.accountBank")}</SelectItem>
+                    <SelectItem value="131">131 - {t("finance.create.accountReceivable")}</SelectItem>
+                    <SelectItem value="141">141 - {t("finance.create.accountAdvance")}</SelectItem>
+                    <SelectItem value="338">338 - {t("finance.create.accountOtherPayable")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1772,12 +1772,12 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                 <Select value={counterAccount} onValueChange={setCounterAccount}>
                   <SelectTrigger className="h-9" data-testid="select-counterpart"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="511">511 - Doanh thu</SelectItem>
-                    <SelectItem value="711">711 - Thu nhập khác</SelectItem>
-                    <SelectItem value="3387">3387 - Doanh thu chưa thực hiện</SelectItem>
-                    <SelectItem value="331">331 - Phải trả người bán</SelectItem>
-                    <SelectItem value="334">334 - Phải trả người lao động</SelectItem>
-                    <SelectItem value="642">642 - Chi phí quản lý doanh nghiệp</SelectItem>
+                    <SelectItem value="511">511 - {t("finance.create.accountRevenue")}</SelectItem>
+                    <SelectItem value="711">711 - {t("finance.create.accountOtherIncome")}</SelectItem>
+                    <SelectItem value="3387">3387 - {t("finance.create.accountUnearnedRevenue")}</SelectItem>
+                    <SelectItem value="331">331 - {t("finance.create.accountVendorPayable")}</SelectItem>
+                    <SelectItem value="334">334 - {t("finance.create.accountEmployeePayable")}</SelectItem>
+                    <SelectItem value="642">642 - {t("finance.create.accountAdminExpense")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -2018,7 +2018,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               </DialogTrigger>
                              {hasAvailableVouchers && (
                                <span className="mt-0.5 block text-[9px] leading-tight text-red-500">
-                                 Có Voucher chưa sử dụng
+                                 {t("finance.create.availableVoucher")}
                                </span>
                              )}
                                 <DialogContent
@@ -2026,7 +2026,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                   overlayClassName="bg-black/30 backdrop-blur-[1px]"
                                 >
                                  <div className="flex items-center justify-between gap-2 mb-2">
-                                    <DialogTitle className="text-xl font-semibold">Chọn khuyến mãi</DialogTitle>
+                                    <DialogTitle className="text-xl font-semibold">{t("finance.create.choosePromotion")}</DialogTitle>
                                    {canCreatePromotion && (
                                      <button
                                        type="button"
@@ -2034,7 +2034,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                        onClick={() => openQuickCreate("promotion", { scope: "product", productId: p.id })}
                                        data-testid={`button-quick-add-promotion-${p.id}`}
                                      >
-                                       <Plus className="h-3 w-3" /> Thêm mới
+                                       <Plus className="h-3 w-3" /> {t("finance.addNew")}
                                      </button>
                                    )}
                                  </div>
@@ -2055,7 +2055,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                                className="w-full min-h-9 flex items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-1.5 text-left text-xs hover:border-purple-400"
                                              >
                                                <span className={selectedOption ? "truncate" : "text-muted-foreground"}>
-                                                 {selectedOption ? formatPromotionLabel(selectedOption) : "Chọn khuyến mãi..."}
+                                                 {selectedOption ? formatPromotionLabel(selectedOption) : t("finance.create.choosePromotion")}
                                                </span>
                                                <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                                              </button>
@@ -2066,7 +2066,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                                <Input
                                                  value={promotionSearch}
                                                  onChange={e => setPromotionSearch(e.target.value)}
-                                                 placeholder="Tìm theo tên hoặc mã khuyến mãi..."
+                                                 placeholder={t("finance.create.searchPromotion")}
                                                  className="h-8 pl-7 text-xs"
                                                  autoFocus
                                                  onKeyDown={e => e.stopPropagation()}
@@ -2074,9 +2074,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                              </div>
                                              <div className="max-h-64 overflow-y-auto space-y-1">
                                                {promotionOptionsWithVouchers.length === 0 ? (
-                                                 <p className="py-3 text-center text-xs text-muted-foreground">Chưa có khuyến mãi</p>
+                                                 <p className="py-3 text-center text-xs text-muted-foreground">{t("finance.create.noPromotion")}</p>
                                                ) : filteredPromotionOptionsWithVouchers.length === 0 ? (
-                                                 <p className="py-3 text-center text-xs text-muted-foreground">Không tìm thấy khuyến mãi phù hợp</p>
+                                                 <p className="py-3 text-center text-xs text-muted-foreground">{t("finance.create.promotionNotFound")}</p>
                                                ) : filteredPromotionOptionsWithVouchers.map((o: any) => {
                                                  const val = parseFloat(o.valueAmount || "0");
                                                  return (
@@ -2112,8 +2112,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                              onChange={e => updateManualAdjustmentRow(p.id, "promotion", row.id, { valueType: e.target.value as ManualAdjustment["valueType"] })}
                                              className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
                                            >
-                                             <option value="amount">Số tiền</option>
-                                             <option value="percent">Phần trăm</option>
+                                             <option value="amount">{t("finance.create.amountType")}</option>
+                                             <option value="percent">{t("finance.create.percentType")}</option>
                                            </select>
                                            <div className="relative min-w-0 flex-1">
                                              <Input
@@ -2121,7 +2121,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                                min={0}
                                                value={row.value || ""}
                                                onChange={e => updateManualAdjustmentRow(p.id, "promotion", row.id, { value: Math.max(0, Number(e.target.value) || 0) })}
-                                               placeholder="Nhập nhanh..."
+                                               placeholder={t("finance.create.quickEnter")}
                                                className="h-8 pr-8 text-xs"
                                              />
                                              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
@@ -2132,7 +2132,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                              type="button"
                                              className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
                                              onClick={() => removeManualAdjustmentRow(p.id, "promotion", row.id)}
-                                             aria-label="Xóa dòng khuyến mãi"
+                                             aria-label={t("finance.create.removeAdjustment", { type: t("finance.promotion").toLowerCase() })}
                                            >
                                              <X className="h-4 w-4" />
                                            </button>
@@ -2145,11 +2145,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                      className="text-xs font-medium text-purple-600 hover:text-purple-700"
                                      onClick={() => addManualAdjustmentRow(p.id, "promotion")}
                                    >
-                                     + Thêm
+                                     + {t("finance.add")}
                                    </button>
                                  </div>
                                  <div className="mt-3 flex justify-between border-t pt-2 text-xs font-semibold">
-                                   <span>Tổng khuyến mãi</span>
+                                   <span>{t("finance.create.totalPromotion")}</span>
                                    <span className="text-green-600">-{fmtMoney(promoAmt)}</span>
                                  </div>
                                 </DialogContent>
@@ -2170,7 +2170,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               <DialogTrigger asChild>
                                 <button className="w-full h-8 flex items-center justify-between px-2 rounded-md border bg-background hover:border-purple-400 transition-colors text-[11px]">
                                   <span className={surchargeAmt > 0 ? "text-orange-600 font-semibold" : "text-muted-foreground"}>
-                                    {surchargeAmt > 0 ? `+${fmtMoney(surchargeAmt)}` : "Chọn..."}
+                                    {surchargeAmt > 0 ? `+${fmtMoney(surchargeAmt)}` : t("finance.create.choose")}
                                   </span>
                                   <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                                 </button>
@@ -2180,7 +2180,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                   overlayClassName="bg-black/30 backdrop-blur-[1px]"
                                 >
                                  <div className="flex items-center justify-between gap-2 mb-2">
-                                   <DialogTitle className="text-xl font-semibold">Chọn phụ thu</DialogTitle>
+                                   <DialogTitle className="text-xl font-semibold">{t("finance.create.chooseSurcharge")}</DialogTitle>
                                    {canCreatePromotion && (
                                      <button
                                        type="button"
@@ -2188,7 +2188,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                        onClick={() => openQuickCreate("surcharge", { scope: "product", productId: p.id })}
                                        data-testid={`button-quick-add-surcharge-${p.id}`}
                                      >
-                                       <Plus className="h-3 w-3" /> Thêm mới
+                                       <Plus className="h-3 w-3" /> {t("finance.addNew")}
                                      </button>
                                    )}
                                  </div>
@@ -2209,7 +2209,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                                 className="w-full min-h-9 flex items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-1.5 text-left text-xs hover:border-purple-400"
                                               >
                                                 <span className={selectedOption ? "truncate" : "text-muted-foreground"}>
-                                                  {selectedOption ? selectedOption.name : "Chọn phụ thu..."}
+                                                  {selectedOption ? selectedOption.name : t("finance.create.chooseSurcharge")}
                                                 </span>
                                                 <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                                               </button>
@@ -2220,7 +2220,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                                 <Input
                                                   value={surchargeSearch}
                                                   onChange={e => setSurchargeSearch(e.target.value)}
-                                                  placeholder="Tìm theo tên hoặc mã phụ thu..."
+                                                  placeholder={t("finance.create.searchSurcharge")}
                                                   className="h-8 pl-7 text-xs"
                                                   autoFocus
                                                   onKeyDown={e => e.stopPropagation()}
@@ -2228,9 +2228,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                               </div>
                                               <div className="max-h-64 overflow-y-auto space-y-1">
                                                 {surchargeOptions.length === 0 ? (
-                                                  <p className="py-3 text-center text-xs text-muted-foreground">Chưa có phụ thu</p>
+                                                  <p className="py-3 text-center text-xs text-muted-foreground">{t("finance.create.noSurcharge")}</p>
                                                 ) : filteredSurchargeOptions.length === 0 ? (
-                                                  <p className="py-3 text-center text-xs text-muted-foreground">Không tìm thấy phụ thu phù hợp</p>
+                                                  <p className="py-3 text-center text-xs text-muted-foreground">{t("finance.create.surchargeNotFound")}</p>
                                                 ) : filteredSurchargeOptions.map((o: any) => {
                                                   const val = parseFloat(o.valueAmount || "0");
                                                   return (
@@ -2261,8 +2261,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                               onChange={e => updateManualAdjustmentRow(p.id, "surcharge", row.id, { valueType: e.target.value as ManualAdjustment["valueType"] })}
                                               className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
                                             >
-                                              <option value="amount">Số tiền</option>
-                                              <option value="percent">Phần trăm</option>
+                                              <option value="amount">{t("finance.create.amountType")}</option>
+                                              <option value="percent">{t("finance.create.percentType")}</option>
                                             </select>
                                             <div className="relative min-w-0 flex-1">
                                               <Input
@@ -2270,7 +2270,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                                 min={0}
                                                 value={row.value || ""}
                                                 onChange={e => updateManualAdjustmentRow(p.id, "surcharge", row.id, { value: Math.max(0, Number(e.target.value) || 0) })}
-                                                placeholder="Nhập nhanh..."
+                                                placeholder={t("finance.create.quickEnter")}
                                                 className="h-8 pr-8 text-xs"
                                               />
                                               <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
@@ -2281,7 +2281,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                               type="button"
                                               className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
                                               onClick={() => removeManualAdjustmentRow(p.id, "surcharge", row.id)}
-                                              aria-label="Xóa dòng phụ thu"
+                                              aria-label={t("finance.create.removeAdjustment", { type: t("finance.surcharge").toLowerCase() })}
                                             >
                                               <X className="h-4 w-4" />
                                             </button>
@@ -2294,11 +2294,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                      className="text-xs font-medium text-purple-600 hover:text-purple-700"
                                      onClick={() => addManualAdjustmentRow(p.id, "surcharge")}
                                    >
-                                     + Thêm
+                                     + {t("finance.add")}
                                    </button>
                                  </div>
                                  <div className="mt-3 flex justify-between border-t pt-2 text-xs font-semibold">
-                                   <span>Tổng phụ thu</span>
+                                   <span>{t("finance.create.totalSurcharge")}</span>
                                    <span className="text-orange-600">+{fmtMoney(surchargeAmt)}</span>
                                  </div>
                                 </DialogContent>
@@ -2324,9 +2324,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
 
             {/* Note */}
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Ghi chú</label>
+              <label className="text-xs font-medium text-muted-foreground">{t("finance.note")}</label>
               <Textarea
-                placeholder="Nhập thông tin chi tiết..."
+                placeholder={t("finance.notePlaceholder")}
                 value={note}
                 onChange={e => setNote(e.target.value)}
                 className="text-sm resize-none"
@@ -2338,9 +2338,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
             {/* Commission / Doanh thu tính hoa hồng */}
             <div className="space-y-2">
               <div>
-                <label className="text-xs font-medium text-muted-foreground">Doanh thu tính hoa hồng</label>
+                <label className="text-xs font-medium text-muted-foreground">{t("finance.commissionRevenue")}</label>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  Doanh thu của từng nhân sự được tính trên Tổng tiền hóa đơn theo tỷ lệ đã nhập.
+                  {t("finance.create.commissionDescription")}
                 </p>
               </div>
               <Popover
@@ -2356,7 +2356,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     className="w-full h-9 flex items-center justify-between px-3 rounded-md border bg-background text-sm hover:border-purple-400 transition-colors text-left"
                     data-testid="button-commission-staff-picker"
                   >
-                    <span className="text-muted-foreground">[ Chọn nhân sự nhận hoa hồng ]</span>
+                    <span className="text-muted-foreground">{t("finance.create.chooseCommissionStaff")}</span>
                     <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0 ml-1" />
                   </button>
                 </PopoverTrigger>
@@ -2365,7 +2365,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                     <Input
                       className="h-8 text-xs pl-7"
-                      placeholder="Tìm theo tên hoặc mã nhân sự..."
+                      placeholder={t("finance.create.commissionStaffSearch")}
                       value={commissionStaffSearch}
                       onChange={e => setCommissionStaffSearch(e.target.value)}
                       autoFocus
@@ -2375,7 +2375,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                   <div className="max-h-60 overflow-y-auto space-y-0.5">
                     {commissionStaffOptions.length === 0 ? (
                       <p className="text-xs text-center text-muted-foreground py-4">
-                        {commissionStaffSearch ? "Không tìm thấy nhân sự" : "Không còn nhân sự để chọn"}
+                        {commissionStaffSearch ? t("finance.notFound") : t("finance.create.noMoreStaff")}
                       </p>
                     ) : commissionStaffOptions.map((s: any) => {
                       const isInactive = s.status === "Không hoạt động";
@@ -2394,7 +2394,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         >
                           <span className="font-mono text-muted-foreground">[{s.code}]</span>
                           <span className="truncate">{s.fullName}</span>
-                          {isInactive && <span className="text-amber-500 text-[10px] font-medium whitespace-nowrap">⚠ Không hoạt động</span>}
+                          {isInactive && <span className="text-amber-500 text-[10px] font-medium whitespace-nowrap">⚠ {t("finance.inactive")}</span>}
                         </button>
                       );
                     })}
@@ -2405,9 +2405,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
               {commissions.length > 0 && (
                 <div className="space-y-1.5">
                   <div className="grid items-center gap-2 text-[11px] text-muted-foreground sm:grid-cols-[minmax(0,1fr)_72px_130px_20px]">
-                    <span>Nhân sự</span>
-                    <span className="text-right">Tỷ lệ</span>
-                    <span className="text-right">Doanh thu tính hoa hồng</span>
+                    <span>{t("finance.create.commissionStaff")}</span>
+                    <span className="text-right">{t("finance.commissionRate")}</span>
+                    <span className="text-right">{t("finance.create.commissionRevenueHeader")}</span>
                     <span />
                   </div>
                   {commissions.map((c) => {
@@ -2428,11 +2428,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               setCommissions(prev => prev.map(x => x.staffId === c.staffId ? { ...x, percentage: val } : x));
                             }}
                             className="h-7 w-16 text-right text-xs"
-                            aria-label={`Tỷ lệ doanh thu của ${s?.fullName ?? c.staffId}`}
+                            aria-label={`${t("finance.commissionRate")} ${s?.fullName ?? c.staffId}`}
                           />
                           <span className="text-xs text-muted-foreground">%</span>
                         </div>
-                        <div className="text-right text-xs font-medium text-foreground" title="Tổng tiền hóa đơn × tỷ lệ doanh thu">
+                        <div className="text-right text-xs font-medium text-foreground" title={t("finance.create.commissionRateTitle")}>
                           {fmtMoney(commissionRevenue)} đ
                         </div>
                         <button
@@ -2694,7 +2694,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         </Select>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-muted-foreground">Mã: {p.code}</span>
+                        <span className="text-[10px] text-muted-foreground">{t("finance.create.invoiceCodePrefix")} {p.code}</span>
                         <button
                           type="button"
                           onClick={() => removePayment(p.id)}
@@ -2721,8 +2721,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                             : !canEditPaymentAmount(p)
                             ? p.status === "paid"
                                ? t("finance.create.paidInstallmentLocked")
-                              : "Chỉ còn một đợt chưa thanh toán. Hãy dùng Tách đợt để thay đổi cách phân bổ."
-                            : "Số tiền chênh lệch sẽ tự phân bổ sang đợt chưa thanh toán khác"}
+                               : t("finance.create.singleUnpaidHint")
+                             : t("finance.create.reallocateHint")}
                           className={`h-8 text-xs text-right font-semibold ${(!canEditPaymentAmount(p) || hasScheduleAdjustment) ? "bg-muted/40 cursor-not-allowed" : ""} ${p.status === "paid" ? "bg-green-50 text-green-700" : ""}`}
                           data-testid={`input-payment-amount-${p.id}`}
                         />
@@ -2808,7 +2808,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                           data-testid={`button-schedule-promo-${p.id}`}
                         >
                           <span className="flex items-center gap-1">
-                            Khuyến mãi:
+                            {t("finance.promotion")}:
                             <ChevronDown className="h-3 w-3 opacity-60" />
                           </span>
                           <span>{promotionAmount > 0 ? `-${fmtMoney(promotionAmount)}` : "0 ₫"}</span>
@@ -2819,7 +2819,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         overlayClassName="bg-black/30 backdrop-blur-[1px]"
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <DialogTitle className="text-xl font-semibold">Chọn khuyến mãi</DialogTitle>
+                          <DialogTitle className="text-xl font-semibold">{t("finance.create.choosePromotion")}</DialogTitle>
                           {canCreatePromotion && (
                             <button
                               type="button"
@@ -2827,7 +2827,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               onClick={() => openQuickCreate("promotion", { scope: "schedule", scheduleId: p.id })}
                               data-testid={`button-quick-add-schedule-promotion-${p.id}`}
                             >
-                              <Plus className="h-3 w-3" /> Thêm mới
+                              <Plus className="h-3 w-3" /> {t("finance.addNew")}
                             </button>
                           )}
                         </div>
@@ -2865,7 +2865,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                           data-testid={`button-schedule-surcharge-${p.id}`}
                         >
                           <span className="flex items-center gap-1">
-                            Phụ thu:
+                            {t("finance.surcharge")}:
                             <ChevronDown className="h-3 w-3 opacity-60" />
                           </span>
                           <span>{surchargeAmount > 0 ? `+${fmtMoney(surchargeAmount)}` : "0 ₫"}</span>
@@ -2876,7 +2876,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         overlayClassName="bg-black/30 backdrop-blur-[1px]"
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <DialogTitle className="text-xl font-semibold">Chọn phụ thu</DialogTitle>
+                          <DialogTitle className="text-xl font-semibold">{t("finance.create.chooseSurcharge")}</DialogTitle>
                           {canCreatePromotion && (
                             <button
                               type="button"
@@ -2884,7 +2884,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               onClick={() => openQuickCreate("surcharge", { scope: "schedule", scheduleId: p.id })}
                               data-testid={`button-quick-add-schedule-surcharge-${p.id}`}
                             >
-                              <Plus className="h-3 w-3" /> Thêm mới
+                              <Plus className="h-3 w-3" /> {t("finance.addNew")}
                             </button>
                           )}
                         </div>
@@ -2977,8 +2977,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                   data-testid="input-split-payment-amount"
                 />
                 <p className="text-xs text-muted-foreground">
-                  {splitPayment.label} còn {fmtMoney(Math.max(0, splitPayment.amount - splitAmount))};
-                  đợt mới nhận {fmtMoney(splitAmount)}.
+                   {t("finance.create.splitPreview", {
+                     label: splitPayment.label,
+                     remaining: fmtMoney(Math.max(0, splitPayment.amount - splitAmount)),
+                     amount: fmtMoney(splitAmount),
+                   })}
                 </p>
               </div>
               <div className="space-y-1.5">
@@ -2991,7 +2994,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                Đợt mới sẽ giữ hình thức thanh toán và ngân hàng của {splitPayment.label}. Bạn có thể chỉnh lại sau khi tách.
+                 {t("finance.create.splitBankHint", { label: splitPayment.label })}
               </p>
               <div className="flex justify-end gap-2 pt-1">
                 <Button
@@ -3027,7 +3030,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
             setQuickCreateTarget(null);
           }
         }}
-        title={quickCreateType === "promotion" ? "Thêm mới khuyến mãi" : "Thêm mới phụ thu"}
+        title={quickCreateType === "promotion" ? t("finance.create.quickAddPromotion") : t("finance.create.quickAddSurcharge")}
         isSaving={createPromotionMutation.isPending}
         onSave={data => {
           if (quickCreateType) {

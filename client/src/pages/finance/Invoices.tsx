@@ -88,8 +88,8 @@ function compareSummaryValue(current: number, previous: number | undefined): Sum
   };
 }
 
-function formatComparisonPercent(percent: number | null): string {
-  if (percent === null) return "Mới phát sinh";
+function formatComparisonPercent(percent: number | null, newLabel = "Newly generated"): string {
+  if (percent === null) return newLabel;
   const rounded = Math.round(percent * 10) / 10;
   return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}%`;
 }
@@ -238,7 +238,7 @@ function DateRangePicker({
   const displayLabel = label ?? t("finance.date.created");
   const triggerText = dateRange.from
     ? `${displayLabel}: ${format(dateRange.from, "dd/MM/yyyy")} – ${dateRange.to ? format(dateRange.to, "dd/MM/yyyy") : "..."}`
-    : `${displayLabel}: Toàn thời gian`;
+    : `${displayLabel}: ${t("finance.allTime")}`;
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -267,7 +267,7 @@ function DateRangePicker({
           </div>
           <div className="p-4 flex flex-col gap-3" style={{ width: "260px", flexShrink: 0 }}>
             <div className="flex flex-col gap-1">
-              <label className="text-sm text-muted-foreground">Từ ngày</label>
+              <label className="text-sm text-muted-foreground">{t("finance.date.from")}</label>
               <input
                 type="date"
                 value={draftFrom}
@@ -276,7 +276,7 @@ function DateRangePicker({
               />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-sm text-muted-foreground">Đến ngày</label>
+              <label className="text-sm text-muted-foreground">{t("finance.date.to")}</label>
               <input
                 type="date"
                 value={draftTo}
@@ -285,8 +285,8 @@ function DateRangePicker({
               />
             </div>
             <div className="flex justify-end gap-2 mt-1">
-              <Button variant="outline" size="sm" onClick={handleClear}>Xóa</Button>
-              <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={handleApply}>Áp dụng</Button>
+              <Button variant="outline" size="sm" onClick={handleClear}>{t("finance.clear")}</Button>
+              <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={handleApply}>{t("finance.apply")}</Button>
             </div>
           </div>
         </div>
@@ -363,15 +363,15 @@ function EditableInvoiceDateCell({
       const target = invoice.isScheduleRow ? t("finance.paymentSchedule") : t("finance.invoiceCode");
       toast({
         title: t("finance.updateDate"),
-        description: payload.createdAt && payload.paidAt
-          ? `Ngày tạo và ngày thanh toán của ${target} đã được đưa về ${fmtDate(payload.paidAt)}.`
+          description: payload.createdAt && payload.paidAt
+          ? t("finance.updatedBothDates", { target, date: fmtDate(payload.paidAt) })
           : field === "createdAt"
-          ? `Ngày tạo ${target} đã được thay đổi.`
-          : `Ngày thanh toán ${target} đã được thay đổi.`,
+          ? t("finance.updatedCreatedDate", { target })
+          : t("finance.updatedPaidDate", { target }),
       });
     },
     onError: (error: any) => {
-      toast({ title: "Không thể cập nhật ngày", description: error?.message ?? "Vui lòng thử lại.", variant: "destructive" });
+      toast({ title: t("finance.cannotUpdateDate"), description: error?.message ?? t("finance.tryAgain"), variant: "destructive" });
     },
   });
 
@@ -379,7 +379,7 @@ function EditableInvoiceDateCell({
   const paidDate = field === "createdAt" ? toInputDate(invoice.paidAt) : "";
   const hasDateConflict = field === "paidAt" && !!createdDate && !!draft && draft < createdDate;
   const isInvalid = !draft || (field === "createdAt" && !!paidDate && draft > paidDate);
-  const label = field === "createdAt" ? "Ngày tạo" : "Ngày thanh toán";
+  const label = field === "createdAt" ? t("finance.createdDate") : t("finance.paidDate");
   const saveDate = () => {
     if (hasDateConflict) {
       setPendingConflictDate(draft);
@@ -409,7 +409,7 @@ function EditableInvoiceDateCell({
           <button
             type="button"
             className="text-muted-foreground hover:text-violet-700 hover:underline underline-offset-2 transition-colors"
-            title={`Chỉnh ${label}`}
+            title={t("finance.editDate", { label })}
             data-testid={`button-edit-${field}-${invoice.id}`}
           >
             {value ? fmtDate(value) : "—"}
@@ -427,15 +427,15 @@ function EditableInvoiceDateCell({
           />
           {field === "paidAt" && (
              <p className="mt-1.5 text-[11px] text-muted-foreground">
-               Nếu sớm hơn ngày tạo, hệ thống sẽ hỏi có đưa ngày tạo về cùng ngày hay không.
+                {t("finance.earlierPaidDateHint")}
              </p>
           )}
           <div className="mt-3 flex justify-end gap-2">
             <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)} disabled={mutation.isPending}>
-              <X className="mr-1 h-3.5 w-3.5" /> Hủy
+              <X className="mr-1 h-3.5 w-3.5" /> {t("finance.cancel")}
             </Button>
              <Button type="button" size="sm" onClick={saveDate} disabled={isInvalid || mutation.isPending}>
-              <Check className="mr-1 h-3.5 w-3.5" /> Lưu
+              <Check className="mr-1 h-3.5 w-3.5" /> {t("finance.save")}
             </Button>
           </div>
         </PopoverContent>
@@ -454,17 +454,12 @@ function EditableInvoiceDateCell({
             <DialogTitle>{t("finance.paymentDateBeforeCreation")}</DialogTitle>
            </DialogHeader>
            <div className="space-y-3 text-sm text-muted-foreground">
-             <p>
-               Ngày thanh toán <strong className="text-foreground">{fmtDate(pendingConflictDate)}</strong> đang trước ngày tạo{" "}
-               <strong className="text-foreground">{fmtDate(createdDate)}</strong>.
-             </p>
-             <p>
-               Bạn có muốn tự động chuyển ngày tạo về cùng ngày <strong className="text-foreground">{fmtDate(pendingConflictDate)}</strong> không?
-             </p>
+              <p>{t("finance.dateConflictBody", { date: fmtDate(pendingConflictDate), createdDate: fmtDate(createdDate) })}</p>
+              <p>{t("finance.dateConflictAction", { date: fmtDate(pendingConflictDate) })}</p>
            </div>
            <div className="flex justify-end gap-2 pt-2">
              <Button type="button" variant="outline" onClick={() => setDateConflictOpen(false)} disabled={mutation.isPending}>
-               Hủy
+                {t("finance.cancel")}
              </Button>
              <Button type="button" onClick={confirmDateConflict} disabled={mutation.isPending}>
                {mutation.isPending ? t("finance.updateDateSaving") : t("finance.agreeAction")}
@@ -520,36 +515,41 @@ function flattenInvoiceRows(invoices: InvoiceRow[]): InvoiceRow[] {
   });
 }
 
-async function downloadInvoiceListExcel(rows: InvoiceRow[], tabLabel: string, page: number) {
+async function downloadInvoiceListExcel(
+  rows: InvoiceRow[],
+  tabLabel: string,
+  page: number,
+  t: (key: string, params?: Record<string, string | number>) => string,
+) {
   const columns = [
-    { header: "Học viên", width: 28 },
-    { header: "Mã học viên", width: 16 },
-    { header: "Mã hóa đơn", width: 18 },
-    { header: "Đợt thanh toán", width: 20 },
-    { header: "Cơ sở", width: 20 },
-    { header: "Loại", width: 12 },
-    { header: "Danh mục", width: 24 },
-    { header: "Lớp", width: 24 },
-    { header: "Số tiền", width: 16 },
-    { header: "Khuyến mãi", width: 16 },
-    { header: "Phụ thu", width: 16 },
-    { header: "Đặt cọc", width: 16 },
-    { header: "Tổng tiền", width: 16 },
-    { header: "Đã thu", width: 16 },
-    { header: "Còn lại", width: 16 },
-    { header: "Trạng thái", width: 22 },
-    { header: "Hạn thanh toán", width: 18 },
-    { header: "Hình thức thanh toán", width: 22 },
-    { header: "Người tạo", width: 22 },
-    { header: "Ngày tạo", width: 18 },
-    { header: "Người thanh toán", width: 22 },
-    { header: "Ngày thanh toán", width: 18 },
-    { header: "Mô tả", width: 36 },
+    { header: t("finance.student"), width: 28 },
+    { header: t("finance.studentCode"), width: 16 },
+    { header: t("finance.invoiceCode"), width: 18 },
+    { header: t("finance.paymentSchedule"), width: 20 },
+    { header: t("finance.branch"), width: 20 },
+    { header: t("finance.type"), width: 12 },
+    { header: t("finance.category"), width: 24 },
+    { header: t("finance.class"), width: 24 },
+    { header: t("finance.amount"), width: 16 },
+    { header: t("finance.promotion"), width: 16 },
+    { header: t("finance.surcharge"), width: 16 },
+    { header: t("finance.deposit"), width: 16 },
+    { header: t("finance.total"), width: 16 },
+    { header: t("finance.paid"), width: 16 },
+    { header: t("finance.remaining"), width: 16 },
+    { header: t("finance.status"), width: 22 },
+    { header: t("finance.dueDate"), width: 18 },
+    { header: t("finance.paymentMethod"), width: 22 },
+    { header: t("finance.creator"), width: 22 },
+    { header: t("finance.createdDate"), width: 18 },
+    { header: t("finance.payer"), width: 22 },
+    { header: t("finance.paidDate"), width: 18 },
+    { header: t("finance.description"), width: 36 },
   ];
 
   const paymentMethodLabels: Record<string, string> = {
-    cash: "Tiền mặt",
-    transfer: "Chuyển khoản",
+    cash: t("finance.cash"),
+    transfer: t("finance.transfer"),
   };
 
   // Keep each parent invoice immediately above its visible installment rows.
@@ -574,7 +574,7 @@ async function downloadInvoiceListExcel(rows: InvoiceRow[], tabLabel: string, pa
     if (group.parent) {
       exportInvoices.push({
         ...group.parent,
-        scheduleLabel: "Hóa đơn cha",
+        scheduleLabel: t("finance.parentInvoiceLabel"),
         scheduleId: undefined,
         isScheduleRow: false,
         parentInvoice: undefined,
@@ -591,12 +591,12 @@ async function downloadInvoiceListExcel(rows: InvoiceRow[], tabLabel: string, pa
 
   const ExcelJS = (await import("exceljs")).default;
   const workbook = new ExcelJS.Workbook();
-  const worksheet = workbook.addWorksheet("Hóa đơn");
-  const subtitle = `Tab: ${tabLabel} · Trang ${page} · ${exportInvoices.length} dòng · Dòng hóa đơn cha và các đợt con được xuất riêng; không cộng trùng hai cấp · Xuất theo bộ lọc hiện tại`;
+  const worksheet = workbook.addWorksheet(t("finance.invoiceCode"));
+  const subtitle = t("finance.exportSubtitle", { tab: tabLabel, page, count: exportInvoices.length });
   const lastColumn = columns.length;
 
   worksheet.mergeCells(1, 1, 1, lastColumn);
-  worksheet.getCell(1, 1).value = "Danh sách hóa đơn";
+  worksheet.getCell(1, 1).value = t("finance.invoiceList");
   worksheet.getCell(1, 1).font = { bold: true, size: 14 };
   worksheet.getCell(1, 1).alignment = { vertical: "middle" };
   worksheet.getRow(1).height = 24;
@@ -655,7 +655,7 @@ async function downloadInvoiceListExcel(rows: InvoiceRow[], tabLabel: string, pa
       }
     });
 
-    if (invoice.scheduleLabel === "Hóa đơn cha" && !invoice.isScheduleRow) {
+    if (invoice.scheduleLabel === t("finance.parentInvoiceLabel") && !invoice.isScheduleRow) {
       row.font = { bold: true, color: { argb: "FF0F172A" } };
       row.fill = parentFill;
       row.border = parentBorder;
@@ -691,6 +691,7 @@ function getScheduleForRow(inv: InvoiceRow): ScheduleItem | undefined {
 function renderInvoiceCell(
   colKey: string,
   inv: InvoiceRow,
+  t: (key: string, params?: Record<string, string | number>) => string,
   updateStatusMutation: InvoiceUpdateStatusMutation,
   updateScheduleStatusMutation: {
     mutate: (
@@ -772,13 +773,13 @@ function renderInvoiceCell(
               <button
                 type="button"
                 className="w-full rounded-md py-1 hover:bg-violet-50 transition-colors cursor-pointer"
-                title="Xem hóa đơn và các đợt thanh toán"
+                 title={t("finance.viewInvoiceSchedules")}
                 data-testid={`button-schedule-progress-${inv.scheduleId}`}
               >
                 <span className="text-sm font-semibold text-slate-700">
-                  Đợt {inv.scheduleSortOrder ?? "—"} / {inv.paymentSchedule?.length ?? "—"}
+                  {t("finance.installmentOf", { current: inv.scheduleSortOrder ?? "—", total: inv.paymentSchedule?.length ?? "—" })}
                 </span>
-                {inv.dueDate && <div className="text-[11px] text-muted-foreground mt-0.5">Hạn: {fmtDate(inv.dueDate)}</div>}
+                {inv.dueDate && <div className="text-[11px] text-muted-foreground mt-0.5">{t("finance.duePrefix")} {fmtDate(inv.dueDate)}</div>}
               </button>
             </ScheduleProgressPopover>
           </td>
@@ -823,18 +824,18 @@ function renderInvoiceCell(
                 : isOverdue
                 ? <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
                 : <CreditCard className="h-4 w-4 text-blue-500 shrink-0" />}
-              <span className="text-sm font-semibold">{paidSch} / {total} đợt</span>
+              <span className="text-sm font-semibold">{t("finance.installmentsCount", { paid: paidSch, total })}</span>
             </div>
             {allDone ? (
               <div className="text-[11px] text-green-600 font-medium">
-                Hoàn tất{lastPaid ? ` ${fmtDate(lastPaid)}` : ""}
+                {t("finance.completed")}{lastPaid ? ` ${fmtDate(lastPaid)}` : ""}
               </div>
             ) : nextDue ? (
               <div className={`text-[11px] font-medium ${isOverdue ? "text-red-500" : "text-muted-foreground"}`}>
-                {isOverdue ? "Quá hạn" : "Đợt tiếp:"} {fmtDate(nextDue)}
+                {isOverdue ? t("finance.overdue") : t("finance.nextInstallmentShort")} {fmtDate(nextDue)}
               </div>
             ) : (
-              <div className="text-[11px] text-muted-foreground">Chưa có hạn</div>
+              <div className="text-[11px] text-muted-foreground">{t("finance.noPaymentDue")}</div>
             )}
           </ScheduleProgressPopover>
         </td>
@@ -847,7 +848,7 @@ function renderInvoiceCell(
     case "remaining": {
       const remaining = parseNum(inv.remainingAmount);
       const grand     = parseNum(inv.grandTotal);
-      return <td key="remaining" className="p-3 text-right whitespace-nowrap">{remaining > 0 ? <span className="font-medium text-red-600">{fmtMoney(remaining)}</span> : remaining === 0 && grand > 0 ? <span className="text-green-600 text-xs font-medium">Đã đủ</span> : <span className="text-muted-foreground text-xs">—</span>}</td>;
+      return <td key="remaining" className="p-3 text-right whitespace-nowrap">{remaining > 0 ? <span className="font-medium text-red-600">{fmtMoney(remaining)}</span> : remaining === 0 && grand > 0 ? <span className="text-green-600 text-xs font-medium">{t("finance.paidEnough")}</span> : <span className="text-muted-foreground text-xs">—</span>}</td>;
     }
     case "description": {
       const displayDescription = inv.note?.trim() || inv.description?.trim() || "";
@@ -914,9 +915,9 @@ function renderInvoiceCell(
     case "paymentMethod": {
       const method = inv.paymentMethod?.trim();
       const label = method === "cash"
-        ? "Tiền mặt"
+        ? t("finance.cash")
         : method === "transfer"
-          ? "Chuyển khoản"
+          ? t("finance.transfer")
           : method || "—";
       return <td key="paymentMethod" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{label}</td>;
     }
@@ -999,7 +1000,7 @@ function BulkPrintDialog({
             disabled={!defaultTemplateId}
             onClick={() => onConfirm(defaultTemplateId)}
           >
-            In phiếu
+             {t("finance.printAction")}
           </Button>
         </div>
       </DialogContent>
@@ -1029,12 +1030,12 @@ function BulkDueDateDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarIcon className="w-4 h-4 text-purple-600" />
-            Cập nhật Hạn thanh toán hàng loạt
+             {t("finance.bulkDueDateTitle")}
           </DialogTitle>
         </DialogHeader>
         <div className="py-2 flex flex-col items-center gap-3">
           <p className="text-sm text-muted-foreground w-full">
-            Chọn ngày hạn thanh toán áp dụng cho tất cả hoá đơn đã chọn.
+             {t("finance.bulkDueDateDescription")}
           </p>
           <Calendar
             mode="single"
@@ -1045,7 +1046,7 @@ function BulkDueDateDialog({
           />
           {selectedDate && (
             <p className="text-sm font-medium text-purple-700">
-              Hạn đã chọn: {format(selectedDate, "dd/MM/yyyy")}
+               {t("finance.selectedDueDate")} {format(selectedDate, "dd/MM/yyyy")}
             </p>
           )}
         </div>
@@ -1100,7 +1101,7 @@ function BulkInvoiceDateDialog({
   useEffect(() => {
     if (!open) setConfirmingConflict(false);
   }, [open, field]);
-  const label = field === "createdAt" ? "ngày tạo" : "ngày thanh toán";
+   const label = field === "createdAt" ? t("finance.createdDate").toLowerCase() : t("finance.paidDate").toLowerCase();
   const selectedDateText = selectedDate ? format(selectedDate, "yyyy-MM-dd") : "";
   const conflictingItems = selectedDate
     ? selectedItems.filter((item) => {
@@ -1120,13 +1121,11 @@ function BulkInvoiceDateDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarIcon className="w-4 h-4 text-purple-600" />
-            Cập nhật {label} hàng loạt
+             {t("finance.bulkDateTitle", { label })}
           </DialogTitle>
         </DialogHeader>
         <div className="py-2 flex flex-col items-center gap-3">
-          <p className="text-sm text-muted-foreground w-full">
-             Chọn {label} áp dụng cho {selectedItems.length} mục đã chọn.
-          </p>
+             <p className="text-sm text-muted-foreground w-full">{t("finance.bulkDateDescription", { label, count: selectedItems.length })}</p>
           <Calendar
             mode="single"
             selected={selectedDate}
@@ -1139,25 +1138,22 @@ function BulkInvoiceDateDialog({
           />
           {selectedDate && (
             <p className="text-sm font-medium text-purple-700">
-              Ngày đã chọn: {format(selectedDate, "dd/MM/yyyy")}
+               {t("finance.selectedDate")} {format(selectedDate, "dd/MM/yyyy")}
             </p>
           )}
           {field === "paidAt" && conflictingItems.length > 0 && !confirmingConflict && (
             <div className="w-full rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-              Có {conflictingItems.length} mục có ngày tạo sau ngày thanh toán đã chọn.
-              Khi xác nhận, ngày tạo của các mục này sẽ được đưa về cùng ngày thanh toán.
+               {t("finance.dateConflictCount", { count: conflictingItems.length })}
             </div>
           )}
           {field === "createdAt" && conflictingItems.length > 0 && (
             <div className="w-full rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
-              Không thể áp dụng cho {conflictingItems.length} mục vì ngày thanh toán
-              không được trước ngày tạo. Vui lòng chọn ngày khác.
+               {t("finance.dateCreatedConflict", { count: conflictingItems.length })}
             </div>
           )}
           {confirmingConflict && (
             <div className="w-full rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">
-              Bạn có muốn cập nhật ngày tạo của {conflictingItems.length} mục bị xung đột
-              về cùng ngày {selectedDate ? format(selectedDate, "dd/MM/yyyy") : ""} không?
+               {t("finance.dateConflictBulkQuestion", { count: conflictingItems.length, date: selectedDate ? format(selectedDate, "dd/MM/yyyy") : "" })}
             </div>
           )}
         </div>
@@ -1170,7 +1166,7 @@ function BulkInvoiceDateDialog({
             }}
             disabled={isPending}
           >
-            {confirmingConflict ? "Quay lại" : "Hủy"}
+             {confirmingConflict ? t("finance.back") : t("finance.cancel")}
           </Button>
           <Button
             className="bg-purple-600 hover:bg-purple-700"
@@ -1231,7 +1227,7 @@ function BulkAssignCommissionDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Percent className="h-4 w-4 text-orange-500" />
-            Gán hoa hồng hàng loạt
+             {t("finance.assignCommission")}
           </DialogTitle>
         </DialogHeader>
         <div className="py-2 space-y-3">
@@ -1259,7 +1255,7 @@ function BulkAssignCommissionDialog({
           {commissions.length > 0 && (
             <div className="rounded-lg border overflow-hidden">
               <div className="px-3 py-1.5 bg-muted/40 border-b text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                Danh sách hoa hồng
+                 {t("finance.commissionList")}
               </div>
               <div className="divide-y">
                 {commissions.map(c => {
@@ -1295,7 +1291,7 @@ function BulkAssignCommissionDialog({
               </div>
               {commissions.reduce((sum, c) => sum + c.percentage, 0) > 100 && (
                 <div className="px-3 py-2 text-xs text-destructive bg-destructive/5 border-t">
-                  Tổng tỷ lệ hoa hồng vượt quá 100%
+                   {t("finance.commissionOverLimit")}
                 </div>
               )}
             </div>
@@ -1303,13 +1299,13 @@ function BulkAssignCommissionDialog({
 
           {commissions.length === 0 && (
             <p className="text-xs text-muted-foreground text-center py-2">
-              Chưa có nhân viên nào được chọn. Chọn nhân viên ở trên để thêm.
+               {t("finance.noCommissionStaff")}
             </p>
           )}
         </div>
         <div className="flex justify-end gap-2 pt-1">
           <Button variant="outline" onClick={() => { setCommissions([]); onOpenChange(false); }} disabled={isPending}>
-            Hủy
+             {t("finance.cancel")}
           </Button>
           <Button
             className="bg-orange-500 hover:bg-orange-600"
@@ -1426,13 +1422,12 @@ function DeleteInvoiceDialog({ target, onClose, deleteMutation }: {
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-red-600">
-            <Trash2 className="h-4 w-4" /> Xoá hoá đơn
+             <Trash2 className="h-4 w-4" /> {t("finance.deleteInvoice")}
           </DialogTitle>
         </DialogHeader>
         <div className="py-3 space-y-3">
           <p className="text-sm">
-            Bạn chắc chắn muốn xoá hoá đơn{" "}
-            <span className="font-semibold text-purple-700">{target.code || target.id}</span>?
+             {t("finance.confirmDeleteInvoiceQuestion", { code: target.code || target.id })}
           </p>
           {isPaidOrPartial && (
             <div className="rounded-lg bg-orange-50 border border-orange-200 p-3 text-xs text-orange-800">
@@ -1452,7 +1447,7 @@ function DeleteInvoiceDialog({ target, onClose, deleteMutation }: {
           )}
           {!isPaidOrPartial && (
             <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-xs text-red-800">
-              Hành động này không thể hoàn tác.
+               {t("finance.deleteIrreversible")}
             </div>
           )}
         </div>
@@ -1465,10 +1460,10 @@ function DeleteInvoiceDialog({ target, onClose, deleteMutation }: {
                 deleteMutation.mutate(target.id, {
                   onSuccess: () => {
                     onClose();
-                    toast({ title: "Đã xoá hoá đơn thành công" });
+                     toast({ title: t("finance.deleteInvoiceSuccess") });
                   },
                   onError: (err: any) =>
-                    toast({ title: "Lỗi xoá hoá đơn", description: err.message, variant: "destructive" }),
+                     toast({ title: t("finance.deleteInvoiceError"), description: err.message, variant: "destructive" }),
                 })
               }
               disabled={deleteMutation.isPending || loadingReceipts}
@@ -1601,7 +1596,7 @@ export default function Invoices() {
           const r = data.results?.[0];
           results.push({ id, success: !!r?.success, message: r?.message ?? (data.message ?? "OK") });
         } catch (err: any) {
-          results.push({ id, success: false, message: err?.message ?? "Lỗi gửi" });
+          results.push({ id, success: false, message: err?.message ?? t("finance.errorSending") });
         }
         done++;
         setSignProgress({ done, total });
@@ -1616,7 +1611,7 @@ export default function Invoices() {
           const r = data.results?.[0];
           results.push({ id, success: !!r?.success, message: r?.message ?? (data.message ?? "OK") });
         } catch (err: any) {
-          results.push({ id, success: false, message: err?.message ?? "Lỗi gửi" });
+          results.push({ id, success: false, message: err?.message ?? t("finance.errorSending") });
         }
         done++;
         setSignProgress({ done, total });
@@ -1628,9 +1623,9 @@ export default function Invoices() {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoice-schedules"] });
       const ok = results.filter(r => r.success).length;
       const fail = results.length - ok;
-      toast({
-        title: vars.isPublish ? t("finance.sendSigned") : t("finance.sendDraft"),
-        description: `Thành công ${ok}/${results.length}${fail > 0 ? ` — Thất bại ${fail}` : ""}`,
+       toast({
+         title: vars.isPublish ? t("finance.sendSigned") : t("finance.sendDraft"),
+         description: t("finance.signSuccess", { ok, total: results.length, failed: fail > 0 ? ` — ${t("finance.error")} ${fail}` : "" }),
         variant: fail > 0 ? "destructive" : "default",
       });
       setSignDialogOpen(false);
@@ -1641,7 +1636,7 @@ export default function Invoices() {
     onError: (err: any) => {
       toast({
         title: t("finance.sendElectronicInvoiceError"),
-        description: err?.message ?? "Không gửi được, vui lòng thử lại",
+         description: err?.message ?? t("finance.noSendRetry"),
         variant: "destructive",
       });
       setSignProgress(null);
@@ -1661,7 +1656,7 @@ export default function Invoices() {
       const totalTargets = vars.invoiceIds.length + vars.scheduleIds.length;
       toast({
         title: t("finance.updateSuccess"),
-        description: `Đã chuyển ${totalTargets} mục sang trạng thái "${label}".`,
+         description: t("finance.statusChanged", { count: totalTargets, status: label }),
       });
       setSelectedIds(new Set());
       setSelectedSchedules(new Map());
@@ -1669,7 +1664,7 @@ export default function Invoices() {
     onError: (err: any) => {
       toast({
         title: t("finance.updateError"),
-        description: err?.message ?? "Không thể cập nhật, vui lòng thử lại.",
+         description: err?.message ?? t("finance.noUpdateRetry"),
         variant: "destructive",
       });
     },
@@ -1685,7 +1680,7 @@ export default function Invoices() {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
       toast({
         title: t("finance.assignClassSuccess"),
-        description: `Đã gán lớp cho ${vars.ids.length} hoá đơn.`,
+         description: t("finance.assignedClass", { count: vars.ids.length }),
       });
       setSelectedIds(new Set());
       setSelectedSchedules(new Map());
@@ -1694,7 +1689,7 @@ export default function Invoices() {
     onError: (err: any) => {
       toast({
         title: t("finance.assignClassError"),
-        description: err?.message ?? "Không thể gán lớp, vui lòng thử lại.",
+         description: err?.message ?? t("finance.noUpdateRetry"),
         variant: "destructive",
       });
     },
@@ -1709,7 +1704,7 @@ export default function Invoices() {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
       toast({
         title: t("finance.assignCommissionSuccess"),
-        description: `Đã gán hoa hồng cho ${vars.ids.length} hoá đơn.`,
+         description: t("finance.assignedCommission", { count: vars.ids.length }),
       });
       setSelectedIds(new Set());
       setSelectedSchedules(new Map());
@@ -1718,7 +1713,7 @@ export default function Invoices() {
     onError: (err: any) => {
       toast({
         title: t("finance.assignCommissionError"),
-        description: err?.message ?? "Không thể gán hoa hồng, vui lòng thử lại.",
+         description: err?.message ?? t("finance.noUpdateRetry"),
         variant: "destructive",
       });
     },
@@ -1736,7 +1731,7 @@ export default function Invoices() {
       const totalTargets = vars.invoiceIds.length + vars.scheduleIds.length;
       toast({
         title: t("finance.updateSuccess"),
-        description: `Đã cập nhật hạn thanh toán cho ${totalTargets} mục.`,
+         description: t("finance.updatedDueDate", { count: totalTargets }),
       });
       setSelectedIds(new Set());
       setSelectedSchedules(new Map());
@@ -1745,7 +1740,7 @@ export default function Invoices() {
     onError: (err: any) => {
       toast({
         title: t("finance.updateError"),
-        description: err?.message ?? "Không thể cập nhật, vui lòng thử lại.",
+         description: err?.message ?? t("finance.noUpdateRetry"),
         variant: "destructive",
       });
     },
@@ -1788,10 +1783,10 @@ export default function Invoices() {
       const totalTargets = vars.invoiceIds.length + vars.scheduleIds.length;
       const adjustedTargets = (vars.adjustCreatedAtIds?.length ?? 0) + (vars.adjustCreatedAtScheduleIds?.length ?? 0);
       toast({
-        title: `Cập nhật ${label} thành công`,
+         title: t("finance.updateSuccess"),
         description: adjustedTargets
-          ? `Đã cập nhật ngày thanh toán cho ${totalTargets} mục; đồng thời điều chỉnh ngày tạo cho ${adjustedTargets} mục.`
-          : `Đã cập nhật ${label} cho ${totalTargets} mục.`,
+           ? t("finance.updatedPaidAndCreated", { count: totalTargets, adjusted: adjustedTargets })
+           : t("finance.updatedDate", { label, count: totalTargets }),
       });
       setSelectedIds(new Set());
       setSelectedSchedules(new Map());
@@ -1801,7 +1796,7 @@ export default function Invoices() {
     onError: (err: any) => {
       toast({
         title: t("finance.updateDateError"),
-        description: err?.message ?? "Không thể cập nhật, vui lòng thử lại.",
+         description: err?.message ?? t("finance.noUpdateRetry"),
         variant: "destructive",
       });
     },
@@ -1813,14 +1808,14 @@ export default function Invoices() {
     },
     onSuccess: (_data, ids) => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
-       toast({ title: t("finance.deleteInvoiceSuccess"), description: `${ids.length} ${t("finance.invoiceCode")}.` });
+         toast({ title: t("finance.deleteInvoiceSuccess"), description: t("finance.filedInvoiceCount", { count: ids.length }) });
       setSelectedIds(new Set());
       setBulkDeleteOpen(false);
     },
     onError: (err: any) => {
       toast({
         title: t("finance.deleteInvoiceError"),
-        description: err?.message ?? "Không thể xoá, vui lòng thử lại.",
+         description: err?.message ?? t("finance.deleteInvoiceErrorRetry"),
         variant: "destructive",
       });
     },
@@ -2106,7 +2101,7 @@ export default function Invoices() {
                 style={{ borderColor: "#0891b260", color: "#0891b2" }}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border text-xs font-semibold transition-all bg-background hover:bg-cyan-50"
               >
-                Mẫu in hoá đơn
+                 {t("finance.tab.printTemplate")}
               </button>
             </div>
           </div>
@@ -2140,7 +2135,7 @@ export default function Invoices() {
                 </div>
                 <div
                   className={`mt-1 flex min-h-4 items-center gap-1 text-[10px] font-medium ${comparisonColor}`}
-                  title="So với cùng khoảng thời gian của tháng trước"
+                   title={t("finance.financeSummary.previousPeriod")}
                 >
                   {isComparisonLoading ? (
                     <span className="inline-block h-3 w-24 animate-pulse rounded bg-slate-100" />
@@ -2170,7 +2165,7 @@ export default function Invoices() {
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm" className={`h-9 gap-1.5 rounded-lg border-slate-200 bg-white shadow-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-700 hover:border-slate-300 transition-all ${hasAnyToolbarFilter ? "border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100 hover:border-violet-400" : ""}`} data-testid="button-filter">
                   <SlidersHorizontal className={`h-4 w-4 ${hasAnyToolbarFilter ? "text-violet-600" : "text-slate-400"}`} />
-                  Bộ lọc
+                   {t("finance.filterTitle")}
                   {hasAnyToolbarFilter && <span className="w-1.5 h-1.5 rounded-full bg-violet-600" />}
                 </Button>
               </PopoverTrigger>
@@ -2182,20 +2177,20 @@ export default function Invoices() {
                       className="text-xs text-purple-600 hover:underline"
                       onClick={() => { setFilters(DEFAULT_FILTERS); setPaidAtRange({}); }}
                     >
-                      Xoá tất cả
+                       {t("finance.clearFilters")}
                     </button>
                   )}
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {([
-                    { label: "Cơ sở",             key: "branches",       opts: filterOptions.branches.map(v => ({ value: v, label: v })),       withSearch: false },
-                    { label: "Loại phiếu",         key: "types",          opts: filterOptions.types.map(v => ({ value: v, label: v })),          withSearch: false },
-                    { label: "Danh mục",           key: "categories",     opts: filterOptions.categories.map(v => ({ value: v, label: v })),     withSearch: false },
-                    { label: "Hình thức",          key: "paymentMethods", opts: filterOptions.paymentMethods.map(v => v === "cash" ? { value: v, label: "Tiền mặt" } : v === "transfer" ? { value: v, label: "Chuyển khoản" } : { value: v, label: v }), withSearch: false },
-                    { label: "Lớp",                key: "classes",        opts: filterOptions.classes.map(v => ({ value: v, label: v })),        withSearch: true },
-                    { label: "Người tạo",          key: "creators",       opts: filterOptions.creators.map(v => ({ value: v, label: v })),       withSearch: true },
-                    { label: "Người thanh toán",   key: "payers",         opts: filterOptions.payers.map(v => ({ value: v, label: v })),         withSearch: true },
-                    { label: "Hoa hồng",           key: "commissions",    opts: filterOptions.commissions.map(v => ({ value: v, label: v })),    withSearch: true },
+                     { label: t("finance.branch"),             key: "branches",       opts: filterOptions.branches.map(v => ({ value: v, label: v })),       withSearch: false },
+                     { label: t("finance.type"),               key: "types",          opts: filterOptions.types.map(v => ({ value: v, label: v })),          withSearch: false },
+                     { label: t("finance.category"),           key: "categories",     opts: filterOptions.categories.map(v => ({ value: v, label: v })),     withSearch: false },
+                     { label: t("finance.paymentMethod"),      key: "paymentMethods", opts: filterOptions.paymentMethods.map(v => v === "cash" ? { value: v, label: t("finance.cash") } : v === "transfer" ? { value: v, label: t("finance.transfer") } : { value: v, label: v }), withSearch: false },
+                     { label: t("finance.class"),              key: "classes",        opts: filterOptions.classes.map(v => ({ value: v, label: v })),        withSearch: true },
+                     { label: t("finance.creator"),            key: "creators",       opts: filterOptions.creators.map(v => ({ value: v, label: v })),       withSearch: true },
+                     { label: t("finance.payer"),              key: "payers",         opts: filterOptions.payers.map(v => ({ value: v, label: v })),         withSearch: true },
+                     { label: t("finance.commissionStaff"),    key: "commissions",    opts: filterOptions.commissions.map(v => ({ value: v, label: v })),    withSearch: true },
                   ] as Array<{ label: string; key: keyof typeof filters; opts: { value: string; label: string }[]; withSearch: boolean }>).map(({ label, key, opts, withSearch }) => (
                     <MultiSelectFilter
                       key={key}
@@ -2210,7 +2205,7 @@ export default function Invoices() {
                 <div className="mt-3 pt-3 border-t border-border/70">
                   <div className="mb-1.5 text-xs font-medium text-muted-foreground">{t("finance.paymentDateRange")}</div>
                   <DateRangePicker
-                    label="Ngày thanh toán"
+                     label={t("finance.paidDate")}
                     dateRange={paidAtRange}
                     onChange={setPaidAtRange}
                     open={paidAtCalendarOpen}
@@ -2235,13 +2230,13 @@ export default function Invoices() {
               className="h-9 gap-1.5 rounded-lg border-slate-200 bg-white text-slate-600 shadow-sm font-medium hover:bg-slate-50 hover:border-slate-300 transition-all"
               onClick={() => {
                 const tabLabel = t(TABS.find(tab => tab.key === activeTab)?.labelKey ?? "finance.tab.all");
-                 void downloadInvoiceListExcel(displayInvoices, tabLabel, page);
+                 void downloadInvoiceListExcel(displayInvoices, tabLabel, page, t);
               }}
               disabled={isLoading || displayInvoices.length === 0}
               data-testid="button-download-invoices-excel"
             >
               <FileSpreadsheet className="h-4 w-4" />
-              Tải xuống
+               {t("finance.downloadInvoices")}
             </Button>
 
             {totalSelectedCount > 0 && (() => {
@@ -2253,11 +2248,11 @@ export default function Invoices() {
               const unpaidSchedCount = schedArr.filter(s => !isInvoicePaidLike(s.status)).length;
               const publishedSchedCount = schedArr.filter(s => s.einvoiceStatus === "published").length;
               const reasons: string[] = [];
-              if (unpaidCount > 0)    reasons.push(`${unpaidCount} hoá đơn ở trạng thái Chưa thanh toán`);
-              if (partialCount > 0)   reasons.push(`${partialCount} hoá đơn ở trạng thái Thanh toán 1 phần`);
-              if (publishedCount > 0) reasons.push(`${publishedCount} hoá đơn đã ký số`);
-              if (unpaidSchedCount > 0) reasons.push(`${unpaidSchedCount} đợt chưa thanh toán`);
-              if (publishedSchedCount > 0) reasons.push(`${publishedSchedCount} đợt đã ký số`);
+               if (unpaidCount > 0)    reasons.push(`${unpaidCount} ${t("finance.invoiceCode")} (${t("finance.tab.unpaid").toLowerCase()})`);
+               if (partialCount > 0)   reasons.push(`${partialCount} ${t("finance.invoiceCode")} (${t("finance.partialPayment").toLowerCase()})`);
+               if (publishedCount > 0) reasons.push(`${publishedCount} ${t("finance.invoiceCode")} (${t("finance.sentSigned").toLowerCase()})`);
+               if (unpaidSchedCount > 0) reasons.push(`${unpaidSchedCount} ${t("finance.paymentSchedule")} (${t("finance.tab.unpaid").toLowerCase()})`);
+               if (publishedSchedCount > 0) reasons.push(`${publishedSchedCount} ${t("finance.paymentSchedule")} (${t("finance.sentSigned").toLowerCase()})`);
               const blocked = reasons.length > 0;
               const button = (
                 <Button
@@ -2268,7 +2263,7 @@ export default function Invoices() {
                   disabled={blocked}
                   data-testid="button-send-sign"
                 >
-                  <FileSignature className="h-4 w-4 text-violet-600" /> Gửi ký số ({totalSelectedCount})
+                   <FileSignature className="h-4 w-4 text-violet-600" /> {t("finance.sendSignature")} ({totalSelectedCount})
                 </Button>
               );
               if (!blocked) return button;
@@ -2279,11 +2274,11 @@ export default function Invoices() {
                       <span className="inline-flex">{button}</span>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" className="max-w-[320px]">
-                      <p className="font-medium mb-1">Không thể gửi ký số:</p>
+                       <p className="font-medium mb-1">{t("finance.cannotSendSignature")}</p>
                       <ul className="list-disc pl-4 space-y-0.5 text-xs">
                         {reasons.map((r, i) => <li key={i}>{r}</li>)}
                       </ul>
-                      <p className="text-xs mt-1 opacity-80">Vui lòng bỏ chọn các hoá đơn đó.</p>
+                       <p className="text-xs mt-1 opacity-80">{t("finance.unselectInvoices")}</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -2296,7 +2291,7 @@ export default function Invoices() {
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm" className="h-9 gap-1.5 rounded-lg border-slate-200 bg-white shadow-sm font-medium text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-all" data-testid="button-col-manager">
                   <Settings2 className="h-4 w-4 text-slate-400" />
-                  Sắp xếp
+                   {t("finance.reorder")}
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-64 p-2" data-testid="popover-col-manager">
@@ -2338,7 +2333,7 @@ export default function Invoices() {
                 onClick={() => setBulkEntryOpen(true)}
               >
                 <Keyboard className="h-4 w-4 text-blue-600" />
-                Nhập trực tiếp
+                 {t("finance.directEntry")}
               </Button>
             )}
 
@@ -2354,7 +2349,7 @@ export default function Invoices() {
                   className={`h-9 gap-1.5 rounded-lg shadow-sm font-medium transition-all ${totalSelectedCount > 0 ? "border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100 hover:border-violet-400" : "border-slate-200 bg-white text-slate-400 hover:bg-slate-50 hover:border-slate-300"}`}
                   data-testid="button-bulk-action"
                 >
-                  Hành động {totalSelectedCount > 0 ? `(${totalSelectedCount})` : ""}
+                   {t("finance.bulkAction")} {totalSelectedCount > 0 ? `(${totalSelectedCount})` : ""}
                   <ChevronDown className="h-4 w-4" />
                 </Button>
               </ActionMenuTrigger>
@@ -2521,7 +2516,7 @@ export default function Invoices() {
             {invPerm.canCreate && (
             <Button size="sm" className="h-9 gap-1.5 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 border-0 shadow-md shadow-violet-200 font-semibold" onClick={handleOpenCreate} data-testid="button-add-invoice">
               <Plus className="h-4 w-4" />
-              Thêm mới phiếu
+               {t("finance.addVoucher")}
             </Button>
             )}
           </div>
@@ -2553,7 +2548,7 @@ export default function Invoices() {
                     </span>
                   </th>
                 ))}
-                <th className="px-3 py-2.5 sticky top-0 right-0 z-40 bg-muted text-center text-[10px] font-semibold text-muted-foreground uppercase tracking-wider w-28 border-l border-border">Thao tác</th>
+                 <th className="px-3 py-2.5 sticky top-0 right-0 z-40 bg-muted text-center text-[10px] font-semibold text-muted-foreground uppercase tracking-wider w-28 border-l border-border">{t("finance.actions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -2606,9 +2601,10 @@ export default function Invoices() {
                         />
                       )}
                     </td>
-                    {visibleColumns.map(col => renderInvoiceCell(
+                   {visibleColumns.map(col => renderInvoiceCell(
                       col.key,
                       inv,
+                       t,
                       updateStatusMutation,
                       updateScheduleStatusMutation,
                       invPerm.canEdit,
@@ -2638,7 +2634,7 @@ export default function Invoices() {
                               }}
                             >
                               <Eye className="h-3.5 w-3.5 text-blue-600" />
-                              Xem
+                               {t("finance.view")}
                             </ActionMenuItem>
                             {invPerm.canEdit && (
                               <ActionMenuItem
@@ -2647,7 +2643,7 @@ export default function Invoices() {
                                 onClick={() => handleOpenEdit(parentInvoice.id)}
                               >
                                 <Pencil className="h-3.5 w-3.5 text-amber-600" />
-                                Sửa
+                                 {t("finance.edit")}
                               </ActionMenuItem>
                             )}
                             {invPerm.canEdit && isScheduleRow && schedule && !isInvoicePaidLike(schedule.status) && (
@@ -2657,7 +2653,7 @@ export default function Invoices() {
                                 onClick={() => setAdjustmentTarget({ schedule, invoiceId: parentInvoice.id })}
                               >
                                 <Percent className="h-3.5 w-3.5 text-purple-600" />
-                                Khuyến mãi/phụ thu
+                                 {t("finance.promotionSurcharge")}
                               </ActionMenuItem>
                             )}
                             {(inv.status === "unpaid" || inv.status === "debt") && (
@@ -2671,7 +2667,7 @@ export default function Invoices() {
                                      : inv)}
                                 >
                                   <QrCode className="h-3.5 w-3.5 text-purple-600" />
-                                  Mã QR
+                                   {t("finance.qrCode")}
                                 </ActionMenuItem>
                               </>
                             )}
@@ -2688,7 +2684,7 @@ export default function Invoices() {
                                   )}
                                 >
                                   <FileText className="h-3.5 w-3.5 text-indigo-600" />
-                                  Xem thử PDF
+                                   {t("finance.previewPdf")}
                                 </ActionMenuItem>
                               </>
                             )}
@@ -2705,7 +2701,7 @@ export default function Invoices() {
                                   )}
                                 >
                                   <Download className="h-3.5 w-3.5 text-emerald-600" />
-                                  Tải PDF hoá đơn
+                                   {t("finance.downloadInvoicePdf")}
                                 </ActionMenuItem>
                               </>
                             )}
@@ -2723,13 +2719,13 @@ export default function Invoices() {
                                           onClick={() => (inv.scheduleCount ?? 0) <= 1 && setDeleteInvoiceTarget(inv)}
                                         >
                                           <Trash2 className="h-3.5 w-3.5" />
-                                          Xoá
+                                           {t("finance.delete")}
                                         </ActionMenuItem>
                                       </div>
                                     </TooltipTrigger>
                                     {(inv.scheduleCount ?? 0) > 1 && (
                                       <TooltipContent side="left" className="max-w-[220px] text-center">
-                                        <p>Hóa đơn đã có các đợt thanh toán.<br/>Vui lòng xoá các đợt trước khi xoá hóa đơn.</p>
+                                         <p>{t("finance.invoiceHasSchedules")}</p>
                                       </TooltipContent>
                                     )}
                                   </Tooltip>
@@ -2746,7 +2742,7 @@ export default function Invoices() {
                       key={`sched-${inv.id}`}
                       invoiceId={inv.id}
                       isExpanded={isExpanded}
-                      visibleColumns={visibleColumns}
+                       visibleColumns={visibleColumns.map(({ key, labelKey }) => ({ key, label: t(labelKey) }))}
                       onSplit={(s) => setSplitDialog({ scheduleId: s.id, label: s.label, amount: parseFloat(s.amount ?? "0"), invoiceId: inv.id })}
                       invoice={{ id: inv.id, code: inv.code ?? undefined, name: inv.name ?? undefined, branch: inv.branch ?? undefined, dueDate: inv.dueDate ?? undefined, description: (inv as any).description ?? undefined, note: (inv as any).note ?? undefined }}
                       selectedScheduleIds={selectedScheduleIdSet}
@@ -2765,11 +2761,11 @@ export default function Invoices() {
         {/* Pagination */}
         <div className="shrink-0 flex items-center justify-between text-sm text-muted-foreground pb-1 pt-1">
           <div className="flex items-center gap-2">
-            <span>{total} mục</span>
+            <span>{total} {t("finance.items")}</span>
             <Select value={String(pageSize)} onValueChange={v => { setPageSize(Number(v)); }}>
               <SelectTrigger className="h-7 w-24 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {[20, 30, 50, 100].map(n => <SelectItem key={n} value={String(n)}>{n} / trang</SelectItem>)}
+                {[20, 30, 50, 100].map(n => <SelectItem key={n} value={String(n)}>{t("finance.perPage", { count: n })}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -2837,7 +2833,7 @@ export default function Invoices() {
                   <div className="relative min-w-[220px] flex-1">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <Input
-                      placeholder="Tìm theo tên học viên, mã hoá đơn..."
+                      placeholder={t("finance.debtSearchPlaceholder")}
                       value={search}
                       onChange={e => setSearch(e.target.value)}
                       className="h-9 rounded-lg border-slate-200 bg-white pl-9 text-sm"
@@ -2853,13 +2849,13 @@ export default function Invoices() {
                         data-testid="button-debt-filter"
                       >
                         <SlidersHorizontal className="h-4 w-4" />
-                        Bộ lọc
+                         {t("finance.filterTitle")}
                         {hasActiveFilters(filters) && <span className="h-1.5 w-1.5 rounded-full bg-violet-600" />}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent align="start" className="w-[520px] p-4">
                       <div className="mb-3 flex items-center justify-between">
-                        <span className="text-sm font-semibold">Lọc công nợ</span>
+                         <span className="text-sm font-semibold">{t("finance.debtFilter")}</span>
                         {hasDebtFilters && (
                           <button
                             className="text-xs text-violet-600 hover:underline"
@@ -2871,15 +2867,15 @@ export default function Invoices() {
                               setDebtCondition("all");
                             }}
                           >
-                            Xoá tất cả
+                             {t("finance.clearFilters")}
                           </button>
                         )}
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         {([
-                          { label: "Cơ sở", key: "branches", opts: filterOptions.branches.map(v => ({ value: v, label: v })), withSearch: false },
-                          { label: "Danh mục", key: "categories", opts: filterOptions.categories.map(v => ({ value: v, label: v })), withSearch: false },
-                          { label: "Lớp", key: "classes", opts: filterOptions.classes.map(v => ({ value: v, label: v })), withSearch: true },
+                          { label: t("finance.branch"), key: "branches", opts: filterOptions.branches.map(v => ({ value: v, label: v })), withSearch: false },
+                          { label: t("finance.category"), key: "categories", opts: filterOptions.categories.map(v => ({ value: v, label: v })), withSearch: false },
+                          { label: t("finance.class"), key: "classes", opts: filterOptions.classes.map(v => ({ value: v, label: v })), withSearch: true },
                         ] as Array<{ label: string; key: keyof typeof filters; opts: { value: string; label: string }[]; withSearch: boolean }>).map(({ label, key, opts, withSearch }) => (
                           <MultiSelectFilter
                             key={key}
@@ -2895,19 +2891,19 @@ export default function Invoices() {
                   </Popover>
                   <Select value={debtCondition} onValueChange={value => setDebtCondition(value as DebtCondition)}>
                     <SelectTrigger className="h-9 w-[170px] rounded-lg border-slate-200 bg-white text-sm" data-testid="select-debt-condition">
-                      <SelectValue placeholder="Tình trạng" />
+                       <SelectValue placeholder={t("finance.debtCondition")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Tất cả tình trạng</SelectItem>
-                      <SelectItem value="overdue">Quá hạn</SelectItem>
-                      <SelectItem value="today">Đến hạn hôm nay</SelectItem>
-                      <SelectItem value="soon">Sắp đến hạn (1–7 ngày)</SelectItem>
-                      <SelectItem value="upcoming">Chưa đến hạn</SelectItem>
-                      <SelectItem value="no-due-date">Không có hạn thanh toán</SelectItem>
+                       <SelectItem value="all">{t("finance.allDebtStatus")}</SelectItem>
+                       <SelectItem value="overdue">{t("finance.overdue")}</SelectItem>
+                       <SelectItem value="today">{t("finance.dueToday")}</SelectItem>
+                       <SelectItem value="soon">{t("finance.debtStatusSoon")}</SelectItem>
+                       <SelectItem value="upcoming">{t("finance.notDue")}</SelectItem>
+                       <SelectItem value="no-due-date">{t("finance.noDueDatePayment")}</SelectItem>
                     </SelectContent>
                   </Select>
                   <DateRangePicker
-                    label="Hạn TT"
+                    label={t("finance.dueDateShort")}
                     dateRange={dateRange}
                     onChange={setDateRange}
                     open={calendarOpen}
@@ -2926,7 +2922,7 @@ export default function Invoices() {
                         setDebtCondition("all");
                       }}
                     >
-                      Xoá lọc
+                       {t("finance.clearFilterShort")}
                     </Button>
                   )}
                 </div>
@@ -2956,12 +2952,12 @@ export default function Invoices() {
                 {isLoading ? (
                   <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
                     <div className="h-8 w-8 animate-spin rounded-full border-2 border-purple-600 border-t-transparent" />
-                    <p className="text-sm">Đang tải dữ liệu...</p>
+                    <p className="text-sm">{t("finance.debtLoading")}</p>
                   </div>
                 ) : groups.length === 0 ? (
                   <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
                     <CreditCard className="h-10 w-10 opacity-20" />
-                    <p className="text-sm">Không có công nợ nào</p>
+                    <p className="text-sm">{t("finance.noDebt")}</p>
                   </div>
                 ) : (
                   <>
@@ -2980,7 +2976,7 @@ export default function Invoices() {
                               <span className="font-bold text-sm text-slate-700">{group.name}</span>
                             </div>
                             <div className="text-right">
-                              <p className="text-[10px] text-slate-400 uppercase tracking-wide font-semibold">Tổng công nợ</p>
+                              <p className="text-[10px] text-slate-400 uppercase tracking-wide font-semibold">{t("finance.debtTotal")}</p>
                               <p className="text-red-600 font-bold text-base">{fmtMoney(totalDebt)}</p>
                             </div>
                           </div>
@@ -2996,13 +2992,13 @@ export default function Invoices() {
                             </colgroup>
                             <thead>
                               <tr className="bg-slate-50/70 border-b border-slate-100">
-                                <th className="px-4 py-2 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Mã GD</th>
-                                <th className="px-4 py-2 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Danh mục</th>
-                                <th className="px-4 py-2 text-right text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Tổng tiền</th>
-                                <th className="px-4 py-2 text-right text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Còn nợ</th>
-                                <th className="px-4 py-2 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Hạn TT</th>
-                                <th className="px-4 py-2 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Trạng thái</th>
-                                <th className="px-4 py-2 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Tình trạng</th>
+                                <th className="px-4 py-2 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{t("finance.transactionCode")}</th>
+                                <th className="px-4 py-2 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{t("finance.category")}</th>
+                                <th className="px-4 py-2 text-right text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{t("finance.total")}</th>
+                                <th className="px-4 py-2 text-right text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{t("finance.debtRemaining")}</th>
+                                <th className="px-4 py-2 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{t("finance.dueDateShort")}</th>
+                                <th className="px-4 py-2 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{t("finance.status")}</th>
+                                <th className="px-4 py-2 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{t("finance.debtCondition")}</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -3030,11 +3026,11 @@ export default function Invoices() {
               {/* Debt pagination */}
               <div className="shrink-0 flex items-center justify-between text-sm text-muted-foreground pb-1 pt-1">
                 <div className="flex items-center gap-2">
-                  <span>{total} hoá đơn công nợ</span>
+                  <span>{t("finance.debtCount", { count: total })}</span>
                   <Select value={String(pageSize)} onValueChange={v => { setPageSize(Number(v)); setPage(1); }}>
                     <SelectTrigger className="h-7 w-24 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {[20, 30, 50, 100].map(n => <SelectItem key={n} value={String(n)}>{n} / trang</SelectItem>)}
+                       {[20, 30, 50, 100].map(n => <SelectItem key={n} value={String(n)}>{t("finance.perPage", { count: n })}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -3064,7 +3060,7 @@ export default function Invoices() {
       <HistoryDialog
         open={historyDialogOpen}
         onOpenChange={setHistoryDialogOpen}
-        title="Lịch sử hóa đơn"
+        title={t("finance.invoiceHistory")}
       >
         <InvoiceHistoryTab
           locationOptions={locationsList.map((l: any) => ({ value: l.id, label: l.name }))}
@@ -3273,57 +3269,53 @@ export default function Invoices() {
             <DialogContent className="max-w-sm">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2 text-red-600">
-                  <Trash2 className="h-4 w-4" /> Xoá hoá đơn hàng loạt
+                  <Trash2 className="h-4 w-4" /> {t("finance.bulkDeleteTitle")}
                 </DialogTitle>
               </DialogHeader>
               <div className="py-3 space-y-3">
                 <p className="text-sm">
-                  Bạn có chắc chắn muốn xoá{" "}
-                  <span className="font-semibold text-red-600">{eligible.length}</span>{" "}
-                  {eligible.length !== selectedInvoices.length && (
-                    <span className="text-muted-foreground">(trong tổng số {selectedInvoices.length} đã chọn)</span>
-                  )}{" "}
-                  hoá đơn?
+                  {t("finance.confirmBulkDelete", {
+                    count: eligible.length,
+                    selected: eligible.length !== selectedInvoices.length ? ` (${t("finance.selectedCount", { count: selectedInvoices.length })})` : "",
+                  })}
                 </p>
 
                 {ineligible.length > 0 && (
                   <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-3 text-xs text-yellow-800 space-y-1">
-                    <p className="font-semibold">Hoá đơn có Đợt con đã thanh toán không thể xoá!</p>
-                    <p>
-                      {ineligible.length} hoá đơn bị bỏ qua:{" "}
+                    <p className="font-semibold">{t("finance.paidChildInvoicesCannotDelete")}</p>
+                    <p>{t("finance.ineligibleInvoices", { count: ineligible.length })}{" "}
                       <span className="font-medium">{ineligible.map(i => i.code || i.id).join(", ")}</span>
                     </p>
-                    <p className="mt-0.5">Cần chuyển các đợt đã thanh toán về chưa thanh toán trước khi xoá.</p>
+                    <p className="mt-0.5">{t("finance.resetPaidSchedules")}</p>
                   </div>
                 )}
 
                 {eligibleWithSchedules.length > 0 && (
                   <div className="rounded-lg bg-orange-50 border border-orange-200 p-3 text-xs text-orange-800 space-y-1">
-                    <p className="font-semibold">Bạn đang chọn có hoá đơn có các đợt con!</p>
-                    <p>
-                      {eligibleWithSchedules.length} hoá đơn có đợt con:{" "}
+                    <p className="font-semibold">{t("finance.selectedInvoicesHaveSchedules")}</p>
+                    <p>{t("finance.invoicesWithSchedules", { count: eligibleWithSchedules.length })}{" "}
                       <span className="font-medium">{eligibleWithSchedules.map(i => i.code || i.id).join(", ")}</span>
                     </p>
-                    <p>Xoá hoá đơn gốc thì các đợt con cũng bị xoá theo.</p>
+                    <p>{t("finance.deleteChildrenWithParent")}</p>
                   </div>
                 )}
 
                 <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-xs text-red-800">
-                  Khi xoá hoá đơn thì sẽ không thể hoàn tác lại được.
+                  {t("finance.bulkDeleteWarning")}
                 </div>
               </div>
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setBulkDeleteOpen(false)} disabled={bulkDeleteMutation.isPending}>Huỷ</Button>
+                <Button variant="outline" onClick={() => setBulkDeleteOpen(false)} disabled={bulkDeleteMutation.isPending}>{t("finance.cancel")}</Button>
                 <Button
                   variant="destructive"
                   disabled={bulkDeleteMutation.isPending || eligible.length === 0}
                   onClick={() => bulkDeleteMutation.mutate(eligible.map(i => i.id))}
                 >
                   {bulkDeleteMutation.isPending
-                    ? "Đang xoá..."
+                    ? t("finance.deleting")
                     : eligible.length === 0
-                      ? "Không có hoá đơn đủ điều kiện"
-                      : `Xác nhận xoá ${eligible.length} hoá đơn`}
+                      ? t("finance.noEligibleInvoices")
+                      : t("finance.confirmDeleteCount", { count: eligible.length })}
                 </Button>
               </div>
             </DialogContent>
@@ -3408,23 +3400,18 @@ export default function Invoices() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               <FileSignature className="h-5 w-5 text-purple-600" />
-              Xác nhận phát hành hóa đơn điện tử
+              {t("finance.signDialogTitle")}
             </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-3 text-sm">
             <p>
-              Bạn đang chọn{" "}
-              <span className="font-semibold text-purple-700" data-testid="text-sign-count">
-                {selectedIds.size}
-              </span>{" "}
-              hóa đơn để ký số và gửi lên cơ quan Thuế.
+              {t("finance.signDialogDescription", { count: selectedIds.size })}
             </p>
 
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800 text-xs leading-relaxed">
-              <div className="font-semibold mb-1">Lưu ý:</div>
-              Hóa đơn sau khi ký số sẽ không thể sửa đổi hoặc xóa bỏ một cách thông thường.
-              Vui lòng đảm bảo các thông tin học viên và số tiền đã chính xác 100%.
+              <div className="font-semibold mb-1">{t("finance.notice")}</div>
+              {t("finance.signWarning")}
             </div>
 
             <label className="flex items-start gap-2 cursor-pointer select-none">
@@ -3435,23 +3422,23 @@ export default function Invoices() {
                 className="mt-0.5"
               />
               <span className="text-sm">
-                Tôi đã kiểm tra kỹ và chịu trách nhiệm với dữ liệu này.
+                {t("finance.signAcknowledgement")}
               </span>
             </label>
 
             <div className="border-t pt-3 space-y-1.5 text-xs italic text-muted-foreground">
-              <div className="font-medium not-italic text-foreground mb-1">Giải thích:</div>
+              <div className="font-medium not-italic text-foreground mb-1">{t("finance.explanation")}</div>
               <div>
-                <span className="not-italic font-semibold text-emerald-700">Đồng ý:</span>{" "}
-                Hóa đơn sẽ được ký số và gửi lên Thuế ngay lập tức. Không thể sửa sau khi ký.
+                <span className="not-italic font-semibold text-emerald-700">{t("finance.agree")}</span>{" "}
+                {t("finance.signImmediately")}
               </div>
               <div>
-                <span className="not-italic font-semibold text-amber-700">Gửi nháp:</span>{" "}
-                Dữ liệu chỉ gửi sang Mắt Bão để kiểm tra, chưa có giá trị pháp lý. Có thể xóa/sửa dễ dàng.
+                <span className="not-italic font-semibold text-amber-700">{t("finance.sendDraftLabel")}</span>{" "}
+                {t("finance.draftExplanation")}
               </div>
               <div>
-                <span className="not-italic font-semibold text-gray-700">Hủy bỏ:</span>{" "}
-                Đóng cửa sổ và không làm gì cả.
+                <span className="not-italic font-semibold text-gray-700">{t("finance.cancelLabel")}</span>{" "}
+                {t("finance.cancelExplanation")}
               </div>
             </div>
           </div>
@@ -3459,7 +3446,7 @@ export default function Invoices() {
           {signProgress && (
             <div className="pt-2">
               <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                <span>Đang gửi sang Mắt Bão...</span>
+                <span>{t("finance.sendingToProvider")}</span>
                 <span>{signProgress.done} / {signProgress.total}</span>
               </div>
               <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
@@ -3478,7 +3465,7 @@ export default function Invoices() {
               disabled={signMutation.isPending}
               data-testid="button-sign-cancel"
             >
-              Hủy bỏ
+              {t("finance.cancelLabel").replace(":", "")}
             </Button>
             <Button
               variant="outline"
@@ -3487,7 +3474,7 @@ export default function Invoices() {
               onClick={() => signMutation.mutate({ invoiceIds: Array.from(selectedIds), scheduleIds: Array.from(selectedSchedules.keys()), isPublish: false })}
               data-testid="button-sign-draft"
             >
-              Gửi nháp
+              {t("finance.sendDraftLabel").replace(":", "")}
             </Button>
             {!isUsbSigning && (
               <Button
@@ -3496,7 +3483,7 @@ export default function Invoices() {
                 onClick={() => signMutation.mutate({ invoiceIds: Array.from(selectedIds), scheduleIds: Array.from(selectedSchedules.keys()), isPublish: true })}
                 data-testid="button-sign-confirm"
               >
-                {signMutation.isPending ? "Đang xử lý..." : "Đồng ý"}
+                {signMutation.isPending ? t("finance.processing") : t("finance.agree").replace(":", "")}
               </Button>
             )}
           </div>
