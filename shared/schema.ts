@@ -947,6 +947,7 @@ export const classSessions = pgTable("class_sessions", {
   programId: uuid("program_id").references(() => coursePrograms.id, { onDelete: "set null" }),
   scoreSheetId: uuid("score_sheet_id").references(() => scoreSheets.id, { onDelete: "set null" }),
   scoreSheetAssessmentId: uuid("score_sheet_assessment_id"),
+  scoreSheetAssessmentPublished: boolean("score_sheet_assessment_published").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({

@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { sendHomeworkScoreNotification } from "../lib/attendance-notification";
+import { sendNotificationToMany } from "../lib/notification";
 import { db, pool } from "../db";
 import { z } from "zod";
 import {
@@ -3758,6 +3759,15 @@ export function registerMySpaceRoutes(app: Express): void {
       if (!ctx.selfStudentId || ctx.studentIds.length === 0) return res.json([]);
 
       const studentNameMap = new Map(ctx.linkedStudents.map(s => [s.id, s]));
+      const [assessmentSettings] = await db
+        .select({ value: systemSettings.value })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, "scoreSheetAssessments"))
+        .limit(1);
+      const assessmentConfigs = assessmentSettings
+        ? z.array(scoreSheetAssessmentSchema).parse(JSON.parse(assessmentSettings.value))
+        : [];
+      const assessmentConfigsById = new Map(assessmentConfigs.map((assessment) => [assessment.id, assessment]));
 
       const allMapped: any[] = [];
 
@@ -3838,6 +3848,109 @@ export function registerMySpaceRoutes(app: Express): void {
             scores: row.scores,
             teacherComment: row.teacher_comment,
             createdByName: row.created_by_name,
+            studentName: ctx.isParent ? (linked?.fullName ?? null) : null,
+          });
+        }
+
+        const assessmentAttemptRows = await db
+          .select({
+            assessmentId: scoreSheetAssessmentStudentAttempts.assessmentId,
+            classSessionId: scoreSheetAssessmentStudentAttempts.classSessionId,
+            attemptNumber: scoreSheetAssessmentStudentAttempts.attemptNumber,
+            result: scoreSheetAssessmentStudentAttempts.result,
+            createdAt: scoreSheetAssessmentStudentAttempts.createdAt,
+            updatedAt: scoreSheetAssessmentStudentAttempts.updatedAt,
+            sessionDate: classSessions.sessionDate,
+            sessionIndex: classSessions.sessionIndex,
+            classId: classes.id,
+            classCode: classes.classCode,
+            className: classes.name,
+          })
+          .from(scoreSheetAssessmentStudentAttempts)
+          .innerJoin(
+            classSessions,
+            and(
+              eq(classSessions.id, scoreSheetAssessmentStudentAttempts.classSessionId),
+              eq(classSessions.scoreSheetAssessmentId, scoreSheetAssessmentStudentAttempts.assessmentId),
+              eq(classSessions.scoreSheetAssessmentPublished, true),
+            ),
+          )
+          .innerJoin(
+            studentSessions,
+            and(
+              eq(studentSessions.classSessionId, classSessions.id),
+              eq(studentSessions.studentId, scoreSheetAssessmentStudentAttempts.studentId),
+            ),
+          )
+          .innerJoin(classes, eq(classes.id, classSessions.classId))
+          .where(eq(scoreSheetAssessmentStudentAttempts.studentId, studentId))
+          .orderBy(desc(classSessions.sessionDate), desc(scoreSheetAssessmentStudentAttempts.attemptNumber));
+
+        const attemptsByAssessmentSession = new Map<string, { assessment: any; attempts: any[] }>();
+        for (const attempt of assessmentAttemptRows) {
+          const assessment = assessmentConfigsById.get(attempt.assessmentId);
+          if (!assessment?.templateSnapshot.scoreConversionTemplateId) continue;
+          const key = `${attempt.assessmentId}:${attempt.classSessionId}`;
+          const group = attemptsByAssessmentSession.get(key) ?? { assessment, attempts: [] };
+          group.attempts.push(attempt);
+          attemptsByAssessmentSession.set(key, group);
+        }
+
+        for (const group of attemptsByAssessmentSession.values()) {
+          const summary = selectScoreSheetAssessmentAttemptSummary(
+            group.attempts,
+            group.assessment.scoringPolicy,
+            true,
+          );
+          if (!summary) continue;
+
+          const selectedAttempt = group.attempts.find(
+            (attempt) => attempt.attemptNumber === summary.attemptNumber,
+          ) ?? group.attempts[0];
+          const formatScore = (value: number) =>
+            new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(value);
+          const skillScores = summary.result.skills
+            .filter((skill) => skill.convertedScore !== null)
+            .map((skill) => ({
+              categoryId: skill.skillId,
+              categoryName: skill.name,
+              score: formatScore(skill.convertedScore!),
+            }));
+          const scores = [
+            ...skillScores,
+            ...(summary.result.gradeBand
+              ? [{
+                  categoryId: `${selectedAttempt.assessmentId}:grade-band`,
+                  categoryName: "Xếp loại",
+                  score: summary.result.gradeBand.label,
+                }]
+              : []),
+            ...(summary.result.overallConvertedScore === null
+              ? []
+              : [{
+                  categoryId: `${selectedAttempt.assessmentId}:overall`,
+                  categoryName: "Điểm quy đổi",
+                  score: formatScore(summary.result.overallConvertedScore),
+                }]),
+          ];
+          if (scores.length === 0) continue;
+
+          allMapped.push({
+            id: `score-sheet-assessment:${selectedAttempt.classSessionId}:${selectedAttempt.assessmentId}:${studentId}`,
+            title: group.assessment.name,
+            classId: selectedAttempt.classId,
+            sessionId: selectedAttempt.classSessionId,
+            published: true,
+            createdAt: selectedAttempt.createdAt,
+            updatedAt: selectedAttempt.updatedAt,
+            classCode: selectedAttempt.classCode,
+            className: selectedAttempt.className,
+            scoreSheetName: group.assessment.templateSnapshot.name,
+            sessionIndex: selectedAttempt.sessionIndex,
+            sessionDate: selectedAttempt.sessionDate,
+            scores,
+            teacherComment: null,
+            createdByName: null,
             studentName: ctx.isParent ? (linked?.fullName ?? null) : null,
           });
         }
@@ -4372,4 +4485,136 @@ export function registerMySpaceRoutes(app: Express): void {
       }
     },
   );
+
+  app.put("/api/my-space/score-sheet/staff-assessments/:sessionId/publication", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+      const sessionId = z.string().uuid().parse(req.params.sessionId);
+      const { published } = z.object({ published: z.boolean() }).strict().parse(req.body);
+
+      const result = await db.transaction(async (tx) => {
+        let notification: {
+          classId: string;
+          classLabel: string;
+          assessmentName: string;
+          recipientUserIds: string[];
+        } | null = null;
+        const access = await getAuthorizedScoreSheetSession(req, sessionId, {
+          queryable: tx,
+          lock: true,
+          permission: "edit",
+        });
+        if (!access?.assessment?.templateSnapshot.scoreConversionTemplateId) {
+          return { error: "Không tìm thấy buổi thi hoặc bạn không có quyền công bố bảng điểm.", status: 404 as const };
+        }
+
+        const [session] = await tx
+          .select({
+            classId: classes.id,
+            classCode: classes.classCode,
+            className: classes.name,
+            published: classSessions.scoreSheetAssessmentPublished,
+          })
+          .from(classSessions)
+          .innerJoin(classes, eq(classes.id, classSessions.classId))
+          .where(eq(classSessions.id, sessionId))
+          .limit(1);
+        if (!session) {
+          return { error: "Không tìm thấy buổi thi.", status: 404 as const };
+        }
+
+        if (published && !session.published) {
+          const attemptRows = await tx
+            .select({
+              studentId: scoreSheetAssessmentStudentAttempts.studentId,
+              attemptNumber: scoreSheetAssessmentStudentAttempts.attemptNumber,
+              result: scoreSheetAssessmentStudentAttempts.result,
+            })
+            .from(scoreSheetAssessmentStudentAttempts)
+            .innerJoin(
+              studentSessions,
+              and(
+                eq(studentSessions.classSessionId, scoreSheetAssessmentStudentAttempts.classSessionId),
+                eq(studentSessions.studentId, scoreSheetAssessmentStudentAttempts.studentId),
+              ),
+            )
+            .where(and(
+              eq(scoreSheetAssessmentStudentAttempts.assessmentId, access.assessmentId),
+              eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId),
+            ));
+
+          const attemptsByStudent = new Map<string, Array<{ attemptNumber: number; result: unknown }>>();
+          for (const attempt of attemptRows) {
+            const attempts = attemptsByStudent.get(attempt.studentId) ?? [];
+            attempts.push({ attemptNumber: attempt.attemptNumber, result: attempt.result });
+            attemptsByStudent.set(attempt.studentId, attempts);
+          }
+          const scoredStudentIds = Array.from(attemptsByStudent.entries())
+            .filter(([, attempts]) => {
+              const summary = selectScoreSheetAssessmentAttemptSummary(
+                attempts,
+                access.assessment!.scoringPolicy,
+                true,
+              );
+              return Boolean(summary && (
+                summary.result.overallConvertedScore !== null
+                || summary.result.skills.some((skill) => skill.convertedScore !== null)
+              ));
+            })
+            .map(([studentId]) => studentId);
+          if (scoredStudentIds.length === 0) {
+            return {
+              error: "Cần nhập ít nhất một điểm trước khi công bố bảng điểm.",
+              status: 400 as const,
+            };
+          }
+
+          const recipients = await tx
+            .select({ userId: students.userId })
+            .from(students)
+            .where(inArray(students.id, scoredStudentIds));
+          notification = {
+            classId: session.classId,
+            classLabel: session.classCode || session.className,
+            assessmentName: access.assessment.name,
+            recipientUserIds: recipients
+              .map((recipient) => recipient.userId)
+              .filter((userId): userId is string => Boolean(userId)),
+          };
+        }
+
+        const [updated] = await tx
+          .update(classSessions)
+          .set({ scoreSheetAssessmentPublished: published, updatedAt: new Date() })
+          .where(eq(classSessions.id, sessionId))
+          .returning({ published: classSessions.scoreSheetAssessmentPublished });
+        return { published: updated?.published ?? published, notification };
+      });
+
+      if ("error" in result) {
+        return res.status(result.status ?? 500).json({ message: result.error });
+      }
+      res.json({ published: result.published });
+
+      if (result.notification?.recipientUserIds.length) {
+        sendNotificationToMany(result.notification.recipientUserIds, {
+          title: "Thông báo bảng điểm",
+          content: `Bảng điểm ${result.notification.assessmentName} vừa được công bố cho lớp ${result.notification.classLabel}`,
+          category: "schedule",
+          referenceId: result.notification.classId,
+          referenceType: "score_sheet",
+          deeplink: {
+            screen: "ScoreSheet",
+            params: { classId: result.notification.classId },
+          },
+        }).catch((err) => console.error("[ScoreSheetAssessmentNotify] Publish error:", err));
+      }
+    } catch (err: any) {
+      const status = err instanceof z.ZodError ? 400 : err?.status ?? 500;
+      if (status >= 500) console.error("Staff score assessment publication error:", err);
+      res.status(status).json({ message: err.message || "Không thể cập nhật trạng thái công bố." });
+    }
+  });
 }

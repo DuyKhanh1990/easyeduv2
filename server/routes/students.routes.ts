@@ -5,8 +5,10 @@ import { z } from "zod";
 import { runSecurityTests } from "../middleware/security-test";
 import { cacheGet, cacheSet, cacheInvalidate } from "../lib/simple-cache";
 import { db } from "../db";
-import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, students, classes, attendanceFeeRules, users, staff, staffAssignments, locations, roles, departments, classGradeBooks, classGradeBookScores, scoreCategories, scoreSheetItems, sessionContents, studentSessionContents, classSessions, studentRelationshipHistory, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools, crmCustomFields, crmRequiredFields, evaluationCriteria, evaluationSubCriteria } from "@shared/schema";
+import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, students, classes, attendanceFeeRules, users, staff, staffAssignments, locations, roles, departments, classGradeBooks, classGradeBookScores, scoreCategories, scoreSheetItems, sessionContents, studentSessionContents, classSessions, scoreSheetAssessmentStudentAttempts, systemSettings, studentRelationshipHistory, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools, crmCustomFields, crmRequiredFields, evaluationCriteria, evaluationSubCriteria } from "@shared/schema";
 import { eq, and, isNotNull, sql, inArray, desc, gte, lte, ne } from "drizzle-orm";
+import { scoreSheetAssessmentSchema } from "@shared/score-sheet-assessment";
+import { selectScoreSheetAssessmentAttemptSummary } from "@shared/score-sheet-assessment-scoring";
 import { getStudentLearningStatusSummary, getCustomerLearningStatusSummary, getCustomerSummary, getNewCustomersSummary, getStudentsBySource, getStudentsByRelationship, getStudentsByLocation, getStudentsByStaff, getStudentsLearningStatuses, getMonthlyStudentCounts } from "../storage/student.storage";
 import { createCrmConfigAuditLog, getCrmConfigAuditLogs } from "../storage/crm-config-audit.storage";
 import { codeStem, nextCodeForStem } from "../lib/role-code";
@@ -2392,6 +2394,111 @@ export function registerStudentsRoutes(app: Express): void {
         };
       }).filter((entry) => entry.scores.length > 0 || Boolean(entry.gradingComment?.trim()));
 
+      const [assessmentSettings] = await db
+        .select({ value: systemSettings.value })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, "scoreSheetAssessments"))
+        .limit(1);
+      const assessments = assessmentSettings
+        ? z.array(scoreSheetAssessmentSchema).parse(JSON.parse(assessmentSettings.value))
+        : [];
+      const assessmentsById = new Map(assessments.map((assessment) => [assessment.id, assessment]));
+      const publishedAssessmentAttempts = await db
+        .select({
+          assessmentId: scoreSheetAssessmentStudentAttempts.assessmentId,
+          classSessionId: scoreSheetAssessmentStudentAttempts.classSessionId,
+          attemptNumber: scoreSheetAssessmentStudentAttempts.attemptNumber,
+          result: scoreSheetAssessmentStudentAttempts.result,
+          updatedAt: scoreSheetAssessmentStudentAttempts.updatedAt,
+          sessionDate: classSessions.sessionDate,
+          sessionIndex: classSessions.sessionIndex,
+          classId: classes.id,
+          classCode: classes.classCode,
+          className: classes.name,
+        })
+        .from(scoreSheetAssessmentStudentAttempts)
+        .innerJoin(
+          classSessions,
+          and(
+            eq(classSessions.id, scoreSheetAssessmentStudentAttempts.classSessionId),
+            eq(classSessions.scoreSheetAssessmentId, scoreSheetAssessmentStudentAttempts.assessmentId),
+            eq(classSessions.scoreSheetAssessmentPublished, true),
+          ),
+        )
+        .innerJoin(
+          studentSessions,
+          and(
+            eq(studentSessions.classSessionId, classSessions.id),
+            eq(studentSessions.studentId, scoreSheetAssessmentStudentAttempts.studentId),
+          ),
+        )
+        .innerJoin(classes, eq(classes.id, classSessions.classId))
+        .where(eq(scoreSheetAssessmentStudentAttempts.studentId, studentId))
+        .orderBy(desc(classSessions.sessionDate), desc(scoreSheetAssessmentStudentAttempts.attemptNumber));
+
+      const publishedAssessmentGroups = new Map<string, { assessment: any; attempts: any[] }>();
+      for (const row of publishedAssessmentAttempts) {
+        const assessment = assessmentsById.get(row.assessmentId);
+        if (!assessment?.templateSnapshot.scoreConversionTemplateId) continue;
+        const key = `${row.assessmentId}:${row.classSessionId}`;
+        const group = publishedAssessmentGroups.get(key) ?? { assessment, attempts: [] };
+        group.attempts.push(row);
+        publishedAssessmentGroups.set(key, group);
+      }
+
+      const publishedAssessmentEntries = Array.from(publishedAssessmentGroups.entries()).flatMap(
+        ([, group]) => {
+          const summary = selectScoreSheetAssessmentAttemptSummary(
+            group.attempts,
+            group.assessment.scoringPolicy,
+            true,
+          );
+          if (!summary) return [];
+          const selectedAttempt = group.attempts.find(
+            (attempt) => attempt.attemptNumber === summary.attemptNumber,
+          ) ?? group.attempts[0];
+          const formatScore = (value: number) =>
+            new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(value);
+          const overallScore = summary.result.overallConvertedScore;
+          const skillScores = summary.result.skills
+            .filter((skill) => skill.convertedScore !== null)
+            .map((skill) => ({
+              categoryName: skill.name,
+              score: formatScore(skill.convertedScore!),
+            }));
+          if (overallScore === null && skillScores.length === 0) return [];
+
+          const scores: Array<{ categoryName: string; score: string | null }> = [
+            ...(overallScore === null
+              ? []
+              : [{ categoryName: "Điểm quy đổi", score: formatScore(overallScore) }]),
+            ...skillScores,
+            ...(summary.result.gradeBand
+              ? [{ categoryName: "Xếp loại", score: summary.result.gradeBand.label }]
+              : []),
+          ];
+          const row = group.attempts[0];
+          const rawCreatedAt = selectedAttempt?.updatedAt ?? row.sessionDate;
+          const createdAt = rawCreatedAt instanceof Date
+            ? rawCreatedAt.toISOString()
+            : String(rawCreatedAt ?? "");
+          return [{
+            id: `score-sheet-assessment:${row.classSessionId}:${row.assessmentId}`,
+            type: "Bảng điểm" as const,
+            title: `${group.assessment.name}${row.sessionIndex != null ? ` · Buổi ${row.sessionIndex}` : ""}`,
+            className: row.classCode || row.className,
+            classId: row.classId,
+            finalScore: overallScore === null
+              ? skillScores.map((score) => `${score.categoryName}: ${score.score}`).join(" / ") || null
+              : formatScore(overallScore),
+            scores,
+            gradingComment: null,
+            refId: row.classSessionId,
+            createdAt,
+          }];
+        },
+      );
+
       // 2. BTVN and bài kiểm tra where student has a score
       const contentResult = await db.execute(sql`
         SELECT
@@ -2426,7 +2533,7 @@ export function registerStudentsRoutes(app: Express): void {
         createdAt: row.created_at,
       }));
 
-      const all = [...gradeBookEntries, ...contentEntries].sort(
+      const all = [...gradeBookEntries, ...publishedAssessmentEntries, ...contentEntries].sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
 

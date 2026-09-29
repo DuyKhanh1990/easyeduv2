@@ -777,6 +777,7 @@ export default function ScoreConversion() {
         assessment={selectedAssessment}
         open={!!selectedAssessment}
         canManageScores={canEdit}
+        canManagePublication
         onOpenChange={(open) => {
           if (!open) setSelectedAssessment(null);
         }}

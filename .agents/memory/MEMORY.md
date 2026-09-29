@@ -76,3 +76,4 @@
 - [Invoice installment adjustments](invoice-schedule-adjustments.md) — đợt chưa thanh toán tính từ tiền cơ sở; server khóa đợt đã thu và đồng bộ tổng hóa đơn cha.
 - [Mockup sandbox screenshots](mockup-sandbox-screenshots.md) — screenshot isolated previews from the sandbox URL; appPreview paths load the main app instead.
 - [Score-sheet template configuration](score-sheet-template-configuration.md) — manual skills stay unlinked, source switches preserve matching parts, and overall rules are copied per template.
+- [Score conversion publication](score-assessment-publication.md) — publish state belongs to each class session; students only see their enrolled session's policy-selected result.

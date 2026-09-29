@@ -1,9 +1,11 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { AlertCircle, Loader2, Settings2 } from "lucide-react";
+import { AlertCircle, Loader2, Save, Settings2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { useToast } from "@/hooks/use-toast";
 import { StaffScoreSheetAssessmentScoreDialog } from "./StaffScoreSheetAssessmentScoreDialog";
 import {
   Dialog,
@@ -35,6 +37,7 @@ export type StaffAssignedScoreSheetAssessment = {
   assessmentName: string | null;
   templateName: string | null;
   scoreDeadlineAt: string | null;
+  published?: boolean;
   studentCount: number;
   enteredStudentCount: number;
   completedStudentCount: number;
@@ -73,6 +76,7 @@ type StaffScoreSheetAssessmentStudentsDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   canManageScores?: boolean;
+  canManagePublication?: boolean;
 };
 
 export function StaffScoreSheetAssessmentStudentsDialog({
@@ -80,7 +84,10 @@ export function StaffScoreSheetAssessmentStudentsDialog({
   open,
   onOpenChange,
   canManageScores = true,
+  canManagePublication = false,
 }: StaffScoreSheetAssessmentStudentsDialogProps) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const rosterQuery = useQuery<AssessmentRosterStudent[]>({
     queryKey: [
       "/api/my-space/score-sheet/staff-assessments",
@@ -105,6 +112,49 @@ export function StaffScoreSheetAssessmentStudentsDialog({
   const students = rosterQuery.data ?? [];
   const assessmentName = assessment?.assessmentName ?? "Bảng điểm Quy đổi";
   const [editingStudent, setEditingStudent] = useState<AssessmentRosterStudent | null>(null);
+  const [published, setPublished] = useState(false);
+  const [savedPublished, setSavedPublished] = useState(false);
+
+  useEffect(() => {
+    const initialPublished = assessment?.published ?? false;
+    setPublished(initialPublished);
+    setSavedPublished(initialPublished);
+  }, [assessment?.sessionId, assessment?.published]);
+
+  const publicationMutation = useMutation({
+    mutationFn: async (nextPublished: boolean) => {
+      if (!assessment) throw new Error("Chưa chọn buổi thi");
+      const response = await fetch(
+        `/api/my-space/score-sheet/staff-assessments/${encodeURIComponent(assessment.sessionId)}/publication`,
+        {
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ published: nextPublished }),
+        },
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { message?: string } | null;
+        throw new Error(payload?.message ?? "Không thể lưu trạng thái công bố");
+      }
+      return response.json() as Promise<{ published: boolean }>;
+    },
+    onSuccess: (result) => {
+      setPublished(result.published);
+      setSavedPublished(result.published);
+      queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned"] });
+      toast({
+        title: result.published ? "Đã công bố bảng điểm" : "Đã gỡ công bố bảng điểm",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Không thể lưu trạng thái công bố",
+        description: error instanceof Error ? error.message : "Đã xảy ra lỗi.",
+        variant: "destructive",
+      });
+    },
+  });
 
   function formatScore(value: number | null | undefined) {
     if (value == null || !Number.isFinite(value)) return "—";
@@ -138,6 +188,42 @@ export function StaffScoreSheetAssessmentStudentsDialog({
               </>
             )}
           </DialogDescription>
+          {canManagePublication && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium">Công bố</span>
+                {canManageScores ? (
+                  <Switch
+                    checked={published}
+                    onCheckedChange={setPublished}
+                    disabled={publicationMutation.isPending}
+                    aria-label="Công bố bảng điểm cho học viên"
+                  />
+                ) : (
+                  <Badge variant={savedPublished ? "default" : "secondary"}>
+                    {savedPublished ? "Đã công bố" : "Chưa công bố"}
+                  </Badge>
+                )}
+                {canManageScores && (
+                  <span className="text-xs text-muted-foreground">
+                    {published ? "Học viên sẽ xem được bảng điểm" : "Học viên chưa xem được bảng điểm"}
+                  </span>
+                )}
+              </div>
+              {canManageScores && (
+                <Button
+                  size="sm"
+                  onClick={() => publicationMutation.mutate(published)}
+                  disabled={!assessment || published === savedPublished || publicationMutation.isPending}
+                >
+                  {publicationMutation.isPending
+                    ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    : <Save className="mr-2 h-4 w-4" />}
+                  Lưu
+                </Button>
+              )}
+            </div>
+          )}
         </DialogHeader>
 
         <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-5">
@@ -160,12 +246,12 @@ export function StaffScoreSheetAssessmentStudentsDialog({
             </div>
           ) : (
             <div className="overflow-x-auto rounded-md border">
-              <Table className="min-w-[1120px]">
+              <Table className="min-w-[1000px]">
                 <TableHeader>
                   <TableRow className="bg-muted/50">
                     <TableHead className="min-w-[210px]">Học viên</TableHead>
-                    <TableHead className="min-w-[130px]">Bài kiểm tra</TableHead>
                     <TableHead className="min-w-[90px] text-center">Lịch học</TableHead>
+                    <TableHead className="min-w-[120px]">Ngày thi</TableHead>
                     <TableHead className="min-w-[125px]">Ngày phải trả</TableHead>
                     <TableHead className="min-w-[90px] text-center">Lần thi</TableHead>
                     <TableHead className="min-w-[110px]">
@@ -173,7 +259,6 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                     </TableHead>
                     <TableHead className="min-w-[100px]">Kết quả</TableHead>
                     <TableHead className="min-w-[110px]">Tình trạng</TableHead>
-                    <TableHead className="min-w-[110px]">Công bố</TableHead>
                     {canManageScores && (
                       <TableHead className="min-w-[90px] text-center">Quản lý</TableHead>
                     )}
@@ -182,7 +267,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                 <TableBody>
                   {students.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={canManageScores ? 10 : 9} className="h-24 text-center text-muted-foreground">
+                      <TableCell colSpan={canManageScores ? 9 : 8} className="h-24 text-center text-muted-foreground">
                         Buổi thi chưa có học viên.
                       </TableCell>
                     </TableRow>
@@ -192,8 +277,10 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                         <TableCell className="font-medium">
                           {student.code} - {student.fullName}
                         </TableCell>
-                        <TableCell>{assessment?.assessmentName ?? assessment?.assessmentCode ?? "—"}</TableCell>
-                        <TableCell className="text-center">{assessment?.sessionIndex ?? "—"}</TableCell>
+                        <TableCell className="text-center">
+                          {assessment?.sessionIndex != null ? `Buổi ${assessment.sessionIndex}` : "—"}
+                        </TableCell>
+                        <TableCell>{formatDate(assessment?.examDate)}</TableCell>
                         <TableCell>{formatDeadline(assessment?.scoreDeadlineAt)}</TableCell>
                         <TableCell className="text-center">
                           {student.attemptNumber
@@ -215,9 +302,6 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                                 ? "Đang nhập"
                                 : "Chưa nhập"}
                           </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary" className="font-normal">Chưa công bố</Badge>
                         </TableCell>
                         {canManageScores && (
                           <TableCell className="text-center">
