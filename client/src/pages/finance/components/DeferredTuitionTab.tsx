@@ -23,6 +23,7 @@ import {
 } from "@/hooks/use-deferred-tuition";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/hooks/use-language";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -39,9 +40,9 @@ function clsChargeableCount(sessions: { deductsFee: boolean }[]) {
 const fmtMoney = (n: number) =>
   new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(n);
 
-const fmtMonth = (ym: string) => {
+const fmtMonth = (ym: string, t: (key: string, params?: Record<string, string | number>) => string) => {
   const [y, m] = ym.split("-");
-  return `Tháng ${parseInt(m, 10)}/${y}`;
+  return `${t("deferred.monthShort", { month: parseInt(m, 10) })}/${y}`;
 };
 
 const fmtDate = (iso: string) => {
@@ -75,6 +76,7 @@ function DeferredTuitionReceiptDialog({
   onClose,
 }: DeferredTuitionReceiptDialogProps) {
   const { toast } = useToast();
+  const { t } = useLanguage();
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
 
@@ -92,7 +94,7 @@ function DeferredTuitionReceiptDialog({
     }>();
 
     for (const session of chargeableSessions) {
-      const packageName = session.packageName ?? "Buổi học";
+      const packageName = session.packageName ?? t("deferred.session");
       const key = `${session.packageId ?? packageName}:${session.price}`;
       const current = groups.get(key);
       if (current) {
@@ -110,10 +112,10 @@ function DeferredTuitionReceiptDialog({
     }
 
     return Array.from(groups.values());
-  }, [chargeableSessions]);
+  }, [chargeableSessions, t]);
   const total = groupedItems.reduce((sum, item) => sum + item.subtotal, 0);
   const parsedAmount = parseInt(amount.replace(/\D/g, ""), 10) || 0;
-  const monthLabel = selectedMonth ? fmtMonth(selectedMonth) : "Học phí trả sau";
+  const monthLabel = selectedMonth ? fmtMonth(selectedMonth, t) : t("deferred.title");
 
   const buildDescription = () =>
     `Thu học phí trả sau - ${student?.studentName ?? ""} - ${cls?.className ?? ""} - ${monthLabel}`;
@@ -131,14 +133,14 @@ function DeferredTuitionReceiptDialog({
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Tạo phiếu thu thành công" });
+      toast({ title: t("deferred.createReceiptSuccess") });
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/finance/deferred-tuition"] });
       onClose();
     },
     onError: (err: Error) => {
       toast({
-        title: "Lỗi khi tạo phiếu thu",
+        title: t("deferred.createReceiptError"),
         description: err.message,
         variant: "destructive",
       });
@@ -149,8 +151,8 @@ function DeferredTuitionReceiptDialog({
     if (!student || !cls) return;
     if (parsedAmount > total) {
       toast({
-        title: "Số tiền thu không được vượt quá tổng học phí",
-        description: `Tối đa ${fmtMoney(total)}`,
+        title: t("deferred.amountExceedsTotal"),
+        description: t("deferred.maximum", { amount: fmtMoney(total) }),
         variant: "destructive",
       });
       return;
@@ -224,33 +226,33 @@ function DeferredTuitionReceiptDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base font-semibold">
             <Receipt className="h-4 w-4 text-rose-600" />
-            Tạo phiếu thu học phí
+            {t("deferred.receiptTitle")}
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <div className="space-y-2 text-sm">
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Học viên:</span>
+              <span className="text-muted-foreground">{t("deferred.student")}</span>
               <span className="text-right font-medium">{student.studentName}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Lớp:</span>
+              <span className="text-muted-foreground">{t("deferred.class")}</span>
               <span className="text-right">{cls.className}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Thời gian:</span>
+              <span className="text-muted-foreground">{t("deferred.period")}</span>
               <span className="text-right">{monthLabel}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Tổng học phí:</span>
+              <span className="text-muted-foreground">{t("deferred.totalTuition")}</span>
               <span className="font-semibold text-rose-600">{fmtMoney(total)}</span>
             </div>
           </div>
 
           <div className="border-t pt-4 space-y-3">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Mô tả phiếu</label>
+              <label className="text-xs font-medium text-muted-foreground">{t("deferred.receiptDescription")}</label>
               <Textarea
                 value={description}
                 onChange={event => setDescription(event.target.value)}
@@ -260,18 +262,18 @@ function DeferredTuitionReceiptDialog({
 
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">
-                Số tiền thu <span className="font-normal">(có thể bỏ trống)</span>
+                {t("deferred.amountCollected")} <span className="font-normal">{t("deferred.optional")}</span>
               </label>
               <Input
                 type="text"
                 inputMode="numeric"
                 value={parsedAmount > 0 ? parsedAmount.toLocaleString("vi-VN") : ""}
                 onChange={event => setAmount(event.target.value.replace(/\D/g, ""))}
-                placeholder="Nhập số tiền..."
+                placeholder={t("deferred.amountPlaceholder")}
                 className="h-9 text-sm"
               />
               <p className="text-[11px] text-muted-foreground">
-                Để trống để tạo phiếu thu chưa thanh toán.
+                {t("deferred.emptyAmountHint")}
               </p>
             </div>
           </div>
@@ -279,7 +281,7 @@ function DeferredTuitionReceiptDialog({
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" size="sm" onClick={onClose} disabled={isPending}>
-            Hủy
+            {t("deferred.cancel")}
           </Button>
           <Button
             size="sm"
@@ -288,7 +290,7 @@ function DeferredTuitionReceiptDialog({
             disabled={isPending}
           >
             <Receipt className="h-3.5 w-3.5" />
-            {isPending ? "Đang xử lý..." : "Tạo phiếu thu"}
+            {isPending ? t("deferred.processing") : t("deferred.createReceipt")}
           </Button>
         </div>
       </DialogContent>
@@ -309,6 +311,7 @@ interface MonthPickerProps {
 }
 
 function MonthPicker({ value, onChange }: MonthPickerProps) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const today = new Date();
   const currentYM = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
@@ -335,7 +338,7 @@ function MonthPicker({ value, onChange }: MonthPickerProps) {
       <PopoverTrigger asChild>
         <div className="relative h-9 flex items-center border border-input rounded-md bg-background px-3 cursor-pointer hover:bg-accent transition-colors min-w-[140px]">
           <span className="text-xs text-muted-foreground absolute -top-2 left-2 bg-background px-1 leading-none">
-            Chọn tháng năm
+            {t("deferred.monthPicker")}
           </span>
           <span className="text-sm flex-1">{displayValue}</span>
           <Calendar className="h-4 w-4 text-muted-foreground ml-2 shrink-0" />
@@ -350,7 +353,7 @@ function MonthPicker({ value, onChange }: MonthPickerProps) {
             <ChevronLeft className="h-4 w-4" />
           </button>
           <span className="text-sm font-semibold">
-            {selectedMonthNum ? `Tháng ${selectedMonthNum} ` : ""}Năm {pickerYear}
+            {selectedMonthNum ? `${t("deferred.monthShort", { month: selectedMonthNum })} ` : ""}{t("deferred.year")} {pickerYear}
           </span>
           <button
             onClick={() => setPickerYear(y => y + 1)}
@@ -360,7 +363,7 @@ function MonthPicker({ value, onChange }: MonthPickerProps) {
           </button>
         </div>
         <div className="grid grid-cols-3 gap-1">
-          {SHORT_MONTHS.map((label, idx) => {
+          {SHORT_MONTHS.map((_, idx) => {
             const monthNum = idx + 1;
             const ym = `${pickerYear}-${String(monthNum).padStart(2, "0")}`;
             const isSelected = value === ym;
@@ -378,7 +381,7 @@ function MonthPicker({ value, onChange }: MonthPickerProps) {
                     : "hover:bg-accent text-foreground",
                 ].join(" ")}
               >
-                {label}
+                {t("deferred.monthShort", { month: monthNum })}
               </button>
             );
           })}
@@ -398,6 +401,7 @@ interface MultiSelectProps {
 }
 
 function MultiSelect({ options, selected, onChange, placeholder }: MultiSelectProps) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
 
   const toggle = (id: string) =>
@@ -418,16 +422,16 @@ function MultiSelect({ options, selected, onChange, placeholder }: MultiSelectPr
               ? placeholder
               : selected.length === 1
               ? selectedNames[0]
-              : `${selected.length} đã chọn`}
+              : t("deferred.selectedCount", { count: selected.length })}
           </span>
           <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[260px] p-0" align="start">
         <Command>
-          <CommandInput placeholder="Tìm kiếm..." />
+          <CommandInput placeholder={t("deferred.search")} />
           <CommandList>
-            <CommandEmpty>Không tìm thấy.</CommandEmpty>
+            <CommandEmpty>{t("deferred.noResults")}</CommandEmpty>
             <CommandGroup>
               {options.map(opt => (
                 <CommandItem key={opt.id} value={opt.name} onSelect={() => toggle(opt.id)}>
@@ -455,17 +459,18 @@ interface ClassDetailDialogProps {
 }
 
 const SESSION_STATUS_LABEL: Record<string, { label: string; className: string }> = {
-  pending:      { label: "Chưa điểm danh", className: "bg-gray-50 text-gray-600 border-gray-200" },
-  scheduled:    { label: "Chưa điểm danh", className: "bg-gray-50 text-gray-600 border-gray-200" },
-  present:      { label: "Có học",         className: "bg-green-50 text-green-700 border-green-200" },
-  attended:     { label: "Có học",         className: "bg-green-50 text-green-700 border-green-200" },
-  absent:       { label: "Nghỉ học",       className: "bg-red-50 text-red-700 border-red-200" },
-  makeup_wait:  { label: "Nghỉ chờ bù",   className: "bg-orange-50 text-orange-700 border-orange-200" },
-  makeup_scheduled: { label: "Đã xếp bù", className: "bg-violet-100 text-violet-900 border-violet-300" },
-  makeup_done:  { label: "Đã học bù",     className: "bg-blue-50 text-blue-700 border-blue-200" },
+  pending:      { label: "deferred.status.pending", className: "bg-gray-50 text-gray-600 border-gray-200" },
+  scheduled:    { label: "deferred.status.scheduled", className: "bg-gray-50 text-gray-600 border-gray-200" },
+  present:      { label: "deferred.status.present", className: "bg-green-50 text-green-700 border-green-200" },
+  attended:     { label: "deferred.status.attended", className: "bg-green-50 text-green-700 border-green-200" },
+  absent:       { label: "deferred.status.absent", className: "bg-red-50 text-red-700 border-red-200" },
+  makeup_wait:  { label: "deferred.status.makeupWait", className: "bg-orange-50 text-orange-700 border-orange-200" },
+  makeup_scheduled: { label: "deferred.status.makeupScheduled", className: "bg-violet-100 text-violet-900 border-violet-300" },
+  makeup_done:  { label: "deferred.status.makeupDone", className: "bg-blue-50 text-blue-700 border-blue-300" },
 };
 
 function ClassDetailDialog({ student, cls, selectedMonth, onClose }: ClassDetailDialogProps) {
+  const { t } = useLanguage();
   if (!student || !cls) return null;
   const unpaidCount = cls.sessions.filter(s => !s.isPaid).length;
   const attendedSessions = cls.sessions.filter(s => s.deductsFee);
@@ -485,11 +490,11 @@ function ClassDetailDialog({ student, cls, selectedMonth, onClose }: ClassDetail
         <div className="space-y-3 py-1">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Lịch học{selectedMonth ? ` — ${fmtMonth(selectedMonth)}` : ""}
+              {t("deferred.summarySessions")}{selectedMonth ? ` — ${fmtMonth(selectedMonth, t)}` : ""}
             </span>
             {unpaidCount > 0 && (
               <span className="text-xs px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200 font-medium">
-                {unpaidCount} buổi chưa thanh toán
+                {t("deferred.unpaidSessions", { count: unpaidCount })}
               </span>
             )}
           </div>
@@ -498,11 +503,11 @@ function ClassDetailDialog({ student, cls, selectedMonth, onClose }: ClassDetail
               <thead className="bg-muted/40">
                 <tr>
                   <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-8">#</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Ngày học</th>
-                  <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground">Trạng thái</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Gói học phí</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Học phí</th>
-                  <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground">Đã học</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t("deferred.studyDate")}</th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground">{t("deferred.status")}</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t("deferred.package")}</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">{t("deferred.tuition")}</th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground">{t("deferred.attended")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -514,7 +519,7 @@ function ClassDetailDialog({ student, cls, selectedMonth, onClose }: ClassDetail
                       <td className="px-3 py-2 font-medium">{fmtDate(s.date)}</td>
                       <td className="px-3 py-2 text-center">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${statusCfg.className}`}>
-                          {statusCfg.label}
+                          {SESSION_STATUS_LABEL[s.status ?? ""] ? t(statusCfg.label) : statusCfg.label}
                         </span>
                       </td>
                       <td className="px-3 py-2 text-xs text-muted-foreground">
@@ -536,7 +541,7 @@ function ClassDetailDialog({ student, cls, selectedMonth, onClose }: ClassDetail
               <tfoot className="border-t bg-muted/20">
                 <tr>
                   <td colSpan={4} className="px-3 py-2 text-sm font-semibold">
-                    Tổng ({attendedCount} buổi)
+                    {t("deferred.totalLabel")} ({t("deferred.sessions", { count: attendedCount })})
                   </td>
                   <td className="px-3 py-2 text-right font-bold text-purple-700">
                     {fmtMoney(attendedTotal)}
@@ -561,16 +566,17 @@ interface StudentSummaryDialogProps {
 }
 
 const SUMMARY_STATUS_STYLE: Record<string, { label: string; color: string }> = {
-  present:     { label: "Có học",          color: "text-green-600" },
-  attended:    { label: "Có học",          color: "text-green-600" },
-  absent:      { label: "Nghỉ học",        color: "text-red-500" },
-  makeup_wait: { label: "Nghỉ chờ bù",    color: "text-orange-500" },
-  makeup_done: { label: "Đã học bù",      color: "text-blue-500" },
-  pending:     { label: "Chưa điểm danh", color: "text-gray-400" },
-  scheduled:   { label: "Chưa điểm danh", color: "text-gray-400" },
+  present:     { label: "deferred.status.present", color: "text-green-600" },
+  attended:    { label: "deferred.status.attended", color: "text-green-600" },
+  absent:      { label: "deferred.status.absent", color: "text-red-500" },
+  makeup_wait: { label: "deferred.status.makeupWait", color: "text-orange-500" },
+  makeup_done: { label: "deferred.status.makeupDone", color: "text-blue-500" },
+  pending:     { label: "deferred.status.pending", color: "text-gray-400" },
+  scheduled:   { label: "deferred.status.scheduled", color: "text-gray-400" },
 };
 
 function StudentSummaryDialog({ student, selectedMonth, onClose }: StudentSummaryDialogProps) {
+  const { t } = useLanguage();
   if (!student) return null;
 
   const allDates = useMemo(() => {
@@ -609,7 +615,7 @@ function StudentSummaryDialog({ student, selectedMonth, onClose }: StudentSummar
           <div>
             <h2 className="text-slate-800 font-semibold text-base leading-tight">{student.studentName}</h2>
             <p className="text-slate-500 text-xs mt-0.5">
-              Tổng hợp buổi học{selectedMonth ? ` — ${fmtMonth(selectedMonth)}` : ""}
+              {t("deferred.summarySessions")}{selectedMonth ? ` — ${fmtMonth(selectedMonth, t)}` : ""}
             </p>
           </div>
           <button
@@ -630,7 +636,7 @@ function StudentSummaryDialog({ student, selectedMonth, onClose }: StudentSummar
                   className="text-left px-3 py-3 text-xs font-semibold text-slate-500 border-b border-r"
                   style={{ position: "sticky", left: 0, background: "#fff", zIndex: 31, minWidth: 120, whiteSpace: "nowrap" }}
                 >
-                  Lớp \ Ngày học
+                  {t("deferred.classByDate")}
                 </th>
                 {/* Date columns */}
                 {allDates.map(date => (
@@ -647,19 +653,19 @@ function StudentSummaryDialog({ student, selectedMonth, onClose }: StudentSummar
                   className="px-3 py-3 text-center text-xs font-semibold text-slate-600 border-b border-l border-r"
                   style={stickyRight.tongBuoi}
                 >
-                  Tổng buổi
+                  {t("deferred.totalSessions")}
                 </th>
                 <th
                   className="px-3 py-3 text-center text-xs font-semibold text-orange-600 border-b border-r"
                   style={stickyRight.daHoc}
                 >
-                  Đã học
+                  {t("deferred.attended")}
                 </th>
                 <th
                   className="px-3 py-3 text-center text-xs font-semibold text-purple-700 border-b"
                   style={stickyRight.hocPhi}
                 >
-                  Học phí
+                  {t("deferred.tuition")}
                 </th>
               </tr>
             </thead>
@@ -692,7 +698,9 @@ function StudentSummaryDialog({ student, selectedMonth, onClose }: StudentSummar
                       return (
                         <td key={date} className="px-2 py-3 text-center border-b border-r" style={{ background: cellBg }}>
                           <div className="flex flex-col items-center gap-0.5">
-                            <span className={`text-xs font-medium ${st.color}`}>{st.label}</span>
+                            <span className={`text-xs font-medium ${st.color}`}>
+                              {SUMMARY_STATUS_STYLE[s.status ?? ""] ? t(st.label) : st.label}
+                            </span>
                             {s.packageName && (
                               <span className="text-[10px] text-slate-400 leading-tight">{s.packageName}</span>
                             )}
@@ -733,7 +741,7 @@ function StudentSummaryDialog({ student, selectedMonth, onClose }: StudentSummar
                   className="px-3 py-3 font-bold text-sm border-t border-r uppercase tracking-wide text-slate-500"
                   style={{ position: "sticky", left: 0, background: "#fff", zIndex: 31 }}
                 >
-                  Tổng
+                  {t("deferred.totalLabel")}
                 </td>
                 {allDates.map(date => (
                   <td key={date} className="border-t border-r" style={{ background: "#fff" }} />
@@ -776,6 +784,7 @@ interface StudentCardProps {
 }
 
 function StudentCard({ student, selectedMonth, onViewDetail, onViewSummary, onCreateReceipt }: StudentCardProps) {
+  const { t } = useLanguage();
   const initial = student.studentName.charAt(0).toUpperCase();
   const studentAttendedTotal = student.classes.reduce(
     (sum, cls) => sum + clsAttendedAmount(cls.sessions), 0
@@ -792,7 +801,7 @@ function StudentCard({ student, selectedMonth, onViewDetail, onViewSummary, onCr
           <div className="flex flex-col">
             <span className="font-semibold text-sm leading-tight">{student.studentName}</span>
             <span className="text-xs text-muted-foreground">
-              {student.totalSessions} buổi chưa thanh toán
+              {t("deferred.unpaidSessions", { count: student.totalSessions })}
             </span>
           </div>
         </div>
@@ -803,7 +812,7 @@ function StudentCard({ student, selectedMonth, onViewDetail, onViewSummary, onCr
           <button
             onClick={() => onViewSummary(student)}
             className="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-purple-100 text-purple-400 hover:text-purple-700 transition-colors"
-            title="Xem bảng tổng hợp"
+            title={t("deferred.viewSummary")}
           >
             <TableProperties className="h-4 w-4" />
           </button>
@@ -823,16 +832,16 @@ function StudentCard({ student, selectedMonth, onViewDetail, onViewSummary, onCr
           </colgroup>
           <thead>
             <tr className="border-b bg-muted/10">
-              <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Tên lớp</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">{t("deferred.className")}</th>
               <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground">
-                Số buổi{selectedMonth ? ` (${fmtMonth(selectedMonth)})` : ""}
+                {t("deferred.sessionCount")}{selectedMonth ? ` (${fmtMonth(selectedMonth, t)})` : ""}
               </th>
               <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground">
-                Số buổi tính phí
+                {t("deferred.chargeableSessions")}
               </th>
-              <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Tổng tiền</th>
-               <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Đã thu</th>
-              <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground">Hóa đơn</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground">{t("deferred.totalAmount")}</th>
+               <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground">{t("deferred.collected")}</th>
+              <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground">{t("deferred.invoice")}</th>
             </tr>
           </thead>
           <tbody>
@@ -845,12 +854,12 @@ function StudentCard({ student, selectedMonth, onViewDetail, onViewSummary, onCr
                  <td className="px-4 py-2.5 text-center">
                    <div className="inline-flex items-center justify-center gap-1.5">
                      <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-xs font-semibold border border-purple-200">
-                       {cls.totalSessions} buổi
+                       {t("deferred.sessions", { count: cls.totalSessions })}
                      </span>
                      <button
                        onClick={() => onViewDetail(student, cls)}
                        className="inline-flex items-center justify-center w-7 h-7 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                       title="Xem lịch học chi tiết"
+                       title={t("deferred.viewDetail")}
                      >
                        <Eye className="h-4 w-4" />
                      </button>
@@ -858,7 +867,7 @@ function StudentCard({ student, selectedMonth, onViewDetail, onViewSummary, onCr
                 </td>
                 <td className="px-4 py-2.5 text-center">
                   <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 text-xs font-semibold border border-orange-200">
-                    {clsChargeableCount(cls.sessions)} buổi
+                    {t("deferred.sessions", { count: clsChargeableCount(cls.sessions) })}
                   </span>
                 </td>
                 <td className="px-4 py-2.5 text-right font-semibold text-purple-700">
@@ -879,13 +888,13 @@ function StudentCard({ student, selectedMonth, onViewDetail, onViewSummary, onCr
                          ? "inline-flex items-center justify-center gap-1 rounded-md border border-green-200 bg-green-50 px-2 py-1.5 text-xs font-medium text-green-700 disabled:cursor-not-allowed"
                         : "inline-flex items-center justify-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs font-medium text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"}
                       title={hasReceipt
-                        ? "Đã tạo phiếu thu cho tháng này"
+                        ? t("deferred.receiptCreatedForMonth")
                         : attended > 0
-                        ? "Tạo phiếu thu học phí"
-                        : "Không có buổi tính phí"}
+                        ? t("deferred.createTuitionReceipt")
+                        : t("deferred.noChargeableSessions")}
                    >
                      <Receipt className="h-3.5 w-3.5" />
-                       {hasReceipt ? "Đã tạo" : "Phiếu thu"}
+                       {hasReceipt ? t("deferred.created") : t("deferred.receipt")}
                    </button>
                  </td>
               </tr>
@@ -901,6 +910,7 @@ function StudentCard({ student, selectedMonth, onViewDetail, onViewSummary, onCr
 // ─── DeferredTuitionTab ────────────────────────────────────────────────────────
 
 export function DeferredTuitionTab() {
+  const { t } = useLanguage();
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string>(getCurrentMonth);
@@ -971,13 +981,13 @@ export function DeferredTuitionTab() {
           options={allStudents}
           selected={selectedStudentIds}
           onChange={v => { setSelectedStudentIds(v); setPage(1); }}
-          placeholder="Lọc theo học viên"
+          placeholder={t("deferred.filterStudent")}
         />
         <MultiSelect
           options={allClasses}
           selected={selectedClassIds}
           onChange={v => { setSelectedClassIds(v); setPage(1); }}
-          placeholder="Lọc theo lớp"
+          placeholder={t("deferred.filterClass")}
         />
         <MonthPicker value={selectedMonth} onChange={v => { setSelectedMonth(v); setPage(1); }} />
 
@@ -987,10 +997,10 @@ export function DeferredTuitionTab() {
           className="h-9 gap-1.5"
           onClick={() => refetch()}
           disabled={isFetching}
-          title="Tải lại dữ liệu học phí trả sau"
+          title={t("deferred.refreshTitle")}
         >
           <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
-          Cập nhật
+          {t("deferred.refresh")}
         </Button>
 
         {hasActiveFilters && (
@@ -1000,13 +1010,13 @@ export function DeferredTuitionTab() {
             className="h-9 gap-1 text-muted-foreground"
             onClick={clearFilters}
           >
-            <X className="h-3.5 w-3.5" /> Xoá lọc
+            <X className="h-3.5 w-3.5" /> {t("deferred.clearFilters")}
           </Button>
         )}
 
         {!isLoading && total > 0 && (
           <div className="ml-auto flex items-center gap-3 text-sm text-muted-foreground">
-            <span>{total} học viên</span>
+            <span>{t("deferred.studentCount", { count: total })}</span>
             <span className="text-purple-700 font-semibold">{fmtMoney(totalAmount)}</span>
           </div>
         )}
@@ -1016,16 +1026,16 @@ export function DeferredTuitionTab() {
       {isLoading ? (
         <div className="flex flex-col items-center gap-2 py-20 text-muted-foreground">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-purple-600 border-t-transparent" />
-          <p className="text-sm">Đang tải dữ liệu...</p>
+          <p className="text-sm">{t("deferred.loading")}</p>
         </div>
       ) : students.length === 0 ? (
         <div className="flex flex-col items-center gap-2 py-20 text-muted-foreground">
           <CreditCard className="h-12 w-12 opacity-20" />
-          <p className="text-sm font-medium">Không có học phí trả sau nào</p>
+          <p className="text-sm font-medium">{t("deferred.empty")}</p>
           <p className="text-xs">
             {selectedMonth
-              ? `Không có dữ liệu cho ${fmtMonth(selectedMonth)}.`
-              : "Tất cả học phí đã được thanh toán."}
+              ? t("deferred.emptyForMonth", { month: fmtMonth(selectedMonth, t) })
+              : t("deferred.allPaid")}
           </p>
         </div>
       ) : (
@@ -1047,19 +1057,21 @@ export function DeferredTuitionTab() {
       {!isLoading && students.length > 0 && (
         <div className="shrink-0 flex items-center justify-between text-sm text-muted-foreground pt-1">
           <div className="flex items-center gap-2">
-            <span>{total} học viên</span>
+            <span>{t("deferred.studentCount", { count: total })}</span>
             <select
               value={pageSize}
               onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
               className="h-7 rounded border border-input bg-background px-2 text-xs"
             >
-              {[20, 30, 50, 100].map(n => <option key={n} value={n}>{n} / trang</option>)}
+              {[20, 30, 50, 100].map(n => <option key={n} value={n}>{t("deferred.perPage", { count: n })}</option>)}
             </select>
           </div>
           <div className="flex items-center gap-1">
             <button className="h-7 w-7 rounded border border-input bg-background text-xs disabled:opacity-50" disabled={page <= 1} onClick={() => setPage(1)}>«</button>
             <button className="h-7 w-7 rounded border border-input bg-background text-xs disabled:opacity-50" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>‹</button>
-            <span className="px-2 text-xs">Trang {page} / {Math.max(1, Math.ceil(total / pageSize))}</span>
+            <span className="px-2 text-xs">
+              {t("deferred.page", { page, total: Math.max(1, Math.ceil(total / pageSize)) })}
+            </span>
             <button className="h-7 w-7 rounded border border-input bg-background text-xs disabled:opacity-50" disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage(p => p + 1)}>›</button>
             <button className="h-7 w-7 rounded border border-input bg-background text-xs disabled:opacity-50" disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage(Math.ceil(total / pageSize))}>»</button>
           </div>
