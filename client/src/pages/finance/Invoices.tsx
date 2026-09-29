@@ -65,6 +65,7 @@ import { InvoiceHistoryTab } from "./components/InvoiceHistoryTab";
 import { HistoryDialog } from "@/components/common/HistoryDialog";
 import { useLocations } from "@/hooks/use-locations";
 import type { SortKey } from "@/hooks/use-invoice-filters";
+import { useLanguage } from "@/hooks/use-language";
 
 type TabKey = "all" | "unpaid" | "paid" | "confirmed" | "debt" | "history" | "print-template";
 type DebtCondition = "all" | "overdue" | "today" | "soon" | "upcoming" | "no-due-date";
@@ -93,14 +94,14 @@ function formatComparisonPercent(percent: number | null): string {
   return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}%`;
 }
 
-const TABS: { key: TabKey; label: string; statusFilter?: string; color: string }[] = [
-  { key: "all",              label: "Tất cả",            color: "#64748b" },
-  { key: "unpaid",           label: "Chưa thanh toán",   statusFilter: "unpaid",  color: "#ca8a04" },
-  { key: "paid",             label: "Đã thanh toán",     statusFilter: "paid",    color: "#16a34a" },
-  { key: "confirmed",        label: "Đã xác nhận",       statusFilter: "confirmed", color: "#1d4ed8" },
-  { key: "debt",             label: "Công nợ",           statusFilter: "debt",    color: "#dc2626" },
-  { key: "history",          label: "Lịch sử",                                    color: "#7c3aed" },
-  { key: "print-template",   label: "Mẫu in hoá đơn",                             color: "#0891b2" },
+const TABS: { key: TabKey; labelKey: string; statusFilter?: string; color: string }[] = [
+  { key: "all",              labelKey: "finance.tab.all",            color: "#64748b" },
+  { key: "unpaid",           labelKey: "finance.tab.unpaid",         statusFilter: "unpaid",  color: "#ca8a04" },
+  { key: "paid",             labelKey: "finance.tab.paid",           statusFilter: "paid",    color: "#16a34a" },
+  { key: "confirmed",        labelKey: "finance.tab.confirmed",      statusFilter: "confirmed", color: "#1d4ed8" },
+  { key: "debt",             labelKey: "finance.tab.debt",           statusFilter: "debt",    color: "#dc2626" },
+  { key: "history",          labelKey: "finance.tab.history",                                      color: "#7c3aed" },
+  { key: "print-template",   labelKey: "finance.tab.printTemplate",                              color: "#0891b2" },
 ];
 
 function MultiSelectFilter({
@@ -114,6 +115,7 @@ function MultiSelectFilter({
 }) {
   const [open, setOpen] = useState(false);
   const [searchQ, setSearchQ] = useState("");
+  const { t } = useLanguage();
   const hasSelected = selected.length > 0;
   const selectedLabels = selected
     .map(v => options.find(o => o.value === v)?.label ?? v)
@@ -142,7 +144,7 @@ function MultiSelectFilter({
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                placeholder="Tìm kiếm..."
+                placeholder={t("finance.filterSearch")}
                 value={searchQ}
                 onChange={e => setSearchQ(e.target.value)}
                 className="h-7 pl-7 text-xs"
@@ -152,7 +154,7 @@ function MultiSelectFilter({
         )}
         <div className="max-h-56 overflow-y-auto">
           {visibleOptions.length === 0 ? (
-            <p className="text-xs text-muted-foreground px-2 py-1.5">Không có dữ liệu</p>
+            <p className="text-xs text-muted-foreground px-2 py-1.5">{t("finance.noFilterData")}</p>
           ) : (
             visibleOptions.map(opt => {
               const checked = selected.includes(opt.value);
@@ -170,7 +172,7 @@ function MultiSelectFilter({
         </div>
         {hasSelected && (
           <div className="border-t mt-1 pt-1 px-2">
-            <button className="text-xs text-purple-600 hover:underline" onClick={() => onChange([])}>Xoá lọc</button>
+            <button className="text-xs text-purple-600 hover:underline" onClick={() => onChange([])}>{t("finance.clearFilterShort")}</button>
           </div>
         )}
       </PopoverContent>
@@ -190,6 +192,7 @@ function DateRangePicker({
   const [draftFrom, setDraftFrom] = useState("");
   const [draftTo, setDraftTo]     = useState("");
   const [activePreset, setActivePreset] = useState<string | null>(null);
+  const { t } = useLanguage();
 
   useEffect(() => {
     if (open) {
@@ -202,14 +205,14 @@ function DateRangePicker({
   const today = getTodayVietnamDate();
 
   const presets = [
-    { label: "Toàn thời gian",  key: "all",       fn: () => ({ from: undefined as Date | undefined, to: undefined as Date | undefined }) },
-    { label: "Hôm nay",         key: "today",     fn: () => ({ from: today as Date | undefined, to: today as Date | undefined }) },
-    { label: "Hôm qua",         key: "yesterday", fn: () => { const d = new Date(today); d.setDate(d.getDate() - 1); return { from: d as Date | undefined, to: d as Date | undefined }; } },
-    { label: "7 ngày gần nhất", key: "7d",        fn: () => { const f = new Date(today); f.setDate(f.getDate() - 6); return { from: f as Date | undefined, to: today as Date | undefined }; } },
-    { label: "28 ngày gần nhất",key: "28d",       fn: () => { const f = new Date(today); f.setDate(f.getDate() - 27); return { from: f as Date | undefined, to: today as Date | undefined }; } },
-    { label: "Tuần này",        key: "thisweek",  fn: () => { const day = today.getDay(); const diff = day === 0 ? -6 : 1 - day; const f = new Date(today); f.setDate(today.getDate() + diff); const t = new Date(f); t.setDate(f.getDate() + 6); return { from: f as Date | undefined, to: t as Date | undefined }; } },
-    { label: "Tháng này",       key: "thismonth", fn: () => ({ from: new Date(today.getFullYear(), today.getMonth(), 1) as Date | undefined, to: new Date(today.getFullYear(), today.getMonth() + 1, 0) as Date | undefined }) },
-    { label: "Năm nay",         key: "thisyear",  fn: () => ({ from: new Date(today.getFullYear(), 0, 1) as Date | undefined, to: new Date(today.getFullYear(), 11, 31) as Date | undefined }) },
+    { label: t("finance.date.all"),       key: "all",       fn: () => ({ from: undefined as Date | undefined, to: undefined as Date | undefined }) },
+    { label: t("finance.date.today"),     key: "today",     fn: () => ({ from: today as Date | undefined, to: today as Date | undefined }) },
+    { label: t("finance.date.yesterday"), key: "yesterday", fn: () => { const d = new Date(today); d.setDate(d.getDate() - 1); return { from: d as Date | undefined, to: d as Date | undefined }; } },
+    { label: t("finance.date.last7Days"), key: "7d",        fn: () => { const f = new Date(today); f.setDate(f.getDate() - 6); return { from: f as Date | undefined, to: today as Date | undefined }; } },
+    { label: t("finance.date.last28Days"),key: "28d",       fn: () => { const f = new Date(today); f.setDate(f.getDate() - 27); return { from: f as Date | undefined, to: today as Date | undefined }; } },
+    { label: t("finance.date.thisWeek"),  key: "thisweek",  fn: () => { const day = today.getDay(); const diff = day === 0 ? -6 : 1 - day; const f = new Date(today); f.setDate(today.getDate() + diff); const t = new Date(f); t.setDate(f.getDate() + 6); return { from: f as Date | undefined, to: t as Date | undefined }; } },
+    { label: t("finance.date.thisMonth"), key: "thismonth", fn: () => ({ from: new Date(today.getFullYear(), today.getMonth(), 1) as Date | undefined, to: new Date(today.getFullYear(), today.getMonth() + 1, 0) as Date | undefined }) },
+    { label: t("finance.date.thisYear"),  key: "thisyear",  fn: () => ({ from: new Date(today.getFullYear(), 0, 1) as Date | undefined, to: new Date(today.getFullYear(), 11, 31) as Date | undefined }) },
   ];
 
   const handlePreset = (p: typeof presets[0]) => {
@@ -232,7 +235,7 @@ function DateRangePicker({
     setActivePreset(null);
   };
 
-  const displayLabel = label ?? "Ngày tạo";
+  const displayLabel = label ?? t("finance.date.created");
   const triggerText = dateRange.from
     ? `${displayLabel}: ${format(dateRange.from, "dd/MM/yyyy")} – ${dateRange.to ? format(dateRange.to, "dd/MM/yyyy") : "..."}`
     : `${displayLabel}: Toàn thời gian`;
@@ -326,6 +329,7 @@ function EditableInvoiceDateCell({
   isSelected?: boolean;
   isOdd?: boolean;
 }) {
+  const { t } = useLanguage();
   const value = invoice[field];
   const [open, setOpen] = useState(false);
   const [dateConflictOpen, setDateConflictOpen] = useState(false);
@@ -356,9 +360,9 @@ function EditableInvoiceDateCell({
       setOpen(false);
       setDateConflictOpen(false);
       setPendingConflictDate("");
-      const target = invoice.isScheduleRow ? "đợt thanh toán" : "hoá đơn";
+      const target = invoice.isScheduleRow ? t("finance.paymentSchedule") : t("finance.invoiceCode");
       toast({
-        title: "Đã cập nhật ngày",
+        title: t("finance.updateDate"),
         description: payload.createdAt && payload.paidAt
           ? `Ngày tạo và ngày thanh toán của ${target} đã được đưa về ${fmtDate(payload.paidAt)}.`
           : field === "createdAt"
@@ -447,7 +451,7 @@ function EditableInvoiceDateCell({
        >
          <DialogContent className="sm:max-w-md">
            <DialogHeader>
-             <DialogTitle>Ngày thanh toán trước ngày tạo</DialogTitle>
+            <DialogTitle>{t("finance.paymentDateBeforeCreation")}</DialogTitle>
            </DialogHeader>
            <div className="space-y-3 text-sm text-muted-foreground">
              <p>
@@ -463,7 +467,7 @@ function EditableInvoiceDateCell({
                Hủy
              </Button>
              <Button type="button" onClick={confirmDateConflict} disabled={mutation.isPending}>
-               {mutation.isPending ? "Đang lưu..." : "Đồng ý"}
+               {mutation.isPending ? t("finance.updateDateSaving") : t("finance.agreeAction")}
              </Button>
            </div>
          </DialogContent>
@@ -956,6 +960,7 @@ function BulkPrintDialog({
   defaultTemplateId: string;
   onTemplateChange: (id: string) => void;
 }) {
+  const { t } = useLanguage();
   const { data: templates = [] } = useQuery<{ id: string; name: string; invoiceType: string }[]>({
     queryKey: ["/api/finance/invoice-print-templates"],
     queryFn: async () => {
@@ -970,14 +975,14 @@ function BulkPrintDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>In hóa đơn</DialogTitle>
+          <DialogTitle>{t("finance.print")}</DialogTitle>
         </DialogHeader>
         <div className="py-2 space-y-3">
           <div className="space-y-1.5">
-            <label className="text-sm text-muted-foreground">Chọn mẫu in</label>
+            <label className="text-sm text-muted-foreground">{t("finance.choosePrintTemplate")}</label>
             <Select value={defaultTemplateId} onValueChange={onTemplateChange}>
               <SelectTrigger className="h-9">
-                <SelectValue placeholder="Chọn mẫu in..." />
+                <SelectValue placeholder={t("finance.choosePrintTemplatePlaceholder")} />
               </SelectTrigger>
               <SelectContent>
                 {templates.map((t) => (
@@ -988,7 +993,7 @@ function BulkPrintDialog({
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-1">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Hủy</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t("finance.cancel")}</Button>
           <Button
             className="bg-purple-600 hover:bg-purple-700"
             disabled={!defaultTemplateId}
@@ -1017,6 +1022,7 @@ function BulkDueDateDialog({
   onDateChange: (d: Date | undefined) => void;
   isPending: boolean;
 }) {
+  const { t } = useLanguage();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
@@ -1044,13 +1050,13 @@ function BulkDueDateDialog({
           )}
         </div>
         <div className="flex justify-end gap-2 pt-1">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>Hủy</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>{t("finance.cancel")}</Button>
           <Button
             className="bg-purple-600 hover:bg-purple-700"
             disabled={!selectedDate || isPending}
             onClick={() => selectedDate && onConfirm(selectedDate)}
           >
-            {isPending ? "Đang cập nhật..." : "Xác nhận"}
+            {isPending ? t("finance.updateDateSaving") : t("finance.confirm")}
           </Button>
         </div>
       </DialogContent>
@@ -1089,6 +1095,7 @@ function BulkInvoiceDateDialog({
   selectedItems: BulkInvoiceDateTarget[];
   isPending: boolean;
 }) {
+  const { t } = useLanguage();
   const [confirmingConflict, setConfirmingConflict] = useState(false);
   useEffect(() => {
     if (!open) setConfirmingConflict(false);
@@ -1177,7 +1184,7 @@ function BulkInvoiceDateDialog({
               onConfirm(selectedDate, confirmingConflict);
             }}
           >
-            {isPending ? "Đang cập nhật..." : confirmingConflict ? "Đồng ý" : "Xác nhận"}
+            {isPending ? t("finance.updateDateSaving") : confirmingConflict ? t("finance.agreeAction") : t("finance.confirm")}
           </Button>
         </div>
       </DialogContent>
@@ -1196,6 +1203,7 @@ function BulkAssignCommissionDialog({
   onConfirm: (commissions: { staffId: string; percentage: number }[]) => void;
   isPending: boolean;
 }) {
+  const { t } = useLanguage();
   const [commissions, setCommissions] = useState<{ staffId: string; percentage: number }[]>([]);
 
   const { data: staffList = [] } = useStaff(undefined, true);
@@ -1228,10 +1236,10 @@ function BulkAssignCommissionDialog({
         </DialogHeader>
         <div className="py-2 space-y-3">
           <div className="space-y-1.5">
-            <label className="text-sm text-muted-foreground">Thêm nhân viên hưởng hoa hồng</label>
+            <label className="text-sm text-muted-foreground">{t("finance.addCommissionStaff")}</label>
             <Select value="" onValueChange={addRow}>
               <SelectTrigger className="h-9">
-                <SelectValue placeholder="Chọn nhân viên..." />
+                <SelectValue placeholder={t("finance.chooseStaff")} />
               </SelectTrigger>
               <SelectContent>
                 {availableStaff.map((s: any) => (
@@ -1241,7 +1249,7 @@ function BulkAssignCommissionDialog({
                 ))}
                 {availableStaff.length === 0 && (
                   <div className="px-3 py-2 text-xs text-muted-foreground text-center">
-                    {(staffList as any[]).length === 0 ? "Đang tải..." : "Đã thêm tất cả nhân viên"}
+                    {(staffList as any[]).length === 0 ? t("finance.loading") : t("finance.noMoreStaff")}
                   </div>
                 )}
               </SelectContent>
@@ -1308,7 +1316,7 @@ function BulkAssignCommissionDialog({
             disabled={commissions.length === 0 || isPending}
             onClick={() => onConfirm(commissions)}
           >
-            {isPending ? "Đang gán..." : "Gán hoa hồng"}
+            {isPending ? t("finance.assigning") : t("finance.assignCommission")}
           </Button>
         </div>
       </DialogContent>
@@ -1331,6 +1339,7 @@ function BulkAssignClassDialog({
   onClassChange: (id: string) => void;
   isPending: boolean;
 }) {
+  const { t } = useLanguage();
   const [search, setSearch] = useState("");
 
   const { data: classes = [] } = useQuery<{ id: string; name: string; classCode?: string }[]>({
@@ -1354,20 +1363,20 @@ function BulkAssignClassDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Gán lớp hàng loạt</DialogTitle>
+          <DialogTitle>{t("finance.assignClassBulk")}</DialogTitle>
         </DialogHeader>
         <div className="py-2 space-y-3">
           <div className="space-y-1.5">
-            <label className="text-sm text-muted-foreground">Chọn lớp</label>
+            <label className="text-sm text-muted-foreground">{t("finance.chooseClass")}</label>
             <Input
-              placeholder="Tìm lớp..."
+              placeholder={t("finance.searchClass")}
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="h-9 mb-1"
             />
             <Select value={selectedClassId} onValueChange={onClassChange}>
               <SelectTrigger className="h-9">
-                <SelectValue placeholder="Chọn lớp học..." />
+                <SelectValue placeholder={t("finance.chooseClassPlaceholder")} />
               </SelectTrigger>
               <SelectContent>
                 {filtered.map(c => (
@@ -1376,20 +1385,20 @@ function BulkAssignClassDialog({
                   </SelectItem>
                 ))}
                 {filtered.length === 0 && (
-                  <div className="px-3 py-2 text-xs text-muted-foreground text-center">Không tìm thấy lớp</div>
+                  <div className="px-3 py-2 text-xs text-muted-foreground text-center">{t("finance.noClassFound")}</div>
                 )}
               </SelectContent>
             </Select>
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-1">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>Hủy</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>{t("finance.cancel")}</Button>
           <Button
             className="bg-purple-600 hover:bg-purple-700"
             disabled={!selectedClassId || isPending}
             onClick={() => onConfirm(selectedClassId)}
           >
-            {isPending ? "Đang gán..." : "Gán lớp"}
+            {isPending ? t("finance.assigning") : t("finance.assignClass")}
           </Button>
         </div>
       </DialogContent>
@@ -1402,6 +1411,7 @@ function DeleteInvoiceDialog({ target, onClose, deleteMutation }: {
   onClose: () => void;
   deleteMutation: any;
 }) {
+  const { t } = useLanguage();
   const { toast } = useToast();
   const { data: linkedReceipts = [], isLoading: loadingReceipts } = useQuery<any[]>({
     queryKey: ["/api/finance/invoices", target.id, "linked-store-receipts"],
@@ -1426,16 +1436,16 @@ function DeleteInvoiceDialog({ target, onClose, deleteMutation }: {
           </p>
           {isPaidOrPartial && (
             <div className="rounded-lg bg-orange-50 border border-orange-200 p-3 text-xs text-orange-800">
-              <p className="font-semibold mb-1">Không thể xoá</p>
-              <p>Hoá đơn đang ở trạng thái <strong>{isInvoicePaidLike(target.status) ? STATUS_CONFIG[target.status]?.label : "Thanh toán một phần"}</strong>. Vui lòng chuyển về <strong>Chưa thanh toán</strong> trước khi xoá.</p>
+              <p className="font-semibold mb-1">{t("finance.cannotDelete")}</p>
+              <p>{t("finance.invoiceCode")} <strong>{isInvoicePaidLike(target.status) ? STATUS_CONFIG[target.status]?.label : t("finance.partialPayment")}</strong>. {t("finance.tryAgain")}</p>
             </div>
           )}
           {!isPaidOrPartial && activeReceipts.length > 0 && (
             <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-3 text-xs text-yellow-800">
-              <p className="font-semibold mb-1">Lưu ý — Phiếu xuất kho liên kết:</p>
+              <p className="font-semibold mb-1">{t("finance.deleteLinkedIssueWarning")}</p>
               <ul className="list-disc list-inside space-y-0.5">
                 {activeReceipts.map(r => (
-                  <li key={r.id}><span className="font-medium">{r.code}</span> sẽ bị hủy và tồn kho sẽ được hoàn trả.</li>
+                  <li key={r.id}><span className="font-medium">{r.code}</span> {t("finance.deleteLinkedIssueItem")}</li>
                 ))}
               </ul>
             </div>
@@ -1447,7 +1457,7 @@ function DeleteInvoiceDialog({ target, onClose, deleteMutation }: {
           )}
         </div>
         <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose} disabled={deleteMutation.isPending}>Huỷ</Button>
+          <Button variant="outline" onClick={onClose} disabled={deleteMutation.isPending}>{t("finance.cancel")}</Button>
           {!isPaidOrPartial && (
             <Button
               variant="destructive"
@@ -1464,7 +1474,7 @@ function DeleteInvoiceDialog({ target, onClose, deleteMutation }: {
               disabled={deleteMutation.isPending || loadingReceipts}
               data-testid="button-confirm-delete-invoice"
             >
-              {deleteMutation.isPending ? "Đang xoá..." : "Xác nhận xoá"}
+              {deleteMutation.isPending ? t("finance.deleting") : t("finance.confirmDelete")}
             </Button>
           )}
         </div>
@@ -1477,6 +1487,7 @@ export default function Invoices() {
   const [location, navigate] = useLocation();
   const routeParams = useParams<{ id?: string }>();
   const urlInvoiceId = routeParams?.id; // "new" | "<uuid>" | undefined
+  const { t } = useLanguage();
 
   const [activeTab, setActiveTab]   = useState<TabKey>("all");
   const [debtCondition, setDebtCondition] = useState<DebtCondition>("all");
@@ -1618,7 +1629,7 @@ export default function Invoices() {
       const ok = results.filter(r => r.success).length;
       const fail = results.length - ok;
       toast({
-        title: vars.isPublish ? "Đã gửi ký số" : "Đã gửi nháp",
+        title: vars.isPublish ? t("finance.sendSigned") : t("finance.sendDraft"),
         description: `Thành công ${ok}/${results.length}${fail > 0 ? ` — Thất bại ${fail}` : ""}`,
         variant: fail > 0 ? "destructive" : "default",
       });
@@ -1629,7 +1640,7 @@ export default function Invoices() {
     },
     onError: (err: any) => {
       toast({
-        title: "Lỗi gửi hoá đơn điện tử",
+        title: t("finance.sendElectronicInvoiceError"),
         description: err?.message ?? "Không gửi được, vui lòng thử lại",
         variant: "destructive",
       });
@@ -1646,10 +1657,10 @@ export default function Invoices() {
     },
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
-      const label = STATUS_CONFIG[vars.status]?.label ?? "Chưa thanh toán";
+      const label = STATUS_CONFIG[vars.status]?.label ?? t("finance.tab.unpaid");
       const totalTargets = vars.invoiceIds.length + vars.scheduleIds.length;
       toast({
-        title: `Cập nhật thành công`,
+        title: t("finance.updateSuccess"),
         description: `Đã chuyển ${totalTargets} mục sang trạng thái "${label}".`,
       });
       setSelectedIds(new Set());
@@ -1657,7 +1668,7 @@ export default function Invoices() {
     },
     onError: (err: any) => {
       toast({
-        title: "Lỗi cập nhật trạng thái",
+        title: t("finance.updateError"),
         description: err?.message ?? "Không thể cập nhật, vui lòng thử lại.",
         variant: "destructive",
       });
@@ -1673,7 +1684,7 @@ export default function Invoices() {
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
       toast({
-        title: "Gán lớp thành công",
+        title: t("finance.assignClassSuccess"),
         description: `Đã gán lớp cho ${vars.ids.length} hoá đơn.`,
       });
       setSelectedIds(new Set());
@@ -1682,7 +1693,7 @@ export default function Invoices() {
     },
     onError: (err: any) => {
       toast({
-        title: "Lỗi gán lớp",
+        title: t("finance.assignClassError"),
         description: err?.message ?? "Không thể gán lớp, vui lòng thử lại.",
         variant: "destructive",
       });
@@ -1697,7 +1708,7 @@ export default function Invoices() {
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
       toast({
-        title: "Gán hoa hồng thành công",
+        title: t("finance.assignCommissionSuccess"),
         description: `Đã gán hoa hồng cho ${vars.ids.length} hoá đơn.`,
       });
       setSelectedIds(new Set());
@@ -1706,7 +1717,7 @@ export default function Invoices() {
     },
     onError: (err: any) => {
       toast({
-        title: "Lỗi gán hoa hồng",
+        title: t("finance.assignCommissionError"),
         description: err?.message ?? "Không thể gán hoa hồng, vui lòng thử lại.",
         variant: "destructive",
       });
@@ -1724,7 +1735,7 @@ export default function Invoices() {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
       const totalTargets = vars.invoiceIds.length + vars.scheduleIds.length;
       toast({
-        title: "Cập nhật hạn thanh toán thành công",
+        title: t("finance.updateSuccess"),
         description: `Đã cập nhật hạn thanh toán cho ${totalTargets} mục.`,
       });
       setSelectedIds(new Set());
@@ -1733,7 +1744,7 @@ export default function Invoices() {
     },
     onError: (err: any) => {
       toast({
-        title: "Lỗi cập nhật hạn thanh toán",
+        title: t("finance.updateError"),
         description: err?.message ?? "Không thể cập nhật, vui lòng thử lại.",
         variant: "destructive",
       });
@@ -1773,7 +1784,7 @@ export default function Invoices() {
     },
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
-      const label = vars.field === "createdAt" ? "ngày tạo" : "ngày thanh toán";
+       const label = vars.field === "createdAt" ? t("finance.createdDate") : t("finance.paidDate");
       const totalTargets = vars.invoiceIds.length + vars.scheduleIds.length;
       const adjustedTargets = (vars.adjustCreatedAtIds?.length ?? 0) + (vars.adjustCreatedAtScheduleIds?.length ?? 0);
       toast({
@@ -1789,7 +1800,7 @@ export default function Invoices() {
     },
     onError: (err: any) => {
       toast({
-        title: "Không thể cập nhật ngày",
+        title: t("finance.updateDateError"),
         description: err?.message ?? "Không thể cập nhật, vui lòng thử lại.",
         variant: "destructive",
       });
@@ -1802,13 +1813,13 @@ export default function Invoices() {
     },
     onSuccess: (_data, ids) => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
-      toast({ title: "Xoá hoá đơn thành công", description: `Đã xoá ${ids.length} hoá đơn.` });
+       toast({ title: t("finance.deleteInvoiceSuccess"), description: `${ids.length} ${t("finance.invoiceCode")}.` });
       setSelectedIds(new Set());
       setBulkDeleteOpen(false);
     },
     onError: (err: any) => {
       toast({
-        title: "Lỗi xoá hoá đơn",
+        title: t("finance.deleteInvoiceError"),
         description: err?.message ?? "Không thể xoá, vui lòng thử lại.",
         variant: "destructive",
       });
@@ -2010,12 +2021,12 @@ export default function Invoices() {
   const hasPaidAtFilter = !!(paidAtRange.from || paidAtRange.to);
   const hasAnyToolbarFilter = hasActiveFilters(filters) || hasPaidAtFilter;
   const summaryCards = [
-    { label: "Dự thu", value: invoiceSummary?.expectedIncome ?? 0, previousValue: previousSummary?.expectedIncome, icon: TrendingUp, color: "text-blue-600", bg: "bg-blue-50", testId: "summary-expected-income" },
-    { label: "Thực thu", value: invoiceSummary?.actualIncome ?? 0, previousValue: previousSummary?.actualIncome, icon: CheckCircle, color: "text-emerald-600", bg: "bg-emerald-50", testId: "summary-actual-income" },
-    { label: "Dự chi", value: invoiceSummary?.expectedExpense ?? 0, previousValue: previousSummary?.expectedExpense, icon: TrendingDown, color: "text-orange-600", bg: "bg-orange-50", testId: "summary-expected-expense" },
-    { label: "Thực chi", value: invoiceSummary?.actualExpense ?? 0, previousValue: previousSummary?.actualExpense, icon: CreditCard, color: "text-red-600", bg: "bg-red-50", testId: "summary-actual-expense" },
+    { label: t("finance.financeSummary.expectedIncome"), value: invoiceSummary?.expectedIncome ?? 0, previousValue: previousSummary?.expectedIncome, icon: TrendingUp, color: "text-blue-600", bg: "bg-blue-50", testId: "summary-expected-income" },
+    { label: t("finance.financeSummary.actualIncome"), value: invoiceSummary?.actualIncome ?? 0, previousValue: previousSummary?.actualIncome, icon: CheckCircle, color: "text-emerald-600", bg: "bg-emerald-50", testId: "summary-actual-income" },
+    { label: t("finance.financeSummary.expectedExpense"), value: invoiceSummary?.expectedExpense ?? 0, previousValue: previousSummary?.expectedExpense, icon: TrendingDown, color: "text-orange-600", bg: "bg-orange-50", testId: "summary-expected-expense" },
+    { label: t("finance.financeSummary.actualExpense"), value: invoiceSummary?.actualExpense ?? 0, previousValue: previousSummary?.actualExpense, icon: CreditCard, color: "text-red-600", bg: "bg-red-50", testId: "summary-actual-expense" },
     {
-      label: "Lợi nhuận",
+      label: t("finance.financeSummary.profit"),
       value: (invoiceSummary?.actualIncome ?? 0) - (invoiceSummary?.actualExpense ?? 0),
       previousValue: (previousSummary?.actualIncome ?? 0) - (previousSummary?.actualExpense ?? 0),
       icon: TrendingUp,
@@ -2036,29 +2047,29 @@ export default function Invoices() {
           <div className="px-5 pt-4 pb-3 flex flex-col gap-3">
           {/* Pill tabs */}
           <div className="flex flex-wrap items-center gap-2">
-            {TABS.filter(t => t.key !== "history" && t.key !== "print-template" && t.key !== "debt").map(t => {
-              const count = t.key === "all"
+            {TABS.filter(tab => tab.key !== "history" && tab.key !== "print-template" && tab.key !== "debt").map(tab => {
+              const count = tab.key === "all"
                 ? tabCounts.all
-                : t.statusFilter === "debt"
+                : tab.statusFilter === "debt"
                   ? tabCounts.debt
-                  : t.statusFilter
-                    ? (tabCounts[t.statusFilter] ?? 0)
+                  : tab.statusFilter
+                    ? (tabCounts[tab.statusFilter] ?? 0)
                     : undefined;
-               const isActive = activeTab === t.key;
+               const isActive = activeTab === tab.key;
               return (
                 <button
-                  key={t.key}
-                   onClick={() => setActiveTab(t.key)}
-                  data-testid={`tab-${t.key}`}
+                   key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                   data-testid={`tab-${tab.key}`}
                   style={isActive
-                    ? { backgroundColor: t.color, borderColor: t.color, boxShadow: `0 2px 8px ${t.color}25` }
-                    : { borderColor: `${t.color}55`, color: t.color }
+                     ? { backgroundColor: tab.color, borderColor: tab.color, boxShadow: `0 2px 8px ${tab.color}25` }
+                     : { borderColor: `${tab.color}55`, color: tab.color }
                   }
                   className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg border text-xs font-semibold transition-all ${
                     isActive ? "text-white" : "bg-background hover:bg-muted/50"
                   }`}
                 >
-                  {t.label}
+                  {t(tab.labelKey)}
                   {count !== undefined && (
                     <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
                       isActive ? "bg-white/30 text-white" : "bg-slate-100 text-slate-500"
@@ -2070,22 +2081,22 @@ export default function Invoices() {
               );
             })}
             <div className="ml-auto flex items-center gap-2">
-              {TABS.filter(t => t.key === "history").map(t => {
+              {TABS.filter(tab => tab.key === "history").map(tab => {
                  const isActive = historyDialogOpen;
                 return (
                   <button
-                    key={t.key}
+                    key={tab.key}
                      onClick={() => setHistoryDialogOpen(true)}
-                    data-testid={`tab-${t.key}`}
+                    data-testid={`tab-${tab.key}`}
                     style={isActive
-                      ? { backgroundColor: t.color, borderColor: t.color }
-                      : { borderColor: `${t.color}60`, color: t.color }
+                       ? { backgroundColor: tab.color, borderColor: tab.color }
+                       : { borderColor: `${tab.color}60`, color: tab.color }
                     }
                     className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg border text-xs font-semibold transition-all ${
                       isActive ? "text-white" : "bg-background hover:bg-violet-50"
                     }`}
                   >
-                    {t.label}
+                    {t(tab.labelKey)}
                   </button>
                 );
               })}
@@ -2137,10 +2148,10 @@ export default function Invoices() {
                     <>
                       {ComparisonIcon && <ComparisonIcon className="h-3 w-3" strokeWidth={2.5} />}
                       <span>{formatComparisonPercent(comparison.percent)}</span>
-                      <span className="font-normal text-slate-400">so với kỳ trước</span>
+                  <span className="font-normal text-slate-400">{t("finance.financeSummary.previousPeriod")}</span>
                     </>
                   ) : (
-                    <span className="font-normal text-slate-400">Chưa có kỳ đối chiếu</span>
+                    <span className="font-normal text-slate-400">{t("finance.financeSummary.noComparison")}</span>
                   )}
                 </div>
               </div>
@@ -2152,7 +2163,7 @@ export default function Invoices() {
           <div className="flex items-center gap-2 flex-wrap border-t border-border/70 pt-3">
             <div className="relative flex-1 min-w-[200px] max-w-xs">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <Input placeholder="Tìm kiếm hoá đơn..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-9 rounded-lg border-slate-200 bg-white shadow-sm text-sm placeholder:text-slate-400 focus-visible:ring-violet-400" data-testid="input-search" />
+              <Input placeholder={t("finance.searchInvoices")} value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-9 rounded-lg border-slate-200 bg-white shadow-sm text-sm placeholder:text-slate-400 focus-visible:ring-violet-400" data-testid="input-search" />
             </div>
 
             <Popover open={filterOpen} onOpenChange={setFilterOpen}>
@@ -2165,7 +2176,7 @@ export default function Invoices() {
               </PopoverTrigger>
               <PopoverContent align="start" className="w-[720px] p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="font-semibold text-sm">Bộ lọc</span>
+                  <span className="font-semibold text-sm">{t("finance.filterTitle")}</span>
                   {hasAnyToolbarFilter && (
                     <button
                       className="text-xs text-purple-600 hover:underline"
@@ -2197,7 +2208,7 @@ export default function Invoices() {
                   ))}
                 </div>
                 <div className="mt-3 pt-3 border-t border-border/70">
-                  <div className="mb-1.5 text-xs font-medium text-muted-foreground">Khoảng ngày thanh toán</div>
+                  <div className="mb-1.5 text-xs font-medium text-muted-foreground">{t("finance.paymentDateRange")}</div>
                   <DateRangePicker
                     label="Ngày thanh toán"
                     dateRange={paidAtRange}
@@ -2223,7 +2234,7 @@ export default function Invoices() {
               size="sm"
               className="h-9 gap-1.5 rounded-lg border-slate-200 bg-white text-slate-600 shadow-sm font-medium hover:bg-slate-50 hover:border-slate-300 transition-all"
               onClick={() => {
-                const tabLabel = TABS.find(tab => tab.key === activeTab)?.label ?? "Tất cả";
+                const tabLabel = t(TABS.find(tab => tab.key === activeTab)?.labelKey ?? "finance.tab.all");
                  void downloadInvoiceListExcel(displayInvoices, tabLabel, page);
               }}
               disabled={isLoading || displayInvoices.length === 0}
@@ -2289,7 +2300,7 @@ export default function Invoices() {
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-64 p-2" data-testid="popover-col-manager">
-                <div className="mb-2 px-1 text-xs font-semibold text-muted-foreground">Ẩn / hiện và kéo thả để sắp xếp cột</div>
+                <div className="mb-2 px-1 text-xs font-semibold text-muted-foreground">{t("finance.columnSettingsHint")}</div>
                 <div className="space-y-0.5 max-h-80 overflow-y-auto">
                   {columnOrder.map(key => {
                     const col = ALL_COLUMNS.find(c => c.key === key);
@@ -2361,7 +2372,7 @@ export default function Invoices() {
               >
                 {totalSelectedCount > 0 ? (
                   <>
-                    <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground border-b mb-1">Thao tác hàng loạt</div>
+                    <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground border-b mb-1">{t("finance.bulkActionsTitle")}</div>
                     <ActionMenuItem
                       className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
                       disabled={selectedIds.size === 0}
@@ -2373,7 +2384,7 @@ export default function Invoices() {
                         setBulkPrintOpen(true);
                       }}
                     >
-                      <FileText className="w-4 h-4 text-cyan-600" /><span>Mẫu in hoá đơn</span>
+                      <FileText className="w-4 h-4 text-cyan-600" /><span>{t("finance.printTemplates")}</span>
                     </ActionMenuItem>
                     <ActionMenuItem
                       className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
@@ -2386,7 +2397,7 @@ export default function Invoices() {
                         });
                       }}
                     >
-                      <CreditCard className="w-4 h-4 text-yellow-600" /><span>Chưa thanh toán</span>
+                      <CreditCard className="w-4 h-4 text-yellow-600" /><span>{t("finance.tab.unpaid")}</span>
                     </ActionMenuItem>
                     <ActionMenuItem
                       className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
@@ -2399,7 +2410,7 @@ export default function Invoices() {
                         });
                       }}
                     >
-                      <CheckCircle className="w-4 h-4 text-green-600" /><span>Đã thanh toán</span>
+                      <CheckCircle className="w-4 h-4 text-green-600" /><span>{t("finance.tab.paid")}</span>
                     </ActionMenuItem>
                     <ActionMenuItem
                       className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
@@ -2412,7 +2423,7 @@ export default function Invoices() {
                         });
                       }}
                     >
-                      <CheckCircle className="w-4 h-4 text-blue-700" /><span>Đã xác nhận</span>
+                      <CheckCircle className="w-4 h-4 text-blue-700" /><span>{t("finance.tab.confirmed")}</span>
                     </ActionMenuItem>
                     <ActionMenuItem
                       className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
@@ -2421,7 +2432,7 @@ export default function Invoices() {
                         setBulkCommissionOpen(true);
                       }}
                     >
-                      <Percent className="w-4 h-4 text-orange-500" /><span>Gán hoa hồng</span>
+                      <Percent className="w-4 h-4 text-orange-500" /><span>{t("finance.assignCommission")}</span>
                     </ActionMenuItem>
                     <ActionMenuItem
                       className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
@@ -2431,7 +2442,7 @@ export default function Invoices() {
                         setBulkAssignClassOpen(true);
                       }}
                     >
-                      <BookOpen className="w-4 h-4 text-blue-500" /><span>Gán lớp</span>
+                      <BookOpen className="w-4 h-4 text-blue-500" /><span>{t("finance.assignClass")}</span>
                     </ActionMenuItem>
                     <ActionMenuItem
                       className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
@@ -2441,7 +2452,7 @@ export default function Invoices() {
                         setBulkDueDateOpen(true);
                       }}
                     >
-                      <CalendarIcon className="w-4 h-4 text-purple-600" /><span>Cập nhật Hạn thanh toán</span>
+                      <CalendarIcon className="w-4 h-4 text-purple-600" /><span>{t("finance.updateDueDate")}</span>
                     </ActionMenuItem>
                     <ActionMenuItem
                       className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
@@ -2451,7 +2462,7 @@ export default function Invoices() {
                         setBulkInvoiceDateField("createdAt");
                       }}
                     >
-                      <CalendarIcon className="w-4 h-4 text-blue-600" /><span>Cập nhật Ngày tạo</span>
+                      <CalendarIcon className="w-4 h-4 text-blue-600" /><span>{t("finance.updateCreatedDate")}</span>
                     </ActionMenuItem>
                     <ActionMenuItem
                       className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
@@ -2461,7 +2472,7 @@ export default function Invoices() {
                         setBulkInvoiceDateField("paidAt");
                       }}
                     >
-                      <CalendarIcon className="w-4 h-4 text-green-600" /><span>Cập nhật Ngày thanh toán</span>
+                      <CalendarIcon className="w-4 h-4 text-green-600" /><span>{t("finance.updatePaidDate")}</span>
                     </ActionMenuItem>
                     <div className="my-1 border-t" />
                     {(() => {
@@ -2474,7 +2485,7 @@ export default function Invoices() {
                                 setBulkCollectOpen(true);
                               }}
                             >
-                              <Merge className="w-4 h-4 text-purple-600" /><span>Thu gộp</span>
+                              <Merge className="w-4 h-4 text-purple-600" /><span>{t("finance.bulkIncome")}</span>
                             </ActionMenuItem>
                           )}
                            {selectedHasChi && (
@@ -2484,7 +2495,7 @@ export default function Invoices() {
                                 setBulkCollectOpen(true);
                               }}
                             >
-                              <Merge className="w-4 h-4 text-orange-500" /><span>Chi gộp</span>
+                              <Merge className="w-4 h-4 text-orange-500" /><span>{t("finance.bulkExpense")}</span>
                             </ActionMenuItem>
                           )}
                         </>
@@ -2498,11 +2509,11 @@ export default function Invoices() {
                         setBulkDeleteOpen(true);
                       }}
                     >
-                      <Trash2 className="w-4 h-4" /><span>Xoá hoá đơn</span>
+                      <Trash2 className="w-4 h-4" /><span>{t("finance.deleteInvoice")}</span>
                     </ActionMenuItem>
                   </>
                 ) : (
-                  <div className="px-4 py-2 text-xs text-muted-foreground text-center">Vui lòng chọn hoá đơn để thực hiện hành động</div>
+                  <div className="px-4 py-2 text-xs text-muted-foreground text-center">{t("finance.selectInvoicesFirst")}</div>
                 )}
               </ActionMenuContent>
             </ActionMenu>
@@ -2552,7 +2563,7 @@ export default function Invoices() {
                     <div className="w-10 h-10 rounded-full bg-violet-100 flex items-center justify-center">
                       <div className="h-5 w-5 animate-spin rounded-full border-2 border-violet-600 border-t-transparent" />
                     </div>
-                    <p className="text-sm text-slate-400 font-medium">Đang tải dữ liệu...</p>
+                    <p className="text-sm text-slate-400 font-medium">{t("finance.loadingData")}</p>
                   </div>
                 </td></tr>
               ) : invoices.length === 0 ? (
@@ -2561,7 +2572,7 @@ export default function Invoices() {
                     <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center">
                       <CreditCard className="h-6 w-6 text-slate-300" />
                     </div>
-                    <p className="text-sm text-slate-400 font-medium">Không có hoá đơn nào</p>
+                    <p className="text-sm text-slate-400 font-medium">{t("finance.noInvoiceData")}</p>
                   </div>
                 </td></tr>
               ) : displayInvoices.map((inv, idx) => {

@@ -29,6 +29,7 @@ import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { fmtMoney, getTodayVietnamDate, isInvoicePaidLike } from "@/types/invoice-types";
 import { isLegacyAutoInvoiceDepositDoubleCount } from "@shared/invoice-deposit-accounting";
 import { FinancePromotionDialog, type FinancePromotionType } from "./components/FinancePromotionDialog";
+import { useLanguage } from "@/hooks/use-language";
 
 interface Product {
   id: string;
@@ -196,6 +197,7 @@ function AdjustmentRowsEditor({
   onRemove: (rowId: string) => void;
 }) {
   const isPromotion = kind === "promotion";
+  const { t } = useLanguage();
 
   return (
     <div className="mt-3 space-y-4">
@@ -215,7 +217,7 @@ function AdjustmentRowsEditor({
                   <span className={selectedOption ? "truncate" : "text-muted-foreground"}>
                     {selectedOption
                       ? (isPromotion ? formatPromotionLabel(selectedOption) : selectedOption.name)
-                      : `Chọn ${isPromotion ? "khuyến mãi" : "phụ thu"}...`}
+                      : `${t("finance.create.choose")} ${isPromotion ? t("finance.promotion").toLowerCase() : t("finance.surcharge").toLowerCase()}...`}
                   </span>
                   <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 </button>
@@ -226,7 +228,7 @@ function AdjustmentRowsEditor({
                   <Input
                     value={search}
                     onChange={e => onSearchChange(e.target.value)}
-                    placeholder={`Tìm theo tên hoặc mã ${isPromotion ? "khuyến mãi" : "phụ thu"}...`}
+                    placeholder={isPromotion ? t("finance.create.searchPromotion") : t("finance.create.searchSurcharge")}
                     className="h-8 pl-7 text-xs"
                     autoFocus
                     onKeyDown={e => e.stopPropagation()}
@@ -235,11 +237,11 @@ function AdjustmentRowsEditor({
                 <div className="max-h-64 overflow-y-auto space-y-1">
                   {options.length === 0 ? (
                     <p className="py-3 text-center text-xs text-muted-foreground">
-                      Chưa có {isPromotion ? "khuyến mãi" : "phụ thu"}
+                      {isPromotion ? t("finance.create.noPromotion") : t("finance.create.noSurcharge")}
                     </p>
                   ) : filteredOptions.length === 0 ? (
                     <p className="py-3 text-center text-xs text-muted-foreground">
-                      Không tìm thấy {isPromotion ? "khuyến mãi" : "phụ thu"} phù hợp
+                      {isPromotion ? t("finance.create.promotionNotFound") : t("finance.create.surchargeNotFound")}
                     </p>
                   ) : filteredOptions.map((o: any) => {
                     const val = parseFloat(o.valueAmount || "0");
@@ -277,8 +279,8 @@ function AdjustmentRowsEditor({
                 onChange={e => onUpdate(row.id, { valueType: e.target.value as ManualAdjustment["valueType"] })}
                 className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
               >
-                <option value="amount">Số tiền</option>
-                <option value="percent">Phần trăm</option>
+                 <option value="amount">{t("finance.amount")}</option>
+                 <option value="percent">%</option>
               </select>
               <div className="relative min-w-0 flex-1">
                 <Input
@@ -286,7 +288,7 @@ function AdjustmentRowsEditor({
                   min={0}
                   value={row.value || ""}
                   onChange={e => onUpdate(row.id, { value: Math.max(0, Number(e.target.value) || 0) })}
-                  placeholder="Nhập nhanh..."
+                   placeholder={t("finance.create.quickEnter")}
                   className="h-8 pr-8 text-xs"
                 />
                 <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
@@ -310,10 +312,10 @@ function AdjustmentRowsEditor({
         className="text-xs font-medium text-purple-600 hover:text-purple-700"
         onClick={onAdd}
       >
-        + Thêm
+         + {t("finance.add")}
       </button>
       <div className="flex justify-between border-t pt-3 text-xs font-semibold">
-        <span>Tổng {isPromotion ? "khuyến mãi" : "phụ thu"} toàn đơn</span>
+         <span>{isPromotion ? t("finance.create.totalPromotion") : t("finance.create.totalSurcharge")}</span>
         <span className={isPromotion ? "text-green-600" : "text-orange-600"}>
           {isPromotion ? "-" : "+"}{fmtMoney(total)}
         </span>
@@ -324,6 +326,7 @@ function AdjustmentRowsEditor({
 
 export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }: { open: boolean; onClose: () => void; invoiceId?: string | null; defaultStudent?: { id: string; fullName: string; code: string } | null }) {
   const isEdit = Boolean(invoiceId);
+  const { t } = useLanguage();
 
   const [invoiceType, setInvoiceType] = useState<"income" | "expense">("income");
   const [locationId, setLocationId]   = useState<string>("");
@@ -599,7 +602,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       if (studentId) {
         queryClient.invalidateQueries({ queryKey: ["/api/students", studentId, "fee-wallet"] });
       }
-      toast({ title: isEdit ? "Đã cập nhật phiếu thành công" : "Đã lưu phiếu thành công" });
+      toast({ title: isEdit ? t("finance.create.updateSuccess") : t("finance.create.saveSuccess") });
       onClose();
     },
     onError: (err: any) => {
@@ -1626,23 +1629,23 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                 className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${invoiceType === "income" ? "bg-purple-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                 data-testid="toggle-income"
               >
-                Phiếu thu
+                {t("finance.invoiceTypeIncome")}
               </button>
               <button
                 onClick={() => { setInvoiceType("expense"); setProducts(prev => prev.map(p => ({ ...p, categoryId: "" }))); }}
                 className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${invoiceType === "expense" ? "bg-purple-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                 data-testid="toggle-expense"
               >
-                Phiếu chi
+                {t("finance.invoiceTypeExpense")}
               </button>
             </div>
 
             {/* Row 1: Cơ sở, Tên, Lớp */}
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Cơ sở <span className="text-red-500">*</span></label>
+                <label className="text-xs font-medium text-muted-foreground">{t("finance.create.branchRequired")} <span className="text-red-500">*</span></label>
               <Select value={locationId} onValueChange={v => { setLocationId(v); setStudentId(null); setSubjectName(""); setClassId(""); clearSelectedVouchers(); setProducts(prev => prev.map(p => ({ ...p, packageId: null }))); }}>
-                  <SelectTrigger className="h-9" data-testid="select-branch"><SelectValue placeholder="Chọn cơ sở" /></SelectTrigger>
+                  <SelectTrigger className="h-9" data-testid="select-branch"><SelectValue placeholder={t("finance.create.chooseBranch")} /></SelectTrigger>
                   <SelectContent>
                     {locations.map((loc: any) => (
                       <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
@@ -1651,7 +1654,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                 </Select>
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Tên <span className="text-red-500">*</span></label>
+                <label className="text-xs font-medium text-muted-foreground">{t("finance.create.nameRequired")} <span className="text-red-500">*</span></label>
                 <Popover open={studentPickerOpen} onOpenChange={setStudentPickerOpen}>
                   <PopoverTrigger asChild>
                     <button
@@ -1659,7 +1662,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       data-testid="button-student-picker"
                     >
                       <span className={displayName ? "text-foreground truncate" : "text-muted-foreground"}>
-                        {displayName || "Tên học viên / đối tượng..."}
+                        {displayName || t("finance.selectStudent")}
                       </span>
                       <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0 ml-1" />
                     </button>
@@ -1669,7 +1672,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                       <Input
                         className="h-8 text-xs pl-7"
-                        placeholder="Tìm tên, mã..."
+                         placeholder={t("finance.create.searchPerson")}
                         value={studentSearch}
                         onChange={e => setStudentSearch(e.target.value)}
                         autoFocus
@@ -1677,7 +1680,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     </div>
                     <div className="max-h-52 overflow-y-auto space-y-0.5">
                       {students.length === 0 ? (
-                        <p className="text-xs text-center text-muted-foreground py-4">Không tìm thấy</p>
+                        <p className="text-xs text-center text-muted-foreground py-4">{t("finance.notFound")}</p>
                       ) : (() => {
                         const studentItemsRaw = students.filter((s: any) => s.entityType !== "staff");
                         const studentItems = [...studentItemsRaw].sort((a: any, b: any) => {
@@ -1690,7 +1693,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         return (
                           <>
                             {studentItems.length > 0 && studentSearch && (
-                              <p className="text-[10px] font-medium text-muted-foreground px-2 py-1">Học viên / Phụ huynh</p>
+                              <p className="text-[10px] font-medium text-muted-foreground px-2 py-1">{t("finance.create.studentsParents")}</p>
                             )}
                             {studentItems.map((s: any) => {
                               const isInactive = s.accountStatus === "Không hoạt động";
@@ -1704,7 +1707,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                   <span className="inline-flex items-center gap-1.5">
                                     <span className="font-mono text-muted-foreground">[{s.code}]</span> {s.fullName}
                                     <span className="text-[10px] text-muted-foreground">({s.type})</span>
-                                    {isInactive && <span className="text-amber-500 text-[10px] font-medium">⚠ Không hoạt động</span>}
+                                    {isInactive && <span className="text-amber-500 text-[10px] font-medium">⚠ {t("finance.inactive")}</span>}
                                   </span>
                                 </button>
                               );
@@ -1712,7 +1715,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                             {staffItems.length > 0 && (
                               <>
                                 <div className="border-t my-1" />
-                                <p className="text-[10px] font-medium text-muted-foreground px-2 py-1">Nhân viên</p>
+                                <p className="text-[10px] font-medium text-muted-foreground px-2 py-1">{t("finance.create.staff")}</p>
                                 {staffItems.map((s: any) => (
                                   <button
                                     key={s.id}
@@ -1720,7 +1723,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                     onClick={() => { clearSelectedVouchers(); setStudentId(null); setSelectedStaffId(s.id); setSubjectName(`[${s.code}] ${s.fullName}`); setDeduction(0); setStudentPickerOpen(false); }}
                                   >
                                     <span className="font-mono text-muted-foreground">[{s.code}]</span> {s.fullName}
-                                    <span className="ml-1 text-[10px] text-blue-500">(Nhân viên)</span>
+                                    <span className="ml-1 text-[10px] text-blue-500">({t("finance.create.staff")})</span>
                                   </button>
                                 ))}
                               </>
@@ -1733,12 +1736,12 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                 </Popover>
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Lớp</label>
+                <label className="text-xs font-medium text-muted-foreground">{t("finance.class")}</label>
                 <SearchableSelect
                   value={classId}
                   onChange={setClassId}
-                  placeholder="Chọn lớp"
-                  searchPlaceholder="Tìm theo mã hoặc tên lớp..."
+                  placeholder={t("finance.create.chooseClass")}
+                  searchPlaceholder={t("finance.searchClass")}
                   options={classes.map((cls: any) => ({
                     value: cls.id,
                     label: `[${cls.classCode}] ${cls.name}`,
@@ -1752,7 +1755,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
             {/* Row 2: Tài khoản thu/chi, Tài khoản đối ứng, Hạn Thanh toán */}
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">{invoiceType === "income" ? "Tài khoản thu" : "Tài khoản chi"} <span className="text-red-500">*</span></label>
+                <label className="text-xs font-medium text-muted-foreground">{invoiceType === "income" ? t("finance.invoiceTypeIncome") : t("finance.invoiceTypeExpense")} <span className="text-red-500">*</span></label>
                 <Select value={account} onValueChange={setAccount}>
                   <SelectTrigger className="h-9" data-testid="select-account"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -1765,7 +1768,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                 </Select>
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Tài khoản đối ứng</label>
+                <label className="text-xs font-medium text-muted-foreground">{t("finance.create.counterAccount")}</label>
                 <Select value={counterAccount} onValueChange={setCounterAccount}>
                   <SelectTrigger className="h-9" data-testid="select-counterpart"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -1779,7 +1782,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                 </Select>
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">Hạn thanh toán</label>
+                <label className="text-xs font-medium text-muted-foreground">{t("finance.create.dueDate")}</label>
                 <Input
                   type="date"
                   value={dueDate}
@@ -1793,9 +1796,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
             {/* Product list */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-semibold">Danh sách sản phẩm</span>
+                <span className="text-sm font-semibold">{t("finance.create.products")}</span>
                 <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" onClick={addProduct} data-testid="button-add-product">
-                  <Plus className="h-3.5 w-3.5" /> Thêm sản phẩm
+                  <Plus className="h-3.5 w-3.5" /> {t("finance.addProduct")}
                 </Button>
               </div>
 
@@ -1813,13 +1816,13 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                   </colgroup>
                   <thead className="bg-muted/60">
                     <tr className="border-b">
-                      <th className="p-2 text-left font-semibold text-muted-foreground">Danh mục</th>
-                      <th className="p-2 text-left font-semibold text-muted-foreground">Tên gói</th>
-                      <th className="p-2 text-right font-semibold text-muted-foreground">Đơn giá</th>
-                      <th className="p-2 text-center font-semibold text-muted-foreground">SL</th>
-                      <th className="p-2 text-right font-semibold text-muted-foreground">Khuyến mãi</th>
-                      <th className="p-2 text-right font-semibold text-muted-foreground">Phụ thu</th>
-                      <th className="p-2 text-right font-semibold text-muted-foreground">Thành tiền</th>
+                      <th className="p-2 text-left font-semibold text-muted-foreground">{t("finance.create.category")}</th>
+                      <th className="p-2 text-left font-semibold text-muted-foreground">{t("finance.create.packageName")}</th>
+                      <th className="p-2 text-right font-semibold text-muted-foreground">{t("finance.unitPrice")}</th>
+                      <th className="p-2 text-center font-semibold text-muted-foreground">{t("finance.create.quantity")}</th>
+                      <th className="p-2 text-right font-semibold text-muted-foreground">{t("finance.promotion")}</th>
+                      <th className="p-2 text-right font-semibold text-muted-foreground">{t("finance.surcharge")}</th>
+                      <th className="p-2 text-right font-semibold text-muted-foreground">{t("finance.lineTotal")}</th>
                       <th />
                     </tr>
                   </thead>
@@ -1857,8 +1860,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                 } : x));
                                 setDeduction(0);
                               }}
-                              placeholder="Chọn..."
-                              searchPlaceholder="Tìm danh mục..."
+                              placeholder={t("finance.create.choose")}
+                               searchPlaceholder={t("finance.searchCategory")}
                               options={categories.map((cat: any) => ({
                                 value: cat.id,
                                 label: cat.name,
@@ -1892,8 +1895,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                   <SearchableSelect
                                     value={p.packageId ?? feePackages.find((fp: any) => fp.name === p.name)?.id ?? ""}
                                     onChange={v => handleSelectFeePackage(p.id, v)}
-                                    placeholder="Chọn gói học phí..."
-                                    searchPlaceholder="Tìm tên hoặc khóa học..."
+                                     placeholder={t("finance.create.choosePackage")}
+                                     searchPlaceholder={t("finance.searchCourse")}
                                     options={packageOptions}
                                     className="h-8 text-xs"
                                     contentClassName="min-w-[280px]"
@@ -1907,7 +1910,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                     <PopoverTrigger asChild>
                                       <button className="w-full h-8 flex items-center justify-between px-2 rounded-md border bg-background hover:border-purple-400 transition-colors text-[11px] text-left">
                                         <span className={p.name ? "text-foreground truncate" : "text-muted-foreground"}>
-                                          {p.name || "Chọn sản phẩm kho..."}
+                                          {p.name || t("finance.chooseInventoryProduct")}
                                         </span>
                                         <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                                       </button>
@@ -1917,7 +1920,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                         <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                                         <Input
                                           className="h-8 text-xs pl-7"
-                                          placeholder="Tìm sản phẩm kho..."
+                                           placeholder={t("finance.create.searchInventory")}
                                           value={khoSearch}
                                           onChange={e => setKhoSearch(e.target.value)}
                                           autoFocus
@@ -1925,9 +1928,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                       </div>
                                       <div className="max-h-52 overflow-y-auto space-y-0.5">
                                         {!locationId ? (
-                                          <p className="text-xs text-center text-muted-foreground py-4">Vui lòng chọn Cơ sở trước</p>
+                                           <p className="text-xs text-center text-muted-foreground py-4">{t("finance.create.chooseBranchFirst")}</p>
                                         ) : khoProducts.length === 0 ? (
-                                          <p className="text-xs text-center text-muted-foreground py-4">Không tìm thấy sản phẩm</p>
+                                           <p className="text-xs text-center text-muted-foreground py-4">{t("finance.create.noProducts")}</p>
                                         ) : khoProducts.map((prod: any) => (
                                           <button
                                             key={`${prod.id}-${prod.warehouse_id}`}
@@ -1950,7 +1953,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                             <div className="font-medium">{prod.name} <span className="text-muted-foreground font-normal">({prod.code})</span></div>
                                             <div className="text-muted-foreground flex justify-between mt-0.5">
                                               <span className="truncate">{prod.warehouse_name || "Kho"}</span>
-                                              <span className="ml-2 flex-shrink-0">Tồn: {prod.stock} | {fmtMoney(parseFloat(prod.sale_price) || 0)}</span>
+                                               <span className="ml-2 flex-shrink-0">{t("finance.stock")}: {prod.stock} | {fmtMoney(parseFloat(prod.sale_price) || 0)}</span>
                                             </div>
                                           </button>
                                         ))}
@@ -1962,7 +1965,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               return (
                                 <Input
                                   className="h-8 text-xs"
-                                  placeholder="Tên gói / dịch vụ..."
+                                   placeholder={t("finance.create.serviceName")}
                                   value={p.name}
                                   onChange={e => setProducts(prev => prev.map(x => x.id === p.id ? { ...x, name: e.target.value } : x))}
                                 />
@@ -1977,7 +1980,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               onChange={e => !isKhoa && setProducts(prev => prev.map(x => x.id === p.id ? { ...x, unitPrice: Number(e.target.value) } : x))}
                               onFocus={e => e.target.select()}
                               className={`h-8 text-[11px] text-right px-1.5 ${isKhoa ? "bg-muted/40 cursor-not-allowed opacity-70" : ""}`}
-                              title={isKhoa ? "Gói theo khoá: đơn giá cố định" : undefined}
+                               title={isKhoa ? t("finance.fixedCoursePrice") : undefined}
                             />
                           </td>
                           <td className="p-2">
@@ -1990,7 +1993,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               className="h-8 text-[11px] text-center px-1"
                             />
                             {isKhoa && (
-                              <p className="text-[9px] text-amber-600 mt-0.5 leading-tight">Gói theo khoá, không ảnh hưởng tổng tiền</p>
+                              <p className="text-[9px] text-amber-600 mt-0.5 leading-tight">{t("finance.create.coursePackageNote")}</p>
                             )}
                           </td>
                           <td className="p-2">
@@ -2008,7 +2011,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               <DialogTrigger asChild>
                                 <button className="w-full h-8 flex items-center justify-between px-2 rounded-md border bg-background hover:border-purple-400 transition-colors text-[11px]">
                                   <span className={promoAmt > 0 ? "text-green-600 font-semibold" : "text-muted-foreground"}>
-                                    {promoAmt > 0 ? `-${fmtMoney(promoAmt)}` : "Chọn..."}
+                                    {promoAmt > 0 ? `-${fmtMoney(promoAmt)}` : t("finance.create.choose")}
                                   </span>
                                   <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                                 </button>
@@ -2452,8 +2455,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
           <div className="w-[400px] flex-shrink-0 overflow-y-auto px-5 py-4 space-y-4 bg-muted/20">
             <div className="rounded-xl border bg-card p-4 space-y-3 shadow-sm">
               <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Số tiền:</span>
+                 <div className="flex justify-between text-muted-foreground">
+                   <span>{t("finance.create.amount")}:</span>
                   <span className="font-medium text-foreground">{fmtMoney(totalAmount)}</span>
                 </div>
                 <Dialog open={openInvoicePromo} onOpenChange={v => {
@@ -2472,11 +2475,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       data-testid="button-invoice-promo"
                     >
                       <span className="flex items-center gap-1">
-                        Khuyến mãi:
+                         {t("finance.promotion")}:
                         <ChevronDown className="h-3 w-3 opacity-60" />
                         {hasAvailableVouchers && (
                           <span className="ml-1 text-[10px] font-medium text-red-500">
-                            Có Voucher chưa sử dụng
+                             {t("finance.availableVoucher")}
                           </span>
                         )}
                       </span>
@@ -2488,7 +2491,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     overlayClassName="bg-black/30 backdrop-blur-[1px]"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <DialogTitle className="text-xl font-semibold">Chọn khuyến mãi</DialogTitle>
+                       <DialogTitle className="text-xl font-semibold">{t("finance.create.choosePromotion")}</DialogTitle>
                       {canCreatePromotion && (
                         <button
                           type="button"
@@ -2496,7 +2499,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                           onClick={() => openQuickCreate("promotion", { scope: "invoice" })}
                           data-testid="button-quick-add-invoice-promotion"
                         >
-                          <Plus className="h-3 w-3" /> Thêm mới
+                           <Plus className="h-3 w-3" /> {t("finance.addNew")}
                         </button>
                       )}
                     </div>
@@ -2520,7 +2523,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       data-testid="button-invoice-surcharge"
                     >
                       <span className="flex items-center gap-1">
-                        Phụ thu:
+                         {t("finance.surcharge")}:
                         <ChevronDown className="h-3 w-3 opacity-60" />
                       </span>
                       <span>{totalSurcharge > 0 ? `+${fmtMoney(totalSurcharge)}` : "0 ₫"}</span>
@@ -2531,7 +2534,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     overlayClassName="bg-black/30 backdrop-blur-[1px]"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <DialogTitle className="text-xl font-semibold">Chọn phụ thu</DialogTitle>
+                     <DialogTitle className="text-xl font-semibold">{t("finance.create.chooseSurcharge")}</DialogTitle>
                       {canCreatePromotion && (
                         <button
                           type="button"
@@ -2539,7 +2542,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                           onClick={() => openQuickCreate("surcharge", { scope: "invoice" })}
                           data-testid="button-quick-add-invoice-surcharge"
                         >
-                          <Plus className="h-3 w-3" /> Thêm mới
+                           <Plus className="h-3 w-3" /> {t("finance.addNew")}
                         </button>
                       )}
                     </div>
@@ -2547,12 +2550,12 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                   </DialogContent>
                 </Dialog>
                 <div className="flex justify-between font-semibold pt-1 border-t">
-                  <span>Thành tiền:</span>
+                   <span>{t("finance.create.totalAmount")}:</span>
                   <span>{fmtMoney(subTotal)}</span>
                 </div>
                 <div className="space-y-1">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-muted-foreground flex-shrink-0">Đặt cọc:</span>
+                     <span className="text-muted-foreground flex-shrink-0">{t("finance.create.deposit")}:</span>
                     <Input
                       type="number"
                       min={0}
@@ -2572,26 +2575,26 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                   {studentId && datCocBalance > 0 && (
                     <div className="space-y-1">
                       <div className="flex justify-between text-xs text-blue-600 bg-blue-50 rounded px-2 py-1">
-                        <span>Tiền cọc còn:</span>
+                         <span>{t("finance.create.remainingDeposit")}</span>
                         <span className="font-semibold">{fmtMoney(Math.max(0, datCocBalance - deduction))}</span>
                       </div>
                       {deduction > 0 && isHocPhi && (
-                        <p className="text-[10px] text-muted-foreground px-1">Ưu tiên trừ cọc vào danh mục Học phí trước</p>
+                         <p className="text-[10px] text-muted-foreground px-1">{t("finance.create.depositPriorityHint")}</p>
                       )}
                     </div>
                   )}
                   {studentId && datCocBalance <= 0 && studentWallet !== undefined && (
-                    <p className="text-xs text-muted-foreground text-right">Học viên không có tiền cọc</p>
+                     <p className="text-xs text-muted-foreground text-right">{t("finance.create.noDeposit")}</p>
                   )}
                 </div>
                 <div className="flex justify-between font-bold pt-1 border-t text-foreground">
-                  <span>Tổng tiền:</span>
+                   <span>{t("finance.create.grandTotal")}:</span>
                   <span className="text-base">{fmtMoney(finalTotal)}</span>
                 </div>
               </div>
               <div className="pt-2 border-t space-y-2">
                 <div className="flex items-center justify-between gap-2 text-sm">
-                  <span className="text-muted-foreground flex-shrink-0">Đã thanh toán</span>
+                   <span className="text-muted-foreground flex-shrink-0">{t("finance.create.paidAmount")}</span>
                   <Input
                     type="number"
                     min={0}
@@ -2605,23 +2608,23 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                 </div>
                 <div className="flex gap-2 items-end">
                     <div className="space-y-0.5 w-36 flex-shrink-0">
-                      <span className="text-xs text-muted-foreground">Hình thức</span>
+                       <span className="text-xs text-muted-foreground">{t("finance.create.method")}</span>
                       <Select value={directPaymentMethod} onValueChange={v => { setDirectPaymentMethod(v); if (v === "cash") setDirectBank(""); }}>
                         <SelectTrigger className="h-8 text-xs" data-testid="select-direct-payment-method"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="cash">Tiền mặt</SelectItem>
-                          <SelectItem value="transfer">Chuyển khoản</SelectItem>
+                           <SelectItem value="cash">{t("finance.cash")}</SelectItem>
+                           <SelectItem value="transfer">{t("finance.transfer")}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     {directPaymentMethod === "transfer" && (
                       <div className="flex-1 space-y-0.5">
-                        <span className="text-xs text-muted-foreground">Ngân hàng</span>
+                         <span className="text-xs text-muted-foreground">{t("finance.bank")}</span>
                         <Select value={directBank} onValueChange={setDirectBank}>
-                          <SelectTrigger className="h-8 text-xs" data-testid="select-direct-bank"><SelectValue placeholder="Chọn ngân hàng" /></SelectTrigger>
+                           <SelectTrigger className="h-8 text-xs" data-testid="select-direct-bank"><SelectValue placeholder={t("finance.create.chooseBank")} /></SelectTrigger>
                           <SelectContent>
                             {locationBanks.length === 0
-                              ? <SelectItem value="_none" disabled>Chưa cấu hình ngân hàng</SelectItem>
+                               ? <SelectItem value="_none" disabled>{t("finance.bankNotConfigured")}</SelectItem>
                               : locationBanks.map((b, i) => (
                                   <SelectItem key={i} value={b.bankAccount}>
                                     {b.bankName} - {b.bankAccount}{b.accountHolder ? ` (${b.accountHolder})` : ""}
@@ -2646,20 +2649,20 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
             {/* Payment schedule */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Lịch thanh toán</span>
+                 <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide">{t("finance.create.paymentSchedule")}</span>
                 <Button
                   size="sm" variant="outline"
                   className={`h-7 gap-1 text-xs transition-opacity ${!canAddSchedule ? "opacity-40 cursor-not-allowed" : ""}`}
                   onClick={addPayment}
                   disabled={!canAddSchedule}
-                  title={!canAddSchedule ? "Đã phân bổ đủ tổng tiền" : "Thêm đợt thanh toán"}
+                   title={!canAddSchedule ? t("finance.allocationComplete") : t("finance.create.addInstallment")}
                   data-testid="button-add-payment"
                 >
-                  <Plus className="h-3 w-3" /> Thêm
+                   <Plus className="h-3 w-3" /> {t("finance.add")}
                 </Button>
               </div>
               {paymentSchedule.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-3 border rounded-lg">Nhấn "+ Thêm" để tạo đợt thanh toán</p>
+                 <p className="text-xs text-muted-foreground text-center py-3 border rounded-lg">{t("finance.create.noInstallments")}</p>
               )}
               <div className="space-y-2">
                 {paymentSchedule.map(p => (
@@ -2685,8 +2688,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="unpaid">Chưa thanh toán</SelectItem>
-                            <SelectItem value="paid">Đã thanh toán</SelectItem>
+                             <SelectItem value="unpaid">{t("finance.create.unpaid")}</SelectItem>
+                             <SelectItem value="paid">{t("finance.create.paid")}</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -2706,7 +2709,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     {/* Số tiền + Hạn on same row */}
                     <div className="flex gap-2">
                       <div className="flex-1 space-y-0.5">
-                        <span className="text-xs text-muted-foreground">Số tiền</span>
+                         <span className="text-xs text-muted-foreground">{t("finance.create.amount")}</span>
                         <Input
                           type="number"
                           value={p.amount}
@@ -2714,10 +2717,10 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                           onFocus={e => e.target.select()}
                           readOnly={!canEditPaymentAmount(p) || hasScheduleAdjustment}
                           title={hasScheduleAdjustment
-                            ? "Đợt có khuyến mãi/phụ thu riêng. Hãy chỉnh tại thao tác Khuyến mãi/phụ thu."
+                             ? t("finance.create.installmentOwnAdjustments")
                             : !canEditPaymentAmount(p)
                             ? p.status === "paid"
-                              ? "Đợt đã thanh toán không thể sửa"
+                               ? t("finance.create.paidInstallmentLocked")
                               : "Chỉ còn một đợt chưa thanh toán. Hãy dùng Tách đợt để thay đổi cách phân bổ."
                             : "Số tiền chênh lệch sẽ tự phân bổ sang đợt chưa thanh toán khác"}
                           className={`h-8 text-xs text-right font-semibold ${(!canEditPaymentAmount(p) || hasScheduleAdjustment) ? "bg-muted/40 cursor-not-allowed" : ""} ${p.status === "paid" ? "bg-green-50 text-green-700" : ""}`}
@@ -2725,7 +2728,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         />
                       </div>
                       <div className="flex-1 space-y-0.5">
-                        <span className="text-xs text-muted-foreground">Hạn</span>
+                         <span className="text-xs text-muted-foreground">{t("finance.dueDateShort")}</span>
                         <Popover open={openDuePicker === p.id} onOpenChange={v => setOpenDuePicker(v ? p.id : null)}>
                           <PopoverTrigger asChild>
                             <button
@@ -2735,7 +2738,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                             >
                               <CalendarIcon className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                               <span className={p.due ? "text-foreground" : "text-muted-foreground"}>
-                                {p.due ? format(p.due, "dd/MM/yyyy") : "Chọn ngày..."}
+                                 {p.due ? format(p.due, "dd/MM/yyyy") : t("finance.chooseDate")}
                               </span>
                             </button>
                           </PopoverTrigger>
@@ -2753,7 +2756,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     {/* Hình thức thanh toán */}
                     <div className="flex gap-2 items-end">
                       <div className="space-y-0.5 w-36 flex-shrink-0">
-                        <span className="text-xs text-muted-foreground">Hình thức</span>
+                         <span className="text-xs text-muted-foreground">{t("finance.create.method")}</span>
                         <Select
                           value={p.paymentMethod}
                             disabled={p.status === "paid"}
@@ -2761,23 +2764,23 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         >
                           <SelectTrigger className="h-8 text-xs" data-testid={`select-payment-method-${p.id}`}><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="cash">Tiền mặt</SelectItem>
-                            <SelectItem value="transfer">Chuyển khoản</SelectItem>
+                             <SelectItem value="cash">{t("finance.cash")}</SelectItem>
+                             <SelectItem value="transfer">{t("finance.transfer")}</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                       {p.paymentMethod === "transfer" && (
                         <div className="flex-1 space-y-0.5">
-                          <span className="text-xs text-muted-foreground">Ngân hàng</span>
+                           <span className="text-xs text-muted-foreground">{t("finance.bank")}</span>
                           <Select
                             value={p.bank}
                               disabled={p.status === "paid"}
                             onValueChange={v => setPaymentSchedule(prev => prev.map(x => x.id === p.id ? { ...x, bank: v } : x))}
                           >
-                            <SelectTrigger className="h-8 text-xs" data-testid={`select-bank-${p.id}`}><SelectValue placeholder="Chọn ngân hàng" /></SelectTrigger>
+                             <SelectTrigger className="h-8 text-xs" data-testid={`select-bank-${p.id}`}><SelectValue placeholder={t("finance.create.chooseBank")} /></SelectTrigger>
                             <SelectContent>
                               {locationBanks.length === 0
-                                ? <SelectItem value="_none" disabled>Chưa cấu hình ngân hàng</SelectItem>
+                                 ? <SelectItem value="_none" disabled>{t("finance.bankNotConfigured")}</SelectItem>
                                 : locationBanks.map((b, i) => (
                                     <SelectItem key={i} value={b.bankAccount}>
                                       {b.bankName} - {b.bankAccount}{b.accountHolder ? ` (${b.accountHolder})` : ""}
@@ -2911,10 +2914,10 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                           className="h-7 px-3 text-[11px] font-medium text-purple-600 border-purple-200 hover:bg-purple-50 hover:text-purple-700"
                           onClick={() => openSplitPayment(p)}
                           disabled={p.amount <= 1}
-                          title={p.amount <= 1 ? "Số tiền đợt quá nhỏ để tách" : `Tách ${p.label} thành hai đợt`}
+                           title={p.amount <= 1 ? t("finance.amountTooSmallToSplit") : `${t("finance.create.splitInstallmentTitle")} ${p.label}`}
                           data-testid={`button-split-payment-${p.id}`}
                         >
-                          Tách đợt
+                           {t("finance.create.splitInstallmentTitle")}
                         </Button>
                       </div>
                     )}
@@ -2929,9 +2932,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
 
         {/* Footer actions */}
         <div className="flex items-center justify-end gap-2 px-6 py-3 border-t bg-muted/20 flex-shrink-0">
-          <Button variant="outline" onClick={onClose} disabled={saveMutation.isPending} data-testid="button-cancel">Huỷ</Button>
+           <Button variant="outline" onClick={onClose} disabled={saveMutation.isPending} data-testid="button-cancel">{t("finance.cancel")}</Button>
           <Button className="bg-purple-600 hover:bg-purple-700 gap-1" onClick={handleSave} disabled={saveMutation.isPending} data-testid="button-save-pay">
-            {saveMutation.isPending ? "Đang lưu..." : isEdit ? "Cập nhật phiếu" : "Lưu"}
+             {saveMutation.isPending ? t("finance.create.saving") : isEdit ? t("finance.create.updateReceipt") : t("finance.save")}
           </Button>
         </div>
       </DialogContent>
@@ -2951,18 +2954,18 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
           overlayClassName="bg-black/30 backdrop-blur-[1px]"
         >
           <DialogHeader>
-            <DialogTitle>Tách {splitPayment?.label ?? "đợt thanh toán"}</DialogTitle>
+             <DialogTitle>{t("finance.create.splitInstallmentTitle")} {splitPayment?.label ?? t("finance.paymentSchedule")}</DialogTitle>
           </DialogHeader>
           {splitPayment && (
             <div className="space-y-4">
               <div className="rounded-lg border bg-muted/30 p-3 text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Số tiền hiện tại</span>
+                   <span className="text-muted-foreground">{t("finance.create.currentAmount")}</span>
                   <span className="font-semibold">{fmtMoney(splitPayment.amount)}</span>
                 </div>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Số tiền chuyển sang đợt mới</label>
+                 <label className="text-sm font-medium">{t("finance.create.newInstallmentAmount")}</label>
                 <Input
                   type="number"
                   min={1}
@@ -2979,7 +2982,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                 </p>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Hạn thanh toán đợt mới</label>
+                 <label className="text-sm font-medium">{t("finance.create.newInstallmentDue")}</label>
                 <Input
                   type="date"
                   value={splitDueDate}
@@ -3000,7 +3003,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     setSplitDueDate("");
                   }}
                 >
-                  Hủy
+                   {t("finance.cancel")}
                 </Button>
                 <Button
                   type="button"
@@ -3009,7 +3012,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                   disabled={splitAmount <= 0 || splitAmount >= splitPayment.amount}
                   data-testid="button-confirm-split-payment"
                 >
-                  Tách đợt
+                   {t("finance.create.splitInstallmentTitle")}
                 </Button>
               </div>
             </div>
