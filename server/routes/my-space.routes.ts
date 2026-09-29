@@ -26,6 +26,7 @@ import {
   roles,
   studentSessions,
   classSessions,
+  classSessionTeacherAssignments,
   classes,
   shiftTemplates,
   sessionContents,
@@ -56,6 +57,7 @@ import {
 import { storage } from "../storage";
 import { eq, and, gte, lte, sql, inArray, isNotNull, isNull, or, desc } from "drizzle-orm";
 import { updateStudentAttendance } from "../storage/attendance.storage";
+import { getTeacherIdsForTimeRange } from "@shared/teacher-time-assignments";
 
 async function getStudentForUser(userId: string) {
   const [student] = await db
@@ -2226,8 +2228,33 @@ export function registerMySpaceRoutes(app: Express): void {
         });
       }
 
+      const timeAssignments = await db
+        .select({
+          teacherId: classSessionTeacherAssignments.teacherId,
+          startTime: classSessionTeacherAssignments.startTime,
+          endTime: classSessionTeacherAssignments.endTime,
+        })
+        .from(classSessionTeacherAssignments)
+        .where(eq(classSessionTeacherAssignments.classSessionId, classSessionId));
+
+      const ownAssignment = timeAssignments.find((assignment) => assignment.teacherId === staffRecord.id);
+      const startTime = ownAssignment?.startTime ?? row.startTime;
+      const endTime = ownAssignment?.endTime ?? row.endTime;
+      const isAssignedToSession =
+        (row.teacherIds ?? []).includes(staffRecord.id) || !!ownAssignment;
+      if (!isAssignedToSession) {
+        return res.status(404).json({ message: "Không tìm thấy buổi học" });
+      }
+
+      const visibleTeacherIds = getTeacherIdsForTimeRange(
+        timeAssignments,
+        startTime,
+        endTime,
+        row.teacherIds ?? [],
+      );
+
       const [teachers, contents, stats, regularStudentSessions] = await Promise.all([
-        getTeachersWithIds(row.teacherIds ?? []),
+        getTeachersWithIds(visibleTeacherIds),
         getSessionContents(row.classSessionId),
         getSessionAttendanceStats(row.classSessionId),
         getRegularSessionStudents(row.classSessionId),
@@ -2242,8 +2269,8 @@ export function registerMySpaceRoutes(app: Express): void {
         weekday: row.weekday,
         className: row.className,
         classCode: row.classCode,
-        startTime: row.startTime,
-        endTime: row.endTime,
+        startTime,
+        endTime,
         learningFormat: row.learningFormat,
         onlineLink: row.onlineLink ?? null,
         sessionStatus: row.sessionStatus,

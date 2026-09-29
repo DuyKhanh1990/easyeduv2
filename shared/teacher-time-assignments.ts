@@ -10,6 +10,8 @@ export type TeacherTimeAssignment = {
   scheduleKey: string;
 };
 
+export type TeacherTimeInterval = Pick<TeacherTimeAssignment, "teacherId" | "startTime" | "endTime">;
+
 export type ShiftTimeLookup = Map<string, {
   startTime: string | null | undefined;
   endTime: string | null | undefined;
@@ -20,6 +22,34 @@ function toMinutes(value: string | null | undefined): number {
   const [hours, minutes] = value.slice(0, 5).split(":").map(Number);
   if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return -1;
   return hours * 60 + minutes;
+}
+
+export function getTeacherIdsForTimeRange(
+  assignments: TeacherTimeInterval[],
+  startTime: string,
+  endTime: string,
+  legacyTeacherIds: string[] = [],
+): string[] {
+  const rangeStart = toMinutes(startTime);
+  const rangeEnd = toMinutes(endTime);
+  const assignedTeacherIds = new Set(assignments.map((assignment) => assignment.teacherId));
+  const visibleTeacherIds = new Set(
+    assignments
+      .filter((assignment) => {
+        const assignmentStart = toMinutes(assignment.startTime);
+        const assignmentEnd = toMinutes(assignment.endTime);
+        return assignmentStart < rangeEnd && rangeStart < assignmentEnd;
+      })
+      .map((assignment) => assignment.teacherId),
+  );
+
+  for (const teacherId of legacyTeacherIds) {
+    // Existing class teachers without a time-specific assignment remain
+    // assigned for the whole shift.
+    if (!assignedTeacherIds.has(teacherId)) visibleTeacherIds.add(teacherId);
+  }
+
+  return [...visibleTeacherIds];
 }
 
 function formatTime(minutes: number): string {
