@@ -1,4 +1,4 @@
-import { pgTable, text, varchar, timestamp, boolean, uuid, decimal, date, integer, jsonb, json, numeric, index, uniqueIndex, unique, serial, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, boolean, uuid, decimal, date, integer, jsonb, json, numeric, index, uniqueIndex, unique, serial, primaryKey, time } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -958,6 +958,25 @@ export const classSessions = pgTable("class_sessions", {
   roomConflictIdx: index("class_sessions_room_conflict_idx").on(table.roomId, table.sessionDate, table.shiftTemplateId),
 }));
 
+// Time-specific teacher assignments are a separate overlay on the regular
+// class session. class_sessions.teacher_ids remains the source for existing
+// whole-session permissions and class-facing teacher lists.
+export const classSessionTeacherAssignments = pgTable("class_session_teacher_assignments", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  classSessionId: uuid("class_session_id").notNull().references(() => classSessions.id, { onDelete: "cascade" }),
+  teacherId: uuid("teacher_id").notNull().references(() => staff.id, { onDelete: "cascade" }),
+  scheduleKey: varchar("schedule_key", { length: 80 }).notNull(),
+  startTime: time("start_time").notNull(),
+  endTime: time("end_time").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  sessionTeacherUnique: uniqueIndex("class_session_teacher_assignments_session_teacher_uidx")
+    .on(table.classSessionId, table.teacherId),
+  sessionIdx: index("class_session_teacher_assignments_session_idx").on(table.classSessionId),
+  teacherIdx: index("class_session_teacher_assignments_teacher_idx").on(table.teacherId),
+}));
+
 // Relations
 export const classesRelations = relations(classes, ({ one, many }) => ({
   location: one(locations, { fields: [classes.locationId], references: [locations.id] }),
@@ -967,9 +986,10 @@ export const classesRelations = relations(classes, ({ one, many }) => ({
   studentClasses: many(studentClasses),
 }));
 
-export const classSessionsRelations = relations(classSessions, ({ one }) => ({
+export const classSessionsRelations = relations(classSessions, ({ one, many }) => ({
   class: one(classes, { fields: [classSessions.classId], references: [classes.id] }),
   shiftTemplate: one(shiftTemplates, { fields: [classSessions.shiftTemplateId], references: [shiftTemplates.id] }),
+  teacherTimeAssignments: many(classSessionTeacherAssignments),
 }));
 
 // Schemas & Types

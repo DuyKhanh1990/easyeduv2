@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   db,
   eq, sql, and, inArray, asc,
@@ -5,8 +6,13 @@ import {
   staff, students, studentLocations, shiftTemplates,
   courseFeePackages, financePromotions, invoices, invoiceItems,
 } from "./base";
-import { attendanceFeeRules, sessionContents, activityLogs, publicHolidays } from "@shared/schema";
+import { attendanceFeeRules, sessionContents, activityLogs, publicHolidays, classSessionTeacherAssignments } from "@shared/schema";
 import { studentWalletTransactions } from "@shared/schema";
+import {
+  buildTeacherTimeAssignments,
+  resolveShiftScheduleKey,
+  validateTeacherTimeCoverage,
+} from "@shared/teacher-time-assignments";
 import { calculateAutoInvoiceDepositTotals } from "@shared/invoice-deposit-accounting";
 import { distributeInvoiceFeeToSessions } from "./invoice-session-allocation.storage";
 import { getNextLocationCode } from "./finance.storage";
@@ -830,6 +836,23 @@ export async function createClass(data: any): Promise<Class> {
   const newClass = await db.transaction(async (tx) => {
     const scheduleConfig = data.schedule_config || [];
     const teachersConfig = data.teachers_config || [];
+    const shiftIds: string[] = Array.from(new Set<string>(
+      scheduleConfig.flatMap((day: any) => (day.shifts || [])
+        .map((shift: any): string => String(shift.shift_template_id || shift.shiftTemplateId || ""))
+        .filter((shiftId: string) => shiftId.length > 0)),
+    ));
+    const shiftRows = shiftIds.length > 0
+      ? await tx.select({
+          id: shiftTemplates.id,
+          startTime: shiftTemplates.startTime,
+          endTime: shiftTemplates.endTime,
+        }).from(shiftTemplates).where(inArray(shiftTemplates.id, shiftIds))
+      : [];
+    const shiftTimeMap = new Map(shiftRows.map((shift) => [shift.id, shift]));
+    if (data.requireTeacherCoverage === true && data.classType !== "free") {
+      const coverageIssues = validateTeacherTimeCoverage(scheduleConfig, teachersConfig, shiftTimeMap);
+      if (coverageIssues.length > 0) throw new Error(coverageIssues[0].message);
+    }
     const skipHolidays: boolean = data.skipHolidays === true;
     const endType: string = data.endType || "date";
     const sessionCount: number = endType === "sessions" ? Number(data.sessionCount) : 0;
@@ -852,8 +875,9 @@ export async function createClass(data: any): Promise<Class> {
       if (inHoliday(dateStr)) return;
       const dayConfig = scheduleConfig.find((c: any) => Number(c.weekday) === dbWeekday);
       if (!dayConfig?.shifts) return;
-      for (const shift of dayConfig.shifts) {
-        const shiftKey = `${dbWeekday}_shift${dayConfig.shifts.indexOf(shift)}`;
+       for (let shiftIndex = 0; shiftIndex < dayConfig.shifts.length; shiftIndex += 1) {
+         const shift = dayConfig.shifts[shiftIndex];
+         const shiftKey = `${dbWeekday}_shift${shiftIndex}`;
         const assignedTeacherIds: string[] = [];
         if (teachersConfig && Array.isArray(teachersConfig)) {
           for (const tConfig of teachersConfig) {
@@ -863,13 +887,22 @@ export async function createClass(data: any): Promise<Class> {
           }
         }
         if (shift.shift_template_id || shift.shiftTemplateId) {
+           const shiftTemplateId = shift.shift_template_id || shift.shiftTemplateId;
+           const shiftTimes = shiftTimeMap.get(shiftTemplateId);
           sessions.push({
             classId: "", // will be replaced after insert
             sessionDate: dateStr,
             weekday: dbWeekday,
-            shiftTemplateId: shift.shift_template_id || shift.shiftTemplateId,
+             shiftTemplateId,
             roomId: shift.room_id || shift.roomId || "00000000-0000-0000-0000-000000000000",
             teacherIds: assignedTeacherIds.length > 0 ? assignedTeacherIds : null,
+             scheduleKey: shiftKey,
+             teacherTimeAssignments: buildTeacherTimeAssignments(
+               teachersConfig,
+               shiftKey,
+               String(shiftTimes?.startTime || ""),
+               String(shiftTimes?.endTime || ""),
+             ),
             status: "scheduled",
           });
         }
@@ -953,6 +986,7 @@ export async function createClass(data: any): Promise<Class> {
     if (orderedSessions.length > 0) {
       const sessionsWithIndex = orderedSessions.map((s, idx) => ({
         ...s,
+        id: s.id || randomUUID(),
         classId: newClass.id,
         sessionIndex: idx + 1,
         subjectId: newClass.subjectId || null,
@@ -960,7 +994,23 @@ export async function createClass(data: any): Promise<Class> {
         programId: newClass.programId || null,
         scoreSheetId: newClass.scoreSheetId || null,
       }));
-      await tx.insert(classSessions).values(sessionsWithIndex);
+      const sessionRows = sessionsWithIndex.map((session: any) => {
+        const { scheduleKey: _scheduleKey, teacherTimeAssignments: _teacherTimeAssignments, ...row } = session;
+        return row;
+      });
+      await tx.insert(classSessions).values(sessionRows as any[]);
+      const assignmentRows = sessionsWithIndex.flatMap((session: any) =>
+        (session.teacherTimeAssignments || []).map((assignment: any) => ({
+          classSessionId: session.id,
+          teacherId: assignment.teacherId,
+          scheduleKey: assignment.scheduleKey || session.scheduleKey,
+          startTime: assignment.startTime,
+          endTime: assignment.endTime,
+        })),
+      );
+      if (assignmentRows.length > 0) {
+        await tx.insert(classSessionTeacherAssignments).values(assignmentRows as any[]);
+      }
       await tx.update(classes).set({ scheduleGenerated: true, updatedAt: new Date() }).where(eq(classes.id, newClass.id));
       const { recalculateClass } = await import("./session.storage");
       await recalculateClass(newClass.id, tx);
@@ -1019,12 +1069,125 @@ export async function createClass(data: any): Promise<Class> {
 // ---------------------------------------------------------------------------
 // updateClass
 // ---------------------------------------------------------------------------
+async function updateClassTeacherTimeAssignments(id: string, data: any): Promise<void> {
+  const [classRow] = await db
+    .select({ scheduleConfig: classes.scheduleConfig })
+    .from(classes)
+    .where(eq(classes.id, id))
+    .limit(1);
+  const scheduleConfig = Array.isArray(data.schedule_config)
+    ? data.schedule_config
+    : Array.isArray(classRow?.scheduleConfig) ? classRow.scheduleConfig : [];
+  const teachersConfig = Array.isArray(data.teachers_config) ? data.teachers_config : [];
+  const sessionRows = await db
+    .select({
+      id: classSessions.id,
+      sessionDate: classSessions.sessionDate,
+      weekday: classSessions.weekday,
+      shiftTemplateId: classSessions.shiftTemplateId,
+      roomId: classSessions.roomId,
+      teacherIds: classSessions.teacherIds,
+      shiftStart: shiftTemplates.startTime,
+      shiftEnd: shiftTemplates.endTime,
+    })
+    .from(classSessions)
+    .leftJoin(shiftTemplates, eq(classSessions.shiftTemplateId, shiftTemplates.id))
+    .where(eq(classSessions.classId, id));
+  if (sessionRows.length === 0) return;
+
+  const shiftTimeMap = new Map(sessionRows.map((session) => [
+    session.shiftTemplateId,
+    { startTime: session.shiftStart, endTime: session.shiftEnd },
+  ]));
+  const coverageIssues = validateTeacherTimeCoverage(scheduleConfig, teachersConfig, shiftTimeMap);
+  if (coverageIssues.length > 0) throw new Error(coverageIssues[0].message);
+
+  const candidates = sessionRows.map((session) => {
+    const scheduleKey = resolveShiftScheduleKey(
+      scheduleConfig,
+      session.weekday,
+      session.shiftTemplateId,
+      session.roomId,
+    ) || `${session.weekday}_shift0`;
+    const allConfiguredAssignments = buildTeacherTimeAssignments(
+      teachersConfig,
+      scheduleKey,
+      String(session.shiftStart || ""),
+      String(session.shiftEnd || ""),
+    );
+    const configuredByTeacher = new Map(allConfiguredAssignments.map((assignment) => [assignment.teacherId, assignment]));
+    const teacherIds = session.teacherIds || [];
+    const teacherTimeAssignments = teacherIds.map((teacherId) => {
+      const configured = configuredByTeacher.get(teacherId);
+      return configured
+        ? { teacherId, startTime: configured.startTime, endTime: configured.endTime }
+        : {
+            teacherId,
+            startTime: String(session.shiftStart || ""),
+            endTime: String(session.shiftEnd || ""),
+          };
+    });
+    return {
+      sessionDate: String(session.sessionDate),
+      shiftTemplateId: session.shiftTemplateId,
+      roomId: session.roomId,
+      teacherIds,
+      teacherTimeAssignments,
+      scheduleKey,
+    };
+  });
+  const { checkScheduleConflicts } = await import("../services/conflict-check.service");
+  const teacherConflicts = (await checkScheduleConflicts(candidates, id))
+    .filter((conflict) => conflict.type === "teacher");
+  if (teacherConflicts.length > 0) {
+    const conflict = teacherConflicts[0];
+    throw new Error(
+      `Giáo viên ${conflict.resourceName} bị trùng lịch với lớp ${conflict.conflictClassName} (${conflict.shiftTime}).`,
+    );
+  }
+
+  const sessionIds = sessionRows.map((session) => session.id);
+  const assignmentRows = candidates.flatMap((session, index) =>
+    session.teacherTimeAssignments.map((assignment) => ({
+      classSessionId: sessionRows[index].id,
+      teacherId: assignment.teacherId,
+      scheduleKey: session.scheduleKey,
+      startTime: assignment.startTime,
+      endTime: assignment.endTime,
+    })),
+  );
+  await db.transaction(async (tx) => {
+    await tx.delete(classSessionTeacherAssignments)
+      .where(inArray(classSessionTeacherAssignments.classSessionId, sessionIds));
+    if (assignmentRows.length > 0) {
+      await tx.insert(classSessionTeacherAssignments).values(assignmentRows as any[]);
+    }
+  });
+}
+
 export async function updateClass(id: string, data: any): Promise<Class> {
   // Case: regenerate sessions (class had no schedule, now being set for the first time)
   if (data.regenerateSessions === true) {
     return await db.transaction(async (tx) => {
       const scheduleConfig = data.schedule_config || [];
       const teachersConfig = data.teachers_config || [];
+      const shiftIds: string[] = Array.from(new Set<string>(
+        scheduleConfig.flatMap((day: any) => (day.shifts || [])
+          .map((shift: any): string => String(shift.shift_template_id || shift.shiftTemplateId || ""))
+          .filter((shiftId: string) => shiftId.length > 0)),
+      ));
+      const shiftRows = shiftIds.length > 0
+        ? await tx.select({
+            id: shiftTemplates.id,
+            startTime: shiftTemplates.startTime,
+            endTime: shiftTemplates.endTime,
+          }).from(shiftTemplates).where(inArray(shiftTemplates.id, shiftIds))
+        : [];
+      const shiftTimeMap = new Map(shiftRows.map((shift) => [shift.id, shift]));
+      if (data.requireTeacherCoverage === true && data.classType !== "free") {
+        const coverageIssues = validateTeacherTimeCoverage(scheduleConfig, teachersConfig, shiftTimeMap);
+        if (coverageIssues.length > 0) throw new Error(coverageIssues[0].message);
+      }
       const skipHolidays: boolean = data.skipHolidays === true;
       const endType: string = data.endType || "date";
       const sessionCount: number = endType === "sessions" ? Number(data.sessionCount) : 0;
@@ -1046,8 +1209,9 @@ export async function updateClass(id: string, data: any): Promise<Class> {
         if (inHoliday(dateStr)) return;
         const dayConfig = scheduleConfig.find((c: any) => Number(c.weekday) === dbWeekday);
         if (!dayConfig?.shifts) return;
-        for (const shift of dayConfig.shifts) {
-          const shiftKey = `${dbWeekday}_shift${dayConfig.shifts.indexOf(shift)}`;
+         for (let shiftIndex = 0; shiftIndex < dayConfig.shifts.length; shiftIndex += 1) {
+           const shift = dayConfig.shifts[shiftIndex];
+           const shiftKey = `${dbWeekday}_shift${shiftIndex}`;
           const assignedTeacherIds: string[] = [];
           if (teachersConfig && Array.isArray(teachersConfig)) {
             for (const tConfig of teachersConfig) {
@@ -1057,13 +1221,22 @@ export async function updateClass(id: string, data: any): Promise<Class> {
             }
           }
           if (shift.shift_template_id || shift.shiftTemplateId) {
+             const shiftTemplateId = shift.shift_template_id || shift.shiftTemplateId;
+             const shiftTimes = shiftTimeMap.get(shiftTemplateId);
             sessions.push({
               classId: id,
               sessionDate: dateStr,
               weekday: dbWeekday,
-              shiftTemplateId: shift.shift_template_id || shift.shiftTemplateId,
+               shiftTemplateId,
               roomId: shift.room_id || shift.roomId || "00000000-0000-0000-0000-000000000000",
               teacherIds: assignedTeacherIds.length > 0 ? assignedTeacherIds : null,
+               scheduleKey: shiftKey,
+               teacherTimeAssignments: buildTeacherTimeAssignments(
+                 teachersConfig,
+                 shiftKey,
+                 String(shiftTimes?.startTime || ""),
+                 String(shiftTimes?.endTime || ""),
+               ),
               status: "scheduled",
             });
           }
@@ -1127,12 +1300,29 @@ export async function updateClass(id: string, data: any): Promise<Class> {
       if (orderedSessions.length > 0) {
         const sessionsWithIndex = orderedSessions.map((s, idx) => ({
           ...s,
+          id: s.id || randomUUID(),
           sessionIndex: idx + 1,
           subjectId: updated.subjectId || null,
           evaluationCriteriaIds: updated.evaluationCriteriaIds || null,
           scoreSheetId: updated.scoreSheetId || null,
         }));
-        await tx.insert(classSessions).values(sessionsWithIndex);
+        const sessionRows = sessionsWithIndex.map((session: any) => {
+          const { scheduleKey: _scheduleKey, teacherTimeAssignments: _teacherTimeAssignments, ...row } = session;
+          return row;
+        });
+        await tx.insert(classSessions).values(sessionRows as any[]);
+        const assignmentRows = sessionsWithIndex.flatMap((session: any) =>
+          (session.teacherTimeAssignments || []).map((assignment: any) => ({
+            classSessionId: session.id,
+            teacherId: assignment.teacherId,
+            scheduleKey: assignment.scheduleKey || session.scheduleKey,
+            startTime: assignment.startTime,
+            endTime: assignment.endTime,
+          })),
+        );
+        if (assignmentRows.length > 0) {
+          await tx.insert(classSessionTeacherAssignments).values(assignmentRows as any[]);
+        }
       }
 
       const { recalculateClass } = await import("./session.storage");
@@ -1143,6 +1333,14 @@ export async function updateClass(id: string, data: any): Promise<Class> {
   }
 
   // Default: update class fields only (schedule already generated — do not touch session schedule structure)
+  if (
+    data.requireTeacherCoverage === true &&
+    data.teachers_config !== undefined &&
+    data.classType !== "free"
+  ) {
+    await updateClassTeacherTimeAssignments(id, data);
+  }
+
   const updateData: any = {};
    const allowed = ["classCode", "name", "locationId", "programId", "courseId", "managerIds", "teacherIds", "shiftTemplateIds", "feePackageId", "scoreSheetId", "maxStudents", "learningFormat", "onlineLink", "description", "status", "startDate", "endDate", "weekdays", "color", "subjectId", "evaluationCriteriaIds", "freeClassMode"];
   for (const key of allowed) {

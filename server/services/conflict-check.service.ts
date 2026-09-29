@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { classSessions, classes, shiftTemplates, staff, classrooms } from "@shared/schema";
+import { classSessions, classSessionTeacherAssignments, classes, shiftTemplates, staff, classrooms } from "@shared/schema";
 import { and, inArray, ne, eq, gte, lte, sql } from "drizzle-orm";
 
 export type ConflictType = "room" | "teacher";
@@ -19,6 +19,11 @@ export interface SessionInput {
   shiftTemplateId: string | null | undefined;
   roomId?: string | null;
   teacherIds?: string[] | null;
+  teacherTimeAssignments?: Array<{
+    teacherId: string;
+    startTime: string;
+    endTime: string;
+  }>;
 }
 
 const NULL_ROOM = "00000000-0000-0000-0000-000000000000";
@@ -69,6 +74,7 @@ export async function checkScheduleConflicts(
 
   const otherSessions = await db
     .select({
+      id: classSessions.id,
       classId: classSessions.classId,
       sessionDate: classSessions.sessionDate,
       roomId: classSessions.roomId,
@@ -83,6 +89,24 @@ export async function checkScheduleConflicts(
   // Filter to only sessions on our exact dates
   const relevantOther = otherSessions.filter(s => dates.includes(s.sessionDate));
   if (!relevantOther.length) return [];
+
+  const otherSessionIds = relevantOther.map((session) => session.id);
+  const existingTeacherAssignments = await db
+    .select({
+      classSessionId: classSessionTeacherAssignments.classSessionId,
+      teacherId: classSessionTeacherAssignments.teacherId,
+      startTime: classSessionTeacherAssignments.startTime,
+      endTime: classSessionTeacherAssignments.endTime,
+    })
+    .from(classSessionTeacherAssignments)
+    .where(inArray(classSessionTeacherAssignments.classSessionId, otherSessionIds));
+  const assignmentMap = new Map<string, { startTime: string; endTime: string }>();
+  for (const assignment of existingTeacherAssignments) {
+    assignmentMap.set(`${assignment.classSessionId}:${assignment.teacherId}`, {
+      startTime: String(assignment.startTime),
+      endTime: String(assignment.endTime),
+    });
+  }
 
   // Enrich with class info
   const otherClassIds = [...new Set(relevantOther.map(s => s.classId).filter(Boolean) as string[])];
@@ -115,7 +139,8 @@ export async function checkScheduleConflicts(
 
     for (const other of relevantOther) {
       if (other.sessionDate !== our.sessionDate) continue;
-      if (!overlaps(shift.startTime, shift.endTime, other.shiftStart, other.shiftEnd)) continue;
+      const baseShiftsOverlap = overlaps(shift.startTime, shift.endTime, other.shiftStart, other.shiftEnd);
+      if (!baseShiftsOverlap) continue;
 
       const cls = classMap.get(other.classId ?? "");
       const conflictClassName = cls?.name ?? "Lớp khác";
@@ -138,9 +163,23 @@ export async function checkScheduleConflicts(
         }
       }
 
-      // Teacher conflict
-      for (const tid of (our.teacherIds || [])) {
-        if ((other.teacherIds || []).includes(tid)) {
+      // Teacher conflicts use assigned sub-intervals when present. Legacy
+      // sessions without rows continue to occupy their complete shift.
+      const ourAssignments = our.teacherTimeAssignments?.length
+        ? our.teacherTimeAssignments
+        : (our.teacherIds || []).map((teacherId) => ({
+            teacherId,
+            startTime: String(shift.startTime ?? ""),
+            endTime: String(shift.endTime ?? ""),
+          }));
+      for (const assignment of ourAssignments) {
+        const tid = assignment.teacherId;
+        if (!(other.teacherIds || []).includes(tid)) continue;
+        const otherAssignment = assignmentMap.get(`${other.id}:${tid}`);
+        const otherStart = otherAssignment?.startTime ?? String(other.shiftStart ?? "");
+        const otherEnd = otherAssignment?.endTime ?? String(other.shiftEnd ?? "");
+        if (!overlaps(assignment.startTime, assignment.endTime, otherStart, otherEnd)) continue;
+
           const key = `teacher|${our.sessionDate}|${tid}|${other.classId}`;
           if (!seen.has(key)) {
             seen.add(key);
@@ -148,13 +187,12 @@ export async function checkScheduleConflicts(
               type: "teacher",
               sessionDate: our.sessionDate,
               shiftName: shift.name ?? "",
-              shiftTime,
+              shiftTime: `${assignment.startTime.slice(0, 5)} - ${assignment.endTime.slice(0, 5)}`,
               resourceName: teacherNameMap.get(tid) ?? tid,
               conflictClassName,
               conflictClassCode,
             });
           }
-        }
       }
     }
   }

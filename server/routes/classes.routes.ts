@@ -18,6 +18,7 @@ import { buildClassVisibilitySql, canViewClass, resolveClassViewAccess, type Cla
 import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 import { getNextLocationCode } from "../storage/finance.storage";
 import { recordFreeClassWalletTransition } from "../storage/free-class-wallet.storage";
+import { buildTeacherTimeAssignments, getShiftScheduleKey } from "@shared/teacher-time-assignments";
 
 async function resolveStaffFullName(userId: string | undefined | null): Promise<string | null> {
   if (!userId) return null;
@@ -5706,6 +5707,19 @@ export function registerClassesRoutes(app: Express): void {
       const endType: string = req.body.endType || "date";
       const sessionCount: number = endType === "sessions" ? Number(req.body.sessionCount) : 0;
       const sessions: any[] = [];
+      const previewShiftIds = Array.from(new Set(
+        scheduleConfig.flatMap((day: any) => (day.shifts || [])
+          .map((shift: any) => shift.shift_template_id || shift.shiftTemplateId)
+          .filter(Boolean)),
+      ));
+      const previewShiftRows = previewShiftIds.length > 0
+        ? await db.select({
+            id: shiftTemplates.id,
+            startTime: shiftTemplates.startTime,
+            endTime: shiftTemplates.endTime,
+          }).from(shiftTemplates).where(inArray(shiftTemplates.id, previewShiftIds))
+        : [];
+      const previewShiftTimeMap = new Map(previewShiftRows.map((shift) => [shift.id, shift]));
 
       // Load holidays if needed
       let holidays: { startDate: string; endDate: string }[] = [];
@@ -5721,15 +5735,23 @@ export function registerClassesRoutes(app: Express): void {
         for (let i = 0; i < (dayConfig.shifts || []).length; i++) {
           const shift = dayConfig.shifts[i];
           if (!shift.shift_template_id && !shift.shiftTemplateId) continue;
-          const shiftKey = `${weekday}_shift${i}`;
+          const shiftKey = getShiftScheduleKey(weekday, i);
           const teacherIds: string[] = teachersConfig
             .filter((tc: any) => tc.teacher_id && (tc.mode === "all" || (tc.mode === "specific" && (tc.shift_keys?.includes(shiftKey) || tc.shiftKeys?.includes(shiftKey)))))
             .map((tc: any) => tc.teacher_id);
+          const shiftTemplateId = shift.shift_template_id || shift.shiftTemplateId;
+          const shiftTime = previewShiftTimeMap.get(shiftTemplateId);
           sessions.push({
             sessionDate: dateStr,
-            shiftTemplateId: shift.shift_template_id || shift.shiftTemplateId,
+            shiftTemplateId,
             roomId: shift.room_id || shift.roomId || null,
             teacherIds: teacherIds.length > 0 ? teacherIds : null,
+            teacherTimeAssignments: buildTeacherTimeAssignments(
+              teachersConfig,
+              shiftKey,
+              String(shiftTime?.startTime || ""),
+              String(shiftTime?.endTime || ""),
+            ),
           });
         }
       };
@@ -6042,6 +6064,9 @@ export function registerClassesRoutes(app: Express): void {
       console.log("Creating class with body:", JSON.stringify(req.body, null, 2));
       const cls = await storage.createClass({
         ...req.body,
+        requireTeacherCoverage: req.body.classType !== "free" &&
+          Array.isArray(req.body.schedule_config) &&
+          req.body.schedule_config.some((day: any) => (day.shifts || []).length > 0),
         // Never trust createdBy from the browser.
         createdBy: (req.user as any)?.id ?? null,
       });
@@ -6050,13 +6075,38 @@ export function registerClassesRoutes(app: Express): void {
       try {
         const { checkScheduleConflicts } = await import("../services/conflict-check.service");
         const generated = await db.select({
+          id: classSessions.id,
           sessionDate: classSessions.sessionDate,
           shiftTemplateId: classSessions.shiftTemplateId,
           roomId: classSessions.roomId,
           teacherIds: classSessions.teacherIds,
         }).from(classSessions).where(eq(classSessions.classId, cls.id));
+        const { classSessionTeacherAssignments } = await import("@shared/schema");
+        const generatedAssignments = generated.length > 0
+          ? await db.select({
+              classSessionId: classSessionTeacherAssignments.classSessionId,
+              teacherId: classSessionTeacherAssignments.teacherId,
+              startTime: classSessionTeacherAssignments.startTime,
+              endTime: classSessionTeacherAssignments.endTime,
+            }).from(classSessionTeacherAssignments)
+              .where(inArray(classSessionTeacherAssignments.classSessionId, generated.map((session) => session.id)))
+          : [];
+        const assignmentsBySession = new Map<string, Array<{ teacherId: string; startTime: string; endTime: string }>>();
+        for (const assignment of generatedAssignments) {
+          const current = assignmentsBySession.get(assignment.classSessionId) || [];
+          current.push({
+            teacherId: assignment.teacherId,
+            startTime: String(assignment.startTime),
+            endTime: String(assignment.endTime),
+          });
+          assignmentsBySession.set(assignment.classSessionId, current);
+        }
+        const sessionsWithAssignments = generated.map((session) => ({
+          ...session,
+          teacherTimeAssignments: assignmentsBySession.get(session.id) || [],
+        }));
         console.log(`[ConflictCheck] create: ${generated.length} sessions, sample:`, JSON.stringify(generated.slice(0, 2)));
-        conflicts = await checkScheduleConflicts(generated, cls.id);
+        conflicts = await checkScheduleConflicts(sessionsWithAssignments, cls.id);
         console.log(`[ConflictCheck] create: ${conflicts.length} conflicts found`);
       } catch (ce) {
         console.error("[ConflictCheck] create:", ce);
@@ -6105,9 +6155,17 @@ export function registerClassesRoutes(app: Express): void {
     try {
       const clsPerms = await getClassPermissions(req);
       if (!clsPerms.canEdit) return res.status(403).json({ message: "Bạn không có quyền chỉnh sửa lớp học." });
-      const classId = req.params.id;
+      const classId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const oldCls = await getClassForLog(classId);
-      const cls = await storage.updateClass(classId, req.body);
+      const [storedClass] = await db.select({ classType: classes.classType })
+        .from(classes).where(eq(classes.id, classId)).limit(1);
+      const updateData = {
+        ...req.body,
+        ...(req.body.regenerateSessions === true && storedClass?.classType !== "free"
+          ? { requireTeacherCoverage: true }
+          : {}),
+      };
+      const cls = await storage.updateClass(classId, updateData);
       res.json(cls);
 
       const userId = (req.user as any)?.id ?? null;

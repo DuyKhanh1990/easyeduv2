@@ -1814,8 +1814,8 @@ export function registerMySpaceRoutes(app: Express): void {
           cs.learning_format,
           cs.status AS session_status,
           cs.session_index,
-          st.start_time,
-          st.end_time,
+          COALESCE(tta.start_time, st.start_time) AS start_time,
+          COALESCE(tta.end_time, st.end_time) AS end_time,
           c.name AS class_name,
           c.class_code,
           c.color AS class_color,
@@ -1827,7 +1827,9 @@ export function registerMySpaceRoutes(app: Express): void {
         INNER JOIN classes c ON c.id = cs.class_id
         INNER JOIN shift_templates st ON st.id = cs.shift_template_id
         LEFT JOIN teacher_attendance ta ON ta.class_session_id = cs.id AND ta.staff_id = ${staffRecord.id}::uuid
-        WHERE cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
+        LEFT JOIN class_session_teacher_assignments tta
+          ON tta.class_session_id = cs.id AND tta.teacher_id = ${staffRecord.id}::uuid
+        WHERE (cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[] OR tta.teacher_id IS NOT NULL)
           AND cs.session_date >= ${dateFrom}
           AND cs.session_date <= ${dateTo}
         ORDER BY cs.session_date, st.start_time

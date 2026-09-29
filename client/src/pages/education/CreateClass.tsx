@@ -26,6 +26,8 @@ import { Badge } from "@/components/ui/badge";
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PageGuideButton } from "@/components/guides/PageGuideDialog";
+import { TeacherShiftTimeEditor } from "@/components/education/TeacherShiftTimeEditor";
+import { validateTeacherTimeCoverage } from "@shared/teacher-time-assignments";
 
 const STEPS = [
   { id: 1, name: "Thông tin cơ bản" },
@@ -89,7 +91,8 @@ export function CreateClass() {
       teachers_config: z.array(z.object({
         teacher_id: z.string().min(1, "Vui lòng chọn giáo viên"),
         mode: z.enum(["all", "specific"]),
-        shift_keys: z.array(z.string())
+        shift_keys: z.array(z.string()),
+        shift_time_ranges: z.record(z.any()).optional(),
       })).optional(),
       classType: z.string().optional(),
       freeClassMode: z.enum(["self_practice", "guided"]).optional(),
@@ -300,10 +303,28 @@ export function CreateClass() {
         console.log("Step 2 validation failed", form.formState.errors);
         return toast({ title: "Thiếu thông tin", description: "Vui lòng hoàn tất cấu hình lịch học và giáo viên", variant: "destructive" });
       }
+      const values = form.getValues();
+      const shiftTimeLookup = new Map(
+        (Array.isArray(shifts) ? shifts : []).map((shift: any) => [
+          String(shift.id),
+          { startTime: shift.startTime, endTime: shift.endTime },
+        ]),
+      );
+      const coverageIssues = validateTeacherTimeCoverage(
+        values.schedule_config || [],
+        values.teachers_config || [],
+        shiftTimeLookup,
+      );
+      if (coverageIssues.length > 0) {
+        return toast({
+          title: "Ca học chưa được phân công đủ giáo viên",
+          description: coverageIssues[0].message,
+          variant: "destructive",
+        });
+      }
       // Check room/teacher conflicts before advancing
       setIsCheckingStep2(true);
       try {
-        const values = form.getValues();
         const res = await apiRequest("POST", "/api/classes/preview-conflicts", {
           startDate: values.startDate,
           endDate: values.endDate,
@@ -342,6 +363,7 @@ export function CreateClass() {
       const submitData = {
         ...data,
         classType: isFreeClass ? "free" : "group",
+        requireTeacherCoverage: !isFreeClass,
         weekdays: (data.weekdays || []).map(Number),
         managerIds: data.managerIds || [],
         teacherIds: isFreeClass
@@ -410,18 +432,35 @@ export function CreateClass() {
 
   // Helper to get all shifts for teacher config
   const getAllShiftsList = () => {
-    const list: { key: string, label: string }[] = [];
+    const list: { key: string; label: string; startTime: string; endTime: string }[] = [];
     scheduleConfig.forEach((day: any) => {
       const dayLabel = WEEKDAYS.find(w => w.value === day.weekday)?.label;
       day.shifts.forEach((s: any, idx: number) => {
-        const shiftName = shifts?.find((st: any) => st.id === s.shift_template_id)?.name || `Ca ${idx + 1}`;
+        const shiftInfo = shifts?.find((st: any) => st.id === s.shift_template_id);
+        const shiftName = shiftInfo?.name || `Ca ${idx + 1}`;
         list.push({
           key: `${day.weekday}_shift${idx}`,
-          label: `${dayLabel}-${shiftName}`
+          label: `${dayLabel}-${shiftName}`,
+          startTime: shiftInfo?.startTime || "",
+          endTime: shiftInfo?.endTime || "",
         });
       });
     });
     return list;
+  };
+
+  const updateTeacherShiftTime = (teacherIndex: number, shiftKey: string, startTime: string, endTime: string) => {
+    const nextConfig = [...(form.getValues("teachers_config") || [])];
+    const current = nextConfig[teacherIndex];
+    if (!current) return;
+    nextConfig[teacherIndex] = {
+      ...current,
+      shift_time_ranges: {
+        ...(current.shift_time_ranges || {}),
+        [shiftKey]: { start_time: startTime, end_time: endTime },
+      },
+    };
+    form.setValue("teachers_config", nextConfig, { shouldDirty: true, shouldValidate: true });
   };
 
   return (
@@ -1234,6 +1273,13 @@ export function CreateClass() {
                                       </div>
                                     )}
                                   </div>
+                                  <TeacherShiftTimeEditor
+                                    teacher={teacher}
+                                    shifts={getAllShiftsList()}
+                                    onRangeChange={(shiftKey, startTime, endTime) =>
+                                      updateTeacherShiftTime(idx, shiftKey, startTime, endTime)
+                                    }
+                                  />
                                 </CardContent>
                               </Card>
                             );

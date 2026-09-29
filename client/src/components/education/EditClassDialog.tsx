@@ -20,6 +20,8 @@ import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { TeacherShiftTimeEditor } from "@/components/education/TeacherShiftTimeEditor";
+import { resolveShiftScheduleKey, validateTeacherTimeCoverage } from "@shared/teacher-time-assignments";
 
 const STEPS = [
   { id: 1, name: "Thông tin cơ bản" },
@@ -80,6 +82,7 @@ const editSchema = z.object({
     teacher_id: z.string(),
     mode: z.enum(["all", "specific"]),
     shift_keys: z.array(z.string()),
+    shift_time_ranges: z.record(z.any()).optional(),
   })).optional(),
   freeClassMode: z.enum(["self_practice", "guided"]).optional(),
 });
@@ -97,6 +100,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
   const { toast } = useToast();
   const { updateClassMutation } = useClassMutations();
   const [step, setStep] = useState(1);
+  const [teacherAssignmentsDirty, setTeacherAssignmentsDirty] = useState(false);
   const [selectedColor, setSelectedColor] = useState<string>(CLASS_PALETTE[5]);
   const [endType, setEndType] = useState<"date" | "sessions">("date");
   const [sessionCount, setSessionCount] = useState<string>("10");
@@ -197,12 +201,14 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
       // Reconstruct schedule_config: prefer sessions → stored JSON → fallback
       let schedule_config: any[];
       if (sessions && sessions.length > 0) {
-        const dayMap = new Map<number, Map<string, string>>();
+        const dayMap = new Map<number, Map<string, { shift_template_id: string; room_id: string }>>();
         sessions.forEach((s: any) => {
           if (!dayMap.has(s.weekday)) dayMap.set(s.weekday, new Map());
           const shiftMap = dayMap.get(s.weekday)!;
-          if (s.shiftTemplateId && !shiftMap.has(s.shiftTemplateId)) {
-            shiftMap.set(s.shiftTemplateId, s.roomId || "");
+          const roomId = s.roomId === "00000000-0000-0000-0000-000000000000" ? "" : (s.roomId || "");
+          const key = `${s.shiftTemplateId}:${roomId}`;
+          if (s.shiftTemplateId && !shiftMap.has(key)) {
+            shiftMap.set(key, { shift_template_id: s.shiftTemplateId, room_id: roomId });
           }
         });
         schedule_config = weekdays.map((wd: number) => {
@@ -210,10 +216,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
           if (shiftMap && shiftMap.size > 0) {
             return {
               weekday: wd,
-              shifts: Array.from(shiftMap.entries()).map(([shift_template_id, room_id]) => ({
-                shift_template_id,
-                room_id: room_id === "00000000-0000-0000-0000-000000000000" ? "" : (room_id || ""),
-              })),
+              shifts: Array.from(shiftMap.values()),
             };
           }
           return { weekday: wd, shifts: [{ shift_template_id: "", room_id: "" }] };
@@ -241,22 +244,36 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
           const ids: string[] = Array.isArray(s.teacherIds) ? s.teacherIds : [];
           ids.forEach((tid: string) => {
             if (!teacherMap.has(tid)) teacherMap.set(tid, []);
-            const key = `${s.weekday}_shift0`;
-            if (!teacherMap.get(tid)!.includes(key)) {
+            const key = resolveShiftScheduleKey(
+              schedule_config,
+              Number(s.weekday),
+              String(s.shiftTemplateId || ""),
+              s.roomId,
+            ) || `${s.weekday}_shift0`;
+            if (s.shiftTemplateId && !teacherMap.get(tid)!.includes(key)) {
               teacherMap.get(tid)!.push(key);
             }
           });
         });
-        const totalDays = weekdays.length;
-        teachers_config = Array.from(teacherMap.entries()).map(([teacher_id, keys]) => ({
-          teacher_id,
-          mode: keys.length >= totalDays ? "all" as const : "specific" as const,
-          shift_keys: keys.length >= totalDays ? [] : keys,
-        }));
+        const storedTeachers = Array.isArray(cls.teachersConfig) ? cls.teachersConfig as any[] : [];
+        const allScheduleKeys = schedule_config.flatMap((day: any) =>
+          (day.shifts || []).map((_: any, index: number) => `${day.weekday}_shift${index}`),
+        );
+        teachers_config = Array.from(teacherMap.entries()).map(([teacher_id, keys]) => {
+          const stored = storedTeachers.find((teacher) => String(teacher.teacher_id) === teacher_id);
+          const assignedEveryShift = allScheduleKeys.length > 0 &&
+            allScheduleKeys.every((key: string) => keys.includes(key));
+          return {
+            teacher_id,
+            mode: assignedEveryShift ? "all" as const : "specific" as const,
+            shift_keys: assignedEveryShift ? [] : keys,
+            shift_time_ranges: stored?.shift_time_ranges || {},
+          };
+        });
         const allTeacherIds: string[] = Array.isArray(cls.teacherIds) ? cls.teacherIds : (cls.teacherId ? [cls.teacherId] : []);
-        for (const tid of allTeacherIds) {
-          if (!teacherMap.has(tid)) {
-            teachers_config.push({ teacher_id: tid, mode: "all" as const, shift_keys: [] });
+        if (teacherMap.size === 0) {
+          for (const tid of allTeacherIds) {
+            teachers_config.push({ teacher_id: tid, mode: "all" as const, shift_keys: [], shift_time_ranges: {} });
           }
         }
       } else if (cls.teachersConfig && Array.isArray(cls.teachersConfig) && cls.teachersConfig.length > 0) {
@@ -297,6 +314,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
         teachers_config,
          freeClassMode,
       });
+      setTeacherAssignmentsDirty(false);
       setStep(1);
       setSelectedColor(cls.color || CLASS_PALETTE[5]);
       setEndType("date");
@@ -322,6 +340,27 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
       if (selectedLearningFormat === "online") fields.push("onlineLink");
       const isValid = await form.trigger(fields);
       if (!isValid) return toast({ title: "Thiếu thông tin", description: "Vui lòng điền đầy đủ các trường bắt buộc", variant: "destructive" });
+    }
+    if (step === 2 && scheduleGenerated && !isFreeClass && teacherAssignmentsDirty) {
+      const values = form.getValues();
+      const shiftTimeLookup = new Map(
+        (Array.isArray(filteredShifts) ? filteredShifts : []).map((shift: any) => [
+          String(shift.id),
+          { startTime: shift.startTime, endTime: shift.endTime },
+        ]),
+      );
+      const coverageIssues = validateTeacherTimeCoverage(
+        values.schedule_config || [],
+        values.teachers_config || [],
+        shiftTimeLookup,
+      );
+      if (coverageIssues.length > 0) {
+        return toast({
+          title: "Ca học chưa được phân công đủ giáo viên",
+          description: coverageIssues[0].message,
+          variant: "destructive",
+        });
+      }
     }
     if (step === 2 && !scheduleGenerated) {
       if (isFreeClass) {
@@ -391,8 +430,13 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
         scoreSheetId: valOrNull(data.scoreSheetId),
         color: selectedColor || null,
       };
+      if (teacherAssignmentsDirty) {
+        submitData.schedule_config = data.schedule_config || [];
+        submitData.teachers_config = data.teachers_config || [];
+        submitData.requireTeacherCoverage = true;
+      }
       updateClassMutation.mutate(
-        { id: classId, data: submitData },
+        { id: classId!, data: submitData },
         { onSuccess: () => { onOpenChange(false); onSuccess?.(); } }
       );
     } else {
@@ -454,26 +498,48 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
             }))
           : data.teachers_config || [],
          freeClassMode: isFreeClass ? data.freeClassMode : undefined,
+        requireTeacherCoverage: !isFreeClass,
         skipHolidays,
         regenerateSessions: true,
       };
       updateClassMutation.mutate(
-        { id: classId, data: submitData },
+        { id: classId!, data: submitData },
         { onSuccess: () => { onOpenChange(false); onSuccess?.(); } }
       );
     }
   };
 
   const getAllShiftsList = () => {
-    const list: { key: string; label: string }[] = [];
+    const list: { key: string; label: string; startTime: string; endTime: string }[] = [];
     scheduleConfig.forEach((day: any) => {
       const dayLabel = WEEKDAYS.find((w) => w.value === day.weekday)?.label;
       day.shifts.forEach((s: any, idx: number) => {
-        const shiftName = shifts?.find((st: any) => st.id === s.shift_template_id)?.name || `Ca ${idx + 1}`;
-        list.push({ key: `${day.weekday}_shift${idx}`, label: `${dayLabel}-${shiftName}` });
+        const shiftInfo = shifts?.find((st: any) => st.id === s.shift_template_id);
+        const shiftName = shiftInfo?.name || `Ca ${idx + 1}`;
+        list.push({
+          key: `${day.weekday}_shift${idx}`,
+          label: `${dayLabel}-${shiftName}`,
+          startTime: shiftInfo?.startTime || "",
+          endTime: shiftInfo?.endTime || "",
+        });
       });
     });
     return list;
+  };
+
+  const updateTeacherShiftTime = (teacherIndex: number, shiftKey: string, startTime: string, endTime: string) => {
+    const nextConfig = [...(form.getValues("teachers_config") || [])];
+    const current = nextConfig[teacherIndex];
+    if (!current) return;
+    nextConfig[teacherIndex] = {
+      ...current,
+      shift_time_ranges: {
+        ...(current.shift_time_ranges || {}),
+        [shiftKey]: { start_time: startTime, end_time: endTime },
+      },
+    };
+    form.setValue("teachers_config", nextConfig, { shouldDirty: true, shouldValidate: true });
+    setTeacherAssignmentsDirty(true);
   };
 
   const handleClose = (open: boolean) => {
@@ -893,12 +959,26 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                             {teachersConfig.map((t: any) => {
                               const member = staff?.find((s: any) => s.id === t.teacher_id);
                               return (
-                                <div key={t.teacher_id} className="flex items-center gap-2 px-3 py-2 bg-muted/30 rounded-lg border text-sm">
-                                  <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
-                                    <User className="h-3 w-3 text-primary" />
+                                <div key={t.teacher_id} className="w-full max-w-xl space-y-3 rounded-lg border bg-muted/20 p-3">
+                                  <div className="flex items-center gap-2 text-sm">
+                                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
+                                      <User className="h-3 w-3 text-primary" />
+                                    </div>
+                                    <span className="font-medium">{member?.fullName || t.teacher_id}</span>
+                                    <Badge variant="outline" className="text-xs">{t.mode === "all" ? "Tất cả" : "Theo ca"}</Badge>
                                   </div>
-                                  <span className="font-medium">{member?.fullName || t.teacher_id}</span>
-                                  <Badge variant="outline" className="text-xs">{t.mode === "all" ? "Tất cả" : "Theo ca"}</Badge>
+                                  <TeacherShiftTimeEditor
+                                    teacher={t}
+                                    shifts={getAllShiftsList()}
+                                    onRangeChange={(shiftKey, startTime, endTime) =>
+                                      updateTeacherShiftTime(
+                                        teachersConfig.findIndex((teacher: any) => teacher.teacher_id === t.teacher_id),
+                                        shiftKey,
+                                        startTime,
+                                        endTime,
+                                      )
+                                    }
+                                  />
                                 </div>
                               );
                             })}
@@ -1138,7 +1218,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                                     </div>
                                     <Button type="button" variant="ghost" size="sm" className="text-destructive h-7 px-2"
                                       onClick={() => {
-                                        const current = form.getValues("teachers_config");
+                                        const current = form.getValues("teachers_config") || [];
                                         form.setValue("teachers_config", current.filter((_: any, i: number) => i !== idx));
                                       }}>
                                       <X className="h-4 w-4 mr-1" /> Gỡ
@@ -1151,7 +1231,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                                         <button key={mode} type="button"
                                           className={cn("px-3 py-1 rounded transition-colors", teacher.mode === mode ? "bg-background shadow-sm font-bold" : "text-muted-foreground")}
                                           onClick={() => {
-                                            const current = [...form.getValues("teachers_config")];
+                                            const current = [...(form.getValues("teachers_config") || [])];
                                             current[idx].mode = mode;
                                             form.setValue("teachers_config", current);
                                           }}>
@@ -1170,7 +1250,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                                             className={cn("cursor-pointer px-3 py-1.5 rounded-full text-xs font-medium transition-all",
                                               !teacher.shift_keys.includes(shift.key) && "bg-background hover:bg-accent")}
                                             onClick={() => {
-                                              const current = [...form.getValues("teachers_config")];
+                                              const current = [...(form.getValues("teachers_config") || [])];
                                               const keys = [...current[idx].shift_keys];
                                               current[idx].shift_keys = keys.includes(shift.key) ? keys.filter((k) => k !== shift.key) : [...keys, shift.key];
                                               form.setValue("teachers_config", current);
@@ -1182,6 +1262,13 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                                       </div>
                                     </div>
                                   )}
+                                  <TeacherShiftTimeEditor
+                                    teacher={teacher}
+                                    shifts={getAllShiftsList()}
+                                    onRangeChange={(shiftKey, startTime, endTime) =>
+                                      updateTeacherShiftTime(idx, shiftKey, startTime, endTime)
+                                    }
+                                  />
                                 </CardContent>
                               </Card>
                             );
