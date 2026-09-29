@@ -2320,7 +2320,7 @@ export default function Invoices() {
                           onCheckedChange={v => setColumnVisible(prev => ({ ...prev, [key]: !!v }))}
                           data-testid={`checkbox-col-${key}`}
                         />
-                        <span className="text-sm">{col.label}</span>
+                        <span className="text-sm">{t(col.labelKey)}</span>
                       </div>
                     );
                   })}
@@ -2548,7 +2548,7 @@ export default function Invoices() {
                 {visibleColumns.map(col => (
                   <th key={col.key} className={`px-3 py-2.5 sticky top-0 z-30 bg-muted text-[10px] font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-muted/70 hover:text-foreground transition-colors ${col.align === "right" ? "text-right" : "text-left"} ${col.key === "name" ? "left-10 z-40 min-w-[160px] border-r border-border" : ""}`} onClick={() => col.sortKey && handleSort(col.sortKey)}>
                     <span className={`flex items-center gap-0.5 ${col.align === "right" ? "justify-end" : ""}`}>
-                      {col.label}
+                      {t(col.labelKey)}
                       {col.sortKey && <SortIcon k={col.sortKey} activeSortKey={sortKey} activeSortDir={sortDir} />}
                     </span>
                   </th>

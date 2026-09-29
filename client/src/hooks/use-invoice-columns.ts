@@ -4,41 +4,41 @@ import type { SortKey } from "./use-invoice-filters";
 
 export interface ColumnDef {
   key: string;
-  label: string;
+  labelKey: string;
   sortKey?: SortKey;
   defaultVisible: boolean;
   align?: "left" | "right";
 }
 
 export const ALL_COLUMNS: ColumnDef[] = [
-  { key: "name",        label: "Tên",                 sortKey: "name",        defaultVisible: true },
-  { key: "branch",      label: "Cơ sở",              sortKey: "branch",      defaultVisible: true },
-  { key: "code",        label: "Mã",                  sortKey: "code",        defaultVisible: true },
-  { key: "settleCode",  label: "Mã kết toán",         sortKey: "settleCode",  defaultVisible: false },
-  { key: "type",        label: "Loại",                sortKey: "type",        defaultVisible: true },
-  { key: "className",   label: "Lớp",                                         defaultVisible: false },
-  { key: "category",    label: "Danh mục",            sortKey: "category",    defaultVisible: true },
-  { key: "amount",      label: "Số tiền",                                     defaultVisible: false, align: "right" },
-  { key: "promotion",   label: "Khuyến mãi",                                  defaultVisible: false, align: "right" },
-  { key: "surcharge",   label: "Phụ thu",                                     defaultVisible: false, align: "right" },
-  { key: "deduction",   label: "Đặt cọc",                                     defaultVisible: false, align: "right" },
-  { key: "total",       label: "Tổng tiền",           sortKey: "grandTotal",  defaultVisible: true,  align: "right" },
-  { key: "paymentProgress",   label: "Đã thu / Còn nợ",                       defaultVisible: true },
-  { key: "scheduleProgress",  label: "Đợt & Tiến độ",                        defaultVisible: true },
-  { key: "paidAmount",  label: "Đã thu",                                      defaultVisible: false, align: "right" },
-  { key: "remaining",   label: "Còn lại",                                     defaultVisible: false, align: "right" },
-  { key: "description", label: "Mô tả",               sortKey: "description", defaultVisible: false },
-  { key: "status",      label: "Trạng thái",          sortKey: "status",      defaultVisible: true },
-  { key: "einvoice",    label: "HĐĐT",                                        defaultVisible: true },
-  { key: "dueDate",     label: "Hạn TT",              sortKey: "dueDate",     defaultVisible: true },
-  { key: "creator",     label: "Người tạo",                                   defaultVisible: true },
-  { key: "createdAt",   label: "Ngày tạo",            sortKey: "createdAt",   defaultVisible: true },
-  { key: "paidBy",      label: "Người thanh toán",                            defaultVisible: false },
-  { key: "paidAt",      label: "Ngày thanh toán",     sortKey: "paidAt",      defaultVisible: false },
-  { key: "paymentMethod", label: "Hình thức TT",                              defaultVisible: true },
-  { key: "updater",     label: "Người cập nhật",                              defaultVisible: false },
-  { key: "updatedAt",   label: "Ngày cập nhật",       sortKey: "updatedAt",   defaultVisible: false },
-  { key: "commission",  label: "Hoa hồng",            sortKey: "commission",  defaultVisible: false, align: "right" },
+  { key: "name",        labelKey: "finance.column.name", sortKey: "name", defaultVisible: true },
+  { key: "branch",      labelKey: "finance.branch",                      sortKey: "branch",      defaultVisible: true },
+  { key: "code",        labelKey: "finance.column.code",                 sortKey: "code",        defaultVisible: true },
+  { key: "settleCode",  labelKey: "finance.column.settleCode",            sortKey: "settleCode",  defaultVisible: false },
+  { key: "type",        labelKey: "finance.type",                        sortKey: "type",        defaultVisible: true },
+  { key: "className",   labelKey: "finance.class",                                             defaultVisible: false },
+  { key: "category",    labelKey: "finance.category",                    sortKey: "category",    defaultVisible: true },
+  { key: "amount",      labelKey: "finance.amount",                                           defaultVisible: false, align: "right" },
+  { key: "promotion",   labelKey: "finance.promotion",                                        defaultVisible: false, align: "right" },
+  { key: "surcharge",   labelKey: "finance.surcharge",                                        defaultVisible: false, align: "right" },
+  { key: "deduction",   labelKey: "finance.deposit",                                           defaultVisible: false, align: "right" },
+  { key: "total",       labelKey: "finance.total",                       sortKey: "grandTotal",  defaultVisible: true,  align: "right" },
+  { key: "paymentProgress",   labelKey: "finance.column.paymentProgress",                       defaultVisible: true },
+  { key: "scheduleProgress",  labelKey: "finance.column.scheduleProgress",                      defaultVisible: true },
+  { key: "paidAmount",  labelKey: "finance.paid",                                               defaultVisible: false, align: "right" },
+  { key: "remaining",   labelKey: "finance.remaining",                                          defaultVisible: false, align: "right" },
+  { key: "description", labelKey: "finance.description",               sortKey: "description", defaultVisible: false },
+  { key: "status",      labelKey: "finance.status",                    sortKey: "status",      defaultVisible: true },
+  { key: "einvoice",    labelKey: "finance.column.einvoice",                                     defaultVisible: true },
+  { key: "dueDate",     labelKey: "finance.column.dueDate",             sortKey: "dueDate",     defaultVisible: true },
+  { key: "creator",     labelKey: "finance.creator",                                             defaultVisible: true },
+  { key: "createdAt",   labelKey: "finance.createdDate",                sortKey: "createdAt",   defaultVisible: true },
+  { key: "paidBy",      labelKey: "finance.payer",                                               defaultVisible: false },
+  { key: "paidAt",      labelKey: "finance.paidDate",                    sortKey: "paidAt",      defaultVisible: false },
+  { key: "paymentMethod", labelKey: "finance.column.paymentMethod",                            defaultVisible: true },
+  { key: "updater",     labelKey: "finance.column.updater",                                      defaultVisible: false },
+  { key: "updatedAt",   labelKey: "finance.column.updatedAt",            sortKey: "updatedAt",   defaultVisible: false },
+  { key: "commission",  labelKey: "finance.column.commission",           sortKey: "commission",  defaultVisible: false, align: "right" },
 ];
 
 const INVOICE_COLUMNS_STORAGE_KEY = "edumanage:invoices:columns";
