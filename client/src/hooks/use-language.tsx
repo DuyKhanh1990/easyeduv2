@@ -969,9 +969,14 @@ const navMap: Record<string, string> = {
 
   // ── FINANCE items ────────────────────────────────────────────
   "Hoá đơn": "Invoices",
+  "Công nợ": "Debt",
+  "Học phí trả sau": "Deferred Tuition",
+  "Đối soát": "Reconciliation",
   "Cấu hình tài chính": "Finance Settings",
   "Khuyến mãi / Phụ thu": "Promotions / Surcharges",
   "Danh mục Thu Chi": "Income & Expenses",
+  "Voucher": "Vouchers",
+  "Nhắc công nợ": "Debt Reminders",
 
   // ── STORE items ──────────────────────────────────────────────
   "Kho hàng": "Warehouse",
