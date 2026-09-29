@@ -381,7 +381,7 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
         <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
           <div className="space-y-1 min-w-0">
             <p className="text-sm text-muted-foreground">
-              Thời gian: <span className="font-bold text-foreground">{session.isFreeSession ? "Lịch linh hoạt" : `${session.startTime} - ${session.endTime}`}</span>
+              Thời gian: <span className="font-bold text-foreground">{session.isFreeSession ? "Lịch linh hoạt" : `${session.startTime.slice(0, 5)} - ${session.endTime.slice(0, 5)}`}</span>
               {testEnded && (
                 <span className="ml-2 text-xs font-semibold text-red-500 bg-red-50 dark:bg-red-950/30 px-2 py-0.5 rounded-full">Đã kết thúc</span>
               )}
@@ -594,7 +594,7 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
       <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
         <div className="space-y-1 min-w-0">
           <p className="text-sm text-muted-foreground">
-            Thời gian: <span className="font-bold text-foreground">{session.isFreeSession ? "Lịch linh hoạt" : `${session.startTime} - ${session.endTime}`}</span>
+            Thời gian: <span className="font-bold text-foreground">{session.isFreeSession ? "Lịch linh hoạt" : `${session.startTime.slice(0, 5)} - ${session.endTime.slice(0, 5)}`}</span>
             {isCancelled && (
               <span className="ml-2 text-xs font-semibold text-red-500 bg-red-50 dark:bg-red-950/30 px-2 py-0.5 rounded-full">Đã huỷ</span>
             )}

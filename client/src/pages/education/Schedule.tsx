@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { getAuthHeaders } from "@/lib/queryClient";
+import { getAssignedTeacherTimeRange, type TeacherTimeInterval } from "@shared/teacher-time-assignments";
 import ExcelJS from "exceljs";
 
 type ViewMode = "list-day" | "list-week" | "week" | "month" | "room" | "teacher";
@@ -47,6 +48,7 @@ interface ScheduleSession {
   shiftName: string;
   learningFormat: string;
   teacherIds: string[];
+  teacherTimeAssignments?: TeacherTimeInterval[];
   classColor?: string | null;
   roomId?: string | null;
   roomName?: string | null;
@@ -101,6 +103,16 @@ function getScheduleTimeLabel(session: Pick<ScheduleSession, "isFreeSession" | "
   if (start && end) return `${start} – ${end}`;
   if (start || end) return `${start || end}`;
   return session.isFreeSession ? "Lớp tự do" : "—";
+}
+
+function getTeacherViewSession(session: ScheduleSession, teacherId: string): ScheduleSession {
+  const range = getAssignedTeacherTimeRange(
+    session.teacherTimeAssignments ?? [],
+    teacherId,
+    session.shiftStart,
+    session.shiftEnd,
+  );
+  return { ...session, shiftStart: range.startTime, shiftEnd: range.endTime };
 }
 
 export function Schedule() {
@@ -2176,9 +2188,9 @@ function TeacherView({
               </div>
             ) : (
               allWeekTeacherRows.map((teacher, rowIdx) => {
-                const weekSessions = sessions.filter(s =>
-                  s.teacherIds?.includes(teacher.key) || s.teachers.includes(teacher.name)
-                );
+                const weekSessions = sessions
+                  .filter(s => s.teacherIds?.includes(teacher.key) || s.teachers.includes(teacher.name))
+                  .map(s => getTeacherViewSession(s, teacher.key));
                 const totalCount = weekSessions.length;
                 return (
                   <div
@@ -2383,9 +2395,9 @@ function TeacherView({
             </div>
           ) : (
             teacherRows.map((teacher, rowIdx) => {
-              const rowSessions = daySessions.filter(s =>
-                s.teacherIds?.includes(teacher.key) || s.teachers.includes(teacher.name)
-              );
+              const rowSessions = daySessions
+                .filter(s => s.teacherIds?.includes(teacher.key) || s.teachers.includes(teacher.name))
+                .map(s => getTeacherViewSession(s, teacher.key));
               const laneMap = computeLanes(rowSessions);
               const maxLanes = rowSessions.length === 0 ? 1 : Math.max(...Array.from(laneMap.values()).map(v => v.laneCount));
               const LANE_MIN = 72;

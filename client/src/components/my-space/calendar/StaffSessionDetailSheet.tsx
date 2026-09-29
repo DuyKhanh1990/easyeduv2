@@ -421,7 +421,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                     <span className="font-medium text-foreground">
                       {isFreeSession
                         ? `Lịch linh hoạt · ${weekdayLabel} ${dateLabel}`
-                        : `${session.startTime} - ${session.endTime} · ${weekdayLabel} ${dateLabel}`}
+                        : `${session.startTime.slice(0, 5)} - ${session.endTime.slice(0, 5)} · ${weekdayLabel} ${dateLabel}`}
                     </span>
                   </div>
                   <div className="flex gap-2">

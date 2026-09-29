@@ -4536,7 +4536,7 @@ export function registerClassesRoutes(app: Express): void {
       }
 
       const { db: baseDb, eq: baseEq, and: baseAnd, sql: baseSql, classSessions: baseSessions, classes: baseClasses, shiftTemplates: baseShifts, locations, staff, studentSessions: baseSs, inArray: baseInArray, sessionContents: baseContents } = await import("../storage/base");
-      const { classrooms } = await import("@shared/schema");
+      const { classrooms, classSessionTeacherAssignments } = await import("@shared/schema");
 
       const locationConditions = [];
       if (effectiveLocationId) {
@@ -4587,6 +4587,30 @@ export function registerClassesRoutes(app: Express): void {
       classTotals.forEach(c => totalSessionsMap.set(c.classId, c.total));
 
       const sessionIds = sessions.map(s => s.id);
+      const teacherTimeAssignmentRows = sessionIds.length > 0
+        ? await baseDb.select({
+            classSessionId: classSessionTeacherAssignments.classSessionId,
+            teacherId: classSessionTeacherAssignments.teacherId,
+            startTime: classSessionTeacherAssignments.startTime,
+            endTime: classSessionTeacherAssignments.endTime,
+          })
+          .from(classSessionTeacherAssignments)
+          .where(baseInArray(classSessionTeacherAssignments.classSessionId, sessionIds))
+        : [];
+      const teacherTimeAssignmentsBySession = new Map<
+        string,
+        Array<{ teacherId: string; startTime: string; endTime: string }>
+      >();
+      for (const assignment of teacherTimeAssignmentRows) {
+        const assignments = teacherTimeAssignmentsBySession.get(assignment.classSessionId) ?? [];
+        assignments.push({
+          teacherId: assignment.teacherId,
+          startTime: String(assignment.startTime),
+          endTime: String(assignment.endTime),
+        });
+        teacherTimeAssignmentsBySession.set(assignment.classSessionId, assignments);
+      }
+
       const enrolledCountMap = new Map<string, number>();
       if (sessionIds.length > 0) {
         const counts = await baseDb.select({
@@ -4617,15 +4641,23 @@ export function registerClassesRoutes(app: Express): void {
       const enriched = sessions
         .filter(s => {
           if (teacherId) {
-            return s.teacherIds?.includes(teacherId) ?? false;
+            return (s.teacherIds?.includes(teacherId) ?? false) ||
+              (teacherTimeAssignmentsBySession.get(s.id) ?? []).some((assignment) => assignment.teacherId === teacherId);
           }
           return true;
         })
         .map(s => {
           const contents = contentsMap.get(s.id) || [];
+          const teacherTimeAssignments = teacherTimeAssignmentsBySession.get(s.id) ?? [];
+          const teacherIds = [...new Set([
+            ...(s.teacherIds ?? []),
+            ...teacherTimeAssignments.map((assignment) => assignment.teacherId),
+          ])];
           return {
             ...s,
-            teachers: (s.teacherIds || []).map(id => staffMap.get(id) || "").filter(Boolean),
+            teacherIds,
+            teachers: teacherIds.map(id => staffMap.get(id) || "").filter(Boolean),
+            teacherTimeAssignments,
             totalSessions: totalSessionsMap.get(s.classId) || 0,
             enrolledCount: enrolledCountMap.get(s.id) || 0,
             classColor: s.classColor || null,

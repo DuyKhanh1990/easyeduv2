@@ -52,6 +52,19 @@ export function getTeacherIdsForTimeRange(
   return [...visibleTeacherIds];
 }
 
+export function getAssignedTeacherTimeRange(
+  assignments: TeacherTimeInterval[],
+  teacherId: string,
+  defaultStartTime: string,
+  defaultEndTime: string,
+): { startTime: string; endTime: string } {
+  const assignment = assignments.find((candidate) => candidate.teacherId === teacherId);
+  return {
+    startTime: String(assignment?.startTime ?? defaultStartTime).slice(0, 5),
+    endTime: String(assignment?.endTime ?? defaultEndTime).slice(0, 5),
+  };
+}
+
 function formatTime(minutes: number): string {
   const hours = Math.floor(minutes / 60).toString().padStart(2, "0");
   const remainingMinutes = (minutes % 60).toString().padStart(2, "0");

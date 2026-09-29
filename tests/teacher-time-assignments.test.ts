@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { getTeacherIdsForTimeRange } from "../shared/teacher-time-assignments";
+import {
+  getAssignedTeacherTimeRange,
+  getTeacherIdsForTimeRange,
+} from "../shared/teacher-time-assignments";
 
 describe("getTeacherIdsForTimeRange", () => {
   it("shows assigned teachers whose intervals overlap the staff member's interval", () => {
@@ -24,5 +27,20 @@ describe("getTeacherIdsForTimeRange", () => {
     expect(
       getTeacherIdsForTimeRange(assignments, "08:00", "10:00", ["legacy", "partial"]),
     ).toEqual(["partial", "legacy"]);
+  });
+
+  it("uses the selected teacher's interval and keeps the configured full shift as fallback", () => {
+    const assignments = [
+      { teacherId: "teacher-a", startTime: "08:30:00", endTime: "09:30:00" },
+    ];
+
+    expect(getAssignedTeacherTimeRange(assignments, "teacher-a", "08:00", "10:00")).toEqual({
+      startTime: "08:30",
+      endTime: "09:30",
+    });
+    expect(getAssignedTeacherTimeRange(assignments, "teacher-b", "08:00", "10:00")).toEqual({
+      startTime: "08:00",
+      endTime: "10:00",
+    });
   });
 });
