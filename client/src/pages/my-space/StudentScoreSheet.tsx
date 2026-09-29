@@ -152,11 +152,11 @@ export function StudentScoreSheet() {
                       return (
                         <div
                           key={book.id}
-                          className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(160px,1fr)_160px_80px_minmax(160px,1fr)_48px] xl:items-center xl:gap-x-4 xl:gap-y-0"
+                           className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 sm:grid-cols-3 sm:px-4 md:grid-cols-[minmax(0,1.4fr)_minmax(120px,1fr)_80px_minmax(180px,1.4fr)_48px] xl:grid-cols-[minmax(160px,1fr)_160px_80px_minmax(160px,1fr)_48px] xl:items-center xl:gap-x-4 xl:gap-y-0"
                           data-testid={`row-grade-book-${book.id}`}
                         >
                           {/* Col 1: Title + class */}
-                          <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
+                           <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-1 xl:col-span-1">
                             <p className="text-sm font-semibold text-foreground truncate leading-tight">
                               {book.title}
                             </p>
@@ -203,7 +203,7 @@ export function StudentScoreSheet() {
                           </div>
 
                           {/* Col 4: Creator + date */}
-                          <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
+                           <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-1 xl:col-span-1">
                             <p className="text-[11px] text-muted-foreground whitespace-nowrap truncate">
                               {t("mySpace.scoreSheet.created")}: {book.createdByName ?? "—"} · {formatDate(book.createdAt)}
                             </p>
@@ -213,7 +213,7 @@ export function StudentScoreSheet() {
                           </div>
 
                           {/* Col 5: View button */}
-                          <div className="col-span-2 flex justify-end border-t border-border/60 pt-2 sm:col-span-1 sm:border-0 sm:pt-0 md:col-span-4 xl:col-span-1 xl:border-0 xl:pt-0">
+                           <div className="col-span-2 flex justify-end border-t border-border/60 pt-2 sm:col-span-1 sm:border-0 sm:pt-0 md:col-span-1 xl:col-span-1 xl:border-0 xl:pt-0">
                             <Button
                               variant="ghost"
                               size="icon"
