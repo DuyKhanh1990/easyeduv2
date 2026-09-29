@@ -2,6 +2,7 @@ import { useInvoiceSchedules } from "@/hooks/use-invoice-schedules";
 import { AlertCircle } from "lucide-react";
 import { DueDateBadge } from "./DueDateBadge";
 import { STATUS_CONFIG, parseNum, fmtMoney, fmtDate, DEBT_ROW_COLS, type InvoiceRow } from "@/types/invoice-types";
+import { useLanguage } from "@/hooks/use-language";
 
 export function DebtScheduleLoader({
   invoice,
@@ -12,6 +13,7 @@ export function DebtScheduleLoader({
   dueDateFrom?: string;
   dueDateTo?: string;
 }) {
+  const { t } = useLanguage();
   const { schedules, isLoading } = useInvoiceSchedules(invoice.id);
   const hasDueDateFilter = !!dueDateFrom || !!dueDateTo;
   const unpaid = schedules.filter(s => {
@@ -39,6 +41,10 @@ export function DebtScheduleLoader({
     <>
       {unpaid.map(s => {
         const amount = parseNum(s.amount);
+        const installmentNumber = String(s.label ?? "").match(/\d+/)?.[0];
+        const installmentLabel = installmentNumber
+          ? t("finance.installmentLabel", { number: installmentNumber })
+          : s.label;
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const due = s.dueDate ? new Date(s.dueDate) : null;
@@ -49,7 +55,7 @@ export function DebtScheduleLoader({
             <td className="px-4 py-2.5 text-xs font-medium text-primary">
               <div className="flex items-baseline gap-1.5">
                 <span>{s.code ?? s.label}</span>
-                {s.code && <span className="text-[10px] text-muted-foreground">{s.label.toLowerCase()}</span>}
+                {s.code && <span className="text-[10px] text-muted-foreground">{installmentLabel}</span>}
               </div>
             </td>
             <td className="px-4 py-2.5 text-xs text-muted-foreground">{invoice.category || "—"}</td>
@@ -60,7 +66,7 @@ export function DebtScheduleLoader({
                 ? <span className="flex items-center gap-1">{fmtDate(s.dueDate)}{isOverdue && <AlertCircle className="h-3 w-3 text-orange-500" />}</span>
                 : <span className="text-muted-foreground">—</span>}
             </td>
-            <td className="px-4 py-2.5"><span className={`inline-flex items-center whitespace-nowrap text-[11px] px-1.5 py-0.5 rounded ${STATUS_CONFIG.unpaid.className}`}>Chưa thanh toán</span></td>
+            <td className="px-4 py-2.5"><span className={`inline-flex items-center whitespace-nowrap text-[11px] px-1.5 py-0.5 rounded ${STATUS_CONFIG.unpaid.className}`}>{t("finance.unpaidStatus")}</span></td>
             <td className="px-4 py-2.5"><DueDateBadge dueDate={s.dueDate} /></td>
           </tr>
         );

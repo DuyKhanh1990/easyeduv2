@@ -336,8 +336,8 @@ function MonthPicker({ value, onChange }: MonthPickerProps) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <div className="relative h-9 flex items-center border border-input rounded-md bg-background px-3 cursor-pointer hover:bg-accent transition-colors min-w-[140px]">
-          <span className="text-xs text-muted-foreground absolute -top-2 left-2 bg-background px-1 leading-none">
+        <div className="relative h-9 flex items-center border border-input rounded-md bg-background px-3 cursor-pointer hover:bg-accent transition-colors w-[180px] min-w-[180px]">
+          <span className="text-xs text-muted-foreground absolute -top-2 left-2 bg-background px-1 leading-none whitespace-nowrap">
             {t("deferred.monthPicker")}
           </span>
           <span className="text-sm flex-1">{displayValue}</span>
