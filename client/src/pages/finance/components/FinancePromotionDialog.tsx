@@ -119,7 +119,7 @@ export function FinancePromotionDialog({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="percent">%</SelectItem>
-                  <SelectItem value="vnd">VNĐ</SelectItem>
+                  <SelectItem value="vnd">{t("financeConfig.currency")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>

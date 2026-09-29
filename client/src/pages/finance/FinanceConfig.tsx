@@ -107,12 +107,12 @@ export default function FinanceConfig() {
 
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
           <div className="flex flex-wrap gap-2 mb-4">
-            {visibleTabs.map(t => (
+            {visibleTabs.map(tab => (
               <button
-                key={t.value}
-                onClick={() => handleTabChange(t.value)}
-                className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all", activeTab === t.value ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}
-              >{t.labelKey ? t(t.labelKey) : ""}</button>
+                key={tab.value}
+                onClick={() => handleTabChange(tab.value)}
+                className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all", activeTab === tab.value ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}
+              >{tab.labelKey ? t(tab.labelKey) : ""}</button>
             ))}
           </div>
 
@@ -241,9 +241,9 @@ function PromoPanel({
                   <span className="text-sm font-medium truncate">{item.name}</span>
                   <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
                     {item.valueAmount && (
-                      <span>{t("financeConfig.valueLabel")}: {item.valueAmount}{item.valueType === "percent" ? "%" : " VNĐ"}</span>
+                      <span>{t("financeConfig.valueLabel")}: {item.valueAmount}{item.valueType === "percent" ? "%" : ` ${t("financeConfig.currency")}`}</span>
                     )}
-                    {item.quantity && <span>SL: {item.quantity}</span>}
+                    {item.quantity && <span>{t("financeConfig.quantityShort")}: {item.quantity}</span>}
                     {item.fromDate && item.toDate && (
                       <span>{item.fromDate} → {item.toDate}</span>
                     )}
@@ -491,7 +491,7 @@ function VoucherStatusBadge({ voucher }: { voucher: FinanceVoucher }) {
 }
 
 function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
-  const { t } = useLanguage();
+  const { lang, t } = useLanguage();
   const { toast } = useToast();
   const [addOpen, setAddOpen] = useState(false);
   const [editingVoucher, setEditingVoucher] = useState<FinanceVoucher | null>(null);
@@ -728,7 +728,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
   };
 
   const formatValue = (voucher: FinanceVoucher) =>
-    `${Number(voucher.valueAmount).toLocaleString("vi-VN")}${voucher.valueType === "percent" ? "%" : " đ"}`;
+    `${Number(voucher.valueAmount).toLocaleString(lang === "en" ? "en-US" : "vi-VN")}${voucher.valueType === "percent" ? "%" : ` ${t("financeConfig.currency")}`}`;
 
   const formatAudience = (voucher: FinanceVoucher) => {
     if (voucher.audience === "birthday") {
@@ -744,7 +744,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
         <div className="flex items-center justify-between">
           <CardTitle className="text-base flex items-center gap-2">
             <Tag className="h-4 w-4 text-purple-600" />
-            Voucher
+            {t("financeConfig.voucherTitle")}
           </CardTitle>
           <div className="flex items-center gap-2">
             <Input
@@ -856,7 +856,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                   {t("financeConfig.voucherCode")} <span className="text-red-500">*</span>
                 </label>
                 <Input
-                  placeholder="VD: WELCOME2026"
+                  placeholder={t("financeConfig.voucherCodePlaceholder")}
                   value={form.code}
                   onChange={e => setForm(current => ({ ...current, code: e.target.value }))}
                   data-testid="input-voucher-code"
@@ -1057,7 +1057,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="percent">%</SelectItem>
-                      <SelectItem value="vnd">VNĐ</SelectItem>
+                      <SelectItem value="vnd">{t("financeConfig.currency")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1213,7 +1213,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                       </td>
                       <td className="px-4 py-2.5 text-muted-foreground">
                         {row.usedAt
-                          ? new Date(row.usedAt).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" })
+                          ? new Date(row.usedAt).toLocaleString(lang === "en" ? "en-US" : "vi-VN", { dateStyle: "short", timeStyle: "short" })
                           : "—"}
                       </td>
                       <td className="px-4 py-2.5">
