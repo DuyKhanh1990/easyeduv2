@@ -88,7 +88,9 @@ export function buildTeacherTimeAssignments(
     const teacherId = String(teacher?.teacher_id || "");
     if (!teacherId || seen.has(teacherId) || !teacherCoversShift(teacher, scheduleKey)) continue;
     seen.add(teacherId);
-    const range = getTeacherTimeRange(teacher, scheduleKey, defaultStartTime, defaultEndTime);
+    const range = teacher.mode === "all"
+      ? { startTime: defaultStartTime.slice(0, 5), endTime: defaultEndTime.slice(0, 5) }
+      : getTeacherTimeRange(teacher, scheduleKey, defaultStartTime, defaultEndTime);
     assignments.push({
       teacherId,
       startTime: range.startTime,

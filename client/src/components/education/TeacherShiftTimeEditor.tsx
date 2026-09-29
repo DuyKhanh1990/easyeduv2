@@ -19,9 +19,11 @@ function shortTime(value: string | null | undefined): string {
 }
 
 export function TeacherShiftTimeEditor({ teacher, shifts, onRangeChange, disabled = false }: Props) {
-  const assignedShifts = teacher?.mode === "all"
-    ? shifts
-    : shifts.filter((shift) => (teacher?.shift_keys || teacher?.shiftKeys || []).includes(shift.key));
+  if (teacher?.mode === "all") return null;
+
+  const assignedShifts = shifts.filter((shift) =>
+    (teacher?.shift_keys || teacher?.shiftKeys || []).includes(shift.key)
+  );
 
   if (assignedShifts.length === 0) return null;
 
