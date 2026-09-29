@@ -734,7 +734,7 @@ function renderInvoiceCell(
     case "settleCode":
       return <td key="settleCode" className="p-3 whitespace-nowrap"><span className="text-xs text-slate-400">{inv.settleCode || "—"}</span></td>;
     case "type":
-      return <td key="type" className="p-3"><span className={`text-[11px] px-2.5 py-1 rounded-full font-bold tracking-wide ${inv.type === "Thu" ? "bg-sky-100 text-sky-700 border border-sky-200" : "bg-orange-100 text-orange-700 border border-orange-200"}`}>{inv.type === "Thu" ? t("finance.invoiceTypeIncome") : t("finance.invoiceTypeExpense")}</span></td>;
+      return <td key="type" className="p-3 w-[112px] min-w-[112px] whitespace-nowrap"><span className={`text-[11px] px-2.5 py-1 rounded-full font-bold tracking-wide whitespace-nowrap ${inv.type === "Thu" ? "bg-sky-100 text-sky-700 border border-sky-200" : "bg-orange-100 text-orange-700 border border-orange-200"}`}>{inv.type === "Thu" ? t("finance.invoiceTypeIncome") : t("finance.invoiceTypeExpense")}</span></td>;
     case "name":
       return (
         <td key="name" className={`p-3 font-medium whitespace-nowrap sticky left-10 z-10 will-change-transform ${nameBg} min-w-[160px] border-r border-slate-100`}>
@@ -2562,7 +2562,7 @@ export default function Invoices() {
                   if (nextChecked) reopenActionMenuAfterCheckboxClick();
                 }} data-testid="checkbox-all" />}</th>
                 {visibleColumns.map(col => (
-                  <th key={col.key} className={`px-3 py-2.5 sticky top-0 z-30 bg-muted text-[10px] font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-muted/70 hover:text-foreground transition-colors ${col.align === "right" ? "text-right" : "text-left"} ${col.key === "name" ? "left-10 z-40 min-w-[160px] border-r border-border" : ""}`} onClick={() => col.sortKey && handleSort(col.sortKey)}>
+                  <th key={col.key} className={`px-3 py-2.5 sticky top-0 z-30 bg-muted text-[10px] font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-muted/70 hover:text-foreground transition-colors ${col.align === "right" ? "text-right" : "text-left"} ${col.key === "name" ? "left-10 z-40 min-w-[160px] border-r border-border" : ""} ${col.key === "type" ? "w-[112px] min-w-[112px]" : ""}`} onClick={() => col.sortKey && handleSort(col.sortKey)}>
                     <span className={`flex items-center gap-0.5 ${col.align === "right" ? "justify-end" : ""}`}>
                       {t(col.labelKey)}
                       {col.sortKey && <SortIcon k={col.sortKey} activeSortKey={sortKey} activeSortDir={sortDir} />}
