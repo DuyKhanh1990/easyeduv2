@@ -36,7 +36,7 @@ import {
   DropdownMenuTrigger as ActionMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";
-import { vi } from "date-fns/locale";
+import { enUS, vi } from "date-fns/locale";
 import { useStaff } from "@/hooks/use-staff";
 import { CreateInvoiceDialog } from "./CreateInvoiceDialog";
 import { BulkInvoiceEntryDialog } from "./components/BulkInvoiceEntryDialog";
@@ -1023,7 +1023,7 @@ function BulkDueDateDialog({
   onDateChange: (d: Date | undefined) => void;
   isPending: boolean;
 }) {
-  const { t } = useLanguage();
+  const { lang, t } = useLanguage();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
@@ -1041,7 +1041,7 @@ function BulkDueDateDialog({
             mode="single"
             selected={selectedDate}
             onSelect={onDateChange}
-            locale={vi}
+            locale={lang === "en" ? enUS : vi}
             className="rounded-md border"
           />
           {selectedDate && (
@@ -1096,7 +1096,7 @@ function BulkInvoiceDateDialog({
   selectedItems: BulkInvoiceDateTarget[];
   isPending: boolean;
 }) {
-  const { t } = useLanguage();
+  const { lang, t } = useLanguage();
   const [confirmingConflict, setConfirmingConflict] = useState(false);
   useEffect(() => {
     if (!open) setConfirmingConflict(false);
@@ -1133,7 +1133,7 @@ function BulkInvoiceDateDialog({
               setConfirmingConflict(false);
               onDateChange(date);
             }}
-            locale={vi}
+            locale={lang === "en" ? enUS : vi}
             className="rounded-md border"
           />
           {selectedDate && (
@@ -1282,7 +1282,7 @@ function BulkAssignCommissionDialog({
                           className="ml-1 text-muted-foreground hover:text-destructive"
                           onClick={() => removeRow(c.staffId)}
                         >
-                          <span className="sr-only">Xóa</span>×
+                          <span className="sr-only">{t("finance.remove")}</span>×
                         </button>
                       </div>
                     </div>
@@ -2772,7 +2772,7 @@ export default function Invoices() {
           <div className="flex items-center gap-1">
             <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page <= 1} onClick={() => setPage(1)}>«</Button>
             <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>‹</Button>
-            <span className="px-2 text-xs">Trang {page} / {Math.max(1, Math.ceil(parentTotal / pageSize))}</span>
+            <span className="px-2 text-xs">{t("finance.pageOf", { page, total: Math.max(1, Math.ceil(parentTotal / pageSize)) })}</span>
             <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page >= Math.ceil(parentTotal / pageSize)} onClick={() => setPage(p => p + 1)}>›</Button>
             <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page >= Math.ceil(parentTotal / pageSize)} onClick={() => setPage(Math.ceil(parentTotal / pageSize))}>»</Button>
           </div>
@@ -2806,15 +2806,15 @@ export default function Invoices() {
             });
             const totalDebtAll = filteredDebtInvoices.reduce((s, i) => s + parseNum(i.remainingAmount), 0);
             const debtConditionCards: { key: DebtCondition | "total"; label: string; value: string | number; activeClass: string; textClass: string }[] = [
-              { key: "overdue", label: "Quá hạn", value: invoices.filter(invoice => (getDaysUntilDue(invoice) ?? 0) < 0).length, activeClass: "border-red-300 bg-red-50", textClass: "text-red-600" },
-              { key: "today", label: "Đến hạn hôm nay", value: invoices.filter(invoice => getDaysUntilDue(invoice) === 0).length, activeClass: "border-orange-300 bg-orange-50", textClass: "text-orange-600" },
-              { key: "soon", label: "Sắp đến hạn", value: invoices.filter(invoice => {
+              { key: "overdue", label: t("finance.overdue"), value: invoices.filter(invoice => (getDaysUntilDue(invoice) ?? 0) < 0).length, activeClass: "border-red-300 bg-red-50", textClass: "text-red-600" },
+              { key: "today", label: t("finance.dueToday"), value: invoices.filter(invoice => getDaysUntilDue(invoice) === 0).length, activeClass: "border-orange-300 bg-orange-50", textClass: "text-orange-600" },
+              { key: "soon", label: t("finance.debtStatusSoon"), value: invoices.filter(invoice => {
                 const days = getDaysUntilDue(invoice);
                 return days !== null && days >= 1 && days <= 7;
               }).length, activeClass: "border-amber-300 bg-amber-50", textClass: "text-amber-600" },
-              { key: "upcoming", label: "Chưa đến hạn", value: invoices.filter(invoice => (getDaysUntilDue(invoice) ?? 0) > 7).length, activeClass: "border-blue-300 bg-blue-50", textClass: "text-blue-600" },
-              { key: "no-due-date", label: "Không có hạn", value: invoices.filter(invoice => getDaysUntilDue(invoice) === null).length, activeClass: "border-slate-300 bg-slate-100", textClass: "text-slate-600" },
-              { key: "total", label: "Tổng công nợ", value: fmtMoney(totalDebtAll), activeClass: "border-rose-300 bg-rose-50", textClass: "text-rose-600" },
+              { key: "upcoming", label: t("finance.notDue"), value: invoices.filter(invoice => (getDaysUntilDue(invoice) ?? 0) > 7).length, activeClass: "border-blue-300 bg-blue-50", textClass: "text-blue-600" },
+              { key: "no-due-date", label: t("finance.noDueDate"), value: invoices.filter(invoice => getDaysUntilDue(invoice) === null).length, activeClass: "border-slate-300 bg-slate-100", textClass: "text-slate-600" },
+              { key: "total", label: t("finance.debtTotal"), value: fmtMoney(totalDebtAll), activeClass: "border-rose-300 bg-rose-50", textClass: "text-rose-600" },
             ];
             const groups = (() => {
               const map = new Map<string, { key: string; name: string; invoices: InvoiceRow[] }>();
@@ -3037,7 +3037,7 @@ export default function Invoices() {
                 <div className="flex items-center gap-1">
                   <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page <= 1} onClick={() => setPage(1)}>«</Button>
                   <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>‹</Button>
-                  <span className="px-2 text-xs">Trang {page} / {Math.max(1, Math.ceil(total / pageSize))}</span>
+                  <span className="px-2 text-xs">{t("finance.pageOf", { page, total: Math.max(1, Math.ceil(total / pageSize)) })}</span>
                   <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage(p => p + 1)}>›</Button>
                   <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage(Math.ceil(total / pageSize))}>»</Button>
                 </div>
@@ -3160,8 +3160,8 @@ export default function Invoices() {
           items: (Array.isArray(invAny.items) && invAny.items.length > 0)
             ? invAny.items
             : [{
-                packageName: `${invAny.category ?? inv.name ?? "Học phí"} — ${s.label}`,
-                name: `${invAny.category ?? inv.name ?? "Học phí"} — ${s.label}`,
+                packageName: `${invAny.category ?? inv.name ?? t("finance.tuition")} — ${s.label}`,
+                name: `${invAny.category ?? inv.name ?? t("finance.tuition")} — ${s.label}`,
                 unitPrice: amount,
                 price: amount,
                 quantity: 1,

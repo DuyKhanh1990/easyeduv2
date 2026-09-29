@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { vi } from "date-fns/locale";
+import { enUS, vi } from "date-fns/locale";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -16,15 +16,17 @@ import { useToast } from "@/hooks/use-toast";
 import { SplitScheduleDialog } from "./SplitScheduleDialog";
 import { ScheduleQRDialog } from "./ScheduleRows";
 import { InvoicePrintPreview } from "../InvoicePrintPreview";
+import { useLanguage } from "@/hooks/use-language";
 
 /* ─── Status badge (display only) ────────────────────────── */
 function StatusLabel({ status, dueDate }: { status: string; dueDate?: string | null }) {
+  const { t } = useLanguage();
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const due = dueDate ? new Date(dueDate) : null;
   const overdue = status !== "paid" && due !== null && due < today;
-  if (status === "paid") return <span className="text-green-700 flex items-center gap-1"><CheckCircle className="h-3 w-3" />Đã thanh toán</span>;
-  if (overdue) return <span className="text-amber-600 flex items-center gap-1"><AlertCircle className="h-3 w-3" />Quá hạn</span>;
-  return <span className="text-muted-foreground flex items-center gap-1">⏳ Chưa thanh toán</span>;
+  if (status === "paid") return <span className="text-green-700 flex items-center gap-1"><CheckCircle className="h-3 w-3" />{t("finance.paidStatus")}</span>;
+  if (overdue) return <span className="text-amber-600 flex items-center gap-1"><AlertCircle className="h-3 w-3" />{t("finance.overdue")}</span>;
+  return <span className="text-muted-foreground flex items-center gap-1">⏳ {t("finance.unpaidStatus")}</span>;
 }
 
 interface Props { inv: InvoiceRow; children: React.ReactNode; }
@@ -32,6 +34,7 @@ interface Props { inv: InvoiceRow; children: React.ReactNode; }
 export function ScheduleProgressPopover({ inv, children }: Props) {
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
+  const { lang, t } = useLanguage();
 
   /* Dialog targets */
   const [deleteTarget, setDeleteTarget]   = useState<ScheduleItem | null>(null);
@@ -92,9 +95,9 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
       invalidate();
       setSignTarget(null);
       setSignConfirmed(false);
-      toast({ title: "Gửi ký số thành công" });
+      toast({ title: t("finance.signSendSuccess") });
     },
-    onError: (err: any) => toast({ title: "Lỗi gửi ký số", description: err.message, variant: "destructive" }),
+    onError: (err: any) => toast({ title: t("finance.signSendError"), description: err.message, variant: "destructive" }),
   });
 
   /* Derived */
@@ -110,10 +113,16 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
   const nextDueDate  = nextDueRaw ? new Date(nextDueRaw) : null;
   const allDone      = paidSch === total && grandTotal > 0;
   const topStatus    = STATUS_CONFIG[inv.status] ?? STATUS_CONFIG.unpaid;
-  const invoiceRef   = { id: inv.id, code: inv.code, name: inv.name, branch: inv.branch, dueDate: inv.dueDate };
+  const invoiceRef   = {
+    id: inv.id,
+    code: inv.code ?? undefined,
+    name: inv.name ?? undefined,
+    branch: inv.branch ?? undefined,
+    dueDate: inv.dueDate ?? undefined,
+  };
   const singleSchedule: ScheduleItem = {
     id: `invoice-${inv.id}-single`,
-    label: "ĐỢT 1",
+    label: t("finance.installmentLabel", { number: 1 }),
     code: inv.code,
     amount: String(grandTotal),
     status: remaining === 0 && grandTotal > 0 ? "paid" : "unpaid",
@@ -157,8 +166,8 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
       items: (Array.isArray(invAny.items) && invAny.items.length > 0)
         ? invAny.items
         : [{
-            packageName: `${invAny.category ?? inv.name ?? "Học phí"} — ${s.label}`,
-            name: `${invAny.category ?? inv.name ?? "Học phí"} — ${s.label}`,
+            packageName: `${invAny.category ?? inv.name ?? t("finance.tuition")} — ${s.label}`,
+            name: `${invAny.category ?? inv.name ?? t("finance.tuition")} — ${s.label}`,
             unitPrice: amount,
             price: amount,
             quantity: 1,
@@ -203,7 +212,7 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
           {/* ── Header ── */}
           <div className="flex items-center justify-between px-5 py-3 border-b bg-muted/40">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Hoá đơn</span>
+              <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide">{t("finance.invoice")}</span>
               {inv.code  && <span className="font-bold text-sm text-primary">{inv.code}</span>}
               {inv.name  && <><span className="text-muted-foreground">•</span><span className="text-sm font-semibold">{inv.name}</span></>}
               {inv.category && <><span className="text-muted-foreground">•</span><span className="text-xs text-muted-foreground">{inv.category}</span></>}
@@ -220,22 +229,22 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
           <div className="flex gap-0 max-h-[75vh]">
             {/* Left: summary */}
             <div className="w-[300px] shrink-0 px-5 py-4 border-r space-y-3 overflow-y-auto">
-              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Tóm tắt tài chính</p>
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">{t("finance.financeSummary")}</p>
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-lg bg-muted/50 p-2.5">
-                  <p className="text-[10px] text-muted-foreground mb-0.5">Tổng tiền:</p>
+                  <p className="text-[10px] text-muted-foreground mb-0.5">{t("finance.total")}:</p>
                   <p className="text-sm font-bold">{fmtMoney(grandTotal)}</p>
                 </div>
                 <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 p-2.5">
-                  <p className="text-[10px] text-muted-foreground mb-0.5">Đã thu:</p>
+                  <p className="text-[10px] text-muted-foreground mb-0.5">{t("finance.paid")}:</p>
                   <p className="text-sm font-bold text-blue-600">{fmtMoney(paidAmount)}</p>
                 </div>
                 <div className="rounded-lg bg-red-50 dark:bg-red-950/30 p-2.5">
-                  <p className="text-[10px] text-muted-foreground mb-0.5">Còn nợ:</p>
+                  <p className="text-[10px] text-muted-foreground mb-0.5">{t("finance.remaining")}:</p>
                   <p className="text-sm font-bold text-red-600">{fmtMoney(remaining)}</p>
                 </div>
                 <div className="rounded-lg bg-muted/50 p-2.5">
-                  <p className="text-[10px] text-muted-foreground mb-0.5">Hạn TT:</p>
+                  <p className="text-[10px] text-muted-foreground mb-0.5">{t("finance.dueDateShort")}:</p>
                   <p className="text-sm font-bold">{nextDueDate ? fmtDate(nextDueRaw) : "—"}</p>
                 </div>
               </div>
@@ -247,8 +256,8 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
               </div>
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Tiến độ: <span className="font-semibold text-foreground">{pct}%</span></span>
-                  <span className="font-semibold text-muted-foreground">{paidSch} / {total} đợt</span>
+                  <span className="text-muted-foreground">{t("finance.progress")}: <span className="font-semibold text-foreground">{pct}%</span></span>
+                  <span className="font-semibold text-muted-foreground">{t("finance.installmentsCount", { paid: paidSch, total })}</span>
                 </div>
                 <div className="h-2 rounded-full bg-muted overflow-hidden">
                   <div className={`h-full rounded-full transition-all ${allDone ? "bg-green-500" : pct > 0 ? "bg-blue-500" : "bg-transparent"}`}
@@ -261,7 +270,7 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
             <div className="flex-1 px-5 py-4 space-y-2 min-w-0 overflow-y-auto">
               <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
                 <CalendarDays className="h-3.5 w-3.5" />
-                Danh sách đợt thanh toán
+                {t("finance.scheduleList")}
               </p>
 
               {isLoading ? (
@@ -303,7 +312,7 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
                               onClick={() => setCalOpenId(isCalOpen ? null : sch.id)}
                               className={`inline-flex items-center gap-1 rounded px-1 py-0.5 transition-colors
                                 ${!isPaid ? "hover:bg-blue-100 hover:text-blue-700 cursor-pointer text-muted-foreground" : "text-muted-foreground cursor-default"}`}
-                              title={!isPaid ? "Bấm để đổi hạn thanh toán" : undefined}
+                              title={!isPaid ? t("finance.changeDueDate") : undefined}
                             >
                               <CalendarIcon className="h-3 w-3" />
                               {fmtDate(sch.dueDate)}
@@ -315,9 +324,9 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
                             <div
                               className="flex items-center gap-2"
                               title={
-                                isSigned   ? "Đã phát hành hoá đơn điện tử" :
-                                canSign    ? "Bấm để gửi ký số" :
-                                "Chỉ đợt đã thanh toán mới gửi được"
+                                isSigned   ? t("finance.einvoicePublished") :
+                                canSign    ? t("finance.clickToSendSign") :
+                                t("finance.onlyPaidCanSign")
                               }
                             >
                               {/* Einvoice status badge */}
@@ -330,7 +339,7 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
                                   </span>
                                 );
                               })()}
-                              <span className="text-[10px] text-muted-foreground">Ký số</span>
+                               <span className="text-[10px] text-muted-foreground">{t("finance.digitalSign")}</span>
                               <Checkbox
                                 checked={isSigned}
                                 disabled={!canSign && !isSigned}
@@ -343,10 +352,10 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
                               <button
                                 onClick={() => window.open(`/api/einvoice/schedule-pdf/${sch.id}`, "_blank", "noopener,noreferrer")}
                                 className="inline-flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 hover:underline transition-colors"
-                                title="Tải PDF hoá đơn đã ký số"
+                                 title={t("finance.downloadSignedPdf")}
                               >
                                 <Download className="h-3 w-3" />
-                                Tải PDF
+                                 {t("finance.downloadPdf")}
                               </button>
                             )}
                           </div>
@@ -368,7 +377,7 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
                                   }
                                 }
                               }}
-                              locale={vi}
+                               locale={lang === "en" ? enUS : vi}
                               disabled={sch.isSynthetic
                                 ? updateInvoiceDueDateMutation.isPending
                                 : updateDueDateMutation.isPending}
@@ -396,8 +405,8 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
                                 : "border-yellow-200 bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
                               }`}
                           >
-                            <option value="paid">✓ Đã thanh toán</option>
-                            <option value="unpaid">⏳ Chưa thanh toán</option>
+                             <option value="paid">✓ {t("finance.paidStatus")}</option>
+                             <option value="unpaid">⏳ {t("finance.unpaidStatus")}</option>
                           </select>
                         </div>
 
@@ -406,14 +415,14 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
                           <button
                             onClick={() => { setPrintTarget(sch); }}
                             className="p-1 rounded hover:bg-black/5 text-muted-foreground hover:text-blue-600 transition-colors"
-                            title="In hoá đơn"
+                             title={t("finance.printInvoice")}
                           ><Printer className="h-3.5 w-3.5" /></button>
 
                           {!isPaid && !sch.isSynthetic && (
                             <button
                               onClick={() => setSplitTarget(sch)}
                               className="p-1 rounded hover:bg-black/5 text-muted-foreground hover:text-blue-600 transition-colors"
-                              title="Tách đợt"
+                               title={t("finance.splitInstallment")}
                             ><Scissors className="h-3.5 w-3.5" /></button>
                           )}
 
@@ -421,7 +430,7 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
                             <button
                               onClick={() => setDeleteTarget(sch)}
                               className="p-1 rounded hover:bg-black/5 text-muted-foreground hover:text-red-600 transition-colors"
-                              title="Xoá đợt"
+                               title={t("finance.deleteSchedule")}
                             ><Trash2 className="h-3.5 w-3.5" /></button>
                           )}
 
@@ -429,7 +438,7 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
                             <button
                               onClick={() => setQrTarget(sch)}
                               className="p-1 rounded hover:bg-black/5 text-muted-foreground hover:text-purple-600 transition-colors"
-                              title="Mã QR thanh toán"
+                               title={t("finance.paymentQr")}
                             ><QrCode className="h-3.5 w-3.5" /></button>
                           )}
                         </div>
@@ -467,27 +476,27 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
           <DialogContent className="max-w-sm">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-red-600">
-                <Trash2 className="h-4 w-4" /> Xoá đợt thanh toán
+                <Trash2 className="h-4 w-4" /> {t("finance.deleteScheduleTitle")}
               </DialogTitle>
             </DialogHeader>
             <div className="py-3 space-y-3">
-              <p className="text-sm">Bạn chắc chắn muốn xoá đợt <span className="font-semibold">{deleteTarget.label}</span>?</p>
+              <p className="text-sm">{t("finance.confirmDeleteScheduleQuestion", { label: deleteTarget.label })}</p>
               <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-3 text-xs text-yellow-800 space-y-1">
-                <p className="font-semibold">Lưu ý nghiệp vụ:</p>
-                <p>Số tiền <span className="font-semibold">{fmtMoney(parseNum(deleteTarget.amount))}</span> sẽ được cộng vào đợt cuối để tổng không đổi.</p>
+                <p className="font-semibold">{t("finance.businessNote")}</p>
+                <p>{t("finance.deleteScheduleReallocation", { amount: fmtMoney(parseNum(deleteTarget.amount)) })}</p>
               </div>
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleteMutation.isPending}>Huỷ</Button>
+               <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleteMutation.isPending}>{t("finance.cancel")}</Button>
               <Button
                 variant="destructive"
                 onClick={() => deleteMutation.mutate(deleteTarget.id, {
-                  onSuccess: () => { setDeleteTarget(null); toast({ title: "Đã xoá đợt" }); },
-                  onError: (err: any) => toast({ title: "Lỗi xoá", description: err.message, variant: "destructive" }),
+                   onSuccess: () => { setDeleteTarget(null); toast({ title: t("finance.deleteScheduleSuccess") }); },
+                   onError: (err: any) => toast({ title: t("finance.deleteError"), description: err.message, variant: "destructive" }),
                 })}
                 disabled={deleteMutation.isPending}
               >
-                {deleteMutation.isPending ? "Đang xoá..." : "Xác nhận xoá"}
+                 {deleteMutation.isPending ? t("finance.deleting") : t("finance.confirmDelete")}
               </Button>
             </div>
           </DialogContent>
@@ -505,19 +514,18 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-base">
                 <FileSignature className="h-5 w-5 text-purple-600" />
-                Xác nhận phát hành hóa đơn điện tử
+                {t("finance.signDialogTitle")}
               </DialogTitle>
             </DialogHeader>
 
             <div className="space-y-3 text-sm">
               <p>
-                Bạn đang chọn <span className="font-semibold text-purple-700">1</span> hóa đơn để ký số và gửi lên cơ quan Thuế.
+                 {t("finance.signDialogDescription", { count: 1 })}
               </p>
 
               <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800 text-xs leading-relaxed">
-                <div className="font-semibold mb-1">Lưu ý:</div>
-                Hóa đơn sau khi ký số sẽ không thể sửa đổi hoặc xóa bỏ một cách thông thường.
-                Vui lòng đảm bảo các thông tin học viên và số tiền đã chính xác 100%.
+                 <div className="font-semibold mb-1">{t("finance.notice")}</div>
+                 {t("finance.signWarning")}
               </div>
 
               <label className="flex items-start gap-2 cursor-pointer select-none">
@@ -526,22 +534,22 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
                   onCheckedChange={(v) => setSignConfirmed(!!v)}
                   className="mt-0.5"
                 />
-                <span>Tôi đã kiểm tra kỹ và chịu trách nhiệm với dữ liệu này.</span>
+                 <span>{t("finance.signAcknowledgement")}</span>
               </label>
 
               <div className="border-t pt-3 space-y-1.5 text-xs italic text-muted-foreground">
-                <div className="font-medium not-italic text-foreground mb-1">Giải thích:</div>
+                 <div className="font-medium not-italic text-foreground mb-1">{t("finance.explanation")}</div>
                 <div>
-                  <span className="not-italic font-semibold text-emerald-700">Đồng ý:</span>{" "}
-                  Hóa đơn sẽ được ký số và gửi lên Thuế ngay lập tức. Không thể sửa sau khi ký.
+                   <span className="not-italic font-semibold text-emerald-700">{t("finance.agree")}</span>{" "}
+                   {t("finance.signImmediately")}
                 </div>
                 <div>
-                  <span className="not-italic font-semibold text-amber-700">Gửi nháp:</span>{" "}
-                  Dữ liệu chỉ gửi sang Mắt Bão để kiểm tra, chưa có giá trị pháp lý. Có thể xóa/sửa dễ dàng.
+                   <span className="not-italic font-semibold text-amber-700">{t("finance.sendDraftLabel")}</span>{" "}
+                   {t("finance.draftExplanation")}
                 </div>
                 <div>
-                  <span className="not-italic font-semibold text-gray-700">Hủy bỏ:</span>{" "}
-                  Đóng cửa sổ và không làm gì cả.
+                   <span className="not-italic font-semibold text-gray-700">{t("finance.cancelLabel")}</span>{" "}
+                   {t("finance.cancelExplanation")}
                 </div>
               </div>
             </div>
@@ -552,7 +560,7 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
                 onClick={() => { setSignTarget(null); setSignConfirmed(false); }}
                 disabled={signMutation.isPending}
               >
-                Hủy bỏ
+                 {t("finance.cancelLabel").replace(":", "")}
               </Button>
               <Button
                 variant="outline"
@@ -560,14 +568,14 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
                 disabled={!signConfirmed || signMutation.isPending}
                 onClick={() => signMutation.mutate({ scheduleId: signTarget.id, isPublish: false })}
               >
-                Gửi nháp
+                 {t("finance.sendDraftLabel").replace(":", "")}
               </Button>
               <Button
                 className="bg-purple-600 hover:bg-purple-700"
                 disabled={!signConfirmed || signMutation.isPending}
                 onClick={() => signMutation.mutate({ scheduleId: signTarget.id, isPublish: true })}
               >
-                {signMutation.isPending ? "Đang xử lý..." : "Đồng ý"}
+                 {signMutation.isPending ? t("finance.processing") : t("finance.agree").replace(":", "")}
               </Button>
             </div>
           </DialogContent>

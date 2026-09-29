@@ -21,7 +21,7 @@ import {
   Search, CreditCard, Plus, ChevronDown, X, CalendarIcon,
 } from "lucide-react";
 import { format } from "date-fns";
-import { vi } from "date-fns/locale";
+import { enUS, vi } from "date-fns/locale";
 import { useClasses } from "@/hooks/use-classes";
 import { useStaff } from "@/hooks/use-staff";
 import { useAuth } from "@/hooks/use-auth";
@@ -326,7 +326,7 @@ function AdjustmentRowsEditor({
 
 export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }: { open: boolean; onClose: () => void; invoiceId?: string | null; defaultStudent?: { id: string; fullName: string; code: string } | null }) {
   const isEdit = Boolean(invoiceId);
-  const { t } = useLanguage();
+  const { lang, t } = useLanguage();
 
   const [invoiceType, setInvoiceType] = useState<"income" | "expense">("income");
   const [locationId, setLocationId]   = useState<string>("");
@@ -547,7 +547,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     if (Array.isArray(inv.paymentSchedule) && inv.paymentSchedule.length > 0) {
       setPaymentSchedule(inv.paymentSchedule.map((s: any, i: number) => ({
         id: s.id ?? String(i + 1),
-        label: s.label ?? `Đợt ${i + 1}`,
+        label: s.label ?? t("finance.installmentLabel", { number: i + 1 }),
         code: s.code ?? "",
         amount: parseFloat(s.amount) || 0,
         baseAmount: s.baseAmount === null || s.baseAmount === undefined ? null : parseFloat(s.baseAmount) || 0,
@@ -936,7 +936,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         if ((directPaidAmount > 0 || deduction > 0) && difference > 0) {
           return [{
             id: `auto-${Date.now()}`,
-            label: directPaidAmount > 0 ? "ĐỢT 2" : "ĐỢT 1",
+            label: directPaidAmount > 0 ? t("finance.installmentLabel", { number: 2 }) : t("finance.installmentLabel", { number: 1 }),
             code: `PT-${Date.now()}`,
             amount: difference,
             due: getTodayVietnamDate(),
@@ -961,7 +961,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         const nextNum = getNextPaymentNumber(prev, directPaidAmount);
         return [...prev, {
           id: `auto-${Date.now()}`,
-          label: `ĐỢT ${nextNum}`,
+          label: t("finance.installmentLabel", { number: nextNum }),
           code: `PT-${Date.now()}`,
           amount: difference,
           due: getTodayVietnamDate(),
@@ -1201,7 +1201,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       const remaining = Math.max(0, finalTotal - allocated);
       // When directPaidAmount > 0, schedule starts at ĐỢT 2
       const nextNum = getNextPaymentNumber(prev, directPaidAmount);
-      return [...prev, { id: Date.now().toString(), label: `ĐỢT ${nextNum}`, code: `PT-${Date.now()}`, amount: remaining, due: getTodayVietnamDate(), status: "unpaid", paymentMethod: "cash", bank: "" }];
+      return [...prev, { id: Date.now().toString(), label: t("finance.installmentLabel", { number: nextNum }), code: `PT-${Date.now()}`, amount: remaining, due: getTodayVietnamDate(), status: "unpaid", paymentMethod: "cash", bank: "" }];
     });
   };
   const removePayment = (id: string) => setPaymentSchedule(prev => {
@@ -1290,7 +1290,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         : entry),
       {
         id: `split-${timestamp}`,
-        label: `ĐỢT ${nextNum}`,
+        label: t("finance.installmentLabel", { number: nextNum }),
         code: `PT-${timestamp}`,
         amount,
         due: splitDueDate ? new Date(`${splitDueDate}T00:00:00`) : source.due,
@@ -1418,7 +1418,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     const schedule = (directPaidAmount > 0 && baseSchedule.length > 0)
       ? [
           {
-            label: "ĐỢT 1",
+            label: t("finance.installmentLabel", { number: 1 }),
             code: `PT1-${Date.now()}`,
             amount: String(directPaidAmount),
             dueDate: format(getTodayVietnamDate(), "yyyy-MM-dd"),
@@ -2439,7 +2439,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                           type="button"
                           onClick={() => setCommissions(prev => prev.filter(x => x.staffId !== c.staffId))}
                           className="text-muted-foreground hover:text-destructive"
-                          aria-label={`Xóa ${s?.fullName ?? c.staffId}`}
+                          aria-label={t("finance.removeNamed", { name: s?.fullName ?? c.staffId })}
                         >
                           <X className="h-3.5 w-3.5" />
                         </button>
@@ -2747,7 +2747,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               mode="single"
                               selected={p.due}
                               onSelect={(date: Date | undefined) => { if (date) updatePaymentDue(p.id, date); }}
-                              locale={vi}
+                              locale={lang === "en" ? enUS : vi}
                             />
                           </PopoverContent>
                         </Popover>
