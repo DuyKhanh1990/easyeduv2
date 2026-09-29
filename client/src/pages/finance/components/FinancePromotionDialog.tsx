@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FinancePromotion } from "@shared/schema";
+import { useLanguage } from "@/hooks/use-language";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -55,6 +56,7 @@ function getInitialForm(initial?: Partial<FinancePromotion>): PromotionForm {
 export function FinancePromotionDialog({
   open, onClose, onSave, initial, title, isSaving = false, contentClassName, overlayClassName,
 }: FinancePromotionDialogProps) {
+  const { t } = useLanguage();
   const [form, setForm] = useState<PromotionForm>(() => getInitialForm(initial));
 
   useEffect(() => {
@@ -83,18 +85,18 @@ export function FinancePromotionDialog({
         <div className="space-y-3 py-2">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-sm font-medium">Mã <span className="text-red-500">*</span></label>
+              <label className="text-sm font-medium">{t("financeConfig.code")} <span className="text-red-500">*</span></label>
               <Input
-                placeholder="VD: KM001"
+                placeholder={t("financeConfig.codePlaceholder")}
                 value={form.code}
                 onChange={e => setForm(current => ({ ...current, code: e.target.value }))}
                 data-testid="input-promo-code"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-sm font-medium">Tên <span className="text-red-500">*</span></label>
+              <label className="text-sm font-medium">{t("financeConfig.name")} <span className="text-red-500">*</span></label>
               <Input
-                placeholder="Tên khuyến mãi/phụ thu..."
+                placeholder={t("financeConfig.promotionNamePlaceholder")}
                 value={form.name}
                 onChange={e => setForm(current => ({ ...current, name: e.target.value }))}
                 data-testid="input-promo-name"
@@ -102,10 +104,10 @@ export function FinancePromotionDialog({
             </div>
           </div>
           <div className="space-y-1">
-            <label className="text-sm font-medium">Giá trị</label>
+            <label className="text-sm font-medium">{t("financeConfig.value")}</label>
             <div className="flex gap-2">
               <Input
-                placeholder="Nhập giá trị..."
+                placeholder={t("financeConfig.valuePlaceholder")}
                 value={form.valueAmount}
                 onChange={e => setForm(current => ({ ...current, valueAmount: e.target.value }))}
                 className="flex-1"
@@ -123,33 +125,33 @@ export function FinancePromotionDialog({
             </div>
           </div>
           <div className="space-y-1">
-            <label className="text-sm font-medium">Số lượng</label>
+            <label className="text-sm font-medium">{t("financeConfig.quantity")}</label>
             <Input
               type="number"
-              placeholder="Số lượng áp dụng..."
+              placeholder={t("financeConfig.quantityPlaceholder")}
               value={form.quantity}
               onChange={e => setForm(current => ({ ...current, quantity: e.target.value }))}
               data-testid="input-promo-quantity"
             />
           </div>
           <div className="space-y-1">
-            <label className="text-sm font-medium">Thời gian áp dụng</label>
+            <label className="text-sm font-medium">{t("financeConfig.validityPeriod")}</label>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Từ ngày</label>
+                <label className="text-xs text-muted-foreground">{t("financeConfig.fromDate")}</label>
                 <Input type="date" value={form.fromDate} onChange={e => setForm(current => ({ ...current, fromDate: e.target.value }))} data-testid="input-promo-from" />
               </div>
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Đến ngày</label>
+                <label className="text-xs text-muted-foreground">{t("financeConfig.toDate")}</label>
                 <Input type="date" value={form.toDate} onChange={e => setForm(current => ({ ...current, toDate: e.target.value }))} data-testid="input-promo-to" />
               </div>
             </div>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isSaving}>Huỷ</Button>
+          <Button variant="outline" onClick={onClose} disabled={isSaving}>{t("financeConfig.cancel")}</Button>
           <Button onClick={handleSave} disabled={isSaving || !form.code.trim() || !form.name.trim()} data-testid="button-save-promo">
-            {isSaving ? "Đang lưu..." : "Lưu"}
+            {isSaving ? t("financeConfig.saving") : t("financeConfig.save")}
           </Button>
         </DialogFooter>
       </DialogContent>

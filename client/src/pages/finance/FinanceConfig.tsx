@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/hooks/use-language";
 import type { FinanceTransactionCategory, FinancePromotion, FinanceVoucher } from "@shared/schema";
 import { FinancePromotionDialog } from "./components/FinancePromotionDialog";
 
@@ -36,10 +37,10 @@ function getTabFromUrl(): string {
 }
 
 const FINANCE_TABS = [
-  { value: "promotions", label: "Khuyến mãi/Phụ thu" },
-  { value: "categories", label: "Danh mục Thu Chi" },
-  { value: "voucher", label: "Voucher" },
-  { value: "debt-reminder", label: "Nhắc công nợ" },
+  { value: "promotions", labelKey: "financeConfig.tab.promotions" },
+  { value: "categories", labelKey: "financeConfig.tab.categories" },
+  { value: "voucher", labelKey: "financeConfig.tab.voucher" },
+  { value: "debt-reminder", labelKey: "financeConfig.tab.debtReminder" },
 ];
 
 function buildTabPerm(data: import("@/hooks/use-my-permissions").MyPermissionsResult | null | undefined, tabValue: string): ConfigTabPerm {
@@ -61,6 +62,7 @@ function canViewTab(data: import("@/hooks/use-my-permissions").MyPermissionsResu
 }
 
 export default function FinanceConfig() {
+  const { t } = useLanguage();
   const { isSubTabVisible } = useSidebarVisibility();
   const { data: myPerms } = useMyPermissions();
   const visibleTabs = FINANCE_TABS.filter(t => isSubTabVisible(FINANCE_CONFIG_HREF, t.value) && canViewTab(myPerms, t.value));
@@ -84,9 +86,9 @@ export default function FinanceConfig() {
         <div className="space-y-6">
           <h1 className="text-3xl font-display font-bold text-foreground flex items-center gap-2">
             <Settings2 className="h-8 w-8 text-purple-600" />
-            Cấu hình tài chính
+            {t("financeConfig.title")}
           </h1>
-          <p className="text-muted-foreground">Tất cả các tab đã bị ẩn. Vui lòng bật lại trong Quản lý module.</p>
+          <p className="text-muted-foreground">{t("financeConfig.noVisibleTabs")}</p>
         </div>
       </DashboardLayout>
     );
@@ -98,9 +100,9 @@ export default function FinanceConfig() {
         <div>
           <h1 className="text-3xl font-display font-bold text-foreground flex items-center gap-2">
             <Settings2 className="h-8 w-8 text-purple-600" />
-            Cấu hình tài chính
+            {t("financeConfig.title")}
           </h1>
-          <p className="text-muted-foreground">Quản lý các danh mục cấu hình cho module tài chính</p>
+          <p className="text-muted-foreground">{t("financeConfig.subtitle")}</p>
         </div>
 
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
@@ -110,7 +112,7 @@ export default function FinanceConfig() {
                 key={t.value}
                 onClick={() => handleTabChange(t.value)}
                 className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all", activeTab === t.value ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}
-              >{t.label}</button>
+              >{t.labelKey ? t(t.labelKey) : ""}</button>
             ))}
           </div>
 
@@ -157,6 +159,7 @@ function PromoPanel({
   dialogTitle: string;
   perm?: ConfigTabPerm;
 }) {
+  const { t } = useLanguage();
   const canAdd = perm?.canAdd ?? true;
   const canEdit = perm?.canEdit ?? true;
   const canDelete = perm?.canDelete ?? true;
@@ -175,9 +178,9 @@ function PromoPanel({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/promotions", promoType] });
       setAddOpen(false);
-      toast({ title: `Đã thêm ${title.toLowerCase()}` });
+      toast({ title: t("financeConfig.added", { item: title.toLowerCase() }) });
     },
-    onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
+    onError: (e: any) => toast({ title: t("financeConfig.error"), description: e.message, variant: "destructive" }),
   });
 
   const updateMutation = useMutation({
@@ -185,18 +188,18 @@ function PromoPanel({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/promotions", promoType] });
       setEditItem(null);
-      toast({ title: "Đã cập nhật" });
+      toast({ title: t("financeConfig.updated") });
     },
-    onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
+    onError: (e: any) => toast({ title: t("financeConfig.error"), description: e.message, variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/finance/promotions/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/promotions", promoType] });
-      toast({ title: "Đã xoá" });
+      toast({ title: t("financeConfig.deleted") });
     },
-    onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
+    onError: (e: any) => toast({ title: t("financeConfig.error"), description: e.message, variant: "destructive" }),
   });
 
   return (
@@ -210,7 +213,7 @@ function PromoPanel({
           {canAdd && (
             <Button size="sm" onClick={() => setAddOpen(true)} data-testid={`button-add-${promoType}`}>
               <Plus className="h-4 w-4 mr-1" />
-              Thêm mới
+              {t("financeConfig.addNew")}
             </Button>
           )}
         </div>
@@ -224,7 +227,7 @@ function PromoPanel({
         ) : items.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
             <Tag className="h-8 w-8 opacity-30" />
-            <p className="text-sm">Chưa có dữ liệu</p>
+            <p className="text-sm">{t("financeConfig.noData")}</p>
           </div>
         ) : (
           <ul className="divide-y">
@@ -238,7 +241,7 @@ function PromoPanel({
                   <span className="text-sm font-medium truncate">{item.name}</span>
                   <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
                     {item.valueAmount && (
-                      <span>Giá trị: {item.valueAmount}{item.valueType === "percent" ? "%" : " VNĐ"}</span>
+                      <span>{t("financeConfig.valueLabel")}: {item.valueAmount}{item.valueType === "percent" ? "%" : " VNĐ"}</span>
                     )}
                     {item.quantity && <span>SL: {item.quantity}</span>}
                     {item.fromDate && item.toDate && (
@@ -267,34 +270,35 @@ function PromoPanel({
       </CardContent>
 
        <FinancePromotionDialog open={addOpen} onClose={() => setAddOpen(false)} onSave={data => createMutation.mutate(data)} title={dialogTitle} isSaving={createMutation.isPending} />
-      {editItem && (
-         <FinancePromotionDialog open={!!editItem} onClose={() => setEditItem(null)} onSave={data => updateMutation.mutate({ id: editItem.id, data })} initial={editItem} title={`Chỉnh sửa ${title}`} isSaving={updateMutation.isPending} />
+       {editItem && (
+          <FinancePromotionDialog open={!!editItem} onClose={() => setEditItem(null)} onSave={data => updateMutation.mutate({ id: editItem.id, data })} initial={editItem} title={`${t("financeConfig.edit")} ${title}`} isSaving={updateMutation.isPending} />
       )}
     </Card>
   );
 }
 
 function PromotionsTab({ perm }: { perm?: ConfigTabPerm }) {
+  const { t } = useLanguage();
   return (
     <div className="flex gap-4 h-[calc(100vh-260px)] min-h-[400px]">
       <PromoPanel
         promoType="promotion"
-        title="Khuyến mãi"
+        title={t("financeConfig.promotion")}
         icon={<Percent className="h-4 w-4 text-green-600" />}
         accentColor="border-l-green-500"
-        badgeLabel="Khuyến mãi"
+        badgeLabel={t("financeConfig.promotion")}
         badgeClass="bg-green-100 text-green-700 hover:bg-green-100"
-        dialogTitle="Thêm khuyến mãi"
+        dialogTitle={t("financeConfig.addPromotion")}
         perm={perm}
       />
       <PromoPanel
         promoType="surcharge"
-        title="Phụ thu"
+        title={t("financeConfig.surcharge")}
         icon={<DollarSign className="h-4 w-4 text-orange-600" />}
         accentColor="border-l-orange-500"
-        badgeLabel="Phụ thu"
+        badgeLabel={t("financeConfig.surcharge")}
         badgeClass="bg-orange-100 text-orange-700 hover:bg-orange-100"
-        dialogTitle="Thêm phụ thu"
+        dialogTitle={t("financeConfig.addSurcharge")}
         perm={perm}
       />
     </div>
@@ -314,6 +318,7 @@ function CategoryPanel({
   badgeClass: string;
   perm?: ConfigTabPerm;
 }) {
+  const { t } = useLanguage();
   const canAdd = perm?.canAdd ?? true;
   const canDelete = perm?.canDelete ?? true;
   const { toast } = useToast();
@@ -332,18 +337,18 @@ function CategoryPanel({
       queryClient.invalidateQueries({ queryKey: ["/api/finance/transaction-categories", catType] });
       setInputVal("");
       setAddOpen(false);
-      toast({ title: "Đã thêm danh mục" });
+      toast({ title: t("financeConfig.categoryAdded") });
     },
-    onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
+    onError: (e: any) => toast({ title: t("financeConfig.error"), description: e.message, variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/finance/transaction-categories/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/transaction-categories", catType] });
-      toast({ title: "Đã xoá danh mục" });
+      toast({ title: t("financeConfig.categoryDeleted") });
     },
-    onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
+    onError: (e: any) => toast({ title: t("financeConfig.error"), description: e.message, variant: "destructive" }),
   });
 
   const handleAdd = () => {
@@ -362,7 +367,7 @@ function CategoryPanel({
           {canAdd && (
             <Button size="sm" onClick={() => setAddOpen(true)} data-testid={`button-open-add-${catType}`}>
               <Plus className="h-4 w-4 mr-1" />
-              Thêm mới
+              {t("financeConfig.addNew")}
             </Button>
           )}
         </div>
@@ -375,7 +380,7 @@ function CategoryPanel({
             </div>
           ) : items.length === 0 ? (
             <div className="flex items-center justify-center py-10 text-muted-foreground">
-              <p className="text-sm">Chưa có dữ liệu</p>
+              <p className="text-sm">{t("financeConfig.noData")}</p>
             </div>
           ) : (
             <ul className="divide-y rounded-md border">
@@ -389,7 +394,7 @@ function CategoryPanel({
                     <Badge className={`text-xs ${badgeClass}`}>{badgeLabel}</Badge>
                     {canDelete && (
                       item.isDefault ? (
-                        <span className="h-6 w-6 inline-flex items-center justify-center text-muted-foreground/30" title="Không thể xoá danh mục mặc định">
+                        <span className="h-6 w-6 inline-flex items-center justify-center text-muted-foreground/30" title={t("financeConfig.cannotDeleteDefault")}>
                           <Lock className="h-3.5 w-3.5" />
                         </span>
                       ) : (
@@ -408,12 +413,12 @@ function CategoryPanel({
       <Dialog open={addOpen} onOpenChange={value => { if (!value && !createMutation.isPending) setAddOpen(false); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Thêm {title.toLowerCase()}</DialogTitle>
+            <DialogTitle>{t("financeConfig.addCategory", { item: title.toLowerCase() })}</DialogTitle>
           </DialogHeader>
           <div className="space-y-1 py-2">
-            <label className="text-sm font-medium">Tên danh mục</label>
+            <label className="text-sm font-medium">{t("financeConfig.categoryName")}</label>
             <Input
-              placeholder={`Tên ${title.toLowerCase()}...`}
+              placeholder={t("financeConfig.categoryNamePlaceholder", { item: title.toLowerCase() })}
               value={inputVal}
               onChange={e => setInputVal(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter") handleAdd(); }}
@@ -423,10 +428,10 @@ function CategoryPanel({
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddOpen(false)} disabled={createMutation.isPending}>
-              Huỷ
+              {t("financeConfig.cancel")}
             </Button>
             <Button onClick={handleAdd} disabled={!inputVal.trim() || createMutation.isPending} data-testid={`button-add-${catType}`}>
-              {createMutation.isPending ? "Đang lưu..." : "Lưu"}
+              {createMutation.isPending ? t("financeConfig.saving") : t("financeConfig.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -436,23 +441,24 @@ function CategoryPanel({
 }
 
 function CategoriesTab({ perm }: { perm?: ConfigTabPerm }) {
+  const { t } = useLanguage();
   return (
     <div className="flex gap-4 h-[calc(100vh-260px)] min-h-[400px]">
       <CategoryPanel
         catType="income"
-        title="Danh mục Thu"
+        title={t("financeConfig.incomeCategory")}
         icon={<TrendingUp className="h-4 w-4 text-blue-600" />}
         accentColor="border-l-blue-500"
-        badgeLabel="Thu"
+        badgeLabel={t("financeConfig.income")}
         badgeClass="bg-blue-100 text-blue-700 hover:bg-blue-100"
         perm={perm}
       />
       <CategoryPanel
         catType="expense"
-        title="Danh mục Chi"
+        title={t("financeConfig.expenseCategory")}
         icon={<TrendingDown className="h-4 w-4 text-red-600" />}
         accentColor="border-l-red-500"
-        badgeLabel="Chi"
+        badgeLabel={t("financeConfig.expense")}
         badgeClass="bg-red-100 text-red-700 hover:bg-red-100"
         perm={perm}
       />
@@ -475,15 +481,17 @@ function getVoucherStatus(voucher: FinanceVoucher): "active" | "expiring" | "exp
 }
 
 function VoucherStatusBadge({ voucher }: { voucher: FinanceVoucher }) {
+  const { t } = useLanguage();
   const status = getVoucherStatus(voucher);
   if (status === "expired")
-    return <Badge variant="secondary" className="text-red-600 bg-red-50 border-red-200">Hết hạn</Badge>;
+    return <Badge variant="secondary" className="text-red-600 bg-red-50 border-red-200">{t("financeConfig.expired")}</Badge>;
   if (status === "expiring")
-    return <Badge variant="secondary" className="text-orange-600 bg-orange-50 border-orange-200">Sắp hết hạn</Badge>;
-  return <Badge className="bg-green-600 hover:bg-green-700 text-white">Đang hoạt động</Badge>;
+    return <Badge variant="secondary" className="text-orange-600 bg-orange-50 border-orange-200">{t("financeConfig.expiring")}</Badge>;
+  return <Badge className="bg-green-600 hover:bg-green-700 text-white">{t("financeConfig.active")}</Badge>;
 }
 
 function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
+  const { t } = useLanguage();
   const { toast } = useToast();
   const [addOpen, setAddOpen] = useState(false);
   const [editingVoucher, setEditingVoucher] = useState<FinanceVoucher | null>(null);
@@ -580,7 +588,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
       `/api/students?minimal=true&limit=20&searchTerm=${encodeURIComponent(searchTerm.trim())}`,
       { credentials: "include" },
     ).then(async response => {
-      if (!response.ok) throw new Error("Không thể tìm kiếm đối tượng áp dụng.");
+      if (!response.ok) throw new Error(t("financeConfig.audienceSearchError"));
       return response.json();
     }),
     enabled: addOpen && form.audience === "specific" && searchTerm.trim().length > 0,
@@ -623,10 +631,10 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/vouchers"] });
       setAddOpen(false);
       resetForm();
-      toast({ title: "Đã thêm voucher" });
+      toast({ title: t("financeConfig.voucherAdded") });
     },
     onError: (error: any) => toast({
-      title: "Không thể thêm voucher",
+      title: t("financeConfig.voucherAddError"),
       description: error.message,
       variant: "destructive",
     }),
@@ -640,10 +648,10 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
       setAddOpen(false);
       setEditingVoucher(null);
       resetForm();
-      toast({ title: "Đã cập nhật voucher" });
+      toast({ title: t("financeConfig.voucherUpdated") });
     },
     onError: (error: any) => toast({
-      title: "Không thể cập nhật voucher",
+      title: t("financeConfig.voucherUpdateError"),
       description: error.message,
       variant: "destructive",
     }),
@@ -653,10 +661,10 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
     mutationFn: (id: string) => apiRequest("DELETE", `/api/finance/vouchers/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/vouchers"] });
-      toast({ title: "Đã xoá voucher" });
+      toast({ title: t("financeConfig.voucherDeleted") });
     },
     onError: (error: any) => toast({
-      title: "Không thể xoá voucher",
+      title: t("financeConfig.voucherDeleteError"),
       description: error.message,
       variant: "destructive",
     }),
@@ -667,32 +675,32 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
     const quantity = form.quantityMode === "limited" ? Number(form.quantity) : null;
     if (!form.code.trim() || !form.name.trim() || !Number.isFinite(valueAmount) || valueAmount <= 0) {
       toast({
-        title: "Thiếu thông tin",
-        description: "Vui lòng nhập mã, tên và giá trị voucher hợp lệ.",
+        title: t("financeConfig.missingInformation"),
+        description: t("financeConfig.invalidVoucherDescription"),
         variant: "destructive",
       });
       return;
     }
     if (form.valueType === "percent" && valueAmount > 100) {
       toast({
-        title: "Giá trị không hợp lệ",
-        description: "Voucher phần trăm không được lớn hơn 100%.",
+        title: t("financeConfig.invalidValue"),
+        description: t("financeConfig.percentVoucherLimit"),
         variant: "destructive",
       });
       return;
     }
     if (form.quantityMode === "limited" && (!Number.isInteger(quantity) || quantity! < 1)) {
       toast({
-        title: "Số lượng không hợp lệ",
-        description: "Số lượng voucher phải là số nguyên lớn hơn 0.",
+        title: t("financeConfig.invalidQuantity"),
+        description: t("financeConfig.quantityPositive"),
         variant: "destructive",
       });
       return;
     }
     if (form.audience === "specific" && selectedAudienceStudents.length === 0) {
       toast({
-        title: "Chưa chọn đối tượng",
-        description: "Vui lòng tìm và chọn ít nhất một học viên.",
+        title: t("financeConfig.noAudienceSelected"),
+        description: t("financeConfig.selectAtLeastOneStudent"),
         variant: "destructive",
       });
       return;
@@ -724,10 +732,10 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
 
   const formatAudience = (voucher: FinanceVoucher) => {
     if (voucher.audience === "birthday") {
-      return voucher.birthdayMode === "month" ? "Sinh nhật trong tháng" : "Đúng ngày sinh nhật";
+      return voucher.birthdayMode === "month" ? t("financeConfig.birthdayMonth") : t("financeConfig.birthdayExact");
     }
-    if (voucher.audience === "specific") return "Đối tượng chỉ định";
-    return "Tất cả học viên";
+    if (voucher.audience === "specific") return t("financeConfig.specificAudience");
+    return t("financeConfig.allStudents");
   };
 
   return (
@@ -741,7 +749,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
           <div className="flex items-center gap-2">
             <Input
               className="h-8 w-44"
-              placeholder="Tìm voucher..."
+              placeholder={t("financeConfig.searchVoucher")}
               value={listSearch}
               onChange={e => setListSearch(e.target.value)}
               data-testid="input-search-voucher"
@@ -749,7 +757,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
             {perm.canAdd && (
               <Button size="sm" onClick={openAddDialog} data-testid="button-open-add-voucher">
                 <Plus className="h-4 w-4 mr-1" />
-                Thêm mới
+                {t("financeConfig.addNew")}
               </Button>
             )}
           </div>
@@ -763,7 +771,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
         ) : vouchers.length === 0 ? (
           <div className="flex min-h-[260px] flex-col items-center justify-center gap-2 text-center text-muted-foreground">
             <Tag className="h-9 w-9 opacity-30" />
-            <p className="text-sm">Chưa có cấu hình voucher</p>
+            <p className="text-sm">{t("financeConfig.noVoucherConfig")}</p>
           </div>
         ) : (
           <ul className="divide-y">
@@ -776,15 +784,15 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                   </div>
                   <p className="truncate text-sm font-medium">{voucher.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {formatAudience(voucher)} · {voucher.quantity == null ? "Không giới hạn" : `${voucher.quantity} lượt`} ·
-                    {" "}{voucher.usageLimit === "once" ? "Mỗi người 1 lần" : "Nhiều lần"}
+                    {formatAudience(voucher)} · {voucher.quantity == null ? t("financeConfig.unlimited") : `${voucher.quantity} ${t("financeConfig.uses")}`} ·
+                    {" "}{voucher.usageLimit === "once" ? t("financeConfig.oncePerPerson") : t("financeConfig.multipleUses")}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                   <div className="text-right">
                     <p className="text-sm font-semibold text-emerald-700">{formatValue(voucher)}</p>
                     <p className="text-xs text-muted-foreground">
-                      {voucher.startDate || "Không giới hạn"} → {voucher.endDate || "Không giới hạn"}
+                      {voucher.startDate || t("financeConfig.unlimited")} → {voucher.endDate || t("financeConfig.unlimited")}
                     </p>
                   </div>
                   <div className="flex items-center gap-1">
@@ -799,7 +807,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                         setUsagesSearch("");
                         setUsagesStatus("all");
                       }}
-                      aria-label={`Xem danh sách học viên voucher ${voucher.code}`}
+                      aria-label={t("financeConfig.viewVoucherStudents", { code: voucher.code })}
                     >
                       <Eye className="h-4 w-4" />
                     </Button>
@@ -809,7 +817,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                         size="icon"
                         className="h-8 w-8 text-muted-foreground hover:text-primary"
                         onClick={() => openEditDialog(voucher)}
-                        aria-label={`Sửa voucher ${voucher.code}`}
+                        aria-label={t("financeConfig.editVoucher", { code: voucher.code })}
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -820,10 +828,10 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                         size="icon"
                         className="h-8 w-8 text-muted-foreground hover:text-red-600"
                         onClick={() => {
-                          if (confirm(`Xoá voucher "${voucher.code}"?`)) deleteMutation.mutate(voucher.id);
+                          if (confirm(t("financeConfig.confirmDeleteVoucher", { code: voucher.code }))) deleteMutation.mutate(voucher.id);
                         }}
                         disabled={deleteMutation.isPending}
-                        aria-label={`Xoá voucher ${voucher.code}`}
+                        aria-label={t("financeConfig.deleteVoucher", { code: voucher.code })}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -838,14 +846,14 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
       <Dialog open={addOpen} onOpenChange={(open) => { setAddOpen(open); if (!open) setEditingVoucher(null); }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingVoucher ? `Sửa Voucher · ${editingVoucher.code}` : "Thêm Voucher"}</DialogTitle>
+            <DialogTitle>{editingVoucher ? `${t("financeConfig.editVoucherTitle")} · ${editingVoucher.code}` : t("financeConfig.addVoucher")}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-5 py-2">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">
-                  Mã Voucher <span className="text-red-500">*</span>
+                  {t("financeConfig.voucherCode")} <span className="text-red-500">*</span>
                 </label>
                 <Input
                   placeholder="VD: WELCOME2026"
@@ -856,10 +864,10 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">
-                  Tên Voucher <span className="text-red-500">*</span>
+                  {t("financeConfig.voucherName")} <span className="text-red-500">*</span>
                 </label>
                 <Input
-                  placeholder="Nhập tên voucher..."
+                  placeholder={t("financeConfig.voucherNamePlaceholder")}
                   value={form.name}
                   onChange={e => setForm(current => ({ ...current, name: e.target.value }))}
                   data-testid="input-voucher-name"
@@ -868,7 +876,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Đối tượng áp dụng</label>
+              <label className="text-sm font-medium">{t("financeConfig.audience")}</label>
               <Select
                 value={form.audience}
                 onValueChange={value => setForm(current => ({
@@ -880,9 +888,9 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả</SelectItem>
-                  <SelectItem value="specific">Chỉ định đối tượng</SelectItem>
-                  <SelectItem value="birthday">Sinh nhật</SelectItem>
+                  <SelectItem value="all">{t("financeConfig.all")}</SelectItem>
+                  <SelectItem value="specific">{t("financeConfig.specificAudience")}</SelectItem>
+                  <SelectItem value="birthday">{t("financeConfig.birthday")}</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -892,7 +900,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                     <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
                       className="pl-9"
-                      placeholder="Tìm tên khách hàng để chọn..."
+                      placeholder={t("financeConfig.searchAudience")}
                       value={searchTerm}
                       onChange={e => setSearchTerm(e.target.value)}
                       data-testid="input-voucher-customer-search"
@@ -908,7 +916,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                           onClick={() => setSelectedAudienceStudents(current =>
                             current.filter(item => item.id !== student.id)
                           )}
-                          aria-label={`Bỏ chọn ${student.fullName}`}
+                          aria-label={t("financeConfig.removeAudience", { name: student.fullName })}
                         >
                           {student.fullName} <span className="opacity-70">×</span>
                         </button>
@@ -918,16 +926,16 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                   <div className="max-h-48 overflow-y-auto rounded-md border bg-background">
                     {!searchTerm.trim() ? (
                       <p className="px-3 py-5 text-center text-sm text-muted-foreground">
-                        Nhập tên hoặc mã học viên để tìm và chọn nhiều đối tượng.
+                        {t("financeConfig.audienceSearchHint")}
                       </p>
                     ) : isSearchingAudience ? (
                       <div className="flex items-center justify-center gap-2 px-3 py-5 text-sm text-muted-foreground">
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        Đang tìm kiếm...
+                        {t("financeConfig.searching")}
                       </div>
                     ) : audienceSearchResults.length === 0 ? (
                       <p className="px-3 py-5 text-center text-sm text-muted-foreground">
-                        Không tìm thấy học viên phù hợp.
+                        {t("financeConfig.noStudentsFound")}
                       </p>
                     ) : (
                       <div className="divide-y">
@@ -955,7 +963,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                                 </span>
                               </span>
                               <span className="shrink-0 text-xs text-primary">
-                                {isSelected ? "Đã chọn" : "Chọn"}
+                                {isSelected ? t("financeConfig.selected") : t("financeConfig.select")}
                               </span>
                             </button>
                           );
@@ -979,8 +987,8 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                     )}
                     data-testid="button-voucher-birthday-exact"
                   >
-                    <span className="font-medium block">Đúng ngày/tháng</span>
-                    <span className="text-xs text-muted-foreground">Áp dụng đúng ngày sinh</span>
+                    <span className="font-medium block">{t("financeConfig.birthdayExactMode")}</span>
+                    <span className="text-xs text-muted-foreground">{t("financeConfig.birthdayExactHint")}</span>
                   </button>
                   <button
                     type="button"
@@ -993,18 +1001,18 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                     )}
                     data-testid="button-voucher-birthday-month"
                   >
-                    <span className="font-medium block">Trong tháng</span>
-                    <span className="text-xs text-muted-foreground">Áp dụng trong tháng sinh</span>
+                    <span className="font-medium block">{t("financeConfig.birthdayMonthMode")}</span>
+                    <span className="text-xs text-muted-foreground">{t("financeConfig.birthdayMonthHint")}</span>
                   </button>
                 </div>
               )}
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Thời gian áp dụng</label>
+              <label className="text-sm font-medium">{t("financeConfig.validityPeriod")}</label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Từ ngày</label>
+                  <label className="text-xs text-muted-foreground">{t("financeConfig.fromDate")}</label>
                   <Input
                     type="date"
                     value={form.startDate}
@@ -1013,7 +1021,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Đến ngày</label>
+                  <label className="text-xs text-muted-foreground">{t("financeConfig.toDate")}</label>
                   <Input
                     type="date"
                     value={form.endDate}
@@ -1026,12 +1034,12 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Giá trị</label>
+                <label className="text-sm font-medium">{t("financeConfig.value")}</label>
                 <div className="flex gap-2">
                   <Input
                     type="number"
                     min="0"
-                    placeholder="Nhập giá trị..."
+                    placeholder={t("financeConfig.valuePlaceholder")}
                     value={form.value}
                     onChange={e => setForm(current => ({ ...current, value: e.target.value }))}
                     className="flex-1"
@@ -1056,7 +1064,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">Số lượng</label>
+                <label className="text-sm font-medium">{t("financeConfig.quantity")}</label>
                 <div className="flex gap-2">
                   <Select
                     value={form.quantityMode}
@@ -1069,15 +1077,15 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="unlimited">Không giới hạn</SelectItem>
-                      <SelectItem value="limited">Nhập số lượng</SelectItem>
+                      <SelectItem value="unlimited">{t("financeConfig.unlimited")}</SelectItem>
+                      <SelectItem value="limited">{t("financeConfig.enterQuantity")}</SelectItem>
                     </SelectContent>
                   </Select>
                   {form.quantityMode === "limited" && (
                     <Input
                       type="number"
                       min="1"
-                      placeholder="Số lượng"
+                      placeholder={t("financeConfig.quantity")}
                       value={form.quantity}
                       onChange={e => setForm(current => ({ ...current, quantity: e.target.value }))}
                       className="w-32"
@@ -1089,7 +1097,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Giới hạn sử dụng</label>
+              <label className="text-sm font-medium">{t("financeConfig.usageLimit")}</label>
               <Select
                 value={form.usageLimit}
                 onValueChange={value => setForm(current => ({
@@ -1101,8 +1109,8 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="once">1 lần</SelectItem>
-                  <SelectItem value="multiple">Nhiều lần</SelectItem>
+                  <SelectItem value="once">{t("financeConfig.oncePerPerson")}</SelectItem>
+                  <SelectItem value="multiple">{t("financeConfig.multipleUses")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1110,7 +1118,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => { setAddOpen(false); setEditingVoucher(null); }}>
-              Huỷ
+              {t("financeConfig.cancel")}
             </Button>
             <Button
               onClick={handleSave}
@@ -1119,7 +1127,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
             >
               {(createMutation.isPending || updateMutation.isPending)
                 ? <Loader2 className="h-4 w-4 animate-spin" />
-                : editingVoucher ? "Cập nhật" : "Lưu"}
+                : editingVoucher ? t("financeConfig.update") : t("financeConfig.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1131,7 +1139,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="h-4 w-4 text-blue-600" />
-              Danh sách học viên – Voucher {viewUsagesVoucher?.code}
+              {t("financeConfig.voucherStudentsTitle")} {viewUsagesVoucher?.code}
               {viewUsagesVoucher && <VoucherStatusBadge voucher={viewUsagesVoucher} />}
             </DialogTitle>
           </DialogHeader>
@@ -1142,7 +1150,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 className="pl-8 h-9"
-                placeholder="Tìm tên hoặc mã học viên..."
+                placeholder={t("financeConfig.searchStudent")}
                 value={usagesSearchInput}
                 onChange={e => setUsagesSearchInput(e.target.value)}
                 onKeyDown={e => {
@@ -1151,16 +1159,16 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
               />
             </div>
             <Button variant="secondary" size="sm" onClick={() => { setUsagesSearch(usagesSearchInput); setUsagesPage(1); }}>
-              Tìm
+              {t("financeConfig.search")}
             </Button>
             <Select value={usagesStatus} onValueChange={v => { setUsagesStatus(v as any); setUsagesPage(1); }}>
               <SelectTrigger className="h-9 w-44">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tất cả tình trạng</SelectItem>
-                <SelectItem value="used">Đã sử dụng</SelectItem>
-                <SelectItem value="unused">Chưa sử dụng</SelectItem>
+                <SelectItem value="all">{t("financeConfig.allStatuses")}</SelectItem>
+                <SelectItem value="used">{t("financeConfig.used")}</SelectItem>
+                <SelectItem value="unused">{t("financeConfig.unused")}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={String(usagesLimit)} onValueChange={v => { setUsagesLimit(Number(v) as 20 | 30 | 50); setUsagesPage(1); }}>
@@ -1168,9 +1176,9 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="20">20 / trang</SelectItem>
-                <SelectItem value="30">30 / trang</SelectItem>
-                <SelectItem value="50">50 / trang</SelectItem>
+                <SelectItem value="20">{t("financeConfig.perPage", { count: 20 })}</SelectItem>
+                <SelectItem value="30">{t("financeConfig.perPage", { count: 30 })}</SelectItem>
+                <SelectItem value="50">{t("financeConfig.perPage", { count: 50 })}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -1184,16 +1192,16 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
             ) : !usagesData || usagesData.data.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-muted-foreground text-sm">
                 <Eye className="h-8 w-8 opacity-20 mb-2" />
-                Không có học viên nào phù hợp
+                {t("financeConfig.noStudentsFound")}
               </div>
             ) : (
               <table className="w-full text-sm">
                 <thead className="bg-muted/50 sticky top-0">
                   <tr>
-                    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Tên (mã)</th>
-                    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Thời gian áp dụng</th>
-                    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Tình trạng</th>
-                    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Trạng thái Voucher</th>
+                    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("financeConfig.nameCode")}</th>
+                    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("financeConfig.validityPeriod")}</th>
+                    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("financeConfig.usageStatus")}</th>
+                    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("financeConfig.voucherStatus")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -1210,8 +1218,8 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                       </td>
                       <td className="px-4 py-2.5">
                         {row.usedAt
-                          ? <Badge className="bg-green-600 text-white text-xs">Đã sử dụng</Badge>
-                          : <Badge variant="secondary" className="text-xs">Chưa sử dụng</Badge>}
+                          ? <Badge className="bg-green-600 text-white text-xs">{t("financeConfig.used")}</Badge>
+                          : <Badge variant="secondary" className="text-xs">{t("financeConfig.unused")}</Badge>}
                       </td>
                       <td className="px-4 py-2.5">
                         {viewUsagesVoucher && <VoucherStatusBadge voucher={viewUsagesVoucher} />}
@@ -1227,7 +1235,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
           {usagesData && usagesData.total > 0 && (
             <div className="flex items-center justify-between pt-2 text-sm text-muted-foreground">
               <span>
-                {((usagesPage - 1) * usagesLimit) + 1}–{Math.min(usagesPage * usagesLimit, usagesData.total)} / {usagesData.total} học viên
+                {((usagesPage - 1) * usagesLimit) + 1}–{Math.min(usagesPage * usagesLimit, usagesData.total)} / {usagesData.total} {t("financeConfig.students")}
               </span>
               <div className="flex items-center gap-1">
                 <Button
@@ -1236,10 +1244,10 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                   disabled={usagesPage <= 1}
                   onClick={() => setUsagesPage(p => p - 1)}
                 >
-                  ← Trước
+                  ← {t("financeConfig.previous")}
                 </Button>
                 <span className="px-3 text-sm">
-                  Trang {usagesPage} / {Math.ceil(usagesData.total / usagesLimit)}
+                  {t("financeConfig.page", { page: usagesPage, total: Math.ceil(usagesData.total / usagesLimit) })}
                 </span>
                 <Button
                   variant="outline"
@@ -1247,7 +1255,7 @@ function VoucherTab({ perm }: { perm: ConfigTabPerm }) {
                   disabled={usagesPage >= Math.ceil(usagesData.total / usagesLimit)}
                   onClick={() => setUsagesPage(p => p + 1)}
                 >
-                  Sau →
+                  {t("financeConfig.next")} →
                 </Button>
               </div>
             </div>
@@ -1283,6 +1291,7 @@ function ReminderRuleRow({
   label: string;
   disabled?: boolean;
 }) {
+  const { t } = useLanguage();
   return (
     <div className={cn("grid grid-cols-3 gap-4 p-4 rounded-lg border bg-background transition-opacity", disabled && "pointer-events-none opacity-50")}>
       {/* Số ngày */}
@@ -1293,13 +1302,13 @@ function ReminderRuleRow({
             type="number"
             min={1}
             max={365}
-            placeholder="Nhập số ngày"
+            placeholder={t("financeConfig.daysPlaceholder")}
             value={rule.days}
             onChange={e => onChange({ ...rule, days: e.target.value })}
             className="h-9 text-sm"
             disabled={disabled}
           />
-          <span className="text-sm text-muted-foreground whitespace-nowrap">ngày</span>
+          <span className="text-sm text-muted-foreground whitespace-nowrap">{t("financeConfig.days")}</span>
         </div>
       </div>
 
@@ -1307,7 +1316,7 @@ function ReminderRuleRow({
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
           <Clock className="h-3 w-3" />
-          Thời gian gửi
+          {t("financeConfig.sendTime")}
         </label>
         <Input
           type="time"
@@ -1320,14 +1329,14 @@ function ReminderRuleRow({
 
       {/* Chu kỳ */}
       <div className="space-y-1.5">
-        <label className="text-xs font-medium text-muted-foreground">Chu kỳ</label>
+        <label className="text-xs font-medium text-muted-foreground">{t("financeConfig.cycle")}</label>
         <Select value={rule.cycle} onValueChange={v => onChange({ ...rule, cycle: v as "once" | "daily" })} disabled={disabled}>
           <SelectTrigger className="h-9 text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="once">1 lần</SelectItem>
-            <SelectItem value="daily">Hàng ngày</SelectItem>
+            <SelectItem value="once">{t("financeConfig.once")}</SelectItem>
+            <SelectItem value="daily">{t("financeConfig.daily")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -1336,6 +1345,7 @@ function ReminderRuleRow({
 }
 
 function DebtReminderTab() {
+  const { t } = useLanguage();
   const { toast } = useToast();
 
   const { data: savedConfig, isLoading } = useQuery<any>({
@@ -1390,10 +1400,10 @@ function DebtReminderTab() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notification/debt-reminder-config"] });
-      toast({ title: "Đã lưu cấu hình nhắc công nợ" });
+      toast({ title: t("financeConfig.debtReminderSaved") });
     },
     onError: (e: any) =>
-      toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
+      toast({ title: t("financeConfig.error"), description: e.message, variant: "destructive" }),
   });
 
   if (isLoading) {
@@ -1415,11 +1425,11 @@ function DebtReminderTab() {
           <div className="flex items-center justify-between">
             <CardTitle className="text-base flex items-center gap-2">
               <Bell className="h-4 w-4 text-amber-500" />
-              Báo công nợ trước khi đến hạn
+              {t("financeConfig.beforeDueTitle")}
             </CardTitle>
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">
-                {beforeRule.enabled ? "Đang bật" : "Đang tắt"}
+                {beforeRule.enabled ? t("financeConfig.enabled") : t("financeConfig.disabled")}
               </span>
               <Switch
                 checked={beforeRule.enabled}
@@ -1428,13 +1438,13 @@ function DebtReminderTab() {
             </div>
           </div>
           <p className="text-xs text-muted-foreground pt-1">
-            Gửi thông báo nhắc học viên trước khi hoá đơn đến hạn thanh toán.
+            {t("financeConfig.beforeDueDescription")}
           </p>
         </CardHeader>
         <CardContent className="pt-4">
           <ReminderRuleRow
             rule={beforeRule}
-            label="Số ngày báo trước"
+            label={t("financeConfig.daysBeforeDue")}
             onChange={setBeforeRule}
             disabled={!beforeRule.enabled}
           />
@@ -1447,11 +1457,11 @@ function DebtReminderTab() {
           <div className="flex items-center justify-between">
             <CardTitle className="text-base flex items-center gap-2">
               <BellRing className="h-4 w-4 text-red-500" />
-              Báo công nợ quá hạn
+              {t("financeConfig.overdueTitle")}
             </CardTitle>
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">
-                {afterRule.enabled ? "Đang bật" : "Đang tắt"}
+                {afterRule.enabled ? t("financeConfig.enabled") : t("financeConfig.disabled")}
               </span>
               <Switch
                 checked={afterRule.enabled}
@@ -1460,13 +1470,13 @@ function DebtReminderTab() {
             </div>
           </div>
           <p className="text-xs text-muted-foreground pt-1">
-            Gửi thông báo nhắc học viên sau khi hoá đơn đã quá hạn thanh toán.
+            {t("financeConfig.overdueDescription")}
           </p>
         </CardHeader>
         <CardContent className="pt-4">
           <ReminderRuleRow
             rule={afterRule}
-            label="Số ngày sau hạn"
+            label={t("financeConfig.daysAfterDue")}
             onChange={setAfterRule}
             disabled={!afterRule.enabled}
           />
@@ -1477,7 +1487,7 @@ function DebtReminderTab() {
       <div className="flex justify-end">
         <Button onClick={handleSave} className="gap-2">
           <Save className="h-4 w-4" />
-          Lưu cấu hình
+          {saveMutation.isPending ? t("financeConfig.saving") : t("financeConfig.saveConfig")}
         </Button>
       </div>
     </div>
