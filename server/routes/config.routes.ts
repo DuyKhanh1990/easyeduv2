@@ -23,9 +23,11 @@ import {
   scoreSheetAssessmentSchema,
   type ScoreSheetAssessment,
 } from "@shared/score-sheet-assessment";
+import { selectScoreSheetAssessmentAttemptSummary } from "@shared/score-sheet-assessment-scoring";
 import { eq, and, sql, notExists, inArray, ne } from "drizzle-orm";
 import {
   staffAssignments, departments, users, roles, students, shiftTemplates, classes, studentClasses, centerConfig,
+  studentSessions, scoreSheetAssessmentStudentAttempts,
   courses, courseFeePackages, coursePrograms, courseProgramContents, activityLogs,
 } from "@shared/schema";
 import { emitToAll } from "../lib/ws-hub";
@@ -2372,13 +2374,6 @@ export function registerConfigRoutes(app: Express): void {
             WHERE attempt.assessment_id = cs.score_sheet_assessment_id
               AND attempt.class_session_id = cs.id
           ) AS entered_student_count,
-          (
-            SELECT COUNT(DISTINCT attempt.student_id)::int
-            FROM score_sheet_assessment_student_attempts attempt
-            WHERE attempt.assessment_id = cs.score_sheet_assessment_id
-              AND attempt.class_session_id = cs.id
-              AND attempt.result @> '{"inputComplete":true}'::jsonb
-          ) AS completed_student_count
         FROM class_sessions cs
         JOIN classes c ON c.id = cs.class_id
         LEFT JOIN shift_templates st ON st.id = cs.shift_template_id
@@ -2398,9 +2393,68 @@ export function registerConfigRoutes(app: Express): void {
         ORDER BY cs.session_date DESC, cs.session_index DESC, c.class_code
       `);
 
+      const conversionRows = result.rows.filter((row: any) =>
+        assessmentsById.get(row.assessment_id)?.templateSnapshot.scoreConversionTemplateId,
+      );
+      const conversionSessionIds = conversionRows.map((row: any) => String(row.session_id));
+      const conversionAssessmentIds = Array.from(
+        new Set(conversionRows.map((row: any) => String(row.assessment_id))),
+      );
+      const assessmentAttempts = conversionSessionIds.length
+        ? await db.select({
+            assessmentId: scoreSheetAssessmentStudentAttempts.assessmentId,
+            classSessionId: scoreSheetAssessmentStudentAttempts.classSessionId,
+            studentId: scoreSheetAssessmentStudentAttempts.studentId,
+            attemptNumber: scoreSheetAssessmentStudentAttempts.attemptNumber,
+            result: scoreSheetAssessmentStudentAttempts.result,
+          })
+          .from(scoreSheetAssessmentStudentAttempts)
+          .innerJoin(
+            studentSessions,
+            and(
+              eq(studentSessions.classSessionId, scoreSheetAssessmentStudentAttempts.classSessionId),
+              eq(studentSessions.studentId, scoreSheetAssessmentStudentAttempts.studentId),
+            ),
+          )
+          .where(and(
+            inArray(scoreSheetAssessmentStudentAttempts.classSessionId, conversionSessionIds),
+            inArray(scoreSheetAssessmentStudentAttempts.assessmentId, conversionAssessmentIds),
+          ))
+        : [];
+      const attemptsBySessionStudent = new Map<string, Map<string, Map<number, {
+        attemptNumber: number;
+        result: unknown;
+      }>>>();
+      for (const attempt of assessmentAttempts) {
+        const sessionKey = `${attempt.assessmentId}:${attempt.classSessionId}`;
+        let studentsForSession = attemptsBySessionStudent.get(sessionKey);
+        if (!studentsForSession) {
+          studentsForSession = new Map();
+          attemptsBySessionStudent.set(sessionKey, studentsForSession);
+        }
+        let attemptsForStudent = studentsForSession.get(attempt.studentId);
+        if (!attemptsForStudent) {
+          attemptsForStudent = new Map();
+          studentsForSession.set(attempt.studentId, attemptsForStudent);
+        }
+        attemptsForStudent.set(attempt.attemptNumber, {
+          attemptNumber: attempt.attemptNumber,
+          result: attempt.result,
+        });
+      }
+
       const mapped = result.rows.flatMap((row: any) => {
         const assessment = assessmentsById.get(row.assessment_id);
         if (!assessment?.templateSnapshot.scoreConversionTemplateId) return [];
+        const sessionKey = `${row.assessment_id}:${row.session_id}`;
+        const studentAttempts = attemptsBySessionStudent.get(sessionKey);
+        const completedStudentCount = Array.from(studentAttempts?.values() ?? [])
+          .filter((attempts) => selectScoreSheetAssessmentAttemptSummary(
+            Array.from(attempts.values()),
+            assessment.scoringPolicy,
+            true,
+          )?.result.inputComplete)
+          .length;
         return [{
           sessionId: row.session_id,
           classId: row.class_id,
@@ -2411,7 +2465,7 @@ export function registerConfigRoutes(app: Express): void {
           sessionIndex: row.session_index,
           studentCount: row.student_count ?? 0,
           enteredStudentCount: row.entered_student_count ?? 0,
-          completedStudentCount: row.completed_student_count ?? 0,
+          completedStudentCount,
           examDate: row.session_date,
           assessmentId: row.assessment_id,
           assessmentCode: assessment.code,

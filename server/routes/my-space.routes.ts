@@ -12,6 +12,7 @@ import {
 } from "@shared/score-conversion";
 import {
   calculateScoreSheetAssessmentAttemptResult,
+  selectScoreSheetAssessmentAttemptSummary,
   scoreSheetAssessmentAttemptResultSchema,
   scoreSheetAssessmentAttemptValuesSchema,
   type ScoreSheetAssessmentAttemptResult,
@@ -108,44 +109,6 @@ async function getScoreSheetAssessmentScoringConfig(assessmentId: string, querya
       ? scoreConversionTemplateSchema.parse(conversionTemplate)
       : null,
   };
-}
-
-type AssessmentAttemptSummaryRow = {
-  attemptNumber: number;
-  result: unknown;
-};
-
-function selectAssessmentAttemptSummary(
-  attempts: AssessmentAttemptSummaryRow[],
-  scoringPolicy: "highest" | "latest",
-  hasConversion: boolean,
-): { attemptNumber: number; result: ScoreSheetAssessmentAttemptResult } | null {
-  const parsed = attempts.map((attempt) => ({
-    attemptNumber: attempt.attemptNumber,
-    result: scoreSheetAssessmentAttemptResultSchema.parse(attempt.result),
-  }));
-  if (parsed.length === 0) return null;
-
-  if (scoringPolicy === "latest") {
-    return parsed.reduce((latest, current) =>
-      current.attemptNumber > latest.attemptNumber ? current : latest,
-    );
-  }
-
-  return parsed.reduce((highest, current) => {
-    const highestScore = hasConversion
-      ? highest.result.overallConvertedScore
-      : highest.result.overallRawScore;
-    const currentScore = hasConversion
-      ? current.result.overallConvertedScore
-      : current.result.overallRawScore;
-    if (currentScore === null && highestScore !== null) return highest;
-    if (currentScore !== null && highestScore === null) return current;
-    if (currentScore !== null && highestScore !== null && currentScore !== highestScore) {
-      return currentScore > highestScore ? current : highest;
-    }
-    return current.attemptNumber > highest.attemptNumber ? current : highest;
-  });
 }
 
 async function isStaffInDaotaoDept(staffId: string): Promise<boolean> {
@@ -4088,7 +4051,7 @@ export function registerMySpaceRoutes(app: Express): void {
           eq(scoreSheetAssessmentStudentAttempts.assessmentId, assessmentId),
           eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId.data),
         ));
-      const attemptsByStudent = new Map<string, AssessmentAttemptSummaryRow[]>();
+      const attemptsByStudent = new Map<string, Array<{ attemptNumber: number; result: unknown }>>();
       for (const attempt of attemptRows) {
         const studentAttempts = attemptsByStudent.get(attempt.studentId) ?? [];
         studentAttempts.push({
@@ -4100,7 +4063,7 @@ export function registerMySpaceRoutes(app: Express): void {
 
       res.json(Array.from(uniqueStudents.values()).map((student) => {
         const attempts = attemptsByStudent.get(student.studentId) ?? [];
-        const summary = selectAssessmentAttemptSummary(
+        const summary = selectScoreSheetAssessmentAttemptSummary(
           attempts,
           assessment.scoringPolicy,
           !!assessment.templateSnapshot.scoreConversionTemplateId,

@@ -504,12 +504,14 @@ export default function ScoreConversion() {
                               assessment.scoreDeadlineAt,
                               nowWallClockMs,
                             );
-                            const scoreProgressLabel = assessment.studentCount > 0
-                              && assessment.completedStudentCount >= assessment.studentCount
-                              ? "Đã nhập đủ điểm"
-                              : assessment.enteredStudentCount > 0
-                                ? `${assessment.enteredStudentCount}/${assessment.studentCount} đã nhập`
-                                : "Chưa nhập";
+                            const completedStudentCount = Math.max(
+                              0,
+                              Math.min(assessment.completedStudentCount, assessment.studentCount),
+                            );
+                            const notCompletedStudentCount = Math.max(
+                              0,
+                              assessment.studentCount - completedStudentCount,
+                            );
                             return (
                               <div
                                 key={assessment.sessionId}
@@ -585,9 +587,12 @@ export default function ScoreConversion() {
                                 </div>
 
                                 <div className="flex min-w-0 flex-col items-start gap-1">
-                                  <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-muted-foreground">
+                                  <span className="inline-flex items-center gap-1 whitespace-nowrap text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
                                     <CircleDot className="h-3.5 w-3.5 shrink-0" />
-                                    {scoreProgressLabel}
+                                    Đã nhập điểm: {completedStudentCount}
+                                  </span>
+                                  <span className="whitespace-nowrap text-[10px] font-medium text-muted-foreground">
+                                    Chưa nhập điểm: {notCompletedStudentCount}
                                   </span>
                                   <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded border px-1 text-[10px] font-medium ${deadlineStatus.className}`}>
                                     {deadlineStatus.indicator} {deadlineStatus.label}

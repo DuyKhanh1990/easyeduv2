@@ -49,6 +49,39 @@ export const scoreSheetAssessmentAttemptResultSchema = z.object({
 export type ScoreSheetAssessmentAttemptValues = z.infer<typeof scoreSheetAssessmentAttemptValuesSchema>;
 export type ScoreSheetAssessmentAttemptResult = z.infer<typeof scoreSheetAssessmentAttemptResultSchema>;
 
+export function selectScoreSheetAssessmentAttemptSummary(
+  attempts: Array<{ attemptNumber: number; result: unknown }>,
+  scoringPolicy: "highest" | "latest",
+  hasConversion: boolean,
+): { attemptNumber: number; result: ScoreSheetAssessmentAttemptResult } | null {
+  const parsed = attempts.map((attempt) => ({
+    attemptNumber: attempt.attemptNumber,
+    result: scoreSheetAssessmentAttemptResultSchema.parse(attempt.result),
+  }));
+  if (parsed.length === 0) return null;
+
+  if (scoringPolicy === "latest") {
+    return parsed.reduce((latest, current) =>
+      current.attemptNumber > latest.attemptNumber ? current : latest,
+    );
+  }
+
+  return parsed.reduce((highest, current) => {
+    const highestScore = hasConversion
+      ? highest.result.overallConvertedScore
+      : highest.result.overallRawScore;
+    const currentScore = hasConversion
+      ? current.result.overallConvertedScore
+      : current.result.overallRawScore;
+    if (currentScore === null && highestScore !== null) return highest;
+    if (currentScore !== null && highestScore === null) return current;
+    if (currentScore !== null && highestScore !== null && currentScore !== highestScore) {
+      return currentScore > highestScore ? current : highest;
+    }
+    return current.attemptNumber > highest.attemptNumber ? current : highest;
+  });
+}
+
 type ScoreSheetSkill = ScoreSheetTemplate["skills"][number];
 
 function getSkillId(skill: ScoreSheetSkill, index: number): string {
