@@ -30,6 +30,18 @@ interface BidvQrStatus {
 
 import { getBankCode, sanitizeForBank } from "./qr-utils";
 
+function invoiceStatusLabel(status: string, t: (key: string) => string): string {
+  const keys: Record<string, string> = {
+    paid: "finance.paidStatus",
+    confirmed: "finance.tab.confirmed",
+    unpaid: "finance.unpaidStatus",
+    debt: "finance.tab.debt",
+    partial: "finance.partialPayment",
+    cancelled: "finance.statusCancelled",
+  };
+  return t(keys[status] ?? "finance.unpaidStatus");
+}
+
 export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialogProps) {
   const { toast } = useToast();
   const { t } = useLanguage();
@@ -271,12 +283,12 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2 text-sm">
                   <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                  <span className="text-muted-foreground">Học viên:</span>
+                  <span className="text-muted-foreground">{t("finance.studentLabel")}:</span>
                   <span className="font-semibold">{invoice.name || "—"}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <CreditCard className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                  <span className="text-muted-foreground">Mã hóa đơn:</span>
+                  <span className="text-muted-foreground">{t("finance.invoiceCode")}:</span>
                   <span className="font-semibold text-primary">{invoice.code}</span>
                 </div>
               </div>
@@ -285,7 +297,7 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
 
               <div className="space-y-2">
                 <div className="flex items-baseline gap-2">
-                  <span className="text-muted-foreground text-sm">Số tiền cần thanh toán:</span>
+                   <span className="text-muted-foreground text-sm">{t("finance.amount")}:</span>
                   <span className="text-xl font-bold text-red-600">{fmtMoney(payAmount)}</span>
                 </div>
               </div>
@@ -296,18 +308,18 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2 text-sm">
                   <Landmark className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                  <span className="text-muted-foreground">Ngân hàng:</span>
+                   <span className="text-muted-foreground">{t("finance.bank")}:</span>
                   <span className="font-semibold text-blue-700">BIDV</span>
                 </div>
                 {bidvVa?.vaCode && (
                   <div className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground pl-6">TK định danh:</span>
+                    <span className="text-muted-foreground pl-6">{t("finance.virtualAccount")}:</span>
                     <span className="font-semibold font-mono text-blue-700">{bidvVa.vaCode}</span>
                   </div>
                 )}
                 {bidvVa?.accountName && (
                   <div className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground pl-6">Người nhận:</span>
+                    <span className="text-muted-foreground pl-6">{t("finance.recipient")}:</span>
                     <span className="font-semibold uppercase tracking-wide">{bidvVa.accountName}</span>
                   </div>
                 )}
@@ -316,16 +328,16 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
               <div className="h-px bg-border" />
 
               <div className="flex items-center gap-2 text-sm">
-                <span className="text-muted-foreground">Trạng thái:</span>
+                 <span className="text-muted-foreground">{t("finance.status")}:</span>
                 {status && (
                   <Badge className={`text-xs font-medium ${status.className}`}>
                     {invoice.status === "unpaid" ? "⏳ " : isInvoicePaidLike(invoice.status) ? "✅ " : ""}
-                    {status.label}
+                    {invoiceStatusLabel(invoice.status, t)}
                   </Badge>
                 )}
                 {bidvVa?.isEnabled === false && (
                   <Badge variant="outline" className="text-xs text-amber-600 border-amber-400 ml-2">
-                    BIDV chưa bật
+                     {t("finance.bidvNotEnabled")}
                   </Badge>
                 )}
               </div>
@@ -334,7 +346,7 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
                 <>
                   <div className="h-px bg-border" />
                   <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Mô tả hoá đơn:</p>
+                     <p className="text-sm text-muted-foreground">{t("finance.qrDescription")}</p>
                     <p className="text-sm text-foreground whitespace-pre-wrap">{invoice.description}</p>
                   </div>
                 </>
@@ -345,7 +357,7 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
             <div className="flex-[2] flex flex-col items-center justify-center gap-4 px-6 py-8 bg-blue-50/30">
               <div className="flex items-center gap-1.5 text-sm font-semibold text-blue-700 mb-1">
                 <QrCode className="h-4 w-4" />
-                QR BIDV — Quét để thanh toán
+                 {t("finance.bidvQrAlt")} — {t("finance.qrScanToPay")}
               </div>
 
               <div className="border border-blue-200 bg-white rounded-xl p-3 shadow-sm">
@@ -355,25 +367,25 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
                   <img
                     key={`bidv-${refreshKey}`}
                     src={bidvQrUrl}
-                    alt="QR BIDV"
+                     alt={t("finance.bidvQrAlt")}
                     className="w-56 h-56 object-contain rounded"
                     onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                   />
                 ) : (
                   <div className="w-56 h-56 flex items-center justify-center text-center text-sm text-muted-foreground p-4">
                     {bidvVa === undefined && !bidvLoading
-                      ? "Cấu hình BIDV chưa sẵn sàng"
-                      : "Không tạo được QR"}
+                       ? t("finance.bidvConfigNotReady")
+                       : t("finance.cannotCreateQr")}
                   </div>
                 )}
               </div>
 
               <p className="text-xs text-center text-muted-foreground">
-                Quét bằng app BIDV SmartBanking hoặc bất kỳ app ngân hàng nào
+                  {t("finance.bidvScanHint")}
               </p>
               {bidvVa?.vaCode && (
                 <div className="space-y-1 text-xs text-center">
-                  <p className="flex items-center gap-1 text-green-600"><CheckCircle2 className="h-3.5 w-3.5" />Tự động xác nhận sau khi nhận tiền</p>
+                   <p className="flex items-center gap-1 text-green-600"><CheckCircle2 className="h-3.5 w-3.5" />{t("finance.autoConfirmPayment")}</p>
                 </div>
               )}
             </div>

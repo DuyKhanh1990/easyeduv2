@@ -77,3 +77,4 @@
 - [Mockup sandbox screenshots](mockup-sandbox-screenshots.md) — screenshot isolated previews from the sandbox URL; appPreview paths load the main app instead.
 - [Score-sheet template configuration](score-sheet-template-configuration.md) — manual skills stay unlinked, source switches preserve matching parts, and overall rules are copied per template.
 - [Score conversion publication](score-assessment-publication.md) — publish state belongs to each class session; students only see their enrolled session's policy-selected result.
+- [Finance translation parity](finance-translation-parity.md) — invoice English audits must compare vi/en key sets and scan child dialogs, not only the main Invoices page.

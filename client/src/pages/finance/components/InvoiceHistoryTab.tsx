@@ -7,6 +7,7 @@ import { CalendarIcon, History, Plus, CreditCard, CheckCircle2, Eye } from "luci
 import { fmtMoney, getInvoiceBusinessDateKey } from "@/types/invoice-types";
 import { Pencil, Trash2, XCircle } from "lucide-react";
 import { HistoryPaginationFooter } from "@/components/common/HistoryPaginationFooter";
+import { useLanguage } from "@/hooks/use-language";
 
 /* ── Types ─────────────────────────────────────────────── */
 interface HistoryEvent {
@@ -74,60 +75,61 @@ function formatDateOnly(dateKeyValue: string) {
   return `${day}/${month}/${year}`;
 }
 
+type Translate = (key: string, params?: Record<string, string | number>) => string;
 type EvCfg = { label: string; icon: React.ReactNode; bg: string; border: string; textColor: string };
 
 const EV_CONFIG: Record<HistoryEvent["ev_type"], EvCfg> = {
   created: {
-    label: "Tạo mới",
+    label: "finance.history.created",
     icon: <Plus className="h-3 w-3" />,
     bg: "bg-violet-50",
     border: "border-violet-200",
     textColor: "text-violet-700",
   },
   paid: {
-    label: "Đã thanh toán",
+    label: "finance.history.paid",
     icon: <CheckCircle2 className="h-3 w-3" />,
     bg: "bg-emerald-50",
     border: "border-emerald-200",
     textColor: "text-emerald-700",
   },
   schedule_paid: {
-    label: "Thu đợt",
+    label: "finance.history.schedulePaid",
     icon: <CreditCard className="h-3 w-3" />,
     bg: "bg-sky-50",
     border: "border-sky-200",
     textColor: "text-sky-700",
   },
   "Sửa hoá đơn": {
-    label: "Sửa hoá đơn",
+    label: "finance.history.editedInvoice",
     icon: <Pencil className="h-3 w-3" />,
     bg: "bg-amber-50",
     border: "border-amber-200",
     textColor: "text-amber-700",
   },
   "Đổi trạng thái hoá đơn": {
-    label: "Đổi trạng thái hoá đơn",
+    label: "finance.history.statusChanged",
     icon: <CheckCircle2 className="h-3 w-3" />,
     bg: "bg-emerald-50",
     border: "border-emerald-200",
     textColor: "text-emerald-700",
   },
   "Xoá hoá đơn": {
-    label: "Xoá hoá đơn",
+    label: "finance.history.deletedInvoice",
     icon: <Trash2 className="h-3 w-3" />,
     bg: "bg-red-50",
     border: "border-red-200",
     textColor: "text-red-700",
   },
   "Huỷ thanh toán hoá đơn": {
-    label: "Huỷ thanh toán",
+    label: "finance.history.paymentCancelled",
     icon: <XCircle className="h-3 w-3" />,
     bg: "bg-orange-50",
     border: "border-orange-200",
     textColor: "text-orange-700",
   },
   "Sửa đợt thanh toán": {
-    label: "Sửa đợt thanh toán",
+    label: "finance.history.editedSchedule",
     icon: <Pencil className="h-3 w-3" />,
     bg: "bg-blue-50",
     border: "border-blue-200",
@@ -136,54 +138,54 @@ const EV_CONFIG: Record<HistoryEvent["ev_type"], EvCfg> = {
 };
 
 const DEFAULT_EV_CONFIG: EvCfg = {
-  label: "Cập nhật",
+  label: "finance.history.updated",
   icon: <History className="h-3 w-3" />,
   bg: "bg-slate-50",
   border: "border-slate-200",
   textColor: "text-slate-700",
 };
 
-function getEventConfig(eventType: string): EvCfg {
-  return EV_CONFIG[eventType as keyof typeof EV_CONFIG] ?? {
-    ...DEFAULT_EV_CONFIG,
-    label: eventType || DEFAULT_EV_CONFIG.label,
-  };
+function getEventConfig(eventType: string, t: Translate): EvCfg {
+  const config = EV_CONFIG[eventType as keyof typeof EV_CONFIG];
+  return config
+    ? { ...config, label: t(config.label) }
+    : { ...DEFAULT_EV_CONFIG, label: eventType || t(DEFAULT_EV_CONFIG.label) };
 }
 
-function payMethodLabel(m: string | null | undefined) {
+function payMethodLabel(m: string | null | undefined, t: Translate) {
   if (!m) return null;
-  if (m === "cash")     return "Tiền mặt";
-  if (m === "transfer") return "Chuyển khoản";
+  if (m === "cash")     return t("finance.cash");
+  if (m === "transfer") return t("finance.transfer");
   return m;
 }
 
 /* ── Field labels for diff display ─────────────────────── */
-const FIELD_LABELS: Record<string, string> = {
-  type:            "Loại phiếu",
-  subjectName:     "Đối tượng",
-  category:        "Danh mục",
-  status:          "Trạng thái",
-  grandTotal:      "Tổng tiền",
-  paidAmount:      "Đã thanh toán",
-  remainingAmount: "Còn lại",
-  paymentMethod:   "Hình thức TT",
-  dueDate:         "Hạn thanh toán",
-  createdAt:       "Ngày tạo",
-  paidAt:          "Ngày thanh toán",
-  scheduleLabel:   "Đợt thanh toán",
-  note:            "Ghi chú",
-  description:     "Mô tả",
-  locationId:      "Cơ sở (ID)",
-  locationName:    "Cơ sở",
-  classId:         "Lớp học (ID)",
-  className:       "Lớp học",
+const FIELD_LABEL_KEYS: Record<string, string> = {
+  type:            "finance.type",
+  subjectName:     "finance.history.subject",
+  category:        "finance.category",
+  status:          "finance.status",
+  grandTotal:      "finance.total",
+  paidAmount:      "finance.paid",
+  remainingAmount: "finance.remaining",
+  paymentMethod:   "finance.history.paymentMethodShort",
+  dueDate:         "finance.dueDate",
+  createdAt:       "finance.createdDate",
+  paidAt:          "finance.paidDate",
+  scheduleLabel:   "finance.paymentSchedule",
+  note:            "finance.note",
+  description:     "finance.description",
+  locationId:      "finance.history.locationId",
+  locationName:    "finance.branch",
+  classId:         "finance.history.classId",
+  className:       "finance.class",
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  unpaid:  "Chưa thanh toán",
-  partial: "Thanh toán một phần",
-  paid:    "Đã thanh toán",
-  confirmed: "Đã xác nhận",
+const STATUS_LABEL_KEYS: Record<string, string> = {
+  unpaid:  "finance.unpaidStatus",
+  partial: "finance.partialPayment",
+  paid:    "finance.paidStatus",
+  confirmed: "finance.tab.confirmed",
 };
 
 const MONEY_FIELDS = new Set(["grandTotal", "paidAmount", "remainingAmount"]);
@@ -192,15 +194,15 @@ const SKIP_IF_SIBLING: Record<string, string> = {
   classId:    "className",
 };
 
-function formatFieldValue(key: string, val: any): string {
+function formatFieldValue(key: string, val: any, t: Translate): string {
   if (val === null || val === undefined || val === "") return "—";
-  if (key === "status") return STATUS_LABELS[String(val)] ?? String(val);
+  if (key === "status") return STATUS_LABEL_KEYS[String(val)] ? t(STATUS_LABEL_KEYS[String(val)]) : String(val);
   if (MONEY_FIELDS.has(key)) {
     const n = parseFloat(String(val));
     return isNaN(n) ? String(val) : `${fmtMoney(n)} đ`;
   }
-  if (key === "paymentMethod") return payMethodLabel(String(val)) ?? String(val);
-  if (key === "type") return String(val) === "Thu" ? "Thu (Phiếu thu)" : "Chi (Phiếu chi)";
+  if (key === "paymentMethod") return payMethodLabel(String(val), t) ?? String(val);
+  if (key === "type") return String(val) === "Thu" ? t("finance.invoiceTypeIncome") : t("finance.invoiceTypeExpense");
   if (key === "dueDate") {
     const value = String(val);
     return /^\d{4}-\d{2}-\d{2}/.test(value)
@@ -222,8 +224,9 @@ function EventDetailDialog({
   event: HistoryEvent | null;
   onClose: () => void;
 }) {
+  const { t } = useLanguage();
   if (!event) return null;
-  const cfg = getEventConfig(event.ev_type);
+  const cfg = getEventConfig(event.ev_type, t);
 
   const oldObj: Record<string, any> = (() => {
     try { return event.old_content_json ? JSON.parse(event.old_content_json) : {}; }
@@ -269,34 +272,34 @@ function EventDetailDialog({
 
         {/* Meta info */}
         <div className="text-xs text-slate-500 space-y-0.5 -mt-1">
-          {event.subject_name && <div><span className="font-medium">Đối tượng:</span> {event.subject_name}</div>}
-          {event.created_by_name && <div><span className="font-medium">Thực hiện bởi:</span> {event.created_by_name}</div>}
-          {event.location_name && <div><span className="font-medium">Cơ sở:</span> {event.location_name}</div>}
+          {event.subject_name && <div><span className="font-medium">{t("finance.history.subject")}:</span> {event.subject_name}</div>}
+          {event.created_by_name && <div><span className="font-medium">{t("finance.history.performedBy")}:</span> {event.created_by_name}</div>}
+          {event.location_name && <div><span className="font-medium">{t("finance.branch")}:</span> {event.location_name}</div>}
         </div>
 
         {/* Diff table */}
         {isAuditEvent && diffRows.length > 0 ? (
           <div className="mt-2">
             <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-2">
-              {event.ev_type === "Xoá hoá đơn" ? "Thông tin hoá đơn đã xoá" : "Các trường bị thay đổi"}
+              {event.ev_type === "Xoá hoá đơn" ? t("finance.history.deletedInfo") : t("finance.history.changedFields")}
             </p>
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-slate-100">
-                  <th className="text-left py-1.5 pr-3 font-semibold text-slate-500 w-[30%]">Trường</th>
+                  <th className="text-left py-1.5 pr-3 font-semibold text-slate-500 w-[30%]">{t("finance.history.field")}</th>
                   {event.ev_type !== "Xoá hoá đơn" && (
-                    <th className="text-left py-1.5 pr-3 font-semibold text-red-400 w-[35%]">Trước</th>
+                    <th className="text-left py-1.5 pr-3 font-semibold text-red-400 w-[35%]">{t("finance.history.before")}</th>
                   )}
                   <th className="text-left py-1.5 font-semibold text-emerald-600">
-                    {event.ev_type === "Xoá hoá đơn" ? "Giá trị" : "Sau"}
+                    {event.ev_type === "Xoá hoá đơn" ? t("finance.history.value") : t("finance.history.after")}
                   </th>
                 </tr>
               </thead>
               <tbody>
                 {diffRows.map(k => {
-                  const label = FIELD_LABELS[k] ?? k;
-                  const oldVal = formatFieldValue(k, oldObj[k]);
-                  const newVal = formatFieldValue(k, newObj[k]);
+                  const label = FIELD_LABEL_KEYS[k] ? t(FIELD_LABEL_KEYS[k]) : k;
+                  const oldVal = formatFieldValue(k, oldObj[k], t);
+                  const newVal = formatFieldValue(k, newObj[k], t);
                   return (
                     <tr key={k} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                       <td className="py-2 pr-3 font-medium text-slate-600 align-top">{label}</td>
@@ -324,38 +327,38 @@ function EventDetailDialog({
           </div>
         ) : isAuditEvent && diffRows.length === 0 ? (
           <p className="text-xs text-slate-400 mt-2 italic">
-            Không có chi tiết thay đổi được ghi lại cho sự kiện này.
+            {t("finance.history.noChangeDetails")}
           </p>
         ) : (
           /* Non-audit events: show basic event summary */
           <div className="mt-2 space-y-1.5">
             <div className="flex justify-between text-xs">
-              <span className="text-slate-500">Tổng tiền hoá đơn</span>
+              <span className="text-slate-500">{t("finance.history.invoiceTotal")}</span>
               <span className="font-semibold text-slate-700">
                 {fmtMoney(parseFloat(event.grand_total) || 0)} đ
               </span>
             </div>
             <div className="flex justify-between text-xs">
-              <span className="text-slate-500">Số tiền nghiệp vụ</span>
+              <span className="text-slate-500">{t("finance.history.transactionAmount")}</span>
               <span className={`font-semibold ${event.invoice_type === "Thu" ? "text-emerald-600" : "text-red-600"}`}>
                 {event.invoice_type === "Thu" ? "+" : "-"}{fmtMoney(parseFloat(event.amount) || 0)} đ
               </span>
             </div>
-            {payMethodLabel(event.payment_method) && (
+            {payMethodLabel(event.payment_method, t) && (
               <div className="flex justify-between text-xs">
-                <span className="text-slate-500">Hình thức TT</span>
-                <span className="text-slate-700">{payMethodLabel(event.payment_method)}</span>
+                <span className="text-slate-500">{t("finance.history.paymentMethodShort")}</span>
+                <span className="text-slate-700">{payMethodLabel(event.payment_method, t)}</span>
               </div>
             )}
             {event.ev_type === "schedule_paid" && event.schedule_label && (
               <div className="flex justify-between text-xs">
-                <span className="text-slate-500">Đợt thanh toán</span>
+                <span className="text-slate-500">{t("finance.paymentSchedule")}</span>
                 <span className="text-slate-700">{event.schedule_label}</span>
               </div>
             )}
             {event.settle_code && (
               <div className="flex justify-between text-xs">
-                <span className="text-slate-500">Mã chứng từ</span>
+                <span className="text-slate-500">{t("finance.history.documentCode")}</span>
                 <span className="font-mono text-slate-600">{event.settle_code}</span>
               </div>
             )}
@@ -395,6 +398,7 @@ export function InvoiceHistoryTab({
 }: {
   locationOptions: { value: string; label: string }[];
 }) {
+  const { t } = useLanguage();
   const [quickRange, setQuickRange] = useState<QuickRange>("7d");
   const [locationId, setLocationId] = useState<string>("__all__");
   const [page, setPage] = useState(1);
@@ -433,11 +437,11 @@ export function InvoiceHistoryTab({
   }, new Map());
 
   const QUICK_RANGES: { label: string; value: QuickRange }[] = [
-    { label: "Toàn thời gian", value: "all" },
-    { label: "Hôm nay",        value: "today" },
-    { label: "7 ngày",         value: "7d" },
-    { label: "30 ngày",        value: "30d" },
-    { label: "Tháng này",      value: "thismonth" },
+    { label: t("finance.history.allTime"), value: "all" },
+    { label: t("finance.history.today"),   value: "today" },
+    { label: t("finance.history.last7Days"), value: "7d" },
+    { label: t("finance.history.last30Days"), value: "30d" },
+    { label: t("finance.history.thisMonth"), value: "thismonth" },
   ];
 
   return (
@@ -466,10 +470,10 @@ export function InvoiceHistoryTab({
         {locationOptions.length > 0 && (
           <Select value={locationId} onValueChange={v => { setLocationId(v); setPage(1); }}>
             <SelectTrigger className="h-8 w-[180px] text-xs border-slate-200 bg-white">
-              <SelectValue placeholder="Tất cả cơ sở" />
+              <SelectValue placeholder={t("finance.history.allLocations")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__all__">Tất cả cơ sở</SelectItem>
+              <SelectItem value="__all__">{t("finance.history.allLocations")}</SelectItem>
               {locationOptions.map(o => (
                 <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
               ))}
@@ -481,16 +485,16 @@ export function InvoiceHistoryTab({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="50">50 / trang</SelectItem>
-            <SelectItem value="100">100 / trang</SelectItem>
-            <SelectItem value="200">200 / trang</SelectItem>
+            <SelectItem value="50">{t("finance.perPage", { count: 50 })}</SelectItem>
+            <SelectItem value="100">{t("finance.perPage", { count: 100 })}</SelectItem>
+            <SelectItem value="200">{t("finance.perPage", { count: 200 })}</SelectItem>
           </SelectContent>
         </Select>
 
         <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
           <CalendarIcon className="h-3.5 w-3.5" />
-          {from && to ? `${formatDateOnly(from)} – ${formatDateOnly(to)}` : "Toàn thời gian"}
-          <span className="ml-2 font-medium text-slate-600">{total} sự kiện</span>
+          {from && to ? `${formatDateOnly(from)} – ${formatDateOnly(to)}` : t("finance.history.allTime")}
+          <span className="ml-2 font-medium text-slate-600">{t("finance.history.eventsCount", { count: total })}</span>
         </div>
       </div>
 
@@ -499,12 +503,12 @@ export function InvoiceHistoryTab({
         {isLoading ? (
           <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-violet-600 border-t-transparent" />
-            <p className="text-sm">Đang tải lịch sử...</p>
+            <p className="text-sm">{t("finance.history.loading")}</p>
           </div>
         ) : groups.size === 0 ? (
           <div className="flex flex-col items-center gap-3 py-20 text-muted-foreground">
             <History className="h-12 w-12 opacity-15" />
-            <p className="text-sm">Không có sự kiện nào trong khoảng thời gian này</p>
+            <p className="text-sm">{t("finance.history.empty")}</p>
           </div>
         ) : (
           <div className="space-y-6">
@@ -522,7 +526,7 @@ export function InvoiceHistoryTab({
                 {/* Events for this date */}
                 <div className="space-y-1.5">
                   {evs.map((ev, idx) => {
-                    const cfg = getEventConfig(ev.ev_type);
+                    const cfg = getEventConfig(ev.ev_type, t);
                     const amount = parseFloat(ev.amount) || 0;
                     const isIncome = ev.invoice_type === "Thu";
                     return (
@@ -550,7 +554,7 @@ export function InvoiceHistoryTab({
                                 ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                                 : "bg-red-50 text-red-700 border border-red-200"
                             }`}>
-                              {isIncome ? "Thu" : "Chi"}
+                              {isIncome ? t("finance.invoiceTypeIncome") : t("finance.invoiceTypeExpense")}
                             </span>
 
                             {/* Invoice code */}
@@ -578,12 +582,12 @@ export function InvoiceHistoryTab({
                             )}
                             {/* Created by */}
                             {ev.created_by_name && (
-                              <span className="text-[11px] text-slate-400">bởi {ev.created_by_name}</span>
+                              <span className="text-[11px] text-slate-400">{t("finance.history.by")} {ev.created_by_name}</span>
                             )}
                             {/* Payment method */}
-                            {ev.ev_type !== "created" && payMethodLabel(ev.payment_method) && (
+                            {ev.ev_type !== "created" && payMethodLabel(ev.payment_method, t) && (
                               <span className="text-[11px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
-                                {payMethodLabel(ev.payment_method)}
+                                {payMethodLabel(ev.payment_method, t)}
                               </span>
                             )}
                           </div>
@@ -603,7 +607,7 @@ export function InvoiceHistoryTab({
                                 ? "bg-amber-50 text-amber-500 hover:bg-amber-100 hover:text-amber-700"
                                 : "opacity-0 group-hover:opacity-100 bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
                               }`}
-                            title="Xem chi tiết"
+                             title={t("finance.history.viewDetails")}
                           >
                             <Eye className="h-3 w-3" />
                           </button>
@@ -628,8 +632,8 @@ export function InvoiceHistoryTab({
         onPageChange={setPage}
         onPageSizeChange={value => { setPageSize(value); setPage(1); }}
         legend={<>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Thu</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> Chi</span>
+           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> {t("finance.invoiceTypeIncome")}</span>
+           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> {t("finance.invoiceTypeExpense")}</span>
         </>}
       />
 
