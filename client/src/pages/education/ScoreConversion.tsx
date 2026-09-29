@@ -49,12 +49,13 @@ const ASSIGNED_SCORE_SHEET_ASSESSMENT_ENDPOINT = "/api/score-sheet-assessments/a
 const ASSIGNED_SCORE_SHEET_ASSESSMENT_QUERY_KEY = [ASSIGNED_SCORE_SHEET_ASSESSMENT_ENDPOINT];
 
 type DeadlineStatus = {
+  key: "no_deadline" | "overdue" | "upcoming" | "on_time";
   label: string;
   indicator: string;
   className: string;
 }
 
-type AssessmentStatusFilter = "all" | "completed" | "incomplete";
+type AssessmentStatusFilter = "all" | "upcoming" | "on_time" | "overdue";
 
 function formatAssessmentDate(value: string | null | undefined): string {
   if (!value) return "—";
@@ -92,6 +93,7 @@ function getDeadlineStatus(deadline: string | null, nowWallClockMs: number): Dea
   const match = deadline && /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(deadline);
   if (!match) {
     return {
+      key: "no_deadline",
       label: "Chưa có hạn trả điểm",
       indicator: "⚪",
       className: "border-slate-200 bg-slate-50 text-slate-600",
@@ -109,6 +111,7 @@ function getDeadlineStatus(deadline: string | null, nowWallClockMs: number): Dea
   const remainingMs = deadlineWallClockMs - nowWallClockMs;
   if (remainingMs < 0) {
     return {
+      key: "overdue",
       label: "Quá hạn",
       indicator: "🔴",
       className: "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300",
@@ -116,12 +119,14 @@ function getDeadlineStatus(deadline: string | null, nowWallClockMs: number): Dea
   }
   if (remainingMs <= 3 * 24 * 60 * 60 * 1000) {
     return {
+      key: "upcoming",
       label: "Sắp đến hạn",
       indicator: "🟡",
       className: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300",
     };
   }
   return {
+    key: "on_time",
     label: "Đúng hạn",
     indicator: "🟢",
     className: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300",
@@ -180,17 +185,13 @@ export default function ScoreConversion() {
     },
     refetchInterval: 60_000,
   });
+  const nowWallClockMs = getBangkokWallClockMs(new Date());
   const conversionAssessments = (assignedScoreSheetAssessmentsQuery.data ?? [])
     .filter((assessment) => assessment.hasConversion);
-  const completedAssessmentCount = conversionAssessments.filter(
-    (assessment) => getCompletedStudentCount(assessment) >= assessment.studentCount,
-  ).length;
-  const incompleteAssessmentCount = conversionAssessments.length - completedAssessmentCount;
   const filteredConversionAssessments = conversionAssessments.filter((assessment) => {
     const dateKey = assessment.examDate.substring(0, 10);
-    const isComplete = getCompletedStudentCount(assessment) >= assessment.studentCount;
-    if (assessmentStatusFilter === "completed" && !isComplete) return false;
-    if (assessmentStatusFilter === "incomplete" && isComplete) return false;
+    const deadlineStatus = getDeadlineStatus(assessment.scoreDeadlineAt, nowWallClockMs);
+    if (assessmentStatusFilter !== "all" && deadlineStatus.key !== assessmentStatusFilter) return false;
     if (examDateFrom && dateKey < examDateFrom) return false;
     if (examDateTo && dateKey > examDateTo) return false;
     return true;
@@ -204,7 +205,6 @@ export default function ScoreConversion() {
     {},
   );
   const sortedAssessmentDates = Object.keys(assessmentsByDate).sort((a, b) => b.localeCompare(a));
-  const nowWallClockMs = getBangkokWallClockMs(new Date());
   const savedTemplates = templatesQuery.data ?? [];
   const initialTypeKey: ScoreConversionTypeKey =
     SCORE_CONVERSION_TYPES.find((type) =>
@@ -516,8 +516,9 @@ export default function ScoreConversion() {
                   <div className="flex min-w-0 items-center gap-1 overflow-x-auto pb-0.5 sm:shrink-0">
                     {([
                       { value: "all", label: "Tất cả" },
-                      { value: "completed", label: "Đã nhập đủ" },
-                      { value: "incomplete", label: "Chưa nhập đủ" },
+                      { value: "upcoming", label: "Sắp đến hạn" },
+                      { value: "on_time", label: "Đúng hạn" },
+                      { value: "overdue", label: "Quá hạn" },
                     ] as const).map((filter) => (
                       <button
                         key={filter.value}
@@ -578,19 +579,13 @@ export default function ScoreConversion() {
 
                 <div className="max-h-[min(70vh,680px)] overflow-auto">
                   <table
-                    className="w-full min-w-[1605px] border-separate border-spacing-0 text-left text-xs"
+                    className="w-full min-w-[1315px] border-separate border-spacing-0 text-left text-xs"
                     data-testid="table-score-conversion-assessments"
                   >
                     <thead>
                       <tr className="bg-muted/70 text-muted-foreground">
-                        <th className="sticky left-0 top-0 z-30 w-[210px] min-w-[210px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]">
+                        <th className="sticky left-0 top-0 z-30 w-[260px] min-w-[260px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]">
                           Lớp
-                        </th>
-                        <th className="sticky top-0 z-20 w-[100px] min-w-[100px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold">
-                          Buổi học
-                        </th>
-                        <th className="sticky top-0 z-20 w-[160px] min-w-[160px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold">
-                          Cơ sở
                         </th>
                         <th className="sticky top-0 z-20 w-[180px] min-w-[180px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold">
                           Giáo viên
@@ -598,11 +593,8 @@ export default function ScoreConversion() {
                         <th className="sticky top-0 z-20 w-[190px] min-w-[190px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold">
                           Bảng điểm
                         </th>
-                        <th className="sticky top-0 z-20 w-[110px] min-w-[110px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold">
-                          Số học viên
-                        </th>
-                        <th className="sticky top-0 z-20 w-[170px] min-w-[170px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold">
-                          Đã nhập / Chưa nhập
+                        <th className="sticky top-0 z-20 w-[200px] min-w-[200px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold">
+                          Số học viên / Đã nhập / Chưa nhập
                         </th>
                         <th className="sticky top-0 z-20 w-[120px] min-w-[120px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold">
                           Ngày thi
@@ -621,7 +613,7 @@ export default function ScoreConversion() {
                     <tbody>
                       {sortedAssessmentDates.length === 0 ? (
                         <tr>
-                          <td colSpan={11} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                          <td colSpan={8} className="px-4 py-12 text-center text-sm text-muted-foreground">
                             Không có bảng điểm phù hợp với bộ lọc.
                           </td>
                         </tr>
@@ -634,7 +626,7 @@ export default function ScoreConversion() {
                               className="border-b border-t border-violet-200/60 bg-violet-50/60 dark:border-violet-800/30 dark:bg-violet-900/10"
                               data-testid={`row-score-conversion-date-${dateKey}`}
                             >
-                              <td colSpan={11} className="sticky left-0 z-20 bg-violet-50/60 py-2.5 dark:bg-violet-950/30">
+                              <td colSpan={8} className="sticky left-0 z-20 bg-violet-50/60 py-2.5 dark:bg-violet-950/30">
                                 <div className="flex items-center gap-3 px-4">
                                   <div className="h-2.5 w-2.5 shrink-0 rounded-full bg-violet-500 ring-4 ring-violet-100 dark:ring-violet-900/40" />
                                   <span className="whitespace-nowrap text-xs font-semibold text-violet-700 dark:text-violet-400">
@@ -656,30 +648,37 @@ export default function ScoreConversion() {
                                 0,
                                 assessment.studentCount - completedStudentCount,
                               );
+                              const classLabel =
+                                assessment.className !== assessment.classCode
+                                  ? assessment.className
+                                  : assessment.assessmentName ?? assessment.className;
                               return (
                                 <tr
                                   key={assessment.sessionId}
                                   className="group"
                                   data-testid={`row-score-conversion-assessment-${assessment.sessionId}`}
                                 >
-                                  <td className="sticky left-0 z-10 min-w-[210px] border-b border-r border-border bg-card px-3 py-2.5 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)] group-hover:bg-accent/50">
-                                    <p className="truncate font-semibold text-foreground" title={assessment.className}>
-                                      {assessment.className}
+                                  <td className="sticky left-0 z-10 min-w-[260px] border-b border-r border-border bg-card px-3 py-2.5 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)] group-hover:bg-accent/50">
+                                    <p className="truncate font-semibold text-foreground" title={`${classLabel}${assessment.sessionIndex != null ? ` (Buổi ${assessment.sessionIndex})` : ""}`}>
+                                      {classLabel}
+                                      {assessment.sessionIndex != null && (
+                                        <span className="ml-1 font-normal text-muted-foreground">
+                                          (Buổi {assessment.sessionIndex})
+                                        </span>
+                                      )}
                                     </p>
                                     <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={assessment.classCode}>
                                       {assessment.classCode}
                                     </p>
-                                  </td>
-                                  <td className="whitespace-nowrap border-b border-r border-border px-3 py-2.5 text-muted-foreground group-hover:bg-accent/50">
-                                    {assessment.sessionIndex != null ? `Buổi ${assessment.sessionIndex}` : "—"}
-                                  </td>
-                                  <td className="max-w-[160px] border-b border-r border-border px-3 py-2.5 group-hover:bg-accent/50">
-                                    <span className="flex items-center gap-1.5">
-                                      <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                      <span className="truncate" title={assessment.locationName ?? undefined}>
-                                        {assessment.locationName ?? "Chưa xác định"}
+                                    <p
+                                      className="mt-1 flex min-w-0 items-center gap-1 truncate text-[11px] text-muted-foreground"
+                                      title={assessment.locationName ?? "Chưa xác định cơ sở"}
+                                    >
+                                      <MapPin className="h-3 w-3 shrink-0" />
+                                      <span className="truncate">
+                                        {assessment.locationName ?? "Chưa xác định cơ sở"}
                                       </span>
-                                    </span>
+                                    </p>
                                   </td>
                                   <td className="max-w-[180px] border-b border-r border-border px-3 py-2.5 group-hover:bg-accent/50">
                                     <span className="flex items-center gap-1.5">
@@ -697,14 +696,12 @@ export default function ScoreConversion() {
                                       {assessment.assessmentCode ?? "—"}
                                     </p>
                                   </td>
-                                  <td className="whitespace-nowrap border-b border-r border-border px-3 py-2.5 group-hover:bg-accent/50">
-                                    <span className="inline-flex items-center gap-1.5">
-                                      <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                                      {assessment.studentCount}
-                                    </span>
-                                  </td>
                                   <td className="border-b border-r border-border px-3 py-2 group-hover:bg-accent/50">
                                     <div className="space-y-1 whitespace-nowrap">
+                                      <span className="flex items-center gap-1.5 font-medium text-foreground">
+                                        <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                                        {assessment.studentCount} học viên
+                                      </span>
                                       <span className="flex items-center gap-1.5 font-medium text-emerald-700 dark:text-emerald-400">
                                         <CheckCircle2 className="h-3.5 w-3.5" />
                                         Đã nhập: {completedStudentCount}
