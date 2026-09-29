@@ -3997,33 +3997,74 @@ export function registerMySpaceRoutes(app: Express): void {
       if (!sessionId.success) return res.status(400).json({ message: "Buổi thi không hợp lệ" });
 
       const staffRecord = await getStaffForUser(user.id);
-      if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
+      const scoreConversionPermissions = req.isSuperAdmin
+        ? null
+        : await storage.getEffectivePermissions(req.roleIds ?? [], "/assessments#list");
+      const canViewConvertedAssessments = Boolean(
+        req.isSuperAdmin
+        || scoreConversionPermissions?.canView
+        || scoreConversionPermissions?.canViewAll
+        || scoreConversionPermissions?.canCreate
+        || scoreConversionPermissions?.canEdit
+        || scoreConversionPermissions?.canDelete,
+      );
+      if (!staffRecord && !canViewConvertedAssessments) {
+        return res.status(403).json({ message: "Tài khoản không có quyền xem bảng điểm." });
+      }
 
-      const access = await db.execute(sql`
-        SELECT cs.id, cs.score_sheet_assessment_id AS assessment_id
-        FROM class_sessions cs
-        JOIN classes c ON c.id = cs.class_id
-        WHERE cs.id = ${sessionId.data}::uuid
-          AND cs.score_sheet_assessment_id IS NOT NULL
-          AND (
-            ${staffRecord.id} = ANY(c.teacher_ids)
-            OR ${staffRecord.id} = ANY(c.manager_ids)
-            OR cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
-          )
-          AND EXISTS (
-            SELECT 1
-            FROM staff_assignments sa
-            WHERE sa.staff_id = ${staffRecord.id}
-              AND sa.location_id = c.location_id
-          )
-        LIMIT 1
-      `);
-      if (access.rows.length === 0) {
+      let accessRow: { assessment_id: string } | undefined;
+      if (staffRecord) {
+        const staffAccess = await db.execute(sql`
+          SELECT cs.id, cs.score_sheet_assessment_id AS assessment_id
+          FROM class_sessions cs
+          JOIN classes c ON c.id = cs.class_id
+          WHERE cs.id = ${sessionId.data}::uuid
+            AND cs.score_sheet_assessment_id IS NOT NULL
+            AND (
+              ${staffRecord.id} = ANY(c.teacher_ids)
+              OR ${staffRecord.id} = ANY(c.manager_ids)
+              OR cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
+            )
+            AND EXISTS (
+              SELECT 1
+              FROM staff_assignments sa
+              WHERE sa.staff_id = ${staffRecord.id}
+                AND sa.location_id = c.location_id
+            )
+          LIMIT 1
+        `);
+        const staffAccessRow = staffAccess.rows[0];
+        if (staffAccessRow) {
+          accessRow = { assessment_id: String(staffAccessRow.assessment_id) };
+        }
+      }
+
+      let assessment: Awaited<ReturnType<typeof getScoreSheetAssessmentScoringConfig>> = null;
+      if (!accessRow && canViewConvertedAssessments) {
+        const conversionAccess = await db.execute(sql`
+          SELECT cs.id, cs.score_sheet_assessment_id AS assessment_id
+          FROM class_sessions cs
+          WHERE cs.id = ${sessionId.data}::uuid
+            AND cs.score_sheet_assessment_id IS NOT NULL
+          LIMIT 1
+        `);
+        const conversionAccessRow = conversionAccess.rows[0];
+        if (conversionAccessRow) {
+          const candidate = { assessment_id: String(conversionAccessRow.assessment_id) };
+          const candidateAssessment = await getScoreSheetAssessmentScoringConfig(candidate.assessment_id);
+          if (candidateAssessment?.templateSnapshot.scoreConversionTemplateId) {
+            accessRow = candidate;
+            assessment = candidateAssessment;
+          }
+        }
+      }
+
+      if (!accessRow) {
         return res.status(404).json({ message: "Không tìm thấy buổi thi hoặc bạn không có quyền xem" });
       }
 
-      const assessmentId = String(access.rows[0].assessment_id);
-      const assessment = await getScoreSheetAssessmentScoringConfig(assessmentId);
+      const assessmentId = String(accessRow.assessment_id);
+      assessment ??= await getScoreSheetAssessmentScoringConfig(assessmentId);
       if (!assessment) {
         return res.status(409).json({ message: "Cấu hình bảng điểm được giao không còn khả dụng." });
       }

@@ -92,7 +92,10 @@ export function StaffScoreSheetAssessmentStudentsDialog({
         `/api/my-space/score-sheet/staff-assessments/${encodeURIComponent(assessment.sessionId)}/students`,
         { credentials: "include" },
       );
-      if (!response.ok) throw new Error("Không thể tải danh sách học viên");
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { message?: string } | null;
+        throw new Error(payload?.message ?? "Không thể tải danh sách học viên");
+      }
       return response.json();
     },
   });
