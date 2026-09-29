@@ -418,18 +418,6 @@ export function Settings() {
             {myPerms?.isSuperAdmin && <button onClick={() => handleSettingsTabChange("providers")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all", settingsTab === "providers" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}>Kết nối nhà cung cấp</button>}
             {canViewHolidays && <button onClick={() => handleSettingsTabChange("holidays")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-1", settingsTab === "holidays" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}><CalendarDays className="w-3 h-3" />Ngày nghỉ lễ</button>}
              {myPerms?.isSuperAdmin && <button onClick={() => handleSettingsTabChange("history")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all", settingsTab === "history" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}>Lịch sử</button>}
-            {settingsTab === "permissions" && (
-              <div className="basis-full mt-1 flex flex-wrap items-center gap-x-8 gap-y-1 font-['Roboto'] text-[11px] leading-4">
-                <div>
-                  <span className="text-blue-600">Xem:</span>{" "}
-                  <span className="text-black">xem dữ liệu mình tạo ra hoặc mình được phụ trách tùy module.</span>
-                </div>
-                <div>
-                  <span className="text-blue-600">Xem all:</span>{" "}
-                  <span className="text-black">xem được dữ liệu của người khác tạo ra thường là cùng cơ sở.</span>
-                </div>
-              </div>
-            )}
           </div>
 
           <TabsContent value="locations">
@@ -1050,11 +1038,17 @@ export function Settings() {
           </TabsContent>
 
           <TabsContent value="permissions">
-            <PermissionsManager
-              canViewAll={permTabRaw.canViewAll}
-              canCreate={permTabRaw.canCreate}
-              canEdit={permTabRaw.canEdit}
-            />
+            <div className="flex flex-col">
+              <PermissionsManager
+                canViewAll={permTabRaw.canViewAll}
+                canCreate={permTabRaw.canCreate}
+                canEdit={permTabRaw.canEdit}
+              />
+              <div className="mt-2 font-['Roboto'] text-[11px] leading-4 text-blue-600">
+                <div>Xem: xem dữ liệu mình tạo ra hoặc mình được phụ trách tùy module.</div>
+                <div>Xem all: xem được dữ liệu của người khác tạo ra thường là cùng cơ sở.</div>
+              </div>
+            </div>
           </TabsContent>
 
           <TabsContent value="ai-accounts">
@@ -2342,7 +2336,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
   };
 
   return (
-    <div className="flex border rounded-xl overflow-hidden bg-background h-[calc(100vh-160px)]">
+    <div className="flex border rounded-xl overflow-hidden bg-background h-[calc(100vh-220px)]">
       {/* Left sidebar: Departments + Roles */}
       <div className="w-56 shrink-0 border-r bg-muted/20 flex flex-col">
         <div className="px-4 py-3 border-b bg-muted/30">
