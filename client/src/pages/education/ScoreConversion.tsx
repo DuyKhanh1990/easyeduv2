@@ -500,127 +500,155 @@ export default function ScoreConversion() {
                         <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-violet-600 capitalize dark:text-violet-400">
                           {formatDateLabel(dateKey)}
                         </p>
-                        <div className="space-y-2">
-                          {assessments.map((assessment) => {
-                            const deadlineStatus = getDeadlineStatus(
-                              assessment.scoreDeadlineAt,
-                              nowWallClockMs,
-                            );
-                            const completedStudentCount = Math.max(
-                              0,
-                              Math.min(assessment.completedStudentCount, assessment.studentCount),
-                            );
-                            const notCompletedStudentCount = Math.max(
-                              0,
-                              assessment.studentCount - completedStudentCount,
-                            );
-                            return (
-                              <div
-                                key={assessment.sessionId}
-                                role="button"
-                                tabIndex={0}
-                                aria-haspopup="dialog"
-                                aria-label={`Xem danh sách học viên: ${assessment.assessmentName ?? "Bảng điểm Quy đổi"} - ${assessment.classCode}`}
-                                onClick={() => setSelectedAssessment(assessment)}
-                                onKeyDown={(event) => {
-                                  if (event.key === "Enter" || event.key === " ") {
-                                    event.preventDefault();
-                                    setSelectedAssessment(assessment);
-                                  }
-                                }}
-                                className="grid min-w-0 cursor-pointer grid-cols-2 items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(160px,1fr)_160px_150px_minmax(180px,1fr)_56px] xl:items-center xl:gap-x-4 xl:gap-y-0"
-                                data-testid={`row-score-conversion-assessment-${assessment.sessionId}`}
-                              >
-                                <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
-                                  <p className="truncate text-sm font-semibold leading-tight text-foreground">
-                                    {assessment.assessmentName ?? "Cấu hình bảng điểm không khả dụng"}
-                                  </p>
-                                  <div className="mt-0.5 flex items-center gap-1">
-                                    <span className="whitespace-nowrap text-xs font-medium text-muted-foreground">
-                                      {assessment.classCode}
-                                    </span>
-                                    {assessment.className !== assessment.classCode && (
-                                      <span className="truncate text-xs text-muted-foreground/70">
-                                        — {assessment.className}
+                        <div className="max-h-[min(70vh,680px)] overflow-auto rounded-xl border border-border bg-card">
+                          <table
+                            className="w-full min-w-[1480px] border-separate border-spacing-0 text-left text-xs"
+                            data-testid={`table-score-conversion-date-${dateKey}`}
+                          >
+                            <thead>
+                              <tr className="bg-muted/70 text-muted-foreground">
+                                <th className="sticky left-0 top-0 z-30 w-[210px] min-w-[210px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]">
+                                  Lớp
+                                </th>
+                                <th className="sticky top-0 z-20 w-[100px] min-w-[100px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold">
+                                  Buổi học
+                                </th>
+                                <th className="sticky top-0 z-20 w-[160px] min-w-[160px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold">
+                                  Cơ sở
+                                </th>
+                                <th className="sticky top-0 z-20 w-[180px] min-w-[180px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold">
+                                  Giáo viên
+                                </th>
+                                <th className="sticky top-0 z-20 w-[190px] min-w-[190px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold">
+                                  Bảng điểm
+                                </th>
+                                <th className="sticky top-0 z-20 w-[110px] min-w-[110px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold">
+                                  Số học viên
+                                </th>
+                                <th className="sticky top-0 z-20 w-[170px] min-w-[170px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold">
+                                  Đã nhập / Chưa nhập
+                                </th>
+                                <th className="sticky top-0 z-20 w-[120px] min-w-[120px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold">
+                                  Ngày thi
+                                </th>
+                                <th className="sticky top-0 z-20 w-[145px] min-w-[145px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold">
+                                  Hạn trả
+                                </th>
+                                <th className="sticky top-0 z-20 w-[140px] min-w-[140px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold">
+                                  Trạng thái
+                                </th>
+                                <th className="sticky right-0 top-0 z-30 w-[80px] min-w-[80px] border-b border-border bg-muted/95 px-3 py-2.5 text-center font-semibold shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.12)]">
+                                  Xem
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {assessments.map((assessment) => {
+                                const deadlineStatus = getDeadlineStatus(
+                                  assessment.scoreDeadlineAt,
+                                  nowWallClockMs,
+                                );
+                                const completedStudentCount = Math.max(
+                                  0,
+                                  Math.min(assessment.completedStudentCount, assessment.studentCount),
+                                );
+                                const notCompletedStudentCount = Math.max(
+                                  0,
+                                  assessment.studentCount - completedStudentCount,
+                                );
+                                return (
+                                  <tr
+                                    key={assessment.sessionId}
+                                    className="group"
+                                    data-testid={`row-score-conversion-assessment-${assessment.sessionId}`}
+                                  >
+                                    <td className="sticky left-0 z-10 min-w-[210px] border-b border-r border-border bg-card px-3 py-2.5 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)] group-hover:bg-accent/50">
+                                      <p className="truncate font-semibold text-foreground" title={assessment.className}>
+                                        {assessment.className}
+                                      </p>
+                                      <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={assessment.classCode}>
+                                        {assessment.classCode}
+                                      </p>
+                                    </td>
+                                    <td className="whitespace-nowrap border-b border-r border-border px-3 py-2.5 text-muted-foreground group-hover:bg-accent/50">
+                                      {assessment.sessionIndex != null ? `Buổi ${assessment.sessionIndex}` : "—"}
+                                    </td>
+                                    <td className="max-w-[160px] border-b border-r border-border px-3 py-2.5 group-hover:bg-accent/50">
+                                      <span className="flex items-center gap-1.5">
+                                        <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                        <span className="truncate" title={assessment.locationName ?? undefined}>
+                                          {assessment.locationName ?? "Chưa xác định"}
+                                        </span>
                                       </span>
-                                    )}
-                                    {assessment.sessionIndex != null && (
-                                      <span className="whitespace-nowrap text-[11px] text-muted-foreground/60">
-                                        · Buổi {assessment.sessionIndex}
+                                    </td>
+                                    <td className="max-w-[180px] border-b border-r border-border px-3 py-2.5 group-hover:bg-accent/50">
+                                      <span className="flex items-center gap-1.5">
+                                        <UserRound className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                        <span className="truncate" title={assessment.teacherNames ?? undefined}>
+                                          {assessment.teacherNames ?? "Chưa phân công"}
+                                        </span>
                                       </span>
-                                    )}
-                                  </div>
-                                  <div className="mt-1 space-y-0.5 text-[10px] text-muted-foreground">
-                                    <p
-                                      className="flex min-w-0 items-center gap-1"
-                                      title={assessment.locationName ?? "Chưa xác định cơ sở"}
-                                    >
-                                      <MapPin className="h-3 w-3 shrink-0" />
-                                      <span className="truncate">
-                                        Cơ sở: {assessment.locationName ?? "Chưa xác định"}
+                                    </td>
+                                    <td className="max-w-[190px] border-b border-r border-border px-3 py-2.5 group-hover:bg-accent/50">
+                                      <p className="truncate font-medium" title={assessment.assessmentName ?? undefined}>
+                                        {assessment.assessmentName ?? "Cấu hình không khả dụng"}
+                                      </p>
+                                      <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={assessment.assessmentCode ?? undefined}>
+                                        {assessment.assessmentCode ?? "—"}
+                                      </p>
+                                    </td>
+                                    <td className="whitespace-nowrap border-b border-r border-border px-3 py-2.5 group-hover:bg-accent/50">
+                                      <span className="inline-flex items-center gap-1.5">
+                                        <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                                        {assessment.studentCount}
                                       </span>
-                                    </p>
-                                    <p
-                                      className="flex min-w-0 items-center gap-1"
-                                      title={assessment.teacherNames ?? "Chưa phân công giáo viên"}
-                                    >
-                                      <UserRound className="h-3 w-3 shrink-0" />
-                                      <span className="truncate">
-                                        Giáo viên: {assessment.teacherNames ?? "Chưa phân công"}
+                                    </td>
+                                    <td className="border-b border-r border-border px-3 py-2 group-hover:bg-accent/50">
+                                      <div className="space-y-1 whitespace-nowrap">
+                                        <span className="flex items-center gap-1.5 font-medium text-emerald-700 dark:text-emerald-400">
+                                          <CheckCircle2 className="h-3.5 w-3.5" />
+                                          Đã nhập: {completedStudentCount}
+                                        </span>
+                                        <span className="flex items-center gap-1.5 text-muted-foreground">
+                                          <Circle className="h-3.5 w-3.5" />
+                                          Chưa nhập: {notCompletedStudentCount}
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td className="whitespace-nowrap border-b border-r border-border px-3 py-2.5 group-hover:bg-accent/50">
+                                      <span className="inline-flex items-center gap-1.5">
+                                        <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                                        {formatAssessmentDate(assessment.examDate)}
                                       </span>
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <div className="flex min-w-0 flex-col items-start gap-1">
-                                  <Badge variant="outline" className="whitespace-nowrap text-[11px]">
-                                    Bảng điểm Quy đổi
-                                  </Badge>
-                                  {assessment.assessmentCode && (
-                                    <span className="max-w-full truncate text-[10px] text-muted-foreground">
-                                      {assessment.assessmentCode}
-                                    </span>
-                                  )}
-                                </div>
-
-                                <div className="flex min-w-0 flex-col items-start gap-1">
-                                  <span className="inline-flex items-center gap-1 whitespace-nowrap text-[10px] font-medium text-muted-foreground">
-                                    <Users className="h-3.5 w-3.5 shrink-0" />
-                                    {assessment.studentCount} học viên
-                                  </span>
-                                  <span className="inline-flex items-center gap-1 whitespace-nowrap text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
-                                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                                    Đã nhập điểm: {completedStudentCount}
-                                  </span>
-                                  <span className="inline-flex items-center gap-1 whitespace-nowrap text-[10px] font-medium text-muted-foreground">
-                                    <Circle className="h-3.5 w-3.5 shrink-0" />
-                                    Chưa nhập điểm: {notCompletedStudentCount}
-                                  </span>
-                                </div>
-
-                                <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
-                                  <p className="flex items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground">
-                                    <CalendarDays className="h-3 w-3 shrink-0" />
-                                    Ngày thi: {formatAssessmentDate(assessment.examDate)}
-                                  </p>
-                                  <p className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground/70">
-                                    <Clock3 className="h-3 w-3 shrink-0" />
-                                    Hạn trả: {formatAssessmentDeadline(assessment.scoreDeadlineAt)}
-                                  </p>
-                                  <span className={`mt-1 inline-flex items-center gap-1 whitespace-nowrap rounded border px-1 text-[10px] font-medium ${deadlineStatus.className}`}>
-                                    {deadlineStatus.indicator} {deadlineStatus.label}
-                                  </span>
-                                </div>
-
-                                <div className="col-span-2 flex justify-end border-t border-border/60 pt-2 sm:col-span-3 md:col-span-4 xl:col-span-1 xl:border-0 xl:pt-0">
-                                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">
-                                    <Eye className="h-3.5 w-3.5" />
-                                    Xem
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          })}
+                                    </td>
+                                    <td className="whitespace-nowrap border-b border-r border-border px-3 py-2.5 text-muted-foreground group-hover:bg-accent/50">
+                                      <span className="inline-flex items-center gap-1.5">
+                                        <Clock3 className="h-3.5 w-3.5" />
+                                        {formatAssessmentDeadline(assessment.scoreDeadlineAt)}
+                                      </span>
+                                    </td>
+                                    <td className="border-b border-r border-border px-3 py-2.5 group-hover:bg-accent/50">
+                                      <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-0.5 text-[11px] font-medium ${deadlineStatus.className}`}>
+                                        {deadlineStatus.indicator} {deadlineStatus.label}
+                                      </span>
+                                    </td>
+                                    <td className="sticky right-0 z-10 border-b border-border bg-card px-2 py-2 text-center shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.12)] group-hover:bg-accent/50">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 px-2 text-primary"
+                                        aria-label={`Xem danh sách học viên: ${assessment.assessmentName ?? "Bảng điểm Quy đổi"} - ${assessment.classCode}`}
+                                        onClick={() => setSelectedAssessment(assessment)}
+                                      >
+                                        <Eye className="mr-1 h-3.5 w-3.5" />
+                                        Xem
+                                      </Button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
                       </div>
                     </div>
