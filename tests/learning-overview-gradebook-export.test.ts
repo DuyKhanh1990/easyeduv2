@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildGradeBookExcelRows } from "../client/src/pages/education/learning-overview/gradeBookExcelExport";
+import { buildGradeBookExcelRows } from "../client/src/lib/gradeBookExcelExport";
 
 describe("learning overview grade book export", () => {
   it("places the requested metadata above dynamic score-category columns and student comments", () => {

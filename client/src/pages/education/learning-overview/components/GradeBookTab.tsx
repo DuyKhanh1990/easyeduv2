@@ -21,54 +21,8 @@ import { AddGradeBookFromOverviewDialog } from "./AddGradeBookFromOverviewDialog
 import { EditGradeBookFromOverviewDialog } from "./EditGradeBookFromOverviewDialog";
 import { GradeBookViewDialog } from "@/components/education/GradeBookViewDialog";
 import {
-  downloadGradeBookExcel,
-  htmlCommentToPlainText,
-  type GradeBookExcelCategory,
-  type GradeBookExcelStudent,
-} from "../gradeBookExcelExport";
-
-type GradeBookDetails = {
-  scores?: Array<{
-    studentId: string;
-    categoryId: string;
-    score: string | number | null;
-  }>;
-  studentComments?: Record<string, string>;
-  excludedStudentIds?: string[];
-};
-
-type ScoreSheetResponse = {
-  id: string;
-  name: string;
-  items?: Array<{
-    category?: GradeBookExcelCategory | null;
-  }>;
-};
-
-type ClassStudentResponse = {
-  id?: string;
-  studentId?: string;
-  fullName?: string;
-  full_name?: string;
-  code?: string;
-  student?: {
-    id?: string;
-    fullName?: string;
-    full_name?: string;
-    code?: string;
-  };
-};
-
-async function fetchExportJson<T>(url: string, fallbackMessage: string): Promise<T> {
-  const response = await fetch(url, { credentials: "include" });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(
-      (payload && typeof payload.message === "string" && payload.message) || fallbackMessage,
-    );
-  }
-  return payload as T;
-}
+  downloadClassGradeBookExcel,
+} from "@/lib/gradeBookExcelExport";
 
 // ── Sub-components ─────────────────────────────────────────
 
@@ -193,74 +147,14 @@ export function GradeBookTab({
   const handleExport = async (row: GradeBookRow) => {
     setExportingId(row.id);
     try {
-      const [bookDetails, activeStudents, scoreSheets] = await Promise.all([
-        fetchExportJson<GradeBookDetails>(
-          `/api/classes/${row.classId}/grade-books/${row.id}`,
-          "Không thể tải dữ liệu bảng điểm.",
-        ),
-        fetchExportJson<ClassStudentResponse[]>(
-          `/api/classes/${row.classId}/active-students`,
-          "Không thể tải danh sách học viên.",
-        ),
-        fetchExportJson<ScoreSheetResponse[]>(
-          "/api/score-sheets",
-          "Không thể tải cấu hình danh mục điểm.",
-        ),
-      ]);
-
-      const selectedScoreSheet = scoreSheets.find((sheet) => sheet.id === row.scoreSheetId);
-      const categories = (selectedScoreSheet?.items ?? [])
-        .flatMap((item) => item.category ? [item.category] : []);
-      const excludedIds = new Set(bookDetails.excludedStudentIds ?? []);
-      const scoresByStudent = new Map<string, Record<string, string | number | null>>();
-
-      for (const score of bookDetails.scores ?? []) {
-        if (!score.studentId || !score.categoryId) continue;
-        const values = scoresByStudent.get(score.studentId) ?? {};
-        if (score.score === null || score.score === undefined || String(score.score).trim() === "") {
-          values[score.categoryId] = null;
-        } else {
-          const scoreText = String(score.score).trim();
-          const numericScore = Number(scoreText);
-          values[score.categoryId] = Number.isFinite(numericScore) ? numericScore : scoreText;
-        }
-        scoresByStudent.set(score.studentId, values);
-      }
-
-      const studentComments = bookDetails.studentComments ?? {};
-      const gradeBookStudentIds = new Set([
-        ...scoresByStudent.keys(),
-        ...Object.keys(studentComments),
-      ]);
-      const exportStudents: GradeBookExcelStudent[] = activeStudents.flatMap((student, index) => {
-        const studentId = student.studentId || student.student?.id || student.id;
-        if (
-          !studentId ||
-          excludedIds.has(studentId) ||
-          (gradeBookStudentIds.size > 0 && !gradeBookStudentIds.has(studentId))
-        ) {
-          return [];
-        }
-
-        const name = student.fullName
-          || student.full_name
-          || student.student?.fullName
-          || student.student?.full_name
-          || `Học viên ${index + 1}`;
-        return [{
-          name,
-          scores: scoresByStudent.get(studentId) ?? {},
-          comment: htmlCommentToPlainText(studentComments[studentId] ?? ""),
-        }];
-      });
-
-      await downloadGradeBookExcel({
+      await downloadClassGradeBookExcel({
+        classId: row.classId,
+        gradeBookId: row.id,
+        scoreSheetId: row.scoreSheetId,
         locationName: row.locationName || "—",
         className: row.className || "—",
         title: row.title,
-        scoreSheetName: selectedScoreSheet?.name || row.scoreSheetName || "—",
-        categories,
-        students: exportStudents,
+        scoreSheetName: row.scoreSheetName || "—",
       });
       toast({ title: "Đã tải bảng điểm Excel", description: row.title });
     } catch (error) {

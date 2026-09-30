@@ -2,9 +2,11 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { enUS, vi } from "date-fns/locale";
-import { BarChart3, BookOpen, CalendarDays, Clock3, Eye, Pencil, Plus, Users, CheckCircle2, Clock, CircleDot } from "lucide-react";
+import { BarChart3, BookOpen, CalendarDays, Clock3, Eye, Pencil, Plus, Users, CheckCircle2, Clock, CircleDot, Download, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { downloadClassGradeBookExcel } from "@/lib/gradeBookExcelExport";
 import { GradeBookEditDialog } from "@/components/education/GradeBookEditDialog";
 import { GradeBookCreateDialog } from "@/components/education/GradeBookCreateDialog";
 import {
@@ -20,6 +22,7 @@ type StaffGradeBookRow = {
   classId: string;
   classCode: string;
   className: string;
+  locationName?: string | null;
   scoreSheetId: string;
   scoreSheetName: string;
   sessionId: string | null;
@@ -143,6 +146,8 @@ export function StaffScoreSheet() {
   const [editingBook, setEditingBook] = useState<StaffGradeBookRow | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedAssessment, setSelectedAssessment] = useState<StaffAssignedScoreSheetAssessment | null>(null);
+  const [exportingBookId, setExportingBookId] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const { data, isLoading, refetch } = useQuery<StaffGradeBookRow[]>({
     queryKey: ["/api/my-space/score-sheet/staff"],
@@ -170,6 +175,30 @@ export function StaffScoreSheet() {
   const gradeBooks = data ?? [];
   const assignedAssessments = assignedAssessmentsData ?? [];
   const nowWallClockMs = getBangkokWallClockMs(new Date());
+
+  const handleExportGradeBook = async (book: StaffGradeBookRow) => {
+    setExportingBookId(book.id);
+    try {
+      await downloadClassGradeBookExcel({
+        classId: book.classId,
+        gradeBookId: book.id,
+        scoreSheetId: book.scoreSheetId,
+        locationName: book.locationName,
+        className: book.className || book.classCode,
+        title: book.title,
+        scoreSheetName: book.scoreSheetName,
+      });
+      toast({ title: "Đã tải bảng điểm Excel", description: book.title });
+    } catch (error) {
+      toast({
+        title: "Không thể tải bảng điểm Excel",
+        description: error instanceof Error ? error.message : "Vui lòng thử lại.",
+        variant: "destructive",
+      });
+    } finally {
+      setExportingBookId(null);
+    }
+  };
 
   const timelineEntries: ScoreSheetTimelineEntry[] = [
     ...gradeBooks.map((gradeBook) => ({
@@ -443,7 +472,21 @@ export function StaffScoreSheet() {
                           </div>
 
                           {/* Col 6: Edit action */}
-                          <div className="col-span-2 flex justify-end border-t border-border/60 pt-2 sm:col-span-3 md:col-span-4 xl:col-span-1 xl:border-0 xl:pt-0">
+                          <div className="col-span-2 flex items-center justify-end gap-1 border-t border-border/60 pt-2 sm:col-span-3 md:col-span-4 xl:col-span-1 xl:border-0 xl:pt-0">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                              onClick={() => void handleExportGradeBook(book)}
+                              disabled={exportingBookId !== null}
+                              data-testid={`btn-export-grade-book-${book.id}`}
+                              title="Tải bảng điểm Excel"
+                              aria-label={`Tải bảng điểm ${book.title} xuống Excel`}
+                            >
+                              {exportingBookId === book.id
+                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                : <Download className="h-3.5 w-3.5" />}
+                            </Button>
                             <Button
                               variant="ghost"
                               size="sm"

@@ -4165,6 +4165,7 @@ export function registerMySpaceRoutes(app: Express): void {
           gb.updated_at,
           c.class_code AS class_code,
           c.name AS class_name,
+          l.name AS location_name,
           ss.name AS score_sheet_name,
           cs.session_index AS session_index,
           cs.session_date AS session_date,
@@ -4183,6 +4184,7 @@ export function registerMySpaceRoutes(app: Express): void {
           COALESCE(st_u.full_name, uu.username) AS updated_by_name
         FROM class_grade_books gb
         JOIN classes c ON c.id = gb.class_id
+        LEFT JOIN locations l ON l.id = c.location_id
         LEFT JOIN score_sheets ss ON ss.id = gb.score_sheet_id
         LEFT JOIN class_sessions cs ON cs.id = gb.session_id
         LEFT JOIN users cu ON cu.id = gb.created_by
@@ -4217,6 +4219,7 @@ export function registerMySpaceRoutes(app: Express): void {
         updatedAt: row.updated_at,
         classCode: row.class_code,
         className: row.class_name,
+        locationName: row.location_name,
         scoreSheetName: row.score_sheet_name,
         sessionIndex: row.session_index,
         sessionDate: row.session_date,

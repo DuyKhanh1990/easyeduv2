@@ -43,9 +43,10 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { RichEditor } from "@/components/ui/rich-editor";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ClipboardList, Plus, Trash2, MessageSquarePlus, Pencil, Eye, ChevronLeft, ChevronRight } from "lucide-react";
+import { ClipboardList, Plus, Trash2, MessageSquarePlus, Pencil, Eye, ChevronLeft, ChevronRight, Download, Loader2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { downloadClassGradeBookExcel } from "@/lib/gradeBookExcelExport";
 import { GradeBookViewDialog } from "./GradeBookViewDialog";
 
 interface ScoreSheetTabContentProps {
@@ -81,6 +82,7 @@ export function ScoreSheetTabContent({
   const [viewingBook, setViewingBook] = useState<any | null>(null);
   const [gradePage, setGradePage] = useState(0);
   const [gradePageSize, setGradePageSize] = useState(20);
+  const [exportingBookId, setExportingBookId] = useState<string | null>(null);
 
   const isEditMode = !!editingBookId;
 
@@ -255,6 +257,30 @@ export function ScoreSheetTabContent({
       // scores stay empty
     } finally {
       setLoadingEdit(false);
+    }
+  };
+
+  const handleExportBook = async (book: any) => {
+    setExportingBookId(book.id);
+    try {
+      await downloadClassGradeBookExcel({
+        classId,
+        gradeBookId: book.id,
+        scoreSheetId: book.score_sheet_id,
+        locationName: classData?.location?.name || classData?.locationName,
+        className: classData?.name || classData?.className,
+        title: book.title,
+        scoreSheetName: book.score_sheet_name,
+      });
+      toast({ title: "Đã tải bảng điểm Excel", description: book.title });
+    } catch (error) {
+      toast({
+        title: "Không thể tải bảng điểm Excel",
+        description: error instanceof Error ? error.message : "Vui lòng thử lại.",
+        variant: "destructive",
+      });
+    } finally {
+      setExportingBookId(null);
     }
   };
 
@@ -584,6 +610,20 @@ export function ScoreSheetTabContent({
                             title="Xem bảng điểm"
                           >
                             <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            data-testid={`button-export-grade-book-${book.id}`}
+                            onClick={() => void handleExportBook(book)}
+                            disabled={exportingBookId !== null}
+                            title="Tải bảng điểm Excel"
+                            aria-label={`Tải bảng điểm ${book.title} xuống Excel`}
+                          >
+                            {exportingBookId === book.id
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              : <Download className="h-3.5 w-3.5" />}
                           </Button>
                           <Button
                             variant="ghost"
