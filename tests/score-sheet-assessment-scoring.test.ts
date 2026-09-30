@@ -4,7 +4,11 @@ import {
   type ScoreSheetAssessmentAttemptValues,
 } from "../shared/score-sheet-assessment-scoring";
 import type { ScoreSheetTemplate } from "../shared/score-sheet-template";
-import type { ScoreConversionTemplate } from "../shared/score-conversion";
+import {
+  SCORE_CONVERSION_DEFAULT_GRADE_BAND_COLOR,
+  scoreConversionTemplateSchema,
+  type ScoreConversionTemplate,
+} from "../shared/score-conversion";
 
 const conversionId = "11111111-1111-4111-8111-111111111111";
 const sectionId = "22222222-2222-4222-8222-222222222222";
@@ -42,6 +46,7 @@ const conversionTemplate: ScoreConversionTemplate = {
     gradeBands: [{
       id: gradeBandId,
       label: "B1",
+      color: "#16A34A",
       minScore: 100,
       maxScore: 150,
     }],
@@ -94,8 +99,24 @@ describe("score-sheet assessment scoring", () => {
     expect(result.overallRawScore).toBe(4);
     expect(result.overallConvertedScore).toBe(100);
     expect(result.gradeBand?.label).toBe("B1");
+    expect(result.gradeBand?.color).toBe("#16A34A");
     expect(result.inputComplete).toBe(true);
     expect(result.conversionComplete).toBe(true);
+  });
+
+  it("defaults the color for existing grade bands that were saved before colors were added", () => {
+    const existingTemplate = scoreConversionTemplateSchema.parse({
+      ...conversionTemplate,
+      overallRule: {
+        ...conversionTemplate.overallRule,
+        gradeBands: conversionTemplate.overallRule.gradeBands.map(
+          ({ id, label, minScore, maxScore }) => ({ id, label, minScore, maxScore }),
+        ),
+      },
+    });
+
+    expect(existingTemplate.overallRule.gradeBands[0].color)
+      .toBe(SCORE_CONVERSION_DEFAULT_GRADE_BAND_COLOR);
   });
 
   it("uses the next range at shared boundaries and includes the final upper bound", () => {

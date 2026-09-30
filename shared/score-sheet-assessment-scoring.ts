@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  SCORE_CONVERSION_DEFAULT_GRADE_BAND_COLOR,
   scoreConversionTemplateSchema,
   type ScoreConversionTemplate,
 } from "./score-conversion";
@@ -39,6 +40,7 @@ export const scoreSheetAssessmentAttemptResultSchema = z.object({
   gradeBand: z.object({
     id: z.string().uuid(),
     label: z.string(),
+    color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default(SCORE_CONVERSION_DEFAULT_GRADE_BAND_COLOR),
     minScore: z.number().finite(),
     maxScore: z.number().finite(),
   }).nullable(),
@@ -313,6 +315,7 @@ export function calculateScoreSheetAssessmentAttemptResult(args: {
     gradeBand: gradeBand ? {
       id: gradeBand.id,
       label: gradeBand.label,
+      color: gradeBand.color,
       minScore: gradeBand.minScore,
       maxScore: gradeBand.maxScore,
     } : null,

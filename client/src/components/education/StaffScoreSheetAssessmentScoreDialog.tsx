@@ -333,7 +333,12 @@ export function StaffScoreSheetAssessmentScoreDialog({
                     <p className="mt-0.5 text-lg font-semibold tabular-nums text-violet-800 dark:text-violet-200">
                       {formatScore(preview?.overallConvertedScore)}
                       {preview?.gradeBand && (
-                        <span className="ml-2 text-sm font-medium">{preview.gradeBand.label}</span>
+                        <span
+                          className="ml-2 text-sm font-medium"
+                          style={{ color: preview.gradeBand.color }}
+                        >
+                          {preview.gradeBand.label}
+                        </span>
                       )}
                     </p>
                   </div>

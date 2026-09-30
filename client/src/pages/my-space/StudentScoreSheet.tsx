@@ -26,6 +26,7 @@ type ScoreEntry = {
   categoryId: string;
   categoryName: string;
   score: string | null;
+  color?: string | null;
 };
 
 type GradeBookRow = {
@@ -279,7 +280,10 @@ export function StudentScoreSheet() {
                         <TableCell className="text-sm">{entry.categoryName}</TableCell>
                         <TableCell className="text-sm text-right font-semibold">
                           {entry.score != null && entry.score !== "" ? (
-                            <span className={idx === selectedScores.length - 1 ? "text-violet-600 dark:text-violet-400" : ""}>
+                            <span
+                              className={idx === selectedScores.length - 1 && !entry.color ? "text-violet-600 dark:text-violet-400" : ""}
+                              style={{ color: entry.color ?? undefined }}
+                            >
                               {entry.score}
                             </span>
                           ) : (

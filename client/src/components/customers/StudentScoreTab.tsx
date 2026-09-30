@@ -17,7 +17,7 @@ interface ScoreEntry {
   className: string;
   classId: string;
   finalScore: string | null;
-  scores: Array<{ categoryName: string; score: string | null }>;
+  scores: Array<{ categoryName: string; score: string | null; color?: string | null }>;
   refId: string;
   gradingComment?: string | null;
   createdAt: string;
@@ -109,7 +109,12 @@ function ScoreDetailDialog({
                         {entry.scores.map((score, index) => (
                           <tr key={`${score.categoryName}-${index}`} className="border-t">
                             <td className="px-3 py-2">{score.categoryName}</td>
-                            <td className="px-3 py-2 text-right font-medium">{score.score ?? "—"}</td>
+                            <td
+                              className="px-3 py-2 text-right font-medium"
+                              style={{ color: score.color ?? undefined }}
+                            >
+                              {score.score ?? "—"}
+                            </td>
                           </tr>
                         ))}
                       </tbody>

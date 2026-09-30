@@ -3971,6 +3971,7 @@ export function registerMySpaceRoutes(app: Express): void {
                   categoryId: `${selectedAttempt.assessmentId}:grade-band`,
                   categoryName: "Xếp loại",
                   score: summary.result.gradeBand.label,
+                  color: summary.result.gradeBand.color,
                 }]
               : []),
             ...(summary.result.overallConvertedScore === null
@@ -4304,6 +4305,7 @@ export function registerMySpaceRoutes(app: Express): void {
           rawScore: summary?.result.overallRawScore ?? null,
           convertedScore: summary?.result.overallConvertedScore ?? null,
           gradeBandLabel: summary?.result.gradeBand?.label ?? null,
+          gradeBandColor: summary?.result.gradeBand?.color ?? null,
           inputComplete: summary?.result.inputComplete ?? false,
           status: !summary ? "not_entered" : summary.result.inputComplete ? "complete" : "in_progress",
         };

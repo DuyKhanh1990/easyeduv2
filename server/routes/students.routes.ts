@@ -2468,13 +2468,17 @@ export function registerStudentsRoutes(app: Express): void {
             }));
           if (overallScore === null && skillScores.length === 0) return [];
 
-          const scores: Array<{ categoryName: string; score: string | null }> = [
+          const scores: Array<{ categoryName: string; score: string | null; color?: string }> = [
             ...(overallScore === null
               ? []
               : [{ categoryName: "Điểm quy đổi", score: formatScore(overallScore) }]),
             ...skillScores,
             ...(summary.result.gradeBand
-              ? [{ categoryName: "Xếp loại", score: summary.result.gradeBand.label }]
+              ? [{
+                  categoryName: "Xếp loại",
+                  score: summary.result.gradeBand.label,
+                  color: summary.result.gradeBand.color,
+                }]
               : []),
           ];
           const row = group.attempts[0];

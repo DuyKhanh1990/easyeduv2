@@ -3,6 +3,7 @@ import type {
   ScoreConversionTemplateInput,
   ScoreConversionTypeKey,
 } from "@shared/score-conversion";
+import { SCORE_CONVERSION_DEFAULT_GRADE_BAND_COLOR } from "@shared/score-conversion";
 
 export const SCORE_CONVERSION_TYPES: Array<{ value: ScoreConversionTypeKey; label: string }> = [
   { value: "starters", label: "Starters" },
@@ -180,5 +181,11 @@ export function createEmptyMapping(): ScoreConversionTemplateInput["sections"][n
 }
 
 export function createEmptyGradeBand(): ScoreConversionTemplateInput["overallRule"]["gradeBands"][number] {
-  return { id: newId(), label: "", minScore: 0, maxScore: 15 };
+  return {
+    id: newId(),
+    label: "",
+    color: SCORE_CONVERSION_DEFAULT_GRADE_BAND_COLOR,
+    minScore: 0,
+    maxScore: 15,
+  };
 }

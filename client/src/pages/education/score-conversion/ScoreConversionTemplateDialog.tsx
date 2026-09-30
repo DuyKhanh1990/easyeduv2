@@ -534,14 +534,35 @@ export function ScoreConversionTemplateDialog({
                     className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2 rounded-md border p-2"
                   >
                     <div className="min-w-0 space-y-1.5">
-                      <Label htmlFor={`grade-band-label-${band.id}`}>Tên xếp loại</Label>
-                      <Input
-                        id={`grade-band-label-${band.id}`}
-                        value={band.label}
-                        onChange={(event) => updateGradeBand(band.id, { label: event.target.value })}
-                        placeholder="Ví dụ: A2"
-                        maxLength={80}
-                      />
+                      <div className="flex items-center justify-between gap-2">
+                        <Label htmlFor={`grade-band-label-${band.id}`}>Tên xếp loại</Label>
+                        <Label
+                          htmlFor={`grade-band-color-${band.id}`}
+                          className="cursor-pointer text-xs text-muted-foreground"
+                        >
+                          Màu chữ
+                        </Label>
+                      </div>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Input
+                          id={`grade-band-label-${band.id}`}
+                          value={band.label}
+                          onChange={(event) => updateGradeBand(band.id, { label: event.target.value })}
+                          placeholder="Ví dụ: A2"
+                          maxLength={80}
+                          className="min-w-0 flex-1"
+                          style={{ color: band.color }}
+                        />
+                        <Input
+                          id={`grade-band-color-${band.id}`}
+                          type="color"
+                          value={band.color}
+                          onChange={(event) => updateGradeBand(band.id, { color: event.target.value })}
+                          aria-label={`Màu chữ xếp loại ${band.label || index + 1}`}
+                          title="Chọn màu hiển thị cho tên xếp loại"
+                          className="h-9 w-10 shrink-0 cursor-pointer p-1"
+                        />
+                      </div>
                     </div>
                     <div className="min-w-0 space-y-1.5">
                       <Label htmlFor={`grade-band-min-${band.id}`}>Điểm từ</Label>
