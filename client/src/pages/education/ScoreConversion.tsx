@@ -1635,6 +1635,7 @@ export default function ScoreConversion() {
                     </tbody>
                   </table>
                 </div>
+                )}
               </div>
             )}
           </TabsContent>
