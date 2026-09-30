@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import type { ScoreSheetTemplate } from "@shared/score-sheet-template";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Check, ChevronsUpDown } from "lucide-react";
@@ -103,6 +104,15 @@ export function SessionApplyProgramSection({
     queryKey: ["/api/score-sheets"],
   });
 
+  const {
+    data: allScoreSheetTemplates,
+    isLoading: scoreSheetTemplatesLoading,
+    isError: scoreSheetTemplatesError,
+  } = useQuery<ScoreSheetTemplate[]>({
+    queryKey: [`/api/classes/${classId}/score-sheet-templates`],
+    enabled: !!classId,
+  });
+
   // A session's business number is sessionIndex, not its position in the
   // response array. Keep all range selectors on the same canonical order.
   const orderedClassSessions = [...(classSessions || [])].sort((a, b) => {
@@ -122,11 +132,16 @@ export function SessionApplyProgramSection({
   const selectedAssessment = selectedScoreSheetKind === "assessment"
     ? allScoreSheetAssessments?.find((assessment: any) => assessment.id === selectedScoreSheetId)
     : null;
+  const selectedScoreSheetTemplate = selectedScoreSheetKind === "template"
+    ? allScoreSheetTemplates?.find((template) => template.id === selectedScoreSheetId)
+    : null;
   const selectedAssessmentTemplateName =
     selectedAssessment?.currentTemplate?.name
     ?? selectedAssessment?.templateSnapshot?.name
     ?? "Bảng điểm mẫu";
-  const selectedScoreSheetLabel = selectedAssessment
+  const selectedScoreSheetLabel = selectedScoreSheetTemplate
+    ? `${selectedScoreSheetTemplate.code} — ${selectedScoreSheetTemplate.name}`
+    : selectedAssessment
     ? `${selectedAssessment.code} — ${selectedAssessment.name}${
         selectedAssessmentTemplateName !== selectedAssessment.name
           ? ` · ${selectedAssessmentTemplateName}`
@@ -138,6 +153,7 @@ export function SessionApplyProgramSection({
     mutationFn: async (data: {
       scoreSheetId?: string;
       scoreSheetAssessmentId?: string;
+      scoreSheetTemplateId?: string;
       fromSessionIndex: number;
       toSessionIndex: number;
     }) => {
@@ -147,6 +163,7 @@ export function SessionApplyProgramSection({
       queryClient.invalidateQueries({ queryKey: ["/api/classes"] });
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}`] });
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/sessions`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments"] });
       toast({ title: "Áp dụng bảng điểm thành công" });
       setIsApplyScoreSheetOpen(false);
       setApplyScoreSheetId("");
@@ -359,7 +376,13 @@ export function SessionApplyProgramSection({
                   <Command>
                     <CommandInput placeholder="Tìm mã hoặc tên bảng điểm..." />
                     <CommandList>
-                      <CommandEmpty>Không tìm thấy bảng điểm phù hợp.</CommandEmpty>
+                      <CommandEmpty>
+                        {scoreSheetTemplatesLoading
+                          ? "Đang tải bảng điểm mẫu..."
+                          : scoreSheetTemplatesError
+                            ? "Không thể tải danh sách bảng điểm mẫu."
+                            : "Không tìm thấy bảng điểm phù hợp."}
+                      </CommandEmpty>
                       {(allScoreSheets?.length ?? 0) > 0 && (
                         <CommandGroup heading="Bảng điểm thường">
                           {allScoreSheets?.map((sheet: any) => (
@@ -377,34 +400,28 @@ export function SessionApplyProgramSection({
                           ))}
                         </CommandGroup>
                       )}
-                      {(allScoreSheetAssessments?.length ?? 0) > 0 && (
-                        <CommandGroup heading="Bảng điểm quy đổi">
-                          {allScoreSheetAssessments?.map((assessment: any) => (
+                      {(allScoreSheetTemplates?.length ?? 0) > 0 && (
+                        <CommandGroup heading="Bảng điểm mẫu">
+                          {allScoreSheetTemplates?.map((template) => (
                             <CommandItem
-                              key={`assessment:${assessment.id}`}
+                              key={`template:${template.id}`}
                               value={[
-                                assessment.code,
-                                assessment.name,
-                                assessment.currentTemplate?.code,
-                                assessment.currentTemplate?.name,
-                                assessment.templateSnapshot?.name,
-                                assessment.id,
+                                template.code,
+                                template.name,
+                                template.id,
                               ].filter(Boolean).join(" ")}
                               onSelect={() => {
-                                setApplyScoreSheetId(`assessment:${assessment.id}`);
+                                setApplyScoreSheetId(`template:${template.id}`);
                                 setScoreSheetPickerOpen(false);
                               }}
                             >
-                              <Check className={`mr-2 h-4 w-4 ${normalizedScoreSheetSelection === `assessment:${assessment.id}` ? "opacity-100" : "opacity-0"}`} />
+                              <Check className={`mr-2 h-4 w-4 ${normalizedScoreSheetSelection === `template:${template.id}` ? "opacity-100" : "opacity-0"}`} />
                               <span className="min-w-0">
-                                <span className="block truncate">{assessment.code} — {assessment.name}</span>
+                                <span className="block truncate">{template.code} — {template.name}</span>
                                 <span className="block truncate text-xs text-muted-foreground">
-                                  Mẫu: {assessment.currentTemplate?.code
-                                    ? `${assessment.currentTemplate.code} — `
-                                    : ""}
-                                  {assessment.currentTemplate?.name
-                                    ?? assessment.templateSnapshot?.name
-                                    ?? "Bảng điểm mẫu"}
+                                  {template.scoreConversionTemplateId
+                                    ? "Có cấu hình bảng quy đổi"
+                                    : "Không áp dụng bảng quy đổi"}
                                 </span>
                               </span>
                             </CommandItem>
@@ -461,6 +478,8 @@ export function SessionApplyProgramSection({
                 applyScoreSheetMutation.mutate({
                   ...(kind === "assessment"
                     ? { scoreSheetAssessmentId: selectedId }
+                    : kind === "template"
+                      ? { scoreSheetTemplateId: selectedId }
                     : { scoreSheetId: selectedId }),
                   fromSessionIndex: applyScoreSheetFromIdx,
                   toSessionIndex: applyScoreSheetToIdx,

@@ -1,10 +1,13 @@
 import type { Express } from "express";
+import { randomUUID } from "node:crypto";
 import { storage } from "../storage";
 import { createActivityLog, getActivityLogs } from "../storage/activity-log.storage";
 import { getClassFormatSummary, getClassStatusSummary, getNewClassesSummary, getClassesByLocationSummary, getMonthlyAttendanceRate, getClassesByTeacherSummary, getSessionsByTeacherSummary, getMakeupClassEligibility, getMakeupStartOptions } from "../storage/class.storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
+import { parseScoreConversionTemplatesJson } from "@shared/score-conversion";
 import { scoreSheetAssessmentSchema } from "@shared/score-sheet-assessment";
+import { scoreSheetTemplateSchema } from "@shared/score-sheet-template";
 import { db, pool } from "../db";
 import { classSessions, studentSessions, freeClassRegistrations, freeClassDayAssignments, students, classes, studentClasses, staff, staffAssignments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, invoiceItems, courseFeePackages, financePromotions, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
 import { eq, and, sql, inArray, avg, between, gte, lte, gt, desc, asc, or, ilike, isNotNull, isNull, ne } from "drizzle-orm";
@@ -33,7 +36,113 @@ async function checkAttendanceLimitForSession(classSessionId: string, req: any):
 }
 
 const CLASSES_RESOURCE = "/classes";
+const SCORE_CONVERSION_SETTINGS_KEY = "scoreConversionTemplates";
+const SCORE_SHEET_TEMPLATE_SETTINGS_KEY = "scoreSheetTemplates";
 const SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY = "scoreSheetAssessments";
+
+async function createScoreSheetAssessmentForTemplate(options: {
+  templateId: string;
+  reuseAssessmentId: string | null;
+  classCode: string;
+  fromSessionIndex: number;
+  toSessionIndex: number;
+}) {
+  const { systemSettings } = await import("@shared/schema");
+  return db.transaction(async (tx) => {
+    await tx.insert(systemSettings)
+      .values({ key: SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY, value: "[]" })
+      .onConflictDoNothing();
+
+    const [assessmentsRow] = await tx
+      .select({ value: systemSettings.value })
+      .from(systemSettings)
+      .where(eq(systemSettings.key, SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY))
+      .for("update")
+      .limit(1);
+    if (!assessmentsRow) throw new Error("Không thể tải danh sách bảng điểm.");
+
+    const assessments = z.array(scoreSheetAssessmentSchema).parse(JSON.parse(assessmentsRow.value));
+    const reusableAssessment = options.reuseAssessmentId
+      ? assessments.find((assessment) =>
+        assessment.id === options.reuseAssessmentId
+        && assessment.scoreSheetTemplateId === options.templateId)
+      : undefined;
+    if (reusableAssessment) return reusableAssessment;
+
+    const [templatesRow] = await tx
+      .select({ value: systemSettings.value })
+      .from(systemSettings)
+      .where(eq(systemSettings.key, SCORE_SHEET_TEMPLATE_SETTINGS_KEY))
+      .limit(1);
+    const templates = templatesRow
+      ? z.array(scoreSheetTemplateSchema).parse(JSON.parse(templatesRow.value))
+      : [];
+    const template = templates.find((item) => item.id === options.templateId);
+    if (!template) {
+      const error: any = new Error("Không tìm thấy bảng điểm mẫu đã chọn.");
+      error.status = 404;
+      throw error;
+    }
+
+    let conversionTemplateSnapshot = null;
+    if (template.scoreConversionTemplateId) {
+      const [conversionRow] = await tx
+        .select({ value: systemSettings.value })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, SCORE_CONVERSION_SETTINGS_KEY))
+        .limit(1);
+      conversionTemplateSnapshot = conversionRow
+        ? parseScoreConversionTemplatesJson(conversionRow.value)
+          .find((item) => item.id === template.scoreConversionTemplateId) ?? null
+        : null;
+      if (!conversionTemplateSnapshot) {
+        const error: any = new Error("Không tìm thấy bảng quy đổi của bảng điểm mẫu.");
+        error.status = 409;
+        throw error;
+      }
+    }
+
+    const classToken = options.classCode
+      .toLocaleUpperCase()
+      .replace(/[^A-Z0-9]+/g, "")
+      .slice(0, 8) || "CLASS";
+    const suffixBase = `-${classToken}-S${options.fromSessionIndex}-${options.toSessionIndex}`;
+    let code = "";
+    for (let sequence = 1; sequence <= 1000; sequence += 1) {
+      const suffix = `${suffixBase}${sequence === 1 ? "" : `-${sequence}`}`;
+      const prefixLength = Math.max(0, 40 - suffix.length);
+      const candidate = `${template.code.toLocaleUpperCase().slice(0, prefixLength)}${suffix}`;
+      if (!assessments.some((assessment) =>
+        assessment.code.toLocaleLowerCase() === candidate.toLocaleLowerCase())) {
+        code = candidate;
+        break;
+      }
+    }
+    if (!code) throw new Error("Không thể tạo mã duy nhất cho bảng điểm áp dụng.");
+
+    const now = new Date().toISOString();
+    const assessment = scoreSheetAssessmentSchema.parse({
+      id: randomUUID(),
+      code,
+      name: template.name,
+      scoreSheetTemplateId: template.id,
+      scoreDeadlineAt: null,
+      attemptCount: template.attemptCount,
+      scoringPolicy: template.scoringPolicy,
+      templateSnapshot: template,
+      conversionTemplateSnapshot,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await tx.update(systemSettings)
+      .set({
+        value: JSON.stringify([assessment, ...assessments]),
+        updatedAt: new Date(),
+      })
+      .where(eq(systemSettings.key, SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY));
+    return assessment;
+  });
+}
 
 function getBangkokDateString(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -7574,17 +7683,43 @@ export function registerClassesRoutes(app: Express): void {
     }
   });
 
+  app.get("/api/classes/:classId/score-sheet-templates", async (req, res) => {
+    try {
+      const classId = String(req.params.classId);
+      if (!(await assertClassReadable(req, res, classId))) return;
+
+      const { systemSettings } = await import("@shared/schema");
+      const [templatesRow] = await db.select({ value: systemSettings.value })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, SCORE_SHEET_TEMPLATE_SETTINGS_KEY))
+        .limit(1);
+      const templates = templatesRow
+        ? z.array(scoreSheetTemplateSchema).parse(JSON.parse(templatesRow.value))
+        : [];
+      res.json(templates);
+    } catch (err: any) {
+      console.error("Class score sheet templates error:", err);
+      res.status(500).json({ message: err.message || "Không thể tải danh sách bảng điểm mẫu." });
+    }
+  });
+
   app.post("/api/classes/:classId/apply-score-sheet", async (req, res) => {
     try {
       const { classId } = req.params;
       const {
         scoreSheetId,
         scoreSheetAssessmentId,
+        scoreSheetTemplateId,
         fromSessionIndex,
         toSessionIndex,
       } = req.body;
+      const selectionCount = [
+        scoreSheetId,
+        scoreSheetAssessmentId,
+        scoreSheetTemplateId,
+      ].filter(Boolean).length;
       if (
-        Boolean(scoreSheetId) === Boolean(scoreSheetAssessmentId)
+        selectionCount !== 1
         || !Number.isInteger(fromSessionIndex)
         || !Number.isInteger(toSessionIndex)
         || fromSessionIndex < 1
@@ -7595,11 +7730,13 @@ export function registerClassesRoutes(app: Express): void {
       if (
         (scoreSheetId && !z.string().uuid().safeParse(scoreSheetId).success)
         || (scoreSheetAssessmentId && !z.string().uuid().safeParse(scoreSheetAssessmentId).success)
+        || (scoreSheetTemplateId && !z.string().uuid().safeParse(scoreSheetTemplateId).success)
       ) {
         return res.status(400).json({ message: "Mã bảng điểm không hợp lệ." });
       }
 
       let assessmentName: string | null = null;
+      let effectiveScoreSheetAssessmentId: string | null = scoreSheetAssessmentId ?? null;
       if (scoreSheetAssessmentId) {
         const { systemSettings } = await import("@shared/schema");
         const [settingsRow] = await db.select({ value: systemSettings.value })
@@ -7616,12 +7753,19 @@ export function registerClassesRoutes(app: Express): void {
         assessmentName = `${assessment.code} — ${assessment.name}`;
       }
 
-      const { db: baseDb, eq: baseEq, and: baseAnd, sql: baseSql, classSessions: baseSessions } = await import("../storage/base");
+      const {
+        db: baseDb,
+        eq: baseEq,
+        and: baseAnd,
+        sql: baseSql,
+        classSessions: baseSessions,
+      } = await import("../storage/base");
       const sessions = await baseDb
         .select({
           id: baseSessions.id,
           sessionIndex: baseSessions.sessionIndex,
           sessionDate: baseSessions.sessionDate,
+          scoreSheetAssessmentId: baseSessions.scoreSheetAssessmentId,
         })
         .from(baseSessions)
         .where(
@@ -7630,10 +7774,35 @@ export function registerClassesRoutes(app: Express): void {
             baseSql`${baseSessions.sessionIndex} BETWEEN ${fromSessionIndex} AND ${toSessionIndex}`
           )
         );
+      if (sessions.length === 0) {
+        return res.status(400).json({ message: "Không có buổi học trong khoảng đã chọn." });
+      }
+
+      if (scoreSheetTemplateId) {
+        const selectedAssessmentId = sessions[0].scoreSheetAssessmentId ?? null;
+        const reuseAssessmentId = selectedAssessmentId
+          && sessions.every((session) => session.scoreSheetAssessmentId === selectedAssessmentId)
+          ? selectedAssessmentId
+          : null;
+        const [classRow] = await db.select({ classCode: classes.classCode })
+          .from(classes)
+          .where(eq(classes.id, classId))
+          .limit(1);
+        const assessment = await createScoreSheetAssessmentForTemplate({
+          templateId: scoreSheetTemplateId,
+          reuseAssessmentId,
+          classCode: classRow?.classCode ?? classId.slice(0, 8),
+          fromSessionIndex,
+          toSessionIndex,
+        });
+        effectiveScoreSheetAssessmentId = assessment.id;
+        assessmentName = `${assessment.code} — ${assessment.name}`;
+      }
+
       for (const session of sessions) {
         await baseDb.update(baseSessions).set(
-          scoreSheetAssessmentId
-            ? { scoreSheetId: null, scoreSheetAssessmentId }
+          effectiveScoreSheetAssessmentId
+            ? { scoreSheetId: null, scoreSheetAssessmentId: effectiveScoreSheetAssessmentId }
             : { scoreSheetId, scoreSheetAssessmentId: null },
         ).where(baseEq(baseSessions.id, session.id));
       }
@@ -7663,8 +7832,9 @@ export function registerClassesRoutes(app: Express): void {
           oldContent: null,
           newContent: JSON.stringify({
             scoreSheetId: scoreSheetId ?? null,
-            scoreSheetAssessmentId: scoreSheetAssessmentId ?? null,
-            scoreSheetName: sheetRow?.name ?? assessmentName ?? scoreSheetId ?? scoreSheetAssessmentId,
+            scoreSheetAssessmentId: effectiveScoreSheetAssessmentId,
+            scoreSheetTemplateId: scoreSheetTemplateId ?? null,
+            scoreSheetName: sheetRow?.name ?? assessmentName ?? scoreSheetId ?? effectiveScoreSheetAssessmentId,
             fromSessionIndex,
             toSessionIndex,
             sessionCount: sessions.length,
@@ -7676,7 +7846,7 @@ export function registerClassesRoutes(app: Express): void {
       }
     } catch (err: any) {
       console.error("Apply score sheet error:", err);
-      res.status(500).json({ message: err.message || "Không thể áp dụng bảng điểm" });
+      res.status(err?.status ?? 500).json({ message: err.message || "Không thể áp dụng bảng điểm" });
     }
   });
 
