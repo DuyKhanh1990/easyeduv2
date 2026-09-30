@@ -95,6 +95,8 @@ type AssessmentStatusPresentation = {
   className: string;
 }
 
+type AssessmentStatusFilter = "all" | ScoreSheetAssessmentStatus;
+
 const ASSESSMENT_STATUS_PRESENTATION: Record<
   ScoreSheetAssessmentStatus,
   AssessmentStatusPresentation
@@ -240,6 +242,7 @@ export default function ScoreConversion() {
   const [editingScoreSheetTemplate, setEditingScoreSheetTemplate] = useState<ScoreSheetTemplate | null>(null);
   const [pendingTemplateDelete, setPendingTemplateDelete] = useState<PendingTemplateDelete | null>(null);
   const [selectedAssessment, setSelectedAssessment] = useState<StaffAssignedScoreSheetAssessment | null>(null);
+  const [assessmentStatusFilter, setAssessmentStatusFilter] = useState<AssessmentStatusFilter>("all");
   const [assessmentSearchInput, setAssessmentSearchInput] = useState("");
   const [assessmentSearchTerm, setAssessmentSearchTerm] = useState("");
   const [filterDialogOpen, setFilterDialogOpen] = useState(false);
@@ -332,6 +335,7 @@ export default function ScoreConversion() {
       nowWallClockMs,
     );
     const deadlineDateKey = assessment.scoreDeadlineAt?.substring(0, 10) ?? "";
+    if (assessmentStatusFilter !== "all" && status?.key !== assessmentStatusFilter) return false;
     if (classFilters.length > 0 && !classFilters.includes(assessment.classId)) return false;
     if (
       teacherFilters.length > 0
@@ -386,6 +390,7 @@ export default function ScoreConversion() {
     setTeacherFilters([]);
     setAssessmentFilters([]);
     setStatusFilters([]);
+    setAssessmentStatusFilter("all");
     setDeadlineStatusFilters([]);
     setExamDateFrom("");
     setExamDateTo("");
@@ -876,6 +881,57 @@ export default function ScoreConversion() {
                     </button>
                   </form>
 
+                  <div className="flex min-w-0 items-center gap-2 overflow-x-auto py-0.5 sm:flex-wrap">
+                    {([
+                      { value: "all", label: "Tất cả" },
+                      { value: "not_started", label: "Chưa thi" },
+                      { value: "in_progress", label: "Đang thi" },
+                      { value: "processing", label: "Đang xử lý" },
+                      { value: "completed", label: "Hoàn thành" },
+                    ] as const).map((filter) => {
+                      const isSelected = filter.value === "all"
+                        ? statusFilters.length === 0
+                        : assessmentStatusFilter === filter.value && statusFilters.length === 1;
+                      return (
+                        <button
+                          key={filter.value}
+                          type="button"
+                          aria-pressed={isSelected}
+                          data-testid={`filter-score-conversion-${filter.value}`}
+                          onClick={() => {
+                            if (filter.value === "all") {
+                              setAssessmentStatusFilter("all");
+                              setStatusFilters([]);
+                            } else {
+                              setAssessmentStatusFilter(filter.value);
+                              setStatusFilters([filter.value]);
+                            }
+                          }}
+                          className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-3 text-[13px] font-semibold transition-colors ${
+                            filter.value === "all"
+                              ? isSelected
+                                ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                                : "border-blue-300 bg-background text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                              : isSelected
+                                ? ASSESSMENT_FILTER_COLORS[filter.value].active
+                                : `bg-background ${ASSESSMENT_FILTER_COLORS[filter.value].idle}`
+                          }`}
+                        >
+                          {filter.value !== "all" && (
+                            <span
+                              className={`h-1.5 w-1.5 rounded-full ${
+                                isSelected
+                                  ? "bg-white"
+                                  : ASSESSMENT_FILTER_COLORS[filter.value].dot
+                              }`}
+                            />
+                          )}
+                          {filter.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
                   <div className="ml-auto flex items-center gap-2">
                     {activeFilterCount > 0 && (
                       <Button
@@ -954,7 +1010,11 @@ export default function ScoreConversion() {
                                 label: status.label,
                               }))}
                               value={statusFilters}
-                              onChange={(values) => setStatusFilters(values as ScoreSheetAssessmentStatus[])}
+                              onChange={(values) => {
+                                const nextStatuses = values as ScoreSheetAssessmentStatus[];
+                                setStatusFilters(nextStatuses);
+                                setAssessmentStatusFilter(nextStatuses.length === 1 ? nextStatuses[0] : "all");
+                              }}
                               placeholder="Chọn trạng thái"
                               searchPlaceholder="Tìm trạng thái..."
                               data-testid="filter-score-conversion-status"
