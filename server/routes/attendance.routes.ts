@@ -483,6 +483,9 @@ export function registerAttendanceRoutes(app: Express): void {
       const conditions: any[] = [];
       conditions.push(gte(classSessions.sessionDate, startStr));
       conditions.push(lte(classSessions.sessionDate, endStr));
+      // Match the class-session roster: transferred historical rows stay in
+      // storage but must not appear as current attendees.
+      conditions.push(sql`${studentSessions.status} != 'transferred'`);
 
       if (classIds.length > 0) {
         conditions.push(inArray(studentSessions.classId, classIds));
