@@ -723,7 +723,10 @@ export function registerAttendanceRoutes(app: Express): void {
             total: sql<number>`count(*)::int`,
           })
           .from(studentSessions)
-          .where(inArray(studentSessions.classId, resultClassIds))
+          .where(and(
+            inArray(studentSessions.classId, resultClassIds),
+            sql`${studentSessions.status} != 'transferred'`,
+          ))
           .groupBy(studentSessions.studentId, studentSessions.classId);
         countRows.forEach((row: any) => {
           totalSessionsMap.set(`${row.studentId}-${row.classId}`, row.total);

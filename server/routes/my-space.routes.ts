@@ -226,7 +226,10 @@ async function getSessionAttendanceStats(classSessionId: string): Promise<{ enro
       reviewedCount: sql<number>`count(case when ${studentSessions.reviewData} is not null and ${studentSessions.reviewData}::text != 'null' then 1 end)::int`,
     })
     .from(studentSessions)
-    .where(eq(studentSessions.classSessionId, classSessionId));
+    .where(and(
+      eq(studentSessions.classSessionId, classSessionId),
+      sql`${studentSessions.status} != 'transferred'`,
+    ));
   return { enrolledCount: row?.enrolledCount ?? 0, pendingCount: row?.pendingCount ?? 0, reviewedCount: row?.reviewedCount ?? 0 };
 }
 
@@ -245,7 +248,10 @@ async function getRegularSessionStudents(classSessionId: string) {
     })
     .from(studentSessions)
     .innerJoin(students, eq(studentSessions.studentId, students.id))
-    .where(eq(studentSessions.classSessionId, classSessionId))
+    .where(and(
+      eq(studentSessions.classSessionId, classSessionId),
+      sql`${studentSessions.status} != 'transferred'`,
+    ))
     .orderBy(students.fullName);
 
   return rows.map((row) => ({
@@ -882,7 +888,8 @@ export function registerMySpaceRoutes(app: Express): void {
           and(
             inArray(studentSessions.studentId, ctx.studentIds),
             gte(classSessions.sessionDate, dateFrom),
-            lte(classSessions.sessionDate, dateTo)
+            lte(classSessions.sessionDate, dateTo),
+            sql`${studentSessions.status} != 'transferred'`,
           )
         )
         .orderBy(classSessions.sessionDate, shiftTemplates.startTime);
@@ -912,7 +919,10 @@ export function registerMySpaceRoutes(app: Express): void {
           ? db.select({
               classSessionId: studentSessions.classSessionId,
               count: sql<number>`COUNT(*)::int`,
-            }).from(studentSessions).where(inArray(studentSessions.classSessionId, allClassSessionIds)).groupBy(studentSessions.classSessionId)
+          }).from(studentSessions).where(and(
+            inArray(studentSessions.classSessionId, allClassSessionIds),
+            sql`${studentSessions.status} != 'transferred'`,
+          )).groupBy(studentSessions.classSessionId)
           : Promise.resolve([]),
       ]);
 
@@ -1131,7 +1141,10 @@ export function registerMySpaceRoutes(app: Express): void {
         .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
         .innerJoin(classes, eq(classSessions.classId, classes.id))
         .innerJoin(shiftTemplates, eq(classSessions.shiftTemplateId, shiftTemplates.id))
-        .where(inArray(studentSessions.studentId, ctx.studentIds))
+        .where(and(
+          inArray(studentSessions.studentId, ctx.studentIds),
+          sql`${studentSessions.status} != 'transferred'`,
+        ))
         .orderBy(classes.classCode, classSessions.sessionIndex, classSessions.sessionDate);
 
       // Group by class
@@ -1183,7 +1196,10 @@ export function registerMySpaceRoutes(app: Express): void {
         .from(studentSessions)
         .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
         .innerJoin(classes, eq(classSessions.classId, classes.id))
-        .where(inArray(studentSessions.studentId, ctx.studentIds))
+        .where(and(
+          inArray(studentSessions.studentId, ctx.studentIds),
+          sql`${studentSessions.status} != 'transferred'`,
+        ))
         .groupBy(classes.id, classes.name, classes.classCode)
         .orderBy(classes.classCode);
 
@@ -1312,7 +1328,8 @@ export function registerMySpaceRoutes(app: Express): void {
         .where(
           and(
             inArray(studentSessions.studentId, ctx.studentIds),
-            eq(classSessions.classId, classId)
+            eq(classSessions.classId, classId),
+            sql`${studentSessions.status} != 'transferred'`,
           )
         );
 
@@ -1335,7 +1352,8 @@ export function registerMySpaceRoutes(app: Express): void {
         .where(
           and(
             inArray(studentSessions.studentId, ctx.studentIds),
-            eq(classSessions.classId, classId)
+            eq(classSessions.classId, classId),
+            sql`${studentSessions.status} != 'transferred'`,
           )
         )
         .orderBy(classSessions.sessionIndex, classSessions.sessionDate)
@@ -1500,7 +1518,8 @@ export function registerMySpaceRoutes(app: Express): void {
         .where(
           and(
             inArray(studentSessions.studentId, targetStudentIds),
-            eq(classSessions.id, classSessionId)
+            eq(classSessions.id, classSessionId),
+            sql`${studentSessions.status} != 'transferred'`,
           )
         )
         .limit(1);
