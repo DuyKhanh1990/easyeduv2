@@ -12,6 +12,7 @@ import {
 } from "@shared/score-sheet-template";
 import { validateScoreConversionFormula } from "@shared/score-conversion-formula";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -46,6 +47,18 @@ type Part = ScoreSheetTemplateInput["skills"][number]["parts"][number];
 type Skill = ScoreSheetTemplateInput["skills"][number];
 type PartFormula = ScoreSheetTemplateInput["skills"][number]["partFormula"];
 type OverallRule = NonNullable<ScoreSheetTemplateInput["overallRule"]>;
+type EvaluationSubCriterion = {
+  id: string;
+  name: string;
+  parentId?: string | null;
+  itemType?: "heading" | "criterion" | null;
+  inputType?: "text" | "checkbox" | null;
+};
+type EvaluationCriterion = {
+  id: string;
+  name: string;
+  subCriteria?: EvaluationSubCriterion[];
+};
 
 const DEFAULT_OVERALL_RULE: OverallRule = { method: "average", formula: "" };
 const DEFAULT_PART_FORMULA: PartFormula = { method: "sum", formula: "" };
@@ -112,7 +125,7 @@ export function ScoreSheetTemplateDialog({
   const [draft, setDraft] = useState<ScoreSheetTemplateInput>(emptyDraft);
   const [formError, setFormError] = useState("");
   const [pendingConversionTemplateId, setPendingConversionTemplateId] = useState<string | null | undefined>();
-  const evaluationCriteriaQuery = useQuery<any[]>({
+  const evaluationCriteriaQuery = useQuery<EvaluationCriterion[]>({
     queryKey: ["/api/evaluation-criteria"],
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/evaluation-criteria");
@@ -165,6 +178,10 @@ export function ScoreSheetTemplateDialog({
   const selectedConversion = conversionTemplates.find(
     (item) => item.id === draft.scoreConversionTemplateId,
   );
+  const selectedEvaluationCriteria = draft.evaluationCriteriaIds.map((id) => ({
+    id,
+    criterion: evaluationCriteriaQuery.data?.find((item) => String(item.id) === id) ?? null,
+  }));
 
   const applyConversionTemplate = (conversionTemplateId: string | null) => {
     const nextConversion = conversionTemplates.find((item) => item.id === conversionTemplateId);
@@ -916,6 +933,100 @@ export function ScoreSheetTemplateDialog({
                 </div>
               )}
             </section>
+
+            {draft.evaluationCriteriaIds.length > 0 && (
+              <section className="space-y-3 rounded-lg border bg-white p-4">
+                <div>
+                  <h3 className="font-semibold">Chi tiết tiêu chí đánh giá</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Các nhóm và nội dung đã thiết lập cho những tiêu chí được chọn ở trên.
+                  </p>
+                </div>
+
+                {evaluationCriteriaQuery.isLoading ? (
+                  <p className="text-sm text-muted-foreground">Đang tải nội dung tiêu chí...</p>
+                ) : evaluationCriteriaQuery.isError ? (
+                  <p className="text-sm text-destructive" role="alert">
+                    Không thể tải nội dung tiêu chí đánh giá.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {selectedEvaluationCriteria.map(({ id, criterion }) => {
+                      if (!criterion) {
+                        return (
+                          <div key={id} className="rounded-md border p-3 text-sm text-muted-foreground">
+                            Không tìm thấy tiêu chí đã chọn.
+                          </div>
+                        );
+                      }
+
+                      const subCriteria = criterion.subCriteria ?? [];
+                      const headings = subCriteria.filter((item) => item.itemType === "heading");
+                      const headingIds = new Set(headings.map((heading) => heading.id));
+                      const standaloneCriteria = subCriteria.filter((item) =>
+                        item.itemType !== "heading" &&
+                        (!item.parentId || !headingIds.has(item.parentId)));
+                      const criterionCount = subCriteria.filter((item) => item.itemType !== "heading").length;
+                      const renderCriterion = (item: EvaluationSubCriterion) => (
+                        <li
+                          key={item.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-background px-3 py-2 text-sm"
+                        >
+                          <span>{item.name}</span>
+                          <Badge variant="outline">
+                            {item.inputType === "checkbox" ? "Checkbox đạt/chưa đạt" : "Nhập nhận xét"}
+                          </Badge>
+                        </li>
+                      );
+
+                      return (
+                        <div key={id} className="rounded-md border bg-background p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <h4 className="font-medium">{criterion.name}</h4>
+                            <Badge variant="outline">{criterionCount} tiêu chí</Badge>
+                          </div>
+
+                          {subCriteria.length === 0 ? (
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              Chưa thiết lập nội dung cho tiêu chí này.
+                            </p>
+                          ) : (
+                            <div className="mt-3 space-y-2">
+                              {headings.map((heading) => {
+                                const children = subCriteria.filter((item) =>
+                                  item.itemType !== "heading" && item.parentId === heading.id);
+                                return (
+                                  <div key={heading.id} className="rounded-md bg-muted/40 p-3">
+                                    <div className="mb-2 flex items-center gap-2">
+                                      <span className="font-medium">{heading.name}</span>
+                                      <Badge variant="secondary">Nhóm</Badge>
+                                    </div>
+                                    {children.length > 0 ? (
+                                      <ul className="space-y-1.5">
+                                        {children.map(renderCriterion)}
+                                      </ul>
+                                    ) : (
+                                      <p className="text-sm text-muted-foreground">
+                                        Nhóm chưa có tiêu chí con.
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                              {standaloneCriteria.length > 0 && (
+                                <ul className="space-y-1.5">
+                                  {standaloneCriteria.map(renderCriterion)}
+                                </ul>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            )}
 
               {formError && <p className="text-sm text-destructive" role="alert">{formError}</p>}
             </div>
