@@ -181,12 +181,19 @@ export function Attendance() {
           attendance_note: data.attendanceNote,
         });
       }
-      return apiRequest("PATCH", `/api/student-sessions/${data.record.id}/attendance`, {
+      return apiRequest("POST", "/api/student-sessions/attendance", {
+        student_session_id: data.record.id,
         attendance_note: data.attendanceNote,
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/attendance"] });
+      queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey[0] as string;
+          return typeof key === "string" && key.includes("/student-sessions");
+        },
+      });
     },
     onError: (err: any) => {
       toast({ title: "Lỗi", description: err?.message || "Không thể cập nhật ghi chú", variant: "destructive" });

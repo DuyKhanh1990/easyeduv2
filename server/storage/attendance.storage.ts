@@ -71,12 +71,13 @@ export async function updateAttendanceStatus(id: string, status: string, note?: 
 // ---------------------------------------------------------------------------
 export async function updateStudentAttendance(
   id: string,
-  status: string,
-  note?: string,
+  status?: string | null,
+  note?: string | null,
   userId?: string | null,
   userFullName?: string | null,
 ): Promise<{ statusChanged: boolean }> {
   let statusChanged = false;
+  const isStatusProvided = status !== null && status !== undefined;
   await db.transaction(async (tx) => {
     const [session] = await tx.select({
       classSessionId: studentSessions.classSessionId,
@@ -95,34 +96,37 @@ export async function updateStudentAttendance(
     .for("update");
 
     if (session) {
-      const [classSession] = await tx.select({ status: classSessions.status })
-        .from(classSessions)
-        .where(eq(classSessions.id, session.classSessionId))
-        .for("share");
+      if (isStatusProvided) {
+        const [classSession] = await tx.select({ status: classSessions.status })
+          .from(classSessions)
+          .where(eq(classSessions.id, session.classSessionId))
+          .for("share");
 
-      if (classSession?.status === "cancelled") {
-        throw attendanceError("Không thể điểm danh cho buổi học đã bị huỷ", 409);
-      }
+        if (classSession?.status === "cancelled") {
+          throw attendanceError("Không thể điểm danh cho buổi học đã bị huỷ", 409);
+        }
 
-      if (status === "makeup_scheduled" && session.attendanceStatus !== "makeup_scheduled") {
-        throw attendanceError("Trạng thái Đã xếp bù chỉ được cập nhật tự động sau nghiệp vụ xếp bù", 400);
+        if (status === "makeup_scheduled" && session.attendanceStatus !== "makeup_scheduled") {
+          throw attendanceError("Trạng thái Đã xếp bù chỉ được cập nhật tự động sau nghiệp vụ xếp bù", 400);
+        }
       }
     }
 
     // Track whether attendance status actually changed (used by callers to decide on push noti).
     // If status is null/undefined this is a note-only update – never treat as a status change
     // and never overwrite attendanceStatus in DB with null.
-    const isStatusProvided = status !== null && status !== undefined;
     if (isStatusProvided) {
       statusChanged = session ? session.attendanceStatus !== status : true;
     } else {
       statusChanged = false;
     }
 
+    // Status-only changes must preserve an existing note; note-only changes
+    // must not touch attendanceStatus or attendanceAt.
     await tx.update(studentSessions)
       .set({
         ...(isStatusProvided ? { attendanceStatus: status } : {}),
-        attendanceNote: note,
+        ...(note !== undefined ? { attendanceNote: note } : {}),
         ...(isStatusProvided ? { attendanceAt: new Date() } : {}),
         updatedAt: new Date(),
       })
@@ -151,7 +155,7 @@ export async function updateStudentAttendance(
       }
     }
 
-    if (session?.studentClassId) {
+    if (isStatusProvided && session?.studentClassId) {
       await recalculateStudentClass(session.studentClassId, tx);
     }
 

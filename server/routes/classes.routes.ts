@@ -3132,52 +3132,76 @@ export function registerClassesRoutes(app: Express): void {
 
   app.post(api.studentSessions.attendance.path, async (req, res) => {
     try {
-      const { student_session_id, attendance_status, attendance_note } = req.body;
-      const userId = (req as any).user?.id ?? null;
-      const userFullName = await resolveStaffFullName(userId);
+      const { student_session_id, attendance_status, attendance_note } = req.body ?? {};
+      const statusWasProvided = attendance_status !== undefined && attendance_status !== null;
+      const hasStatus = typeof attendance_status === "string" && attendance_status.trim().length > 0;
+      const hasNote = attendance_note !== undefined;
+      if (
+        typeof student_session_id !== "string" ||
+        !student_session_id.trim() ||
+        (statusWasProvided && !hasStatus) ||
+        (!hasStatus && !hasNote) ||
+        (hasNote && attendance_note !== null && typeof attendance_note !== "string")
+      ) {
+        return res.status(400).json({ message: "Thông tin điểm danh không hợp lệ." });
+      }
 
-      // Enforce attendance time limit
-      const [ssForLimit] = await db.select({ classSessionId: studentSessions.classSessionId })
-        .from(studentSessions).where(eq(studentSessions.id, student_session_id)).limit(1);
-      if (ssForLimit) await checkAttendanceLimitForSession(ssForLimit.classSessionId, req);
+      const userId = (req as any).user?.id ?? null;
+      const userFullName = hasStatus ? await resolveStaffFullName(userId) : null;
 
       // Pre-fetch for activity log
       let attendanceLogData: any = null;
-      try {
-        const [ss] = await db.select({
-          classSessionId: studentSessions.classSessionId,
-          studentId: studentSessions.studentId,
-          classId: studentSessions.classId,
-          oldStatus: studentSessions.attendanceStatus,
-        }).from(studentSessions).where(eq(studentSessions.id, student_session_id)).limit(1);
+      if (hasStatus) {
+        // Attendance status changes are subject to the attendance time limit.
+        const [ssForLimit] = await db.select({ classSessionId: studentSessions.classSessionId })
+          .from(studentSessions).where(eq(studentSessions.id, student_session_id)).limit(1);
+        if (ssForLimit) await checkAttendanceLimitForSession(ssForLimit.classSessionId, req);
 
-        if (ss) {
-          const [studentRow] = await db.select({ fullName: students.fullName, code: students.code })
-            .from(students).where(eq(students.id, ss.studentId)).limit(1);
-          const [csRow] = await db.select({
-            sessionIndex: classSessions.sessionIndex,
-            weekday: classSessions.weekday,
-            sessionDate: classSessions.sessionDate,
-            startTime: shiftTemplates.startTime,
-          }).from(classSessions)
-            .leftJoin(shiftTemplates, eq(classSessions.shiftTemplateId, shiftTemplates.id))
-            .where(eq(classSessions.id, ss.classSessionId)).limit(1);
+        try {
+          const [ss] = await db.select({
+            classSessionId: studentSessions.classSessionId,
+            studentId: studentSessions.studentId,
+            classId: studentSessions.classId,
+            oldStatus: studentSessions.attendanceStatus,
+          }).from(studentSessions).where(eq(studentSessions.id, student_session_id)).limit(1);
 
-          attendanceLogData = {
-            classId: ss.classId,
-            session: { index: csRow?.sessionIndex, weekday: csRow?.weekday, sessionDate: csRow?.sessionDate, startTime: csRow?.startTime ?? null },
-            students: [{ name: studentRow?.fullName ?? "", code: studentRow?.code ?? "", oldStatus: ss.oldStatus ?? "scheduled", newStatus: attendance_status }],
-          };
+          if (ss) {
+            const [studentRow] = await db.select({ fullName: students.fullName, code: students.code })
+              .from(students).where(eq(students.id, ss.studentId)).limit(1);
+            const [csRow] = await db.select({
+              sessionIndex: classSessions.sessionIndex,
+              weekday: classSessions.weekday,
+              sessionDate: classSessions.sessionDate,
+              startTime: shiftTemplates.startTime,
+            }).from(classSessions)
+              .leftJoin(shiftTemplates, eq(classSessions.shiftTemplateId, shiftTemplates.id))
+              .where(eq(classSessions.id, ss.classSessionId)).limit(1);
+
+            attendanceLogData = {
+              classId: ss.classId,
+              session: { index: csRow?.sessionIndex, weekday: csRow?.weekday, sessionDate: csRow?.sessionDate, startTime: csRow?.startTime ?? null },
+              students: [{ name: studentRow?.fullName ?? "", code: studentRow?.code ?? "", oldStatus: ss.oldStatus ?? "scheduled", newStatus: attendance_status }],
+            };
+          }
+        } catch (logPrefetchErr) {
+          console.error("[Attendance] Pre-fetch log error:", logPrefetchErr);
         }
-      } catch (logPrefetchErr) {
-        console.error("[Attendance] Pre-fetch log error:", logPrefetchErr);
       }
 
-      const { statusChanged: attendanceChanged } = await storage.updateStudentAttendance(student_session_id, attendance_status, attendance_note, userId, userFullName);
-      if (attendanceChanged) sendAttendanceNotificationWithLimit(student_session_id, attendance_status, userId).catch(console.error);
+      const effectiveStatus = hasStatus ? attendance_status : undefined;
+      const { statusChanged: attendanceChanged } = await storage.updateStudentAttendance(
+        student_session_id,
+        effectiveStatus,
+        attendance_note,
+        userId,
+        userFullName,
+      );
+      if (attendanceChanged && effectiveStatus) {
+        sendAttendanceNotificationWithLimit(student_session_id, effectiveStatus, userId).catch(console.error);
+      }
 
       // Create activity log
-      if (attendanceLogData && userId) {
+      if (hasStatus && attendanceLogData && userId) {
         try {
           const [locRow] = await db.select({ locationId: classes.locationId })
             .from(classes).where(eq(classes.id, attendanceLogData.classId)).limit(1);
