@@ -19,6 +19,8 @@ export type GradeBookExcelInput = {
   students: GradeBookExcelStudent[];
 };
 
+const COMMENT_COLUMN_WIDTH = 42;
+
 export function buildGradeBookExcelRows(input: GradeBookExcelInput): {
   rows: (string | number | null)[][];
   headerRowNumber: number;
@@ -28,10 +30,8 @@ export function buildGradeBookExcelRows(input: GradeBookExcelInput): {
 
   return {
     rows: [
-      ["Cơ sở", input.locationName],
-      ["Lớp", input.className],
-      ["Tiêu đề", input.title],
-      ["Bảng điểm", input.scoreSheetName],
+      ["Cơ sở", "Lớp", "Tiêu đề", "Bảng điểm"],
+      [input.locationName, input.className, input.title, input.scoreSheetName],
       [],
       ["Tên", ...categoryHeaders, "Nhận xét"],
       ...input.students.map((student) => [
@@ -40,8 +40,45 @@ export function buildGradeBookExcelRows(input: GradeBookExcelInput): {
         student.comment,
       ]),
     ],
-    headerRowNumber: 6,
+    headerRowNumber: 4,
   };
+}
+
+export function estimateCommentRowHeight(comment: string): number {
+  const maxCharactersPerLine = COMMENT_COLUMN_WIDTH;
+  let lineCount = 0;
+
+  for (const paragraph of comment.replace(/\r\n/g, "\n").split("\n")) {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      lineCount += 1;
+      continue;
+    }
+
+    let currentLineLength = 0;
+    for (const word of words) {
+      const wordLength = [...word].length;
+      if (wordLength > maxCharactersPerLine) {
+        if (currentLineLength > 0) {
+          lineCount += 1;
+          currentLineLength = 0;
+        }
+        lineCount += Math.floor(wordLength / maxCharactersPerLine);
+        currentLineLength = wordLength % maxCharactersPerLine;
+      } else if (currentLineLength === 0) {
+        currentLineLength = wordLength;
+      } else if (currentLineLength + 1 + wordLength <= maxCharactersPerLine) {
+        currentLineLength += 1 + wordLength;
+      } else {
+        lineCount += 1;
+        currentLineLength = wordLength;
+      }
+    }
+
+    if (currentLineLength > 0) lineCount += 1;
+  }
+
+  return Math.min(409.5, Math.max(22, lineCount * 15 + 4));
 }
 
 export function htmlCommentToPlainText(html: string): string {
@@ -96,13 +133,17 @@ export async function downloadGradeBookExcel(input: GradeBookExcelInput): Promis
   input.categories.forEach((_, index) => {
     worksheet.getColumn(index + 2).width = 18;
   });
-  worksheet.getColumn(input.categories.length + 2).width = 52;
+  worksheet.getColumn(input.categories.length + 2).width = COMMENT_COLUMN_WIDTH;
 
-  for (let rowNumber = 1; rowNumber <= 4; rowNumber += 1) {
+  for (const rowNumber of [1, 2]) {
     const row = worksheet.getRow(rowNumber);
     row.height = 22;
-    row.getCell(1).font = { bold: true, color: { argb: "FF334155" } };
-    row.getCell(2).alignment = { vertical: "middle", wrapText: true };
+    row.eachCell((cell) => {
+      cell.alignment = { vertical: "middle", wrapText: true };
+      if (rowNumber === 1) {
+        cell.font = { bold: true, color: { argb: "FF334155" } };
+      }
+    });
   }
 
   const headerRow = worksheet.getRow(headerRowNumber);
@@ -118,14 +159,15 @@ export async function downloadGradeBookExcel(input: GradeBookExcelInput): Promis
     cell.border = { bottom: { style: "thin", color: { argb: "FFCBD5E1" } } };
   });
 
-  for (let rowNumber = headerRowNumber + 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
-    const row = worksheet.getRow(rowNumber);
+  input.students.forEach((student, index) => {
+    const row = worksheet.getRow(headerRowNumber + index + 1);
+    row.height = estimateCommentRowHeight(student.comment);
     row.alignment = { vertical: "top" };
     row.getCell(input.categories.length + 2).alignment = {
       vertical: "top",
       wrapText: true,
     };
-  }
+  });
 
   worksheet.views = [{ state: "frozen", ySplit: headerRowNumber }];
   worksheet.autoFilter = {
