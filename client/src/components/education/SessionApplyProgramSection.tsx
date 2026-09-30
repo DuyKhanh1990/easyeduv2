@@ -135,16 +135,34 @@ export function SessionApplyProgramSection({
   const selectedScoreSheetTemplate = selectedScoreSheetKind === "template"
     ? allScoreSheetTemplates?.find((template) => template.id === selectedScoreSheetId)
     : null;
+  const conversionAssessments = (allScoreSheetAssessments ?? []).filter((assessment: any) => (
+    Boolean(
+      assessment.conversionTemplateSnapshot
+      || assessment.templateSnapshot?.scoreConversionTemplateId,
+    )
+  ));
+  const representedConversionTemplateIds = new Set(
+    conversionAssessments.map((assessment: any) => assessment.scoreSheetTemplateId),
+  );
+  const unrepresentedConversionTemplates = (allScoreSheetTemplates ?? []).filter((template) => (
+    Boolean(template.scoreConversionTemplateId)
+    && !representedConversionTemplateIds.has(template.id)
+  ));
+  const manualScoreSheetTemplates = (allScoreSheetTemplates ?? []).filter((template) => (
+    !template.scoreConversionTemplateId
+  ));
+  const selectedAssessmentTemplate =
+    selectedAssessment?.currentTemplate ?? selectedAssessment?.templateSnapshot;
   const selectedAssessmentTemplateName =
-    selectedAssessment?.currentTemplate?.name
-    ?? selectedAssessment?.templateSnapshot?.name
+    selectedAssessmentTemplate?.name
     ?? "Bảng điểm mẫu";
+  const selectedAssessmentTemplateCode = selectedAssessmentTemplate?.code;
   const selectedScoreSheetLabel = selectedScoreSheetTemplate
     ? `${selectedScoreSheetTemplate.code} — ${selectedScoreSheetTemplate.name}`
     : selectedAssessment
     ? `${selectedAssessment.code} — ${selectedAssessment.name}${
-        selectedAssessmentTemplateName !== selectedAssessment.name
-          ? ` · ${selectedAssessmentTemplateName}`
+        selectedAssessmentTemplateCode || selectedAssessmentTemplateName !== selectedAssessment.name
+          ? ` · Mẫu: ${[selectedAssessmentTemplateCode, selectedAssessmentTemplateName].filter(Boolean).join(" — ")}`
           : ""
       }`
     : selectedLegacyScoreSheet?.name ?? "";
@@ -164,6 +182,8 @@ export function SessionApplyProgramSection({
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}`] });
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/sessions`] });
       queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff-assessments"] });
       toast({ title: "Áp dụng bảng điểm thành công" });
       setIsApplyScoreSheetOpen(false);
       setApplyScoreSheetId("");
@@ -400,9 +420,62 @@ export function SessionApplyProgramSection({
                           ))}
                         </CommandGroup>
                       )}
-                      {(allScoreSheetTemplates?.length ?? 0) > 0 && (
+                      {conversionAssessments.length > 0 && (
+                        <CommandGroup heading="Bảng điểm quy đổi">
+                          {conversionAssessments.map((assessment: any) => {
+                            const template = assessment.currentTemplate ?? assessment.templateSnapshot;
+                            return (
+                              <CommandItem
+                                key={`assessment:${assessment.id}`}
+                                value={[
+                                  assessment.code,
+                                  assessment.name,
+                                  template?.code,
+                                  template?.name,
+                                  assessment.id,
+                                ].filter(Boolean).join(" ")}
+                                onSelect={() => {
+                                  setApplyScoreSheetId(`assessment:${assessment.id}`);
+                                  setScoreSheetPickerOpen(false);
+                                }}
+                              >
+                                <Check className={`mr-2 h-4 w-4 ${normalizedScoreSheetSelection === `assessment:${assessment.id}` ? "opacity-100" : "opacity-0"}`} />
+                                <span className="min-w-0">
+                                  <span className="block truncate">{assessment.code} — {assessment.name}</span>
+                                  <span className="block truncate text-xs text-muted-foreground">
+                                    Mẫu: {[template?.code, template?.name].filter(Boolean).join(" — ") || "Bảng điểm mẫu"}
+                                  </span>
+                                </span>
+                              </CommandItem>
+                            );
+                          })}
+                          {unrepresentedConversionTemplates.map((template) => (
+                            <CommandItem
+                              key={`template:${template.id}`}
+                              value={[
+                                template.code,
+                                template.name,
+                                template.id,
+                              ].filter(Boolean).join(" ")}
+                              onSelect={() => {
+                                setApplyScoreSheetId(`template:${template.id}`);
+                                setScoreSheetPickerOpen(false);
+                              }}
+                            >
+                              <Check className={`mr-2 h-4 w-4 ${normalizedScoreSheetSelection === `template:${template.id}` ? "opacity-100" : "opacity-0"}`} />
+                              <span className="min-w-0">
+                                <span className="block truncate">{template.code} — {template.name}</span>
+                                <span className="block truncate text-xs text-muted-foreground">
+                                  Mẫu bảng điểm quy đổi
+                                </span>
+                              </span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      )}
+                      {manualScoreSheetTemplates.length > 0 && (
                         <CommandGroup heading="Bảng điểm mẫu">
-                          {allScoreSheetTemplates?.map((template) => (
+                          {manualScoreSheetTemplates.map((template) => (
                             <CommandItem
                               key={`template:${template.id}`}
                               value={[
