@@ -4,6 +4,8 @@ export type ScoreSheetAssessmentStatus =
   | "processing"
   | "completed";
 
+export type ScoreSheetAssessmentDeadlineStatus = "within_deadline" | "overdue";
+
 export type ScoreSheetAssessmentStatusInput = {
   examDate: string;
   scoreDeadlineAt: string | null;
@@ -41,6 +43,15 @@ function parseBangkokDeadline(value: string | null): number | null {
 
   const timestamp = Date.UTC(year, month - 1, day, hour, minute);
   return new Date(timestamp).toISOString().slice(0, 16) === value ? timestamp : null;
+}
+
+export function resolveScoreSheetAssessmentDeadlineStatus(
+  scoreDeadlineAt: string | null,
+  nowBangkokWallClockMs: number,
+): ScoreSheetAssessmentDeadlineStatus | null {
+  const deadline = parseBangkokDeadline(scoreDeadlineAt);
+  if (deadline === null) return null;
+  return nowBangkokWallClockMs <= deadline ? "within_deadline" : "overdue";
 }
 
 export function resolveScoreSheetAssessmentStatus(

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolveScoreSheetAssessmentStatus } from "../shared/score-sheet-assessment-status";
+import {
+  resolveScoreSheetAssessmentDeadlineStatus,
+  resolveScoreSheetAssessmentStatus,
+} from "../shared/score-sheet-assessment-status";
 
 const baseAssessment = {
   examDate: "2026-09-30",
@@ -11,6 +14,24 @@ const baseAssessment = {
 };
 
 describe("score-sheet assessment status", () => {
+  it("marks the deadline date and time as within deadline until the exact cutoff", () => {
+    expect(resolveScoreSheetAssessmentDeadlineStatus(
+      "2026-10-01T11:05",
+      Date.UTC(2026, 9, 1, 11, 5),
+    )).toBe("within_deadline");
+    expect(resolveScoreSheetAssessmentDeadlineStatus(
+      "2026-10-01T11:05",
+      Date.UTC(2026, 9, 1, 11, 6),
+    )).toBe("overdue");
+  });
+
+  it("returns no deadline status when a deadline is missing or invalid", () => {
+    expect(resolveScoreSheetAssessmentDeadlineStatus(null, Date.UTC(2026, 9, 1, 11, 5)))
+      .toBeNull();
+    expect(resolveScoreSheetAssessmentDeadlineStatus("bad-date", Date.UTC(2026, 9, 1, 11, 5)))
+      .toBeNull();
+  });
+
   it("marks an assessment as not started before its exam date", () => {
     expect(resolveScoreSheetAssessmentStatus(
       baseAssessment,

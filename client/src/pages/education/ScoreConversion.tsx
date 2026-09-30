@@ -15,6 +15,7 @@ import {
   MapPin,
   Pencil,
   Plus,
+  Search,
   Trash2,
   UserRound,
   Users,
@@ -45,7 +46,9 @@ import type {
   ScoreSheetTemplateInput,
 } from "@shared/score-sheet-template";
 import {
+  resolveScoreSheetAssessmentDeadlineStatus,
   resolveScoreSheetAssessmentStatus,
+  type ScoreSheetAssessmentDeadlineStatus,
   type ScoreSheetAssessmentStatus,
 } from "@shared/score-sheet-assessment-status";
 import { ScoreConversionTemplateDialog } from "./score-conversion/ScoreConversionTemplateDialog";
@@ -110,6 +113,46 @@ const ASSESSMENT_STATUS_PRESENTATION: Record<
     label: "Hoàn thành",
     indicator: "✅",
     className: "border-green-800 bg-green-800 text-white dark:border-green-700 dark:bg-green-700 dark:text-white",
+  },
+};
+
+const ASSESSMENT_FILTER_COLORS: Record<
+  ScoreSheetAssessmentStatus,
+  { dot: string; idle: string; active: string }
+> = {
+  not_started: {
+    dot: "bg-violet-500",
+    idle: "border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-800 dark:text-violet-300 dark:hover:bg-violet-950/40",
+    active: "border-violet-600 bg-violet-600 text-white hover:bg-violet-700",
+  },
+  in_progress: {
+    dot: "bg-emerald-500",
+    idle: "border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/40",
+    active: "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700",
+  },
+  processing: {
+    dot: "bg-orange-500",
+    idle: "border-orange-300 text-orange-800 hover:bg-orange-50 dark:border-orange-800 dark:text-orange-300 dark:hover:bg-orange-950/40",
+    active: "border-orange-600 bg-orange-600 text-white hover:bg-orange-700",
+  },
+  completed: {
+    dot: "bg-green-800",
+    idle: "border-green-700 text-green-800 hover:bg-green-50 dark:border-green-700 dark:text-green-300 dark:hover:bg-green-950/40",
+    active: "border-green-800 bg-green-800 text-white hover:bg-green-900",
+  },
+};
+
+const ASSESSMENT_DEADLINE_STATUS_PRESENTATION: Record<
+  ScoreSheetAssessmentDeadlineStatus,
+  { label: string; className: string }
+> = {
+  within_deadline: {
+    label: "Trong hạn",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300",
+  },
+  overdue: {
+    label: "Quá hạn",
+    className: "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300",
   },
 };
 
@@ -178,6 +221,8 @@ export default function ScoreConversion() {
   const [pendingTemplateDelete, setPendingTemplateDelete] = useState<PendingTemplateDelete | null>(null);
   const [selectedAssessment, setSelectedAssessment] = useState<StaffAssignedScoreSheetAssessment | null>(null);
   const [assessmentStatusFilter, setAssessmentStatusFilter] = useState<AssessmentStatusFilter>("all");
+  const [assessmentSearchInput, setAssessmentSearchInput] = useState("");
+  const [assessmentSearchTerm, setAssessmentSearchTerm] = useState("");
   const [examDateFrom, setExamDateFrom] = useState("");
   const [examDateTo, setExamDateTo] = useState("");
   const assessmentPermissions = myPermissions?.permissions["/assessments#list"];
@@ -223,6 +268,20 @@ export default function ScoreConversion() {
     const dateKey = assessment.examDate.substring(0, 10);
     const status = getAssessmentStatus(assessment, nowWallClockMs);
     if (assessmentStatusFilter !== "all" && status?.key !== assessmentStatusFilter) return false;
+    const searchTerm = assessmentSearchTerm.trim().toLocaleLowerCase("vi");
+    const searchableFields = [
+      assessment.classCode,
+      assessment.className,
+      assessment.locationName,
+      assessment.teacherNames,
+      assessment.assessmentCode,
+      assessment.assessmentName,
+      assessment.templateName,
+    ];
+    if (
+      searchTerm
+      && !searchableFields.some((value) => value?.toLocaleLowerCase("vi").includes(searchTerm))
+    ) return false;
     if (examDateFrom && dateKey < examDateFrom) return false;
     if (examDateTo && dateKey > examDateTo) return false;
     return true;
@@ -695,7 +754,32 @@ export default function ScoreConversion() {
                   className="grid grid-cols-1 gap-3 border-b border-border px-3 py-3 sm:flex sm:flex-wrap sm:items-center sm:gap-4 sm:px-4"
                   data-testid="score-conversion-filter-bar"
                 >
-                  <div className="flex min-w-0 items-center gap-1 overflow-x-auto pb-0.5 sm:shrink-0">
+                  <form
+                    className="relative w-full min-w-0 sm:w-[230px] sm:flex-none"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      setAssessmentSearchTerm(assessmentSearchInput);
+                    }}
+                  >
+                    <input
+                      type="search"
+                      aria-label="Tìm kiếm bảng điểm"
+                      data-testid="search-score-conversion"
+                      placeholder="Nhấn enter để tìm kiếm"
+                      value={assessmentSearchInput}
+                      onChange={(event) => setAssessmentSearchInput(event.target.value)}
+                      className="h-9 w-full rounded-full border border-slate-300 bg-background pl-4 pr-10 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20 dark:border-slate-700"
+                    />
+                    <button
+                      type="submit"
+                      aria-label="Tìm kiếm"
+                      className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-muted-foreground hover:text-foreground"
+                    >
+                      <Search className="h-4 w-4" />
+                    </button>
+                  </form>
+
+                  <div className="flex min-w-0 items-center gap-2 overflow-x-auto py-0.5 sm:flex-wrap">
                     {([
                       { value: "all", label: "Tất cả" },
                       { value: "not_started", label: "Chưa thi" },
@@ -709,12 +793,25 @@ export default function ScoreConversion() {
                         aria-pressed={assessmentStatusFilter === filter.value}
                         data-testid={`filter-score-conversion-${filter.value}`}
                         onClick={() => setAssessmentStatusFilter(filter.value)}
-                        className={`shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                          assessmentStatusFilter === filter.value
-                            ? "bg-foreground text-background"
-                            : "text-muted-foreground hover:bg-secondary/60"
+                        className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-3 text-[13px] font-semibold transition-colors ${
+                          filter.value === "all"
+                            ? assessmentStatusFilter === "all"
+                              ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                              : "border-blue-300 bg-background text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                            : assessmentStatusFilter === filter.value
+                              ? ASSESSMENT_FILTER_COLORS[filter.value].active
+                              : `bg-background ${ASSESSMENT_FILTER_COLORS[filter.value].idle}`
                         }`}
                       >
+                        {filter.value !== "all" && (
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${
+                              assessmentStatusFilter === filter.value
+                                ? "bg-white"
+                                : ASSESSMENT_FILTER_COLORS[filter.value].dot
+                            }`}
+                          />
+                        )}
                         {filter.label}
                       </button>
                     ))}
@@ -762,7 +859,7 @@ export default function ScoreConversion() {
 
                 <div className="max-h-[min(70vh,680px)] overflow-auto">
                   <table
-                    className="w-full min-w-[1315px] border-separate border-spacing-0 text-left text-xs"
+                    className="w-full min-w-[1435px] border-separate border-spacing-0 text-left text-xs"
                     data-testid="table-score-conversion-assessments"
                   >
                     <thead>
@@ -788,6 +885,9 @@ export default function ScoreConversion() {
                         <th className="sticky top-0 z-20 w-[140px] min-w-[140px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold">
                           Trạng thái
                         </th>
+                        <th className="sticky top-0 z-20 w-[125px] min-w-[125px] border-b border-r border-border bg-muted/95 px-3 py-2.5 font-semibold">
+                          Tình trạng
+                        </th>
                         <th className="sticky right-0 top-0 z-30 w-[80px] min-w-[80px] border-b border-border bg-muted/95 px-3 py-2.5 text-center font-semibold shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.12)]">
                           Xem
                         </th>
@@ -796,7 +896,7 @@ export default function ScoreConversion() {
                     <tbody>
                       {sortedAssessmentDates.length === 0 ? (
                         <tr>
-                          <td colSpan={8} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                          <td colSpan={9} className="px-4 py-12 text-center text-sm text-muted-foreground">
                             Không có bảng điểm phù hợp với bộ lọc.
                           </td>
                         </tr>
@@ -809,7 +909,7 @@ export default function ScoreConversion() {
                               className="border-b border-t border-violet-200/60 bg-violet-50/60 dark:border-violet-800/30 dark:bg-violet-900/10"
                               data-testid={`row-score-conversion-date-${dateKey}`}
                             >
-                              <td colSpan={8} className="sticky left-0 z-20 bg-violet-50/60 py-2.5 dark:bg-violet-950/30">
+                              <td colSpan={9} className="sticky left-0 z-20 bg-violet-50/60 py-2.5 dark:bg-violet-950/30">
                                 <div className="flex items-center gap-3 px-4">
                                   <div className="h-2.5 w-2.5 shrink-0 rounded-full bg-violet-500 ring-4 ring-violet-100 dark:ring-violet-900/40" />
                                   <span className="whitespace-nowrap text-xs font-semibold text-violet-700 dark:text-violet-400">
@@ -823,6 +923,13 @@ export default function ScoreConversion() {
                             </tr>,
                             ...assessments.map((assessment) => {
                               const status = getAssessmentStatus(assessment, nowWallClockMs);
+                              const deadlineStatusKey = resolveScoreSheetAssessmentDeadlineStatus(
+                                assessment.scoreDeadlineAt,
+                                nowWallClockMs,
+                              );
+                              const deadlineStatus = deadlineStatusKey
+                                ? ASSESSMENT_DEADLINE_STATUS_PRESENTATION[deadlineStatusKey]
+                                : null;
                               const completedStudentCount = getCompletedStudentCount(assessment);
                               const notCompletedStudentCount = Math.max(
                                 0,
@@ -911,6 +1018,15 @@ export default function ScoreConversion() {
                                       </span>
                                     ) : (
                                       <span className="text-muted-foreground" aria-label="Chưa có trạng thái">—</span>
+                                    )}
+                                  </td>
+                                  <td className="border-b border-r border-border px-3 py-2 group-hover:bg-accent/50">
+                                    {deadlineStatus ? (
+                                      <span className={`inline-flex items-center whitespace-nowrap rounded border px-1.5 py-0.5 text-[11px] font-medium ${deadlineStatus.className}`}>
+                                        {deadlineStatus.label}
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted-foreground" aria-label="Chưa có hạn trả">—</span>
                                     )}
                                   </td>
                                   <td className="sticky right-0 z-10 border-b border-border bg-card px-2 py-2 text-center shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.12)] group-hover:bg-accent/50">
