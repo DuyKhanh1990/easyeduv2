@@ -214,6 +214,11 @@ function formatAssessmentDeadline(value: string | null | undefined): string {
   return match ? `${match[3]}/${match[2]}/${match[1]} ${match[4]}:${match[5]}` : "—";
 }
 
+function formatScoreValue(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(value);
+}
+
 function getBangkokWallClockMs(date: Date): number {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Bangkok",
