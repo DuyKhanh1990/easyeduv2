@@ -249,6 +249,9 @@ function StaffScoreSheetStudentSummaryView({
   const overallScore = conversionTemplate
     ? result?.overallConvertedScore
     : result?.overallRawScore;
+  const overallMaximumScore = conversionTemplate
+    ? maximumScores.overallConvertedScore
+    : maximumScores.overallRawScore;
   const evaluationCommentGroups = getEvaluationCommentGroups(
     details.evaluationCriteria,
     attempt?.evaluationResponses,
@@ -271,87 +274,89 @@ function StaffScoreSheetStudentSummaryView({
 
   return (
     <>
-      <div className="shrink-0 space-y-3 border-b bg-muted/20 px-4 py-4 sm:px-6">
-        <div className="grid gap-2 sm:grid-cols-2">
-          <div className="rounded-lg border bg-background px-3 py-2">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Học viên</p>
-            <p className="mt-0.5 text-sm font-semibold">{student.code} · {student.fullName}</p>
-          </div>
-          <div className="rounded-lg border bg-background px-3 py-2">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Bảng điểm</p>
-            <p className="mt-0.5 text-sm font-semibold">{templateName}</p>
-          </div>
-          <div className="rounded-lg border bg-background px-3 py-2">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Lớp / buổi / ngày thi</p>
-            <p className="mt-0.5 text-sm font-medium">
-              {assessment.classCode}
-              {assessment.sessionIndex != null ? ` · Buổi ${assessment.sessionIndex}` : ""}
-              {` · ${formatDate(assessment.examDate)}`}
-            </p>
-          </div>
-          <div className="rounded-lg border bg-background px-3 py-2">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Ngày phải trả</p>
-            <p className="mt-0.5 text-sm font-medium">{formatDateTime(details.assessment.scoreDeadlineAt)}</p>
-          </div>
-        </div>
-
-        <div className={`grid gap-2 ${conversionTemplate ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
-          <div className="rounded-lg border bg-background px-3 py-2">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              {conversionTemplate ? "Điểm tổng quy đổi" : "Điểm tổng"}
-            </p>
-            <p className="mt-0.5 text-lg font-semibold tabular-nums">
-              {formatScore(overallScore)} / {formatScore(
-                conversionTemplate ? result?.overallRawScore : maximumScores.overallRawScore,
-              )}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {conversionTemplate ? "Điểm quy đổi / điểm thô" : "Điểm thô / điểm tối đa"}
-            </p>
-          </div>
-          <div className="rounded-lg border bg-background px-3 py-2">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Điểm chuẩn yêu cầu
-            </p>
-            <p className="mt-0.5 text-lg font-semibold tabular-nums">
-              {passThreshold?.enabled
-                ? `${formatScore(passThreshold.minScore)} / ${formatScore(thresholdMaximumScore)}`
-                : "Chưa cấu hình"}
-            </p>
-            {passThreshold?.enabled && (
-              <p className="text-xs text-muted-foreground">
-                {passThreshold.scoreSource === "overallRawScore"
-                  ? "Theo điểm thô · điểm tối đa"
-                  : "Theo điểm quy đổi · điểm tối đa quy đổi"}
-              </p>
-            )}
-          </div>
-          <div className="rounded-lg border bg-background px-3 py-2">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Xếp loại / kết quả</p>
-            {result ? (
-              <div className="mt-0.5 flex flex-wrap items-center gap-2">
-                {result.gradeBand ? (
-                  <span className="text-sm font-semibold" style={{ color: result.gradeBand.color }}>
-                    {result.gradeBand.label}
-                  </span>
-                ) : (
-                  <span className="text-sm text-muted-foreground">Chưa xếp loại</span>
-                )}
-                {result.passStatus && (
-                  <Badge className={result.passStatus === "passed"
-                    ? "bg-emerald-600 hover:bg-emerald-600"
-                    : "bg-red-600 hover:bg-red-600"}
+      <div className="shrink-0 border-b bg-muted/20 px-4 py-3 sm:px-6">
+        <section className="overflow-hidden rounded-lg border bg-background">
+          <h3 className="border-b bg-muted/40 px-3 py-2 text-sm font-semibold">Tổng quan</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[820px] table-fixed border-collapse text-sm">
+              <colgroup>
+                <col className="w-[21%]" />
+                <col className="w-[29%]" />
+                <col className="w-[21%]" />
+                <col className="w-[29%]" />
+              </colgroup>
+              <tbody className="divide-y">
+                <tr>
+                  <th scope="row" className="whitespace-nowrap border-r bg-muted/20 px-3 py-2 text-left font-medium">Học viên</th>
+                  <td className="truncate border-r px-3 py-2 font-semibold" title={`${student.code} · ${student.fullName}`}>
+                    {student.code} · {student.fullName}
+                  </td>
+                  <th scope="row" className="whitespace-nowrap border-r bg-muted/20 px-3 py-2 text-left font-medium">Bảng điểm</th>
+                  <td className="truncate px-3 py-2" title={templateName}>{templateName}</td>
+                </tr>
+                <tr>
+                  <th scope="row" className="whitespace-nowrap border-r bg-muted/20 px-3 py-2 text-left font-medium">Lớp / buổi / ngày thi</th>
+                  <td
+                    className="truncate border-r px-3 py-2"
+                    title={[
+                      assessment.classCode,
+                      assessment.sessionIndex != null ? `Buổi ${assessment.sessionIndex}` : null,
+                      formatDate(assessment.examDate),
+                    ].filter(Boolean).join(" · ")}
                   >
-                    {result.passStatus === "passed" ? "Đạt" : "Không đạt"}
-                  </Badge>
-                )}
-              </div>
-            ) : (
-              <p className="mt-0.5 text-sm text-muted-foreground">Chưa có kết quả</p>
-            )}
+                    {assessment.classCode}
+                    {assessment.sessionIndex != null ? ` · Buổi ${assessment.sessionIndex}` : ""}
+                    {` · ${formatDate(assessment.examDate)}`}
+                  </td>
+                  <th scope="row" className="whitespace-nowrap border-r bg-muted/20 px-3 py-2 text-left font-medium">Ngày phải trả</th>
+                  <td className="truncate px-3 py-2" title={formatDateTime(details.assessment.scoreDeadlineAt)}>
+                    {formatDateTime(details.assessment.scoreDeadlineAt)}
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row" className="whitespace-nowrap border-r bg-muted/20 px-3 py-2 text-left font-medium">
+                    {conversionTemplate ? "Điểm tổng quy đổi" : "Điểm tổng"}
+                  </th>
+                  <td className="whitespace-nowrap border-r px-3 py-2 font-semibold tabular-nums">
+                    {formatScore(overallScore)} / {formatScore(overallMaximumScore)}
+                  </td>
+                  <th scope="row" className="whitespace-nowrap border-r bg-muted/20 px-3 py-2 text-left font-medium">Điểm chuẩn yêu cầu</th>
+                  <td className="whitespace-nowrap px-3 py-2 font-semibold tabular-nums">
+                    {passThreshold?.enabled
+                      ? `${formatScore(passThreshold.minScore)} / ${formatScore(thresholdMaximumScore)}`
+                      : "Chưa cấu hình"}
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row" className="whitespace-nowrap border-r bg-muted/20 px-3 py-2 text-left font-medium">Xếp loại / kết quả</th>
+                  <td colSpan={3} className="px-3 py-2">
+                    {result ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        {result.gradeBand ? (
+                          <span className="text-sm font-semibold" style={{ color: result.gradeBand.color }}>
+                            {result.gradeBand.label}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">Chưa xếp loại</span>
+                        )}
+                        {result.passStatus && (
+                          <Badge className={result.passStatus === "passed"
+                            ? "bg-emerald-600 hover:bg-emerald-600"
+                            : "bg-red-600 hover:bg-red-600"}
+                          >
+                            {result.passStatus === "passed" ? "Đạt" : "Không đạt"}
+                          </Badge>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">Chưa có kết quả</span>
+                    )}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-        </div>
-
+        </section>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <Badge variant="outline">
             {attempt
@@ -729,7 +734,7 @@ export function StaffScoreSheetAssessmentScoreDialog({
               <Badge className="bg-emerald-600 hover:bg-emerald-600">Đã đủ điểm</Badge>
             )}
           </div>
-          <DialogDescription>
+          <DialogDescription className={mode === "view" ? "sr-only" : undefined}>
             {student && <span className="font-medium text-foreground">{student.code} · {student.fullName}</span>}
             {assessment && (
               <>
