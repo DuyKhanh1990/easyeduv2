@@ -93,10 +93,31 @@ const scoreConversionGradeBandSchema = z.object({
   path: ["maxScore"],
 });
 
+const scoreConversionPassThresholdSchema = z.object({
+  enabled: z.boolean().default(false),
+  minScore: z.number().finite().default(0),
+  maxScore: z.number().finite().default(0),
+  scoreSource: z.enum(["overallRawScore", "overallConvertedScore"]).default("overallConvertedScore"),
+});
+
 export const scoreConversionRuleSchema = z.object({
   method: z.enum(["sum", "average", "custom"]),
   formula: z.string().trim().max(1000).default(""),
   gradeBands: z.array(scoreConversionGradeBandSchema).max(20).default([]),
+  passThreshold: scoreConversionPassThresholdSchema.default({
+    enabled: false,
+    minScore: 0,
+    maxScore: 0,
+    scoreSource: "overallConvertedScore",
+  }),
+}).superRefine((rule, context) => {
+  if (rule.passThreshold.enabled && rule.passThreshold.maxScore < rule.passThreshold.minScore) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Điểm đến ngưỡng Đạt phải lớn hơn hoặc bằng điểm từ.",
+      path: ["passThreshold", "maxScore"],
+    });
+  }
 });
 
 const legacyScoreConversionRuleSchema = z.object({

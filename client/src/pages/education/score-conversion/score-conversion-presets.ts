@@ -151,6 +151,12 @@ export function createDefaultDraft(typeKey: ScoreConversionTypeKey = "starters")
         method: "average",
         formula: "",
         gradeBands: [],
+        passThreshold: {
+          enabled: false,
+          minScore: 0,
+          maxScore: 0,
+          scoreSource: "overallConvertedScore",
+        },
       },
     };
   }
@@ -160,7 +166,17 @@ export function createDefaultDraft(typeKey: ScoreConversionTypeKey = "starters")
     typeKey,
     typeName: preset.typeName,
     sections: preset.sectionDefaults.map(makeSection),
-    overallRule: { ...preset.overallRule, formula: "", gradeBands: [] },
+    overallRule: {
+      ...preset.overallRule,
+      formula: "",
+      gradeBands: [],
+      passThreshold: {
+        enabled: false,
+        minScore: 0,
+        maxScore: 0,
+        scoreSource: "overallConvertedScore",
+      },
+    },
   };
 }
 

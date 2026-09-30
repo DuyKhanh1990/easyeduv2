@@ -53,6 +53,7 @@ export const scoreSheetAssessmentAttemptResultSchema = z.object({
     minScore: z.number().finite(),
     maxScore: z.number().finite(),
   }).nullable(),
+  passStatus: z.enum(["passed", "failed"]).nullable().default(null),
   inputComplete: z.boolean(),
   conversionComplete: z.boolean(),
 });
@@ -308,6 +309,15 @@ export function calculateScoreSheetAssessmentAttemptResult(args: {
       overallConvertedScore >= band.minScore && overallConvertedScore <= band.maxScore,
     ) ?? null
     : null;
+  const passThreshold = conversionTemplate?.overallRule.passThreshold;
+  const passScore = passThreshold?.scoreSource === "overallRawScore"
+    ? overallRawScore
+    : overallConvertedScore;
+  const passStatus = passThreshold?.enabled && passScore !== null
+    ? passScore >= passThreshold.minScore && passScore <= passThreshold.maxScore
+      ? "passed"
+      : "failed"
+    : null;
   const inputComplete = skillResults.length > 0
     && skillResults.every((result) => result.rawScore !== null);
   const conversionComplete = !conversionTemplate
@@ -329,6 +339,7 @@ export function calculateScoreSheetAssessmentAttemptResult(args: {
       minScore: gradeBand.minScore,
       maxScore: gradeBand.maxScore,
     } : null,
+    passStatus,
     inputComplete,
     conversionComplete,
   });

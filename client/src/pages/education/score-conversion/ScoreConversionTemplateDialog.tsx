@@ -111,6 +111,18 @@ export function ScoreConversionTemplateDialog({
     }));
   };
 
+  const updatePassThreshold = (
+    update: Partial<ScoreConversionTemplateInput["overallRule"]["passThreshold"]>,
+  ) => {
+    setDraft((current) => ({
+      ...current,
+      overallRule: {
+        ...current.overallRule,
+        passThreshold: { ...current.overallRule.passThreshold, ...update },
+      },
+    }));
+  };
+
   const updateGradeBand = (
     bandId: string,
     update: Partial<ScoreConversionTemplateInput["overallRule"]["gradeBands"][number]>,
@@ -311,6 +323,15 @@ export function ScoreConversionTemplateDialog({
       if (band.maxScore < band.minScore) {
         return `Điểm đến của ngưỡng ${band.label} phải lớn hơn hoặc bằng điểm từ.`;
       }
+    }
+    const passThreshold = draft.overallRule.passThreshold;
+    if (
+      passThreshold.enabled &&
+      (!Number.isFinite(passThreshold.minScore)
+        || !Number.isFinite(passThreshold.maxScore)
+        || passThreshold.maxScore < passThreshold.minScore)
+    ) {
+      return "Điểm đến ngưỡng Đạt phải lớn hơn hoặc bằng điểm từ.";
     }
     if (draft.overallRule.method === "custom") {
       const formulaError = validateScoreConversionFormula(
@@ -525,6 +546,73 @@ export function ScoreConversionTemplateDialog({
                 <Plus className="mr-1 h-4 w-4" />
                 Thêm ngưỡng
               </Button>
+            </div>
+            <div className="rounded-md border border-emerald-200 bg-emerald-50/50 p-3 dark:border-emerald-900 dark:bg-emerald-950/20">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-semibold">Ngưỡng Đạt</h4>
+                  <p className="text-xs text-muted-foreground">
+                    Điểm trong khoảng được xếp Đạt; ngoài khoảng là Không đạt.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="score-conversion-pass-threshold-enabled"
+                    checked={draft.overallRule.passThreshold.enabled}
+                    onCheckedChange={(checked) => updatePassThreshold({ enabled: checked === true })}
+                  />
+                  <Label htmlFor="score-conversion-pass-threshold-enabled" className="cursor-pointer text-sm">
+                    Phân loại Đạt/Không đạt
+                  </Label>
+                </div>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                <div className="min-w-0 space-y-1.5">
+                  <Label htmlFor="score-conversion-pass-threshold-min">Đạt: Từ</Label>
+                  <Input
+                    id="score-conversion-pass-threshold-min"
+                    type="number"
+                    step="any"
+                    value={draft.overallRule.passThreshold.minScore}
+                    disabled={!draft.overallRule.passThreshold.enabled}
+                    onChange={(event) => updatePassThreshold({ minScore: numericValue(event.target.value) })}
+                  />
+                </div>
+                <div className="min-w-0 space-y-1.5">
+                  <Label htmlFor="score-conversion-pass-threshold-max">Đến</Label>
+                  <Input
+                    id="score-conversion-pass-threshold-max"
+                    type="number"
+                    step="any"
+                    value={draft.overallRule.passThreshold.maxScore}
+                    disabled={!draft.overallRule.passThreshold.enabled}
+                    onChange={(event) => updatePassThreshold({ maxScore: numericValue(event.target.value) })}
+                  />
+                </div>
+                <div className="min-w-0 space-y-1.5">
+                  <Label htmlFor="score-conversion-pass-threshold-source">Mốc so sánh</Label>
+                  <Select
+                    value={draft.overallRule.passThreshold.scoreSource}
+                    onValueChange={(value) => updatePassThreshold({
+                      scoreSource: value === "overallRawScore" ? "overallRawScore" : "overallConvertedScore",
+                    })}
+                    disabled={!draft.overallRule.passThreshold.enabled}
+                  >
+                    <SelectTrigger id="score-conversion-pass-threshold-source">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="overallRawScore">Điểm Tổng</SelectItem>
+                      <SelectItem value="overallConvertedScore">Điểm đã quy đổi</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {!draft.overallRule.passThreshold.enabled && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Bật phân loại để áp dụng ngưỡng này cho kết quả học viên.
+                </p>
+              )}
             </div>
             {draft.overallRule.gradeBands.length > 0 ? (
               <div className="space-y-3">
