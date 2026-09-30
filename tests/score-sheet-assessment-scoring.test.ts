@@ -222,6 +222,28 @@ describe("score-sheet assessment scoring", () => {
     expect(maximum.skills[0].convertedScore).toBe(120);
   });
 
+  it("includes an upper bound when the next range begins after it", () => {
+    const conversionWithSeparatedRanges = {
+      ...conversionTemplate,
+      sections: [{
+        ...conversionTemplate.sections[0],
+        mappings: [
+          { ...conversionTemplate.sections[0].mappings[0], rawTo: 4 },
+          { ...conversionTemplate.sections[0].mappings[1], rawFrom: 5 },
+        ],
+      }],
+    };
+    const result = calculateScoreSheetAssessmentAttemptResult({
+      template,
+      conversionTemplate: conversionWithSeparatedRanges,
+      values: values(4),
+    });
+
+    expect(result.skills[0].rawScore).toBe(4);
+    expect(result.skills[0].convertedScore).toBe(100);
+    expect(result.skills[0].mappingStatus).toBe("available");
+  });
+
   it("prefers an exact-point mapping at the final boundary", () => {
     const conversionWithPoint = {
       ...conversionTemplate,

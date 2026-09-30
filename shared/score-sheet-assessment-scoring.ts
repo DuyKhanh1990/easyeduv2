@@ -144,9 +144,12 @@ function findConversionMapping(
 
   return mappings.find((mapping, index) => {
     if (mapping.rawFrom === mapping.rawTo) return rawScore === mapping.rawFrom;
+    const nextMapping = mappings[index + 1];
+    const includesUpperBound = index === mappings.length - 1
+      || Boolean(nextMapping && nextMapping.rawFrom > mapping.rawTo);
     return rawScore >= mapping.rawFrom
       && (rawScore < mapping.rawTo
-        || (index === mappings.length - 1 && rawScore === mapping.rawTo));
+        || (includesUpperBound && rawScore === mapping.rawTo));
   }) ?? null;
 }
 
