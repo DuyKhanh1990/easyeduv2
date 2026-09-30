@@ -145,6 +145,106 @@ async function readScoreSheetAssessments(): Promise<ScoreSheetAssessment[]> {
   return parseScoreSheetAssessments(row.value);
 }
 
+type ScoreTemplateUsage = {
+  scoreSheetTemplateIdsInUse: string[];
+  scoreConversionTemplateIdsInUse: string[];
+};
+
+async function readScoreTemplateUsage(executor: any = db): Promise<ScoreTemplateUsage> {
+  const { classSessions, systemSettings } = await import("@shared/schema");
+  const [assessmentSettings] = await executor.select({ value: systemSettings.value })
+    .from(systemSettings)
+    .where(eq(systemSettings.key, SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY))
+    .for("share")
+    .limit(1);
+  const assessments = assessmentSettings
+    ? parseScoreSheetAssessments(assessmentSettings.value)
+    : [];
+  const assignedRows = await executor.select({
+    assessmentId: classSessions.scoreSheetAssessmentId,
+  })
+    .from(classSessions)
+    .where(sql`${classSessions.scoreSheetAssessmentId} IS NOT NULL`);
+  const assignedAssessmentIds = new Set<string>(
+    (assignedRows as Array<{ assessmentId: string | null }>)
+      .map(({ assessmentId }) => assessmentId)
+      .filter((assessmentId): assessmentId is string => Boolean(assessmentId)),
+  );
+  const assignedAssessments = assessments.filter((assessment) =>
+    assignedAssessmentIds.has(assessment.id));
+
+  return {
+    scoreSheetTemplateIdsInUse: Array.from(new Set(
+      assignedAssessments.map((assessment) => assessment.scoreSheetTemplateId),
+    )),
+    scoreConversionTemplateIdsInUse: Array.from(new Set(
+      assignedAssessments
+        .map((assessment) => assessment.templateSnapshot.scoreConversionTemplateId)
+        .filter((templateId): templateId is string => Boolean(templateId)),
+    )),
+  };
+}
+
+async function deleteScoreConversionTemplateIfUnassigned(
+  id: string,
+): Promise<"deleted" | "in_use" | "not_found"> {
+  const { systemSettings } = await import("@shared/schema");
+  return db.transaction(async (tx) => {
+    await tx.insert(systemSettings)
+      .values({ key: SCORE_CONVERSION_SETTINGS_KEY, value: "[]" })
+      .onConflictDoNothing();
+    const [row] = await tx.select({ value: systemSettings.value })
+      .from(systemSettings)
+      .where(eq(systemSettings.key, SCORE_CONVERSION_SETTINGS_KEY))
+      .for("update")
+      .limit(1);
+    if (!row) return "not_found";
+
+    const templates = parseScoreConversionTemplates(row.value);
+    if (!templates.some((template) => template.id === id)) return "not_found";
+    const usage = await readScoreTemplateUsage(tx);
+    if (usage.scoreConversionTemplateIdsInUse.includes(id)) return "in_use";
+
+    await tx.update(systemSettings)
+      .set({
+        value: JSON.stringify(templates.filter((template) => template.id !== id)),
+        updatedAt: new Date(),
+      })
+      .where(eq(systemSettings.key, SCORE_CONVERSION_SETTINGS_KEY));
+    return "deleted";
+  });
+}
+
+async function deleteScoreSheetTemplateIfUnassigned(
+  id: string,
+): Promise<"deleted" | "in_use" | "not_found"> {
+  const { systemSettings } = await import("@shared/schema");
+  return db.transaction(async (tx) => {
+    await tx.insert(systemSettings)
+      .values({ key: SCORE_SHEET_TEMPLATE_SETTINGS_KEY, value: "[]" })
+      .onConflictDoNothing();
+    const [row] = await tx.select({ value: systemSettings.value })
+      .from(systemSettings)
+      .where(eq(systemSettings.key, SCORE_SHEET_TEMPLATE_SETTINGS_KEY))
+      .for("update")
+      .limit(1);
+    if (!row) return "not_found";
+
+    const templates = parseScoreSheetTemplates(row.value);
+    if (!templates.some((template) => template.id === id)) return "not_found";
+    const usage = await readScoreTemplateUsage(tx);
+    if (usage.scoreSheetTemplateIdsInUse.includes(id)) return "in_use";
+
+    await tx.update(systemSettings)
+      .set({
+        value: JSON.stringify(templates.filter((template) => template.id !== id)),
+        updatedAt: new Date(),
+      })
+      .where(eq(systemSettings.key, SCORE_SHEET_TEMPLATE_SETTINGS_KEY));
+    return "deleted";
+  });
+}
+
 async function mutateScoreSheetAssessments(
   mutate: (assessments: ScoreSheetAssessment[]) => {
     assessments: ScoreSheetAssessment[];
@@ -2245,6 +2345,28 @@ export function registerConfigRoutes(app: Express): void {
     }
   });
 
+  app.delete("/api/score-conversion-templates/:id", async (req, res) => {
+    try {
+      const permissions = await getScoreConversionPermissions(req);
+      if (!permissions.canDelete) {
+        return res.status(403).json({ message: "Bạn không có quyền xóa cấu hình bảng điểm quy đổi." });
+      }
+      const result = await deleteScoreConversionTemplateIfUnassigned(req.params.id);
+      if (result === "not_found") {
+        return res.status(404).json({ message: "Không tìm thấy cấu hình bảng điểm quy đổi." });
+      }
+      if (result === "in_use") {
+        return res.status(409).json({
+          code: "SCORE_CONVERSION_TEMPLATE_IN_USE",
+          message: "Không thể xóa cấu hình vì bảng quy đổi này đang được dùng trong ít nhất một buổi học của lớp.",
+        });
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Không thể xóa cấu hình bảng điểm quy đổi." });
+    }
+  });
+
   // ─── Score Sheet Templates ──────────────────────────────────────────────────
   app.get("/api/score-sheet-templates", async (req, res) => {
     try {
@@ -2332,6 +2454,46 @@ export function registerConfigRoutes(app: Express): void {
         return res.status(400).json({ message: err.message });
       }
       res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/score-sheet-templates/:id", async (req, res) => {
+    try {
+      const permissions = await getScoreConversionPermissions(req);
+      if (!permissions.canDelete) {
+        return res.status(403).json({ message: "Bạn không có quyền xóa bảng điểm mẫu." });
+      }
+      const result = await deleteScoreSheetTemplateIfUnassigned(req.params.id);
+      if (result === "not_found") {
+        return res.status(404).json({ message: "Không tìm thấy bảng điểm mẫu." });
+      }
+      if (result === "in_use") {
+        return res.status(409).json({
+          code: "SCORE_SHEET_TEMPLATE_IN_USE",
+          message: "Không thể xóa bảng điểm mẫu vì bảng này đang được gán vào ít nhất một buổi học của lớp.",
+        });
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Không thể xóa bảng điểm mẫu." });
+    }
+  });
+
+  app.get("/api/score-template-usage", async (req, res) => {
+    try {
+      const permissions = await getScoreConversionPermissions(req);
+      if (
+        !permissions.canView
+        && !permissions.canViewAll
+        && !permissions.canCreate
+        && !permissions.canEdit
+        && !permissions.canDelete
+      ) {
+        return res.status(403).json({ message: "Bạn không có quyền xem trạng thái sử dụng bảng điểm." });
+      }
+      res.json(await readScoreTemplateUsage());
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Không thể tải trạng thái sử dụng bảng điểm." });
     }
   });
 

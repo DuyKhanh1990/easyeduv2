@@ -7,6 +7,7 @@ import {
   BookOpen,
   CalendarDays,
   CheckCircle2,
+  ClipboardList,
   Circle,
   CircleDot,
   Clock3,
@@ -14,12 +15,22 @@ import {
   MapPin,
   Pencil,
   Plus,
+  Trash2,
   UserRound,
   Users,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { apiRequest } from "@/lib/queryClient";
@@ -45,8 +56,19 @@ const TEMPLATE_ENDPOINT = "/api/score-conversion-templates";
 const TEMPLATE_QUERY_KEY = [TEMPLATE_ENDPOINT];
 const SCORE_SHEET_TEMPLATE_ENDPOINT = "/api/score-sheet-templates";
 const SCORE_SHEET_TEMPLATE_QUERY_KEY = [SCORE_SHEET_TEMPLATE_ENDPOINT];
+const TEMPLATE_USAGE_ENDPOINT = "/api/score-template-usage";
+const TEMPLATE_USAGE_QUERY_KEY = [TEMPLATE_USAGE_ENDPOINT];
 const ASSIGNED_SCORE_SHEET_ASSESSMENT_ENDPOINT = "/api/score-sheet-assessments/assigned";
 const ASSIGNED_SCORE_SHEET_ASSESSMENT_QUERY_KEY = [ASSIGNED_SCORE_SHEET_ASSESSMENT_ENDPOINT];
+
+type ScoreTemplateUsage = {
+  scoreSheetTemplateIdsInUse: string[];
+  scoreConversionTemplateIdsInUse: string[];
+};
+
+type PendingTemplateDelete =
+  | { kind: "conversion"; id: string; name: string }
+  | { kind: "scoreSheet"; id: string; name: string };
 
 type DeadlineStatus = {
   key: "no_deadline" | "overdue" | "upcoming" | "on_time";
@@ -155,6 +177,7 @@ export default function ScoreConversion() {
   const [editingTemplate, setEditingTemplate] = useState<ScoreConversionTemplate | null>(null);
   const [scoreSheetDialogOpen, setScoreSheetDialogOpen] = useState(false);
   const [editingScoreSheetTemplate, setEditingScoreSheetTemplate] = useState<ScoreSheetTemplate | null>(null);
+  const [pendingTemplateDelete, setPendingTemplateDelete] = useState<PendingTemplateDelete | null>(null);
   const [selectedAssessment, setSelectedAssessment] = useState<StaffAssignedScoreSheetAssessment | null>(null);
   const [assessmentStatusFilter, setAssessmentStatusFilter] = useState<AssessmentStatusFilter>("all");
   const [examDateFrom, setExamDateFrom] = useState("");
@@ -162,6 +185,7 @@ export default function ScoreConversion() {
   const assessmentPermissions = myPermissions?.permissions["/assessments#list"];
   const canCreate = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canCreate);
   const canEdit = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canEdit);
+  const canDelete = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canDelete);
 
   const templatesQuery = useQuery<ScoreConversionTemplate[]>({
     queryKey: TEMPLATE_QUERY_KEY,
@@ -169,6 +193,15 @@ export default function ScoreConversion() {
       const response = await apiRequest("GET", TEMPLATE_ENDPOINT);
       return response.json();
     },
+  });
+  const templateUsageQuery = useQuery<ScoreTemplateUsage>({
+    queryKey: TEMPLATE_USAGE_QUERY_KEY,
+    queryFn: async () => {
+      const response = await apiRequest("GET", TEMPLATE_USAGE_ENDPOINT);
+      return response.json();
+    },
+    enabled: canDelete,
+    refetchInterval: 30_000,
   });
   const scoreSheetTemplatesQuery = useQuery<ScoreSheetTemplate[]>({
     queryKey: SCORE_SHEET_TEMPLATE_QUERY_KEY,
@@ -248,6 +281,57 @@ export default function ScoreConversion() {
     },
   });
 
+  const deleteConversionTemplateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `${TEMPLATE_ENDPOINT}/${id}`);
+    },
+    onSuccess: async () => {
+      setPendingTemplateDelete(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: TEMPLATE_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: TEMPLATE_USAGE_QUERY_KEY }),
+      ]);
+      toast({ title: "Đã xóa cấu hình điểm quy đổi" });
+    },
+    onError: (error) => {
+      toast({
+        title: "Không thể xóa cấu hình điểm quy đổi",
+        description: error instanceof Error ? error.message : "Vui lòng thử lại.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteScoreSheetTemplateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `${SCORE_SHEET_TEMPLATE_ENDPOINT}/${id}`);
+    },
+    onSuccess: async () => {
+      setPendingTemplateDelete(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: SCORE_SHEET_TEMPLATE_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: TEMPLATE_USAGE_QUERY_KEY }),
+      ]);
+      toast({ title: "Đã xóa bảng điểm mẫu" });
+    },
+    onError: (error) => {
+      toast({
+        title: "Không thể xóa bảng điểm mẫu",
+        description: error instanceof Error ? error.message : "Vui lòng thử lại.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const conversionTemplateIdsInUse = new Set(
+    templateUsageQuery.data?.scoreConversionTemplateIdsInUse ?? [],
+  );
+  const scoreSheetTemplateIdsInUse = new Set(
+    templateUsageQuery.data?.scoreSheetTemplateIdsInUse ?? [],
+  );
+  const templateUsageUnavailable =
+    !templateUsageQuery.isSuccess || !templateUsageQuery.data;
+
   const openCreateDialog = () => {
     setEditingTemplate(null);
     setDialogOpen(true);
@@ -279,6 +363,18 @@ export default function ScoreConversion() {
     });
   };
 
+  const confirmTemplateDelete = () => {
+    if (!pendingTemplateDelete) return;
+    if (pendingTemplateDelete.kind === "conversion") {
+      deleteConversionTemplateMutation.mutate(pendingTemplateDelete.id);
+    } else {
+      deleteScoreSheetTemplateMutation.mutate(pendingTemplateDelete.id);
+    }
+  };
+
+  const deletingTemplate =
+    deleteConversionTemplateMutation.isPending || deleteScoreSheetTemplateMutation.isPending;
+
   return (
     <DashboardLayout>
       <div className="p-4 md:p-6">
@@ -296,10 +392,28 @@ export default function ScoreConversion() {
           </div>
         </div>
         <Tabs defaultValue="international" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="international">Cấu hình điểm Quy đổi</TabsTrigger>
-            <TabsTrigger value="sample">Bảng điểm mẫu</TabsTrigger>
-            <TabsTrigger value="scores">Danh sách Bảng điểm Quy đổi</TabsTrigger>
+          <TabsList className="flex h-auto flex-wrap justify-start gap-2 rounded-none bg-transparent p-0">
+            <TabsTrigger
+              value="international"
+              className="gap-1.5 rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none"
+            >
+              <BarChart3 className="h-3.5 w-3.5" />
+              Cấu hình điểm Quy đổi
+            </TabsTrigger>
+            <TabsTrigger
+              value="sample"
+              className="gap-1.5 rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none"
+            >
+              <ClipboardList className="h-3.5 w-3.5" />
+              Bảng điểm mẫu
+            </TabsTrigger>
+            <TabsTrigger
+              value="scores"
+              className="gap-1.5 rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none"
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              Danh sách Bảng điểm Quy đổi
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="international" className="space-y-4">
             {canCreate && (
@@ -336,7 +450,7 @@ export default function ScoreConversion() {
                           <th className="px-4 py-3 font-medium">Phần thi</th>
                           <th className="px-4 py-3 font-medium">Khoảng quy đổi</th>
                           <th className="px-4 py-3 font-medium">Cách tính điểm tổng</th>
-                          {canEdit && <th className="w-16 px-4 py-3" />}
+                          {(canEdit || canDelete) && <th className="w-24 px-4 py-3" />}
                         </tr>
                       </thead>
                       <tbody>
@@ -364,16 +478,49 @@ export default function ScoreConversion() {
                                     : "Trung bình các phần thi"}
                               </span>
                             </td>
-                            {canEdit && (
+                            {(canEdit || canDelete) && (
                               <td className="px-4 py-3">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  aria-label={`Sửa bảng ${template.typeName}`}
-                                  onClick={() => openEditDialog(template)}
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
+                                <div className="flex items-center justify-end gap-1">
+                                  {canEdit && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      aria-label={`Sửa bảng ${template.typeName}`}
+                                      onClick={() => openEditDialog(template)}
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                  {canDelete && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="text-destructive hover:text-destructive"
+                                      aria-label={`Xóa bảng ${template.typeName}`}
+                                      title={
+                                        templateUsageQuery.isError
+                                          ? "Không thể kiểm tra bảng này có đang được gán hay không."
+                                          : templateUsageUnavailable
+                                            ? "Đang kiểm tra trạng thái sử dụng."
+                                            : conversionTemplateIdsInUse.has(template.id)
+                                              ? "Đang được gán vào lịch học nên không thể xóa."
+                                              : "Xóa cấu hình điểm quy đổi"
+                                      }
+                                      disabled={
+                                        templateUsageUnavailable ||
+                                        conversionTemplateIdsInUse.has(template.id) ||
+                                        deleteConversionTemplateMutation.isPending
+                                      }
+                                      onClick={() => setPendingTemplateDelete({
+                                        kind: "conversion",
+                                        id: template.id,
+                                        name: template.typeName,
+                                      })}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                </div>
                               </td>
                             )}
                           </tr>
@@ -432,7 +579,7 @@ export default function ScoreConversion() {
                           <th className="px-4 py-3 font-medium">Tên bảng điểm</th>
                           <th className="px-4 py-3 font-medium">Bảng quy đổi</th>
                           <th className="px-4 py-3 font-medium">Kỹ năng</th>
-                          {canEdit && <th className="w-16 px-4 py-3" />}
+                          {(canEdit || canDelete) && <th className="w-24 px-4 py-3" />}
                         </tr>
                       </thead>
                       <tbody>
@@ -448,16 +595,49 @@ export default function ScoreConversion() {
                                 {conversion?.typeName ?? (template.scoreConversionTemplateId ? "Không tìm thấy bảng quy đổi" : "Không áp dụng")}
                               </td>
                               <td className="px-4 py-3">{conversion?.sections.length ?? template.skills.length}</td>
-                              {canEdit && (
+                              {(canEdit || canDelete) && (
                                 <td className="px-4 py-3">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    aria-label={`Sửa bảng điểm mẫu ${template.name}`}
-                                    onClick={() => openEditScoreSheetTemplateDialog(template)}
-                                  >
-                                    <Pencil className="h-4 w-4" />
-                                  </Button>
+                                  <div className="flex items-center justify-end gap-1">
+                                    {canEdit && (
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        aria-label={`Sửa bảng điểm mẫu ${template.name}`}
+                                        onClick={() => openEditScoreSheetTemplateDialog(template)}
+                                      >
+                                        <Pencil className="h-4 w-4" />
+                                      </Button>
+                                    )}
+                                    {canDelete && (
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="text-destructive hover:text-destructive"
+                                        aria-label={`Xóa bảng điểm mẫu ${template.name}`}
+                                        title={
+                                          templateUsageQuery.isError
+                                            ? "Không thể kiểm tra bảng này có đang được gán hay không."
+                                            : templateUsageUnavailable
+                                              ? "Đang kiểm tra trạng thái sử dụng."
+                                              : scoreSheetTemplateIdsInUse.has(template.id)
+                                                ? "Đang được gán vào lịch học nên không thể xóa."
+                                                : "Xóa bảng điểm mẫu"
+                                        }
+                                        disabled={
+                                          templateUsageUnavailable ||
+                                          scoreSheetTemplateIdsInUse.has(template.id) ||
+                                          deleteScoreSheetTemplateMutation.isPending
+                                        }
+                                        onClick={() => setPendingTemplateDelete({
+                                          kind: "scoreSheet",
+                                          id: template.id,
+                                          name: template.name,
+                                        })}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    )}
+                                  </div>
                                 </td>
                               )}
                             </tr>
@@ -773,6 +953,40 @@ export default function ScoreConversion() {
         onOpenChange={setScoreSheetDialogOpen}
         onSave={handleSaveScoreSheetTemplate}
       />
+      <AlertDialog
+        open={Boolean(pendingTemplateDelete)}
+        onOpenChange={(open) => {
+          if (!open && !deletingTemplate) setPendingTemplateDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingTemplateDelete?.kind === "conversion"
+                ? "Xóa cấu hình điểm quy đổi?"
+                : "Xóa bảng điểm mẫu?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingTemplateDelete && (
+                <>
+                  Bạn có chắc muốn xóa <strong>{pendingTemplateDelete.name}</strong>? Thao tác này không thể hoàn tác.
+                  Bảng đã được gán vào buổi học sẽ không thể xóa.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingTemplate}>Hủy</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              onClick={confirmTemplateDelete}
+              disabled={!pendingTemplateDelete || deletingTemplate}
+            >
+              {deletingTemplate ? "Đang xóa..." : "Xóa"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <StaffScoreSheetAssessmentStudentsDialog
         assessment={selectedAssessment}
         open={!!selectedAssessment}
