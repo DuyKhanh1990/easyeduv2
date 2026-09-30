@@ -44,43 +44,6 @@ export function buildGradeBookExcelRows(input: GradeBookExcelInput): {
   };
 }
 
-export function estimateCommentRowHeight(comment: string): number {
-  const maxCharactersPerLine = COMMENT_COLUMN_WIDTH;
-  let lineCount = 0;
-
-  for (const paragraph of comment.replace(/\r\n/g, "\n").split("\n")) {
-    const words = paragraph.split(/\s+/).filter(Boolean);
-    if (words.length === 0) {
-      lineCount += 1;
-      continue;
-    }
-
-    let currentLineLength = 0;
-    for (const word of words) {
-      const wordLength = [...word].length;
-      if (wordLength > maxCharactersPerLine) {
-        if (currentLineLength > 0) {
-          lineCount += 1;
-          currentLineLength = 0;
-        }
-        lineCount += Math.floor(wordLength / maxCharactersPerLine);
-        currentLineLength = wordLength % maxCharactersPerLine;
-      } else if (currentLineLength === 0) {
-        currentLineLength = wordLength;
-      } else if (currentLineLength + 1 + wordLength <= maxCharactersPerLine) {
-        currentLineLength += 1 + wordLength;
-      } else {
-        lineCount += 1;
-        currentLineLength = wordLength;
-      }
-    }
-
-    if (currentLineLength > 0) lineCount += 1;
-  }
-
-  return Math.min(409.5, Math.max(22, lineCount * 15 + 4));
-}
-
 export function htmlCommentToPlainText(html: string): string {
   if (!html.trim()) return "";
 
@@ -159,9 +122,9 @@ export async function downloadGradeBookExcel(input: GradeBookExcelInput): Promis
     cell.border = { bottom: { style: "thin", color: { argb: "FFCBD5E1" } } };
   });
 
-  input.students.forEach((student, index) => {
+  input.students.forEach((_, index) => {
     const row = worksheet.getRow(headerRowNumber + index + 1);
-    row.height = estimateCommentRowHeight(student.comment);
+    // Leave the height unset so Excel can auto-fit wrapped text instead of saving a fixed tall row.
     row.alignment = { vertical: "top" };
     row.getCell(input.categories.length + 2).alignment = {
       vertical: "top",

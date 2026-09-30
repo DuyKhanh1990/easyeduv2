@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildGradeBookExcelRows,
-  estimateCommentRowHeight,
-} from "../client/src/pages/education/learning-overview/gradeBookExcelExport";
+import { buildGradeBookExcelRows } from "../client/src/pages/education/learning-overview/gradeBookExcelExport";
 
 describe("learning overview grade book export", () => {
   it("places the requested metadata above dynamic score-category columns and student comments", () => {
@@ -29,13 +26,5 @@ describe("learning overview grade book export", () => {
     ]);
     expect(result.rows[3]).toEqual(["Tên", "Nghe (L)", "Viết", "Nhận xét"]);
     expect(result.rows[4]).toEqual(["Nguyễn An", 8.5, null, "Tiến bộ tốt"]);
-  });
-
-  it("increases the worksheet row height to fit longer comments", () => {
-    const shortComment = "Học viên tiến bộ tốt trong khóa học.";
-    const longerComment = Array(6).fill(shortComment).join(" ");
-
-    expect(estimateCommentRowHeight(longerComment))
-      .toBeGreaterThan(estimateCommentRowHeight(shortComment));
   });
 });
