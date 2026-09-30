@@ -2480,6 +2480,13 @@ export function registerStudentsRoutes(app: Express): void {
                   color: summary.result.gradeBand.color,
                 }]
               : []),
+            ...(summary.result.passStatus
+              ? [{
+                  categoryName: "Kết quả",
+                  score: summary.result.passStatus === "passed" ? "Đạt" : "Chưa đạt",
+                  color: summary.result.passStatus === "passed" ? "#15803D" : "#DC2626",
+                }]
+              : []),
           ];
           const row = group.attempts[0];
           const rawCreatedAt = selectedAttempt?.updatedAt ?? row.sessionDate;

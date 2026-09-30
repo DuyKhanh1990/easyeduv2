@@ -71,6 +71,7 @@ type AssessmentRosterStudent = {
   convertedScore: number | null;
   gradeBandLabel: string | null;
   gradeBandColor: string | null;
+  passStatus: "passed" | "failed" | null;
   inputComplete: boolean;
   status: "not_entered" | "in_progress" | "complete";
 };
@@ -411,8 +412,20 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                         <TableCell className="font-medium tabular-nums">
                           {formatScore(assessment?.hasConversion ? student.convertedScore : student.rawScore)}
                         </TableCell>
-                        <TableCell style={{ color: student.gradeBandColor ?? undefined }}>
-                          {student.gradeBandLabel ?? "—"}
+                        <TableCell>
+                          <div className="space-y-1">
+                            <div style={{ color: student.gradeBandColor ?? undefined }}>
+                              {student.gradeBandLabel ?? "—"}
+                            </div>
+                            {student.passStatus && (
+                              <Badge
+                                variant={student.passStatus === "passed" ? "default" : "destructive"}
+                                className={`font-normal ${student.passStatus === "passed" ? "bg-emerald-600 hover:bg-emerald-600" : ""}`}
+                              >
+                                {student.passStatus === "passed" ? "Đạt" : "Chưa đạt"}
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Badge

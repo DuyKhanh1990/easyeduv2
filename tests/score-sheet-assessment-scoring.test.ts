@@ -50,6 +50,12 @@ const conversionTemplate: ScoreConversionTemplate = {
       minScore: 100,
       maxScore: 150,
     }],
+    passThreshold: {
+      enabled: false,
+      minScore: 0,
+      maxScore: 0,
+      scoreSource: "overallConvertedScore",
+    },
   },
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
@@ -108,7 +114,8 @@ describe("score-sheet assessment scoring", () => {
     const existingTemplate = scoreConversionTemplateSchema.parse({
       ...conversionTemplate,
       overallRule: {
-        ...conversionTemplate.overallRule,
+        method: conversionTemplate.overallRule.method,
+        formula: conversionTemplate.overallRule.formula,
         gradeBands: conversionTemplate.overallRule.gradeBands.map(
           ({ id, label, minScore, maxScore }) => ({ id, label, minScore, maxScore }),
         ),
@@ -117,6 +124,86 @@ describe("score-sheet assessment scoring", () => {
 
     expect(existingTemplate.overallRule.gradeBands[0].color)
       .toBe(SCORE_CONVERSION_DEFAULT_GRADE_BAND_COLOR);
+    expect(existingTemplate.overallRule.passThreshold.enabled).toBe(false);
+  });
+
+  it("classifies students at or above the raw-score minimum, including scores above the entered range", () => {
+    const passingTemplate: ScoreConversionTemplate = {
+      ...conversionTemplate,
+      overallRule: {
+        ...conversionTemplate.overallRule,
+        passThreshold: {
+          enabled: true,
+          minScore: 4,
+          maxScore: 4,
+          scoreSource: "overallRawScore",
+        },
+      },
+    };
+    const passingResult = calculateScoreSheetAssessmentAttemptResult({
+      template,
+      conversionTemplate: passingTemplate,
+      values: values(4),
+    });
+    const higherThanEnteredRangeResult = calculateScoreSheetAssessmentAttemptResult({
+      template,
+      conversionTemplate: passingTemplate,
+      values: values(10),
+    });
+    const failingResult = calculateScoreSheetAssessmentAttemptResult({
+      template,
+      conversionTemplate: {
+        ...passingTemplate,
+        overallRule: {
+          ...passingTemplate.overallRule,
+          passThreshold: {
+            ...passingTemplate.overallRule.passThreshold,
+            minScore: 5,
+            maxScore: 10,
+          },
+        },
+      },
+      values: values(4),
+    });
+
+    expect(passingResult.passStatus).toBe("passed");
+    expect(higherThanEnteredRangeResult.passStatus).toBe("passed");
+    expect(failingResult.passStatus).toBe("failed");
+  });
+
+  it("classifies converted scores at or above the minimum and leaves incomplete scores unclassified", () => {
+    const convertedThresholdTemplate: ScoreConversionTemplate = {
+      ...conversionTemplate,
+      overallRule: {
+        ...conversionTemplate.overallRule,
+        passThreshold: {
+          enabled: true,
+          minScore: 100,
+          maxScore: 100,
+          scoreSource: "overallConvertedScore",
+        },
+      },
+    };
+    const completeResult = calculateScoreSheetAssessmentAttemptResult({
+      template,
+      conversionTemplate: convertedThresholdTemplate,
+      values: values(4),
+    });
+    const aboveRangeResult = calculateScoreSheetAssessmentAttemptResult({
+      template,
+      conversionTemplate: convertedThresholdTemplate,
+      values: values(10),
+    });
+    const incompleteResult = calculateScoreSheetAssessmentAttemptResult({
+      template,
+      conversionTemplate: convertedThresholdTemplate,
+      values: values(null),
+    });
+
+    expect(completeResult.passStatus).toBe("passed");
+    expect(aboveRangeResult.overallConvertedScore).toBe(120);
+    expect(aboveRangeResult.passStatus).toBe("passed");
+    expect(incompleteResult.passStatus).toBeNull();
   });
 
   it("uses the next range at shared boundaries and includes the final upper bound", () => {

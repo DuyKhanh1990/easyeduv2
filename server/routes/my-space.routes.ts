@@ -4058,6 +4058,14 @@ export function registerMySpaceRoutes(app: Express): void {
                   color: summary.result.gradeBand.color,
                 }]
               : []),
+            ...(summary.result.passStatus
+              ? [{
+                  categoryId: `${selectedAttempt.assessmentId}:pass-status`,
+                  categoryName: "Kết quả",
+                  score: summary.result.passStatus === "passed" ? "Đạt" : "Chưa đạt",
+                  color: summary.result.passStatus === "passed" ? "#15803D" : "#DC2626",
+                }]
+              : []),
             ...(summary.result.overallConvertedScore === null
               ? []
               : [{
@@ -4416,6 +4424,7 @@ export function registerMySpaceRoutes(app: Express): void {
           convertedScore: summary?.result.overallConvertedScore ?? null,
           gradeBandLabel: summary?.result.gradeBand?.label ?? null,
           gradeBandColor: summary?.result.gradeBand?.color ?? null,
+          passStatus: summary?.result.passStatus ?? null,
           inputComplete: summary?.result.inputComplete ?? false,
           status: !summary ? "not_entered" : summary.result.inputComplete ? "complete" : "in_progress",
         };

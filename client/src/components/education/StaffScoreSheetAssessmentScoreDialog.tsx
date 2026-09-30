@@ -397,6 +397,16 @@ export function StaffScoreSheetAssessmentScoreDialog({
                   <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Tổng điểm thô</p>
                   <p className="mt-0.5 text-lg font-semibold tabular-nums">
                     {formatScore(preview?.overallRawScore)}
+                    {conversionTemplate?.overallRule.passThreshold.scoreSource === "overallRawScore"
+                      && preview?.passStatus && (
+                        <span className={`ml-2 inline-flex rounded px-2 py-0.5 align-middle text-xs font-semibold ${
+                          preview.passStatus === "passed"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-red-100 text-red-700"
+                        }`}>
+                          {preview.passStatus === "passed" ? "Đạt" : "Chưa đạt"}
+                        </span>
+                      )}
                   </p>
                 </div>
                 {conversionTemplate && (
@@ -414,6 +424,16 @@ export function StaffScoreSheetAssessmentScoreDialog({
                           {preview.gradeBand.label}
                         </span>
                       )}
+                      {conversionTemplate?.overallRule.passThreshold.scoreSource === "overallConvertedScore"
+                        && preview?.passStatus && (
+                          <span className={`ml-2 inline-flex rounded px-2 py-0.5 align-middle text-xs font-semibold ${
+                            preview.passStatus === "passed"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-red-100 text-red-700"
+                          }`}>
+                            {preview.passStatus === "passed" ? "Đạt" : "Chưa đạt"}
+                          </span>
+                        )}
                     </p>
                   </div>
                 )}

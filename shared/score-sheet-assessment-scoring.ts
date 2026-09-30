@@ -314,7 +314,7 @@ export function calculateScoreSheetAssessmentAttemptResult(args: {
     ? overallRawScore
     : overallConvertedScore;
   const passStatus = passThreshold?.enabled && passScore !== null
-    ? passScore >= passThreshold.minScore && passScore <= passThreshold.maxScore
+    ? passScore >= passThreshold.minScore
       ? "passed"
       : "failed"
     : null;

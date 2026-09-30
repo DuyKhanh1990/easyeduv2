@@ -552,7 +552,7 @@ export function ScoreConversionTemplateDialog({
                 <div>
                   <h4 className="text-sm font-semibold">Ngưỡng Đạt</h4>
                   <p className="text-xs text-muted-foreground">
-                    Điểm trong khoảng được xếp Đạt; ngoài khoảng là Không đạt.
+                    Điểm từ mốc “Từ” trở lên được xếp Đạt; điểm cao hơn “Đến” vẫn là Đạt.
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
