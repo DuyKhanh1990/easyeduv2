@@ -21,6 +21,7 @@ import {
   type ScoreSheetAssessmentAttemptResult,
   type ScoreSheetAssessmentAttemptValues,
 } from "@shared/score-sheet-assessment-scoring";
+import { evaluateScoreConversionFormula } from "@shared/score-conversion-formula";
 import type { ScoreSheetTemplate } from "@shared/score-sheet-template";
 import type { ScoreConversionTemplate } from "@shared/score-conversion";
 import type { StaffAssignedScoreSheetAssessment } from "./StaffScoreSheetAssessmentStudentsDialog";
@@ -43,6 +44,20 @@ type AssessmentEvaluationGroup = {
   id: string;
   name: string;
   subCriteria: AssessmentEvaluationItem[];
+};
+
+type ScoreSummaryCommentEntry =
+  | { kind: "selected"; title: string }
+  | { kind: "text"; title: string; text: string };
+
+type ScoreSummaryCommentSection = {
+  title: string | null;
+  entries: ScoreSummaryCommentEntry[];
+};
+
+type ScoreSummaryCommentGroup = {
+  title: string;
+  sections: ScoreSummaryCommentSection[];
 };
 
 type AssessmentScoreEntry = {
@@ -110,6 +125,102 @@ function skillIdFor(
   return skill.id ?? skill.sectionId ?? `skill-${index}`;
 }
 
+function getConversionSection(
+  skill: ScoreSheetTemplate["skills"][number],
+  conversionTemplate: ScoreConversionTemplate | null,
+) {
+  return skill.sectionId
+    ? conversionTemplate?.sections.find((section) => section.id === skill.sectionId)
+    : undefined;
+}
+
+function getSkillRawMaximum(
+  skill: ScoreSheetTemplate["skills"][number],
+  conversionTemplate: ScoreConversionTemplate | null,
+) {
+  const section = getConversionSection(skill, conversionTemplate);
+  return section
+    ? Math.min(skill.rawMaxScore > 0 ? skill.rawMaxScore : section.rawMaxScore, section.rawMaxScore)
+    : skill.rawMaxScore > 0 ? skill.rawMaxScore : null;
+}
+
+function calculateOverallMaximum(
+  rule: { method: "sum" | "average" | "custom"; formula: string },
+  values: Array<{ name: string; score: number | null }>,
+) {
+  if (values.length === 0 || values.some(({ score }) => score === null)) return null;
+  const scores = values.map(({ score }) => score as number);
+  if (rule.method === "sum") return Number(scores.reduce((sum, score) => sum + score, 0).toFixed(2));
+  if (rule.method === "average") {
+    return Number((scores.reduce((sum, score) => sum + score, 0) / scores.length).toFixed(2));
+  }
+  try {
+    const result = evaluateScoreConversionFormula(
+      rule.formula,
+      new Map(values.map(({ name, score }) => [name, score as number])),
+    );
+    return Number.isFinite(result) ? Number(result.toFixed(2)) : null;
+  } catch {
+    return null;
+  }
+}
+
+function getSummaryMaximumScores(
+  template: ScoreSheetTemplate,
+  conversionTemplate: ScoreConversionTemplate | null,
+) {
+  const overallRawScore = calculateOverallMaximum(
+    template.overallRule ?? { method: "sum", formula: "" },
+    template.skills.map((skill) => ({
+      name: skill.name || getConversionSection(skill, conversionTemplate)?.name || "Kỹ năng",
+      score: getSkillRawMaximum(skill, conversionTemplate),
+    })),
+  );
+  const overallConvertedScore = conversionTemplate
+    ? calculateOverallMaximum(
+      conversionTemplate.overallRule,
+      conversionTemplate.sections.map((section) => ({
+        name: section.name,
+        score: section.convertedMaxScore,
+      })),
+    )
+    : null;
+  return { overallRawScore, overallConvertedScore };
+}
+
+function getEvaluationCommentGroups(
+  groups: AssessmentEvaluationGroup[],
+  responses: ScoreSheetAssessmentAttemptValues["evaluationResponses"] | undefined,
+): ScoreSummaryCommentGroup[] {
+  if (!responses) return [];
+  return groups.flatMap((group) => {
+    const items = group.subCriteria ?? [];
+    const headings = items.filter((item) => item.itemType === "heading");
+    const headingIds = new Set(headings.map((item) => item.id));
+    const criteria = items.filter((item) => item.itemType === "criterion");
+    const entriesFor = (groupItems: AssessmentEvaluationItem[]) =>
+      groupItems.flatMap((item): ScoreSummaryCommentEntry[] => {
+        const response = responses[item.id];
+        if (response === true) return [{ kind: "selected", title: item.name }];
+        if (typeof response === "string" && response.trim()) {
+          return [{ kind: "text", title: item.name, text: response.trim() }];
+        }
+        return [];
+      });
+    const sections: ScoreSummaryCommentSection[] = [
+      {
+        title: null,
+        entries: entriesFor(criteria.filter((item) => !item.parentId || !headingIds.has(item.parentId))),
+      },
+      ...headings.map((heading) => ({
+        title: heading.name,
+        entries: entriesFor(criteria.filter((item) => item.parentId === heading.id)),
+      })),
+    ].filter((section) => section.entries.length > 0);
+    return sections.length > 0 ? [{ title: group.name, sections }] : [];
+  });
+}
+
 function StaffScoreSheetStudentSummaryView({
   assessment,
   student,
@@ -127,47 +238,35 @@ function StaffScoreSheetStudentSummaryView({
   const conversionTemplate = details.assessment.conversionTemplateSnapshot;
   const result = attempt?.result;
   const passThreshold = conversionTemplate?.overallRule.passThreshold;
+  const templateName = template.name
+    || assessment.templateName
+    || details.assessment.name
+    || details.assessment.code;
+  const maximumScores = getSummaryMaximumScores(template, conversionTemplate);
+  const thresholdMaximumScore = passThreshold?.scoreSource === "overallRawScore"
+    ? maximumScores.overallRawScore
+    : maximumScores.overallConvertedScore;
   const overallScore = conversionTemplate
     ? result?.overallConvertedScore
     : result?.overallRawScore;
-  const evaluationNotes = details.evaluationCriteria.flatMap((group) => {
-    const items = group.subCriteria ?? [];
-    return items
-      .filter((item) => item.itemType === "criterion")
-      .flatMap((item) => {
-        const response = attempt?.evaluationResponses[item.id];
-        if (typeof response === "string" && response.trim()) {
-          const heading = item.parentId
-            ? items.find((candidate) => candidate.id === item.parentId)?.name
-            : null;
-          return [{
-            label: [group.name, heading, item.name].filter(Boolean).join(" · "),
-            value: response.trim(),
-          }];
-        }
-        if (typeof response === "boolean") {
-          const heading = item.parentId
-            ? items.find((candidate) => candidate.id === item.parentId)?.name
-            : null;
-          return [{
-            label: [group.name, heading, item.name].filter(Boolean).join(" · "),
-            value: response ? "Đạt" : "Chưa đạt",
-          }];
-        }
-        return [];
-      });
-  });
-  const scoreNotes = template.skills.flatMap((skill, index) => {
+  const evaluationCommentGroups = getEvaluationCommentGroups(
+    details.evaluationCriteria,
+    attempt?.evaluationResponses,
+  );
+  const scoreCommentGroups = template.skills.flatMap((skill, index) => {
     const notes = attempt?.notes[skillIdFor(skill, index)] ?? {};
-    const skillName = skill.name || `Kỹ năng ${index + 1}`;
-    return Object.entries(notes)
+    const skillName = skill.name
+      || getConversionSection(skill, conversionTemplate)?.name
+      || `Kỹ năng ${index + 1}`;
+    const entries = Object.entries(notes)
       .filter(([, value]) => value.trim())
       .map(([partId, value]) => {
         const partName = partId === "_skill"
-          ? "Nhận xét kỹ năng"
+          ? null
           : skill.parts.find((part) => part.id === partId)?.name ?? "Nhận xét";
-        return { label: `${skillName} · ${partName}`, value };
+        return { title: partName, text: value };
       });
+    return entries.length > 0 ? [{ title: skillName, entries }] : [];
   });
 
   return (
@@ -180,9 +279,7 @@ function StaffScoreSheetStudentSummaryView({
           </div>
           <div className="rounded-lg border bg-background px-3 py-2">
             <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Bảng điểm</p>
-            <p className="mt-0.5 text-sm font-semibold">
-              {details.assessment.name || details.assessment.code}
-            </p>
+            <p className="mt-0.5 text-sm font-semibold">{templateName}</p>
           </div>
           <div className="rounded-lg border bg-background px-3 py-2">
             <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Lớp / buổi / ngày thi</p>
@@ -203,12 +300,14 @@ function StaffScoreSheetStudentSummaryView({
             <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               {conversionTemplate ? "Điểm tổng quy đổi" : "Điểm tổng"}
             </p>
-            <p className="mt-0.5 text-lg font-semibold tabular-nums">{formatScore(overallScore)}</p>
-            {conversionTemplate && (
-              <p className="text-xs text-muted-foreground">
-                Điểm thô: {formatScore(result?.overallRawScore)}
-              </p>
-            )}
+            <p className="mt-0.5 text-lg font-semibold tabular-nums">
+              {formatScore(overallScore)} / {formatScore(
+                conversionTemplate ? result?.overallRawScore : maximumScores.overallRawScore,
+              )}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {conversionTemplate ? "Điểm quy đổi / điểm thô" : "Điểm thô / điểm tối đa"}
+            </p>
           </div>
           <div className="rounded-lg border bg-background px-3 py-2">
             <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -216,12 +315,14 @@ function StaffScoreSheetStudentSummaryView({
             </p>
             <p className="mt-0.5 text-lg font-semibold tabular-nums">
               {passThreshold?.enabled
-                ? `${formatScore(passThreshold.minScore)} trở lên`
+                ? `${formatScore(passThreshold.minScore)} / ${formatScore(thresholdMaximumScore)}`
                 : "Chưa cấu hình"}
             </p>
             {passThreshold?.enabled && (
               <p className="text-xs text-muted-foreground">
-                {passThreshold.scoreSource === "overallRawScore" ? "Theo điểm thô" : "Theo điểm quy đổi"}
+                {passThreshold.scoreSource === "overallRawScore"
+                  ? "Theo điểm thô · điểm tối đa"
+                  : "Theo điểm quy đổi · điểm tối đa quy đổi"}
               </p>
             )}
           </div>
@@ -274,32 +375,20 @@ function StaffScoreSheetStudentSummaryView({
             <section className="space-y-2">
               <h3 className="text-sm font-semibold">Bảng điểm chi tiết</h3>
               <div className="overflow-x-auto rounded-lg border">
-                <table className="w-full min-w-[640px] text-left text-sm">
+                <table className="w-full min-w-[520px] text-left text-sm">
                   <thead className="bg-muted/50 text-xs text-muted-foreground">
                     <tr>
                       <th className="px-3 py-2 font-semibold">Kỹ năng</th>
-                      <th className="px-3 py-2 font-semibold">Điểm thô</th>
-                      {conversionTemplate && (
-                        <>
-                          <th className="px-3 py-2 font-semibold">Điểm nội bộ</th>
-                          <th className="px-3 py-2 font-semibold">Điểm quy đổi</th>
-                        </>
-                      )}
+                      <th className="px-3 py-2 font-semibold">Số câu đúng</th>
+                      <th className="px-3 py-2 font-semibold">Điểm quốc tế</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
                     {template.skills.map((skill, index) => {
                       const skillId = skillIdFor(skill, index);
                       const skillResult = attempt.result.skills.find((item) => item.skillId === skillId);
-                      const section = skill.sectionId
-                        ? conversionTemplate?.sections.find((item) => item.id === skill.sectionId)
-                        : undefined;
-                      const maxRawScore = section
-                        ? Math.min(
-                          skill.rawMaxScore > 0 ? skill.rawMaxScore : section.rawMaxScore,
-                          section.rawMaxScore,
-                        )
-                        : skill.rawMaxScore > 0 ? skill.rawMaxScore : null;
+                      const section = getConversionSection(skill, conversionTemplate);
+                      const maxRawScore = getSkillRawMaximum(skill, conversionTemplate);
                       const partScores = attempt.partScores[skillId] ?? {};
                       return (
                         <tr key={skillId} className="align-top">
@@ -319,18 +408,11 @@ function StaffScoreSheetStudentSummaryView({
                             )}
                           </td>
                           <td className="px-3 py-2.5 font-medium tabular-nums">
-                            {formatScore(skillResult?.rawScore)}
+                            {formatScore(skillResult?.rawScore)} / {formatScore(maxRawScore)}
                           </td>
-                          {conversionTemplate && (
-                            <>
-                              <td className="px-3 py-2.5 tabular-nums">
-                                {formatScore(skillResult?.internalScore)}
-                              </td>
-                              <td className="px-3 py-2.5 font-medium tabular-nums">
-                                {formatScore(skillResult?.convertedScore)}
-                              </td>
-                            </>
-                          )}
+                          <td className="px-3 py-2.5 font-medium tabular-nums">
+                            {formatScore(skillResult?.convertedScore)} / {formatScore(section?.convertedMaxScore)}
+                          </td>
                         </tr>
                       );
                     })}
@@ -341,17 +423,51 @@ function StaffScoreSheetStudentSummaryView({
 
             <section className="space-y-2">
               <h3 className="text-sm font-semibold">Nhận xét</h3>
-              {scoreNotes.length === 0 && evaluationNotes.length === 0 ? (
+              {scoreCommentGroups.length === 0 && evaluationCommentGroups.length === 0 ? (
                 <div className="rounded-lg border bg-muted/10 px-3 py-4 text-sm text-muted-foreground">
                   Chưa có nhận xét.
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {[...scoreNotes, ...evaluationNotes].map((note, index) => (
-                    <div key={`${note.label}-${index}`} className="rounded-lg border bg-background px-3 py-2">
-                      <p className="text-xs font-semibold text-muted-foreground">{note.label}</p>
-                      <p className="mt-1 whitespace-pre-wrap text-sm">{note.value}</p>
-                    </div>
+                <div className="space-y-4 rounded-lg border bg-background px-3 py-3">
+                  {scoreCommentGroups.map((group) => (
+                    <section key={group.title} className="space-y-1.5">
+                      <h4 className="text-sm font-semibold">{group.title}</h4>
+                      {group.entries.map((entry, index) => (
+                        <div key={`${entry.title ?? "skill"}-${index}`} className="pl-2">
+                          {entry.title && (
+                            <p className="text-sm font-medium">{entry.title}</p>
+                          )}
+                          <p className="whitespace-pre-wrap text-sm">{entry.text}</p>
+                        </div>
+                      ))}
+                    </section>
+                  ))}
+                  {evaluationCommentGroups.map((group) => (
+                    <section key={group.title} className="space-y-1.5">
+                      <h4 className="text-sm font-semibold">{group.title}</h4>
+                      {group.sections.map((section, sectionIndex) => (
+                        <div
+                          key={`${section.title ?? "general"}-${sectionIndex}`}
+                          className="space-y-1 pl-2"
+                        >
+                          {section.title && (
+                            <p className="text-sm font-semibold">{section.title}</p>
+                          )}
+                          {section.entries.map((entry, entryIndex) => (
+                            <div key={`${entry.title}-${entryIndex}`} className="pl-2">
+                              {entry.kind === "selected" ? (
+                                <p className="whitespace-pre-wrap text-sm">{entry.title}</p>
+                              ) : (
+                                <>
+                                  <p className="text-sm font-medium">{entry.title}</p>
+                                  <p className="whitespace-pre-wrap text-sm">{entry.text}</p>
+                                </>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </section>
                   ))}
                 </div>
               )}
@@ -602,7 +718,13 @@ export function StaffScoreSheetAssessmentScoreDialog({
             <DialogTitle className="text-base sm:text-lg">
               {mode === "view" ? "Tổng hợp bảng điểm" : "Nhập điểm kỹ năng"}
             </DialogTitle>
-            <Badge variant="outline">{details?.assessment.code ?? assessment?.assessmentCode ?? "Bảng điểm Quy đổi"}</Badge>
+            <Badge variant="outline">
+              {details?.assessment.templateSnapshot.name
+                || assessment?.templateName
+                || details?.assessment.code
+                || assessment?.assessmentCode
+                || "Bảng điểm Quy đổi"}
+            </Badge>
             {mode === "edit" && preview?.inputComplete && (
               <Badge className="bg-emerald-600 hover:bg-emerald-600">Đã đủ điểm</Badge>
             )}
