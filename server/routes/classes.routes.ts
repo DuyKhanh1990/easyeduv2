@@ -5450,6 +5450,7 @@ export function registerClassesRoutes(app: Express): void {
                   and(
                     eq(studentSessions.classSessionId, effectiveSessionId),
                     ne(studentSessions.status, "cancelled"),
+                    ne(studentSessions.status, "transferred"),
                   )
                 );
               const affectedStudentUserIds = Array.from(
