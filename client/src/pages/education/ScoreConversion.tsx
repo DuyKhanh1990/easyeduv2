@@ -78,6 +78,7 @@ const TEMPLATE_USAGE_ENDPOINT = "/api/score-template-usage";
 const TEMPLATE_USAGE_QUERY_KEY = [TEMPLATE_USAGE_ENDPOINT];
 const ASSIGNED_SCORE_SHEET_ASSESSMENT_ENDPOINT = "/api/score-sheet-assessments/assigned";
 const ASSIGNED_SCORE_SHEET_ASSESSMENT_QUERY_KEY = [ASSIGNED_SCORE_SHEET_ASSESSMENT_ENDPOINT];
+const ASSIGNED_SCORE_SHEET_STUDENTS_ENDPOINT = "/api/score-sheet-assessments/assigned/students";
 
 type ScoreTemplateUsage = {
   scoreSheetTemplateIdsInUse: string[];
@@ -87,6 +88,40 @@ type ScoreTemplateUsage = {
 type PendingTemplateDelete =
   | { kind: "conversion"; id: string; name: string }
   | { kind: "scoreSheet"; id: string; name: string };
+
+type ScoreConversionViewMode = "assessments" | "students";
+type StudentResultFilter = "all" | "passed" | "failed";
+
+type ScoreConversionStudentResult = {
+  sessionId: string;
+  classId: string;
+  classCode: string;
+  className: string;
+  locationName?: string | null;
+  teacherNames?: string | null;
+  sessionIndex: number | null;
+  examDate: string;
+  assessmentId: string;
+  assessmentCode: string | null;
+  assessmentName: string | null;
+  templateName: string | null;
+  scoreDeadlineAt: string | null;
+  attemptCount: number;
+  scoringPolicy: "highest" | "latest";
+  hasConversion: boolean;
+  studentId: string;
+  studentCode: string;
+  studentName: string;
+  attemptsTaken: number;
+  attemptNumber: number | null;
+  rawScore: number | null;
+  convertedScore: number | null;
+  gradeBandLabel: string | null;
+  gradeBandColor: string | null;
+  passStatus: "passed" | "failed" | null;
+  inputComplete: boolean;
+  status: "not_entered" | "in_progress" | "complete";
+};
 
 type AssessmentStatusPresentation = {
   key: ScoreSheetAssessmentStatus;
@@ -246,6 +281,7 @@ export default function ScoreConversion() {
   const [editingScoreSheetTemplate, setEditingScoreSheetTemplate] = useState<ScoreSheetTemplate | null>(null);
   const [pendingTemplateDelete, setPendingTemplateDelete] = useState<PendingTemplateDelete | null>(null);
   const [selectedAssessment, setSelectedAssessment] = useState<StaffAssignedScoreSheetAssessment | null>(null);
+  const [viewMode, setViewMode] = useState<ScoreConversionViewMode>("assessments");
   const [assessmentStatusFilter, setAssessmentStatusFilter] = useState<AssessmentStatusFilter>("all");
   const [assessmentSearchInput, setAssessmentSearchInput] = useState("");
   const [assessmentSearchTerm, setAssessmentSearchTerm] = useState("");
@@ -253,6 +289,8 @@ export default function ScoreConversion() {
   const [classFilters, setClassFilters] = useState<string[]>([]);
   const [teacherFilters, setTeacherFilters] = useState<string[]>([]);
   const [assessmentFilters, setAssessmentFilters] = useState<string[]>([]);
+  const [classificationFilters, setClassificationFilters] = useState<string[]>([]);
+  const [studentResultFilter, setStudentResultFilter] = useState<StudentResultFilter>("all");
   const [statusFilters, setStatusFilters] = useState<ScoreSheetAssessmentStatus[]>([]);
   const [deadlineStatusFilters, setDeadlineStatusFilters] = useState<ScoreSheetAssessmentDeadlineStatus[]>([]);
   const [examDateFrom, setExamDateFrom] = useState("");
@@ -295,6 +333,15 @@ export default function ScoreConversion() {
     },
     refetchInterval: 60_000,
   });
+  const assignedScoreSheetStudentsQuery = useQuery<ScoreConversionStudentResult[]>({
+    queryKey: [ASSIGNED_SCORE_SHEET_STUDENTS_ENDPOINT],
+    enabled: viewMode === "students",
+    queryFn: async () => {
+      const response = await apiRequest("GET", ASSIGNED_SCORE_SHEET_STUDENTS_ENDPOINT);
+      return response.json();
+    },
+    refetchInterval: 60_000,
+  });
   const nowWallClockMs = getBangkokWallClockMs(new Date());
   const conversionAssessments = (assignedScoreSheetAssessmentsQuery.data ?? [])
     .filter((assessment) => assessment.hasConversion);
@@ -331,6 +378,16 @@ export default function ScoreConversion() {
     }
     return Array.from(options.values()).sort((a, b) => a.label.localeCompare(b.label, "vi"));
   }, [conversionAssessments]);
+  const classificationFilterOptions = useMemo(() => {
+    const labels = new Set(
+      (assignedScoreSheetStudentsQuery.data ?? [])
+        .map((student) => student.gradeBandLabel)
+        .filter((label): label is string => Boolean(label)),
+    );
+    return Array.from(labels)
+      .sort((a, b) => a.localeCompare(b, "vi"))
+      .map((label) => ({ value: label, label }));
+  }, [assignedScoreSheetStudentsQuery.data]);
   const filteredConversionAssessments = conversionAssessments.filter((assessment) => {
     const dateKey = assessment.examDate.substring(0, 10);
     const status = getAssessmentStatus(assessment, nowWallClockMs);
@@ -354,7 +411,9 @@ export default function ScoreConversion() {
       deadlineStatusFilters.length > 0
       && (!deadlineStatusKey || !deadlineStatusFilters.includes(deadlineStatusKey))
     ) return false;
-    const searchTerm = assessmentSearchTerm.trim().toLocaleLowerCase("vi");
+    const searchTerm = viewMode === "assessments"
+      ? assessmentSearchTerm.trim().toLocaleLowerCase("vi")
+      : "";
     const searchableFields = [
       assessment.classCode,
       assessment.className,
@@ -374,6 +433,42 @@ export default function ScoreConversion() {
     if (deadlineDateTo && (!deadlineDateKey || deadlineDateKey > deadlineDateTo)) return false;
     return true;
   });
+  const eligibleAssessmentSessionIds = new Set(filteredConversionAssessments.map((assessment) => assessment.sessionId));
+  const studentSearchTerm = assessmentSearchTerm.trim().toLocaleLowerCase("vi");
+  const filteredStudentResults = (assignedScoreSheetStudentsQuery.data ?? []).filter((student) => {
+    if (!eligibleAssessmentSessionIds.has(student.sessionId)) return false;
+    if (studentResultFilter === "passed" && student.passStatus !== "passed") return false;
+    if (studentResultFilter === "failed" && student.passStatus !== "failed") return false;
+    if (
+      classificationFilters.length > 0
+      && (!student.gradeBandLabel || !classificationFilters.includes(student.gradeBandLabel))
+    ) return false;
+    if (
+      studentSearchTerm
+      && ![
+        student.studentCode,
+        student.studentName,
+        student.classCode,
+        student.className,
+        student.locationName,
+        student.teacherNames,
+        student.assessmentCode,
+        student.assessmentName,
+        student.templateName,
+      ].some((value) => value?.toLocaleLowerCase("vi").includes(studentSearchTerm))
+    ) return false;
+    return true;
+  });
+  const studentResultsByDate = filteredStudentResults.reduce<
+    Record<string, Record<string, { assessment: ScoreConversionStudentResult; students: ScoreConversionStudentResult[] }>>
+  >((grouped, student) => {
+    const dateKey = student.examDate.substring(0, 10);
+    const dateGroup = grouped[dateKey] ??= {};
+    const sessionGroup = dateGroup[student.sessionId] ??= { assessment: student, students: [] };
+    sessionGroup.students.push(student);
+    return grouped;
+  }, {});
+  const sortedStudentDates = Object.keys(studentResultsByDate).sort((a, b) => b.localeCompare(a));
   const assessmentsByDate = filteredConversionAssessments.reduce<Record<string, StaffAssignedScoreSheetAssessment[]>>(
     (grouped, assessment) => {
       const dateKey = assessment.examDate.substring(0, 10);
@@ -387,6 +482,7 @@ export default function ScoreConversion() {
     classFilters.length > 0,
     teacherFilters.length > 0,
     assessmentFilters.length > 0,
+    classificationFilters.length > 0,
     statusFilters.length > 0,
     deadlineStatusFilters.length > 0,
     Boolean(examDateFrom || examDateTo),
@@ -396,6 +492,8 @@ export default function ScoreConversion() {
     setClassFilters([]);
     setTeacherFilters([]);
     setAssessmentFilters([]);
+    setClassificationFilters([]);
+    setStudentResultFilter("all");
     setStatusFilters([]);
     setAssessmentStatusFilter("all");
     setDeadlineStatusFilters([]);
@@ -863,6 +961,32 @@ export default function ScoreConversion() {
                   className="flex flex-wrap items-center gap-3 border-b border-border px-3 py-3 sm:px-4"
                   data-testid="score-conversion-filter-bar"
                 >
+                  <div className="flex shrink-0 items-center rounded-md border bg-muted/40 p-0.5">
+                    <button
+                      type="button"
+                      className={`h-8 rounded px-3 text-xs font-semibold transition-colors ${
+                        viewMode === "assessments"
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      aria-pressed={viewMode === "assessments"}
+                      onClick={() => setViewMode("assessments")}
+                    >
+                      Theo bảng điểm
+                    </button>
+                    <button
+                      type="button"
+                      className={`h-8 rounded px-3 text-xs font-semibold transition-colors ${
+                        viewMode === "students"
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      aria-pressed={viewMode === "students"}
+                      onClick={() => setViewMode("students")}
+                    >
+                      Theo học viên
+                    </button>
+                  </div>
                   <form
                     className="relative min-w-0 flex-1 sm:max-w-[280px]"
                     onSubmit={(event) => {
@@ -872,9 +996,9 @@ export default function ScoreConversion() {
                   >
                     <input
                       type="search"
-                      aria-label="Tìm kiếm bảng điểm"
+                      aria-label={viewMode === "students" ? "Tìm kiếm học viên" : "Tìm kiếm bảng điểm"}
                       data-testid="search-score-conversion"
-                      placeholder="Nhấn enter để tìm kiếm"
+                      placeholder={viewMode === "students" ? "Tìm học viên hoặc bảng điểm" : "Nhấn enter để tìm kiếm"}
                       value={assessmentSearchInput}
                       onChange={(event) => setAssessmentSearchInput(event.target.value)}
                       className="h-9 w-full rounded-full border border-slate-300 bg-background pl-4 pr-10 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20 dark:border-slate-700"
@@ -888,56 +1012,88 @@ export default function ScoreConversion() {
                     </button>
                   </form>
 
-                  <div className="flex min-w-0 items-center gap-2 overflow-x-auto py-0.5 sm:flex-wrap">
-                    {([
-                      { value: "all", label: "Tất cả" },
-                      { value: "not_started", label: "Chưa thi" },
-                      { value: "in_progress", label: "Đang thi" },
-                      { value: "processing", label: "Đang xử lý" },
-                      { value: "completed", label: "Hoàn thành" },
-                    ] as const).map((filter) => {
-                      const isSelected = filter.value === "all"
-                        ? statusFilters.length === 0
-                        : assessmentStatusFilter === filter.value && statusFilters.length === 1;
-                      return (
-                        <button
-                          key={filter.value}
-                          type="button"
-                          aria-pressed={isSelected}
-                          data-testid={`filter-score-conversion-${filter.value}`}
-                          onClick={() => {
-                            if (filter.value === "all") {
-                              setAssessmentStatusFilter("all");
-                              setStatusFilters([]);
-                            } else {
-                              setAssessmentStatusFilter(filter.value);
-                              setStatusFilters([filter.value]);
-                            }
-                          }}
-                          className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-3 text-[13px] font-semibold transition-colors ${
-                            filter.value === "all"
-                              ? isSelected
-                                ? "border-blue-600 bg-blue-600 text-white shadow-sm"
-                                : "border-blue-300 bg-background text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:hover:bg-blue-950/40"
-                              : isSelected
-                                ? ASSESSMENT_FILTER_COLORS[filter.value].active
-                                : `bg-background ${ASSESSMENT_FILTER_COLORS[filter.value].idle}`
-                          }`}
-                        >
-                          {filter.value !== "all" && (
-                            <span
-                              className={`h-1.5 w-1.5 rounded-full ${
-                                isSelected
-                                  ? "bg-white"
-                                  : ASSESSMENT_FILTER_COLORS[filter.value].dot
-                              }`}
-                            />
-                          )}
-                          {filter.label}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {viewMode === "assessments" ? (
+                    <div className="flex min-w-0 items-center gap-2 overflow-x-auto py-0.5 sm:flex-wrap">
+                      {([
+                        { value: "all", label: "Tất cả" },
+                        { value: "not_started", label: "Chưa thi" },
+                        { value: "in_progress", label: "Đang thi" },
+                        { value: "processing", label: "Đang xử lý" },
+                        { value: "completed", label: "Hoàn thành" },
+                      ] as const).map((filter) => {
+                        const isSelected = filter.value === "all"
+                          ? statusFilters.length === 0
+                          : assessmentStatusFilter === filter.value && statusFilters.length === 1;
+                        return (
+                          <button
+                            key={filter.value}
+                            type="button"
+                            aria-pressed={isSelected}
+                            data-testid={`filter-score-conversion-${filter.value}`}
+                            onClick={() => {
+                              if (filter.value === "all") {
+                                setAssessmentStatusFilter("all");
+                                setStatusFilters([]);
+                              } else {
+                                setAssessmentStatusFilter(filter.value);
+                                setStatusFilters([filter.value]);
+                              }
+                            }}
+                            className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-3 text-[13px] font-semibold transition-colors ${
+                              filter.value === "all"
+                                ? isSelected
+                                  ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                                  : "border-blue-300 bg-background text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                                : isSelected
+                                  ? ASSESSMENT_FILTER_COLORS[filter.value].active
+                                  : `bg-background ${ASSESSMENT_FILTER_COLORS[filter.value].idle}`
+                            }`}
+                          >
+                            {filter.value !== "all" && (
+                              <span
+                                className={`h-1.5 w-1.5 rounded-full ${
+                                  isSelected
+                                    ? "bg-white"
+                                    : ASSESSMENT_FILTER_COLORS[filter.value].dot
+                                }`}
+                              />
+                            )}
+                            {filter.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="flex min-w-0 items-center gap-2 overflow-x-auto py-0.5 sm:flex-wrap">
+                      {([
+                        { value: "all", label: "Tất cả" },
+                        { value: "passed", label: "Đạt" },
+                        { value: "failed", label: "Không đạt" },
+                      ] as const).map((filter) => {
+                        const isSelected = studentResultFilter === filter.value;
+                        return (
+                          <button
+                            key={filter.value}
+                            type="button"
+                            aria-pressed={isSelected}
+                            data-testid={`filter-score-conversion-student-${filter.value}`}
+                            onClick={() => setStudentResultFilter(filter.value)}
+                            className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-3 text-[13px] font-semibold transition-colors ${
+                              isSelected
+                                ? filter.value === "failed"
+                                  ? "border-red-600 bg-red-600 text-white"
+                                  : filter.value === "passed"
+                                    ? "border-emerald-600 bg-emerald-600 text-white"
+                                    : "border-blue-600 bg-blue-600 text-white"
+                                : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
+                            }`}
+                          >
+                            {filter.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   <div className="ml-auto flex items-center gap-2">
                     {activeFilterCount > 0 && (
@@ -1091,6 +1247,19 @@ export default function ScoreConversion() {
                               data-testid="filter-score-conversion-deadline-status"
                             />
                           </div>
+                          {viewMode === "students" && (
+                            <div className="space-y-1.5 sm:col-span-2">
+                              <label className="text-sm font-medium">Phân loại</label>
+                              <SearchableMultiSelect
+                                options={classificationFilterOptions}
+                                value={classificationFilters}
+                                onChange={setClassificationFilters}
+                                placeholder="Chọn phân loại"
+                                searchPlaceholder="Tìm phân loại..."
+                                data-testid="filter-score-conversion-classification"
+                              />
+                            </div>
+                          )}
                         </div>
                         <DialogFooter>
                           <Button type="button" variant="outline" onClick={clearAssessmentFilters}>
@@ -1105,6 +1274,177 @@ export default function ScoreConversion() {
                   </div>
                 </div>
 
+                {viewMode === "students" ? (
+                  assignedScoreSheetStudentsQuery.isLoading ? (
+                    <div className="flex min-h-52 items-center justify-center text-sm text-muted-foreground">
+                      Đang tải danh sách học viên...
+                    </div>
+                  ) : assignedScoreSheetStudentsQuery.isError ? (
+                    <div className="flex min-h-52 flex-col items-center justify-center gap-3 p-6 text-center">
+                      <p className="text-sm text-destructive">
+                        {assignedScoreSheetStudentsQuery.error instanceof Error
+                          ? assignedScoreSheetStudentsQuery.error.message
+                          : "Không thể tải danh sách học viên."}
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => assignedScoreSheetStudentsQuery.refetch()}
+                      >
+                        Thử lại
+                      </Button>
+                    </div>
+                  ) : sortedStudentDates.length === 0 ? (
+                    <div className="flex min-h-52 items-center justify-center p-6 text-sm text-muted-foreground">
+                      Không có học viên phù hợp với bộ lọc.
+                    </div>
+                  ) : (
+                    <div className="space-y-4 p-3 sm:p-4">
+                      {sortedStudentDates.map((dateKey) => {
+                        const sessionGroups = Object.values(studentResultsByDate[dateKey] ?? {});
+                        const totalStudents = sessionGroups.reduce(
+                          (total, group) => total + group.students.length,
+                          0,
+                        );
+                        return (
+                          <section key={dateKey} className="overflow-hidden rounded-xl border border-border">
+                            <div className="flex flex-wrap items-center gap-3 border-b bg-violet-50/60 px-4 py-2.5 dark:bg-violet-950/30">
+                              <div className="h-2.5 w-2.5 shrink-0 rounded-full bg-violet-500 ring-4 ring-violet-100 dark:ring-violet-900/40" />
+                              <span className="text-xs font-semibold text-violet-700 dark:text-violet-400">
+                                {formatDateLabel(dateKey)}
+                              </span>
+                              <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+                                {sessionGroups.length} bảng điểm · {totalStudents} học viên
+                              </span>
+                            </div>
+                            <div className="divide-y">
+                              {sessionGroups.map((group) => {
+                                const assessment = group.assessment;
+                                const assessmentForDialog = assignedScoreSheetAssessmentsQuery.data?.find(
+                                  (item) => item.sessionId === assessment.sessionId,
+                                );
+                                return (
+                                  <div key={assessment.sessionId} className="bg-background">
+                                    <div className="flex flex-wrap items-start justify-between gap-3 border-b bg-muted/20 px-4 py-3">
+                                      <div className="min-w-0">
+                                        <p className="font-semibold text-foreground">
+                                          {getClassLabel(assessment as StaffAssignedScoreSheetAssessment)}
+                                          {assessment.sessionIndex != null && (
+                                            <span className="ml-1 font-normal text-muted-foreground">
+                                              (Buổi {assessment.sessionIndex})
+                                            </span>
+                                          )}
+                                        </p>
+                                        <p className="mt-0.5 text-xs text-muted-foreground">
+                                          {assessment.classCode}
+                                          {assessment.locationName ? ` · ${assessment.locationName}` : ""}
+                                          {assessment.teacherNames ? ` · ${assessment.teacherNames}` : ""}
+                                        </p>
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                        <span className="font-medium text-foreground">
+                                          {getScoreSheetTemplateLabel(assessment as StaffAssignedScoreSheetAssessment)}
+                                        </span>
+                                        <span>Hạn trả {formatAssessmentDeadline(assessment.scoreDeadlineAt)}</span>
+                                      </div>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                      <table className="w-full min-w-[1100px] text-left text-xs">
+                                        <thead className="bg-muted/40 text-muted-foreground">
+                                          <tr>
+                                            <th className="min-w-[210px] px-3 py-2 font-semibold">Học viên</th>
+                                            <th className="min-w-[90px] px-3 py-2 text-center font-semibold">Lịch học</th>
+                                            <th className="min-w-[120px] px-3 py-2 font-semibold">Ngày thi</th>
+                                            <th className="min-w-[125px] px-3 py-2 font-semibold">Ngày phải trả</th>
+                                            <th className="min-w-[90px] px-3 py-2 text-center font-semibold">Lần thi</th>
+                                            <th className="min-w-[110px] px-3 py-2 font-semibold">Điểm quy đổi</th>
+                                            <th className="min-w-[100px] px-3 py-2 font-semibold">Phân loại</th>
+                                            <th className="min-w-[100px] px-3 py-2 font-semibold">Kết quả</th>
+                                            <th className="min-w-[110px] px-3 py-2 font-semibold">Tình trạng</th>
+                                            <th className="min-w-[90px] px-3 py-2 text-center font-semibold">Quản lý</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {group.students.map((student) => (
+                                            <tr key={student.studentId} className="border-t border-border">
+                                              <td className="px-3 py-2.5 font-medium">
+                                                {student.studentCode} - {student.studentName}
+                                              </td>
+                                              <td className="px-3 py-2.5 text-center">
+                                                {student.sessionIndex != null ? `Buổi ${student.sessionIndex}` : "—"}
+                                              </td>
+                                              <td className="px-3 py-2.5">{formatAssessmentDate(student.examDate)}</td>
+                                              <td className="px-3 py-2.5">{formatAssessmentDeadline(student.scoreDeadlineAt)}</td>
+                                              <td className="px-3 py-2.5 text-center">
+                                                {student.attemptNumber
+                                                  ? `${student.attemptNumber}/${student.attemptCount}`
+                                                  : "—"}
+                                              </td>
+                                              <td className="px-3 py-2.5 font-medium tabular-nums">
+                                                {formatScoreValue(student.convertedScore)}
+                                              </td>
+                                              <td
+                                                className="px-3 py-2.5"
+                                                style={{ color: student.gradeBandColor ?? undefined }}
+                                              >
+                                                {student.gradeBandLabel ?? "—"}
+                                              </td>
+                                              <td className={`px-3 py-2.5 font-bold ${
+                                                student.passStatus === "passed"
+                                                  ? "text-green-600 dark:text-green-400"
+                                                  : student.passStatus === "failed"
+                                                    ? "text-red-600 dark:text-red-400"
+                                                    : "text-muted-foreground"
+                                              }`}>
+                                                {student.passStatus === "passed"
+                                                  ? "Đạt"
+                                                  : student.passStatus === "failed"
+                                                    ? "Không đạt"
+                                                    : "—"}
+                                              </td>
+                                              <td className="px-3 py-2.5">
+                                                <span className={`inline-flex rounded px-2 py-1 font-normal ${
+                                                  student.status === "complete"
+                                                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                                                    : "bg-muted text-muted-foreground"
+                                                }`}>
+                                                  {student.status === "complete"
+                                                    ? "Đã nhập"
+                                                    : student.status === "in_progress"
+                                                      ? "Đang nhập"
+                                                      : "Chưa nhập"}
+                                                </span>
+                                              </td>
+                                              <td className="px-3 py-2.5 text-center">
+                                                <Button
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  className="h-8 px-2 text-primary"
+                                                  disabled={!assessmentForDialog}
+                                                  onClick={() => {
+                                                    if (assessmentForDialog) setSelectedAssessment(assessmentForDialog);
+                                                  }}
+                                                  aria-label={`Mở chi tiết ${student.studentName}`}
+                                                >
+                                                  <Eye className="mr-1 h-3.5 w-3.5" />
+                                                  Xem
+                                                </Button>
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </section>
+                        );
+                      })}
+                    </div>
+                  )
+                ) : (
                 <div className="max-h-[min(70vh,680px)] overflow-auto">
                   <table
                     className="w-full min-w-[1435px] border-separate border-spacing-0 text-left text-xs"

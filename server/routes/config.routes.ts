@@ -2673,6 +2673,199 @@ export function registerConfigRoutes(app: Express): void {
     }
   });
 
+  app.get("/api/score-sheet-assessments/assigned/students", async (req, res) => {
+    try {
+      const permissions = await getScoreConversionPermissions(req);
+      if (
+        !permissions.canView
+        && !permissions.canViewAll
+        && !permissions.canCreate
+        && !permissions.canEdit
+        && !permissions.canDelete
+      ) {
+        return res.status(403).json({ message: "Bạn không có quyền xem danh sách học viên." });
+      }
+
+      const [assessments, scoreSheetTemplates] = await Promise.all([
+        readScoreSheetAssessments(),
+        readScoreSheetTemplates(),
+      ]);
+      const assessmentsById = new Map(assessments.map((assessment) => [assessment.id, assessment]));
+      const scoreSheetTemplatesById = new Map(
+        scoreSheetTemplates.map((template) => [template.id, template]),
+      );
+      const result = await db.execute(sql`
+        SELECT
+          cs.id AS session_id,
+          cs.class_id,
+          cs.score_sheet_assessment_id AS assessment_id,
+          cs.session_index,
+          cs.session_date,
+          cs.score_sheet_assessment_excluded_student_ids AS excluded_student_ids,
+          st.start_time AS session_start_time,
+          c.class_code,
+          c.name AS class_name,
+          loc.name AS location_name,
+          assigned_teachers.teacher_names
+        FROM class_sessions cs
+        JOIN classes c ON c.id = cs.class_id
+        LEFT JOIN shift_templates st ON st.id = cs.shift_template_id
+        LEFT JOIN locations loc ON loc.id = c.location_id
+        LEFT JOIN LATERAL (
+          SELECT string_agg(DISTINCT teacher.full_name, ', ' ORDER BY teacher.full_name) AS teacher_names
+          FROM unnest(
+            COALESCE(
+              NULLIF(cs.teacher_ids, '{}'::uuid[]),
+              c.teacher_ids,
+              '{}'::uuid[]
+            )
+          ) AS assigned_teacher(id)
+          JOIN staff teacher ON teacher.id = assigned_teacher.id
+        ) assigned_teachers ON TRUE
+        WHERE cs.score_sheet_assessment_id IS NOT NULL
+        ORDER BY cs.session_date DESC, cs.session_index DESC, c.class_code
+      `);
+      const conversionRows = result.rows.filter((row: any) =>
+        assessmentsById.get(row.assessment_id)?.templateSnapshot.scoreConversionTemplateId,
+      );
+      const conversionSessionIds = conversionRows.map((row: any) => String(row.session_id));
+      const conversionAssessmentIds = Array.from(
+        new Set(conversionRows.map((row: any) => String(row.assessment_id))),
+      );
+      if (conversionSessionIds.length === 0) return res.json([]);
+
+      const excludedStudentIdsBySession = new Map<string, Set<string>>(
+        conversionRows.map((row: any) => [
+          String(row.session_id),
+          new Set<string>((row.excluded_student_ids ?? []).map(String)),
+        ]),
+      );
+      const rosterRows = await db
+        .select({
+          classSessionId: studentSessions.classSessionId,
+          studentId: studentSessions.studentId,
+          code: students.code,
+          fullName: students.fullName,
+        })
+        .from(studentSessions)
+        .innerJoin(students, eq(students.id, studentSessions.studentId))
+        .where(inArray(studentSessions.classSessionId, conversionSessionIds));
+      const studentsBySession = new Map<string, Map<string, {
+        studentId: string;
+        code: string;
+        fullName: string;
+      }>>();
+      for (const row of rosterRows) {
+        const sessionKey = String(row.classSessionId);
+        const sessionStudents = studentsBySession.get(sessionKey) ?? new Map();
+        sessionStudents.set(String(row.studentId), {
+          studentId: String(row.studentId),
+          code: row.code,
+          fullName: row.fullName,
+        });
+        studentsBySession.set(sessionKey, sessionStudents);
+      }
+
+      const attemptRows = await db
+        .select({
+          assessmentId: scoreSheetAssessmentStudentAttempts.assessmentId,
+          classSessionId: scoreSheetAssessmentStudentAttempts.classSessionId,
+          studentId: scoreSheetAssessmentStudentAttempts.studentId,
+          attemptNumber: scoreSheetAssessmentStudentAttempts.attemptNumber,
+          result: scoreSheetAssessmentStudentAttempts.result,
+        })
+        .from(scoreSheetAssessmentStudentAttempts)
+        .innerJoin(
+          studentSessions,
+          and(
+            eq(studentSessions.classSessionId, scoreSheetAssessmentStudentAttempts.classSessionId),
+            eq(studentSessions.studentId, scoreSheetAssessmentStudentAttempts.studentId),
+          ),
+        )
+        .where(and(
+          inArray(scoreSheetAssessmentStudentAttempts.classSessionId, conversionSessionIds),
+          inArray(scoreSheetAssessmentStudentAttempts.assessmentId, conversionAssessmentIds),
+        ));
+      const attemptsBySessionStudent = new Map<string, Array<{
+        attemptNumber: number;
+        result: unknown;
+      }>>();
+      for (const attempt of attemptRows) {
+        const key = `${attempt.assessmentId}:${attempt.classSessionId}:${attempt.studentId}`;
+        const attempts = attemptsBySessionStudent.get(key) ?? [];
+        attempts.push({
+          attemptNumber: attempt.attemptNumber,
+          result: attempt.result,
+        });
+        attemptsBySessionStudent.set(key, attempts);
+      }
+
+      const mapped = conversionRows.flatMap((row: any) => {
+        const assessment = assessmentsById.get(row.assessment_id);
+        if (!assessment?.templateSnapshot.scoreConversionTemplateId) return [];
+        const currentTemplate = scoreSheetTemplatesById.get(assessment.scoreSheetTemplateId);
+        const sessionId = String(row.session_id);
+        const excludedStudentIds = excludedStudentIdsBySession.get(sessionId) ?? new Set<string>();
+        const sessionStudents = studentsBySession.get(sessionId) ?? new Map();
+        return Array.from(sessionStudents.values())
+          .filter((student) => !excludedStudentIds.has(student.studentId))
+          .map((student) => {
+            const attempts = attemptsBySessionStudent.get(
+              `${row.assessment_id}:${row.session_id}:${student.studentId}`,
+            ) ?? [];
+            const summary = selectScoreSheetAssessmentAttemptSummary(
+              attempts,
+              assessment.scoringPolicy,
+              true,
+            );
+            return {
+              sessionId: row.session_id,
+              classId: row.class_id,
+              classCode: row.class_code,
+              className: row.class_name,
+              locationName: row.location_name ?? null,
+              teacherNames: row.teacher_names ?? null,
+              sessionIndex: row.session_index,
+              examDate: row.session_date,
+              assessmentId: row.assessment_id,
+              assessmentCode: assessment.code,
+              assessmentName: assessment.name,
+              templateName: currentTemplate?.name ?? assessment.templateSnapshot.name,
+              scoreDeadlineAt: resolveScoreSheetAssessmentDeadlineAt(
+                assessment,
+                row.session_date,
+                row.session_start_time,
+                currentTemplate?.scoreDeadlineOffsetMinutes,
+              ),
+              attemptCount: assessment.attemptCount,
+              scoringPolicy: assessment.scoringPolicy,
+              hasConversion: true,
+              studentId: student.studentId,
+              studentCode: student.code,
+              studentName: student.fullName,
+              attemptsTaken: attempts.length,
+              attemptNumber: summary?.attemptNumber ?? null,
+              rawScore: summary?.result.overallRawScore ?? null,
+              convertedScore: summary?.result.overallConvertedScore ?? null,
+              gradeBandLabel: summary?.result.gradeBand?.label ?? null,
+              gradeBandColor: summary?.result.gradeBand?.color ?? null,
+              passStatus: summary?.result.passStatus ?? null,
+              inputComplete: summary?.result.inputComplete ?? false,
+              status: !summary
+                ? "not_entered"
+                : summary.result.inputComplete
+                  ? "complete"
+                  : "in_progress",
+            };
+          });
+      });
+      res.json(mapped);
+    } catch (err: any) {
+      console.error("Assigned score conversion students error:", err);
+      res.status(500).json({ message: err.message || "Lỗi khi tải danh sách học viên bảng điểm Quy đổi" });
+    }
+  });
+
   app.get("/api/score-sheet-assessments", async (req, res) => {
     try {
       // Session assignment uses this list in the same way as /api/score-sheets.
