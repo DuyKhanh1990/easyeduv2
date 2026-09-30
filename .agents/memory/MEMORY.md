@@ -78,3 +78,4 @@
 - [Score-sheet template configuration](score-sheet-template-configuration.md) — scoring keeps its saved snapshot; linked templates supply current deadlines and evaluation criteria.
 - [Score conversion publication](score-assessment-publication.md) — publish state belongs to each class session; students only see their enrolled session's policy-selected result.
 - [Finance translation parity](finance-translation-parity.md) — invoice English audits must compare vi/en key sets and scan child dialogs, not only the main Invoices page.
+- [Score conversion pass threshold](score-conversion-pass-threshold.md) — “Đạt” means the selected total is at least the “Từ” score; the “Đến” value does not cap higher scores.
