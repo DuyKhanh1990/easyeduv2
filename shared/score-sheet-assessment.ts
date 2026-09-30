@@ -49,10 +49,16 @@ export function resolveScoreSheetAssessmentDeadlineAt(
   },
   sessionDate: string | Date | null | undefined,
   sessionStartTime: string | null | undefined,
+  currentTemplateOffsetMinutes?: number | null,
 ): string | null {
-  if (assessment.scoreDeadlineAt) return assessment.scoreDeadlineAt;
+  // A linked live template owns relative deadlines. Fixed dates remain a
+  // compatibility path for assessments whose template is no longer available.
+  if (currentTemplateOffsetMinutes == null && assessment.scoreDeadlineAt) {
+    return assessment.scoreDeadlineAt;
+  }
 
-  const offsetMinutes = assessment.templateSnapshot.scoreDeadlineOffsetMinutes;
+  const offsetMinutes = currentTemplateOffsetMinutes
+    ?? assessment.templateSnapshot.scoreDeadlineOffsetMinutes;
   if (!Number.isSafeInteger(offsetMinutes) || offsetMinutes < 0 || sessionDate == null) return null;
 
   const dateKey = sessionDate instanceof Date

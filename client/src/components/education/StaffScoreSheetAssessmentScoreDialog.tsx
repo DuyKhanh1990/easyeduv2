@@ -3,7 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, Calculator, CheckCircle2, Loader2, Save } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -28,11 +30,26 @@ type AssessmentScoreEntryStudent = {
   fullName: string;
 };
 
+type AssessmentEvaluationItem = {
+  id: string;
+  name: string;
+  itemType: "heading" | "criterion";
+  inputType: "text" | "checkbox";
+  parentId: string | null;
+};
+
+type AssessmentEvaluationGroup = {
+  id: string;
+  name: string;
+  subCriteria: AssessmentEvaluationItem[];
+};
+
 type AssessmentScoreEntry = {
   attemptNumber: number;
   partScores: ScoreSheetAssessmentAttemptValues["partScores"];
   skillScores: ScoreSheetAssessmentAttemptValues["skillScores"];
   notes: ScoreSheetAssessmentAttemptValues["notes"];
+  evaluationResponses: ScoreSheetAssessmentAttemptValues["evaluationResponses"];
   result: ScoreSheetAssessmentAttemptResult;
   createdAt: string;
   updatedAt: string;
@@ -49,6 +66,7 @@ type AssessmentScoreEntryResponse = {
     templateSnapshot: ScoreSheetTemplate;
     conversionTemplateSnapshot: ScoreConversionTemplate | null;
   };
+  evaluationCriteria: AssessmentEvaluationGroup[];
   attempts: AssessmentScoreEntry[];
 };
 
@@ -72,7 +90,7 @@ function formatScore(value: number | null | undefined) {
 }
 
 function createEmptyValues(): ScoreSheetAssessmentAttemptValues {
-  return { partScores: {}, skillScores: {}, notes: {} };
+  return { partScores: {}, skillScores: {}, notes: {}, evaluationResponses: {} };
 }
 
 function skillIdFor(
@@ -93,6 +111,10 @@ function hasEnteredValue(values: ScoreSheetAssessmentAttemptValues) {
     )
     || Object.values(values.notes).some((notes) =>
       Object.values(notes).some((note) => note.trim().length > 0),
+    )
+    || Object.values(values.evaluationResponses).some((response) =>
+      typeof response === "boolean"
+      || (typeof response === "string" && response.trim().length > 0),
     );
 }
 
@@ -167,6 +189,7 @@ export function StaffScoreSheetAssessmentScoreDialog({
       partScores: selectedAttempt.partScores,
       skillScores: selectedAttempt.skillScores,
       notes: selectedAttempt.notes,
+      evaluationResponses: selectedAttempt.evaluationResponses,
     })
     : createEmptyValues(), [selectedAttempt]);
   const currentValues = selectedAttemptNumber == null
@@ -204,6 +227,57 @@ export function StaffScoreSheetAssessmentScoreDialog({
       ...current,
       [selectedAttemptNumber]: update(current[selectedAttemptNumber] ?? savedValues),
     }));
+  };
+
+  const renderEvaluationItem = (item: AssessmentEvaluationItem) => {
+    const response = currentValues.evaluationResponses[item.id];
+    if (item.inputType === "checkbox") {
+      return (
+        <div key={item.id} className="flex items-start gap-3 rounded-md border bg-background px-3 py-2">
+          <Checkbox
+            id={`assessment-evaluation-${item.id}`}
+            checked={response === true}
+            onCheckedChange={(checked) => updateDraft((current) => ({
+              ...current,
+              evaluationResponses: {
+                ...current.evaluationResponses,
+                [item.id]: checked === true,
+              },
+            }))}
+            aria-label={item.name}
+          />
+          <label
+            htmlFor={`assessment-evaluation-${item.id}`}
+            className="cursor-pointer text-sm leading-5"
+          >
+            {item.name}
+          </label>
+        </div>
+      );
+    }
+
+    return (
+      <div key={item.id} className="space-y-1.5">
+        <label htmlFor={`assessment-evaluation-${item.id}`} className="text-sm font-medium">
+          {item.name}
+        </label>
+        <Textarea
+          id={`assessment-evaluation-${item.id}`}
+          value={typeof response === "string" ? response : ""}
+          onChange={(event) => updateDraft((current) => ({
+            ...current,
+            evaluationResponses: {
+              ...current.evaluationResponses,
+              [item.id]: event.target.value,
+            },
+          }))}
+          maxLength={1000}
+          rows={2}
+          placeholder="Nhập nhận xét"
+          aria-label={item.name}
+        />
+      </div>
+    );
   };
 
   const saveAttempt = async () => {
@@ -549,6 +623,41 @@ export function StaffScoreSheetAssessmentScoreDialog({
                   </section>
                 );
               })}
+              {details.evaluationCriteria.length > 0 && (
+                <section className="space-y-3 rounded-xl border bg-muted/10 p-4">
+                  <div>
+                    <h3 className="text-sm font-semibold">Tiêu chí đánh giá</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Nhập nhận xét hoặc đánh dấu các tiêu chí theo cấu hình.
+                    </p>
+                  </div>
+                  {details.evaluationCriteria.map((criteria) => {
+                    const subCriteria = criteria.subCriteria ?? [];
+                    const standaloneItems = subCriteria.filter((item) =>
+                      item.itemType === "criterion" && !item.parentId,
+                    );
+                    const headings = subCriteria.filter((item) => item.itemType === "heading");
+
+                    return (
+                      <section key={criteria.id} className="space-y-2 rounded-lg border bg-background p-3">
+                        <h4 className="text-sm font-semibold">{criteria.name}</h4>
+                        {standaloneItems.map(renderEvaluationItem)}
+                        {headings.map((heading) => {
+                          const children = subCriteria.filter((item) =>
+                            item.itemType === "criterion" && item.parentId === heading.id,
+                          );
+                          return (
+                            <div key={heading.id} className="space-y-2 border-t pt-2">
+                              <h5 className="text-xs font-semibold text-muted-foreground">{heading.name}</h5>
+                              {children.map(renderEvaluationItem)}
+                            </div>
+                          );
+                        })}
+                      </section>
+                    );
+                  })}
+                </section>
+              )}
             </div>
 
             <DialogFooter className="shrink-0 flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">

@@ -13,6 +13,38 @@ describe("score-sheet assessment deadlines", () => {
     ).toBe("2026-09-29T10:30");
   });
 
+  it("uses the current linked template offset for a relative deadline", () => {
+    const assessment = {
+      scoreDeadlineAt: null,
+      templateSnapshot: { scoreDeadlineOffsetMinutes: 6 * 60 },
+    };
+
+    expect(
+      resolveScoreSheetAssessmentDeadlineAt(
+        assessment,
+        "2026-09-30",
+        "05:05:00",
+        30 * 60,
+      ),
+    ).toBe("2026-10-01T11:05");
+  });
+
+  it("recalculates a stale fixed deadline when the linked template has a current offset", () => {
+    const assessment = {
+      scoreDeadlineAt: "2026-09-30T11:05",
+      templateSnapshot: { scoreDeadlineOffsetMinutes: 6 * 60 },
+    };
+
+    expect(
+      resolveScoreSheetAssessmentDeadlineAt(
+        assessment,
+        "2026-09-30",
+        "05:05:00",
+        30 * 60,
+      ),
+    ).toBe("2026-10-01T11:05");
+  });
+
   it("preserves an existing fixed deadline", () => {
     const assessment = {
       scoreDeadlineAt: "2026-09-30T16:45",

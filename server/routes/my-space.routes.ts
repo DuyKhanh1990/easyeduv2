@@ -16,8 +16,13 @@ import {
   selectScoreSheetAssessmentAttemptSummary,
   scoreSheetAssessmentAttemptResultSchema,
   scoreSheetAssessmentAttemptValuesSchema,
+  scoreSheetAssessmentEvaluationResponsesSchema,
   type ScoreSheetAssessmentAttemptResult,
 } from "@shared/score-sheet-assessment-scoring";
+import {
+  scoreSheetTemplateSchema,
+  type ScoreSheetTemplate,
+} from "@shared/score-sheet-template";
 import {
   students,
   staff,
@@ -53,6 +58,8 @@ import {
   studentClasses,
   systemSettings,
   scoreSheetAssessmentStudentAttempts,
+  evaluationCriteria,
+  evaluationSubCriteria,
 } from "@shared/schema";
 import { storage } from "../storage";
 import { eq, and, gte, lte, sql, inArray, isNotNull, isNull, or, desc } from "drizzle-orm";
@@ -114,11 +121,81 @@ async function getScoreSheetAssessmentScoringConfig(assessmentId: string, querya
   };
 }
 
+async function getCurrentScoreSheetTemplate(
+  templateId: string,
+  queryable: any = db,
+): Promise<ScoreSheetTemplate | null> {
+  const [settingsRow] = await queryable
+    .select({ value: systemSettings.value })
+    .from(systemSettings)
+    .where(eq(systemSettings.key, "scoreSheetTemplates"))
+    .limit(1);
+  if (!settingsRow) return null;
+
+  const templates = z.array(scoreSheetTemplateSchema).parse(JSON.parse(settingsRow.value));
+  return templates.find((template) => template.id === templateId) ?? null;
+}
+
+type ScoreSheetEvaluationSubCriterion = {
+  id: string;
+  name: string;
+  itemType: string;
+  inputType: string;
+  parentId: string | null;
+};
+
+type ScoreSheetEvaluationCriterion = {
+  id: string;
+  name: string;
+  subCriteria: ScoreSheetEvaluationSubCriterion[];
+};
+
+async function getEvaluationCriteriaForScoreSheet(
+  criteriaIds: string[],
+  queryable: any = db,
+): Promise<ScoreSheetEvaluationCriterion[]> {
+  const uniqueIds = Array.from(new Set(criteriaIds));
+  if (uniqueIds.length === 0) return [];
+
+  const [criteriaRows, subCriteriaRows] = await Promise.all([
+    queryable.select().from(evaluationCriteria)
+      .where(inArray(evaluationCriteria.id, uniqueIds)),
+    queryable.select().from(evaluationSubCriteria)
+      .where(inArray(evaluationSubCriteria.criteriaId, uniqueIds))
+      .orderBy(evaluationSubCriteria.name),
+  ]);
+  const criteriaById = new Map<string, { id: string; name: string }>(
+    criteriaRows.map((criteria: any) => [
+      criteria.id,
+      { id: criteria.id, name: criteria.name },
+    ]),
+  );
+
+  return uniqueIds.flatMap((criteriaId): ScoreSheetEvaluationCriterion[] => {
+    const criteria = criteriaById.get(criteriaId);
+    if (!criteria) return [];
+    return [{
+      id: criteria.id,
+      name: criteria.name,
+      subCriteria: subCriteriaRows
+        .filter((subCriteria: any) => subCriteria.criteriaId === criteriaId)
+        .map((subCriteria: any) => ({
+          id: subCriteria.id,
+          name: subCriteria.name,
+          itemType: subCriteria.itemType,
+          inputType: subCriteria.inputType,
+          parentId: subCriteria.parentId,
+        })),
+    }];
+  });
+}
+
 type ScoreSheetAssessmentSessionAccess = {
   assessmentId: string;
   sessionDate: string | Date | null;
   sessionStartTime: string | null;
   assessment: NonNullable<Awaited<ReturnType<typeof getScoreSheetAssessmentScoringConfig>>> | null;
+  currentTemplate: ScoreSheetTemplate | null;
 };
 
 async function hasScoreConversionPermission(req: any, action: "view" | "edit"): Promise<boolean> {
@@ -195,12 +272,16 @@ async function getAuthorizedScoreSheetSession(
   const assessmentId = String(accessRow.assessment_id);
   const assessment = await getScoreSheetAssessmentScoringConfig(assessmentId, queryable);
   if (!accessThroughStaff && !assessment?.templateSnapshot.scoreConversionTemplateId) return null;
+  const currentTemplate = assessment
+    ? await getCurrentScoreSheetTemplate(assessment.scoreSheetTemplateId, queryable)
+    : null;
 
   return {
     assessmentId,
     sessionDate: accessRow.session_date == null ? null : accessRow.session_date as string | Date,
     sessionStartTime: accessRow.session_start_time == null ? null : accessRow.session_start_time as string,
     assessment,
+    currentTemplate,
   };
 }
 
@@ -4148,15 +4229,24 @@ export function registerMySpaceRoutes(app: Express): void {
       const staffRecord = await getStaffForUser(user.id);
       if (!staffRecord) return res.json([]);
 
-      const [settingsRow] = await db
-        .select({ value: systemSettings.value })
-        .from(systemSettings)
-        .where(eq(systemSettings.key, "scoreSheetAssessments"))
-        .limit(1);
+      const [[settingsRow], [templateSettingsRow]] = await Promise.all([
+        db.select({ value: systemSettings.value })
+          .from(systemSettings)
+          .where(eq(systemSettings.key, "scoreSheetAssessments"))
+          .limit(1),
+        db.select({ value: systemSettings.value })
+          .from(systemSettings)
+          .where(eq(systemSettings.key, "scoreSheetTemplates"))
+          .limit(1),
+      ]);
       const assessments = settingsRow
         ? z.array(scoreSheetAssessmentSchema).parse(JSON.parse(settingsRow.value))
         : [];
       const assessmentsById = new Map(assessments.map((assessment) => [assessment.id, assessment]));
+      const currentTemplates = templateSettingsRow
+        ? z.array(scoreSheetTemplateSchema).parse(JSON.parse(templateSettingsRow.value))
+        : [];
+      const currentTemplatesById = new Map(currentTemplates.map((template) => [template.id, template]));
 
       const result = await db.execute(sql`
         SELECT
@@ -4206,6 +4296,9 @@ export function registerMySpaceRoutes(app: Express): void {
 
       const mapped = result.rows.map((row: any) => {
         const assessment = assessmentsById.get(row.assessment_id);
+        const currentTemplate = assessment
+          ? currentTemplatesById.get(assessment.scoreSheetTemplateId)
+          : undefined;
         return {
           sessionId: row.session_id,
           classId: row.class_id,
@@ -4219,12 +4312,13 @@ export function registerMySpaceRoutes(app: Express): void {
           assessmentId: row.assessment_id,
           assessmentCode: assessment?.code ?? null,
           assessmentName: assessment?.name ?? null,
-          templateName: assessment?.templateSnapshot.name ?? null,
+          templateName: currentTemplate?.name ?? assessment?.templateSnapshot.name ?? null,
           scoreDeadlineAt: assessment
             ? resolveScoreSheetAssessmentDeadlineAt(
                 assessment,
                 row.session_date,
                 row.session_start_time,
+                currentTemplate?.scoreDeadlineOffsetMinutes,
               )
             : null,
           attemptCount: assessment?.attemptCount ?? 1,
@@ -4348,6 +4442,11 @@ export function registerMySpaceRoutes(app: Express): void {
         if (!assessment) {
           return res.status(409).json({ message: "Cấu hình bảng điểm được giao không còn khả dụng." });
         }
+        const evaluationCriteriaIds = access.currentTemplate?.evaluationCriteriaIds
+          ?? assessment.templateSnapshot.evaluationCriteriaIds;
+        const configuredEvaluationCriteria = await getEvaluationCriteriaForScoreSheet(
+          evaluationCriteriaIds,
+        );
 
         const attempts = await db
           .select()
@@ -4370,19 +4469,29 @@ export function registerMySpaceRoutes(app: Express): void {
               assessment,
               access.sessionDate ?? "",
               access.sessionStartTime,
+              access.currentTemplate?.scoreDeadlineOffsetMinutes,
             ),
             templateSnapshot: assessment.templateSnapshot,
             conversionTemplateSnapshot: assessment.conversionTemplateSnapshot,
           },
-          attempts: attempts.map((attempt) => ({
-            attemptNumber: attempt.attemptNumber,
-            partScores: attempt.partScores,
-            skillScores: attempt.skillScores,
-            notes: attempt.notes,
-            result: scoreSheetAssessmentAttemptResultSchema.parse(attempt.result),
-            createdAt: attempt.createdAt,
-            updatedAt: attempt.updatedAt,
-          })),
+          evaluationCriteria: configuredEvaluationCriteria,
+          attempts: attempts.map((attempt) => {
+            const storedResult = attempt.result && typeof attempt.result === "object"
+              ? attempt.result as Record<string, unknown>
+              : {};
+            return {
+              attemptNumber: attempt.attemptNumber,
+              partScores: attempt.partScores,
+              skillScores: attempt.skillScores,
+              notes: attempt.notes,
+              evaluationResponses: scoreSheetAssessmentEvaluationResponsesSchema.parse(
+                storedResult.evaluationResponses ?? {},
+              ),
+              result: scoreSheetAssessmentAttemptResultSchema.parse(attempt.result),
+              createdAt: attempt.createdAt,
+              updatedAt: attempt.updatedAt,
+            };
+          }),
         });
       } catch (err: any) {
         console.error("Staff score assessment entry load error:", err);
@@ -4427,6 +4536,31 @@ export function registerMySpaceRoutes(app: Express): void {
             const error: any = new Error("Cấu hình bảng điểm được giao không còn khả dụng.");
             error.status = 409;
             throw error;
+          }
+          const evaluationCriteriaIds = access.currentTemplate?.evaluationCriteriaIds
+            ?? assessment.templateSnapshot.evaluationCriteriaIds;
+          const configuredEvaluationCriteria = await getEvaluationCriteriaForScoreSheet(
+            evaluationCriteriaIds,
+            tx,
+          );
+          const evaluationItemsById = new Map<string, ScoreSheetEvaluationSubCriterion>(
+            configuredEvaluationCriteria.flatMap((criteria) =>
+              criteria.subCriteria
+                .filter((item: any) => item.itemType === "criterion")
+                .map((item): [string, ScoreSheetEvaluationSubCriterion] => [item.id, item]),
+            ),
+          );
+          for (const [itemId, responseValue] of Object.entries(values.data.evaluationResponses)) {
+            const item = evaluationItemsById.get(itemId);
+            if (!item || responseValue === null) continue;
+            if (
+              (item.inputType === "checkbox" && typeof responseValue !== "boolean")
+              || (item.inputType !== "checkbox" && typeof responseValue !== "string")
+            ) {
+              const error: any = new Error(`Câu trả lời cho tiêu chí “${item.name}” không đúng loại.`);
+              error.status = 400;
+              throw error;
+            }
           }
           if (attemptNumber.data > assessment.attemptCount) {
             const error: any = new Error(`Bảng điểm này chỉ cho phép tối đa ${assessment.attemptCount} lần thi.`);
@@ -4482,6 +4616,10 @@ export function registerMySpaceRoutes(app: Express): void {
             throw error;
           }
 
+          const storedResult = {
+            ...result,
+            evaluationResponses: values.data.evaluationResponses,
+          };
           const now = new Date();
           const [attempt] = await tx
             .insert(scoreSheetAssessmentStudentAttempts)
@@ -4493,7 +4631,7 @@ export function registerMySpaceRoutes(app: Express): void {
               partScores: values.data.partScores,
               skillScores: values.data.skillScores,
               notes: values.data.notes,
-              result,
+              result: storedResult,
               createdBy: user.id,
               updatedBy: user.id,
               createdAt: now,
@@ -4510,7 +4648,7 @@ export function registerMySpaceRoutes(app: Express): void {
                 partScores: values.data.partScores,
                 skillScores: values.data.skillScores,
                 notes: values.data.notes,
-                result,
+                result: storedResult,
                 updatedBy: user.id,
                 updatedAt: now,
               },

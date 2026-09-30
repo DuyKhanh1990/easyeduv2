@@ -2511,8 +2511,14 @@ export function registerConfigRoutes(app: Express): void {
         return res.status(403).json({ message: "Bạn không có quyền xem danh sách bảng điểm." });
       }
 
-      const assessments = await readScoreSheetAssessments();
+      const [assessments, scoreSheetTemplates] = await Promise.all([
+        readScoreSheetAssessments(),
+        readScoreSheetTemplates(),
+      ]);
       const assessmentsById = new Map(assessments.map((assessment) => [assessment.id, assessment]));
+      const scoreSheetTemplatesById = new Map(
+        scoreSheetTemplates.map((template) => [template.id, template]),
+      );
       const result = await db.execute(sql`
         SELECT
           cs.id AS session_id,
@@ -2609,6 +2615,7 @@ export function registerConfigRoutes(app: Express): void {
       const mapped = result.rows.flatMap((row: any) => {
         const assessment = assessmentsById.get(row.assessment_id);
         if (!assessment?.templateSnapshot.scoreConversionTemplateId) return [];
+        const currentTemplate = scoreSheetTemplatesById.get(assessment.scoreSheetTemplateId);
         const sessionKey = `${row.assessment_id}:${row.session_id}`;
         const studentAttempts = attemptsBySessionStudent.get(sessionKey);
         const completedStudentCount = Array.from(studentAttempts?.values() ?? [])
@@ -2633,11 +2640,12 @@ export function registerConfigRoutes(app: Express): void {
           assessmentId: row.assessment_id,
           assessmentCode: assessment.code,
           assessmentName: assessment.name,
-          templateName: assessment.templateSnapshot.name,
+          templateName: currentTemplate?.name ?? assessment.templateSnapshot.name,
           scoreDeadlineAt: resolveScoreSheetAssessmentDeadlineAt(
             assessment,
             row.session_date,
             row.session_start_time,
+            currentTemplate?.scoreDeadlineOffsetMinutes,
           ),
           published: Boolean(row.published),
           attemptCount: assessment.attemptCount,

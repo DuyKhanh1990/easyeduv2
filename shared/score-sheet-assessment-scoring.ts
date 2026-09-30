@@ -12,6 +12,14 @@ import {
 
 const nullableScoreSchema = z.number().finite().nonnegative().nullable();
 
+export const scoreSheetAssessmentEvaluationResponsesSchema = z.record(
+  z.string(),
+  z.union([z.string().max(1000), z.boolean(), z.null()]),
+).default({}).refine(
+  (responses) => Object.keys(responses).length <= 500,
+  "Quá nhiều câu trả lời tiêu chí đánh giá.",
+);
+
 export const scoreSheetAssessmentAttemptValuesSchema = z.object({
   partScores: z.record(
     z.string(),
@@ -22,6 +30,7 @@ export const scoreSheetAssessmentAttemptValuesSchema = z.object({
     z.string(),
     z.record(z.string(), z.string().max(1000)),
   ).default({}),
+  evaluationResponses: scoreSheetAssessmentEvaluationResponsesSchema,
 }).strict();
 
 export const scoreSheetAssessmentAttemptResultSchema = z.object({
@@ -49,6 +58,7 @@ export const scoreSheetAssessmentAttemptResultSchema = z.object({
 });
 
 export type ScoreSheetAssessmentAttemptValues = z.infer<typeof scoreSheetAssessmentAttemptValuesSchema>;
+export type ScoreSheetAssessmentEvaluationResponses = z.infer<typeof scoreSheetAssessmentEvaluationResponsesSchema>;
 export type ScoreSheetAssessmentAttemptResult = z.infer<typeof scoreSheetAssessmentAttemptResultSchema>;
 
 export function selectScoreSheetAssessmentAttemptSummary(

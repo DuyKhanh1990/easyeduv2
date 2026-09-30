@@ -276,6 +276,7 @@ export default function ScoreConversion() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: SCORE_SHEET_TEMPLATE_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned"] }),
       ]);
       setScoreSheetDialogOpen(false);
       toast({

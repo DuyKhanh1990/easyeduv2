@@ -75,6 +75,6 @@
 - [Grade book roster snapshot](grade-book-roster-snapshot.md) — danh sách học viên được chốt lúc tạo; học viên active phát sinh sau đó chỉ được thêm thủ công.
 - [Invoice installment adjustments](invoice-schedule-adjustments.md) — đợt chưa thanh toán tính từ tiền cơ sở; server khóa đợt đã thu và đồng bộ tổng hóa đơn cha.
 - [Mockup sandbox screenshots](mockup-sandbox-screenshots.md) — screenshot isolated previews from the sandbox URL; appPreview paths load the main app instead.
-- [Score-sheet template configuration](score-sheet-template-configuration.md) — manual skills stay unlinked, source switches preserve matching parts, and overall rules are copied per template.
+- [Score-sheet template configuration](score-sheet-template-configuration.md) — scoring keeps its saved snapshot; linked templates supply current deadlines and evaluation criteria.
 - [Score conversion publication](score-assessment-publication.md) — publish state belongs to each class session; students only see their enrolled session's policy-selected result.
 - [Finance translation parity](finance-translation-parity.md) — invoice English audits must compare vi/en key sets and scan child dialogs, not only the main Invoices page.
