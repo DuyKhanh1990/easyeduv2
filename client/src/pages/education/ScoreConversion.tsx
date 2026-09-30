@@ -273,7 +273,10 @@ export default function ScoreConversion() {
       return response.json() as Promise<ScoreSheetTemplate>;
     },
     onSuccess: async (_saved, variables) => {
-      await queryClient.invalidateQueries({ queryKey: SCORE_SHEET_TEMPLATE_QUERY_KEY });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: SCORE_SHEET_TEMPLATE_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments"] }),
+      ]);
       setScoreSheetDialogOpen(false);
       toast({
         title: variables.id ? "Đã cập nhật bảng điểm mẫu" : "Đã lưu bảng điểm mẫu",

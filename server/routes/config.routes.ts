@@ -2658,7 +2658,20 @@ export function registerConfigRoutes(app: Express): void {
       // Session assignment uses this list in the same way as /api/score-sheets.
       // Keep it readable for users who can manage class schedules, even if
       // they do not administer score-conversion settings.
-      res.json(await readScoreSheetAssessments());
+      const [assessments, templates] = await Promise.all([
+        readScoreSheetAssessments(),
+        readScoreSheetTemplates(),
+      ]);
+      const templatesById = new Map(templates.map((template) => [template.id, template]));
+      res.json(assessments.map((assessment) => {
+        const currentTemplate = templatesById.get(assessment.scoreSheetTemplateId);
+        return {
+          ...assessment,
+          currentTemplate: currentTemplate
+            ? { code: currentTemplate.code, name: currentTemplate.name }
+            : null,
+        };
+      }));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

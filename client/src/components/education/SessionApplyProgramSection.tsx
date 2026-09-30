@@ -122,8 +122,16 @@ export function SessionApplyProgramSection({
   const selectedAssessment = selectedScoreSheetKind === "assessment"
     ? allScoreSheetAssessments?.find((assessment: any) => assessment.id === selectedScoreSheetId)
     : null;
+  const selectedAssessmentTemplateName =
+    selectedAssessment?.currentTemplate?.name
+    ?? selectedAssessment?.templateSnapshot?.name
+    ?? "Bảng điểm mẫu";
   const selectedScoreSheetLabel = selectedAssessment
-    ? `${selectedAssessment.code} — ${selectedAssessment.name}`
+    ? `${selectedAssessment.code} — ${selectedAssessment.name}${
+        selectedAssessmentTemplateName !== selectedAssessment.name
+          ? ` · ${selectedAssessmentTemplateName}`
+          : ""
+      }`
     : selectedLegacyScoreSheet?.name ?? "";
 
   const applyScoreSheetMutation = useMutation({
@@ -353,7 +361,7 @@ export function SessionApplyProgramSection({
                     <CommandList>
                       <CommandEmpty>Không tìm thấy bảng điểm phù hợp.</CommandEmpty>
                       {(allScoreSheets?.length ?? 0) > 0 && (
-                        <CommandGroup heading="Bảng điểm hiện có">
+                        <CommandGroup heading="Bảng điểm thường">
                           {allScoreSheets?.map((sheet: any) => (
                             <CommandItem
                               key={`sheet:${sheet.id}`}
@@ -370,11 +378,18 @@ export function SessionApplyProgramSection({
                         </CommandGroup>
                       )}
                       {(allScoreSheetAssessments?.length ?? 0) > 0 && (
-                        <CommandGroup heading="Danh sách bảng điểm">
+                        <CommandGroup heading="Bảng điểm quy đổi">
                           {allScoreSheetAssessments?.map((assessment: any) => (
                             <CommandItem
                               key={`assessment:${assessment.id}`}
-                              value={`${assessment.code} ${assessment.name} ${assessment.templateSnapshot?.name ?? ""} ${assessment.id}`}
+                              value={[
+                                assessment.code,
+                                assessment.name,
+                                assessment.currentTemplate?.code,
+                                assessment.currentTemplate?.name,
+                                assessment.templateSnapshot?.name,
+                                assessment.id,
+                              ].filter(Boolean).join(" ")}
                               onSelect={() => {
                                 setApplyScoreSheetId(`assessment:${assessment.id}`);
                                 setScoreSheetPickerOpen(false);
@@ -384,7 +399,12 @@ export function SessionApplyProgramSection({
                               <span className="min-w-0">
                                 <span className="block truncate">{assessment.code} — {assessment.name}</span>
                                 <span className="block truncate text-xs text-muted-foreground">
-                                  {assessment.templateSnapshot?.name ?? "Bảng điểm mẫu"}
+                                  Mẫu: {assessment.currentTemplate?.code
+                                    ? `${assessment.currentTemplate.code} — `
+                                    : ""}
+                                  {assessment.currentTemplate?.name
+                                    ?? assessment.templateSnapshot?.name
+                                    ?? "Bảng điểm mẫu"}
                                 </span>
                               </span>
                             </CommandItem>
