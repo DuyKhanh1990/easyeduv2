@@ -1,0 +1,69 @@
+import { describe, expect, it } from "vitest";
+import { resolveScoreSheetAssessmentStatus } from "../shared/score-sheet-assessment-status";
+
+const baseAssessment = {
+  examDate: "2026-09-30",
+  scoreDeadlineAt: "2026-10-01T11:05",
+  studentCount: 2,
+  enteredStudentCount: 0,
+  completedStudentCount: 0,
+  published: false,
+};
+
+describe("score-sheet assessment status", () => {
+  it("marks an assessment as not started before its exam date", () => {
+    expect(resolveScoreSheetAssessmentStatus(
+      baseAssessment,
+      Date.UTC(2026, 8, 29, 23, 59),
+    )).toBe("not_started");
+  });
+
+  it("marks an ungraded assessment as in progress from exam date through deadline", () => {
+    expect(resolveScoreSheetAssessmentStatus(
+      baseAssessment,
+      Date.UTC(2026, 8, 30, 0, 0),
+    )).toBe("in_progress");
+    expect(resolveScoreSheetAssessmentStatus(
+      baseAssessment,
+      Date.UTC(2026, 9, 1, 11, 5),
+    )).toBe("in_progress");
+  });
+
+  it("prioritizes processing when scoring has started but is incomplete", () => {
+    expect(resolveScoreSheetAssessmentStatus({
+      ...baseAssessment,
+      enteredStudentCount: 1,
+    }, Date.UTC(2026, 8, 30, 12, 0))).toBe("processing");
+  });
+
+  it("keeps fully graded but unpublished assessments in processing", () => {
+    expect(resolveScoreSheetAssessmentStatus({
+      ...baseAssessment,
+      enteredStudentCount: 2,
+      completedStudentCount: 2,
+    }, Date.UTC(2026, 8, 30, 12, 0))).toBe("processing");
+  });
+
+  it("marks a fully graded and published assessment as completed", () => {
+    expect(resolveScoreSheetAssessmentStatus({
+      ...baseAssessment,
+      enteredStudentCount: 2,
+      completedStudentCount: 2,
+      published: true,
+    }, Date.UTC(2026, 8, 29, 12, 0))).toBe("completed");
+  });
+
+  it("leaves overdue assessments without grades unlabelled for a separate status column", () => {
+    expect(resolveScoreSheetAssessmentStatus(
+      baseAssessment,
+      Date.UTC(2026, 9, 1, 11, 6),
+    )).toBeNull();
+  });
+
+  it("keeps overdue assessments with started scoring in processing", () => {
+    expect(resolveScoreSheetAssessmentStatus({
+      ...baseAssessment,
+      enteredStudentCount: 1,
+    }, Date.UTC(2026, 9, 2, 12, 0))).toBe("processing");
+  });
+});

@@ -44,6 +44,10 @@ import type {
   ScoreSheetTemplate,
   ScoreSheetTemplateInput,
 } from "@shared/score-sheet-template";
+import {
+  resolveScoreSheetAssessmentStatus,
+  type ScoreSheetAssessmentStatus,
+} from "@shared/score-sheet-assessment-status";
 import { ScoreConversionTemplateDialog } from "./score-conversion/ScoreConversionTemplateDialog";
 import { ScoreSheetTemplateDialog } from "./score-conversion/ScoreSheetTemplateDialog";
 import {
@@ -70,14 +74,44 @@ type PendingTemplateDelete =
   | { kind: "conversion"; id: string; name: string }
   | { kind: "scoreSheet"; id: string; name: string };
 
-type DeadlineStatus = {
-  key: "no_deadline" | "overdue" | "upcoming" | "on_time";
+type AssessmentStatusPresentation = {
+  key: ScoreSheetAssessmentStatus;
   label: string;
   indicator: string;
   className: string;
 }
 
-type AssessmentStatusFilter = "all" | "upcoming" | "on_time" | "overdue";
+type AssessmentStatusFilter = "all" | ScoreSheetAssessmentStatus;
+
+const ASSESSMENT_STATUS_PRESENTATION: Record<
+  ScoreSheetAssessmentStatus,
+  AssessmentStatusPresentation
+> = {
+  not_started: {
+    key: "not_started",
+    label: "Chưa thi",
+    indicator: "🟣",
+    className: "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900 dark:bg-violet-950/30 dark:text-violet-300",
+  },
+  in_progress: {
+    key: "in_progress",
+    label: "Đang thi",
+    indicator: "🟢",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300",
+  },
+  processing: {
+    key: "processing",
+    label: "Đang xử lý",
+    indicator: "🟠",
+    className: "border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-900 dark:bg-orange-950/30 dark:text-orange-300",
+  },
+  completed: {
+    key: "completed",
+    label: "Hoàn thành",
+    indicator: "✅",
+    className: "border-green-800 bg-green-800 text-white dark:border-green-700 dark:bg-green-700 dark:text-white",
+  },
+};
 
 function formatAssessmentDate(value: string | null | undefined): string {
   if (!value) return "—";
@@ -111,48 +145,12 @@ function getBangkokWallClockMs(date: Date): number {
   );
 }
 
-function getDeadlineStatus(deadline: string | null, nowWallClockMs: number): DeadlineStatus {
-  const match = deadline && /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(deadline);
-  if (!match) {
-    return {
-      key: "no_deadline",
-      label: "Chưa có hạn trả điểm",
-      indicator: "⚪",
-      className: "border-slate-200 bg-slate-50 text-slate-600",
-    };
-  }
-
-  const [, year, month, day, hour, minute] = match;
-  const deadlineWallClockMs = Date.UTC(
-    Number(year),
-    Number(month) - 1,
-    Number(day),
-    Number(hour),
-    Number(minute),
-  );
-  const remainingMs = deadlineWallClockMs - nowWallClockMs;
-  if (remainingMs < 0) {
-    return {
-      key: "overdue",
-      label: "Quá hạn",
-      indicator: "🔴",
-      className: "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300",
-    };
-  }
-  if (remainingMs <= 3 * 24 * 60 * 60 * 1000) {
-    return {
-      key: "upcoming",
-      label: "Sắp đến hạn",
-      indicator: "🟡",
-      className: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300",
-    };
-  }
-  return {
-    key: "on_time",
-    label: "Đúng hạn",
-    indicator: "🟢",
-    className: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300",
-  };
+function getAssessmentStatus(
+  assessment: StaffAssignedScoreSheetAssessment,
+  nowWallClockMs: number,
+): AssessmentStatusPresentation | null {
+  const status = resolveScoreSheetAssessmentStatus(assessment, nowWallClockMs);
+  return status ? ASSESSMENT_STATUS_PRESENTATION[status] : null;
 }
 
 function getCompletedStudentCount(
@@ -223,8 +221,8 @@ export default function ScoreConversion() {
     .filter((assessment) => assessment.hasConversion);
   const filteredConversionAssessments = conversionAssessments.filter((assessment) => {
     const dateKey = assessment.examDate.substring(0, 10);
-    const deadlineStatus = getDeadlineStatus(assessment.scoreDeadlineAt, nowWallClockMs);
-    if (assessmentStatusFilter !== "all" && deadlineStatus.key !== assessmentStatusFilter) return false;
+    const status = getAssessmentStatus(assessment, nowWallClockMs);
+    if (assessmentStatusFilter !== "all" && status?.key !== assessmentStatusFilter) return false;
     if (examDateFrom && dateKey < examDateFrom) return false;
     if (examDateTo && dateKey > examDateTo) return false;
     return true;
@@ -700,9 +698,10 @@ export default function ScoreConversion() {
                   <div className="flex min-w-0 items-center gap-1 overflow-x-auto pb-0.5 sm:shrink-0">
                     {([
                       { value: "all", label: "Tất cả" },
-                      { value: "upcoming", label: "Sắp đến hạn" },
-                      { value: "on_time", label: "Đúng hạn" },
-                      { value: "overdue", label: "Quá hạn" },
+                      { value: "not_started", label: "Chưa thi" },
+                      { value: "in_progress", label: "Đang thi" },
+                      { value: "processing", label: "Đang xử lý" },
+                      { value: "completed", label: "Hoàn thành" },
                     ] as const).map((filter) => (
                       <button
                         key={filter.value}
@@ -823,10 +822,7 @@ export default function ScoreConversion() {
                               </td>
                             </tr>,
                             ...assessments.map((assessment) => {
-                              const deadlineStatus = getDeadlineStatus(
-                                assessment.scoreDeadlineAt,
-                                nowWallClockMs,
-                              );
+                              const status = getAssessmentStatus(assessment, nowWallClockMs);
                               const completedStudentCount = getCompletedStudentCount(assessment);
                               const notCompletedStudentCount = Math.max(
                                 0,
@@ -909,9 +905,13 @@ export default function ScoreConversion() {
                                     </span>
                                   </td>
                                   <td className="border-b border-r border-border px-3 py-2.5 group-hover:bg-accent/50">
-                                    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-0.5 text-[11px] font-medium ${deadlineStatus.className}`}>
-                                      {deadlineStatus.indicator} {deadlineStatus.label}
-                                    </span>
+                                    {status ? (
+                                      <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-0.5 text-[11px] font-medium ${status.className}`}>
+                                        {status.indicator} {status.label}
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted-foreground" aria-label="Chưa có trạng thái">—</span>
+                                    )}
                                   </td>
                                   <td className="sticky right-0 z-10 border-b border-border bg-card px-2 py-2 text-center shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.12)] group-hover:bg-accent/50">
                                     <Button
