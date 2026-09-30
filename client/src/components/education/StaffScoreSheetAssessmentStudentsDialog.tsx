@@ -368,7 +368,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                 </div>
               )}
               <div className="overflow-x-auto rounded-md border">
-                <Table className="min-w-[1000px]">
+                <Table className="min-w-[1100px]">
                 <TableHeader>
                   <TableRow className="bg-muted/50">
                     <TableHead className="min-w-[210px]">Học viên</TableHead>
@@ -379,6 +379,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                     <TableHead className="min-w-[110px]">
                       {assessment?.hasConversion ? "Điểm quy đổi" : "Tổng điểm"}
                     </TableHead>
+                    <TableHead className="min-w-[100px]">Phân loại</TableHead>
                     <TableHead className="min-w-[100px]">Kết quả</TableHead>
                     <TableHead className="min-w-[110px]">Tình trạng</TableHead>
                     {canManageScores && (
@@ -389,7 +390,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                 <TableBody>
                   {students.length === 0 ? (
                     <TableRow>
-                        <TableCell colSpan={canManageScores ? 9 : 8} className="h-24 text-center text-muted-foreground">
+                        <TableCell colSpan={canManageScores ? 10 : 9} className="h-24 text-center text-muted-foreground">
                           Chưa có học viên trong bảng điểm.
                       </TableCell>
                     </TableRow>
@@ -412,20 +413,21 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                         <TableCell className="font-medium tabular-nums">
                           {formatScore(assessment?.hasConversion ? student.convertedScore : student.rawScore)}
                         </TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            <div style={{ color: student.gradeBandColor ?? undefined }}>
-                              {student.gradeBandLabel ?? "—"}
-                            </div>
-                            {student.passStatus && (
-                              <Badge
-                                variant={student.passStatus === "passed" ? "default" : "destructive"}
-                                className={`font-normal ${student.passStatus === "passed" ? "bg-emerald-600 hover:bg-emerald-600" : ""}`}
-                              >
-                                {student.passStatus === "passed" ? "Đạt" : "Chưa đạt"}
-                              </Badge>
-                            )}
-                          </div>
+                        <TableCell style={{ color: student.gradeBandColor ?? undefined }}>
+                          {student.gradeBandLabel ?? "—"}
+                        </TableCell>
+                        <TableCell className={`font-bold ${
+                          student.passStatus === "passed"
+                            ? "text-green-600 dark:text-green-400"
+                            : student.passStatus === "failed"
+                              ? "text-red-600 dark:text-red-400"
+                              : "text-muted-foreground"
+                        }`}>
+                          {student.passStatus === "passed"
+                            ? "Đạt"
+                            : student.passStatus === "failed"
+                              ? "Không đạt"
+                              : "—"}
                         </TableCell>
                         <TableCell>
                           <Badge
