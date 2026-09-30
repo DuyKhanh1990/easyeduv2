@@ -1,12 +1,27 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { AlertCircle, Loader2, Save, Settings2 } from "lucide-react";
+import { AlertCircle, Loader2, Save, Settings2, Trash2, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { StaffScoreSheetAssessmentScoreDialog } from "./StaffScoreSheetAssessmentScoreDialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -60,6 +75,11 @@ type AssessmentRosterStudent = {
   status: "not_entered" | "in_progress" | "complete";
 };
 
+type AssessmentRosterResponse = {
+  students: AssessmentRosterStudent[];
+  removedStudents: AssessmentRosterStudent[];
+};
+
 function formatDate(value: string | null | undefined) {
   if (!value) return "—";
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
@@ -89,7 +109,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
 }: StaffScoreSheetAssessmentStudentsDialogProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const rosterQuery = useQuery<AssessmentRosterStudent[]>({
+  const rosterQuery = useQuery<AssessmentRosterResponse>({
     queryKey: [
       "/api/my-space/score-sheet/staff-assessments",
       assessment?.sessionId,
@@ -110,11 +130,76 @@ export function StaffScoreSheetAssessmentStudentsDialog({
     },
   });
 
-  const students = rosterQuery.data ?? [];
+  const students = rosterQuery.data?.students ?? [];
+  const removedStudents = rosterQuery.data?.removedStudents ?? [];
   const assessmentName = assessment?.assessmentName ?? "Bảng điểm Quy đổi";
   const [editingStudent, setEditingStudent] = useState<AssessmentRosterStudent | null>(null);
+  const [pendingRemoval, setPendingRemoval] = useState<AssessmentRosterStudent | null>(null);
+  const [restoreMenuOpen, setRestoreMenuOpen] = useState(false);
   const [published, setPublished] = useState(false);
   const [savedPublished, setSavedPublished] = useState(false);
+
+  async function updateRosterStudent(studentId: string, action: "remove" | "restore") {
+    if (!assessment) throw new Error("Chưa chọn buổi thi");
+    const basePath =
+      `/api/my-space/score-sheet/staff-assessments/${encodeURIComponent(assessment.sessionId)}` +
+      `/students/${encodeURIComponent(studentId)}`;
+    const response = await fetch(
+      action === "restore" ? `${basePath}/restore` : basePath,
+      {
+        method: action === "restore" ? "POST" : "DELETE",
+        credentials: "include",
+      },
+    );
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { message?: string } | null;
+      throw new Error(payload?.message ?? "Không thể cập nhật danh sách học viên");
+    }
+    return response.json();
+  }
+
+  const removeStudentMutation = useMutation({
+    mutationFn: (studentId: string) => updateRosterStudent(studentId, "remove"),
+    onSuccess: () => {
+      setPendingRemoval(null);
+      queryClient.invalidateQueries({
+        queryKey: ["/api/my-space/score-sheet/staff-assessments", assessment?.sessionId, "students"],
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned"] });
+      toast({
+        title: "Đã xóa học viên khỏi bảng điểm",
+        description: "Điểm đã nhập được giữ lại. Bạn có thể thêm học viên lại sau.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Không thể xóa học viên",
+        description: error instanceof Error ? error.message : "Đã xảy ra lỗi.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const restoreStudentMutation = useMutation({
+    mutationFn: (studentId: string) => updateRosterStudent(studentId, "restore"),
+    onSuccess: () => {
+      setRestoreMenuOpen(false);
+      queryClient.invalidateQueries({
+        queryKey: ["/api/my-space/score-sheet/staff-assessments", assessment?.sessionId, "students"],
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned"] });
+      toast({ title: "Đã thêm học viên lại vào bảng điểm" });
+    },
+    onError: (error) => {
+      toast({
+        title: "Không thể thêm học viên",
+        description: error instanceof Error ? error.message : "Đã xảy ra lỗi.",
+        variant: "destructive",
+      });
+    },
+  });
 
   useEffect(() => {
     const initialPublished = assessment?.published ?? false;
@@ -246,8 +331,43 @@ export function StaffScoreSheetAssessmentStudentsDialog({
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-md border">
-              <Table className="min-w-[1000px]">
+            <div className="space-y-3">
+              {canManageScores && removedStudents.length > 0 && (
+                <div className="flex justify-end">
+                  <Popover open={restoreMenuOpen} onOpenChange={setRestoreMenuOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={restoreStudentMutation.isPending}
+                      >
+                        <UserPlus className="mr-2 h-4 w-4" />
+                        Thêm học viên vào bảng
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-[320px] p-2">
+                      <p className="px-2 py-1 text-xs font-semibold text-muted-foreground">
+                        Học viên đã xóa khỏi bảng điểm
+                      </p>
+                      <div className="max-h-64 space-y-1 overflow-y-auto">
+                        {removedStudents.map((student) => (
+                          <Button
+                            key={student.studentId}
+                            variant="ghost"
+                            className="h-auto w-full justify-start whitespace-normal px-2 py-2 text-left text-sm"
+                            disabled={restoreStudentMutation.isPending}
+                            onClick={() => restoreStudentMutation.mutate(student.studentId)}
+                          >
+                            {student.code} - {student.fullName}
+                          </Button>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              )}
+              <div className="overflow-x-auto rounded-md border">
+                <Table className="min-w-[1000px]">
                 <TableHeader>
                   <TableRow className="bg-muted/50">
                     <TableHead className="min-w-[210px]">Học viên</TableHead>
@@ -261,15 +381,15 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                     <TableHead className="min-w-[100px]">Kết quả</TableHead>
                     <TableHead className="min-w-[110px]">Tình trạng</TableHead>
                     {canManageScores && (
-                      <TableHead className="min-w-[90px] text-center">Quản lý</TableHead>
+                      <TableHead className="min-w-[110px] text-center">Quản lý</TableHead>
                     )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {students.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={canManageScores ? 9 : 8} className="h-24 text-center text-muted-foreground">
-                        Buổi thi chưa có học viên.
+                        <TableCell colSpan={canManageScores ? 9 : 8} className="h-24 text-center text-muted-foreground">
+                          Chưa có học viên trong bảng điểm.
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -308,17 +428,31 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                         </TableCell>
                         {canManageScores && (
                           <TableCell className="text-center">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => setEditingStudent(student)}
-                              title={`Nhập điểm cho ${student.fullName}`}
-                              aria-label={`Quản lý kết quả của ${student.fullName}`}
-                              data-testid={`btn-manage-assessment-score-${student.studentId}`}
-                            >
-                              <Settings2 className="h-4 w-4" />
-                            </Button>
+                            <div className="inline-flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => setEditingStudent(student)}
+                                title={`Nhập điểm cho ${student.fullName}`}
+                                aria-label={`Quản lý kết quả của ${student.fullName}`}
+                                data-testid={`btn-manage-assessment-score-${student.studentId}`}
+                              >
+                                <Settings2 className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive hover:text-destructive"
+                                onClick={() => setPendingRemoval(student)}
+                                title={`Xóa ${student.fullName} khỏi bảng điểm`}
+                                aria-label={`Xóa ${student.fullName} khỏi bảng điểm`}
+                                data-testid={`btn-remove-assessment-student-${student.studentId}`}
+                                disabled={removeStudentMutation.isPending}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </TableCell>
                         )}
                       </TableRow>
@@ -326,10 +460,40 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                   )}
                 </TableBody>
               </Table>
+              </div>
             </div>
           )}
         </div>
       </DialogContent>
+      <AlertDialog
+        open={!!pendingRemoval}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !removeStudentMutation.isPending) setPendingRemoval(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa học viên khỏi bảng điểm?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Xóa {pendingRemoval?.fullName ?? "học viên"} khỏi danh sách của buổi thi này?
+              <br />
+              Điểm đã nhập được giữ lại; bạn có thể thêm học viên trở lại nếu xóa nhầm.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removeStudentMutation.isPending}>Hủy</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={removeStudentMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                if (pendingRemoval) removeStudentMutation.mutate(pendingRemoval.studentId);
+              }}
+            >
+              {removeStudentMutation.isPending ? "Đang xóa…" : "Xóa"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <StaffScoreSheetAssessmentScoreDialog
         assessment={assessment}
         student={editingStudent}

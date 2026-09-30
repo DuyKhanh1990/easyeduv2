@@ -2527,6 +2527,7 @@ export function registerConfigRoutes(app: Express): void {
           cs.session_index,
           cs.session_date,
           cs.score_sheet_assessment_published AS published,
+          cs.score_sheet_assessment_excluded_student_ids AS excluded_student_ids,
           st.start_time AS session_start_time,
           c.class_code,
           c.name AS class_name,
@@ -2536,12 +2537,14 @@ export function registerConfigRoutes(app: Express): void {
             SELECT COUNT(DISTINCT ss.student_id)::int
             FROM student_sessions ss
             WHERE ss.class_session_id = cs.id
+              AND NOT (ss.student_id = ANY(COALESCE(cs.score_sheet_assessment_excluded_student_ids, '{}'::uuid[])))
           ) AS student_count,
           (
             SELECT COUNT(DISTINCT attempt.student_id)::int
             FROM score_sheet_assessment_student_attempts attempt
             WHERE attempt.assessment_id = cs.score_sheet_assessment_id
               AND attempt.class_session_id = cs.id
+              AND NOT (attempt.student_id = ANY(COALESCE(cs.score_sheet_assessment_excluded_student_ids, '{}'::uuid[])))
           ) AS entered_student_count
         FROM class_sessions cs
         JOIN classes c ON c.id = cs.class_id
@@ -2569,6 +2572,12 @@ export function registerConfigRoutes(app: Express): void {
       const conversionAssessmentIds = Array.from(
         new Set(conversionRows.map((row: any) => String(row.assessment_id))),
       );
+      const excludedStudentIdsBySession = new Map<string, Set<string>>(
+        conversionRows.map((row: any) => [
+          String(row.session_id),
+          new Set<string>((row.excluded_student_ids ?? []).map(String)),
+        ]),
+      );
       const assessmentAttempts = conversionSessionIds.length
         ? await db.select({
             assessmentId: scoreSheetAssessmentStudentAttempts.assessmentId,
@@ -2595,6 +2604,9 @@ export function registerConfigRoutes(app: Express): void {
         result: unknown;
       }>>>();
       for (const attempt of assessmentAttempts) {
+        if (excludedStudentIdsBySession.get(String(attempt.classSessionId))?.has(String(attempt.studentId))) {
+          continue;
+        }
         const sessionKey = `${attempt.assessmentId}:${attempt.classSessionId}`;
         let studentsForSession = attemptsBySessionStudent.get(sessionKey);
         if (!studentsForSession) {

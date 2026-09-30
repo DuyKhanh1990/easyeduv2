@@ -948,6 +948,10 @@ export const classSessions = pgTable("class_sessions", {
   scoreSheetId: uuid("score_sheet_id").references(() => scoreSheets.id, { onDelete: "set null" }),
   scoreSheetAssessmentId: uuid("score_sheet_assessment_id"),
   scoreSheetAssessmentPublished: boolean("score_sheet_assessment_published").notNull().default(false),
+  scoreSheetAssessmentExcludedStudentIds: uuid("score_sheet_assessment_excluded_student_ids")
+    .array()
+    .notNull()
+    .default(sql`'{}'::uuid[]`),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({

@@ -4012,7 +4012,10 @@ export function registerMySpaceRoutes(app: Express): void {
             ),
           )
           .innerJoin(classes, eq(classes.id, classSessions.classId))
-          .where(eq(scoreSheetAssessmentStudentAttempts.studentId, studentId))
+          .where(and(
+            eq(scoreSheetAssessmentStudentAttempts.studentId, studentId),
+            sql`NOT (${scoreSheetAssessmentStudentAttempts.studentId} = ANY(${classSessions.scoreSheetAssessmentExcludedStudentIds}))`,
+          ))
           .orderBy(desc(classSessions.sessionDate), desc(scoreSheetAssessmentStudentAttempts.attemptNumber));
 
         const attemptsByAssessmentSession = new Map<string, { assessment: any; attempts: any[] }>();
@@ -4262,18 +4265,21 @@ export function registerMySpaceRoutes(app: Express): void {
             SELECT COUNT(DISTINCT ss.student_id)::int
             FROM student_sessions ss
             WHERE ss.class_session_id = cs.id
+              AND NOT (ss.student_id = ANY(COALESCE(cs.score_sheet_assessment_excluded_student_ids, '{}'::uuid[])))
           ) AS student_count,
           (
             SELECT COUNT(DISTINCT attempt.student_id)::int
             FROM score_sheet_assessment_student_attempts attempt
             WHERE attempt.assessment_id = cs.score_sheet_assessment_id
               AND attempt.class_session_id = cs.id
+              AND NOT (attempt.student_id = ANY(COALESCE(cs.score_sheet_assessment_excluded_student_ids, '{}'::uuid[])))
           ) AS entered_student_count,
           (
             SELECT COUNT(DISTINCT attempt.student_id)::int
             FROM score_sheet_assessment_student_attempts attempt
             WHERE attempt.assessment_id = cs.score_sheet_assessment_id
               AND attempt.class_session_id = cs.id
+              AND NOT (attempt.student_id = ANY(COALESCE(cs.score_sheet_assessment_excluded_student_ids, '{}'::uuid[])))
               AND attempt.result @> '{"inputComplete":true}'::jsonb
           ) AS completed_student_count
         FROM class_sessions cs
@@ -4352,6 +4358,16 @@ export function registerMySpaceRoutes(app: Express): void {
         return res.status(409).json({ message: "Cấu hình bảng điểm được giao không còn khả dụng." });
       }
 
+      const [sessionRosterSettings] = await db
+        .select({
+          excludedStudentIds: classSessions.scoreSheetAssessmentExcludedStudentIds,
+        })
+        .from(classSessions)
+        .where(eq(classSessions.id, sessionId.data))
+        .limit(1);
+      const excludedStudentIds = new Set(
+        (sessionRosterSettings?.excludedStudentIds ?? []).map(String),
+      );
       const roster = await getRegularSessionStudents(sessionId.data);
       const uniqueStudents = new Map<string, { studentId: string; code: string; fullName: string }>();
       for (const row of roster) {
@@ -4385,7 +4401,7 @@ export function registerMySpaceRoutes(app: Express): void {
         attemptsByStudent.set(attempt.studentId, studentAttempts);
       }
 
-      res.json(Array.from(uniqueStudents.values()).map((student) => {
+      const mappedStudents = Array.from(uniqueStudents.values()).map((student) => {
         const attempts = attemptsByStudent.get(student.studentId) ?? [];
         const summary = selectScoreSheetAssessmentAttemptSummary(
           attempts,
@@ -4403,12 +4419,103 @@ export function registerMySpaceRoutes(app: Express): void {
           inputComplete: summary?.result.inputComplete ?? false,
           status: !summary ? "not_entered" : summary.result.inputComplete ? "complete" : "in_progress",
         };
-      }));
+      });
+      res.json({
+        students: mappedStudents.filter((student) => !excludedStudentIds.has(student.studentId)),
+        removedStudents: mappedStudents.filter((student) => excludedStudentIds.has(student.studentId)),
+      });
     } catch (err: any) {
       console.error("Staff score assessment roster error:", err);
       res.status(500).json({ message: err.message || "Lỗi khi tải danh sách học viên" });
     }
   });
+
+  async function updateScoreAssessmentRoster(
+    req: any,
+    res: any,
+    shouldExclude: boolean,
+  ) {
+    try {
+      if (!(req.user as any)) return res.status(401).json({ message: "Unauthorized" });
+
+      const sessionId = z.string().uuid().safeParse(req.params.sessionId);
+      const studentId = z.string().uuid().safeParse(req.params.studentId);
+      if (!sessionId.success || !studentId.success) {
+        return res.status(400).json({ message: "Buổi thi hoặc học viên không hợp lệ" });
+      }
+
+      const result = await db.transaction(async (tx) => {
+        const access = await getAuthorizedScoreSheetSession(req, sessionId.data, {
+          queryable: tx,
+          lock: true,
+          permission: "edit",
+        });
+        if (!access?.assessment) {
+          return { status: 404, message: "Không tìm thấy buổi thi hoặc bạn không có quyền chỉnh sửa" };
+        }
+
+        const [enrollment] = await tx
+          .select({ id: studentSessions.id })
+          .from(studentSessions)
+          .where(and(
+            eq(studentSessions.classSessionId, sessionId.data),
+            eq(studentSessions.studentId, studentId.data),
+            sql`${studentSessions.status} != 'transferred'`,
+          ))
+          .limit(1);
+        if (!enrollment) {
+          return { status: 404, message: "Học viên không thuộc danh sách của buổi thi này" };
+        }
+
+        const [session] = await tx
+          .select({
+            excludedStudentIds: classSessions.scoreSheetAssessmentExcludedStudentIds,
+          })
+          .from(classSessions)
+          .where(eq(classSessions.id, sessionId.data))
+          .limit(1);
+        if (!session) {
+          return { status: 404, message: "Không tìm thấy buổi thi" };
+        }
+
+        const excludedStudentIds = new Set(
+          (session.excludedStudentIds ?? []).map(String),
+        );
+        if (shouldExclude) excludedStudentIds.add(studentId.data);
+        else excludedStudentIds.delete(studentId.data);
+
+        await tx
+          .update(classSessions)
+          .set({
+            scoreSheetAssessmentExcludedStudentIds: Array.from(excludedStudentIds),
+            updatedAt: new Date(),
+          })
+          .where(eq(classSessions.id, sessionId.data));
+
+        return { status: 200, message: "" };
+      });
+
+      if (result.status !== 200) {
+        return res.status(result.status).json({ message: result.message });
+      }
+      return res.json({ success: true });
+    } catch (err: any) {
+      console.error("Update score assessment roster error:", err);
+      return res.status(500).json({
+        message: err.message || "Lỗi khi cập nhật danh sách học viên",
+      });
+    }
+  }
+
+  app.delete(
+    "/api/my-space/score-sheet/staff-assessments/:sessionId/students/:studentId",
+    (req, res) => updateScoreAssessmentRoster(req, res, true),
+  );
+
+  app.post(
+    "/api/my-space/score-sheet/staff-assessments/:sessionId/students/:studentId/restore",
+    (req, res) => updateScoreAssessmentRoster(req, res, false),
+  );
 
   app.get(
     "/api/my-space/score-sheet/staff-assessments/:sessionId/students/:studentId/score-entry",
@@ -4437,6 +4544,17 @@ export function registerMySpaceRoutes(app: Express): void {
           ))
           .limit(1);
         if (!membership) return res.status(404).json({ message: "Học viên không thuộc buổi thi này." });
+
+        const [rosterSettings] = await db
+          .select({
+            excludedStudentIds: classSessions.scoreSheetAssessmentExcludedStudentIds,
+          })
+          .from(classSessions)
+          .where(eq(classSessions.id, sessionId.data))
+          .limit(1);
+        if (rosterSettings?.excludedStudentIds?.includes(studentId.data)) {
+          return res.status(404).json({ message: "Học viên đã được xóa khỏi bảng điểm này." });
+        }
 
         const { assessmentId, assessment } = access;
         if (!assessment) {
@@ -4579,6 +4697,19 @@ export function registerMySpaceRoutes(app: Express): void {
           if (!membership) {
             const error: any = new Error("Học viên không thuộc buổi thi này.");
             error.status = 404;
+            throw error;
+          }
+
+          const [rosterSettings] = await tx
+            .select({
+              excludedStudentIds: classSessions.scoreSheetAssessmentExcludedStudentIds,
+            })
+            .from(classSessions)
+            .where(eq(classSessions.id, sessionId.data))
+            .limit(1);
+          if (rosterSettings?.excludedStudentIds?.includes(studentId.data)) {
+            const error: any = new Error("Học viên đã được xóa khỏi bảng điểm này.");
+            error.status = 409;
             throw error;
           }
 
