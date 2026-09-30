@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { vi } from "date-fns/locale";
@@ -12,6 +12,7 @@ import {
   CircleDot,
   Clock3,
   Eye,
+  Filter,
   MapPin,
   Pencil,
   Plus,
@@ -19,6 +20,7 @@ import {
   Trash2,
   UserRound,
   Users,
+  X,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -33,9 +35,18 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import type {
   ScoreConversionTemplate,
   ScoreConversionTemplateInput,
@@ -83,8 +94,6 @@ type AssessmentStatusPresentation = {
   indicator: string;
   className: string;
 }
-
-type AssessmentStatusFilter = "all" | ScoreSheetAssessmentStatus;
 
 const ASSESSMENT_STATUS_PRESENTATION: Record<
   ScoreSheetAssessmentStatus,
@@ -210,6 +219,17 @@ function formatDateLabel(value: string): string {
   }
 }
 
+function getClassLabel(assessment: StaffAssignedScoreSheetAssessment): string {
+  return assessment.className || assessment.classCode;
+}
+
+function getTeacherNameList(assessment: StaffAssignedScoreSheetAssessment): string[] {
+  return (assessment.teacherNames ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
 export default function ScoreConversion() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -220,11 +240,18 @@ export default function ScoreConversion() {
   const [editingScoreSheetTemplate, setEditingScoreSheetTemplate] = useState<ScoreSheetTemplate | null>(null);
   const [pendingTemplateDelete, setPendingTemplateDelete] = useState<PendingTemplateDelete | null>(null);
   const [selectedAssessment, setSelectedAssessment] = useState<StaffAssignedScoreSheetAssessment | null>(null);
-  const [assessmentStatusFilter, setAssessmentStatusFilter] = useState<AssessmentStatusFilter>("all");
   const [assessmentSearchInput, setAssessmentSearchInput] = useState("");
   const [assessmentSearchTerm, setAssessmentSearchTerm] = useState("");
+  const [filterDialogOpen, setFilterDialogOpen] = useState(false);
+  const [classFilters, setClassFilters] = useState<string[]>([]);
+  const [teacherFilters, setTeacherFilters] = useState<string[]>([]);
+  const [assessmentFilters, setAssessmentFilters] = useState<string[]>([]);
+  const [statusFilters, setStatusFilters] = useState<ScoreSheetAssessmentStatus[]>([]);
+  const [deadlineStatusFilters, setDeadlineStatusFilters] = useState<ScoreSheetAssessmentDeadlineStatus[]>([]);
   const [examDateFrom, setExamDateFrom] = useState("");
   const [examDateTo, setExamDateTo] = useState("");
+  const [deadlineDateFrom, setDeadlineDateFrom] = useState("");
+  const [deadlineDateTo, setDeadlineDateTo] = useState("");
   const assessmentPermissions = myPermissions?.permissions["/assessments#list"];
   const canCreate = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canCreate);
   const canEdit = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canEdit);
@@ -264,10 +291,58 @@ export default function ScoreConversion() {
   const nowWallClockMs = getBangkokWallClockMs(new Date());
   const conversionAssessments = (assignedScoreSheetAssessmentsQuery.data ?? [])
     .filter((assessment) => assessment.hasConversion);
+  const classFilterOptions = useMemo(() => {
+    const options = new Map<string, { value: string; label: string; sublabel?: string }>();
+    for (const assessment of conversionAssessments) {
+      if (!options.has(assessment.classId)) {
+        options.set(assessment.classId, {
+          value: assessment.classId,
+          label: getClassLabel(assessment),
+          sublabel: assessment.classCode,
+        });
+      }
+    }
+    return Array.from(options.values()).sort((a, b) => a.label.localeCompare(b.label, "vi"));
+  }, [conversionAssessments]);
+  const teacherFilterOptions = useMemo(() => {
+    const names = new Set<string>();
+    conversionAssessments.forEach((assessment) => getTeacherNameList(assessment).forEach((name) => names.add(name)));
+    return Array.from(names)
+      .sort((a, b) => a.localeCompare(b, "vi"))
+      .map((name) => ({ value: name, label: name }));
+  }, [conversionAssessments]);
+  const assessmentFilterOptions = useMemo(() => {
+    const options = new Map<string, { value: string; label: string; sublabel?: string }>();
+    for (const assessment of conversionAssessments) {
+      if (!options.has(assessment.assessmentId)) {
+        options.set(assessment.assessmentId, {
+          value: assessment.assessmentId,
+          label: assessment.assessmentName ?? "Bảng điểm chưa đặt tên",
+          sublabel: assessment.assessmentCode ?? undefined,
+        });
+      }
+    }
+    return Array.from(options.values()).sort((a, b) => a.label.localeCompare(b.label, "vi"));
+  }, [conversionAssessments]);
   const filteredConversionAssessments = conversionAssessments.filter((assessment) => {
     const dateKey = assessment.examDate.substring(0, 10);
     const status = getAssessmentStatus(assessment, nowWallClockMs);
-    if (assessmentStatusFilter !== "all" && status?.key !== assessmentStatusFilter) return false;
+    const deadlineStatusKey = resolveScoreSheetAssessmentDeadlineStatus(
+      assessment.scoreDeadlineAt,
+      nowWallClockMs,
+    );
+    const deadlineDateKey = assessment.scoreDeadlineAt?.substring(0, 10) ?? "";
+    if (classFilters.length > 0 && !classFilters.includes(assessment.classId)) return false;
+    if (
+      teacherFilters.length > 0
+      && !teacherFilters.some((teacher) => getTeacherNameList(assessment).includes(teacher))
+    ) return false;
+    if (assessmentFilters.length > 0 && !assessmentFilters.includes(assessment.assessmentId)) return false;
+    if (statusFilters.length > 0 && (!status || !statusFilters.includes(status.key))) return false;
+    if (
+      deadlineStatusFilters.length > 0
+      && (!deadlineStatusKey || !deadlineStatusFilters.includes(deadlineStatusKey))
+    ) return false;
     const searchTerm = assessmentSearchTerm.trim().toLocaleLowerCase("vi");
     const searchableFields = [
       assessment.classCode,
@@ -284,6 +359,8 @@ export default function ScoreConversion() {
     ) return false;
     if (examDateFrom && dateKey < examDateFrom) return false;
     if (examDateTo && dateKey > examDateTo) return false;
+    if (deadlineDateFrom && (!deadlineDateKey || deadlineDateKey < deadlineDateFrom)) return false;
+    if (deadlineDateTo && (!deadlineDateKey || deadlineDateKey > deadlineDateTo)) return false;
     return true;
   });
   const assessmentsByDate = filteredConversionAssessments.reduce<Record<string, StaffAssignedScoreSheetAssessment[]>>(
@@ -295,6 +372,26 @@ export default function ScoreConversion() {
     {},
   );
   const sortedAssessmentDates = Object.keys(assessmentsByDate).sort((a, b) => b.localeCompare(a));
+  const activeFilterCount = [
+    classFilters.length > 0,
+    teacherFilters.length > 0,
+    assessmentFilters.length > 0,
+    statusFilters.length > 0,
+    deadlineStatusFilters.length > 0,
+    Boolean(examDateFrom || examDateTo),
+    Boolean(deadlineDateFrom || deadlineDateTo),
+  ].filter(Boolean).length;
+  const clearAssessmentFilters = () => {
+    setClassFilters([]);
+    setTeacherFilters([]);
+    setAssessmentFilters([]);
+    setStatusFilters([]);
+    setDeadlineStatusFilters([]);
+    setExamDateFrom("");
+    setExamDateTo("");
+    setDeadlineDateFrom("");
+    setDeadlineDateTo("");
+  };
   const savedTemplates = templatesQuery.data ?? [];
   const initialTypeKey: ScoreConversionTypeKey =
     SCORE_CONVERSION_TYPES.find((type) =>
@@ -751,11 +848,11 @@ export default function ScoreConversion() {
             ) : (
               <div className="overflow-hidden rounded-2xl border border-border bg-background">
                 <div
-                  className="grid grid-cols-1 gap-3 border-b border-border px-3 py-3 sm:flex sm:flex-wrap sm:items-center sm:gap-4 sm:px-4"
+                  className="flex flex-wrap items-center gap-3 border-b border-border px-3 py-3 sm:px-4"
                   data-testid="score-conversion-filter-bar"
                 >
                   <form
-                    className="relative w-full min-w-0 sm:w-[230px] sm:flex-none"
+                    className="relative min-w-0 flex-1 sm:max-w-[280px]"
                     onSubmit={(event) => {
                       event.preventDefault();
                       setAssessmentSearchTerm(assessmentSearchInput);
@@ -779,81 +876,165 @@ export default function ScoreConversion() {
                     </button>
                   </form>
 
-                  <div className="flex min-w-0 items-center gap-2 overflow-x-auto py-0.5 sm:flex-wrap">
-                    {([
-                      { value: "all", label: "Tất cả" },
-                      { value: "not_started", label: "Chưa thi" },
-                      { value: "in_progress", label: "Đang thi" },
-                      { value: "processing", label: "Đang xử lý" },
-                      { value: "completed", label: "Hoàn thành" },
-                    ] as const).map((filter) => (
-                      <button
-                        key={filter.value}
-                        type="button"
-                        aria-pressed={assessmentStatusFilter === filter.value}
-                        data-testid={`filter-score-conversion-${filter.value}`}
-                        onClick={() => setAssessmentStatusFilter(filter.value)}
-                        className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-3 text-[13px] font-semibold transition-colors ${
-                          filter.value === "all"
-                            ? assessmentStatusFilter === "all"
-                              ? "border-blue-600 bg-blue-600 text-white shadow-sm"
-                              : "border-blue-300 bg-background text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:hover:bg-blue-950/40"
-                            : assessmentStatusFilter === filter.value
-                              ? ASSESSMENT_FILTER_COLORS[filter.value].active
-                              : `bg-background ${ASSESSMENT_FILTER_COLORS[filter.value].idle}`
-                        }`}
-                      >
-                        {filter.value !== "all" && (
-                          <span
-                            className={`h-1.5 w-1.5 rounded-full ${
-                              assessmentStatusFilter === filter.value
-                                ? "bg-white"
-                                : ASSESSMENT_FILTER_COLORS[filter.value].dot
-                            }`}
-                          />
-                        )}
-                        {filter.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="hidden flex-1 sm:block" />
-
-                  <div className="grid min-w-0 grid-cols-2 gap-2 text-sm text-muted-foreground sm:flex sm:items-center">
-                    <label className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-                      <span>Từ</span>
-                      <input
-                        type="date"
-                        aria-label="Lọc từ ngày thi"
-                        value={examDateFrom}
-                        onChange={(event) => setExamDateFrom(event.target.value)}
-                        className="min-w-0 rounded-lg border border-border bg-background px-2 py-2 text-sm text-foreground sm:py-1"
-                      />
-                    </label>
-                    <label className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-                      <span>Đến</span>
-                      <input
-                        type="date"
-                        aria-label="Lọc đến ngày thi"
-                        value={examDateTo}
-                        onChange={(event) => setExamDateTo(event.target.value)}
-                        className="min-w-0 rounded-lg border border-border bg-background px-2 py-2 text-sm text-foreground sm:py-1"
-                      />
-                    </label>
-                    {(examDateFrom || examDateTo) && (
+                  <div className="ml-auto flex items-center gap-2">
+                    {activeFilterCount > 0 && (
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="col-span-2 justify-self-end sm:col-span-1"
-                        onClick={() => {
-                          setExamDateFrom("");
-                          setExamDateTo("");
-                        }}
+                        className="h-9 gap-1.5 text-muted-foreground"
+                        onClick={clearAssessmentFilters}
                       >
-                        Xóa ngày
+                        <X className="h-3.5 w-3.5" />
+                        Xóa lọc
                       </Button>
                     )}
+                    <Dialog open={filterDialogOpen} onOpenChange={setFilterDialogOpen}>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 gap-2"
+                        data-testid="open-score-conversion-filters"
+                        onClick={() => setFilterDialogOpen(true)}
+                      >
+                        <Filter className="h-4 w-4" />
+                        Bộ lọc
+                        {activeFilterCount > 0 && (
+                          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
+                            {activeFilterCount}
+                          </span>
+                        )}
+                      </Button>
+                      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+                        <DialogHeader>
+                          <DialogTitle>Bộ lọc bảng điểm quy đổi</DialogTitle>
+                          <DialogDescription>
+                            Chọn một hoặc nhiều điều kiện để lọc danh sách đang hiển thị.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="grid gap-4 py-2 sm:grid-cols-2">
+                          <div className="space-y-1.5">
+                            <label className="text-sm font-medium">Lớp</label>
+                            <SearchableMultiSelect
+                              options={classFilterOptions}
+                              value={classFilters}
+                              onChange={setClassFilters}
+                              placeholder="Chọn lớp"
+                              searchPlaceholder="Tìm lớp..."
+                              data-testid="filter-score-conversion-class"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-sm font-medium">Giáo viên</label>
+                            <SearchableMultiSelect
+                              options={teacherFilterOptions}
+                              value={teacherFilters}
+                              onChange={setTeacherFilters}
+                              placeholder="Chọn giáo viên"
+                              searchPlaceholder="Tìm giáo viên..."
+                              data-testid="filter-score-conversion-teacher"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-sm font-medium">Bảng điểm</label>
+                            <SearchableMultiSelect
+                              options={assessmentFilterOptions}
+                              value={assessmentFilters}
+                              onChange={setAssessmentFilters}
+                              placeholder="Chọn bảng điểm"
+                              searchPlaceholder="Tìm bảng điểm..."
+                              data-testid="filter-score-conversion-assessment"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-sm font-medium">Trạng thái</label>
+                            <SearchableMultiSelect
+                              options={Object.values(ASSESSMENT_STATUS_PRESENTATION).map((status) => ({
+                                value: status.key,
+                                label: status.label,
+                              }))}
+                              value={statusFilters}
+                              onChange={(values) => setStatusFilters(values as ScoreSheetAssessmentStatus[])}
+                              placeholder="Chọn trạng thái"
+                              searchPlaceholder="Tìm trạng thái..."
+                              data-testid="filter-score-conversion-status"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-sm font-medium">Ngày thi</label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <label className="space-y-1 text-xs text-muted-foreground">
+                                <span>Từ</span>
+                                <input
+                                  type="date"
+                                  aria-label="Lọc ngày thi từ"
+                                  value={examDateFrom}
+                                  onChange={(event) => setExamDateFrom(event.target.value)}
+                                  className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                                />
+                              </label>
+                              <label className="space-y-1 text-xs text-muted-foreground">
+                                <span>Đến</span>
+                                <input
+                                  type="date"
+                                  aria-label="Lọc ngày thi đến"
+                                  value={examDateTo}
+                                  onChange={(event) => setExamDateTo(event.target.value)}
+                                  className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                                />
+                              </label>
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-sm font-medium">Hạn trả</label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <label className="space-y-1 text-xs text-muted-foreground">
+                                <span>Từ</span>
+                                <input
+                                  type="date"
+                                  aria-label="Lọc hạn trả từ"
+                                  value={deadlineDateFrom}
+                                  onChange={(event) => setDeadlineDateFrom(event.target.value)}
+                                  className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                                />
+                              </label>
+                              <label className="space-y-1 text-xs text-muted-foreground">
+                                <span>Đến</span>
+                                <input
+                                  type="date"
+                                  aria-label="Lọc hạn trả đến"
+                                  value={deadlineDateTo}
+                                  onChange={(event) => setDeadlineDateTo(event.target.value)}
+                                  className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                                />
+                              </label>
+                            </div>
+                          </div>
+                          <div className="space-y-1.5 sm:col-span-2">
+                            <label className="text-sm font-medium">Tình trạng</label>
+                            <SearchableMultiSelect
+                              options={[
+                                { value: "within_deadline", label: "Trong hạn" },
+                                { value: "overdue", label: "Quá hạn" },
+                              ]}
+                              value={deadlineStatusFilters}
+                              onChange={(values) => setDeadlineStatusFilters(values as ScoreSheetAssessmentDeadlineStatus[])}
+                              placeholder="Chọn tình trạng"
+                              searchPlaceholder="Tìm tình trạng..."
+                              data-testid="filter-score-conversion-deadline-status"
+                            />
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button type="button" variant="outline" onClick={clearAssessmentFilters}>
+                            Xóa tất cả
+                          </Button>
+                          <Button type="button" onClick={() => setFilterDialogOpen(false)}>
+                            Áp dụng
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
                   </div>
                 </div>
 
