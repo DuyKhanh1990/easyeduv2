@@ -133,7 +133,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
 
   const students = rosterQuery.data?.students ?? [];
   const removedStudents = rosterQuery.data?.removedStudents ?? [];
-  const assessmentName = assessment?.assessmentName ?? "Bảng điểm Quy đổi";
+  const scoreSheetTemplateName = assessment?.templateName ?? "Bảng điểm chưa đặt tên";
   const [editingStudent, setEditingStudent] = useState<AssessmentRosterStudent | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<AssessmentRosterStudent | null>(null);
   const [restoreMenuOpen, setRestoreMenuOpen] = useState(false);
@@ -259,7 +259,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
       <DialogContent className="flex max-h-[90vh] w-[98vw] max-w-[98vw] flex-col gap-0 overflow-hidden p-0 sm:w-[98vw] sm:max-w-[98vw]">
         <DialogHeader className="shrink-0 border-b px-5 py-4 text-left sm:px-6">
           <div className="flex flex-wrap items-center gap-2">
-            <DialogTitle className="text-base">{assessmentName}</DialogTitle>
+            <DialogTitle className="text-base">{scoreSheetTemplateName}</DialogTitle>
             <Badge variant="outline">Bảng điểm Quy đổi</Badge>
             <Badge variant="secondary" className="font-normal">
               {rosterQuery.isLoading ? "Đang tải học viên…" : `${students.length} học viên`}

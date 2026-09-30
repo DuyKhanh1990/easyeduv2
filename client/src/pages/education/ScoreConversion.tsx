@@ -225,6 +225,10 @@ function getClassLabel(assessment: StaffAssignedScoreSheetAssessment): string {
   return assessment.className || assessment.classCode;
 }
 
+function getScoreSheetTemplateLabel(assessment: StaffAssignedScoreSheetAssessment): string {
+  return assessment.templateName || "Bảng điểm chưa đặt tên";
+}
+
 function getTeacherNameList(assessment: StaffAssignedScoreSheetAssessment): string[] {
   return (assessment.teacherNames ?? "")
     .split(",")
@@ -315,13 +319,13 @@ export default function ScoreConversion() {
       .map((name) => ({ value: name, label: name }));
   }, [conversionAssessments]);
   const assessmentFilterOptions = useMemo(() => {
-    const options = new Map<string, { value: string; label: string; sublabel?: string }>();
+    const options = new Map<string, { value: string; label: string }>();
     for (const assessment of conversionAssessments) {
-      if (!options.has(assessment.assessmentId)) {
-        options.set(assessment.assessmentId, {
-          value: assessment.assessmentId,
-          label: assessment.assessmentName ?? "Bảng điểm chưa đặt tên",
-          sublabel: assessment.assessmentCode ?? undefined,
+      const templateLabel = getScoreSheetTemplateLabel(assessment);
+      if (!options.has(templateLabel)) {
+        options.set(templateLabel, {
+          value: templateLabel,
+          label: templateLabel,
         });
       }
     }
@@ -341,7 +345,10 @@ export default function ScoreConversion() {
       teacherFilters.length > 0
       && !teacherFilters.some((teacher) => getTeacherNameList(assessment).includes(teacher))
     ) return false;
-    if (assessmentFilters.length > 0 && !assessmentFilters.includes(assessment.assessmentId)) return false;
+    if (
+      assessmentFilters.length > 0
+      && !assessmentFilters.includes(getScoreSheetTemplateLabel(assessment))
+    ) return false;
     if (statusFilters.length > 0 && (!status || !statusFilters.includes(status.key))) return false;
     if (
       deadlineStatusFilters.length > 0
@@ -1217,11 +1224,8 @@ export default function ScoreConversion() {
                                     </span>
                                   </td>
                                   <td className="max-w-[190px] border-b border-r border-border px-3 py-2.5 group-hover:bg-accent/50">
-                                    <p className="truncate font-medium" title={assessment.assessmentName ?? undefined}>
-                                      {assessment.assessmentName ?? "Cấu hình không khả dụng"}
-                                    </p>
-                                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={assessment.assessmentCode ?? undefined}>
-                                      {assessment.assessmentCode ?? "—"}
+                                      <p className="truncate font-medium" title={getScoreSheetTemplateLabel(assessment)}>
+                                        {getScoreSheetTemplateLabel(assessment)}
                                     </p>
                                   </td>
                                   <td className="border-b border-r border-border px-3 py-2 group-hover:bg-accent/50">
@@ -1275,7 +1279,7 @@ export default function ScoreConversion() {
                                       variant="ghost"
                                       size="sm"
                                       className="h-8 px-2 text-primary"
-                                      aria-label={`Xem danh sách học viên: ${assessment.assessmentName ?? "Bảng điểm Quy đổi"} - ${assessment.classCode}`}
+                                      aria-label={`Xem danh sách học viên: ${getScoreSheetTemplateLabel(assessment)} - ${assessment.classCode}`}
                                       onClick={() => setSelectedAssessment(assessment)}
                                     >
                                       <Eye className="mr-1 h-3.5 w-3.5" />
