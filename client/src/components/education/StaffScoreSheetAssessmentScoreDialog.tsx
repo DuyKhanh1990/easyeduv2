@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   calculateScoreSheetAssessmentAttemptResult,
+  selectScoreSheetAssessmentAttemptSummary,
   scoreSheetAssessmentAttemptValuesSchema,
   type ScoreSheetAssessmentAttemptResult,
   type ScoreSheetAssessmentAttemptValues,
@@ -74,6 +75,7 @@ type StaffScoreSheetAssessmentScoreDialogProps = {
   assessment: StaffAssignedScoreSheetAssessment | null;
   student: AssessmentScoreEntryStudent | null;
   open: boolean;
+  mode?: "edit" | "view";
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
 };
@@ -82,6 +84,14 @@ function formatDate(value: string | null | undefined) {
   if (!value) return "—";
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
   return match ? `${match[3]}/${match[2]}/${match[1]}` : "—";
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "—";
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value);
+  return match
+    ? `${match[3]}/${match[2]}/${match[1]} ${match[4]}:${match[5]}`
+    : formatDate(value);
 }
 
 function formatScore(value: number | null | undefined) {
@@ -98,6 +108,263 @@ function skillIdFor(
   index: number,
 ) {
   return skill.id ?? skill.sectionId ?? `skill-${index}`;
+}
+
+function StaffScoreSheetStudentSummaryView({
+  assessment,
+  student,
+  details,
+  attempt,
+  onClose,
+}: {
+  assessment: StaffAssignedScoreSheetAssessment;
+  student: AssessmentScoreEntryStudent;
+  details: AssessmentScoreEntryResponse;
+  attempt: AssessmentScoreEntry | undefined;
+  onClose: () => void;
+}) {
+  const template = details.assessment.templateSnapshot;
+  const conversionTemplate = details.assessment.conversionTemplateSnapshot;
+  const result = attempt?.result;
+  const passThreshold = conversionTemplate?.overallRule.passThreshold;
+  const overallScore = conversionTemplate
+    ? result?.overallConvertedScore
+    : result?.overallRawScore;
+  const evaluationNotes = details.evaluationCriteria.flatMap((group) => {
+    const items = group.subCriteria ?? [];
+    return items
+      .filter((item) => item.itemType === "criterion")
+      .flatMap((item) => {
+        const response = attempt?.evaluationResponses[item.id];
+        if (typeof response === "string" && response.trim()) {
+          const heading = item.parentId
+            ? items.find((candidate) => candidate.id === item.parentId)?.name
+            : null;
+          return [{
+            label: [group.name, heading, item.name].filter(Boolean).join(" · "),
+            value: response.trim(),
+          }];
+        }
+        if (typeof response === "boolean") {
+          const heading = item.parentId
+            ? items.find((candidate) => candidate.id === item.parentId)?.name
+            : null;
+          return [{
+            label: [group.name, heading, item.name].filter(Boolean).join(" · "),
+            value: response ? "Đạt" : "Chưa đạt",
+          }];
+        }
+        return [];
+      });
+  });
+  const scoreNotes = template.skills.flatMap((skill, index) => {
+    const notes = attempt?.notes[skillIdFor(skill, index)] ?? {};
+    const skillName = skill.name || `Kỹ năng ${index + 1}`;
+    return Object.entries(notes)
+      .filter(([, value]) => value.trim())
+      .map(([partId, value]) => {
+        const partName = partId === "_skill"
+          ? "Nhận xét kỹ năng"
+          : skill.parts.find((part) => part.id === partId)?.name ?? "Nhận xét";
+        return { label: `${skillName} · ${partName}`, value };
+      });
+  });
+
+  return (
+    <>
+      <div className="shrink-0 space-y-3 border-b bg-muted/20 px-4 py-4 sm:px-6">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="rounded-lg border bg-background px-3 py-2">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Học viên</p>
+            <p className="mt-0.5 text-sm font-semibold">{student.code} · {student.fullName}</p>
+          </div>
+          <div className="rounded-lg border bg-background px-3 py-2">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Bảng điểm</p>
+            <p className="mt-0.5 text-sm font-semibold">
+              {details.assessment.name || details.assessment.code}
+            </p>
+          </div>
+          <div className="rounded-lg border bg-background px-3 py-2">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Lớp / buổi / ngày thi</p>
+            <p className="mt-0.5 text-sm font-medium">
+              {assessment.classCode}
+              {assessment.sessionIndex != null ? ` · Buổi ${assessment.sessionIndex}` : ""}
+              {` · ${formatDate(assessment.examDate)}`}
+            </p>
+          </div>
+          <div className="rounded-lg border bg-background px-3 py-2">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Ngày phải trả</p>
+            <p className="mt-0.5 text-sm font-medium">{formatDateTime(details.assessment.scoreDeadlineAt)}</p>
+          </div>
+        </div>
+
+        <div className={`grid gap-2 ${conversionTemplate ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+          <div className="rounded-lg border bg-background px-3 py-2">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              {conversionTemplate ? "Điểm tổng quy đổi" : "Điểm tổng"}
+            </p>
+            <p className="mt-0.5 text-lg font-semibold tabular-nums">{formatScore(overallScore)}</p>
+            {conversionTemplate && (
+              <p className="text-xs text-muted-foreground">
+                Điểm thô: {formatScore(result?.overallRawScore)}
+              </p>
+            )}
+          </div>
+          <div className="rounded-lg border bg-background px-3 py-2">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Điểm chuẩn yêu cầu
+            </p>
+            <p className="mt-0.5 text-lg font-semibold tabular-nums">
+              {passThreshold?.enabled
+                ? `${formatScore(passThreshold.minScore)} trở lên`
+                : "Chưa cấu hình"}
+            </p>
+            {passThreshold?.enabled && (
+              <p className="text-xs text-muted-foreground">
+                {passThreshold.scoreSource === "overallRawScore" ? "Theo điểm thô" : "Theo điểm quy đổi"}
+              </p>
+            )}
+          </div>
+          <div className="rounded-lg border bg-background px-3 py-2">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Xếp loại / kết quả</p>
+            {result ? (
+              <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                {result.gradeBand ? (
+                  <span className="text-sm font-semibold" style={{ color: result.gradeBand.color }}>
+                    {result.gradeBand.label}
+                  </span>
+                ) : (
+                  <span className="text-sm text-muted-foreground">Chưa xếp loại</span>
+                )}
+                {result.passStatus && (
+                  <Badge className={result.passStatus === "passed"
+                    ? "bg-emerald-600 hover:bg-emerald-600"
+                    : "bg-red-600 hover:bg-red-600"}
+                  >
+                    {result.passStatus === "passed" ? "Đạt" : "Không đạt"}
+                  </Badge>
+                )}
+              </div>
+            ) : (
+              <p className="mt-0.5 text-sm text-muted-foreground">Chưa có kết quả</p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <Badge variant="outline">
+            {attempt
+              ? `Lần ${attempt.attemptNumber}/${details.assessment.attemptCount}`
+              : "Chưa nhập điểm"}
+          </Badge>
+          <span>
+            Kết quả theo {details.assessment.scoringPolicy === "highest" ? "điểm cao nhất" : "lần thi mới nhất"}
+          </span>
+          {attempt && <span>· Cập nhật {formatDateTime(attempt.updatedAt)}</span>}
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6">
+        {!attempt ? (
+          <div className="rounded-lg border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+            Học viên chưa có điểm được lưu cho bảng điểm này.
+          </div>
+        ) : (
+          <>
+            <section className="space-y-2">
+              <h3 className="text-sm font-semibold">Bảng điểm chi tiết</h3>
+              <div className="overflow-x-auto rounded-lg border">
+                <table className="w-full min-w-[640px] text-left text-sm">
+                  <thead className="bg-muted/50 text-xs text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 font-semibold">Kỹ năng</th>
+                      <th className="px-3 py-2 font-semibold">Điểm thô</th>
+                      {conversionTemplate && (
+                        <>
+                          <th className="px-3 py-2 font-semibold">Điểm nội bộ</th>
+                          <th className="px-3 py-2 font-semibold">Điểm quy đổi</th>
+                        </>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {template.skills.map((skill, index) => {
+                      const skillId = skillIdFor(skill, index);
+                      const skillResult = attempt.result.skills.find((item) => item.skillId === skillId);
+                      const section = skill.sectionId
+                        ? conversionTemplate?.sections.find((item) => item.id === skill.sectionId)
+                        : undefined;
+                      const maxRawScore = section
+                        ? Math.min(
+                          skill.rawMaxScore > 0 ? skill.rawMaxScore : section.rawMaxScore,
+                          section.rawMaxScore,
+                        )
+                        : skill.rawMaxScore > 0 ? skill.rawMaxScore : null;
+                      const partScores = attempt.partScores[skillId] ?? {};
+                      return (
+                        <tr key={skillId} className="align-top">
+                          <td className="px-3 py-2.5">
+                            <p className="font-medium">{skill.name || section?.name || `Kỹ năng ${index + 1}`}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Tối đa {formatScore(maxRawScore)}
+                            </p>
+                            {skill.parts.length > 0 && (
+                              <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                                {skill.parts.map((part) => (
+                                  <li key={part.id}>
+                                    {part.name}: {formatScore(partScores[part.id] ?? null)} / {formatScore(part.rawMaxScore)}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 font-medium tabular-nums">
+                            {formatScore(skillResult?.rawScore)}
+                          </td>
+                          {conversionTemplate && (
+                            <>
+                              <td className="px-3 py-2.5 tabular-nums">
+                                {formatScore(skillResult?.internalScore)}
+                              </td>
+                              <td className="px-3 py-2.5 font-medium tabular-nums">
+                                {formatScore(skillResult?.convertedScore)}
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="space-y-2">
+              <h3 className="text-sm font-semibold">Nhận xét</h3>
+              {scoreNotes.length === 0 && evaluationNotes.length === 0 ? (
+                <div className="rounded-lg border bg-muted/10 px-3 py-4 text-sm text-muted-foreground">
+                  Chưa có nhận xét.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {[...scoreNotes, ...evaluationNotes].map((note, index) => (
+                    <div key={`${note.label}-${index}`} className="rounded-lg border bg-background px-3 py-2">
+                      <p className="text-xs font-semibold text-muted-foreground">{note.label}</p>
+                      <p className="mt-1 whitespace-pre-wrap text-sm">{note.value}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </>
+        )}
+      </div>
+
+      <DialogFooter className="shrink-0 border-t bg-background px-4 py-3 sm:px-6">
+        <Button variant="outline" onClick={onClose}>Đóng</Button>
+      </DialogFooter>
+    </>
+  );
 }
 
 function normalizeValues(values: ScoreSheetAssessmentAttemptValues) {
@@ -128,6 +395,7 @@ export function StaffScoreSheetAssessmentScoreDialog({
   assessment,
   student,
   open,
+  mode = "edit",
   onOpenChange,
   onSaved,
 }: StaffScoreSheetAssessmentScoreDialogProps) {
@@ -166,16 +434,25 @@ export function StaffScoreSheetAssessmentScoreDialog({
     setDraftsByAttempt({});
     setSaveError(null);
     setSaveMessage(null);
-  }, [open, assessment?.sessionId, student?.studentId]);
+  }, [open, assessment?.sessionId, student?.studentId, mode]);
 
   useEffect(() => {
     if (!open || !entryQuery.data || selectedAttemptNumber !== null) return;
+    if (mode === "view") {
+      const summary = selectScoreSheetAssessmentAttemptSummary(
+        entryQuery.data.attempts,
+        entryQuery.data.assessment.scoringPolicy,
+        Boolean(entryQuery.data.assessment.conversionTemplateSnapshot),
+      );
+      setSelectedAttemptNumber(summary?.attemptNumber ?? null);
+      return;
+    }
     const highestAttempt = entryQuery.data.attempts.reduce(
       (highest, attempt) => Math.max(highest, attempt.attemptNumber),
       0,
     );
     setSelectedAttemptNumber(Math.min(highestAttempt + 1, entryQuery.data.assessment.attemptCount));
-  }, [open, entryQuery.data, selectedAttemptNumber]);
+  }, [open, entryQuery.data, selectedAttemptNumber, mode]);
 
   const details = entryQuery.data;
   const template = details?.assessment.templateSnapshot;
@@ -322,9 +599,13 @@ export function StaffScoreSheetAssessmentScoreDialog({
       <DialogContent className="flex max-h-[94vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col gap-0 overflow-hidden p-0 sm:w-[94vw] sm:max-w-[94vw] xl:max-w-[1180px]">
         <DialogHeader className="shrink-0 border-b bg-gradient-to-r from-violet-50 via-background to-sky-50 px-5 py-4 text-left dark:from-violet-950/30 dark:to-sky-950/20 sm:px-6">
           <div className="flex flex-wrap items-center gap-2">
-            <DialogTitle className="text-base sm:text-lg">Nhập điểm kỹ năng</DialogTitle>
+            <DialogTitle className="text-base sm:text-lg">
+              {mode === "view" ? "Tổng hợp bảng điểm" : "Nhập điểm kỹ năng"}
+            </DialogTitle>
             <Badge variant="outline">{details?.assessment.code ?? assessment?.assessmentCode ?? "Bảng điểm Quy đổi"}</Badge>
-            {preview?.inputComplete && <Badge className="bg-emerald-600 hover:bg-emerald-600">Đã đủ điểm</Badge>}
+            {mode === "edit" && preview?.inputComplete && (
+              <Badge className="bg-emerald-600 hover:bg-emerald-600">Đã đủ điểm</Badge>
+            )}
           </div>
           <DialogDescription>
             {student && <span className="font-medium text-foreground">{student.code} · {student.fullName}</span>}
@@ -352,6 +633,14 @@ export function StaffScoreSheetAssessmentScoreDialog({
             </p>
             <Button variant="outline" size="sm" onClick={() => entryQuery.refetch()}>Tải lại</Button>
           </div>
+        ) : details && template && mode === "view" && assessment && student ? (
+          <StaffScoreSheetStudentSummaryView
+            assessment={assessment}
+            student={student}
+            details={details}
+            attempt={selectedAttempt}
+            onClose={() => onOpenChange(false)}
+          />
         ) : details && template ? (
           <>
             <div className="shrink-0 space-y-3 border-b bg-muted/20 px-4 py-3 sm:px-6">

@@ -68,6 +68,7 @@ import {
   StaffScoreSheetAssessmentStudentsDialog,
   type StaffAssignedScoreSheetAssessment,
 } from "@/components/education/StaffScoreSheetAssessmentStudentsDialog";
+import { StaffScoreSheetAssessmentScoreDialog } from "@/components/education/StaffScoreSheetAssessmentScoreDialog";
 import { SCORE_CONVERSION_TYPES } from "./score-conversion/score-conversion-presets";
 
 const TEMPLATE_ENDPOINT = "/api/score-conversion-templates";
@@ -286,6 +287,11 @@ export default function ScoreConversion() {
   const [editingScoreSheetTemplate, setEditingScoreSheetTemplate] = useState<ScoreSheetTemplate | null>(null);
   const [pendingTemplateDelete, setPendingTemplateDelete] = useState<PendingTemplateDelete | null>(null);
   const [selectedAssessment, setSelectedAssessment] = useState<StaffAssignedScoreSheetAssessment | null>(null);
+  const [studentDialogTarget, setStudentDialogTarget] = useState<{
+    mode: "view" | "edit";
+    assessment: StaffAssignedScoreSheetAssessment;
+    student: ScoreConversionStudentResult;
+  } | null>(null);
   const [viewMode, setViewMode] = useState<ScoreConversionViewMode>("assessments");
   const [assessmentStatusFilter, setAssessmentStatusFilter] = useState<AssessmentStatusFilter>("all");
   const [assessmentSearchInput, setAssessmentSearchInput] = useState("");
@@ -1333,7 +1339,7 @@ export default function ScoreConversion() {
                                     <div className="flex flex-wrap items-start justify-between gap-3 border-b bg-muted/20 px-4 py-3">
                                       <div className="min-w-0">
                                         <p className="font-semibold text-foreground">
-                                          {getClassLabel(assessment as StaffAssignedScoreSheetAssessment)}
+                                          {assessment.className || assessment.classCode}
                                           {assessment.sessionIndex != null && (
                                             <span className="ml-1 font-normal text-muted-foreground">
                                               (Buổi {assessment.sessionIndex})
@@ -1348,7 +1354,7 @@ export default function ScoreConversion() {
                                       </div>
                                       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                                         <span className="font-medium text-foreground">
-                                          {getScoreSheetTemplateLabel(assessment as StaffAssignedScoreSheetAssessment)}
+                                          {assessment.templateName || "Bảng điểm chưa đặt tên"}
                                         </span>
                                         <span>Hạn trả {formatAssessmentDeadline(assessment.scoreDeadlineAt)}</span>
                                       </div>
@@ -1366,7 +1372,7 @@ export default function ScoreConversion() {
                                             <th className="min-w-[100px] px-3 py-2 font-semibold">Phân loại</th>
                                             <th className="min-w-[100px] px-3 py-2 font-semibold">Kết quả</th>
                                             <th className="min-w-[110px] px-3 py-2 font-semibold">Tình trạng</th>
-                                            <th className="min-w-[90px] px-3 py-2 text-center font-semibold">Quản lý</th>
+                                            <th className="min-w-[100px] px-3 py-2 text-center font-semibold">Quản lý</th>
                                           </tr>
                                         </thead>
                                         <tbody>
@@ -1421,19 +1427,48 @@ export default function ScoreConversion() {
                                                 </span>
                                               </td>
                                               <td className="px-3 py-2.5 text-center">
-                                                <Button
-                                                  variant="ghost"
-                                                  size="sm"
-                                                  className="h-8 px-2 text-primary"
-                                                  disabled={!assessmentForDialog}
-                                                  onClick={() => {
-                                                    if (assessmentForDialog) setSelectedAssessment(assessmentForDialog);
-                                                  }}
-                                                  aria-label={`Mở chi tiết ${student.studentName}`}
-                                                >
-                                                  <Eye className="mr-1 h-3.5 w-3.5" />
-                                                  Xem
-                                                </Button>
+                                                <div className="inline-flex items-center gap-1">
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8 text-primary"
+                                                    disabled={!assessmentForDialog}
+                                                    onClick={() => {
+                                                      if (!assessmentForDialog) return;
+                                                      setStudentDialogTarget({
+                                                        mode: "view",
+                                                        assessment: assessmentForDialog,
+                                                        student,
+                                                      });
+                                                    }}
+                                                    title={`Xem bảng điểm của ${student.studentName}`}
+                                                    aria-label={`Xem bảng điểm của ${student.studentName}`}
+                                                    data-testid={`button-view-student-score-${student.studentId}`}
+                                                  >
+                                                    <Eye className="h-4 w-4" />
+                                                  </Button>
+                                                  {canEdit && (
+                                                    <Button
+                                                      variant="ghost"
+                                                      size="icon"
+                                                      className="h-8 w-8"
+                                                      disabled={!assessmentForDialog}
+                                                      onClick={() => {
+                                                        if (!assessmentForDialog) return;
+                                                        setStudentDialogTarget({
+                                                          mode: "edit",
+                                                          assessment: assessmentForDialog,
+                                                          student,
+                                                        });
+                                                      }}
+                                                      title={`Nhập điểm cho ${student.studentName}`}
+                                                      aria-label={`Nhập điểm cho ${student.studentName}`}
+                                                      data-testid={`button-edit-student-score-${student.studentId}`}
+                                                    >
+                                                      <Pencil className="h-4 w-4" />
+                                                    </Button>
+                                                  )}
+                                                </div>
                                               </td>
                                             </tr>
                                           ))}
@@ -1705,6 +1740,23 @@ export default function ScoreConversion() {
         canManagePublication
         onOpenChange={(open) => {
           if (!open) setSelectedAssessment(null);
+        }}
+      />
+      <StaffScoreSheetAssessmentScoreDialog
+        assessment={studentDialogTarget?.assessment ?? null}
+        student={studentDialogTarget ? {
+          studentId: studentDialogTarget.student.studentId,
+          code: studentDialogTarget.student.studentCode,
+          fullName: studentDialogTarget.student.studentName,
+        } : null}
+        mode={studentDialogTarget?.mode ?? "edit"}
+        open={!!studentDialogTarget}
+        onOpenChange={(open) => {
+          if (!open) setStudentDialogTarget(null);
+        }}
+        onSaved={() => {
+          void assignedScoreSheetStudentsQuery.refetch();
+          void assignedScoreSheetAssessmentsQuery.refetch();
         }}
       />
     </DashboardLayout>
