@@ -1011,7 +1011,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
             setReviewTarget((current: any) => current
               ? { ...current, reviewData, reviewPublished: published }
               : current);
-          } : undefined}
+          }}
         />
       )}
 
