@@ -1124,6 +1124,7 @@ export const studentLocationsRelations = relations(studentLocations, ({ one }) =
 // ==========================================
 export const shiftTemplates = pgTable("shift_templates", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  groupId: uuid("group_id"),
   code: varchar("code", { length: 50 }),
   name: varchar("name", { length: 100 }).notNull(),
   startTime: text("start_time").notNull(), // Using text for simplicity in JS, maps to TIME in DB
@@ -1202,6 +1203,7 @@ export type InsertShiftTemplate = z.infer<typeof insertShiftTemplateSchema>;
 // ==========================================
 export const shiftAssignments = pgTable("shift_assignments", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  groupId: uuid("group_id"),
   name: varchar("name", { length: 255 }).notNull(),
   locationId: uuid("location_id").notNull().references(() => locations.id),
   targetType: varchar("target_type", { length: 20 }).notNull(), // 'department' | 'role' | 'staff'

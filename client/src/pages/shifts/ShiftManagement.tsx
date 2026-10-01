@@ -72,18 +72,18 @@ const formSchema = z.object({
 
 const shiftAssignmentSchema = z.object({
   name: z.string().min(1, "Vui lòng nhập tên phân ca"),
-  locationId: z.string().min(1, "Vui lòng chọn cơ sở"),
+  locationIds: z.array(z.string()).min(1, "Vui lòng chọn ít nhất một cơ sở"),
   targetType: z.enum(["department", "role", "staff"]),
   targetId: z.string().min(1, "Vui lòng chọn đối tượng"),
   byWeekday: z.boolean().default(true),
-  weekdaySchedule: z.record(z.array(z.string())).optional(),
-  shiftTemplateId: z.string().optional().nullable(),
+  weekdayScheduleByLocation: z.record(z.record(z.array(z.string()))).optional(),
+  shiftTemplateIdsByLocation: z.record(z.string()).optional(),
   effectiveFrom: z.string().optional(),
   effectiveTo: z.string().optional(),
 });
 
 const shiftConfigSchema = z.object({
-  locationId: z.string().min(1, "Vui lòng chọn cơ sở"),
+  locationIds: z.array(z.string()).min(1, "Vui lòng chọn ít nhất một cơ sở"),
   code: z.string().min(1, "Vui lòng nhập mã ca"),
   name: z.string().min(1, "Vui lòng nhập tên ca"),
   startTime: z.string().min(1, "Vui lòng chọn giờ bắt đầu"),
