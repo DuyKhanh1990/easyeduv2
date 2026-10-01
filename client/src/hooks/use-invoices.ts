@@ -50,6 +50,23 @@ function buildQS(params: InvoiceQueryParams): string {
   return p.toString();
 }
 
+export async function fetchAllInvoicesForExport(queryParams: InvoiceQueryParams = {}): Promise<any[]> {
+  const params = new URLSearchParams(buildQS(queryParams));
+  params.delete("page");
+  params.delete("limit");
+  params.delete("includeTabCounts");
+
+  const res = await fetch(`${BASE_KEY}?${params.toString()}`, {
+    credentials: "include",
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error("Failed to fetch invoices for export");
+
+  const result = await res.json() as { data?: any[] };
+  if (!Array.isArray(result.data)) throw new Error("Invalid invoice export response");
+  return result.data;
+}
+
 export interface InvoiceSummary {
   expectedIncome: number;
   actualIncome: number;

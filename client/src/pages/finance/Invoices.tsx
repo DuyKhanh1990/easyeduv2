@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useLocation, useParams } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
-import { getPreviousInvoicePeriodParams, useInvoices, useInvoiceSummary } from "@/hooks/use-invoices";
+import { fetchAllInvoicesForExport, getPreviousInvoicePeriodParams, useInvoices, useInvoiceSummary } from "@/hooks/use-invoices";
 import { useInvoiceFilters, hasActiveFilters, DEFAULT_FILTERS } from "@/hooks/use-invoice-filters";
 import { useInvoiceColumns, ALL_COLUMNS } from "@/hooks/use-invoice-columns";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -26,7 +26,7 @@ import {
 import {
   Search, SlidersHorizontal, CalendarIcon, Plus, ChevronUp, ChevronDown,
   Pencil, Trash2, Eye, CreditCard, Settings2, GripVertical, AlertCircle, QrCode, CheckCircle,
-  FileSignature, FileText, Download, Upload, FileSpreadsheet, Keyboard, Percent, BookOpen, Merge, TrendingUp, TrendingDown, ArrowUp, ArrowDown, Check, X,
+  FileSignature, FileText, Download, Upload, FileSpreadsheet, Loader2, Keyboard, Percent, BookOpen, Merge, TrendingUp, TrendingDown, ArrowUp, ArrowDown, Check, X,
 } from "lucide-react";
 import {
   DropdownMenu as ActionMenu,
@@ -539,7 +539,6 @@ function flattenInvoiceRows(invoices: InvoiceRow[]): InvoiceRow[] {
 async function downloadInvoiceListExcel(
   rows: InvoiceRow[],
   tabLabel: string,
-  page: number,
   t: (key: string, params?: Record<string, string | number>) => string,
 ) {
   const columns = [
@@ -613,7 +612,7 @@ async function downloadInvoiceListExcel(
   const ExcelJS = (await import("exceljs")).default;
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet(t("finance.invoiceCode"));
-  const subtitle = t("finance.exportSubtitle", { tab: tabLabel, page, count: exportInvoices.length });
+  const subtitle = t("finance.exportSubtitle", { tab: tabLabel, count: exportInvoices.length });
   const lastColumn = columns.length;
 
   worksheet.mergeCells(1, 1, 1, lastColumn);
@@ -699,7 +698,7 @@ async function downloadInvoiceListExcel(
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `danh_sach_hoa_don_trang_${page}_${format(new Date(), "yyyyMMdd_HHmm")}.xlsx`;
+  link.download = `danh_sach_hoa_don_${format(new Date(), "yyyyMMdd_HHmm")}.xlsx`;
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -1567,6 +1566,7 @@ export default function Invoices() {
   const [signDialogOpen, setSignDialogOpen] = useState(false);
   const [signConfirmed, setSignConfirmed] = useState(false);
   const [signProgress, setSignProgress] = useState<{ done: number; total: number } | null>(null);
+  const [isExportingInvoices, setIsExportingInvoices] = useState(false);
 
   const { data: einvoiceCfg } = useQuery<{ signingType?: string }>({
     queryKey: ["/api/einvoice/config"],
@@ -1872,7 +1872,7 @@ export default function Invoices() {
     previousQueryParams ?? {},
     { enabled: !!previousQueryParams, staleTime: 30_000 },
   );
-  const displayInvoices = flattenInvoiceRows(invoices).filter((invoice) => {
+  const filterInvoiceRowsForDisplay = (rows: InvoiceRow[]) => flattenInvoiceRows(rows).filter((invoice) => {
     if (activeTab === "unpaid") {
       if (isInvoicePaidLike(invoice.status)) return false;
     }
@@ -1934,6 +1934,7 @@ export default function Invoices() {
 
     return true;
   });
+  const displayInvoices = filterInvoiceRowsForDisplay(invoices);
   const updateScheduleStatusMutation = useMutation({
     mutationFn: ({ scheduleId, status }: { scheduleId: string; status: string }) =>
       apiRequest("PATCH", `/api/finance/invoice-schedules/${scheduleId}/status`, { status }),
@@ -2249,15 +2250,34 @@ export default function Invoices() {
               variant="outline"
               size="sm"
               className="h-9 gap-1.5 rounded-lg border-slate-200 bg-white text-slate-600 shadow-sm font-medium hover:bg-slate-50 hover:border-slate-300 transition-all"
-              onClick={() => {
-                const tabLabel = t(TABS.find(tab => tab.key === activeTab)?.labelKey ?? "finance.tab.all");
-                 void downloadInvoiceListExcel(displayInvoices, tabLabel, page, t);
+              onClick={async () => {
+                setIsExportingInvoices(true);
+                try {
+                  const allInvoices = await fetchAllInvoicesForExport(queryParams);
+                  const exportRows = filterInvoiceRowsForDisplay(allInvoices);
+                  if (exportRows.length === 0) {
+                    toast({ title: t("finance.noInvoicesToDownload") });
+                    return;
+                  }
+                  const tabLabel = t(TABS.find(tab => tab.key === activeTab)?.labelKey ?? "finance.tab.all");
+                  await downloadInvoiceListExcel(exportRows, tabLabel, t);
+                } catch {
+                  toast({
+                    title: t("finance.error"),
+                    description: t("finance.exportInvoicesFailed"),
+                    variant: "destructive",
+                  });
+                } finally {
+                  setIsExportingInvoices(false);
+                }
               }}
-              disabled={isLoading || displayInvoices.length === 0}
+              disabled={isLoading || isExportingInvoices || total === 0}
               data-testid="button-download-invoices-excel"
             >
-              <FileSpreadsheet className="h-4 w-4" />
-               {t("finance.downloadInvoices")}
+              {isExportingInvoices
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <FileSpreadsheet className="h-4 w-4" />}
+              {isExportingInvoices ? t("finance.exportingInvoices") : t("finance.downloadInvoices")}
             </Button>
 
             {totalSelectedCount > 0 && (() => {
