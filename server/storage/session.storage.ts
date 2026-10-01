@@ -2050,6 +2050,8 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
     allocatedFee: number;
     discountAmount: number;
     discountPercent: number | null;
+    hasInvoiceAllocation: boolean;
+    hasPackageAdjustment: boolean;
   }>();
 
   for (const row of allocationRows) {
@@ -2058,10 +2060,13 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
       allocatedFee: 0,
       discountAmount: 0,
       discountPercent: null,
+      hasInvoiceAllocation: false,
+      hasPackageAdjustment: false,
     };
 
     current.allocatedFee += Number(row.allocatedAmount) || 0;
     current.discountAmount += (Number(row.promotionAmount) || 0) / quantity;
+    current.hasInvoiceAllocation = true;
 
     const percent = (row.promotionKeys ?? []).reduce((sum, promotionId) => {
       const promotion = promotionMap.get(promotionId);
@@ -2088,8 +2093,11 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
       allocatedFee: Number(rows.find((session) => session.id === row.studentSessionId)?.sessionPrice ?? 0),
       discountAmount: 0,
       discountPercent: null,
+      hasInvoiceAllocation: false,
+      hasPackageAdjustment: false,
     };
     current.allocatedFee = Number(row.amount) || 0;
+    current.hasPackageAdjustment = true;
     pricingBySession.set(row.studentSessionId, current);
   }
 

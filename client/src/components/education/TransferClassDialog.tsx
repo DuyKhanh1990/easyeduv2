@@ -59,6 +59,11 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { FinancePromotionDialog } from "@/pages/finance/components/FinancePromotionDialog";
+import {
+  calculateFirstSessionPriceAfterDiscount,
+  calculatePerSessionTransferBaseTotal,
+  hasExistingSessionTuition,
+} from "./transferClassPricing";
 
 const transferSchema = z.object({
   studentId: z.string().uuid(),
@@ -631,10 +636,15 @@ export function TransferClassDialog({
     ? currentRegisteredSessionCount
     : getPackageSessionCount(currentFeePackage);
   const currentBaseSessionPrice = getPackageBaseSessionPrice(currentFeePackage, currentStoredSessionPrice);
-  const currentBaseTotal = getPackageBaseTotal(
-    currentFeePackage,
-    currentBaseSessionPrice * currentSessionCount,
-  );
+  const usePerSessionPackageFallback =
+    currentFeePackage?.type === "buổi"
+    && !hasExistingSessionTuition(activeCurrentSessions, currentFeePackage?.fee);
+  const currentBaseTotal = usePerSessionPackageFallback
+    ? calculatePerSessionTransferBaseTotal(currentBaseSessionPrice, transferCount)
+    : getPackageBaseTotal(
+      currentFeePackage,
+      currentBaseSessionPrice * currentSessionCount,
+    );
   const currentDiscountPerSession = Number(currentSession?.pricing?.discountAmount ?? 0);
   // Keep the invoice's total discount stable when the operator changes the
   // editable session count; the source allocation was created for the
@@ -677,7 +687,9 @@ export function TransferClassDialog({
     return Math.max(0, Number.isFinite(fallback) ? fallback : 0);
   };
   const currentSessionPrice = currentSession
-    ? getEffectiveSourceSessionPrice(currentSession)
+    ? usePerSessionPackageFallback
+      ? calculateFirstSessionPriceAfterDiscount(currentNetTotal, currentSessionCount)
+      : getEffectiveSourceSessionPrice(currentSession)
     : fallbackCurrentSessionPrice;
   const selectedSourceSessions = activeCurrentSessions
     .filter((session) => Number(session.classSession?.sessionIndex ?? session.sessionIndex ?? 0) >= Number(fromSessionIndex))
