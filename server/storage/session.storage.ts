@@ -24,6 +24,7 @@ import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 import {
   calculateClassTransferSourceCredit,
   calculateClassTransferTargetSessionPrice,
+  getPackageSessionValue,
 } from "./class-transfer-accounting";
 
 const RENEWAL_WEEKDAY_LABELS = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
@@ -683,22 +684,29 @@ export async function transferStudentClass(data: {
       const hasExistingAdjustment = sourceAdjustments.length > 0;
       const isEligibleUninvoicedPerSessionSource = oldSessions.every((session) => {
         const packageType = String(
-          session.packageFeeType
-            ?? session.packageType
+          session.packageType
+            ?? session.packageFeeType
             ?? sourceDefaultPackage?.type
             ?? "",
-        ).toLocaleLowerCase("vi");
-        const packageFee = Number(session.packageFee ?? sourceDefaultPackage?.fee);
+        )
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLocaleLowerCase("vi");
+        const packageUnitPrice = getPackageSessionValue(session, sourceDefaultPackage);
         const storedPrice = session.sessionPrice == null
-          ? packageFee
+          ? packageUnitPrice
           : Number(session.sessionPrice);
         const sourceOverride = data.sourceSessionPriceOverride;
-        return packageType === "buổi"
+        const isSupportedPackageType =
+          packageType === "buoi"
+          || packageType === "course"
+          || packageType.includes("khoa");
+        return isSupportedPackageType
           && session.sessionSource !== "transfer"
-          && Number.isFinite(packageFee)
+          && Number.isFinite(packageUnitPrice)
           && Number.isFinite(storedPrice)
-          && Math.abs(storedPrice - packageFee) <= 0.01
-          && sourceOverride <= packageFee + 0.01;
+          && Math.abs(storedPrice - packageUnitPrice) <= 0.01
+          && sourceOverride <= packageUnitPrice + 0.01;
       });
 
       if (

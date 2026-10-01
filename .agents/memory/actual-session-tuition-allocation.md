@@ -1,12 +1,12 @@
 ---
-name: Actual session tuition allocation
-description: Quy tắc tính học phí gói khóa khi số buổi đăng ký thực tế khác số buổi cấu hình của gói.
+name: Class transfer package pricing
+description: Quy tắc lấy đơn giá và số buổi theo gói khi chuyển lớp, đồng thời giữ phân bổ học phí đã ghi nhận.
 ---
 
-Với gói khóa, `course_fee_packages.sessions` là số buổi cấu hình tham chiếu. Khi học viên đăng ký số buổi thực tế khác số này, học phí áp dụng từng buổi và phần giảm trừ từng buổi phải lấy theo phân bổ của hóa đơn trên số buổi thực tế. Tổng sau giảm là tổng các khoản phân bổ, không được lấy một khoản giảm đã chia theo invoice quantity rồi nhân lại với số buổi cấu hình của gói.
+Khi chuyển lớp mà các buổi nguồn chưa có phân bổ hóa đơn, điều chỉnh học phí hay giá riêng, dùng tổng giá trong gói chia cho số buổi cấu hình làm mặc định; mẫu số vẫn cho phép nhân viên sửa thủ công. Khuyến mãi cấp gói được chia theo mẫu số đang chọn; thành tiền phần chuyển là đơn giá sau giảm nhân số buổi chuyển. Nếu đã có phân bổ hoặc điều chỉnh, giữ số tiền thực tế đã ghi nhận cho từng buổi.
 
 Không coi `student_sessions.sessionPrice` khác null là bằng chứng học phí riêng đã được áp dụng: lúc đăng ký, trường này cũng được điền bằng giá mặc định của gói. Khi cần phân biệt giá mặc định với giá đã ghi nhận, dựa vào phân bổ hóa đơn hoặc lịch sử điều chỉnh học phí theo buổi; giá lưu khác giá gói có thể là override, nhưng giá trùng gói không chứng minh được nguồn gốc riêng.
 
-**Why:** Một gói 5.000.000đ cấu hình 20 buổi có thể được đăng ký thực tế 49 buổi; trong trường hợp đó hóa đơn phân bổ 4.500.000đ trên 49 buổi, tương đương 91.836,73đ/buổi.
+**Why:** Tổng gói không phải lúc nào cũng là giá trị của số buổi chuyển. Đơn giá từ tổng gói chia số buổi cấu hình (có thể điều chỉnh thủ công) cho phép chuyển một phần tương ứng mà không chuyển nhầm toàn bộ học phí; phân bổ/điều chỉnh đã lưu vẫn là nguồn dữ liệu thực tế ưu tiên.
 
-**How to apply:** Ở các màn hình hiển thị hoặc tính chuyển lớp, ưu tiên `invoice_session_allocations.allocated_amount`/`pricing.allocatedFee` cho học viên đã có hóa đơn và các adjustment records cho giá đã áp dụng riêng. Không dùng riêng tính null/non-null của `sessionPrice` để suy luận nguồn giá. Giữ package total và tổng promotion theo hóa đơn; chỉ dùng giá gói làm fallback khi chưa có allocation/adjustment. Nếu khuyến mãi mới áp dụng cho các buổi gói theo buổi chưa có giá riêng, phải dùng cùng giá ròng cho đơn giá hiển thị, tổng chuyển và giá các buổi nguồn đã chuyển. Khi thu tiền, làm tròn chỉ xử lý phần thập phân của đồng: bỏ phần lẻ hoặc làm tròn lên, không tự làm tròn theo 10.000đ/100.000đ.
+**How to apply:** Ưu tiên `invoice_session_allocations.allocated_amount`/`pricing.allocatedFee` và adjustment records đã áp dụng riêng. Khi chưa có các giá trị đó, lấy giá gói chia số buổi cấu hình (hoặc giá mỗi buổi của gói); không suy ra mức giá riêng chỉ từ `sessionPrice` khác null vì trường này cũng có thể chứa giá mặc định. Giữ cùng đơn giá sau giảm cho phần hiển thị và bút toán điều chuyển; lưu giá mới vào buổi nguồn chỉ trong nhánh chưa có giá đã áp dụng. Khi thu tiền, làm tròn chỉ xử lý phần thập phân của đồng: bỏ phần lẻ hoặc làm tròn lên, không tự làm tròn theo 10.000đ/100.000đ.

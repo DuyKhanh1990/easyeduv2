@@ -111,7 +111,13 @@ const formatPercent = (value: number | null | undefined) => {
 };
 
 const isCoursePackage = (pkg: any) =>
-  pkg?.type === "khoá" || pkg?.type === "khóa";
+  ["course", "khoa"].some((type) => {
+    const packageType = String(pkg?.type ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase("vi");
+    return packageType === type || packageType.includes(type);
+  });
 
 const packageTypeLabel = (pkg: any) =>
   isCoursePackage(pkg) ? "Khóa" : pkg?.type === "buổi" ? "Buổi" : "";
@@ -121,9 +127,11 @@ const getPackageSessionCount = (pkg: any, fallback = 0) => {
   return sessions > 0 ? sessions : fallback;
 };
 
-const getPackageBaseSessionPrice = (pkg: any, fallback = 0) => {
+const getPackageBaseSessionPrice = (pkg: any, fallback = 0, sessionCountOverride = 0) => {
   if (!pkg) return fallback;
-  const sessions = getPackageSessionCount(pkg);
+  const sessions = sessionCountOverride > 0
+    ? sessionCountOverride
+    : getPackageSessionCount(pkg);
   if (isCoursePackage(pkg) && sessions > 0) {
     const total = Number(pkg.totalAmount ?? pkg.fee ?? 0);
     return total / sessions;
@@ -131,13 +139,16 @@ const getPackageBaseSessionPrice = (pkg: any, fallback = 0) => {
   return Number(pkg.fee ?? fallback) || fallback;
 };
 
-const getPackageBaseTotal = (pkg: any, fallback = 0) => {
+const getPackageBaseTotal = (pkg: any, fallback = 0, sessionCountOverride = 0) => {
   if (!pkg) return fallback;
-  const sessions = getPackageSessionCount(pkg);
+  const sessions = sessionCountOverride > 0
+    ? sessionCountOverride
+    : getPackageSessionCount(pkg);
   if (isCoursePackage(pkg)) {
     return Number(pkg.totalAmount ?? pkg.fee ?? 0);
   }
-  return (Number(pkg.fee ?? 0) || 0) * sessions;
+  const fee = Number(pkg.fee ?? 0) || 0;
+  return sessions > 0 ? fee * sessions : fallback || fee;
 };
 
 type TransferAdjustmentRow = {
@@ -403,13 +414,16 @@ export function TransferClassDialog({
     form,
   ]);
 
-  // Default to the student's actual enrolled session count, while allowing
-  // the operator to adjust the denominator for the transfer calculation.
+  // Default the editable denominator from the source tuition package, falling
+  // back to enrolled sessions only when the package has no configured count.
   useEffect(() => {
     if (!isOpen || !currentClass?.id || !student?.id) return;
-    const registeredCount = (currentSessions ?? []).filter(isTransferableSourceSession).length;
-    if (registeredCount > 0) {
-      setActualSessionCount(registeredCount);
+    const sourceSessions = (currentSessions ?? []).filter(isTransferableSourceSession);
+    const registeredCount = sourceSessions.length;
+    const sourcePackage = sourceSessions.find((session) => session.feePackage)?.feePackage;
+    const packageSessionCount = getPackageSessionCount(sourcePackage, registeredCount);
+    if (packageSessionCount > 0) {
+      setActualSessionCount(packageSessionCount);
     }
   }, [isOpen, currentClass?.id, student?.id, currentSessions]);
 
@@ -626,25 +640,30 @@ export function TransferClassDialog({
   }) ?? activeCurrentSessions[0];
   const currentFeePackage = currentSession?.feePackage;
   const currentStoredSessionPrice = currentSession ? Number(currentSession.sessionPrice ?? 0) : 0;
-  // For an enrolled student, the invoice allocation is based on the actual
-  // number of registered sessions, which can differ from the package template
-  // (e.g. a 20-session course package applied to 49 enrolled sessions).
   const currentRegisteredSessionCount = activeCurrentSessions.length;
+  const configuredPackageSessionCount = getPackageSessionCount(
+    currentFeePackage,
+    currentRegisteredSessionCount,
+  );
   const currentSessionCount = actualSessionCount > 0
     ? actualSessionCount
-    : currentRegisteredSessionCount > 0
-    ? currentRegisteredSessionCount
-    : getPackageSessionCount(currentFeePackage);
-  const currentBaseSessionPrice = getPackageBaseSessionPrice(currentFeePackage, currentStoredSessionPrice);
-  const usePerSessionPackageFallback =
-    currentFeePackage?.type === "buổi"
-    && !hasExistingSessionTuition(activeCurrentSessions, currentFeePackage?.fee);
-  const currentBaseTotal = usePerSessionPackageFallback
-    ? calculatePerSessionTransferTotal(currentBaseSessionPrice, transferCount)
-    : getPackageBaseTotal(
-      currentFeePackage,
-      currentBaseSessionPrice * currentSessionCount,
-    );
+    : configuredPackageSessionCount;
+  const configuredPackageSessionPrice = getPackageBaseSessionPrice(
+    currentFeePackage,
+    currentStoredSessionPrice,
+    configuredPackageSessionCount,
+  );
+  const currentBaseTotal = getPackageBaseTotal(
+    currentFeePackage,
+    configuredPackageSessionPrice * currentSessionCount,
+    currentSessionCount,
+  );
+  const currentBaseSessionPrice = currentSessionCount > 0
+    ? currentBaseTotal / currentSessionCount
+    : configuredPackageSessionPrice;
+  const usePackagePriceFallback =
+    !!currentFeePackage
+    && !hasExistingSessionTuition(activeCurrentSessions, configuredPackageSessionPrice);
   const currentDiscountPerSession = Number(currentSession?.pricing?.discountAmount ?? 0);
   // Keep the invoice's total discount stable when the operator changes the
   // editable session count; the source allocation was created for the
@@ -687,12 +706,12 @@ export function TransferClassDialog({
     return Math.max(0, Number.isFinite(fallback) ? fallback : 0);
   };
   const currentSessionPrice = currentSession
-    ? usePerSessionPackageFallback
+    ? usePackagePriceFallback
       ? calculateFirstSessionPriceAfterDiscount(currentNetTotal, currentSessionCount)
       : getEffectiveSourceSessionPrice(currentSession)
     : fallbackCurrentSessionPrice;
   const applyDiscountedPriceToTransfer =
-    usePerSessionPackageFallback && currentDiscountAmount > 0;
+    usePackagePriceFallback && currentDiscountAmount > 0;
   const selectedSourceSessions = activeCurrentSessions
     .filter((session) => Number(session.classSession?.sessionIndex ?? session.sessionIndex ?? 0) >= Number(fromSessionIndex))
     .sort((left, right) =>

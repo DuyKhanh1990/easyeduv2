@@ -23,7 +23,7 @@ export function hasExistingSessionTuition(
 
     if (session.sessionPrice == null) return false;
     const storedPrice = Number(session.sessionPrice);
-    const packageFee = Number(session.feePackage?.fee ?? fallbackPackageFee);
+    const packageFee = Number(fallbackPackageFee ?? session.feePackage?.fee);
     return Number.isFinite(storedPrice)
       && Number.isFinite(packageFee)
       && Math.abs(storedPrice - packageFee) > 0.01;

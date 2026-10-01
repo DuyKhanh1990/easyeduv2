@@ -3,6 +3,7 @@ import {
   calculateClassFundedAmounts,
   calculateClassTransferSourceCredit,
   calculateClassTransferTargetSessionPrice,
+  getPackageSessionValue,
 } from "../server/storage/class-transfer-accounting";
 
 describe("class transfer accounting", () => {
@@ -83,6 +84,15 @@ describe("class transfer accounting", () => {
         fee: 6400,
       },
     })).toBe(800);
+  });
+
+  it("derives a course package unit price from the configured total and session count", () => {
+    expect(getPackageSessionValue({
+      id: "configured-course",
+      packageFeeType: "khóa",
+      packageSessions: 12,
+      packageTotalAmount: 4_800_000,
+    })).toBe(400_000);
   });
 
   it("applies the selected rounding mode and never returns a negative credit", () => {

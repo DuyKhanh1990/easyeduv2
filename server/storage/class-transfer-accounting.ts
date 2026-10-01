@@ -37,7 +37,7 @@ function toFiniteNumber(value: NumericValue, fallback = 0): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function getPackageSessionValue(
+export function getPackageSessionValue(
   session: ClassTransferSourceSession,
   defaultPackage?: ClassTransferPackagePricing,
 ): number {
@@ -46,7 +46,10 @@ function getPackageSessionValue(
       ?? session.packageFeeType
       ?? defaultPackage?.type
       ?? "",
-  ).toLocaleLowerCase("vi");
+  )
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("vi");
   const fee = toFiniteNumber(session.packageFee ?? defaultPackage?.fee);
   const sessionCount = toFiniteNumber(session.packageSessions ?? defaultPackage?.sessions);
   const packageTotal = toFiniteNumber(
@@ -54,7 +57,7 @@ function getPackageSessionValue(
       ?? defaultPackage?.totalAmount
       ?? fee,
   );
-  const isCoursePackage = packageType === "course" || packageType.includes("kho");
+  const isCoursePackage = packageType === "course" || packageType.includes("khoa");
 
   return isCoursePackage
     ? sessionCount > 0 ? packageTotal / sessionCount : 0
