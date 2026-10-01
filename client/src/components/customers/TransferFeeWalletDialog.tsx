@@ -53,10 +53,8 @@ export function TransferFeeWalletDialog({ open, onClose, studentId, summary }: P
     staleTime: 30_000,
   });
 
-  const recipients = useMemo(
-    () => (recipientsData?.students ?? []).filter(recipient => recipient.id !== studentId),
-    [recipientsData, studentId],
-  );
+  const recipients = useMemo(() => recipientsData?.students ?? [], [recipientsData]);
+  const isSelfRecipient = recipientId === studentId;
   const availableHocPhi = Math.max(0, Number(summary.hocPhi) || 0);
   const availableDatCoc = Math.max(0, Number(summary.datCoc) || 0);
   const availableTotal = availableHocPhi + availableDatCoc;
@@ -64,7 +62,15 @@ export function TransferFeeWalletDialog({ open, onClose, studentId, summary }: P
   const hocPhi = Math.max(0, Number(hocPhiAmount) || 0);
   const datCoc = Math.max(0, Number(datCocAmount) || 0);
   const total = hocPhi + datCoc;
-  const exceedsTotal = total > availableTotal;
+  const selfTransferHasBothDirections = isSelfRecipient && hocPhi > 0 && datCoc > 0;
+  const selfTransferExceedsSourceBalance = isSelfRecipient && (
+    hocPhi > availableDatCoc || datCoc > availableHocPhi
+  );
+  const exceedsTotal = isSelfRecipient
+    ? selfTransferHasBothDirections || selfTransferExceedsSourceBalance
+    : total > availableTotal;
+  const maxHocPhi = isSelfRecipient ? availableDatCoc : availableTotal;
+  const maxDatCoc = isSelfRecipient ? availableHocPhi : availableTotal;
 
   const handleAmountChange = (
     setter: (value: string) => void,
@@ -152,7 +158,9 @@ export function TransferFeeWalletDialog({ open, onClose, studentId, summary }: P
                   <span className={selectedRecipient ? "truncate" : "truncate text-muted-foreground"}>
                     {selectedRecipient
                       ? `${selectedRecipient.fullName} (${selectedRecipient.code}) — ${
-                          selectedRecipient.type === "Phụ huynh" ? "Phụ huynh" : "Học viên"
+                          selectedRecipient.id === studentId
+                            ? "Chính học viên này"
+                            : selectedRecipient.type === "Phụ huynh" ? "Phụ huynh" : "Học viên"
                         }`
                       : recipientsLoading ? "Đang tải danh sách..." : "Chọn học viên/phụ huynh"}
                   </span>
@@ -197,6 +205,8 @@ export function TransferFeeWalletDialog({ open, onClose, studentId, summary }: P
                         onClick={() => {
                           setRecipientId(recipient.id);
                           setSelectedRecipient(recipient);
+                          setHocPhiAmount("");
+                          setDatCocAmount("");
                           setRecipientPickerOpen(false);
                           setRecipientSearch("");
                         }}
@@ -207,7 +217,9 @@ export function TransferFeeWalletDialog({ open, onClose, studentId, summary }: P
                           {recipient.fullName} ({recipient.code})
                         </span>
                         <span className="shrink-0 text-xs text-muted-foreground">
-                          {recipient.type === "Phụ huynh" ? "Phụ huynh" : "Học viên"}
+                          {recipient.id === studentId
+                            ? "Chính học viên này"
+                            : recipient.type === "Phụ huynh" ? "Phụ huynh" : "Học viên"}
                         </span>
                       </button>
                     );
@@ -236,17 +248,30 @@ export function TransferFeeWalletDialog({ open, onClose, studentId, summary }: P
 
             <div className="rounded-lg border bg-primary/5 p-4 space-y-3">
               <h3 className="font-semibold text-sm">Số tiền ví chuyển</h3>
-              <p className="text-xs text-muted-foreground">
-                Số tiền nhập là số tiền ví người nhận sẽ nhận. Hệ thống ưu tiên trừ ví cùng loại trước, sau đó bù từ ví còn lại nếu cần.
-              </p>
+              {isSelfRecipient ? (
+                <p className="text-xs text-muted-foreground">
+                  Tự chuyển giữa hai ví: nhập Học phí để trừ từ Đặt cọc, hoặc nhập Đặt cọc để trừ từ Học phí. Ví âm không chuyển đi được; mỗi lần chỉ chuyển một chiều.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Số tiền nhập là số tiền ví người nhận sẽ nhận. Hệ thống ưu tiên trừ ví cùng loại trước, sau đó bù từ ví còn lại nếu cần.
+                </p>
+              )}
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Học phí</label>
+                <label className="text-xs text-muted-foreground">
+                  Học phí{isSelfRecipient ? " (trừ từ Đặt cọc)" : ""}
+                </label>
                 <Input
                   type="number"
                   min={1}
-                  max={availableTotal}
+                  max={maxHocPhi}
                   step={1}
-                  disabled={!hasAvailableBalance || transferMutation.isPending}
+                  disabled={
+                    !hasAvailableBalance
+                    || transferMutation.isPending
+                    || maxHocPhi <= 0
+                    || (isSelfRecipient && datCoc > 0)
+                  }
                   value={hocPhiAmount}
                   onChange={event => handleAmountChange(setHocPhiAmount, event.target.value)}
                   onBlur={() => {
@@ -257,13 +282,20 @@ export function TransferFeeWalletDialog({ open, onClose, studentId, summary }: P
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Đặt cọc</label>
+                <label className="text-xs text-muted-foreground">
+                  Đặt cọc{isSelfRecipient ? " (trừ từ Học phí)" : ""}
+                </label>
                 <Input
                   type="number"
                   min={1}
-                  max={availableTotal}
+                  max={maxDatCoc}
                   step={1}
-                  disabled={!hasAvailableBalance || transferMutation.isPending}
+                  disabled={
+                    !hasAvailableBalance
+                    || transferMutation.isPending
+                    || maxDatCoc <= 0
+                    || (isSelfRecipient && hocPhi > 0)
+                  }
                   value={datCocAmount}
                   onChange={event => handleAmountChange(setDatCocAmount, event.target.value)}
                   onBlur={() => {
@@ -283,7 +315,17 @@ export function TransferFeeWalletDialog({ open, onClose, studentId, summary }: P
           {!hasAvailableBalance && (
             <p className="text-xs text-red-600">Không có số dư khả dụng để chuyển</p>
           )}
-          {exceedsTotal && (
+          {selfTransferHasBothDirections && (
+            <p className="text-xs text-red-600">
+              Mỗi lần chỉ chuyển một chiều giữa Học phí và Đặt cọc.
+            </p>
+          )}
+          {selfTransferExceedsSourceBalance && (
+            <p className="text-xs text-red-600">
+              Số tiền chuyển vượt quá số dư dương của ví nguồn.
+            </p>
+          )}
+          {!isSelfRecipient && exceedsTotal && (
             <p className="text-xs text-red-600">
               Tổng tiền chuyển không được vượt quá {formatCurrency(availableTotal)}
             </p>

@@ -248,14 +248,10 @@ export async function transferStudentWallet(input: WalletTransferInput) {
   if (requested["Học phí"] <= 0 && requested["Đặt cọc"] <= 0) {
     throw new Error("Vui lòng nhập ít nhất một khoản tiền cần chuyển");
   }
-  if (input.fromStudentId === input.toStudentId) {
-    throw new Error("Người nhận phải khác người chuyển");
-  }
-
   return db.transaction(async tx => {
     // Lock both wallets in a stable order. This prevents two simultaneous
     // transfers from spending the same available balance.
-    for (const id of [input.fromStudentId, input.toStudentId].sort()) {
+    for (const id of [...new Set([input.fromStudentId, input.toStudentId])].sort()) {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${id}))`);
     }
 
@@ -285,53 +281,76 @@ export async function transferStudentWallet(input: WalletTransferInput) {
     };
     const requestedTotal = requested["Học phí"] + requested["Đặt cọc"];
     const availableTotal = available["Học phí"] + available["Đặt cọc"];
-    if (requestedTotal > availableTotal + 0.000001) {
-      throw new Error(`Tổng tiền chuyển tối đa ${availableTotal.toLocaleString("vi-VN")} đ`);
-    }
-
-    // Each input is the wallet category the recipient should receive.
-    // First debit the matching sender wallet, then use the other wallet only
-    // for the remaining shortfall. This preserves the user's requested
-    // category while allowing, for example, tuition -> deposit transfers.
-    const matchingHocPhi = Math.min(requested["Học phí"], available["Học phí"]);
-    const matchingDatCoc = Math.min(requested["Đặt cọc"], available["Đặt cọc"]);
-    const remainingHocPhi = available["Học phí"] - matchingHocPhi;
-    const remainingDatCoc = available["Đặt cọc"] - matchingDatCoc;
     const lines: TransferLine[] = [];
 
-    if (matchingHocPhi > 0) {
-      lines.push({ debitCategory: "Học phí", creditCategory: "Học phí", amount: matchingHocPhi });
-    }
-    if (matchingDatCoc > 0) {
-      lines.push({ debitCategory: "Đặt cọc", creditCategory: "Đặt cọc", amount: matchingDatCoc });
-    }
+    if (input.fromStudentId === input.toStudentId) {
+      if (requested["Học phí"] > 0 && requested["Đặt cọc"] > 0) {
+        throw new Error("Mỗi lần chỉ chuyển một chiều giữa Học phí và Đặt cọc");
+      }
 
-    const hocPhiShortfall = requested["Học phí"] - matchingHocPhi;
-    const datCocShortfall = requested["Đặt cọc"] - matchingDatCoc;
-    if (hocPhiShortfall > 0) {
-      if (hocPhiShortfall > remainingDatCoc + 0.000001) {
+      // For a transfer to the same student, the input category is the
+      // destination wallet and the other category is the only valid source.
+      if (requested["Học phí"] > available["Đặt cọc"] + 0.000001) {
+        throw new Error(`Số dư ví Đặt cọc tối đa ${available["Đặt cọc"].toLocaleString("vi-VN")} đ`);
+      }
+      if (requested["Đặt cọc"] > available["Học phí"] + 0.000001) {
+        throw new Error(`Số dư ví Học phí tối đa ${available["Học phí"].toLocaleString("vi-VN")} đ`);
+      }
+      if (requested["Học phí"] > 0) {
+        lines.push({ debitCategory: "Đặt cọc", creditCategory: "Học phí", amount: requested["Học phí"] });
+      }
+      if (requested["Đặt cọc"] > 0) {
+        lines.push({ debitCategory: "Học phí", creditCategory: "Đặt cọc", amount: requested["Đặt cọc"] });
+      }
+    } else {
+      if (requestedTotal > availableTotal + 0.000001) {
         throw new Error(`Tổng tiền chuyển tối đa ${availableTotal.toLocaleString("vi-VN")} đ`);
       }
-      lines.push({ debitCategory: "Đặt cọc", creditCategory: "Học phí", amount: hocPhiShortfall });
-    }
-    if (datCocShortfall > 0) {
-      if (datCocShortfall > remainingHocPhi + 0.000001) {
-        throw new Error(`Tổng tiền chuyển tối đa ${availableTotal.toLocaleString("vi-VN")} đ`);
+
+      // For a different recipient, prefer the matching sender wallet and use
+      // the other wallet only for any remaining shortfall.
+      const matchingHocPhi = Math.min(requested["Học phí"], available["Học phí"]);
+      const matchingDatCoc = Math.min(requested["Đặt cọc"], available["Đặt cọc"]);
+      const remainingHocPhi = available["Học phí"] - matchingHocPhi;
+      const remainingDatCoc = available["Đặt cọc"] - matchingDatCoc;
+
+      if (matchingHocPhi > 0) {
+        lines.push({ debitCategory: "Học phí", creditCategory: "Học phí", amount: matchingHocPhi });
       }
-      lines.push({ debitCategory: "Học phí", creditCategory: "Đặt cọc", amount: datCocShortfall });
+      if (matchingDatCoc > 0) {
+        lines.push({ debitCategory: "Đặt cọc", creditCategory: "Đặt cọc", amount: matchingDatCoc });
+      }
+
+      const hocPhiShortfall = requested["Học phí"] - matchingHocPhi;
+      const datCocShortfall = requested["Đặt cọc"] - matchingDatCoc;
+      if (hocPhiShortfall > 0) {
+        if (hocPhiShortfall > remainingDatCoc + 0.000001) {
+          throw new Error(`Tổng tiền chuyển tối đa ${availableTotal.toLocaleString("vi-VN")} đ`);
+        }
+        lines.push({ debitCategory: "Đặt cọc", creditCategory: "Học phí", amount: hocPhiShortfall });
+      }
+      if (datCocShortfall > 0) {
+        if (datCocShortfall > remainingHocPhi + 0.000001) {
+          throw new Error(`Tổng tiền chuyển tối đa ${availableTotal.toLocaleString("vi-VN")} đ`);
+        }
+        lines.push({ debitCategory: "Học phí", creditCategory: "Đặt cọc", amount: datCocShortfall });
+      }
     }
 
     const transferCode = `WALLET-${Date.now()}`;
     const description = input.description?.trim() || "Chuyển tiền giữa các ví học phí";
+    const isSelfTransfer = input.fromStudentId === input.toStudentId;
     const rowsToInsert = lines.flatMap(line => [
       {
         studentId: input.fromStudentId,
         type: "debit" as const,
         amount: line.amount.toFixed(2),
         category: line.debitCategory,
-        action: `Chuyển ${line.creditCategory.toLowerCase()} sang ví ${input.toStudentName}${
-          line.debitCategory === line.creditCategory ? "" : ` (trừ ${line.debitCategory.toLowerCase()})`
-        }`,
+        action: isSelfTransfer
+          ? `Chuyển từ ví ${line.debitCategory} sang ví ${line.creditCategory}`
+          : `Chuyển ${line.creditCategory.toLowerCase()} sang ví ${input.toStudentName}${
+              line.debitCategory === line.creditCategory ? "" : ` (trừ ${line.debitCategory.toLowerCase()})`
+            }`,
         invoiceCode: transferCode,
         invoiceDescription: description,
         createdBy: input.createdBy ?? null,
@@ -342,9 +361,11 @@ export async function transferStudentWallet(input: WalletTransferInput) {
         type: "credit" as const,
         amount: line.amount.toFixed(2),
         category: line.creditCategory,
-        action: `Nhận ${line.creditCategory.toLowerCase()} từ ví ${input.fromStudentName}${
-          line.debitCategory === line.creditCategory ? "" : ` (từ ${line.debitCategory.toLowerCase()})`
-        }`,
+        action: isSelfTransfer
+          ? `Nhận vào ví ${line.creditCategory} từ ví ${line.debitCategory}`
+          : `Nhận ${line.creditCategory.toLowerCase()} từ ví ${input.fromStudentName}${
+              line.debitCategory === line.creditCategory ? "" : ` (từ ${line.debitCategory.toLowerCase()})`
+            }`,
         invoiceCode: transferCode,
         invoiceDescription: description,
         createdBy: input.createdBy ?? null,
