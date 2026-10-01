@@ -194,6 +194,28 @@ export function SessionDetailPanel({
   }
 
   const session = classSessions?.find((s) => s.id === selectedClassSessionId);
+  const sessionDate = session?.sessionDate ?? "";
+  const { data: sessionsForTeacherTimes = [] } = useQuery<any[]>({
+    queryKey: ["/api/schedule", sessionDate, classData?.locationId, "class-detail-teacher-times"],
+    enabled: mode === "info" && !!sessionDate,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const params = new URLSearchParams({ from: sessionDate, to: sessionDate });
+      if (classData?.locationId) params.set("locationId", classData.locationId);
+      const response = await apiRequest("GET", `/api/schedule?${params.toString()}`);
+      return response.json();
+    },
+  });
+  const selectedScheduleSession = sessionsForTeacherTimes.find((item) => item.id === session?.id);
+  const teacherTimeById = new Map<string, { startTime: string; endTime: string }>();
+  for (const assignment of selectedScheduleSession?.teacherTimeAssignments ?? []) {
+    if (assignment?.teacherId) {
+      teacherTimeById.set(assignment.teacherId, {
+        startTime: String(assignment.startTime ?? ""),
+        endTime: String(assignment.endTime ?? ""),
+      });
+    }
+  }
 
   const { data: classrooms } = useQuery<any[]>({
     queryKey: ["/api/classrooms", { locationId: classData?.locationId }],
@@ -243,6 +265,9 @@ export function SessionDetailPanel({
   const totalSessions = classSessions?.length || 0;
   const sessionIndex = session?.sessionIndex ?? "?";
   const isOnline = classData?.learningFormat === "online";
+  const teachersToDisplay = session?.teachers?.length > 0
+    ? session.teachers
+    : classData?.teachers ?? [];
   const teacherName =
     (session?.teachers?.length > 0
       ? session.teachers.map((t: any) => t.fullName).join(", ")
@@ -359,7 +384,33 @@ export function SessionDetailPanel({
               <UserCog className="h-3.5 w-3.5 text-slate-500" />
             </div>
             <span className="text-xs text-slate-600 w-14 shrink-0 mt-0.5 font-medium">GV:</span>
-            <span className="text-sm font-semibold text-blue-600 flex-1 min-w-0 leading-snug break-words">{teacherName}</span>
+              <span className="text-sm font-semibold text-blue-600 flex-1 min-w-0 leading-snug break-words">
+                {teachersToDisplay.length > 0 ? (
+                  <span className="flex flex-wrap gap-y-1">
+                    {teachersToDisplay.map((teacher: any, index: number) => {
+                      const teacherName = teacher.fullName ?? teacher.name ?? "";
+                      const teacherTime = teacher.id ? teacherTimeById.get(teacher.id) : undefined;
+                      return (
+                        <span
+                          key={teacher.id ?? `${teacherName}-${index}`}
+                          className={cn(
+                            "inline-flex items-baseline whitespace-nowrap",
+                            index < teachersToDisplay.length - 1 && "mr-2",
+                          )}
+                        >
+                          <span>{teacherName}</span>
+                          {teacherTime && (
+                            <span className="ml-1 text-[11px] font-normal text-slate-500">
+                              ({teacherTime.startTime.slice(0, 5)}–{teacherTime.endTime.slice(0, 5)})
+                            </span>
+                          )}
+                          {index < teachersToDisplay.length - 1 && <span>,</span>}
+                        </span>
+                      );
+                    })}
+                  </span>
+                ) : teacherName}
+              </span>
           </div>
           {/* Sĩ số */}
           <div className="flex items-center gap-2">
