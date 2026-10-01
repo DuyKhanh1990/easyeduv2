@@ -208,6 +208,9 @@ export function TransferClassDialog({
   const [selectedTargetPackageId, setSelectedTargetPackageId] = useState<string>("");
   const [isTargetClassPickerOpen, setIsTargetClassPickerOpen] = useState(false);
   const [isTargetDiscountDialogOpen, setIsTargetDiscountDialogOpen] = useState(false);
+  const [isCurrentDiscountDialogOpen, setIsCurrentDiscountDialogOpen] = useState(false);
+  const [currentDiscountInput, setCurrentDiscountInput] = useState("");
+  const [manualCurrentDiscountAmount, setManualCurrentDiscountAmount] = useState<number | null>(null);
   const [targetPromotionSearch, setTargetPromotionSearch] = useState("");
   const [targetPromotionKeys, setTargetPromotionKeys] = useState<string[]>([]);
   const [targetPromotionRows, setTargetPromotionRows] = useState<TransferAdjustmentRow[]>([]);
@@ -409,6 +412,12 @@ export function TransferClassDialog({
     if (isOpen) setTransferFeeAdjustmentInput("");
   }, [isOpen, student?.id, currentClass?.id]);
 
+  useEffect(() => {
+    setIsCurrentDiscountDialogOpen(false);
+    setCurrentDiscountInput("");
+    setManualCurrentDiscountAmount(null);
+  }, [isOpen, student?.id, currentClass?.id]);
+
   // Reset target package when class changes
   useEffect(() => {
     setSelectedTargetPackageId("");
@@ -599,16 +608,31 @@ export function TransferClassDialog({
   // Keep the invoice's total discount stable when the operator changes the
   // editable session count; the source allocation was created for the
   // student's original registered session count.
-  const currentDiscountAmount = currentDiscountPerSession
+  const currentAutomaticDiscountAmount = currentDiscountPerSession
     * (currentRegisteredSessionCount > 0 ? currentRegisteredSessionCount : currentSessionCount);
+  const currentDiscountAmount = currentAutomaticDiscountAmount > 0
+    ? currentAutomaticDiscountAmount
+    : manualCurrentDiscountAmount ?? 0;
   const currentDiscountPercent = currentSession?.pricing?.discountPercent ?? null;
   const currentAllocatedSessionPrice = Number(currentSession?.pricing?.allocatedFee ?? 0);
   const hasCurrentPackagePrice = !!currentFeePackage && currentBaseSessionPrice > 0;
   const currentNetTotal = Math.max(0, currentBaseTotal - currentDiscountAmount);
+  const currentTransferNetTotal = Math.max(0, currentBaseTotal - currentAutomaticDiscountAmount);
+  const parsedCurrentDiscountInput = currentDiscountInput.trim() === ""
+    ? 0
+    : Number(currentDiscountInput);
+  const invalidCurrentDiscountInput = !Number.isFinite(parsedCurrentDiscountInput)
+    || parsedCurrentDiscountInput < 0
+    || parsedCurrentDiscountInput > currentBaseTotal;
+  const applyManualCurrentDiscount = () => {
+    if (invalidCurrentDiscountInput) return;
+    setManualCurrentDiscountAmount(parsedCurrentDiscountInput > 0 ? parsedCurrentDiscountInput : null);
+    setIsCurrentDiscountDialogOpen(false);
+  };
   const fallbackCurrentSessionPrice = currentSession?.sessionSource === "transfer"
     ? currentStoredSessionPrice
-    : currentSessionCount > 0 && (currentAllocatedSessionPrice > 0 || currentNetTotal > 0)
-    ? Number((currentNetTotal / currentSessionCount).toFixed(2))
+    : currentSessionCount > 0 && (currentAllocatedSessionPrice > 0 || currentTransferNetTotal > 0)
+    ? Number((currentTransferNetTotal / currentSessionCount).toFixed(2))
     : hasCurrentPackagePrice
     ? Math.max(0, currentBaseSessionPrice - currentDiscountPerSession)
     : currentStoredSessionPrice;
@@ -1035,13 +1059,91 @@ export function TransferClassDialog({
                         {currentBaseTotal > 0 ? formatCurrency(currentBaseTotal) : "—"}
                       </span>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex items-center justify-between gap-3">
                       <span className="text-muted-foreground">Giảm trừ:</span>
-                      <span className="font-medium">
-                        {currentDiscountAmount > 0
-                          ? `${formatCurrency(currentDiscountAmount)}${formatPercent(currentDiscountPercent) ? ` (${formatPercent(currentDiscountPercent)})` : ""}`
-                          : "0đ"}
-                      </span>
+                      {currentAutomaticDiscountAmount > 0 ? (
+                        <span className="font-medium">
+                          {`${formatCurrency(currentDiscountAmount)}${formatPercent(currentDiscountPercent) ? ` (${formatPercent(currentDiscountPercent)})` : ""}`}
+                        </span>
+                      ) : (
+                        <Dialog
+                          open={isCurrentDiscountDialogOpen}
+                          onOpenChange={(open) => {
+                            setIsCurrentDiscountDialogOpen(open);
+                            if (open) {
+                              setCurrentDiscountInput(
+                                manualCurrentDiscountAmount == null
+                                  ? ""
+                                  : String(manualCurrentDiscountAmount),
+                              );
+                            }
+                          }}
+                        >
+                          <button
+                            type="button"
+                            className={cn(
+                              "flex items-center gap-1 rounded px-1.5 py-0.5 text-right text-sm transition-colors",
+                              currentBaseTotal > 0
+                                ? "hover:bg-green-50 hover:text-green-700 dark:hover:bg-green-950/30"
+                                : "cursor-not-allowed text-muted-foreground opacity-60",
+                            )}
+                            onClick={() => setIsCurrentDiscountDialogOpen(true)}
+                            disabled={currentBaseTotal <= 0}
+                            data-testid="button-current-discount"
+                          >
+                            <span className={currentDiscountAmount > 0 ? "font-semibold text-green-600" : "font-medium"}>
+                              {currentDiscountAmount > 0 ? formatCurrency(currentDiscountAmount) : "0đ"}
+                            </span>
+                            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          </button>
+                          <DialogContent className="sm:max-w-md">
+                            <DialogHeader>
+                              <DialogTitle>Nhập giảm trừ lớp hiện tại</DialogTitle>
+                            </DialogHeader>
+                            <div className="space-y-2">
+                              <label htmlFor="current-class-manual-discount" className="text-sm font-medium">
+                                Số tiền giảm trừ
+                              </label>
+                              <Input
+                                id="current-class-manual-discount"
+                                data-testid="input-current-class-manual-discount"
+                                type="number"
+                                min={0}
+                                max={currentBaseTotal}
+                                step={1}
+                                value={currentDiscountInput}
+                                onChange={(event) => setCurrentDiscountInput(event.target.value)}
+                                placeholder="Nhập số tiền giảm trừ"
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Sau giảm trừ = Tổng học phí - Số tiền giảm trừ.
+                              </p>
+                              {invalidCurrentDiscountInput && currentDiscountInput.trim() !== "" && (
+                                <p className="text-xs text-destructive">
+                                  Số tiền giảm trừ phải từ 0 đến {formatCurrency(currentBaseTotal)}.
+                                </p>
+                              )}
+                            </div>
+                            <DialogFooter>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setIsCurrentDiscountDialogOpen(false)}
+                              >
+                                Hủy
+                              </Button>
+                              <Button
+                                type="button"
+                                onClick={applyManualCurrentDiscount}
+                                disabled={invalidCurrentDiscountInput}
+                                data-testid="button-apply-current-class-discount"
+                              >
+                                Áp dụng
+                              </Button>
+                            </DialogFooter>
+                          </DialogContent>
+                        </Dialog>
+                      )}
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Sau giảm trừ:</span>
