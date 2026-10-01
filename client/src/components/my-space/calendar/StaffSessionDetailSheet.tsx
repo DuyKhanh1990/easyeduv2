@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { RichContentRenderer } from "@/components/ui/rich-content-renderer";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Dialog,
@@ -29,7 +28,7 @@ import { applyBulkAttendance } from "@/lib/attendance-bulk";
 import { useToast } from "@/hooks/use-toast";
 import { Users, Loader2, Star, ChevronDown, LibraryBig } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { SessionContentDialog } from "@/components/education/SessionContentDialog";
+import { ContentViewDialog, SessionContentDialog } from "@/components/education/SessionContentDialog";
 import { LibraryContentDialog } from "@/components/courses/LibraryContentDialog";
 import { AddStudentToSessionDialog } from "@/components/education/AddStudentToSessionDialog";
 import { ReviewDialog } from "@/components/education/ReviewDialog";
@@ -129,7 +128,12 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
 
   const [reviewTarget, setReviewTarget] = useState<any>(null);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
-  const [viewContent, setViewContent] = useState<{ title: string; type: string; description: string | null } | null>(null);
+  const [viewingContentId, setViewingContentId] = useState<string | null>(null);
+  const [viewingFallbackContent, setViewingFallbackContent] = useState<{
+    title: string;
+    type: string;
+    content?: string | null;
+  } | null>(null);
 
   const isOpen = !!session;
   const classSessionId = session?.classSessionId ?? "";
@@ -490,7 +494,14 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                               <button
                                 key={c.id}
                                 className="font-medium text-primary hover:underline text-left line-clamp-1 text-sm"
-                                onClick={() => setViewContent({ title: c.title, type: c.type, description: c.description })}
+                                onClick={() => {
+                                  setViewingContentId(c.resourceUrl || null);
+                                  setViewingFallbackContent(c.resourceUrl ? null : {
+                                    title: c.title,
+                                    type: c.type,
+                                    content: c.description,
+                                  });
+                                }}
                                 data-testid={`btn-view-content-detail-${c.id}`}
                               >
                                 {c.title}
@@ -1024,26 +1035,17 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
         onOpenChange={setLibraryDialogOpen}
       />
 
-      {/* Content view dialog */}
-      <Dialog open={!!viewContent} onOpenChange={(open) => !open && setViewContent(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold">{viewContent?.title}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2 text-sm">
-            {viewContent?.type && (
-              <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
-                {viewContent.type}
-              </p>
-            )}
-            {viewContent?.description ? (
-              <RichContentRenderer text={viewContent.description} />
-            ) : (
-              <p className="text-muted-foreground italic">{t("mySpace.calendar.notAvailable")}</p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ContentViewDialog
+        isOpen={!!viewingContentId || !!viewingFallbackContent}
+        onOpenChange={(open) => {
+          if (!open) {
+            setViewingContentId(null);
+            setViewingFallbackContent(null);
+          }
+        }}
+        contentId={viewingContentId}
+        fallbackContent={viewingFallbackContent}
+      />
     </>
   );
 }
