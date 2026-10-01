@@ -1772,9 +1772,6 @@ export async function getClassSessions(classId: string): Promise<any[]> {
     where: eq(classSessions.classId, classId),
     with: {
       shiftTemplate: { columns: { id: true, name: true, startTime: true, endTime: true } },
-      teacherTimeAssignments: {
-        columns: { teacherId: true, startTime: true, endTime: true },
-      },
     },
     // sessionIndex is the canonical lesson order. Dates are editable and may
     // intentionally be moved before/after neighboring sessions.
@@ -1800,6 +1797,29 @@ export async function getClassSessions(classId: string): Promise<any[]> {
   }
 
   const sessionIds = results.map(s => s.id);
+  const teacherTimeAssignmentsMap: Record<string, Array<{
+    teacherId: string;
+    startTime: string;
+    endTime: string;
+  }>> = {};
+  if (sessionIds.length > 0) {
+    const assignments = await db.select({
+      classSessionId: classSessionTeacherAssignments.classSessionId,
+      teacherId: classSessionTeacherAssignments.teacherId,
+      startTime: classSessionTeacherAssignments.startTime,
+      endTime: classSessionTeacherAssignments.endTime,
+    })
+      .from(classSessionTeacherAssignments)
+      .where(inArray(classSessionTeacherAssignments.classSessionId, sessionIds));
+    for (const assignment of assignments) {
+      (teacherTimeAssignmentsMap[assignment.classSessionId] ??= []).push({
+        teacherId: assignment.teacherId,
+        startTime: assignment.startTime,
+        endTime: assignment.endTime,
+      });
+    }
+  }
+
   let contentsMap: Record<string, any[]> = {};
   if (sessionIds.length > 0) {
     const contentsList = await db.select({
@@ -1818,6 +1838,7 @@ export async function getClassSessions(classId: string): Promise<any[]> {
   return results.map(s => ({
     ...s,
     teachers: (s.teacherIds || []).map((id: string) => staffMap[id]).filter(Boolean),
+    teacherTimeAssignments: teacherTimeAssignmentsMap[s.id] ?? [],
     program: (s as any).programId ? (programMap[(s as any).programId] || null) : null,
     sessionContents: (contentsMap[s.id] || []).sort((a: any, b: any) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0)),
   }));
