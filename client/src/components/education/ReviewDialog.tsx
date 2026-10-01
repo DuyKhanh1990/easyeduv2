@@ -405,6 +405,7 @@ function CriteriaForm({
   checked: CheckedMap;
   setChecked: (fn: (prev: CheckedMap) => CheckedMap) => void;
 }) {
+  const { t } = useLanguage();
   const renderSubCriterion = (sc: SubCriteriaItem) => (
     <div key={sc.id} className="space-y-1">
       {sc.inputType === "checkbox" ? (
