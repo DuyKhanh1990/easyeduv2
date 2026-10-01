@@ -25,12 +25,26 @@ export interface ImportResult {
   successCount: number;
   totalRows: number;
   errorRows: ImportErrorRow[];
+  classAssignmentSummary?: {
+    assigned: number;
+    studentsAssigned: number;
+    classesProcessed: number;
+    classesCreated: number;
+    error?: string;
+  };
 }
 
 export interface ImportOptions {
   allowDuplicatePhone: boolean;
   allowDuplicateEmail: boolean;
 }
+
+const STUDENT_IMPORT_HEADERS = [
+  "Mã số", "Họ và tên (*)", "Cơ sở", "Phân loại (*)", "SĐT", "Ngày sinh", "Email",
+  "PH 1", "SĐT PH 1", "PH 2", "SĐT PH 2", "PH 3", "SĐT PH 3",
+  "Mối quan hệ (*)", "Nguồn", "Lý do từ chối", "Sale", "Quản lý", "Giáo viên",
+  "Mã lớp", "Địa chỉ", "Zalo/FB", "Trình độ", "Ghi chú",
+];
 
 export function useExcelImportExport({
   students,
@@ -65,12 +79,7 @@ export function useExcelImportExport({
       return;
     }
 
-    const headers = [
-      "Mã số", "Họ và tên (*)", "Cơ sở", "Phân loại (*)", "SĐT", "Ngày sinh", "Email",
-      "PH 1", "SĐT PH 1", "PH 2", "SĐT PH 2", "PH 3", "SĐT PH 3",
-      "Mối quan hệ (*)", "Nguồn", "Lý do từ chối", "Sale", "Quản lý", "Giáo viên",
-      "Mã lớp", "Tên lớp", "Địa chỉ", "Zalo/FB", "Trình độ", "Ghi chú",
-    ];
+    const headers = [...STUDENT_IMPORT_HEADERS];
 
     try {
       const ExcelJS = await loadExcelJS();
@@ -102,7 +111,6 @@ export function useExcelImportExport({
           (student.managedByList || []).map((s: any) => s.fullName).join("; "),
           (student.teacherList || []).map((s: any) => s.fullName).join("; "),
           student.classCode || "",
-          student.className || "",
           student.address || "",
           student.socialLink || "",
           student.academicLevel || "",
@@ -167,12 +175,7 @@ export function useExcelImportExport({
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet("Mau_Nhap_Hoc_Vien");
 
-      const headers = [
-        "Mã số", "Họ và tên (*)", "Cơ sở", "Phân loại (*)", "SĐT", "Ngày sinh", "Email",
-        "PH 1", "SĐT PH 1", "PH 2", "SĐT PH 2", "PH 3", "SĐT PH 3",
-        "Mối quan hệ (*)", "Nguồn", "Lý do từ chối", "Sale", "Quản lý", "Giáo viên",
-        "Mã lớp", "Tên lớp", "Địa chỉ", "Zalo/FB", "Trình độ", "Ghi chú",
-      ];
+      const headers = [...STUDENT_IMPORT_HEADERS];
 
       const headerRow = worksheet.addRow(headers);
       headerRow.height = 25;
@@ -222,12 +225,7 @@ export function useExcelImportExport({
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet("Danh_Sach_Loi");
 
-      const headers = [
-        "Mã số", "Họ và tên (*)", "Cơ sở", "Phân loại (*)", "SĐT", "Ngày sinh", "Email",
-        "PH 1", "SĐT PH 1", "PH 2", "SĐT PH 2", "PH 3", "SĐT PH 3",
-        "Mối quan hệ (*)", "Nguồn", "Lý do từ chối", "Sale", "Quản lý", "Giáo viên",
-        "Mã lớp", "Tên lớp", "Địa chỉ", "Zalo/FB", "Trình độ", "Ghi chú", "Lý do lỗi",
-      ];
+      const headers = [...STUDENT_IMPORT_HEADERS, "Lý do lỗi"];
 
       const headerRow = worksheet.addRow(headers);
       headerRow.height = 25;
@@ -277,7 +275,6 @@ export function useExcelImportExport({
           rawData[21] ?? "",
           rawData[22] ?? "",
           rawData[23] ?? "",
-          rawData[24] ?? "",
           errRow.reason,
         ];
         const dataRow = worksheet.addRow(rowValues);
@@ -366,10 +363,20 @@ export function useExcelImportExport({
         rows.push(processedRow);
       });
 
-      const dataRows = rows.slice(1);
+      const sourceColumnIndexes = new Map(
+        (rows[0] || []).map((header, index) => [String(header ?? "").trim().toLocaleLowerCase(), index])
+      );
+      const dataRows = rows.slice(1).map((sourceRow) =>
+        STUDENT_IMPORT_HEADERS.map((header, index) => {
+          const mappedIndex = sourceColumnIndexes.get(header.toLocaleLowerCase());
+          // Older templates had a "Tên lớp" column between "Mã lớp" and "Địa chỉ".
+          return sourceRow[mappedIndex ?? (index >= 20 ? index + 1 : index)];
+        })
+      );
       setUploadProgress(20);
 
-      const classAssignments: { studentId: string; classCode: string; className?: string; locationId: string }[] = [];
+      const classAssignments: { studentId: string; classCode: string; locationId: string }[] = [];
+      let classAssignmentSummary: ImportResult["classAssignmentSummary"];
       let successCount = 0;
       const errorRows: ImportErrorRow[] = [];
 
@@ -470,10 +477,10 @@ export function useExcelImportExport({
           relationshipIds: matchedRelationship ? [matchedRelationship.id] : [],
           source: row[14] ? String(row[14]) : undefined,
           rejectReason: row[15] ? String(row[15]) : undefined,
-          address: row[21] ? String(row[21]) : undefined,
-          socialLink: row[22] ? String(row[22]) : undefined,
-          academicLevel: row[23] ? String(row[23]) : undefined,
-          note: row[24] ? String(row[24]) : undefined,
+          address: row[20] ? String(row[20]) : undefined,
+          socialLink: row[21] ? String(row[21]) : undefined,
+          academicLevel: row[22] ? String(row[22]) : undefined,
+          note: row[23] ? String(row[23]) : undefined,
           password: "123456",
         };
 
@@ -498,19 +505,24 @@ export function useExcelImportExport({
           studentData.username = codeStr;
         }
 
-        const classCode = row[19] ? String(row[19]).trim() : "";
-        const className = row[20] ? String(row[20]).trim() : "";
+        const classCodes = [...new Set(
+          (row[19] ? String(row[19]) : "")
+            .split("/")
+            .map((code: string) => code.trim())
+            .filter(Boolean)
+        )];
 
         try {
           const created = await createStudent.mutateAsync(studentData);
           successCount++;
-          if (classCode && created?.id) {
-            classAssignments.push({
-              studentId: created.id,
-              classCode,
-              className: className || undefined,
-              locationId: rowLocationId,
-            });
+          if (classCodes.length > 0 && created?.id) {
+            for (const classCode of classCodes) {
+              classAssignments.push({
+                studentId: created.id,
+                classCode,
+                locationId: rowLocationId,
+              });
+            }
           }
         } catch (err: any) {
           let reason = err?.message || "Lỗi không xác định";
@@ -543,12 +555,41 @@ export function useExcelImportExport({
       if (classAssignments.length > 0) {
         setUploadProgress(96);
         try {
-          await fetch("/api/students/import-class-assign", {
+          const response = await fetch("/api/students/import-class-assign", {
             method: "POST",
             headers: { "Content-Type": "application/json", ...getAuthHeaders() },
             body: JSON.stringify(classAssignments),
           });
-        } catch (_) {}
+          const payload = await response.json().catch(() => null);
+          if (!response.ok || payload?.success !== true) {
+            throw new Error(payload?.message || "Không thể tạo lớp hoặc gán học viên vào lớp.");
+          }
+          classAssignmentSummary = {
+            assigned: Number(payload.assigned) || 0,
+            studentsAssigned: Number(payload.studentsAssigned) || 0,
+            classesProcessed: Number(payload.classesProcessed) || 0,
+            classesCreated: Number(payload.classesCreated) || 0,
+          };
+          if (classAssignmentSummary.assigned !== classAssignments.length) {
+            classAssignmentSummary.error =
+              `Chỉ hoàn tất ${classAssignmentSummary.assigned}/${classAssignments.length} lượt gán học viên vào lớp.`;
+          }
+        } catch (error: any) {
+          classAssignmentSummary = {
+            assigned: 0,
+            studentsAssigned: 0,
+            classesProcessed: 0,
+            classesCreated: 0,
+            error: error?.message || "Không thể tạo lớp hoặc gán học viên vào lớp.",
+          };
+        }
+
+        if (classAssignmentSummary.assigned > 0) {
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["/api/classes"] }),
+            queryClient.invalidateQueries({ queryKey: ["/api/students/class-tabs"] }),
+          ]);
+        }
       }
 
       if (successCount > 0) {
@@ -556,7 +597,19 @@ export function useExcelImportExport({
       }
 
       setUploadProgress(100);
-      return { successCount, totalRows: dataRows.filter(r => r && r.length >= 2 && r[1]).length, errorRows };
+      if (classAssignmentSummary?.error) {
+        toast({
+          title: "Học viên đã nhập nhưng gán lớp chưa hoàn tất",
+          description: classAssignmentSummary.error,
+          variant: "destructive",
+        });
+      }
+      return {
+        successCount,
+        totalRows: dataRows.filter(r => r && r.length >= 2 && r[1]).length,
+        errorRows,
+        ...(classAssignmentSummary ? { classAssignmentSummary } : {}),
+      };
     } catch (error: any) {
       toast({
         title: "Lỗi nhập dữ liệu",

@@ -1746,39 +1746,67 @@ export function registerStudentsRoutes(app: Express): void {
 
   app.post(api.students.importClassAssign.path, async (req, res) => {
     try {
-      const items: { studentId: string; classCode: string; className?: string; locationId: string }[] = req.body;
+      const items: { studentId: string; classCode: string; locationId: string }[] = req.body;
       if (!Array.isArray(items) || items.length === 0) {
         return res.json({ success: true, assigned: 0 });
       }
 
       const userId = (req.user as any)?.id ?? null;
 
-      const byCode = new Map<string, { studentIds: string[]; className?: string; locationId: string }>();
+      const byCode = new Map<string, { studentIds: Set<string>; locationId: string }>();
       for (const item of items) {
-        if (!item.classCode) continue;
-        if (!byCode.has(item.classCode)) {
-          byCode.set(item.classCode, { studentIds: [], className: item.className, locationId: item.locationId });
+        const studentId = String(item?.studentId ?? "").trim();
+        if (!studentId) continue;
+        const classCodes = [...new Set(
+          String(item?.classCode ?? "")
+            .split("/")
+            .map((code) => code.trim())
+            .filter(Boolean)
+        )];
+        for (const classCode of classCodes) {
+          const existing = byCode.get(classCode);
+          if (!existing) {
+            byCode.set(classCode, {
+              studentIds: new Set([studentId]),
+              locationId: String(item.locationId ?? ""),
+            });
+          } else {
+            existing.studentIds.add(studentId);
+          }
         }
-        byCode.get(item.classCode)!.studentIds.push(item.studentId);
       }
 
       let assigned = 0;
       const created: string[] = [];
+      const assignedStudentIds = new Set<string>();
 
-      for (const [classCode, { studentIds, className, locationId }] of byCode) {
+      for (const [classCode, { studentIds, locationId }] of byCode) {
+        const studentIdList = [...studentIds];
+        if (studentIdList.length === 0) continue;
         let cls = await storage.findClassByCode(classCode);
 
         if (!cls) {
-          if (!className) continue;
-          cls = await storage.createMinimalClass({ classCode, name: className, locationId, createdBy: userId });
+          cls = await storage.createMinimalClass({
+            classCode,
+            name: classCode,
+            locationId,
+            createdBy: userId,
+          });
           created.push(cls.id);
         }
 
-        await storage.addClassStudents(cls.id, studentIds, userId);
-        assigned += studentIds.length;
+        await storage.addClassStudents(cls.id, studentIdList, userId);
+        assigned += studentIdList.length;
+        studentIdList.forEach((studentId) => assignedStudentIds.add(studentId));
       }
 
-      return res.json({ success: true, assigned, classesCreated: created.length });
+      return res.json({
+        success: true,
+        assigned,
+        studentsAssigned: assignedStudentIds.size,
+        classesProcessed: byCode.size,
+        classesCreated: created.length,
+      });
     } catch (err: any) {
       return res.status(500).json({ message: err.message });
     }

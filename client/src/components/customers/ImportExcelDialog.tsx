@@ -114,6 +114,28 @@ export function ImportExcelDialog({
                 </div>
               </div>
 
+              {result.classAssignmentSummary && (
+                <div className={cn(
+                  "rounded-xl border px-4 py-3 text-sm",
+                  result.classAssignmentSummary.error
+                    ? "border-amber-200 bg-amber-50 text-amber-800"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-800",
+                )}>
+                  {result.classAssignmentSummary.error ? (
+                    <>
+                      <p className="font-semibold">Học viên đã nhập nhưng việc gán lớp chưa hoàn tất</p>
+                      <p className="mt-1 text-xs">{result.classAssignmentSummary.error}</p>
+                    </>
+                  ) : (
+                    <p>
+                      Đã xếp {result.classAssignmentSummary.studentsAssigned} học viên vào danh sách chờ của{" "}
+                      {result.classAssignmentSummary.classesProcessed} lớp;
+                      {" "}tạo mới {result.classAssignmentSummary.classesCreated} lớp.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Error detail list */}
               {result.errorRows.length > 0 && (
                 <div className="rounded-2xl border border-rose-200 overflow-hidden shadow-sm">
@@ -201,6 +223,7 @@ export function ImportExcelDialog({
                       <li className="flex items-start gap-1.5"><span className="w-1 h-1 rounded-full bg-amber-400 mt-1.5 flex-shrink-0" />{t("import.noticeCol")}</li>
                       <li className="flex items-start gap-1.5"><span className="w-1 h-1 rounded-full bg-amber-400 mt-1.5 flex-shrink-0" />{t("import.noticeCode")}</li>
                       <li className="flex items-start gap-1.5"><span className="w-1 h-1 rounded-full bg-amber-400 mt-1.5 flex-shrink-0" />{t("import.noticeDropdown")}</li>
+                      <li className="flex items-start gap-1.5"><span className="w-1 h-1 rounded-full bg-amber-400 mt-1.5 flex-shrink-0" />{t("import.classCodeInfo")}</li>
                     </ul>
                   </div>
 
