@@ -80,3 +80,4 @@
 - [Finance translation parity](finance-translation-parity.md) — invoice English audits must compare vi/en key sets and scan child dialogs, not only the main Invoices page.
 - [Score conversion pass threshold](score-conversion-pass-threshold.md) — “Đạt” means the selected total is at least the “Từ” score; the “Đến” value does not cap higher scores.
 - [Score conversion range boundaries](score-conversion-mapping-boundaries.md) — displayed “Từ–Đến” ranges include the upper bound unless the next range starts at that same boundary.
+- [Invoice date-filter row parity](invoice-date-filter-row-parity.md) — counts and date filters must use the same installment-level rows the client renders.
