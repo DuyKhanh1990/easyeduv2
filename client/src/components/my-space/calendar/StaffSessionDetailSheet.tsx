@@ -783,7 +783,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                                   ) : (
                                     <>
                                       <span className="text-base leading-none">+</span>
-                                       {t("mySpace.calendar.addContentShort")}
+                                       {t("mySpace.calendar.addReviewShort")}
                                     </>
                                   )}
                                 </button>
@@ -884,7 +884,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                                   }}
                                 >
                                   <span className="text-base leading-none">+</span>
-                                   {t("mySpace.calendar.addContentShort")}
+                                   {t("mySpace.calendar.addReviewShort")}
                                 </button>
                               )}
                             </td>
