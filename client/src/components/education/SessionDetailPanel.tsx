@@ -243,21 +243,13 @@ export function SessionDetailPanel({
   const totalSessions = classSessions?.length || 0;
   const sessionIndex = session?.sessionIndex ?? "?";
   const isOnline = classData?.learningFormat === "online";
-  const sessionTeachers = session?.teachers?.length > 0
-    ? session.teachers
-    : (classData?.teachers ?? []);
-  const teacherDetails = sessionTeachers.map((teacher: any) => {
-    const assignment = session?.teacherTimeAssignments?.find(
-      (item: any) => item.teacherId === teacher.id,
-    );
-    const startTime = assignment?.startTime?.slice(0, 5);
-    const endTime = assignment?.endTime?.slice(0, 5);
-    return {
-      id: teacher.id,
-      fullName: teacher.fullName,
-      timeRange: startTime && endTime ? `${startTime}–${endTime}` : null,
-    };
-  });
+  const teacherName =
+    (session?.teachers?.length > 0
+      ? session.teachers.map((t: any) => t.fullName).join(", ")
+      : null) ||
+    (classData?.teachers?.length > 0
+      ? classData.teachers.map((t: any) => t.fullName).join(", ")
+      : "Chưa gán");
   const sessionDate = session?.sessionDate ? new Date(session.sessionDate) : null;
   const dayOfWeekLabels = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
   const dayLabel = sessionDate ? dayOfWeekLabels[sessionDate.getDay()] : "";
@@ -367,21 +359,7 @@ export function SessionDetailPanel({
               <UserCog className="h-3.5 w-3.5 text-slate-500" />
             </div>
             <span className="text-xs text-slate-600 w-14 shrink-0 mt-0.5 font-medium">GV:</span>
-            <span className="text-sm font-semibold text-blue-600 flex-1 min-w-0 leading-snug break-words">
-              {teacherDetails.length > 0
-                ? teacherDetails.map((teacher: any, index: number) => (
-                    <span key={teacher.id ?? `${teacher.fullName}-${index}`}>
-                      {index > 0 && ", "}
-                      {teacher.fullName}
-                      {teacher.timeRange && (
-                        <span className="ml-1 text-[11px] font-medium text-slate-500 whitespace-nowrap">
-                          ({teacher.timeRange})
-                        </span>
-                      )}
-                    </span>
-                  ))
-                : "Chưa gán"}
-            </span>
+            <span className="text-sm font-semibold text-blue-600 flex-1 min-w-0 leading-snug break-words">{teacherName}</span>
           </div>
           {/* Sĩ số */}
           <div className="flex items-center gap-2">
