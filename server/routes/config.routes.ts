@@ -42,6 +42,17 @@ import * as courseStorage from "../storage/course.storage";
 import { createCourseAuditLog, getCourseAuditLogs } from "../storage/course-audit-log.storage";
 import { createActivityLog, getStaffHistory } from "../storage/activity-log.storage";
 
+function getBangkokDateOnly(): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
 const SCORE_CONVERSION_SETTINGS_KEY = "scoreConversionTemplates";
 const SCORE_SHEET_TEMPLATE_SETTINGS_KEY = "scoreSheetTemplates";
 const SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY = "scoreSheetAssessments";
@@ -1716,9 +1727,10 @@ export function registerConfigRoutes(app: Express): void {
     const type = req.query.type as string | undefined;
     const requestedLocationId = (locationId === "undefined" || !locationId) ? undefined : locationId;
     const effectiveType = (type === "undefined" || !type) ? undefined : type;
+    const includeInactive = req.query.includeInactive === "true";
 
     if (isSuperAdmin) {
-      const shifts = await storage.getShiftTemplates(requestedLocationId, effectiveType);
+      const shifts = await storage.getShiftTemplates(requestedLocationId, effectiveType, includeInactive);
       return res.json(shifts);
     }
 
@@ -1727,12 +1739,12 @@ export function registerConfigRoutes(app: Express): void {
       if (!allowedLocationIds.includes(requestedLocationId)) {
         return res.json([]);
       }
-      const shifts = await storage.getShiftTemplates(requestedLocationId, effectiveType);
+      const shifts = await storage.getShiftTemplates(requestedLocationId, effectiveType, includeInactive);
       return res.json(shifts);
     }
 
     // No specific location requested — return shifts for all allowed locations only
-    const allShifts = await storage.getShiftTemplates(undefined, effectiveType);
+    const allShifts = await storage.getShiftTemplates(undefined, effectiveType, includeInactive);
     const filtered = allShifts.filter(s => allowedLocationIds.includes(s.locationId));
     return res.json(filtered);
   });
@@ -1740,10 +1752,18 @@ export function registerConfigRoutes(app: Express): void {
   app.post("/api/shift-templates", async (req, res) => {
     try {
       const { insertShiftTemplateSchema } = await import("@shared/schema");
-      const input = insertShiftTemplateSchema.parse(req.body);
-
-      const shift = await storage.createShiftTemplate(input);
-      res.status(201).json(shift);
+      const rawLocationIds = req.body?.locationIds ?? (req.body?.locationId ? [req.body.locationId] : []);
+      const locationIds = z.array(z.string().uuid()).min(1).parse(rawLocationIds);
+      if (!req.isSuperAdmin && locationIds.some((id) => !(req.allowedLocationIds ?? []).includes(id))) {
+        return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở đã chọn" });
+      }
+      const { locationIds: _locationIds, ...rawInput } = req.body ?? {};
+      const input = insertShiftTemplateSchema.parse({ ...rawInput, locationId: locationIds[0] });
+      const groupId = randomUUID();
+      const shifts = await db.insert(shiftTemplates).values(
+        locationIds.map((locationId) => ({ ...input, locationId, groupId }))
+      ).returning();
+      res.status(201).json(shifts.length === 1 ? shifts[0] : shifts);
     } catch (err) {
       if (err instanceof z.ZodError) return res.status(400).json(err.errors);
       res.status(500).json({ message: (err as any).message });
@@ -1753,63 +1773,101 @@ export function registerConfigRoutes(app: Express): void {
   app.put("/api/shift-templates/:id", async (req, res) => {
     try {
       const { insertShiftTemplateSchema } = await import("@shared/schema");
-      const input = insertShiftTemplateSchema.partial().parse(req.body);
+      const { shiftTemplates: shiftTemplateTable } = await import("@shared/schema");
+      const [current] = await db.select().from(shiftTemplateTable)
+        .where(eq(shiftTemplateTable.id, req.params.id)).limit(1);
+      if (!current) return res.status(404).json({ message: "Không tìm thấy ca làm việc" });
+      if (!req.isSuperAdmin && !(req.allowedLocationIds ?? []).includes(current.locationId)) {
+        return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở này" });
+      }
 
-      // Lấy startTime cũ trước khi update để so sánh
-      const [oldShift] = await db
-        .select({ startTime: shiftTemplates.startTime })
-        .from(shiftTemplates)
-        .where(eq(shiftTemplates.id, req.params.id))
-        .limit(1);
+      const rawLocationIds = req.body?.locationIds ?? (req.body?.locationId ? [req.body.locationId] : [current.locationId]);
+      const locationIds = z.array(z.string().uuid()).min(1).parse(rawLocationIds);
+      if (!req.isSuperAdmin && locationIds.some((id) => !(req.allowedLocationIds ?? []).includes(id))) {
+        return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở đã chọn" });
+      }
+      const { locationIds: _locationIds, ...rawInput } = req.body ?? {};
+      const input = insertShiftTemplateSchema.partial().parse({ ...rawInput, locationId: locationIds[0] });
+      const groupRows = current.groupId
+        ? await db.select().from(shiftTemplateTable).where(eq(shiftTemplateTable.groupId, current.groupId))
+        : [current];
+      const managedRows = groupRows.filter((row) =>
+        req.isSuperAdmin || (req.allowedLocationIds ?? []).includes(row.locationId)
+      );
+      const groupId = current.groupId ?? randomUUID();
+      const selected = new Set(locationIds);
+      const updatedRows: any[] = [];
+      const oldRowsByLocation = new Map(managedRows.map((row) => [row.locationId, row]));
 
-      const shift = await storage.updateShiftTemplate(req.params.id, input);
-      res.json(shift);
+      for (const row of managedRows) {
+        if (!selected.has(row.locationId) && row.status !== "inactive") {
+          await db.update(shiftTemplateTable)
+            .set({ status: "inactive", updatedAt: new Date(), groupId })
+            .where(eq(shiftTemplateTable.id, row.id));
+        }
+      }
 
-      // Nếu startTime thay đổi → gửi class_changed cho học viên active trong các lớp dùng shift này
-      if (input.startTime && oldShift && input.startTime !== oldShift.startTime) {
+      const base = { ...current, ...input };
+      const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...cloneFields } = base;
+      for (const locationId of locationIds) {
+        const existing = oldRowsByLocation.get(locationId);
+        if (existing) {
+          const [updated] = await db.update(shiftTemplateTable)
+            .set({ ...input, locationId, groupId, updatedAt: new Date() })
+            .where(eq(shiftTemplateTable.id, existing.id))
+            .returning();
+          updatedRows.push(updated);
+        } else {
+          const [created] = await db.insert(shiftTemplateTable)
+            .values({ ...cloneFields, locationId, groupId })
+            .returning();
+          updatedRows.push(created);
+        }
+      }
+      res.json(updatedRows.length === 1 ? updatedRows[0] : updatedRows);
+
+      const changedShiftIds = managedRows
+        .filter((row) => selected.has(row.locationId) && input.startTime && row.startTime !== input.startTime)
+        .map((row) => row.id);
+      if (changedShiftIds.length > 0 && input.startTime) {
         const newTime = String(input.startTime).slice(0, 5);
-        const shiftId = req.params.id;
-
         setImmediate(async () => {
           try {
             const [center] = await db.select({ id: centerConfig.id }).from(centerConfig).limit(1);
             if (!center?.id) return;
+            const notified = new Set<string>();
 
-            const affectedClasses = await db
-              .select({ id: classes.id, classCode: classes.classCode, name: classes.name })
-              .from(classes)
-              .where(
-                and(
+            for (const shiftId of changedShiftIds) {
+              const affectedClasses = await db
+                .select({ id: classes.id, classCode: classes.classCode, name: classes.name })
+                .from(classes)
+                .where(and(
                   sql`${shiftId} = ANY(${classes.shiftTemplateIds})`,
                   inArray(classes.status, ["active", "recruiting"]),
-                ),
-              );
+                ));
 
-            for (const cls of affectedClasses) {
-              const className = cls.classCode || cls.name;
-              const activeStudents = await db
-                .select({ studentId: studentClasses.studentId, studentName: students.fullName })
-                .from(studentClasses)
-                .innerJoin(students, eq(studentClasses.studentId, students.id))
-                .where(and(eq(studentClasses.classId, cls.id), eq(studentClasses.status, "active")));
+              for (const cls of affectedClasses) {
+                const className = cls.classCode || cls.name;
+                const activeStudents = await db
+                  .select({ studentId: studentClasses.studentId, studentName: students.fullName })
+                  .from(studentClasses)
+                  .innerJoin(students, eq(studentClasses.studentId, students.id))
+                  .where(and(eq(studentClasses.classId, cls.id), eq(studentClasses.status, "active")));
 
-              for (const s of activeStudents) {
-                await notificationService
-                  .send({
+                for (const student of activeStudents) {
+                  const notificationKey = `${cls.id}:${student.studentId}`;
+                  if (notified.has(notificationKey)) continue;
+                  notified.add(notificationKey);
+                  await notificationService.send({
                     centerId: center.id,
-                    studentId: s.studentId,
+                    studentId: student.studentId,
                     type: "class_changed",
-                    data: {
-                      studentName: s.studentName ?? "",
-                      className,
-                      newTime,
-                    },
-                  })
-                  .catch((err) => console.error("[ClassChanged] Lỗi gửi noti studentId:", s.studentId, err));
+                    data: { studentName: student.studentName ?? "", className, newTime },
+                  }).catch((err) => console.error("[ClassChanged] Lỗi gửi noti studentId:", student.studentId, err));
+                }
               }
             }
-
-            console.log(`[ClassChanged] Đã notify shift ${shiftId} → newTime=${newTime}, ${affectedClasses.length} lớp`);
+            console.log(`[ClassChanged] Đã notify ${changedShiftIds.length} ca → newTime=${newTime}`);
           } catch (err) {
             console.error("[ClassChanged] Lỗi xử lý notification:", err);
           }
@@ -1822,8 +1880,26 @@ export function registerConfigRoutes(app: Express): void {
   });
 
   app.delete("/api/shift-templates/:id", async (req, res) => {
-    await storage.deleteShiftTemplate(req.params.id);
-    res.status(204).send();
+    try {
+      const [current] = await db.select().from(shiftTemplates)
+        .where(eq(shiftTemplates.id, req.params.id)).limit(1);
+      if (!current) return res.status(404).json({ message: "Không tìm thấy ca làm việc" });
+      if (!req.isSuperAdmin && !(req.allowedLocationIds ?? []).includes(current.locationId)) {
+        return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở này" });
+      }
+      const groupRows = current.groupId
+        ? await db.select().from(shiftTemplates).where(eq(shiftTemplates.groupId, current.groupId))
+        : [current];
+      for (const row of groupRows) {
+        if (req.isSuperAdmin || (req.allowedLocationIds ?? []).includes(row.locationId)) {
+          await db.update(shiftTemplates).set({ status: "inactive", updatedAt: new Date() })
+            .where(eq(shiftTemplates.id, row.id));
+        }
+      }
+      res.status(204).send();
+    } catch (err) {
+      res.status(500).json({ message: (err as any).message });
+    }
   });
 
   // Shift Assignments (Phân ca làm việc)
@@ -1852,9 +1928,74 @@ export function registerConfigRoutes(app: Express): void {
     try {
       const { insertShiftAssignmentSchema, shiftAssignments } = await import("@shared/schema");
       const { db } = await import("../storage/base");
-      const input = insertShiftAssignmentSchema.parse(req.body);
-      const [row] = await db.insert(shiftAssignments).values(input).returning();
-      res.status(201).json(row);
+      const rawEntries = req.body?.locationAssignments;
+
+      if (!Array.isArray(rawEntries)) {
+        const input = insertShiftAssignmentSchema.parse(req.body);
+        if (!req.isSuperAdmin && !(req.allowedLocationIds ?? []).includes(input.locationId)) {
+          return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở này" });
+        }
+        const [row] = await db.insert(shiftAssignments).values(input).returning();
+        return res.status(201).json(row);
+      }
+
+      const entries = z.array(z.object({
+        locationId: z.string().uuid(),
+        shiftTemplateId: z.string().uuid().nullable(),
+        weekdaySchedule: z.record(z.array(z.string().uuid())).nullable(),
+      })).min(1).parse(rawEntries);
+      const locationIds = entries.map((entry) => entry.locationId);
+      if (new Set(locationIds).size !== locationIds.length) {
+        return res.status(400).json({ message: "Không thể chọn trùng cơ sở" });
+      }
+      if (!req.isSuperAdmin && locationIds.some((id) => !(req.allowedLocationIds ?? []).includes(id))) {
+        return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở đã chọn" });
+      }
+
+      const { locationAssignments: _entries, ...rawCommon } = req.body;
+      const input = insertShiftAssignmentSchema.parse({
+        ...rawCommon,
+        locationId: entries[0].locationId,
+        shiftTemplateId: entries[0].shiftTemplateId,
+        weekdaySchedule: entries[0].weekdaySchedule,
+      });
+      const shiftIds = [...new Set(entries.flatMap((entry) =>
+        entry.shiftTemplateId
+          ? [entry.shiftTemplateId]
+          : Object.values(entry.weekdaySchedule ?? {}).flat()
+      ))];
+      if (shiftIds.length > 0) {
+        const { shiftTemplates } = await import("@shared/schema");
+        const templates = await db.select({
+          id: shiftTemplates.id,
+          locationId: shiftTemplates.locationId,
+          status: shiftTemplates.status,
+        }).from(shiftTemplates).where(inArray(shiftTemplates.id, shiftIds));
+        const templateById = new Map(templates.map((template) => [template.id, template]));
+        for (const entry of entries) {
+          const selectedIds = entry.shiftTemplateId
+            ? [entry.shiftTemplateId]
+            : Object.values(entry.weekdaySchedule ?? {}).flat();
+          if (selectedIds.some((id) => {
+            const template = templateById.get(id);
+            return !template || template.locationId !== entry.locationId || template.status !== "active";
+          })) {
+            return res.status(400).json({ message: "Ca được chọn không thuộc cơ sở hoặc đã ngừng hoạt động" });
+          }
+        }
+      }
+
+      const groupId = randomUUID();
+      const { locationId: _locationId, shiftTemplateId: _shiftTemplateId, weekdaySchedule: _weekdaySchedule, ...common } = input;
+      const rows = await db.transaction(async (tx) => tx.insert(shiftAssignments).values(
+        entries.map((entry) => ({
+          ...common,
+          ...entry,
+          groupId,
+          status: "active",
+        }))
+      ).returning());
+      res.status(201).json(rows);
     } catch (err) {
       if (err instanceof z.ZodError) return res.status(400).json(err.errors);
       res.status(500).json({ message: (err as any).message });
@@ -1865,10 +2006,129 @@ export function registerConfigRoutes(app: Express): void {
     try {
       const { insertShiftAssignmentSchema, shiftAssignments } = await import("@shared/schema");
       const { db } = await import("../storage/base");
-      const { eq } = await import("drizzle-orm");
-      const input = insertShiftAssignmentSchema.partial().parse(req.body);
-      const [row] = await db.update(shiftAssignments).set({ ...input, updatedAt: new Date() }).where(eq(shiftAssignments.id, req.params.id)).returning();
-      res.json(row);
+      const [current] = await db.select().from(shiftAssignments)
+        .where(eq(shiftAssignments.id, req.params.id)).limit(1);
+      if (!current) return res.status(404).json({ message: "Không tìm thấy phân ca" });
+      if (!req.isSuperAdmin && !(req.allowedLocationIds ?? []).includes(current.locationId)) {
+        return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở này" });
+      }
+
+      const rawEntries = req.body?.locationAssignments;
+      if (!Array.isArray(rawEntries)) {
+        const input = insertShiftAssignmentSchema.partial().parse(req.body);
+        if (input.locationId && !req.isSuperAdmin && !(req.allowedLocationIds ?? []).includes(input.locationId)) {
+          return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở này" });
+        }
+        const [row] = await db.update(shiftAssignments)
+          .set({ ...input, updatedAt: new Date() })
+          .where(eq(shiftAssignments.id, req.params.id))
+          .returning();
+        return res.json(row);
+      }
+
+      const entries = z.array(z.object({
+        locationId: z.string().uuid(),
+        shiftTemplateId: z.string().uuid().nullable(),
+        weekdaySchedule: z.record(z.array(z.string().uuid())).nullable(),
+      })).min(1).parse(rawEntries);
+      const locationIds = entries.map((entry) => entry.locationId);
+      if (new Set(locationIds).size !== locationIds.length) {
+        return res.status(400).json({ message: "Không thể chọn trùng cơ sở" });
+      }
+      if (!req.isSuperAdmin && locationIds.some((id) => !(req.allowedLocationIds ?? []).includes(id))) {
+        return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở đã chọn" });
+      }
+
+      const { locationAssignments: _entries, ...rawCommon } = req.body;
+      const input = insertShiftAssignmentSchema.partial().parse({
+        ...rawCommon,
+        locationId: entries[0].locationId,
+        shiftTemplateId: entries[0].shiftTemplateId,
+        weekdaySchedule: entries[0].weekdaySchedule,
+      });
+      const shiftIds = [...new Set(entries.flatMap((entry) =>
+        entry.shiftTemplateId
+          ? [entry.shiftTemplateId]
+          : Object.values(entry.weekdaySchedule ?? {}).flat()
+      ))];
+      if (shiftIds.length > 0) {
+        const { shiftTemplates } = await import("@shared/schema");
+        const templates = await db.select({
+          id: shiftTemplates.id,
+          locationId: shiftTemplates.locationId,
+          status: shiftTemplates.status,
+        }).from(shiftTemplates).where(inArray(shiftTemplates.id, shiftIds));
+        const templateById = new Map(templates.map((template) => [template.id, template]));
+        for (const entry of entries) {
+          const selectedIds = entry.shiftTemplateId
+            ? [entry.shiftTemplateId]
+            : Object.values(entry.weekdaySchedule ?? {}).flat();
+          if (selectedIds.some((id) => {
+            const template = templateById.get(id);
+            return !template || template.locationId !== entry.locationId || template.status !== "active";
+          })) {
+            return res.status(400).json({ message: "Ca được chọn không thuộc cơ sở hoặc đã ngừng hoạt động" });
+          }
+        }
+      }
+
+      const groupRows = current.groupId
+        ? await db.select().from(shiftAssignments).where(eq(shiftAssignments.groupId, current.groupId))
+        : [current];
+      const managedRows = groupRows.filter((row) =>
+        req.isSuperAdmin || (req.allowedLocationIds ?? []).includes(row.locationId)
+      );
+      const groupId = current.groupId ?? randomUUID();
+      const selected = new Set(locationIds);
+      const rowsByLocation = new Map(managedRows.map((row) => [row.locationId, row]));
+      const cutoffDate = getBangkokDateOnly();
+      const rows = await db.transaction(async (tx) => {
+        for (const row of managedRows) {
+          if (selected.has(row.locationId) || row.status === "inactive") continue;
+          const previousEnd = row.effectiveTo ? String(row.effectiveTo).slice(0, 10) : null;
+          const effectiveTo = previousEnd && previousEnd < cutoffDate ? previousEnd : cutoffDate;
+          await tx.update(shiftAssignments).set({
+            status: "inactive",
+            effectiveTo,
+            groupId,
+            updatedAt: new Date(),
+          }).where(eq(shiftAssignments.id, row.id));
+        }
+
+        const mergedBase = { ...current, ...input };
+        const {
+          id: _id,
+          createdAt: _createdAt,
+          updatedAt: _updatedAt,
+          ...baseFields
+        } = mergedBase;
+        const savedRows = [];
+        for (const entry of entries) {
+          const existing = rowsByLocation.get(entry.locationId);
+          if (existing) {
+            const [updated] = await tx.update(shiftAssignments).set({
+              ...input,
+              ...entry,
+              locationId: entry.locationId,
+              groupId,
+              status: "active",
+              updatedAt: new Date(),
+            }).where(eq(shiftAssignments.id, existing.id)).returning();
+            savedRows.push(updated);
+          } else {
+            const [created] = await tx.insert(shiftAssignments).values({
+              ...baseFields,
+              ...entry,
+              locationId: entry.locationId,
+              groupId,
+              status: "active",
+            }).returning();
+            savedRows.push(created);
+          }
+        }
+        return savedRows;
+      });
+      res.json(rows);
     } catch (err) {
       if (err instanceof z.ZodError) return res.status(400).json(err.errors);
       res.status(500).json({ message: (err as any).message });
@@ -1879,8 +2139,26 @@ export function registerConfigRoutes(app: Express): void {
     try {
       const { shiftAssignments } = await import("@shared/schema");
       const { db } = await import("../storage/base");
-      const { eq } = await import("drizzle-orm");
-      await db.delete(shiftAssignments).where(eq(shiftAssignments.id, req.params.id));
+      const [current] = await db.select().from(shiftAssignments)
+        .where(eq(shiftAssignments.id, req.params.id)).limit(1);
+      if (!current) return res.status(404).json({ message: "Không tìm thấy phân ca" });
+      if (!req.isSuperAdmin && !(req.allowedLocationIds ?? []).includes(current.locationId)) {
+        return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở này" });
+      }
+      const groupRows = current.groupId
+        ? await db.select().from(shiftAssignments).where(eq(shiftAssignments.groupId, current.groupId))
+        : [current];
+      const cutoffDate = getBangkokDateOnly();
+      for (const row of groupRows) {
+        if (!req.isSuperAdmin && !(req.allowedLocationIds ?? []).includes(row.locationId)) continue;
+        const previousEnd = row.effectiveTo ? String(row.effectiveTo).slice(0, 10) : null;
+        const effectiveTo = previousEnd && previousEnd < cutoffDate ? previousEnd : cutoffDate;
+        await db.update(shiftAssignments).set({
+          status: "inactive",
+          effectiveTo,
+          updatedAt: new Date(),
+        }).where(eq(shiftAssignments.id, row.id));
+      }
       res.status(204).send();
     } catch (err) {
       res.status(500).json({ message: (err as any).message });

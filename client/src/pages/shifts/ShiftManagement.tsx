@@ -171,6 +171,9 @@ export function ShiftManagement() {
   const { data: locations = [] } = useQuery<any[]>({
     queryKey: ["/api/locations"],
   });
+  const accessibleLocations = locations.filter((location: any) =>
+    isSuperAdmin || myLocationIds.length === 0 || myLocationIds.includes(location.id)
+  );
 
   const { data: staff = [] } = useQuery<any[]>({
     queryKey: ["/api/staff", "minimal", filters.locationId !== "all" ? filters.locationId : undefined],
@@ -279,28 +282,30 @@ export function ShiftManagement() {
   const [editingShift, setEditingShift] = useState<any | null>(null);
 
   const { data: allShiftTemplates = [], isLoading: isShiftsLoading } = useQuery<any[]>({
-    queryKey: ["/api/shift-templates", "work", configLocationFilter !== "all" ? configLocationFilter : undefined, "config"],
+    queryKey: ["/api/shift-templates", "work", "config-all"],
     queryFn: async () => {
-      const params = new URLSearchParams({ type: "work" });
-      if (configLocationFilter !== "all") params.append("locationId", configLocationFilter);
+      const params = new URLSearchParams({ type: "work", includeInactive: "true" });
       const res = await fetch(`/api/shift-templates?${params.toString()}`);
       return res.json();
     },
   });
 
   const filteredConfigShifts = useMemo(() => {
-    if (!myPerms || isSuperAdmin) return allShiftTemplates;
+    let data = Array.isArray(allShiftTemplates)
+      ? allShiftTemplates.filter((shift: any) => shift.status !== "inactive")
+      : [];
+    if (configLocationFilter !== "all") data = data.filter((s: any) => s.locationId === configLocationFilter);
+    if (!myPerms || isSuperAdmin) return data;
     const p = getTabPerm("config");
     if (!p) return [];
-    let data = Array.isArray(allShiftTemplates) ? [...allShiftTemplates] : [];
     if (myLocationIds.length > 0) data = data.filter((s: any) => myLocationIds.includes(s.locationId));
     return data;
-  }, [allShiftTemplates, myPerms, isSuperAdmin, myLocationIds]);
+  }, [allShiftTemplates, myPerms, isSuperAdmin, myLocationIds, configLocationFilter]);
 
   const shiftForm = useForm<z.infer<typeof shiftConfigSchema>>({
     resolver: zodResolver(shiftConfigSchema),
     defaultValues: {
-      locationId: "",
+      locationIds: [],
       code: "",
       name: "",
       startTime: "08:00",
@@ -317,7 +322,7 @@ export function ShiftManagement() {
   const openCreateShift = () => {
     setEditingShift(null);
     shiftForm.reset({
-      locationId: configLocationFilter !== "all" ? configLocationFilter : "",
+      locationIds: configLocationFilter !== "all" ? [configLocationFilter] : [],
       code: "",
       name: "",
       startTime: "08:00",
@@ -334,8 +339,11 @@ export function ShiftManagement() {
 
   const openEditShift = (s: any) => {
     setEditingShift(s);
+    const groupRows = allShiftTemplates.filter((row: any) =>
+      s.groupId ? row.groupId === s.groupId : row.id === s.id
+    );
     shiftForm.reset({
-      locationId: s.locationId,
+      locationIds: groupRows.filter((row: any) => row.status !== "inactive").map((row: any) => row.locationId),
       code: s.code ?? "",
       name: s.name ?? "",
       startTime: s.startTime ?? "",
@@ -400,10 +408,13 @@ export function ShiftManagement() {
   });
 
   const filteredAssignments = useMemo(() => {
-    if (!myPerms || isSuperAdmin) return shiftAssignments;
+    const activeAssignments = Array.isArray(shiftAssignments)
+      ? shiftAssignments.filter((assignment: any) => assignment.status !== "inactive")
+      : [];
+    if (!myPerms || isSuperAdmin) return activeAssignments;
     const p = getTabPerm("assign");
     if (!p) return [];
-    let data = Array.isArray(shiftAssignments) ? [...shiftAssignments] : [];
+    let data = [...activeAssignments];
     if (myLocationIds.length > 0) data = data.filter((a: any) => myLocationIds.includes(a.locationId));
     if (!p.canViewAll && p.canView) data = data.filter((a: any) => a.targetType === "staff" && a.targetId === myStaffId);
     return data;
@@ -413,27 +424,28 @@ export function ShiftManagement() {
     queryKey: ["/api/departments"],
   });
 
-  const emptyWeekdaySchedule: Record<string, string[]> = { "1": [], "2": [], "3": [], "4": [], "5": [], "6": [], "0": [] };
+  const emptyWeekdaySchedule = (): Record<string, string[]> => ({ "1": [], "2": [], "3": [], "4": [], "5": [], "6": [], "0": [] });
 
   const assignForm = useForm<z.infer<typeof shiftAssignmentSchema>>({
     resolver: zodResolver(shiftAssignmentSchema),
     defaultValues: {
       name: "",
-      locationId: "",
+      locationIds: [],
       targetType: "department",
       targetId: "",
       byWeekday: true,
-      weekdaySchedule: emptyWeekdaySchedule,
-      shiftTemplateId: "",
+      weekdayScheduleByLocation: {},
+      shiftTemplateIdsByLocation: {},
       effectiveFrom: format(new Date(), "yyyy-MM-dd"),
       effectiveTo: "",
     },
   });
 
-  const assignLocationId = assignForm.watch("locationId");
+  const assignLocationIds = assignForm.watch("locationIds") || [];
   const assignTargetType = assignForm.watch("targetType");
   const assignByWeekday = assignForm.watch("byWeekday");
-  const assignWeekdaySchedule = assignForm.watch("weekdaySchedule") || emptyWeekdaySchedule;
+  const assignWeekdayScheduleByLocation = assignForm.watch("weekdayScheduleByLocation") || {};
+  const assignShiftTemplateIdsByLocation = assignForm.watch("shiftTemplateIdsByLocation") || {};
 
   const allRoles = departments.flatMap((d: any) =>
     (d.roles || []).map((r: any) => ({ ...r, departmentName: d.name }))
@@ -446,32 +458,81 @@ export function ShiftManagement() {
     if (assignTargetType === "role") {
       return allRoles.map((r: any) => ({ value: r.id, label: `${r.name} (${r.departmentName})` }));
     }
-    const filtered = assignLocationId
-      ? staff.filter((s: any) => s.assignments?.some((a: any) => a.locationId === assignLocationId))
+    const filtered = assignLocationIds.length > 0
+      ? staff.filter((s: any) => assignLocationIds.every((locationId) =>
+          s.assignments?.some((a: any) => a.locationId === locationId)))
       : staff;
     return filtered.map((s: any) => ({ value: s.id, label: s.fullName }));
   })();
 
-  const shiftsForAssignLocation = Array.isArray(allShiftTemplates)
-    ? allShiftTemplates.filter((s: any) => !assignLocationId || s.locationId === assignLocationId)
-    : [];
+  const getShiftOptionsForLocation = (locationId: string) =>
+    (Array.isArray(allShiftTemplates) ? allShiftTemplates : [])
+      .filter((s: any) => s.locationId === locationId && s.status === "active")
+      .map((s: any) => ({
+        value: s.id,
+        label: s.code ? `${s.code} - ${s.name}` : s.name,
+      }));
 
-  const shiftMultiOptions = shiftsForAssignLocation.map((s: any) => ({
-    value: s.id,
-    label: s.code ? `${s.code} - ${s.name}` : s.name,
-  }));
+  const getAssignmentGroupRows = (assignment: any) =>
+    shiftAssignments.filter((row: any) =>
+      assignment.groupId ? row.groupId === assignment.groupId : row.id === assignment.id
+    );
+
+  const normalizeWeekdaySchedule = (schedule: any): Record<string, string[]> => {
+    if (!schedule) return emptyWeekdaySchedule();
+    if (typeof schedule === "string") {
+      try {
+        return { ...emptyWeekdaySchedule(), ...JSON.parse(schedule) };
+      } catch {
+        return emptyWeekdaySchedule();
+      }
+    }
+    return { ...emptyWeekdaySchedule(), ...schedule };
+  };
+
+  const setAssignmentLocations = (locationIds: string[]) => {
+    assignForm.setValue("locationIds", locationIds, { shouldDirty: true, shouldValidate: true });
+    const currentTargetId = assignForm.getValues("targetId");
+    const selectedStaff = staff.find((person: any) => person.id === currentTargetId);
+    if (
+      assignForm.getValues("targetType") === "staff" &&
+      selectedStaff &&
+      !locationIds.every((locationId) =>
+        selectedStaff.assignments?.some((assignment: any) => assignment.locationId === locationId)
+      )
+    ) {
+      assignForm.setValue("targetId", "");
+    }
+  };
+
+  const updateWeekdaySchedule = (locationId: string, weekday: string, shiftIds: string[]) => {
+    const current = assignForm.getValues("weekdayScheduleByLocation") || {};
+    assignForm.setValue("weekdayScheduleByLocation", {
+      ...current,
+      [locationId]: {
+        ...emptyWeekdaySchedule(),
+        ...(current[locationId] || {}),
+        [weekday]: shiftIds,
+      },
+    }, { shouldDirty: true, shouldValidate: true });
+  };
+
+  const getAssignmentEntries = (assignment: any) => {
+    const groupRows = getAssignmentGroupRows(assignment);
+    return groupRows.filter((row: any) => row.status !== "inactive");
+  };
 
   const openCreateAssignment = () => {
     setEditingAssignment(null);
     setIsCopyingAssignment(false);
     assignForm.reset({
       name: "",
-      locationId: "",
+      locationIds: [],
       targetType: "department",
       targetId: "",
       byWeekday: true,
-      weekdaySchedule: { ...emptyWeekdaySchedule },
-      shiftTemplateId: "",
+      weekdayScheduleByLocation: {},
+      shiftTemplateIdsByLocation: {},
       effectiveFrom: format(new Date(), "yyyy-MM-dd"),
       effectiveTo: "",
     });
@@ -481,14 +542,21 @@ export function ShiftManagement() {
   const openEditAssignment = (a: any) => {
     setEditingAssignment(a);
     setIsCopyingAssignment(false);
+    const groupRows = getAssignmentGroupRows(a);
     assignForm.reset({
       name: a.name ?? "",
-      locationId: a.locationId ?? "",
+      locationIds: getAssignmentEntries(a).map((row: any) => row.locationId),
       targetType: (a.targetType as any) ?? "department",
       targetId: a.targetId ?? "",
       byWeekday: a.byWeekday ?? true,
-      weekdaySchedule: a.weekdaySchedule ?? { ...emptyWeekdaySchedule },
-      shiftTemplateId: a.shiftTemplateId ?? "",
+      weekdayScheduleByLocation: Object.fromEntries(groupRows.map((row: any) => [
+        row.locationId,
+        normalizeWeekdaySchedule(row.weekdaySchedule),
+      ])),
+      shiftTemplateIdsByLocation: Object.fromEntries(groupRows.map((row: any) => [
+        row.locationId,
+        row.shiftTemplateId ?? "",
+      ])),
       effectiveFrom: a.effectiveFrom ?? "",
       effectiveTo: a.effectiveTo ?? "",
     });
@@ -499,18 +567,21 @@ export function ShiftManagement() {
     // Keep editingAssignment empty so saving the copy always creates a new row.
     setEditingAssignment(null);
     setIsCopyingAssignment(true);
+    const groupRows = getAssignmentEntries(a);
     assignForm.reset({
       name: `${a.name ?? "Phân ca"} - Bản sao`,
-      locationId: a.locationId ?? "",
+      locationIds: groupRows.map((row: any) => row.locationId),
       targetType: (a.targetType as any) ?? "department",
       targetId: a.targetId ?? "",
       byWeekday: a.byWeekday ?? true,
-      weekdaySchedule: a.weekdaySchedule
-        ? Object.fromEntries(
-            Object.entries(a.weekdaySchedule).map(([day, shiftIds]) => [day, [...(shiftIds as string[])]])
-          )
-        : { ...emptyWeekdaySchedule },
-      shiftTemplateId: a.shiftTemplateId ?? "",
+      weekdayScheduleByLocation: Object.fromEntries(groupRows.map((row: any) => [
+        row.locationId,
+        normalizeWeekdaySchedule(row.weekdaySchedule),
+      ])),
+      shiftTemplateIdsByLocation: Object.fromEntries(groupRows.map((row: any) => [
+        row.locationId,
+        row.shiftTemplateId ?? "",
+      ])),
       effectiveFrom: a.effectiveFrom ?? "",
       effectiveTo: a.effectiveTo ?? "",
     });
@@ -519,10 +590,16 @@ export function ShiftManagement() {
 
   const saveAssignmentMutation = useMutation({
     mutationFn: async (values: z.infer<typeof shiftAssignmentSchema>) => {
+      const { locationIds, weekdayScheduleByLocation, shiftTemplateIdsByLocation, ...commonFields } = values;
       const payload: any = {
-        ...values,
-        shiftTemplateId: values.byWeekday ? null : (values.shiftTemplateId || null),
-        weekdaySchedule: values.byWeekday ? values.weekdaySchedule : null,
+        ...commonFields,
+        locationAssignments: locationIds.map((locationId) => ({
+          locationId,
+          shiftTemplateId: values.byWeekday ? null : (shiftTemplateIdsByLocation?.[locationId] || null),
+          weekdaySchedule: values.byWeekday
+            ? (weekdayScheduleByLocation?.[locationId] || emptyWeekdaySchedule())
+            : null,
+        })),
         effectiveFrom: values.effectiveFrom || null,
         effectiveTo: values.effectiveTo || null,
       };
@@ -556,7 +633,7 @@ export function ShiftManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/shift-assignments"] });
-      toast({ title: "Thành công", description: "Đã xoá phân ca" });
+      toast({ title: "Thành công", description: "Đã ngừng phân ca; lịch sử được giữ lại" });
     },
   });
 
@@ -1321,7 +1398,7 @@ export function ShiftManagement() {
                                 size="icon"
                                 className="text-destructive hover:text-destructive hover:bg-destructive/10"
                                 onClick={() => {
-                                  if (confirm("Bạn có chắc chắn muốn xoá phân ca này?")) {
+                                  if (confirm("Ngừng phân ca này? Lịch sử phân ca và chấm công trước đó sẽ được giữ lại.")) {
                                     deleteAssignmentMutation.mutate(a.id);
                                   }
                                 }}
@@ -1365,18 +1442,19 @@ export function ShiftManagement() {
                       />
                       <FormField
                         control={assignForm.control}
-                        name="locationId"
+                        name="locationIds"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Cơ sở</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value}>
-                              <FormControl>
-                                <SelectTrigger data-testid="select-assignment-location"><SelectValue placeholder="Chọn cơ sở" /></SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {locations.map((l: any) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
+                            <MultiSelect
+                              options={accessibleLocations.map((location: any) => ({ value: location.id, label: location.name }))}
+                              defaultValue={field.value}
+                              onValueChange={setAssignmentLocations}
+                              placeholder="Chọn một hoặc nhiều cơ sở"
+                              maxCount={4}
+                              modalPopover
+                              data-testid="select-assignment-location"
+                            />
                             <FormMessage />
                           </FormItem>
                         )}
@@ -1456,57 +1534,70 @@ export function ShiftManagement() {
 
                     {assignByWeekday ? (
                       <div className="space-y-2">
-                        <div className="text-sm font-medium">Lịch ca theo từng thứ</div>
-                        <div className="space-y-2 max-h-[300px] overflow-y-auto rounded-md border p-3">
-                          {[
-                            { key: "1", label: "Thứ hai" },
-                            { key: "2", label: "Thứ ba" },
-                            { key: "3", label: "Thứ tư" },
-                            { key: "4", label: "Thứ năm" },
-                            { key: "5", label: "Thứ sáu" },
-                            { key: "6", label: "Thứ bảy" },
-                            { key: "0", label: "Chủ nhật" },
-                          ].map((d) => (
-                            <div key={d.key} className="grid grid-cols-[100px_1fr] gap-3 items-center">
-                              <div className="text-sm text-muted-foreground">{d.label}</div>
-                              <MultiSelect
-                                key={`${d.key}-${editingAssignment?.id || "new"}-${assignLocationId}`}
-                                options={shiftMultiOptions}
-                                defaultValue={assignWeekdaySchedule[d.key] || []}
-                                onValueChange={(vals) => {
-                                  const next = { ...(assignForm.getValues("weekdaySchedule") || emptyWeekdaySchedule), [d.key]: vals };
-                                  assignForm.setValue("weekdaySchedule", next, { shouldDirty: true });
-                                }}
-                                placeholder={assignLocationId ? "Chọn ca làm việc" : "Hãy chọn cơ sở trước"}
-                                maxCount={5}
-                                modalPopover
-                                data-testid={`multi-shift-${d.key}`}
-                              />
+                        <div className="text-sm font-medium">Lịch ca theo từng thứ và cơ sở</div>
+                        {assignLocationIds.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">Chọn cơ sở để thiết lập lịch ca.</p>
+                        ) : assignLocationIds.map((locationId) => (
+                          <div key={locationId} className="space-y-2 rounded-md border p-3">
+                            <div className="font-medium">{getLocationName(locationId)}</div>
+                            <div className="space-y-2">
+                              {[
+                                { key: "1", label: "Thứ hai" },
+                                { key: "2", label: "Thứ ba" },
+                                { key: "3", label: "Thứ tư" },
+                                { key: "4", label: "Thứ năm" },
+                                { key: "5", label: "Thứ sáu" },
+                                { key: "6", label: "Thứ bảy" },
+                                { key: "0", label: "Chủ nhật" },
+                              ].map((day) => (
+                                <div key={day.key} className="grid grid-cols-[100px_1fr] gap-3 items-center">
+                                  <div className="text-sm text-muted-foreground">{day.label}</div>
+                                  <MultiSelect
+                                    key={`${day.key}-${editingAssignment?.id || "new"}-${locationId}`}
+                                    options={getShiftOptionsForLocation(locationId)}
+                                    defaultValue={assignWeekdayScheduleByLocation[locationId]?.[day.key] || []}
+                                    onValueChange={(values) => updateWeekdaySchedule(locationId, day.key, values)}
+                                    placeholder="Chọn ca làm việc"
+                                    maxCount={5}
+                                    modalPopover
+                                    data-testid={`multi-shift-${locationId}-${day.key}`}
+                                  />
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
+                          </div>
+                        ))}
                       </div>
                     ) : (
-                      <FormField
-                        control={assignForm.control}
-                        name="shiftTemplateId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Ca làm việc</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value || ""}>
+                      <div className="space-y-3">
+                        <div className="text-sm font-medium">Ca làm việc theo cơ sở</div>
+                        {assignLocationIds.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">Chọn cơ sở để chọn ca làm việc.</p>
+                        ) : assignLocationIds.map((locationId) => (
+                          <FormItem key={locationId}>
+                            <FormLabel>{getLocationName(locationId)}</FormLabel>
+                            <Select
+                              onValueChange={(value) => assignForm.setValue(
+                                `shiftTemplateIdsByLocation.${locationId}`,
+                                value,
+                                { shouldDirty: true, shouldValidate: true },
+                              )}
+                              value={assignShiftTemplateIdsByLocation[locationId] || ""}
+                            >
                               <FormControl>
-                                <SelectTrigger data-testid="select-assignment-shift"><SelectValue placeholder="Chọn ca" /></SelectTrigger>
+                                <SelectTrigger data-testid={`select-assignment-shift-${locationId}`}>
+                                  <SelectValue placeholder="Chọn ca" />
+                                </SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                {shiftsForAssignLocation.map((s: any) => (
-                                  <SelectItem key={s.id} value={s.id}>{s.code ? `${s.code} - ${s.name}` : s.name}</SelectItem>
+                                {getShiftOptionsForLocation(locationId).map((shift: any) => (
+                                  <SelectItem key={shift.value} value={shift.value}>{shift.label}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
-                            <FormMessage />
                           </FormItem>
-                        )}
-                      />
+                        ))}
+                      </div>
                     )}
 
                     <div className="grid grid-cols-2 gap-4">
@@ -1592,6 +1683,7 @@ export function ShiftManagement() {
                     <TableRow>
                       <TableHead>Mã ca</TableHead>
                       <TableHead>Tên ca</TableHead>
+                      <TableHead>Cơ sở</TableHead>
                       <TableHead>Giờ bắt đầu</TableHead>
                       <TableHead>Giờ kết thúc</TableHead>
                       <TableHead>Nghỉ trưa (phút)</TableHead>
@@ -1603,9 +1695,9 @@ export function ShiftManagement() {
                   </TableHeader>
                   <TableBody>
                     {isShiftsLoading ? (
-                      <TableRow><TableCell colSpan={9} className="text-center py-8">Đang tải...</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={10} className="text-center py-8">Đang tải...</TableCell></TableRow>
                     ) : filteredConfigShifts.length === 0 ? (
-                      <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Chưa có ca làm việc nào.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Chưa có ca làm việc nào.</TableCell></TableRow>
                     ) : (
                       filteredConfigShifts.map((s: any) => {
                         const total = calcTotalHours(s.startTime, s.endTime, Number(s.lunchBreakMinutes ?? 0));
@@ -1614,6 +1706,7 @@ export function ShiftManagement() {
                           <TableRow key={s.id} data-testid={`row-shift-${s.id}`}>
                             <TableCell className="font-medium" data-testid={`text-shift-code-${s.id}`}>{s.code || "—"}</TableCell>
                             <TableCell data-testid={`text-shift-name-${s.id}`}>{s.name}</TableCell>
+                            <TableCell>{getLocationName(s.locationId)}</TableCell>
                             <TableCell>{s.startTime}</TableCell>
                             <TableCell>{s.endTime}</TableCell>
                             <TableCell>{Number(s.lunchBreakMinutes ?? 0)}</TableCell>
@@ -1681,20 +1774,19 @@ export function ShiftManagement() {
               >
                 <FormField
                   control={shiftForm.control}
-                  name="locationId"
+                  name="locationIds"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Cơ sở</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-shift-location"><SelectValue placeholder="Chọn cơ sở" /></SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {locations.map((l: any) => (
-                            <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <MultiSelect
+                        options={accessibleLocations.map((location: any) => ({ value: location.id, label: location.name }))}
+                        defaultValue={field.value}
+                        onValueChange={field.onChange}
+                        placeholder="Chọn một hoặc nhiều cơ sở"
+                        maxCount={4}
+                        modalPopover
+                        data-testid="select-shift-location"
+                      />
                       <FormMessage />
                     </FormItem>
                   )}

@@ -181,7 +181,7 @@ export interface IStorage {
   deleteCourseProgramContent(id: string): Promise<void>;
 
   // Shift Templates
-  getShiftTemplates(locationId?: string, type?: string): Promise<ShiftTemplate[]>;
+  getShiftTemplates(locationId?: string, type?: string, includeInactive?: boolean): Promise<ShiftTemplate[]>;
   createShiftTemplate(shift: InsertShiftTemplate): Promise<ShiftTemplate>;
   updateShiftTemplate(id: string, updates: Partial<InsertShiftTemplate>): Promise<ShiftTemplate>;
   deleteShiftTemplate(id: string): Promise<void>;
@@ -497,8 +497,8 @@ export class DatabaseStorage implements IStorage {
     return sessionStorage.makeupClassStudents(classId, data, userId);
   }
 
-  async getShiftTemplates(locationId?: string, type?: string): Promise<ShiftTemplate[]> {
-    return shiftStorage.getShiftTemplates(locationId, type);
+  async getShiftTemplates(locationId?: string, type?: string, includeInactive = false): Promise<ShiftTemplate[]> {
+    return shiftStorage.getShiftTemplates(locationId, type, includeInactive);
   }
 
   async createShiftTemplate(shift: InsertShiftTemplate): Promise<ShiftTemplate> {

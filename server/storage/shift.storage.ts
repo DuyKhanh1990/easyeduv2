@@ -12,8 +12,8 @@ import type {
 // ---------------------------------------------------------------------------
 // getShiftTemplates
 // ---------------------------------------------------------------------------
-export async function getShiftTemplates(locationId?: string, type?: string): Promise<ShiftTemplate[]> {
-  const filters = [eq(shiftTemplates.status, "active")];
+export async function getShiftTemplates(locationId?: string, type?: string, includeInactive = false): Promise<ShiftTemplate[]> {
+  const filters = includeInactive ? [] : [eq(shiftTemplates.status, "active")];
   if (locationId) filters.push(eq(shiftTemplates.locationId, locationId));
   if (type) filters.push(eq(shiftTemplates.type as any, type));
   return await db.select().from(shiftTemplates).where(and(...filters));

@@ -316,7 +316,10 @@ export function registerSalarySheetRoutes(app: Express): void {
                  weekday_schedule, effective_from, effective_to
           FROM shift_assignments
           WHERE location_id = ${locationId}::uuid
-            AND status = 'active'
+            AND (
+              status = 'active'
+              OR (status = 'inactive' AND effective_to IS NOT NULL)
+            )
         `),
         db.execute(sql`
           SELECT id, work_units, start_time, end_time, lunch_break_minutes
