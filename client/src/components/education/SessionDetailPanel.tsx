@@ -194,13 +194,13 @@ export function SessionDetailPanel({
   }
 
   const session = classSessions?.find((s) => s.id === selectedClassSessionId);
-  const sessionDate = session?.sessionDate ?? "";
+  const scheduleDate = session?.sessionDate ?? "";
   const { data: sessionsForTeacherTimes = [] } = useQuery<any[]>({
-    queryKey: ["/api/schedule", sessionDate, classData?.locationId, "class-detail-teacher-times"],
-    enabled: mode === "info" && !!sessionDate,
+    queryKey: ["/api/schedule", scheduleDate, classData?.locationId, "class-detail-teacher-times"],
+    enabled: mode === "info" && !!scheduleDate,
     staleTime: 60_000,
     queryFn: async () => {
-      const params = new URLSearchParams({ from: sessionDate, to: sessionDate });
+      const params = new URLSearchParams({ from: scheduleDate, to: scheduleDate });
       if (classData?.locationId) params.set("locationId", classData.locationId);
       const response = await apiRequest("GET", `/api/schedule?${params.toString()}`);
       return response.json();
@@ -393,10 +393,7 @@ export function SessionDetailPanel({
                       return (
                         <span
                           key={teacher.id ?? `${teacherName}-${index}`}
-                          className={cn(
-                            "inline-flex items-baseline whitespace-nowrap",
-                            index < teachersToDisplay.length - 1 && "mr-2",
-                          )}
+                          className={`inline-flex items-baseline whitespace-nowrap ${index < teachersToDisplay.length - 1 ? "mr-2" : ""}`}
                         >
                           <span>{teacherName}</span>
                           {teacherTime && (
