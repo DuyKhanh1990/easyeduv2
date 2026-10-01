@@ -1,13 +1,12 @@
 import type { Express } from "express";
-import { randomUUID } from "node:crypto";
 import { storage } from "../storage";
 import { createActivityLog, getActivityLogs } from "../storage/activity-log.storage";
-import { getClassFormatSummary, getClassStatusSummary, getNewClassesSummary, getClassesByLocationSummary, getMonthlyAttendanceRate, getClassesByTeacherSummary, getSessionsByTeacherSummary, getMakeupClassEligibility, getMakeupStartOptions } from "../storage/class.storage";
+import { applyCourseProgramContentsToSessions, getClassFormatSummary, getClassStatusSummary, getNewClassesSummary, getClassesByLocationSummary, getMonthlyAttendanceRate, getClassesByTeacherSummary, getSessionsByTeacherSummary, getMakeupClassEligibility, getMakeupStartOptions } from "../storage/class.storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { parseScoreConversionTemplatesJson } from "@shared/score-conversion";
 import { scoreSheetAssessmentSchema } from "@shared/score-sheet-assessment";
 import { scoreSheetTemplateSchema } from "@shared/score-sheet-template";
+import { createScoreSheetAssessmentForTemplate as createScoreSheetAssessmentFromTemplate } from "../lib/score-sheet-assignment";
 import { db, pool } from "../db";
 import { classSessions, studentSessions, freeClassRegistrations, freeClassDayAssignments, students, classes, studentClasses, staff, staffAssignments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, invoiceItems, courseFeePackages, financePromotions, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
 import { eq, and, sql, inArray, avg, between, gte, lte, gt, desc, asc, or, ilike, isNotNull, isNull, ne } from "drizzle-orm";
@@ -36,7 +35,6 @@ async function checkAttendanceLimitForSession(classSessionId: string, req: any):
 }
 
 const CLASSES_RESOURCE = "/classes";
-const SCORE_CONVERSION_SETTINGS_KEY = "scoreConversionTemplates";
 const SCORE_SHEET_TEMPLATE_SETTINGS_KEY = "scoreSheetTemplates";
 const SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY = "scoreSheetAssessments";
 
@@ -47,101 +45,7 @@ async function createScoreSheetAssessmentForTemplate(options: {
   fromSessionIndex: number;
   toSessionIndex: number;
 }) {
-  const { systemSettings } = await import("@shared/schema");
-  return db.transaction(async (tx) => {
-    await tx.insert(systemSettings)
-      .values({ key: SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY, value: "[]" })
-      .onConflictDoNothing();
-
-    const [assessmentsRow] = await tx
-      .select({ value: systemSettings.value })
-      .from(systemSettings)
-      .where(eq(systemSettings.key, SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY))
-      .for("update")
-      .limit(1);
-    if (!assessmentsRow) throw new Error("Không thể tải danh sách bảng điểm.");
-
-    const assessments = z.array(scoreSheetAssessmentSchema).parse(JSON.parse(assessmentsRow.value));
-    const reusableAssessment = options.reuseAssessmentId
-      ? assessments.find((assessment) =>
-        assessment.id === options.reuseAssessmentId
-        && assessment.scoreSheetTemplateId === options.templateId)
-      : undefined;
-    if (reusableAssessment) return reusableAssessment;
-
-    const [templatesRow] = await tx
-      .select({ value: systemSettings.value })
-      .from(systemSettings)
-      .where(eq(systemSettings.key, SCORE_SHEET_TEMPLATE_SETTINGS_KEY))
-      .limit(1);
-    const templates = templatesRow
-      ? z.array(scoreSheetTemplateSchema).parse(JSON.parse(templatesRow.value))
-      : [];
-    const template = templates.find((item) => item.id === options.templateId);
-    if (!template) {
-      const error: any = new Error("Không tìm thấy bảng điểm mẫu đã chọn.");
-      error.status = 404;
-      throw error;
-    }
-
-    let conversionTemplateSnapshot = null;
-    if (template.scoreConversionTemplateId) {
-      const [conversionRow] = await tx
-        .select({ value: systemSettings.value })
-        .from(systemSettings)
-        .where(eq(systemSettings.key, SCORE_CONVERSION_SETTINGS_KEY))
-        .limit(1);
-      conversionTemplateSnapshot = conversionRow
-        ? parseScoreConversionTemplatesJson(conversionRow.value)
-          .find((item) => item.id === template.scoreConversionTemplateId) ?? null
-        : null;
-      if (!conversionTemplateSnapshot) {
-        const error: any = new Error("Không tìm thấy bảng quy đổi của bảng điểm mẫu.");
-        error.status = 409;
-        throw error;
-      }
-    }
-
-    const classToken = options.classCode
-      .toLocaleUpperCase()
-      .replace(/[^A-Z0-9]+/g, "")
-      .slice(0, 8) || "CLASS";
-    const suffixBase = `-${classToken}-S${options.fromSessionIndex}-${options.toSessionIndex}`;
-    let code = "";
-    for (let sequence = 1; sequence <= 1000; sequence += 1) {
-      const suffix = `${suffixBase}${sequence === 1 ? "" : `-${sequence}`}`;
-      const prefixLength = Math.max(0, 40 - suffix.length);
-      const candidate = `${template.code.toLocaleUpperCase().slice(0, prefixLength)}${suffix}`;
-      if (!assessments.some((assessment) =>
-        assessment.code.toLocaleLowerCase() === candidate.toLocaleLowerCase())) {
-        code = candidate;
-        break;
-      }
-    }
-    if (!code) throw new Error("Không thể tạo mã duy nhất cho bảng điểm áp dụng.");
-
-    const now = new Date().toISOString();
-    const assessment = scoreSheetAssessmentSchema.parse({
-      id: randomUUID(),
-      code,
-      name: template.name,
-      scoreSheetTemplateId: template.id,
-      scoreDeadlineAt: null,
-      attemptCount: template.attemptCount,
-      scoringPolicy: template.scoringPolicy,
-      templateSnapshot: template,
-      conversionTemplateSnapshot,
-      createdAt: now,
-      updatedAt: now,
-    });
-    await tx.update(systemSettings)
-      .set({
-        value: JSON.stringify([assessment, ...assessments]),
-        updatedAt: new Date(),
-      })
-      .where(eq(systemSettings.key, SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY));
-    return assessment;
-  });
+  return createScoreSheetAssessmentFromTemplate(options);
 }
 
 function getBangkokDateString(): string {
@@ -7576,7 +7480,19 @@ export function registerClassesRoutes(app: Express): void {
       if (!programId || fromSessionIndex == null || toSessionIndex == null) {
         return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
       }
-      const { db: baseDb, eq: baseEq, and: baseAnd, sql: baseSql, classSessions: baseSessions } = await import("../storage/base");
+      const {
+        db: baseDb,
+        eq: baseEq,
+        and: baseAnd,
+        sql: baseSql,
+        classSessions: baseSessions,
+        classes: baseClasses,
+      } = await import("../storage/base");
+      const [classRow] = await baseDb.select({ classCode: baseClasses.classCode })
+        .from(baseClasses)
+        .where(baseEq(baseClasses.id, classId))
+        .limit(1);
+      if (!classRow) return res.status(404).json({ message: "Không tìm thấy lớp học." });
       const sessions = await baseDb
         .select({ id: baseSessions.id, sessionIndex: baseSessions.sessionIndex })
         .from(baseSessions)
@@ -7590,42 +7506,16 @@ export function registerClassesRoutes(app: Express): void {
       if (sessions.length === 0) {
         return res.status(400).json({ message: "Không có buổi học trong khoảng đã chọn" });
       }
-      const programContents = await storage.getCourseProgramContents(programId);
-      const sortedContents = programContents.sort((a, b) => parseFloat(String(a.sessionNumber)) - parseFloat(String(b.sessionNumber)));
-
-      // Group contents by session number (1-based)
-      const contentsBySessionNum: Record<number, typeof sortedContents> = {};
-      for (const pc of sortedContents) {
-        const sn = Math.round(parseFloat(String(pc.sessionNumber)));
-        if (!contentsBySessionNum[sn]) contentsBySessionNum[sn] = [];
-        contentsBySessionNum[sn].push(pc);
-      }
-
-      for (let i = 0; i < sessions.length; i++) {
-        const session = sessions[i];
+      for (const session of sessions) {
         await baseDb.update(baseSessions).set({ programId }).where(baseEq(baseSessions.id, session.id));
-
-        // Delete all existing contents for this session
-        const existingContents = await storage.getSessionContents(session.id);
-        for (const ec of existingContents) {
-          await storage.deleteSessionContent(ec.id);
-        }
-
-        // Session at position i (0-based) maps to program session number i+1
-        const programSessionNum = i + 1;
-        const contentsForSession = contentsBySessionNum[programSessionNum] || [];
-        for (let j = 0; j < contentsForSession.length; j++) {
-          const pc = contentsForSession[j];
-          await storage.createSessionContent({
-            classSessionId: session.id,
-            contentType: pc.type || "curriculum",
-            title: pc.title,
-            description: pc.content || null,
-            resourceUrl: pc.id,
-            displayOrder: j,
-          });
-        }
       }
+      await applyCourseProgramContentsToSessions({
+        programId,
+        sessions,
+        classCode: classRow.classCode,
+        replaceSessionContents: true,
+        applyScoreSheets: true,
+      });
       res.json({ message: "Áp dụng chương trình thành công", sessionsUpdated: sessions.length });
     } catch (err: any) {
       console.error("Apply program error:", err);

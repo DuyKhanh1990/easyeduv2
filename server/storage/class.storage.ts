@@ -832,6 +832,115 @@ async function sortClassSessionRowsByDateAndTime<T extends {
 // ---------------------------------------------------------------------------
 // createClass
 // ---------------------------------------------------------------------------
+export async function applyCourseProgramContentsToSessions(options: {
+  programId: string;
+  sessions: { id: string; sessionIndex: number | null }[];
+  classCode: string;
+  replaceSessionContents?: boolean;
+  applyScoreSheets?: boolean;
+}): Promise<void> {
+  const { getCourseProgramContents } = await import("./course.storage");
+  const { createSessionContent, deleteSessionContent, getSessionContents } = await import("./session-content.storage");
+  const programContents = await getCourseProgramContents(options.programId);
+  const sessionAssignments: {
+    session: { id: string; sessionIndex: number | null };
+    programSessionNumber: number;
+    scoreSheetAssignment: typeof programContents[number] | undefined;
+  }[] = [];
+
+  for (let index = 0; index < options.sessions.length; index += 1) {
+    const session = options.sessions[index];
+    const programSessionNumber = index + 1;
+    const contentsForSession = programContents.filter((content) =>
+      Math.round(Number(content.sessionNumber)) === programSessionNumber
+    );
+    const existingContents = await getSessionContents(session.id);
+    const shouldApplyContents = options.replaceSessionContents || existingContents.length === 0;
+
+    if (options.replaceSessionContents) {
+      for (const content of existingContents) {
+        await deleteSessionContent(content.id);
+      }
+    }
+
+    if (shouldApplyContents) {
+      let displayOrder = 0;
+      for (const content of contentsForSession) {
+        if (content.scoreSheetId || content.scoreSheetAssessmentId || content.scoreSheetTemplateId) continue;
+        await createSessionContent({
+          classSessionId: session.id,
+          contentType: content.type || "curriculum",
+          title: content.title,
+          description: content.content || null,
+          resourceUrl: content.examId || content.id,
+          displayOrder: displayOrder++,
+        });
+      }
+    }
+
+    sessionAssignments.push({
+      session,
+      programSessionNumber,
+      scoreSheetAssignment: contentsForSession.find((content) =>
+        content.scoreSheetId || content.scoreSheetAssessmentId || content.scoreSheetTemplateId
+      ),
+    });
+  }
+
+  if (!options.applyScoreSheets) return;
+
+  const templateGroups = new Map<string, typeof sessionAssignments>();
+  for (const assignment of sessionAssignments) {
+    const content = assignment.scoreSheetAssignment;
+    if (!content) continue;
+    if (content.scoreSheetTemplateId) {
+      const group = templateGroups.get(content.scoreSheetTemplateId) ?? [];
+      group.push(assignment);
+      templateGroups.set(content.scoreSheetTemplateId, group);
+      continue;
+    }
+
+    await db.update(classSessions).set({
+      scoreSheetId: content.scoreSheetId ?? null,
+      scoreSheetAssessmentId: content.scoreSheetAssessmentId ?? null,
+      updatedAt: new Date(),
+    }).where(eq(classSessions.id, assignment.session.id));
+  }
+
+  if (templateGroups.size === 0) return;
+  const { createScoreSheetAssessmentForTemplate } = await import("../lib/score-sheet-assignment");
+  for (const [templateId, assignments] of templateGroups) {
+    const sessionIds = assignments.map((assignment) => assignment.session.id);
+    const currentSessionRows = await db.select({
+      id: classSessions.id,
+      scoreSheetAssessmentId: classSessions.scoreSheetAssessmentId,
+    }).from(classSessions).where(inArray(classSessions.id, sessionIds));
+    const currentAssessmentId = currentSessionRows[0]?.scoreSheetAssessmentId ?? null;
+    const reuseAssessmentId = currentAssessmentId
+      && currentSessionRows.length === assignments.length
+      && currentSessionRows.every((session) => session.scoreSheetAssessmentId === currentAssessmentId)
+      ? currentAssessmentId
+      : null;
+    const sessionIndexes = assignments
+      .map((assignment) => assignment.session.sessionIndex ?? assignment.programSessionNumber)
+      .sort((a, b) => a - b);
+    const assessment = await createScoreSheetAssessmentForTemplate({
+      templateId,
+      reuseAssessmentId,
+      classCode: options.classCode,
+      fromSessionIndex: sessionIndexes[0],
+      toSessionIndex: sessionIndexes[sessionIndexes.length - 1],
+    });
+    await Promise.all(assignments.map((assignment) =>
+      db.update(classSessions).set({
+        scoreSheetId: null,
+        scoreSheetAssessmentId: assessment.id,
+        updatedAt: new Date(),
+      }).where(eq(classSessions.id, assignment.session.id))
+    ));
+  }
+}
+
 export async function createClass(data: any): Promise<Class> {
   const newClass = await db.transaction(async (tx) => {
     const scheduleConfig = data.schedule_config || [];
@@ -1022,9 +1131,6 @@ export async function createClass(data: any): Promise<Class> {
   // Auto-apply program contents to sessions after transaction
   if (newClass.programId) {
     try {
-      const { getCourseProgramContents } = await import("./course.storage");
-      const { createSessionContent } = await import("./session-content.storage");
-
       const createdSessions = await db
         .select({ id: classSessions.id, sessionIndex: classSessions.sessionIndex })
         .from(classSessions)
@@ -1032,31 +1138,12 @@ export async function createClass(data: any): Promise<Class> {
         .orderBy(asc(classSessions.sessionIndex));
 
       if (createdSessions.length > 0) {
-        const programContents = await getCourseProgramContents(newClass.programId);
-        const sorted = programContents.sort((a, b) => parseFloat(String(a.sessionNumber)) - parseFloat(String(b.sessionNumber)));
-
-        const contentsBySession: Record<number, typeof sorted> = {};
-        for (const pc of sorted) {
-          const sn = Math.round(parseFloat(String(pc.sessionNumber)));
-          if (!contentsBySession[sn]) contentsBySession[sn] = [];
-          contentsBySession[sn].push(pc);
-        }
-
-        for (let i = 0; i < createdSessions.length; i++) {
-          const session = createdSessions[i];
-          const contentsForSession = contentsBySession[i + 1] || [];
-          for (let j = 0; j < contentsForSession.length; j++) {
-            const pc = contentsForSession[j];
-            await createSessionContent({
-              classSessionId: session.id,
-              contentType: (pc.type || "curriculum") as any,
-              title: pc.title,
-              description: pc.content || null,
-              resourceUrl: pc.id,
-              displayOrder: j,
-            });
-          }
-        }
+        await applyCourseProgramContentsToSessions({
+          programId: newClass.programId,
+          sessions: createdSessions,
+          classCode: newClass.classCode,
+          applyScoreSheets: true,
+        });
       }
     } catch (err) {
       console.error("Auto-apply program contents error:", err);
@@ -1341,6 +1428,13 @@ export async function updateClass(id: string, data: any): Promise<Class> {
     await updateClassTeacherTimeAssignments(id, data);
   }
 
+  const [classBeforeUpdate] = await db.select({ programId: classes.programId })
+    .from(classes)
+    .where(eq(classes.id, id))
+    .limit(1);
+  const programChanged = data.programId !== undefined
+    && (data.programId || null) !== (classBeforeUpdate?.programId ?? null);
+
   const updateData: any = {};
    const allowed = ["classCode", "name", "locationId", "programId", "courseId", "managerIds", "teacherIds", "shiftTemplateIds", "feePackageId", "scoreSheetId", "maxStudents", "learningFormat", "onlineLink", "description", "status", "startDate", "endDate", "weekdays", "color", "subjectId", "evaluationCriteriaIds", "freeClassMode"];
   for (const key of allowed) {
@@ -1365,9 +1459,6 @@ export async function updateClass(id: string, data: any): Promise<Class> {
   // Auto-apply program contents to sessions when programId is set/changed
   if (data.programId) {
     try {
-      const { getCourseProgramContents } = await import("./course.storage");
-      const { createSessionContent, getSessionContents } = await import("./session-content.storage");
-
       const existingSessions = await db
         .select({ id: classSessions.id, sessionIndex: classSessions.sessionIndex })
         .from(classSessions)
@@ -1375,35 +1466,12 @@ export async function updateClass(id: string, data: any): Promise<Class> {
         .orderBy(asc(classSessions.sessionIndex));
 
       if (existingSessions.length > 0) {
-        const programContents = await getCourseProgramContents(data.programId);
-        const sorted = programContents.sort((a, b) => parseFloat(String(a.sessionNumber)) - parseFloat(String(b.sessionNumber)));
-
-        const contentsBySession: Record<number, typeof sorted> = {};
-        for (const pc of sorted) {
-          const sn = Math.round(parseFloat(String(pc.sessionNumber)));
-          if (!contentsBySession[sn]) contentsBySession[sn] = [];
-          contentsBySession[sn].push(pc);
-        }
-
-        for (let i = 0; i < existingSessions.length; i++) {
-          const session = existingSessions[i];
-          // Only apply if the session has no existing content
-          const existingContents = await getSessionContents(session.id);
-          if (existingContents.length === 0) {
-            const contentsForSession = contentsBySession[i + 1] || [];
-            for (let j = 0; j < contentsForSession.length; j++) {
-              const pc = contentsForSession[j];
-              await createSessionContent({
-                classSessionId: session.id,
-                contentType: (pc.type || "curriculum") as any,
-                title: pc.title,
-                description: pc.content || null,
-                resourceUrl: pc.id,
-                displayOrder: j,
-              });
-            }
-          }
-        }
+        await applyCourseProgramContentsToSessions({
+          programId: data.programId,
+          sessions: existingSessions,
+          classCode: updated.classCode,
+          applyScoreSheets: programChanged,
+        });
       }
     } catch (err) {
       console.error("Auto-apply program contents on update error:", err);

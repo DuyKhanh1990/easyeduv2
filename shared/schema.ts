@@ -448,7 +448,12 @@ export const courseProgramContents = pgTable("course_program_contents", {
   programId: uuid("program_id").references(() => coursePrograms.id, { onDelete: "cascade" }),
   sessionNumber: decimal("session_number", { precision: 10, scale: 2 }),
   title: varchar("title", { length: 255 }).notNull(),
-  type: varchar("type", { length: 50 }).notNull(), // 'Bài học', 'Bài tập về nhà', 'Giáo trình'
+  type: varchar("type", { length: 50 }).notNull(), // Library content or a program-session assignment
+  // Direct references used by program-session assignments; these rows are not library uploads.
+  examId: uuid("exam_id").references(() => exams.id, { onDelete: "cascade" }),
+  scoreSheetId: uuid("score_sheet_id").references(() => scoreSheets.id, { onDelete: "cascade" }),
+  scoreSheetAssessmentId: uuid("score_sheet_assessment_id"),
+  scoreSheetTemplateId: uuid("score_sheet_template_id"),
   content: text("content"),
   attachments: text("attachments").array(), // Array of file URLs/names
   allowDownload: boolean("allow_download"), // null = use role default, true/false = override

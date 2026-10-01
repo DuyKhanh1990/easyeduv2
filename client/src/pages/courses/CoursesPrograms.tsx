@@ -630,9 +630,16 @@ export default function CoursesPrograms() {
 
                             {contents.length > 0 ? (
                               <div className="grid grid-cols-1 gap-1.5 ml-7">
-                                {contents.map((content) => (
-                                  <Card key={content.id} className="border border-border/50 shadow-sm">
-                                    <CardContent className="p-2.5">
+                                {contents.map((content) => {
+                                  const isLinkedAssignment = Boolean(
+                                    content.examId
+                                    || content.scoreSheetId
+                                    || content.scoreSheetAssessmentId
+                                    || content.scoreSheetTemplateId,
+                                  );
+                                  return (
+                                    <Card key={content.id} className="border border-border/50 shadow-sm">
+                                      <CardContent className="p-2.5">
                                       <div className="flex justify-between items-center">
                                         <div className="flex items-center gap-2 min-w-0 flex-1">
                                           <Badge variant="secondary" className="text-[9px] uppercase font-bold shrink-0 px-1.5 py-0">
@@ -647,8 +654,8 @@ export default function CoursesPrograms() {
                                           )}
                                         </div>
                                         <div className="flex items-center gap-0.5 shrink-0">
-                                          <ViewContentDialog content={content} />
-                                          {programsPerm.canEdit && (
+                                          {!isLinkedAssignment && <ViewContentDialog content={content} />}
+                                          {programsPerm.canEdit && !isLinkedAssignment && (
                                           <ProgramContentDialog 
                                             program={selectedProgram} 
                                             content={content}
@@ -664,9 +671,10 @@ export default function CoursesPrograms() {
                                           )}
                                         </div>
                                       </div>
-                                    </CardContent>
-                                  </Card>
-                                ))}
+                                      </CardContent>
+                                    </Card>
+                                  );
+                                })}
                               </div>
                             ) : (
                               <p className="text-sm text-muted-foreground ml-10 italic">Chưa có nội dung cho buổi này</p>
@@ -1882,7 +1890,85 @@ function AssignContentDialog({ program }: { program: CourseProgram | undefined }
     enabled: open,
   });
 
-  const TYPES = ["Bài học", "Bài tập về nhà", "Giáo trình"];
+  const { data: exams = [] } = useQuery<any[]>({
+    queryKey: ["/api/exams"],
+    enabled: open,
+  });
+  const { data: allScoreSheets = [] } = useQuery<any[]>({
+    queryKey: ["/api/score-sheets"],
+    enabled: open,
+  });
+  const { data: allScoreSheetAssessments = [] } = useQuery<any[]>({
+    queryKey: ["/api/score-sheet-assessments"],
+    enabled: open,
+  });
+  const { data: allScoreSheetTemplates = [] } = useQuery<any[]>({
+    queryKey: ["/api/score-sheet-templates"],
+    enabled: open,
+  });
+
+  const TYPES = ["Bài học", "Bài tập về nhà", "Giáo trình", "Bài kiểm tra", "Bảng điểm"];
+  const conversionAssessments = allScoreSheetAssessments.filter((assessment) => (
+    Boolean(assessment.conversionTemplateSnapshot || assessment.templateSnapshot?.scoreConversionTemplateId)
+  ));
+  const representedConversionTemplateIds = new Set(
+    conversionAssessments.map((assessment) => assessment.scoreSheetTemplateId),
+  );
+  const scoreSheetChoices = [
+    ...allScoreSheets.map((sheet) => ({
+      id: `score-sheet:sheet:${sheet.id}`,
+      title: sheet.name,
+      detail: "Bảng điểm tiêu chuẩn",
+      scoreSheetSelection: { kind: "sheet" as const, id: sheet.id },
+    })),
+    ...conversionAssessments.map((assessment) => ({
+      id: `score-sheet:assessment:${assessment.id}`,
+      title: `${assessment.code} — ${assessment.name}`,
+      detail: `Bảng điểm quy đổi${assessment.currentTemplate?.name || assessment.templateSnapshot?.name ? ` · Mẫu: ${assessment.currentTemplate?.name ?? assessment.templateSnapshot?.name}` : ""}`,
+      scoreSheetSelection: { kind: "assessment" as const, id: assessment.id },
+    })),
+    ...allScoreSheetTemplates
+      .filter((template) => Boolean(template.scoreConversionTemplateId)
+        && !representedConversionTemplateIds.has(template.id))
+      .map((template) => ({
+        id: `score-sheet:template:${template.id}`,
+        title: `${template.code} — ${template.name}`,
+        detail: "Mẫu bảng điểm quy đổi",
+        scoreSheetSelection: { kind: "template" as const, id: template.id },
+      })),
+    ...allScoreSheetTemplates
+      .filter((template) => !template.scoreConversionTemplateId)
+      .map((template) => ({
+        id: `score-sheet:template:${template.id}`,
+        title: `${template.code} — ${template.name}`,
+        detail: "Mẫu bảng điểm",
+        scoreSheetSelection: { kind: "template" as const, id: template.id },
+      })),
+  ];
+  const choices = [
+    ...libraryContents.map((item) => ({
+      id: `library:${item.id}`,
+      title: item.title,
+      type: item.type,
+      detail: item.type,
+      kind: "library" as const,
+      sourceId: item.id,
+    })),
+    ...exams.map((exam) => ({
+      id: `exam:${exam.id}`,
+      title: exam.code ? `${exam.code} — ${exam.name}` : exam.name,
+      type: "Bài kiểm tra",
+      detail: exam.status ? `Bài kiểm tra · ${exam.status}` : "Bài kiểm tra",
+      kind: "exam" as const,
+      sourceId: exam.id,
+    })),
+    ...scoreSheetChoices.map((choice) => ({
+      ...choice,
+      type: "Bảng điểm",
+      kind: "scoreSheet" as const,
+      sourceId: choice.scoreSheetSelection.id,
+    })),
+  ];
 
   const toggleType = (type: string) => {
     setSelectedTypes((prev) =>
@@ -1890,23 +1976,30 @@ function AssignContentDialog({ program }: { program: CourseProgram | undefined }
     );
   };
 
-  const filtered = libraryContents.filter((c) => {
-    const matchType = selectedTypes.length === 0 || selectedTypes.includes(c.type);
-    const matchSearch = c.title.toLowerCase().includes(search.toLowerCase());
+  const filtered = choices.filter((choice) => {
+    const matchType = selectedTypes.length === 0 || selectedTypes.includes(choice.type);
+    const matchSearch = `${choice.title} ${choice.detail}`.toLowerCase().includes(search.toLowerCase());
     return matchType && matchSearch;
   });
 
   const toggleSelect = (id: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
-    );
+    setSelectedIds((prev) => {
+      if (prev.includes(id)) return prev.filter((itemId) => itemId !== id);
+      if (id.startsWith("score-sheet:")) {
+        return [...prev.filter((itemId) => !itemId.startsWith("score-sheet:")), id];
+      }
+      return [...prev, id];
+    });
   };
 
   const assignMutation = useMutation({
     mutationFn: async () => {
-      const toAssign = libraryContents.filter((c) => selectedIds.includes(c.id));
-      for (const item of toAssign) {
-        await apiRequest("POST", `/api/course-programs/${program?.id}/contents`, {
+      const selectedChoices = choices.filter((choice) => selectedIds.includes(choice.id));
+      const toAssign = selectedChoices.filter((choice) => choice.kind === "library");
+      await Promise.all(toAssign.map((choice) => {
+        const item = libraryContents.find((content) => content.id === choice.sourceId);
+        if (!item) return Promise.resolve();
+        return apiRequest("POST", `/api/course-programs/${program?.id}/contents`, {
           programId: program?.id,
           sessionNumber: Number(sessionNumber),
           title: item.title,
@@ -1914,11 +2007,23 @@ function AssignContentDialog({ program }: { program: CourseProgram | undefined }
           content: item.content || "",
           attachments: item.attachments || [],
         });
+      }));
+
+      const examIds = selectedChoices
+        .filter((choice) => choice.kind === "exam")
+        .map((choice) => choice.sourceId);
+      const scoreSheetChoice = selectedChoices.find((choice) => choice.kind === "scoreSheet");
+      if (examIds.length > 0 || scoreSheetChoice) {
+        await apiRequest("POST", `/api/course-programs/${program?.id}/session-assignments`, {
+          sessionNumber: Number(sessionNumber),
+          examIds,
+          ...(scoreSheetChoice ? { scoreSheetSelection: scoreSheetChoice.scoreSheetSelection } : {}),
+        });
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/course-programs", program?.id, "contents"] });
-      toast({ title: "Thành công", description: `Đã gán ${selectedIds.length} nội dung vào Buổi ${sessionNumber}` });
+      toast({ title: "Thành công", description: `Đã gán ${selectedIds.length} mục vào Buổi ${sessionNumber}` });
       setOpen(false);
       setSelectedIds([]);
       setSearch("");
@@ -1947,7 +2052,7 @@ function AssignContentDialog({ program }: { program: CourseProgram | undefined }
       <DialogContent className="sm:max-w-[540px] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="text-lg font-display">Gán Nội dung</DialogTitle>
-          <p className="text-sm text-muted-foreground">Chọn nội dung từ thư viện để gán vào buổi học</p>
+          <p className="text-sm text-muted-foreground">Chọn nội dung, bài kiểm tra và bảng điểm sẽ đi cùng buổi học khi áp dụng chương trình</p>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-5 py-2 pr-1">
@@ -1969,7 +2074,7 @@ function AssignContentDialog({ program }: { program: CourseProgram | undefined }
           {/* Type filter checkboxes */}
           <div className="space-y-2">
             <label className="text-sm font-medium">Loại *</label>
-            <div className="flex items-center gap-5">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
               {TYPES.map((type) => (
                 <label key={type} className="flex items-center gap-2 cursor-pointer text-sm select-none">
                   <Checkbox
@@ -1985,11 +2090,11 @@ function AssignContentDialog({ program }: { program: CourseProgram | undefined }
 
           {/* Search + list */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">Tiêu đề (có thể chọn nhiều)</label>
+            <label className="text-sm font-medium">Có thể chọn nhiều mục, tối đa một bảng điểm</label>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Tìm kiếm theo tên nội dung..."
+                placeholder="Tìm kiếm theo tên..."
                 className="pl-9"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -1999,7 +2104,7 @@ function AssignContentDialog({ program }: { program: CourseProgram | undefined }
             <div className="border rounded-xl overflow-y-auto max-h-[260px] divide-y divide-border/50">
               {filtered.length === 0 ? (
                 <div className="text-center py-8 text-sm text-muted-foreground">
-                  {search ? "Không tìm thấy nội dung phù hợp" : "Không có nội dung trong thư viện"}
+                  {search ? "Không tìm thấy mục phù hợp" : "Không có mục nào thuộc loại đã chọn"}
                 </div>
               ) : (
                 filtered.map((item) => (
@@ -2018,7 +2123,7 @@ function AssignContentDialog({ program }: { program: CourseProgram | undefined }
                     />
                     <div className="min-w-0">
                       <p className="text-sm font-medium leading-snug">{item.title}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{item.type}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{item.detail}</p>
                     </div>
                   </label>
                 ))

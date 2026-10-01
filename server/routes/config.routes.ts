@@ -1276,6 +1276,142 @@ export function registerConfigRoutes(app: Express): void {
     }
   });
 
+  app.post("/api/course-programs/:id/session-assignments", async (req, res) => {
+    try {
+      const bodySchema = z.object({
+        sessionNumber: z.number().int().positive(),
+        examIds: z.array(z.string().uuid()).optional().default([]),
+        scoreSheetSelection: z.object({
+          kind: z.enum(["sheet", "assessment", "template"]),
+          id: z.string().uuid(),
+        }).nullable().optional(),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json(parsed.error);
+
+      const { exams, scoreSheets } = await import("@shared/schema");
+      const { id: programId } = req.params;
+      const { sessionNumber, examIds, scoreSheetSelection } = parsed.data;
+      const [program] = await db.select({
+        id: coursePrograms.id,
+        sessions: coursePrograms.sessions,
+      })
+        .from(coursePrograms)
+        .where(eq(coursePrograms.id, programId))
+        .limit(1);
+      if (!program) return res.status(404).json({ message: "Không tìm thấy chương trình học." });
+      if (sessionNumber > Number(program.sessions)) {
+        return res.status(400).json({ message: "Số buổi nằm ngoài chương trình học." });
+      }
+
+      const examRows = examIds.length
+        ? await db.select({ id: exams.id, code: exams.code, name: exams.name })
+            .from(exams)
+            .where(inArray(exams.id, examIds))
+        : [];
+      if (examRows.length !== new Set(examIds).size) {
+        return res.status(400).json({ message: "Một hoặc nhiều bài kiểm tra không còn tồn tại." });
+      }
+
+      let scoreSheetTitle: string | null = null;
+      if (scoreSheetSelection?.kind === "sheet") {
+        const [sheet] = await db.select({ name: scoreSheets.name })
+          .from(scoreSheets)
+          .where(eq(scoreSheets.id, scoreSheetSelection.id))
+          .limit(1);
+        if (!sheet) return res.status(400).json({ message: "Không tìm thấy bảng điểm đã chọn." });
+        scoreSheetTitle = sheet.name;
+      } else if (scoreSheetSelection?.kind === "assessment") {
+        const assessment = (await readScoreSheetAssessments())
+          .find((item) => item.id === scoreSheetSelection.id);
+        if (!assessment) return res.status(400).json({ message: "Không tìm thấy bảng điểm quy đổi đã chọn." });
+        scoreSheetTitle = `${assessment.code} — ${assessment.name}`;
+      } else if (scoreSheetSelection?.kind === "template") {
+        const template = (await readScoreSheetTemplates())
+          .find((item) => item.id === scoreSheetSelection.id);
+        if (!template) return res.status(400).json({ message: "Không tìm thấy bảng điểm mẫu đã chọn." });
+        scoreSheetTitle = `${template.code} — ${template.name}`;
+      }
+
+      const createdBy = (req.user as any)?.id ?? null;
+      const result = await db.transaction(async (tx) => {
+        const existingExams = examIds.length
+          ? await tx.select({ examId: courseProgramContents.examId })
+              .from(courseProgramContents)
+              .where(and(
+                eq(courseProgramContents.programId, programId),
+                eq(courseProgramContents.sessionNumber, String(sessionNumber)),
+                inArray(courseProgramContents.examId, examIds),
+              ))
+          : [];
+        const assignedExamIds = new Set(existingExams.map((item) => item.examId));
+        const newExamRows = examRows
+          .filter((exam) => !assignedExamIds.has(exam.id))
+          .map((exam) => ({
+            programId,
+            sessionNumber: String(sessionNumber),
+            title: exam.code ? `${exam.code} — ${exam.name}` : exam.name,
+            type: "Bài kiểm tra",
+            examId: exam.id,
+            createdBy,
+          }));
+        const createdExams = newExamRows.length
+          ? await tx.insert(courseProgramContents).values(newExamRows).returning()
+          : [];
+
+        let scoreSheetAssignment: typeof courseProgramContents.$inferSelect | null = null;
+        if (scoreSheetSelection !== undefined) {
+          const currentScoreRows = await tx.select({ id: courseProgramContents.id })
+            .from(courseProgramContents)
+            .where(and(
+              eq(courseProgramContents.programId, programId),
+              eq(courseProgramContents.sessionNumber, String(sessionNumber)),
+              eq(courseProgramContents.type, "Bảng điểm"),
+            ));
+          if (currentScoreRows.length > 0) {
+            await tx.delete(courseProgramContents).where(inArray(
+              courseProgramContents.id,
+              currentScoreRows.map((row) => row.id),
+            ));
+          }
+
+          if (scoreSheetSelection && scoreSheetTitle) {
+            const assignmentValues = {
+              programId,
+              sessionNumber: String(sessionNumber),
+              title: scoreSheetTitle,
+              type: "Bảng điểm",
+              ...(scoreSheetSelection.kind === "sheet"
+                ? { scoreSheetId: scoreSheetSelection.id }
+                : scoreSheetSelection.kind === "assessment"
+                  ? { scoreSheetAssessmentId: scoreSheetSelection.id }
+                  : { scoreSheetTemplateId: scoreSheetSelection.id }),
+              createdBy,
+            };
+            [scoreSheetAssignment] = await tx.insert(courseProgramContents)
+              .values(assignmentValues)
+              .returning();
+          }
+        }
+
+        return { exams: createdExams, scoreSheet: scoreSheetAssignment };
+      });
+
+      await recordCourseAudit(req, {
+        scope: "programs",
+        entityType: "content",
+        entityId: programId,
+        entityName: `Buổi ${sessionNumber}`,
+        action: "created",
+        locationId: await getProgramLocationId(programId),
+        newContent: result,
+      });
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ message: (err as any).message || "Không thể gán nội dung cho buổi học." });
+    }
+  });
+
   app.get("/api/course-program-contents/:id", async (req, res) => {
     try {
       const content = await courseStorage.getCourseProgramContentById(req.params.id);

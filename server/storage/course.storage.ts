@@ -198,6 +198,10 @@ export async function getAllCourseProgramContents(params?: {
       sessionNumber: courseProgramContents.sessionNumber,
       title: courseProgramContents.title,
       type: courseProgramContents.type,
+      examId: courseProgramContents.examId,
+      scoreSheetId: courseProgramContents.scoreSheetId,
+      scoreSheetAssessmentId: courseProgramContents.scoreSheetAssessmentId,
+      scoreSheetTemplateId: courseProgramContents.scoreSheetTemplateId,
       content: courseProgramContents.content,
       attachments: courseProgramContents.attachments,
       createdBy: courseProgramContents.createdBy,
@@ -210,11 +214,20 @@ export async function getAllCourseProgramContents(params?: {
     .leftJoin(coursePrograms, eq(courseProgramContents.programId, coursePrograms.id))
     .leftJoin(users, eq(courseProgramContents.createdBy, users.id));
 
+  const libraryOnlyCondition = and(
+    isNull(courseProgramContents.examId),
+    isNull(courseProgramContents.scoreSheetId),
+    isNull(courseProgramContents.scoreSheetAssessmentId),
+    isNull(courseProgramContents.scoreSheetTemplateId),
+  );
   const whereCondition = search
-    ? sql`(${courseProgramContents.title} ILIKE ${'%' + search + '%'}
+    ? and(
+        libraryOnlyCondition,
+        sql`(${courseProgramContents.title} ILIKE ${'%' + search + '%'}
         OR ${coursePrograms.name} ILIKE ${'%' + search + '%'}
-        OR ${courseProgramContents.type} ILIKE ${'%' + search + '%'})`
-    : undefined;
+        OR ${courseProgramContents.type} ILIKE ${'%' + search + '%'})`,
+      )
+    : libraryOnlyCondition;
 
   const countRows = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -244,6 +257,10 @@ export async function getCourseProgramContentById(id: string): Promise<any | nul
       sessionNumber: courseProgramContents.sessionNumber,
       title: courseProgramContents.title,
       type: courseProgramContents.type,
+      examId: courseProgramContents.examId,
+      scoreSheetId: courseProgramContents.scoreSheetId,
+      scoreSheetAssessmentId: courseProgramContents.scoreSheetAssessmentId,
+      scoreSheetTemplateId: courseProgramContents.scoreSheetTemplateId,
       content: courseProgramContents.content,
       attachments: courseProgramContents.attachments,
       allowDownload: courseProgramContents.allowDownload,
