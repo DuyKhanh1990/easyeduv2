@@ -495,7 +495,7 @@ function EditableInvoiceDateCell({
 function flattenInvoiceRows(invoices: InvoiceRow[]): InvoiceRow[] {
   return invoices.flatMap((invoice) => {
     const schedules = invoice.paymentSchedule ?? [];
-    if (schedules.length < 2) return [invoice];
+    if (schedules.length === 0) return [invoice];
 
     return schedules.map((schedule, index) => {
       const amount = schedule.amount ?? "0";
@@ -1865,7 +1865,7 @@ export default function Invoices() {
     queryParams,
   } = useInvoiceFilters(activeTab);
 
-  const { invoices, total, parentTotal, tabCounts, isLoading, deleteMutation: deleteInvoiceMutation, updateStatusMutation } = useInvoices(queryParams);
+  const { invoices, total, rowPage, tabCounts, isLoading, deleteMutation: deleteInvoiceMutation, updateStatusMutation } = useInvoices(queryParams);
   const { summary: invoiceSummary, isLoading: isSummaryLoading } = useInvoiceSummary(queryParams);
   const previousQueryParams = getPreviousInvoicePeriodParams(queryParams);
   const { summary: previousSummary, isLoading: isPreviousSummaryLoading } = useInvoiceSummary(
@@ -1934,7 +1934,15 @@ export default function Invoices() {
 
     return true;
   });
-  const displayInvoices = filterInvoiceRowsForDisplay(invoices);
+  const pageRowKeys = rowPage
+    ? new Set(rowPage.map(({ invoiceId, scheduleId }) => scheduleId ? `schedule:${scheduleId}` : `invoice:${invoiceId}`))
+    : null;
+  const displayInvoices = filterInvoiceRowsForDisplay(invoices).filter((invoice) => {
+    if (!pageRowKeys) return true;
+    return invoice.isScheduleRow
+      ? pageRowKeys.has(`schedule:${invoice.scheduleId}`)
+      : pageRowKeys.has(`invoice:${invoice.id}`);
+  });
   const updateScheduleStatusMutation = useMutation({
     mutationFn: ({ scheduleId, status }: { scheduleId: string; status: string }) =>
       apiRequest("PATCH", `/api/finance/invoice-schedules/${scheduleId}/status`, { status }),
@@ -2813,9 +2821,9 @@ export default function Invoices() {
           <div className="flex items-center gap-1">
             <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page <= 1} onClick={() => setPage(1)}>«</Button>
             <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>‹</Button>
-            <span className="px-2 text-xs">{t("finance.pageOf", { page, total: Math.max(1, Math.ceil(parentTotal / pageSize)) })}</span>
-            <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page >= Math.ceil(parentTotal / pageSize)} onClick={() => setPage(p => p + 1)}>›</Button>
-            <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page >= Math.ceil(parentTotal / pageSize)} onClick={() => setPage(Math.ceil(parentTotal / pageSize))}>»</Button>
+            <span className="px-2 text-xs">{t("finance.pageOf", { page, total: Math.max(1, Math.ceil(total / pageSize)) })}</span>
+            <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage(p => p + 1)}>›</Button>
+            <Button variant="outline" size="icon" className="h-7 w-7 text-xs" disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage(Math.ceil(total / pageSize))}>»</Button>
           </div>
         </div>
         </div>
