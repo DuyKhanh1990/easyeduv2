@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Settings, Trash2, Eye, ArrowRightLeft, Search, SlidersHorizontal, X, FileDown, History, AlignJustify, Info } from "lucide-react";
+import { Plus, Settings, Trash2, Eye, ArrowRightLeft, Search, SlidersHorizontal, X, FileDown, Loader2, History, AlignJustify, Info } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { StoreTransferDialog, type TransferFormData } from "./StoreTransferDialog";
 import { exportChuyenKho } from "./storeExportUtils";
@@ -127,6 +127,7 @@ export function StoreTransferTab() {
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [isExporting, setIsExporting] = useState(false);
   const [showDialog, setShowDialog] = useState(false);
   const [editData, setEditData] = useState<(Partial<TransferFormData> & { id?: string; status?: string }) | undefined>(undefined);
   const [confirmAction, setConfirmAction] = useState<{ type: "transfer" | "cancel"; row: TransferRow } | null>(null);
@@ -470,9 +471,47 @@ export function StoreTransferTab() {
               variant="outline"
               size="sm"
               className="flex items-center gap-1.5 h-9 text-xs"
-               onClick={() => exportChuyenKho(transfers, toast, timeZone)}
+              onClick={async () => {
+                setIsExporting(true);
+                try {
+                  const exportParams = new URLSearchParams(params);
+                  exportParams.set("pageSize", "100");
+                  const allTransfers: typeof transfers = [];
+                  let totalToFetch: number | null = null;
+                  let exportPage = 1;
+
+                  while (totalToFetch === null || allTransfers.length < totalToFetch) {
+                    exportParams.set("page", String(exportPage));
+                    const response = await apiRequest(
+                      "GET",
+                      `/api/store/transfers?${exportParams.toString()}`,
+                    );
+                    const result = await response.json() as {
+                      data?: typeof transfers;
+                      total?: number;
+                    };
+                    const batch = result.data ?? [];
+                    if (exportPage === 1) totalToFetch = result.total ?? batch.length;
+                    if (batch.length === 0) break;
+                    allTransfers.push(...batch);
+                    exportPage += 1;
+                  }
+
+                  await exportChuyenKho(allTransfers, toast, timeZone);
+                } catch {
+                  toast({
+                    title: "Lỗi",
+                    description: "Không thể tải đầy đủ phiếu chuyển kho để xuất.",
+                    variant: "destructive",
+                  });
+                } finally {
+                  setIsExporting(false);
+                }
+              }}
+              disabled={isLoading || isExporting || total === 0}
             >
-              <FileDown className="w-3.5 h-3.5" /> Tải xuống
+              {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+              {isExporting ? "Đang tải..." : "Tải xuống"}
             </Button>
             <Button
               size="sm"

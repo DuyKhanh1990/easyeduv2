@@ -242,13 +242,11 @@ export type InventoryRow = {
 };
 
 export async function exportTonKho(
-  rows: InventoryRow[],
   fetchAll: () => Promise<InventoryRow[]>,
   toast: (o: any) => void,
 ) {
   try {
-    // If we only have the current page, fetch all for export
-    const data = rows.length > 0 ? await fetchAll() : rows;
+    const data = await fetchAll();
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Tồn kho");

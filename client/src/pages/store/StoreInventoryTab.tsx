@@ -4,7 +4,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Clock, X, FileDown } from "lucide-react";
+import { Clock, X, FileDown, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -240,6 +240,7 @@ export function StoreInventoryTab() {
   const [pageSize, setPageSize] = useState(20);
   const [page, setPage] = useState(1);
   const [detailRow, setDetailRow] = useState<InventoryRow | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   const { data: warehouses = [] } = useQuery<Warehouse[]>({
     queryKey: ["/api/store/warehouses"],
@@ -338,23 +339,43 @@ export function StoreInventoryTab() {
               variant="outline"
               size="sm"
               className="flex items-center gap-1.5 h-9 text-xs"
-              onClick={() => exportTonKho(
-                paged as ExportInventoryRow[],
-                async () => {
-                  const p = new URLSearchParams();
-                  if (search) p.set("search", search);
-                  if (warehouseFilter !== "all") p.set("warehouseId", warehouseFilter);
-                  if (statusFilter !== "all") p.set("status", statusFilter);
-                  p.set("page", "1");
-                  p.set("pageSize", "9999");
-                  const r = await fetch(`/api/store/inventory?${p}`, { credentials: "include" });
-                  const json = await r.json();
-                  return (json.data ?? []) as ExportInventoryRow[];
-                },
-                toast,
-              )}
+              onClick={async () => {
+                setIsExporting(true);
+                try {
+                  await exportTonKho(async () => {
+                    const exportParams = new URLSearchParams(params);
+                    exportParams.set("pageSize", "100");
+                    const allRows: ExportInventoryRow[] = [];
+                    let totalToFetch: number | null = null;
+                    let exportPage = 1;
+
+                    while (totalToFetch === null || allRows.length < totalToFetch) {
+                      exportParams.set("page", String(exportPage));
+                      const response = await apiRequest(
+                        "GET",
+                        `/api/store/inventory?${exportParams.toString()}`,
+                      );
+                      const result = await response.json() as {
+                        data?: ExportInventoryRow[];
+                        total?: number;
+                      };
+                      const batch = result.data ?? [];
+                      if (exportPage === 1) totalToFetch = result.total ?? batch.length;
+                      if (batch.length === 0) break;
+                      allRows.push(...batch);
+                      exportPage += 1;
+                    }
+
+                    return allRows;
+                  }, toast);
+                } finally {
+                  setIsExporting(false);
+                }
+              }}
+              disabled={isLoading || isExporting || total === 0}
             >
-              <FileDown className="w-3.5 h-3.5" /> Tải xuống
+              {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+              {isExporting ? "Đang tải..." : "Tải xuống"}
             </Button>
             <button
               onClick={() => refetch()}
