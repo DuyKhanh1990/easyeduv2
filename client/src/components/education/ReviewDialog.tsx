@@ -254,6 +254,7 @@ export function ReviewDialog({
             key.includes("/student-sessions") ||
             key.includes("/star-rating") ||
             key === "/api/my-space/calendar/staff" ||
+            key === "/api/my-space/calendar/staff/session" ||
             key === "/api/schedule" ||
             (freeReview ? key.includes("/free-schedule") : false)
           );

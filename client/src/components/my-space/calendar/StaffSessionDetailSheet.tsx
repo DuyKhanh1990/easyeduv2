@@ -970,28 +970,44 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
             classId,
             registrationId: reviewTarget.registrationId,
           } : undefined}
-          onSaved={isFreeSession ? (reviewData, published) => {
-            setFreeStudentRows((current) => current.map((student) =>
-              student.registrationId === reviewTarget.registrationId
+          onSaved={(reviewData, published) => {
+            if (isFreeSession) {
+              setFreeStudentRows((current) => current.map((student) =>
+                student.registrationId === reviewTarget.registrationId
+                  ? { ...student, reviewData, reviewPublished: published }
+                  : student,
+              ));
+              queryClient.setQueryData<MyCalendarSession>(
+                ["/api/my-space/calendar/staff/session", classSessionId],
+                (cached) => cached
+                  ? {
+                      ...cached,
+                      freeStudents: (cached.freeStudents ?? []).map((student) =>
+                        student.registrationId === reviewTarget.registrationId
+                          ? { ...student, reviewData, reviewPublished: published }
+                          : student,
+                      ),
+                    }
+                  : cached,
+              );
+            } else {
+              const updateStudentReview = (student: any) => student.id === reviewTarget.id
                 ? { ...student, reviewData, reviewPublished: published }
-                : student,
-            ));
-            queryClient.setQueryData<MyCalendarSession>(
-              ["/api/my-space/calendar/staff/session", classSessionId],
-              (cached) => cached
-                ? {
-                    ...cached,
-                    freeStudents: (cached.freeStudents ?? []).map((student) =>
-                      student.registrationId === reviewTarget.registrationId
-                        ? { ...student, reviewData, reviewPublished: published }
-                        : student,
-                    ),
-                  }
-                : cached,
-            );
-            queryClient.invalidateQueries({
-              queryKey: ["/api/my-space/calendar/staff/session", classSessionId],
-            });
+                : student;
+              queryClient.setQueryData<any[]>(
+                [studentSessionsKey],
+                (cached) => cached?.map(updateStudentReview),
+              );
+              queryClient.setQueryData<MyCalendarSession>(
+                ["/api/my-space/calendar/staff/session", classSessionId],
+                (cached) => cached
+                  ? {
+                      ...cached,
+                      studentSessions: cached.studentSessions?.map(updateStudentReview),
+                    }
+                  : cached,
+              );
+            }
             setReviewTarget((current: any) => current
               ? { ...current, reviewData, reviewPublished: published }
               : current);
