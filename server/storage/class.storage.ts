@@ -1772,6 +1772,9 @@ export async function getClassSessions(classId: string): Promise<any[]> {
     where: eq(classSessions.classId, classId),
     with: {
       shiftTemplate: { columns: { id: true, name: true, startTime: true, endTime: true } },
+      teacherTimeAssignments: {
+        columns: { teacherId: true, startTime: true, endTime: true },
+      },
     },
     // sessionIndex is the canonical lesson order. Dates are editable and may
     // intentionally be moved before/after neighboring sessions.
