@@ -537,6 +537,13 @@ export async function getInvoices(filters: {
   const conditions: ReturnType<typeof eq>[] = [];
   const invoiceCreatedConditions: any[] = [];
   const scheduleCreatedConditions: any[] = [];
+  const invoicePaidAtConditions: any[] = [];
+  const schedulePaidAtConditions: any[] = [];
+  const noPaymentSchedule = sql`NOT EXISTS (
+    SELECT 1
+    FROM invoice_payment_schedule AS date_filter_parent_schedule
+    WHERE date_filter_parent_schedule.invoice_id = ${invoices.id}
+  )`;
 
   if (f.type)          conditions.push(eq(invoices.type, f.type));
   if (f.types?.length) conditions.push(inArray(invoices.type, f.types) as any);
@@ -556,8 +563,8 @@ export async function getInvoices(filters: {
   }
 
   if (f.paidAtFrom || f.paidAtTo) {
-    const invoicePaidAtConditions: any[] = [isNotNull(invoices.paidAt)];
-    const schedulePaidAtConditions: any[] = [isNotNull(invoicePaymentSchedule.paidAt)];
+    invoicePaidAtConditions.push(isNotNull(invoices.paidAt));
+    schedulePaidAtConditions.push(isNotNull(invoicePaymentSchedule.paidAt));
     if (f.paidAtFrom) {
       const from = getVietnamDateBoundary(f.paidAtFrom);
       if (from) {
@@ -577,7 +584,7 @@ export async function getInvoices(filters: {
       .from(invoicePaymentSchedule)
       .where(and(...schedulePaidAtConditions));
     conditions.push(or(
-      and(...invoicePaidAtConditions),
+      and(noPaymentSchedule, ...invoicePaidAtConditions),
       inArray(invoices.id, schedulePaidAtInvoiceIds),
     ) as any);
   } else if (f.dueDateFrom || f.dueDateTo) {
@@ -635,11 +642,6 @@ export async function getInvoices(filters: {
       }
     }
     if (invoiceCreatedConditions.length > 0) {
-      const noPaymentSchedule = sql`NOT EXISTS (
-        SELECT 1
-        FROM invoice_payment_schedule AS date_filter_parent_schedule
-        WHERE date_filter_parent_schedule.invoice_id = ${invoices.id}
-      )`;
       const scheduleCreatedInvoiceIds = db
         .select({ invoiceId: invoicePaymentSchedule.invoiceId })
         .from(invoicePaymentSchedule)
@@ -766,56 +768,124 @@ export async function getInvoices(filters: {
     )
   )`;
 
-  // The list is rendered child-first: invoices with multiple schedules become
-  // one visible row per schedule. Keep counts in the same unit as the UI
-  // instead of counting only parent invoice rows.
+  // Each payment schedule is an independent visible invoice row. Keep counts,
+  // filters, and pagination in that same row unit instead of counting parents.
   const scheduleCountExpr = sql`(
     SELECT COUNT(*)
     FROM invoice_payment_schedule AS count_schedule
     WHERE count_schedule.invoice_id = ${invoices.id}
   )`;
   const scheduleRowDateCondition = (tableAlias: string) => {
-    const dateField = sql.raw(`${tableAlias}.created_at`);
     const rowConditions: any[] = [];
-    if (f.dateFrom) {
-      const from = getVietnamDateBoundary(f.dateFrom);
-      if (from) rowConditions.push(sql`${dateField} >= ${from.sqlTimestamp}::timestamp`);
-    }
-    if (f.dateTo) {
-      const toExclusive = getVietnamDateBoundary(f.dateTo, 1);
-      if (toExclusive) rowConditions.push(sql`${dateField} < ${toExclusive.sqlTimestamp}::timestamp`);
+    if (f.paidAtFrom || f.paidAtTo) {
+      const dateField = sql.raw(`${tableAlias}.paid_at`);
+      rowConditions.push(sql`${dateField} IS NOT NULL`);
+      if (f.paidAtFrom) {
+        const from = getVietnamDateBoundary(f.paidAtFrom);
+        if (from) rowConditions.push(sql`${dateField} >= ${from.sqlTimestamp}::timestamp`);
+      }
+      if (f.paidAtTo) {
+        const toExclusive = getVietnamDateBoundary(f.paidAtTo, 1);
+        if (toExclusive) rowConditions.push(sql`${dateField} < ${toExclusive.sqlTimestamp}::timestamp`);
+      }
+    } else {
+      const dateField = sql.raw(`${tableAlias}.created_at`);
+      if (f.dateFrom) {
+        const from = getVietnamDateBoundary(f.dateFrom);
+        if (from) rowConditions.push(sql`${dateField} >= ${from.sqlTimestamp}::timestamp`);
+      }
+      if (f.dateTo) {
+        const toExclusive = getVietnamDateBoundary(f.dateTo, 1);
+        if (toExclusive) rowConditions.push(sql`${dateField} < ${toExclusive.sqlTimestamp}::timestamp`);
+      }
     }
     return rowConditions.length > 0 ? and(...rowConditions) : sql`TRUE`;
   };
-  const invoiceRowDateCondition = invoiceCreatedConditions.length > 0
-    ? and(...invoiceCreatedConditions)
+  const scheduleRowFilterCondition = (tableAlias: string) => {
+    const column = (name: string) => sql.raw(`${tableAlias}.${name}`);
+    const rowConditions: any[] = [scheduleRowDateCondition(tableAlias)];
+    if (f.paymentMethods?.length) {
+      rowConditions.push(sql`
+        COALESCE(${column("payment_method")}, ${invoices.paymentMethod}, '') = ANY(${f.paymentMethods}::text[])
+      `);
+    }
+    if (f.payerNames?.length) {
+      rowConditions.push(sql`EXISTS (
+        SELECT 1
+        FROM staff AS schedule_row_payer
+        WHERE schedule_row_payer.user_id = ${column("paid_by")}
+          AND schedule_row_payer.full_name = ANY(${f.payerNames}::text[])
+      )`);
+    }
+    if (f.creatorNames?.length) {
+      rowConditions.push(sql`(
+        EXISTS (
+          SELECT 1
+          FROM staff AS schedule_row_creator
+          WHERE schedule_row_creator.user_id = ${column("created_by")}
+            AND schedule_row_creator.full_name = ANY(${f.creatorNames}::text[])
+        )
+        OR (
+          NOT EXISTS (
+            SELECT 1
+            FROM staff AS schedule_row_creator_fallback
+            WHERE schedule_row_creator_fallback.user_id = ${column("created_by")}
+              AND schedule_row_creator_fallback.full_name IS NOT NULL
+          )
+          AND ${creatorStaff.fullName} = ANY(${f.creatorNames}::text[])
+        )
+      )`);
+    }
+    if (f.search) {
+      const searchTerms = f.search.trim().split(/\s+/).filter(Boolean);
+      for (const term of searchTerms) {
+        const query = `%${term}%`;
+        rowConditions.push(sql`(
+          COALESCE(${students.fullName}, ${invoices.subjectName}, '') ILIKE ${query}
+          OR COALESCE(${column("code")}, ${invoices.code}, '') ILIKE ${query}
+          OR COALESCE(${column("settle_code")}, ${invoices.settleCode}, '') ILIKE ${query}
+          OR COALESCE(${invoices.category}, '') ILIKE ${query}
+          OR COALESCE(${invoices.description}, '') ILIKE ${query}
+          OR COALESCE(${invoices.note}, '') ILIKE ${query}
+          OR COALESCE(${invoices.paymentNote}, '') ILIKE ${query}
+          OR COALESCE(${column("label")}, '') ILIKE ${query}
+        )`);
+      }
+    }
+    return and(...rowConditions);
+  };
+  const invoiceRowDateConditions = invoicePaidAtConditions.length > 0
+    ? invoicePaidAtConditions
+    : invoiceCreatedConditions;
+  const invoiceRowDateCondition = invoiceRowDateConditions.length > 0
+    ? and(...invoiceRowDateConditions)
     : sql`TRUE`;
   const matchingScheduleCountExpr = sql`(
     SELECT COUNT(*)
     FROM invoice_payment_schedule AS matching_schedule
     WHERE matching_schedule.invoice_id = ${invoices.id}
-      AND ${scheduleRowDateCondition("matching_schedule")}
+      AND ${scheduleRowFilterCondition("matching_schedule")}
   )`;
   const paidScheduleCountExpr = sql`(
     SELECT COUNT(*)
     FROM invoice_payment_schedule AS paid_count_schedule
     WHERE paid_count_schedule.invoice_id = ${invoices.id}
       AND paid_count_schedule.status IN ('paid', 'confirmed')
-      AND ${scheduleRowDateCondition("paid_count_schedule")}
+      AND ${scheduleRowFilterCondition("paid_count_schedule")}
   )`;
   const paidOnlyScheduleCountExpr = sql`(
     SELECT COUNT(*)
     FROM invoice_payment_schedule AS paid_only_schedule
     WHERE paid_only_schedule.invoice_id = ${invoices.id}
       AND paid_only_schedule.status = 'paid'
-      AND ${scheduleRowDateCondition("paid_only_schedule")}
+      AND ${scheduleRowFilterCondition("paid_only_schedule")}
   )`;
   const confirmedScheduleCountExpr = sql`(
     SELECT COUNT(*)
     FROM invoice_payment_schedule AS confirmed_schedule
     WHERE confirmed_schedule.invoice_id = ${invoices.id}
       AND confirmed_schedule.status = 'confirmed'
-      AND ${scheduleRowDateCondition("confirmed_schedule")}
+      AND ${scheduleRowFilterCondition("confirmed_schedule")}
   )`;
   const visibleRowCountExpr = sql`
     CASE
@@ -845,7 +915,7 @@ export async function getInvoices(filters: {
         FROM invoice_payment_schedule AS unpaid_count_schedule
         WHERE unpaid_count_schedule.invoice_id = ${invoices.id}
           AND unpaid_count_schedule.status NOT IN ('paid', 'confirmed')
-          AND ${scheduleRowDateCondition("unpaid_count_schedule")}
+          AND ${scheduleRowFilterCondition("unpaid_count_schedule")}
       )
       WHEN ${invoices.status} IN ('unpaid', 'partial') AND ${invoiceRowDateCondition} THEN 1
       ELSE 0
@@ -863,7 +933,7 @@ export async function getInvoices(filters: {
         FROM invoice_payment_schedule AS unpaid_filter_schedule
         WHERE unpaid_filter_schedule.invoice_id = ${invoices.id}
           AND unpaid_filter_schedule.status NOT IN ('paid', 'confirmed')
-          AND ${scheduleRowDateCondition("unpaid_filter_schedule")}
+          AND ${scheduleRowFilterCondition("unpaid_filter_schedule")}
       )
     )
     OR (${scheduleCountExpr} = 0 AND ${invoices.status} IN ('unpaid', 'partial') AND ${invoiceRowDateCondition})
@@ -898,6 +968,9 @@ export async function getInvoices(filters: {
     case "paidAt":      orderBy = dirFn(invoices.paidAt); break;
     default:            orderBy = desc(invoices.createdAt); break;
   }
+  const rowOrderBy = !f.sortKey || f.sortKey === "createdAt"
+    ? dirFn(sql`COALESCE(${invoicePaymentSchedule.createdAt}, ${invoices.createdAt})`)
+    : orderBy;
 
   let tabCounts: Record<string, number> = { all: 0, unpaid: 0, partial: 0, paid: 0, confirmed: 0, debt: 0 };
   if (f.includeTabCounts) {
@@ -977,7 +1050,7 @@ export async function getInvoices(filters: {
         .leftJoin(classes,      eq(invoices.classId, classes.id))
         .where(tabWhere).orderBy(orderBy).limit(limit).offset(offset);
     } else {
-      const schedulePageConditions: any[] = [...scheduleCreatedConditions];
+      const schedulePageConditions: any[] = [scheduleRowFilterCondition("invoice_payment_schedule")];
       const invoicePageConditions: any[] = [invoiceRowDateCondition];
       if (f.tabFilter === "paid") {
         schedulePageConditions.push(eq(invoicePaymentSchedule.status, "paid"));
@@ -1012,7 +1085,7 @@ export async function getInvoices(filters: {
             and(isNull(invoicePaymentSchedule.id), invoicePageWhere),
           ),
         ))
-        .orderBy(orderBy, asc(invoicePaymentSchedule.sortOrder), asc(invoicePaymentSchedule.id))
+        .orderBy(rowOrderBy, asc(invoices.id), asc(invoicePaymentSchedule.sortOrder), asc(invoicePaymentSchedule.id))
         .limit(limit)
         .offset(offset);
       rowPage = pageEntries.map((entry) => ({

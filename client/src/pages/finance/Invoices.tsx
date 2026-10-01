@@ -1934,15 +1934,18 @@ export default function Invoices() {
 
     return true;
   });
-  const pageRowKeys = rowPage
-    ? new Set(rowPage.map(({ invoiceId, scheduleId }) => scheduleId ? `schedule:${scheduleId}` : `invoice:${invoiceId}`))
-    : null;
-  const displayInvoices = filterInvoiceRowsForDisplay(invoices).filter((invoice) => {
-    if (!pageRowKeys) return true;
-    return invoice.isScheduleRow
-      ? pageRowKeys.has(`schedule:${invoice.scheduleId}`)
-      : pageRowKeys.has(`invoice:${invoice.id}`);
-  });
+  const filteredDisplayInvoices = filterInvoiceRowsForDisplay(invoices);
+  const displayInvoicesByKey = new Map(filteredDisplayInvoices.map((invoice) => [
+    invoice.isScheduleRow ? `schedule:${invoice.scheduleId}` : `invoice:${invoice.id}`,
+    invoice,
+  ]));
+  const displayInvoices = rowPage
+    ? rowPage
+      .map(({ invoiceId, scheduleId }) => displayInvoicesByKey.get(
+        scheduleId ? `schedule:${scheduleId}` : `invoice:${invoiceId}`,
+      ))
+      .filter((invoice): invoice is InvoiceRow => !!invoice)
+    : filteredDisplayInvoices;
   const updateScheduleStatusMutation = useMutation({
     mutationFn: ({ scheduleId, status }: { scheduleId: string; status: string }) =>
       apiRequest("PATCH", `/api/finance/invoice-schedules/${scheduleId}/status`, { status }),

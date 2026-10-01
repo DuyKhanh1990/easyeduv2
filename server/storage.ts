@@ -344,7 +344,7 @@ export interface IStorage {
   getFinanceVoucherAudienceStudents(id: string): Promise<Array<{ id: string; fullName: string; code: string; phone: string | null }>>;
 
   // Finance - Invoices
-  getInvoices(filters?: { tabFilter?: string; type?: string; types?: string[]; locationId?: string; locationNames?: string[]; search?: string; dateFrom?: string; dateTo?: string; dueDateFrom?: string; dueDateTo?: string; salaryTableId?: string; categories?: string[]; classNames?: string[]; creatorNames?: string[]; payerNames?: string[]; commissionStaffNames?: string[]; paymentMethods?: string[]; allowedLocationIds?: string[] | null; isSuperAdmin?: boolean; sortKey?: string; sortDir?: "asc" | "desc"; page?: number; limit?: number; includeTabCounts?: boolean }): Promise<{ data: any[]; total: number; tabCounts: Record<string, number> }>;
+  getInvoices(filters?: { tabFilter?: string; type?: string; types?: string[]; locationId?: string; locationNames?: string[]; search?: string; dateFrom?: string; dateTo?: string; dueDateFrom?: string; dueDateTo?: string; paidAtFrom?: string; paidAtTo?: string; salaryTableId?: string; categories?: string[]; classNames?: string[]; creatorNames?: string[]; payerNames?: string[]; commissionStaffNames?: string[]; paymentMethods?: string[]; allowedLocationIds?: string[] | null; isSuperAdmin?: boolean; sortKey?: string; sortDir?: "asc" | "desc"; page?: number; limit?: number; includeTabCounts?: boolean }): Promise<{ data: any[]; total: number; parentTotal: number; tabCounts: Record<string, number>; rowPage?: { invoiceId: string; scheduleId: string | null }[] }>;
   getInvoicesSummary(filters?: {
     locationId?: string;
     locationNames?: string[];
