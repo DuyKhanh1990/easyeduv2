@@ -63,14 +63,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { 
   insertCourseSchema, 
   insertCourseFeePackageSchema, 
   insertCourseProgramSchema,
   insertCourseProgramContentSchema,
   type Course, 
+  type CourseWithLocations,
   type CourseFeePackage, 
   type Location,
   type CourseProgram,
@@ -152,7 +155,7 @@ export default function CoursesPrograms() {
   const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
   const [editingPackage, setEditingPackage] = useState<CourseFeePackage | null>(null);
   const [deletingPackage, setDeletingPackage] = useState<CourseFeePackage | null>(null);
-  const [editingCourse, setEditingCourse] = useState<Course | null>(null);
+  const [editingCourse, setEditingCourse] = useState<CourseWithLocations | null>(null);
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null);
   const [editingProgram, setEditingProgram] = useState<CourseProgram | null>(null);
   const [deletingProgram, setDeletingProgram] = useState<CourseProgram | null>(null);
@@ -214,7 +217,7 @@ export default function CoursesPrograms() {
     }
   });
 
-  const { data: courses = [], isLoading: isLoadingCourses } = useQuery<Course[]>({
+  const { data: courses = [], isLoading: isLoadingCourses } = useQuery<CourseWithLocations[]>({
     queryKey: ["/api/courses"],
   });
 
@@ -307,7 +310,17 @@ export default function CoursesPrograms() {
                   ) : (
                     <div className="space-y-1">
                       {courses.map((course) => {
-                        const courseLocation = locations.find(l => l.id === course.locationId);
+                        const courseLocationIds = course.locationIds?.length
+                          ? course.locationIds
+                          : (course.locationId ? [course.locationId] : []);
+                        const courseLocationNames = courseLocationIds
+                          .map(id => locations.find(location => location.id === id)?.name)
+                          .filter((name): name is string => !!name);
+                        const missingLocationCount = courseLocationIds.length - courseLocationNames.length;
+                        const courseLocationLabel = [
+                          ...courseLocationNames,
+                          ...(missingLocationCount > 0 ? [`${missingLocationCount} cơ sở khác`] : []),
+                        ].join(", ") || "Toàn hệ thống";
                         return (
                           <div
                             key={course.id}
@@ -336,7 +349,7 @@ export default function CoursesPrograms() {
                                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
                                   <span className="flex items-center gap-1">
                                     <Layers className="h-3 w-3" />
-                                    {courseLocation?.name || "N/A"}
+                                    {courseLocationLabel}
                                   </span>
                                 </div>
                               </div>
@@ -2706,46 +2719,61 @@ function ProgramContentDialog({ program, defaultSession, content, trigger }: {
   );
 }
 
-function CourseDialog({ locations, editCourse, open: openProp, onOpenChange }: { locations: Location[]; editCourse?: Course; open?: boolean; onOpenChange?: (open: boolean) => void }) {
+const courseDialogSchema = insertCourseSchema
+  .omit({ locationId: true })
+  .extend({ locationIds: z.array(z.string().uuid()).min(1, "Chọn ít nhất một cơ sở") });
+
+function CourseDialog({ locations, editCourse, open: openProp, onOpenChange }: { locations: Location[]; editCourse?: CourseWithLocations; open?: boolean; onOpenChange?: (open: boolean) => void }) {
   const isEdit = !!editCourse;
   const [internalOpen, setInternalOpen] = useState(false);
   const open = openProp !== undefined ? openProp : internalOpen;
   const setOpen = (v: boolean) => { onOpenChange ? onOpenChange(v) : setInternalOpen(v); };
   const { toast } = useToast();
   const form = useForm({
-    resolver: zodResolver(insertCourseSchema),
+    resolver: zodResolver(courseDialogSchema),
     defaultValues: {
       code: editCourse?.code ?? "",
       name: editCourse?.name ?? "",
-      locationId: editCourse?.locationId ?? "",
+      locationIds: editCourse?.locationIds?.length
+        ? editCourse.locationIds
+        : (editCourse?.locationId ? [editCourse.locationId] : []),
       note: editCourse?.note ?? ""
     }
   });
 
   useEffect(() => {
     if (open && editCourse) {
-      form.reset({ code: editCourse.code, name: editCourse.name, locationId: editCourse.locationId ?? "", note: editCourse.note ?? "" });
+      form.reset({
+        code: editCourse.code,
+        name: editCourse.name,
+        locationIds: editCourse.locationIds?.length
+          ? editCourse.locationIds
+          : (editCourse.locationId ? [editCourse.locationId] : []),
+        note: editCourse.note ?? "",
+      });
     } else if (open && !editCourse) {
-      form.reset({ code: "", name: "", locationId: "", note: "" });
+      form.reset({ code: "", name: "", locationIds: [], note: "" });
     }
   }, [open, editCourse]);
 
   const mutation = useMutation({
     mutationFn: async (data: any) => {
+      const { locationIds, ...courseFields } = data;
+      const payload = { ...courseFields, locationIds, locationId: locationIds[0] };
       if (isEdit && editCourse) {
-        const res = await apiRequest("PUT", `/api/courses/${editCourse.id}`, data);
+        const res = await apiRequest("PUT", `/api/courses/${editCourse.id}`, payload);
         return res.json();
       }
-      const res = await apiRequest("POST", "/api/courses", data);
+      const res = await apiRequest("POST", "/api/courses", payload);
       return res.json();
     },
     onSuccess: (updatedCourse) => {
       if (isEdit && updatedCourse?.id) {
-        queryClient.setQueryData<Course[]>(["/api/courses"], (old = []) =>
+        queryClient.setQueryData<CourseWithLocations[]>(["/api/courses"], (old = []) =>
           old.map(c => c.id === updatedCourse.id ? updatedCourse : c)
         );
       } else if (updatedCourse?.id) {
-        queryClient.setQueryData<Course[]>(["/api/courses"], (old = []) =>
+        queryClient.setQueryData<CourseWithLocations[]>(["/api/courses"], (old = []) =>
           [updatedCourse, ...(old || [])]
         );
       }
@@ -2809,22 +2837,20 @@ function CourseDialog({ locations, editCourse, open: openProp, onOpenChange }: {
             </div>
             <FormField
               control={form.control}
-              name="locationId"
+              name="locationIds"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Cơ sở</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Chọn cơ sở" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {locations.map(loc => (
-                        <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormLabel>Cơ sở áp dụng</FormLabel>
+                  <FormControl>
+                    <SearchableMultiSelect
+                      options={locations.map(location => ({ value: location.id, label: location.name }))}
+                      value={field.value ?? []}
+                      onChange={field.onChange}
+                      placeholder="Chọn một hoặc nhiều cơ sở"
+                      searchPlaceholder="Tìm cơ sở..."
+                      data-testid="course-locations-select"
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}

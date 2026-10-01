@@ -865,6 +865,15 @@ export const courses = pgTable("courses", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const courseLocations = pgTable("course_locations", {
+  courseId: uuid("course_id").notNull().references(() => courses.id, { onDelete: "cascade" }),
+  locationId: uuid("location_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.courseId, table.locationId] }),
+  locationIdx: index("course_locations_location_id_idx").on(table.locationId),
+}));
+
 // ==========================================
 // COURSE FEE PACKAGES TABLE
 // ==========================================
@@ -1052,6 +1061,7 @@ export const locationsRelations = relations(locations, ({ many }) => ({
   staff: many(staff),
   students: many(students),
   courses: many(courses),
+  courseLocations: many(courseLocations),
   classes: many(classes),
   availabilities: many(teacherAvailability, {
     relationName: "teacher_avail_loc",
@@ -1063,7 +1073,19 @@ export const coursesRelations = relations(courses, ({ one, many }) => ({
     fields: [courses.locationId],
     references: [locations.id],
   }),
+  courseLocations: many(courseLocations),
   feePackages: many(courseFeePackages),
+}));
+
+export const courseLocationsRelations = relations(courseLocations, ({ one }) => ({
+  course: one(courses, {
+    fields: [courseLocations.courseId],
+    references: [courses.id],
+  }),
+  location: one(locations, {
+    fields: [courseLocations.locationId],
+    references: [locations.id],
+  }),
 }));
 
 export const courseFeePackagesRelations = relations(courseFeePackages, ({ one }) => ({
@@ -1200,6 +1222,8 @@ export type Location = typeof locations.$inferSelect;
 export const insertCourseSchema = createInsertSchema(courses).omit({ id: true, createdAt: true, updatedAt: true });
 export type Course = typeof courses.$inferSelect;
 export type InsertCourse = z.infer<typeof insertCourseSchema>;
+export type CourseWithLocations = Course & { locationIds: string[] };
+export type CourseLocation = typeof courseLocations.$inferSelect;
 
 export const insertCourseFeePackageSchema = createInsertSchema(courseFeePackages, {
   fee: z.coerce.string(),

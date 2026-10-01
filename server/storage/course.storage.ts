@@ -1,6 +1,6 @@
 import {
-  db, eq, and, asc, sql, inArray,
-  courses, courseFeePackages, coursePrograms, courseProgramContents, users,
+  db, eq, and, asc, sql, inArray, isNull, or,
+  courses, courseLocations, courseFeePackages, coursePrograms, courseProgramContents, users,
   studentClasses, studentSessions, classSessions, classes,
   invoices, invoiceItems, invoicePaymentSchedule, invoiceSessionAllocations,
   financePromotions, tuitionPackageChangeRequests, tuitionPackageChangeOperations, tuitionPackageSessionAdjustments,
@@ -8,7 +8,7 @@ import {
 } from "./base";
 import { getNextLocationCode } from "./finance.storage";
 import type {
-  Course, InsertCourse,
+  Course, CourseWithLocations, InsertCourse,
   CourseFeePackage, InsertCourseFeePackage,
   CourseProgram, CourseProgramContent,
 } from "./base";
@@ -17,27 +17,86 @@ import type {
 // COURSES & FEE PACKAGES
 // ==========================================
 
-export async function getCourses(allowedLocationIds?: string[]): Promise<Course[]> {
-  if (!allowedLocationIds || allowedLocationIds.length === 0) {
-    return await db.select().from(courses).orderBy(sql`${courses.createdAt} desc`);
+export async function getCourses(allowedLocationIds?: string[]): Promise<CourseWithLocations[]> {
+  const scopedLocationIds = allowedLocationIds?.length ? [...new Set(allowedLocationIds)] : undefined;
+  let rows: Course[];
+
+  if (scopedLocationIds) {
+    const linkedCourses = await db
+      .select({ courseId: courseLocations.courseId })
+      .from(courseLocations)
+      .where(inArray(courseLocations.locationId, scopedLocationIds));
+    const scopes = [
+      isNull(courses.locationId),
+      inArray(courses.locationId, scopedLocationIds),
+    ];
+    const linkedCourseIds = [...new Set(linkedCourses.map(row => row.courseId))];
+    if (linkedCourseIds.length) scopes.push(inArray(courses.id, linkedCourseIds));
+    rows = await db.select().from(courses).where(or(...scopes)).orderBy(sql`${courses.createdAt} desc`);
+  } else {
+    rows = await db.select().from(courses).orderBy(sql`${courses.createdAt} desc`);
   }
-  return await db.select().from(courses)
-    .where(sql`(${courses.locationId} IS NULL OR ${courses.locationId} = ANY(ARRAY[${sql.raw(allowedLocationIds.map(id => `'${id}'`).join(','))}]::uuid[]))`)
-    .orderBy(sql`${courses.createdAt} desc`);
+
+  if (!rows.length) return [];
+  const locationRows = await db
+    .select({ courseId: courseLocations.courseId, locationId: courseLocations.locationId })
+    .from(courseLocations)
+    .where(inArray(courseLocations.courseId, rows.map(course => course.id)));
+  const locationIdsByCourse = new Map<string, string[]>();
+  for (const row of locationRows) {
+    const ids = locationIdsByCourse.get(row.courseId) ?? [];
+    ids.push(row.locationId);
+    locationIdsByCourse.set(row.courseId, ids);
+  }
+
+  return rows.map(course => ({
+    ...course,
+    locationIds: locationIdsByCourse.get(course.id) ?? (course.locationId ? [course.locationId] : []),
+  }));
 }
 
-export async function createCourse(course: InsertCourse): Promise<Course> {
-  const [newCourse] = await db.insert(courses).values(course).returning();
-  return newCourse;
+export async function createCourse(course: InsertCourse, requestedLocationIds?: string[]): Promise<CourseWithLocations> {
+  const locationIds = [...new Set(requestedLocationIds ?? (course.locationId ? [course.locationId] : []))];
+  const primaryLocationId = locationIds[0] ?? course.locationId ?? null;
+  return db.transaction(async (tx) => {
+    const [newCourse] = await tx.insert(courses).values({ ...course, locationId: primaryLocationId }).returning();
+    if (locationIds.length) {
+      await tx.insert(courseLocations).values(locationIds.map(locationId => ({ courseId: newCourse.id, locationId })));
+    }
+    return { ...newCourse, locationIds: locationIds.length ? locationIds : (newCourse.locationId ? [newCourse.locationId] : []) };
+  });
 }
 
-export async function updateCourse(id: string, data: Partial<InsertCourse>): Promise<Course> {
-  const [updated] = await db
-    .update(courses)
-    .set({ ...data, updatedAt: new Date() })
-    .where(eq(courses.id, id))
-    .returning();
-  return updated;
+export async function updateCourse(id: string, data: Partial<InsertCourse>, requestedLocationIds?: string[]): Promise<CourseWithLocations> {
+  const locationIds = requestedLocationIds === undefined ? undefined : [...new Set(requestedLocationIds)];
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(courses)
+      .set({
+        ...data,
+        ...(locationIds !== undefined ? { locationId: locationIds[0] ?? null } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(courses.id, id))
+      .returning();
+    if (!updated) return undefined as any;
+
+    if (locationIds !== undefined) {
+      await tx.delete(courseLocations).where(eq(courseLocations.courseId, id));
+      if (locationIds.length) {
+        await tx.insert(courseLocations).values(locationIds.map(locationId => ({ courseId: id, locationId })));
+      }
+    }
+    const storedLocations = await tx
+      .select({ locationId: courseLocations.locationId })
+      .from(courseLocations)
+      .where(eq(courseLocations.courseId, id));
+    const storedLocationIds = storedLocations.map(row => row.locationId);
+    return {
+      ...updated,
+      locationIds: storedLocationIds.length ? storedLocationIds : (updated.locationId ? [updated.locationId] : []),
+    };
+  });
 }
 
 export async function deleteCourse(id: string): Promise<void> {
@@ -49,7 +108,12 @@ export async function getCourseFeePackages(courseId: string): Promise<CourseFeeP
 }
 
 export async function getAllFeePackages(locationId?: string): Promise<any[]> {
-  const conditions = locationId ? [eq(courses.locationId, locationId)] : [];
+  const linkedCourses = locationId
+    ? await db.select({ courseId: courseLocations.courseId }).from(courseLocations).where(eq(courseLocations.locationId, locationId))
+    : [];
+  const courseConditions = locationId ? [eq(courses.locationId, locationId)] : [];
+  const linkedCourseIds = [...new Set(linkedCourses.map(row => row.courseId))];
+  if (linkedCourseIds.length) courseConditions.push(inArray(courses.id, linkedCourseIds));
   const rows = await db
     .select({
       id: courseFeePackages.id,
@@ -64,7 +128,7 @@ export async function getAllFeePackages(locationId?: string): Promise<any[]> {
     })
     .from(courseFeePackages)
     .leftJoin(courses, eq(courseFeePackages.courseId, courses.id))
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .where(courseConditions.length > 0 ? or(...courseConditions) : undefined)
     .orderBy(courseFeePackages.name);
   return rows;
 }

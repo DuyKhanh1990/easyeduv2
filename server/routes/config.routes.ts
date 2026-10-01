@@ -982,8 +982,12 @@ export function registerConfigRoutes(app: Express): void {
   app.post(api.courses.create.path, async (req, res) => {
     try {
       const { insertCourseSchema } = await import("@shared/schema");
-      const input = insertCourseSchema.parse(req.body);
-      const course = await storage.createCourse(input);
+      const inputSchema = insertCourseSchema.extend({
+        locationIds: z.array(z.string().uuid()).min(1).optional(),
+      });
+      const { locationIds, ...courseInput } = inputSchema.parse(req.body);
+      const selectedLocationIds = locationIds ?? (courseInput.locationId ? [courseInput.locationId] : []);
+      const course = await storage.createCourse(courseInput, selectedLocationIds);
       await recordCourseAudit(req, {
         scope: "courses",
         entityType: "course",
@@ -1040,10 +1044,14 @@ export function registerConfigRoutes(app: Express): void {
   app.put("/api/courses/:id", async (req, res) => {
     try {
       const { insertCourseSchema } = await import("@shared/schema");
-      const input = insertCourseSchema.partial().parse(req.body);
+      const inputSchema = insertCourseSchema.partial().extend({
+        locationIds: z.array(z.string().uuid()).min(1).optional(),
+      });
+      const { locationIds, ...courseInput } = inputSchema.parse(req.body);
       const [oldCourse] = await db.select().from(courses).where(eq(courses.id, req.params.id)).limit(1);
-      console.log("[PUT /api/courses] id=", req.params.id, "input=", input);
-      const updated = await storage.updateCourse(req.params.id, input);
+      const selectedLocationIds = locationIds ?? (courseInput.locationId ? [courseInput.locationId] : undefined);
+      console.log("[PUT /api/courses] id=", req.params.id, "input=", courseInput);
+      const updated = await storage.updateCourse(req.params.id, courseInput, selectedLocationIds);
       console.log("[PUT /api/courses] updated=", updated);
       if (!updated) {
         return res.status(404).json({ message: "Khoá học không tồn tại" });
@@ -1062,6 +1070,7 @@ export function registerConfigRoutes(app: Express): void {
       res.json(updated);
     } catch (err) {
       console.error("[PUT /api/courses] error:", err);
+      if (err instanceof z.ZodError) return res.status(400).json(err.errors);
       res.status(500).json({ message: (err as any).message });
     }
   });

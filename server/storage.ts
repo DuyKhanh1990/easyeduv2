@@ -12,7 +12,7 @@ import {
   type CrmSchool, type InsertCrmSchool,
   type CrmCustomField, type InsertCrmCustomField,
   type CrmRegistrationFormField,
-  type Course, type InsertCourse,
+  type Course, type CourseWithLocations, type InsertCourse,
   type CourseFeePackage, type InsertCourseFeePackage,
   type CourseProgram, type CourseProgramContent,
   type ShiftTemplate, type InsertShiftTemplate,
@@ -158,9 +158,9 @@ export interface IStorage {
   deleteCrmCustomField(id: string): Promise<void>;
 
   // Courses & Fee Packages
-  getCourses(allowedLocationIds?: string[]): Promise<Course[]>;
-  createCourse(course: InsertCourse): Promise<Course>;
-  updateCourse(id: string, data: Partial<InsertCourse>): Promise<Course>;
+  getCourses(allowedLocationIds?: string[]): Promise<CourseWithLocations[]>;
+  createCourse(course: InsertCourse, locationIds?: string[]): Promise<CourseWithLocations>;
+  updateCourse(id: string, data: Partial<InsertCourse>, locationIds?: string[]): Promise<CourseWithLocations>;
   deleteCourse(id: string): Promise<void>;
   getCourseFeePackages(courseId: string): Promise<CourseFeePackage[]>;
   getAllFeePackages(locationId?: string): Promise<any[]>;
@@ -1006,16 +1006,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Courses & Fee Packages
-  async getCourses(): Promise<Course[]> {
-    return courseStorage.getCourses();
+  async getCourses(allowedLocationIds?: string[]): Promise<CourseWithLocations[]> {
+    return courseStorage.getCourses(allowedLocationIds);
   }
 
-  async createCourse(course: InsertCourse): Promise<Course> {
-    return courseStorage.createCourse(course);
+  async createCourse(course: InsertCourse, locationIds?: string[]): Promise<CourseWithLocations> {
+    return courseStorage.createCourse(course, locationIds);
   }
 
-  async updateCourse(id: string, data: Partial<InsertCourse>): Promise<Course> {
-    return courseStorage.updateCourse(id, data);
+  async updateCourse(id: string, data: Partial<InsertCourse>, locationIds?: string[]): Promise<CourseWithLocations> {
+    return courseStorage.updateCourse(id, data, locationIds);
   }
 
   async deleteCourse(id: string): Promise<void> {
