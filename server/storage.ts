@@ -258,6 +258,7 @@ export interface IStorage {
     targetTransferCount?: number;
     targetPackageId?: string | null;
     targetSessionPrice?: number;
+    sourceSessionPriceOverride?: number;
     roundingMode?: "none" | "down" | "up";
     userId: string;
     createdByName?: string | null;
@@ -457,6 +458,7 @@ export class DatabaseStorage implements IStorage {
     targetTransferCount?: number;
     targetPackageId?: string | null;
     targetSessionPrice?: number;
+    sourceSessionPriceOverride?: number;
     roundingMode?: "none" | "down" | "up";
     userId: string;
     createdByName?: string | null;

@@ -56,6 +56,23 @@ describe("class transfer accounting", () => {
     })).toBe(725 + 800 + 950);
   });
 
+  it("uses a validated transfer-time discounted unit price when no invoice allocation or adjustment exists", () => {
+    expect(calculateClassTransferSourceCredit({
+      sessions: [
+        { id: "lesson-1", sessionPrice: 400, transferPriceOverride: 360 },
+        { id: "lesson-2", sessionPrice: 400, transferPriceOverride: 360 },
+      ],
+    })).toBe(720);
+  });
+
+  it("keeps invoice allocations and package adjustments ahead of transfer-time price overrides", () => {
+    expect(calculateClassTransferSourceCredit({
+      sessions: [{ id: "lesson", sessionPrice: 400, transferPriceOverride: 360 }],
+      allocations: [{ studentSessionId: "lesson", allocatedAmount: 330, invoiceStatus: "paid" }],
+      adjustments: [{ studentSessionId: "lesson", effectiveAmount: 310, appliedSequence: 1 }],
+    })).toBe(310);
+  });
+
   it("uses the source class package when a session has no saved package pricing", () => {
     expect(calculateClassTransferSourceCredit({
       sessions: [{ id: "fallback" }],

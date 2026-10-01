@@ -474,6 +474,7 @@ export async function transferStudentClass(data: {
   targetTransferCount?: number;
   targetPackageId?: string | null;
   targetSessionPrice?: number;
+  sourceSessionPriceOverride?: number;
   roundingMode?: "none" | "down" | "up";
   userId: string;
   refundToDepositAmount?: number;
@@ -537,6 +538,7 @@ export async function transferStudentClass(data: {
       sessionIndex: classSessions.sessionIndex,
       classSessionId: studentSessions.classSessionId,
       sessionPrice: studentSessions.sessionPrice,
+      sessionSource: studentSessions.sessionSource,
       packageType: studentSessions.packageType,
       packageFee: courseFeePackages.fee,
       packageFeeType: courseFeePackages.type,
@@ -671,13 +673,56 @@ export async function transferStudentClass(data: {
     ]);
 
     const sourceDefaultPackage = sourceDefaultPackages[0];
-  const sourceCreditAmount = calculateClassTransferSourceCredit({
-    sessions: oldSessions,
-    allocations: sourceAllocations,
-    adjustments: sourceAdjustments,
-    defaultPackage: sourceDefaultPackage,
-    roundingMode: data.roundingMode,
-  });
+    if (data.sourceSessionPriceOverride !== undefined) {
+      if (!Number.isFinite(data.sourceSessionPriceOverride) || data.sourceSessionPriceOverride < 0) {
+        throw new Error("Đơn giá học phí sau khuyến mãi không hợp lệ");
+      }
+      const hasActiveInvoiceAllocation = sourceAllocations.some(
+        (allocation) => String(allocation.invoiceStatus ?? "").toLowerCase() !== "cancelled",
+      );
+      const hasExistingAdjustment = sourceAdjustments.length > 0;
+      const isEligibleUninvoicedPerSessionSource = oldSessions.every((session) => {
+        const packageType = String(
+          session.packageFeeType
+            ?? session.packageType
+            ?? sourceDefaultPackage?.type
+            ?? "",
+        ).toLocaleLowerCase("vi");
+        const packageFee = Number(session.packageFee ?? sourceDefaultPackage?.fee);
+        const storedPrice = session.sessionPrice == null
+          ? packageFee
+          : Number(session.sessionPrice);
+        const sourceOverride = data.sourceSessionPriceOverride;
+        return packageType === "buổi"
+          && session.sessionSource !== "transfer"
+          && Number.isFinite(packageFee)
+          && Number.isFinite(storedPrice)
+          && Math.abs(storedPrice - packageFee) <= 0.01
+          && sourceOverride <= packageFee + 0.01;
+      });
+
+      if (
+        hasActiveInvoiceAllocation
+        || hasExistingAdjustment
+        || !isEligibleUninvoicedPerSessionSource
+      ) {
+        throw new Error("Chỉ có thể áp dụng giảm trừ chuyển lớp cho các buổi theo gói chưa có học phí áp dụng riêng");
+      }
+    }
+
+    const sourceCreditSessions = data.sourceSessionPriceOverride === undefined
+      ? oldSessions
+      : oldSessions.map((session) => ({
+        ...session,
+        transferPriceOverride: data.sourceSessionPriceOverride,
+      }));
+    const sourceCreditAmount = calculateClassTransferSourceCredit({
+      sessions: sourceCreditSessions,
+      allocations: sourceAllocations,
+      adjustments: sourceAdjustments,
+      defaultPackage: sourceDefaultPackage,
+      roundingMode: data.roundingMode,
+    });
 
     const resolvedTargetPackageId = data.targetPackageId ?? toClass?.feePackageId ?? null;
     let targetFeePackage: typeof courseFeePackages.$inferSelect | undefined;
@@ -762,10 +807,13 @@ export async function transferStudentClass(data: {
     // FIX: Cập nhật tất cả old sessions thành "transferred" trong 1 CASE WHEN SQL
     // (thay vì N UPDATE riêng lẻ). Note khác nhau từng row nên cần CASE WHEN.
     // UUIDs là safe. Class names được escape single-quote theo chuẩn PostgreSQL ('').
+    const sourceDiscountNote = data.sourceSessionPriceOverride === undefined
+      ? ""
+      : `\nĐơn giá sau khuyến mãi: ${data.sourceSessionPriceOverride.toLocaleString("vi-VN")} đ/buổi`;
     const oldSessionUpdates = oldSessions.map((oldSession) => {
       return {
         id: oldSession.id,
-        note: `Chuyển sang lớp ${toClass?.name || data.toClassId}\nĐã nhận ${targetRangeLabel}`,
+        note: `Chuyển sang lớp ${toClass?.name || data.toClassId}\nĐã nhận ${targetRangeLabel}${sourceDiscountNote}`,
       };
     });
 
@@ -774,8 +822,13 @@ export async function transferStudentClass(data: {
         .map(u => `WHEN '${u.id}' THEN '${u.note.replace(/'/g, "''")}'`)
         .join(" ");
       const inList = oldSessionUpdates.map(u => `'${u.id}'`).join(",");
+      const discountedSessionPriceUpdate = data.sourceSessionPriceOverride === undefined
+        ? ""
+        : `, session_price = CASE id ${oldSessionUpdates.map(
+          (session) => `WHEN '${session.id}' THEN '${data.sourceSessionPriceOverride!.toFixed(2)}'`,
+        ).join(" ")} ELSE session_price END`;
       await tx.execute(sql.raw(
-        `UPDATE student_sessions SET status = 'transferred', note = CASE id ${caseWhen} END, updated_at = NOW() WHERE id IN (${inList})`
+        `UPDATE student_sessions SET status = 'transferred', note = CASE id ${caseWhen} END${discountedSessionPriceUpdate}, updated_at = NOW() WHERE id IN (${inList})`
       ));
     }
 

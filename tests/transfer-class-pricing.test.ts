@@ -1,17 +1,24 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateFirstSessionPriceAfterDiscount,
-  calculatePerSessionTransferBaseTotal,
+  calculatePerSessionTransferTotal,
   hasExistingSessionTuition,
 } from "../client/src/components/education/transferClassPricing";
 
 describe("class transfer per-session tuition fallback", () => {
   it("uses the transfer count and per-session fee instead of the package template count", () => {
-    expect(calculatePerSessionTransferBaseTotal(400_000, 7)).toBe(2_800_000);
+    expect(calculatePerSessionTransferTotal(400_000, 7)).toBe(2_800_000);
   });
 
   it("subtracts the chosen discount before dividing by actual registered sessions", () => {
-    const totalAfterDiscount = calculatePerSessionTransferBaseTotal(400_000, 7) - 100_000;
+    const totalAfterDiscount = calculatePerSessionTransferTotal(400_000, 7) - 280_000;
+    const discountedUnitPrice = calculateFirstSessionPriceAfterDiscount(totalAfterDiscount, 7);
+    expect(discountedUnitPrice).toBe(360_000);
+    expect(calculatePerSessionTransferTotal(discountedUnitPrice, 7)).toBe(2_520_000);
+  });
+
+  it("uses actual registered session count, not only transferred count, as the unit-price divisor", () => {
+    const totalAfterDiscount = calculatePerSessionTransferTotal(400_000, 7) - 100_000;
     expect(calculateFirstSessionPriceAfterDiscount(totalAfterDiscount, 7)).toBe(385_714.29);
   });
 

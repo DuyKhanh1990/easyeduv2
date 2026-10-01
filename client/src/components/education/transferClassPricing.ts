@@ -30,7 +30,7 @@ export function hasExistingSessionTuition(
   });
 }
 
-export function calculatePerSessionTransferBaseTotal(
+export function calculatePerSessionTransferTotal(
   perSessionFee: number,
   transferCount: number,
 ): number {

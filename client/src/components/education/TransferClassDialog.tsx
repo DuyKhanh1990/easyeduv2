@@ -61,7 +61,7 @@ import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { FinancePromotionDialog } from "@/pages/finance/components/FinancePromotionDialog";
 import {
   calculateFirstSessionPriceAfterDiscount,
-  calculatePerSessionTransferBaseTotal,
+  calculatePerSessionTransferTotal,
   hasExistingSessionTuition,
 } from "./transferClassPricing";
 
@@ -640,7 +640,7 @@ export function TransferClassDialog({
     currentFeePackage?.type === "buổi"
     && !hasExistingSessionTuition(activeCurrentSessions, currentFeePackage?.fee);
   const currentBaseTotal = usePerSessionPackageFallback
-    ? calculatePerSessionTransferBaseTotal(currentBaseSessionPrice, transferCount)
+    ? calculatePerSessionTransferTotal(currentBaseSessionPrice, transferCount)
     : getPackageBaseTotal(
       currentFeePackage,
       currentBaseSessionPrice * currentSessionCount,
@@ -691,6 +691,8 @@ export function TransferClassDialog({
       ? calculateFirstSessionPriceAfterDiscount(currentNetTotal, currentSessionCount)
       : getEffectiveSourceSessionPrice(currentSession)
     : fallbackCurrentSessionPrice;
+  const applyDiscountedPriceToTransfer =
+    usePerSessionPackageFallback && currentDiscountAmount > 0;
   const selectedSourceSessions = activeCurrentSessions
     .filter((session) => Number(session.classSession?.sessionIndex ?? session.sessionIndex ?? 0) >= Number(fromSessionIndex))
     .sort((left, right) =>
@@ -698,10 +700,12 @@ export function TransferClassDialog({
       - Number(right.classSession?.sessionIndex ?? right.sessionIndex ?? 0),
     )
     .slice(0, transferCount);
-  const exactCurrentTotal = selectedSourceSessions.reduce(
-    (total, session) => total + getEffectiveSourceSessionPrice(session),
-    0,
-  );
+  const exactCurrentTotal = applyDiscountedPriceToTransfer
+    ? calculatePerSessionTransferTotal(currentSessionPrice, selectedSourceSessions.length)
+    : selectedSourceSessions.reduce(
+      (total, session) => total + getEffectiveSourceSessionPrice(session),
+      0,
+    );
   const currentTotal = roundingMode === "down"
     ? Math.floor(exactCurrentTotal)
     : roundingMode === "up"
@@ -829,6 +833,9 @@ export function TransferClassDialog({
         targetPackageId: selectedTargetPackage?.id,
         targetSessionPrice: selectedTargetPackage
           ? Number(targetSessionPrice.toFixed(2))
+          : undefined,
+        sourceSessionPriceOverride: applyDiscountedPriceToTransfer
+          ? Number(currentSessionPrice.toFixed(2))
           : undefined,
         roundingMode,
         refundToDepositAmount: shouldRefundToDeposit ? refundAmount : undefined,

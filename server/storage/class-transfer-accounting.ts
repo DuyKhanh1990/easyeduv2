@@ -15,6 +15,7 @@ export type ClassTransferSourceSession = {
   packageFeeType?: string | null;
   packageSessions?: NumericValue;
   packageTotalAmount?: NumericValue;
+  transferPriceOverride?: NumericValue;
 };
 
 export type ClassTransferInvoiceAllocation = {
@@ -92,6 +93,9 @@ export function calculateClassTransferSourceCredit(input: {
     }
     if (allocationBySession.has(session.id)) {
       return total + (allocationBySession.get(session.id) ?? 0);
+    }
+    if (session.transferPriceOverride != null) {
+      return total + toFiniteNumber(session.transferPriceOverride);
     }
     if (session.sessionPrice != null) {
       return total + toFiniteNumber(session.sessionPrice);
