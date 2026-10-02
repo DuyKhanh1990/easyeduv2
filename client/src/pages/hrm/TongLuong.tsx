@@ -91,6 +91,7 @@ interface SalarySheet {
 
 interface EmployeeRow {
   id: string;
+  staffId: string;
   locationId: string;
   stt: number;
   maNV: string;
@@ -118,6 +119,7 @@ interface EmployeeRow {
 function mapEmployee(e: any, idx: number): EmployeeRow {
   return {
     id: e.id,
+    staffId: e.staffId ?? "",
     locationId: e.locationId ?? "",
     stt: idx + 1,
     maNV: e.staffCode ?? "",
@@ -401,7 +403,31 @@ function SalarySheetDetailDialog({ open, onOpenChange, sheet }: DetailProps) {
 
   if (!sheet) return null;
 
-  const rows: EmployeeRow[] = rawEmployees.map(mapEmployee).filter(r =>
+  const groupedEmployees = new Map<string, EmployeeRow[]>();
+  for (const row of rawEmployees.map(mapEmployee)) {
+    const groupKey = row.staffId || `row:${row.id}`;
+    const group = groupedEmployees.get(groupKey) ?? [];
+    group.push(row);
+    groupedEmployees.set(groupKey, group);
+  }
+
+  const rows: EmployeeRow[] = Array.from(groupedEmployees.values())
+    .sort((left, right) => {
+      const a = left[0];
+      const b = right[0];
+      return a.hoTen.localeCompare(b.hoTen, "vi", { sensitivity: "base" }) ||
+        a.maNV.localeCompare(b.maNV, "vi", { sensitivity: "base", numeric: true }) ||
+        a.staffId.localeCompare(b.staffId);
+    })
+    .flatMap(group =>
+      [...group].sort((a, b) =>
+        a.coSo.localeCompare(b.coSo, "vi", { sensitivity: "base" }) ||
+        a.locationId.localeCompare(b.locationId) ||
+        a.id.localeCompare(b.id)
+      )
+    )
+    .map((row, index) => ({ ...row, stt: index + 1 }))
+    .filter(r =>
     r.hoTen.toLowerCase().includes(search.toLowerCase()) ||
     r.maNV.toLowerCase().includes(search.toLowerCase())
   );
