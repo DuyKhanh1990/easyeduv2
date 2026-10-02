@@ -788,12 +788,13 @@ export function ShiftManagement() {
   };
 
   // Get shift template IDs assigned to a staff member on a particular date
-  const getShiftIdsForStaffOnDate = (s: any, date: Date): string[] => {
+  const getShiftIdsForStaffOnDate = (s: any, date: Date, locationId: string): string[] => {
     const ymd = format(date, "yyyy-MM-dd");
     const dowKey = String(date.getDay());
     const ids: string[] = [];
     if (!Array.isArray(shiftAssignments)) return ids;
     for (const a of shiftAssignments as any[]) {
+      if (a.locationId !== locationId) continue;
       if (!staffMatchesAssignment(s, a)) continue;
       if (a.effectiveFrom && ymd < format(new Date(a.effectiveFrom), "yyyy-MM-dd")) continue;
       if (a.effectiveTo && ymd > format(new Date(a.effectiveTo), "yyyy-MM-dd")) continue;
@@ -821,18 +822,26 @@ export function ShiftManagement() {
     return (s.assignments || []).some((sa: any) => sa.locationId === boardLocationId);
   });
 
-  // Build the board rows: only staff who have at least one shift assigned in the month
-  const boardRowsAll = boardStaffAll
-    .map((s: any) => {
-      const perDay = boardDays.map((d) => getShiftIdsForStaffOnDate(s, d.date));
+  // Build one board row per staff/facility pair that has an assigned shift in the month.
+  const boardRowsAll = boardStaffAll.flatMap((s: any) => {
+    const locationIds = [...new Set(
+      (s.assignments || [])
+        .map((assignment: any) => assignment.locationId)
+        .filter((locationId: string) => locationId && (boardLocationId === "all" || locationId === boardLocationId))
+    )];
+
+    return locationIds.flatMap((locationId: string) => {
+      const perDay = boardDays.map((d) => getShiftIdsForStaffOnDate(s, d.date, locationId));
       const allIds = perDay.flat();
+      if (allIds.length === 0) return [];
+
       const total = allIds.reduce((sum, id) => {
         const tpl = (allShiftTemplates as any[]).find((t: any) => t.id === id);
         return sum + getShiftHours(tpl);
       }, 0);
-      return { staff: s, perDay, total, hasAny: allIds.length > 0 };
-    })
-    .filter((r) => r.hasAny);
+      return [{ staff: s, locationId, perDay, total }];
+    });
+  });
 
   // Apply permission filter to board rows (canView = own row only)
   const boardRowsFiltered = useMemo(() => {
@@ -1233,6 +1242,9 @@ export function ShiftManagement() {
                         <TableHead className="sticky left-0 bg-background min-w-[180px] z-10">
                           Nhân viên
                         </TableHead>
+                        <TableHead className="min-w-[140px]">
+                          Cơ sở
+                        </TableHead>
                         {boardDays.map((d) => (
                           <TableHead
                             key={d.day}
@@ -1253,19 +1265,24 @@ export function ShiftManagement() {
                     <TableBody>
                       {boardRows.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={boardDays.length + 2} className="text-center py-12 text-muted-foreground">
+                          <TableCell colSpan={boardDays.length + 3} className="text-center py-12 text-muted-foreground">
                             Chưa có nhân viên nào được phân ca trong tháng này.
                           </TableCell>
                         </TableRow>
                       ) : (
                         boardRows.map((r) => (
-                          <TableRow key={r.staff.id} data-testid={`row-board-${r.staff.id}`}>
+                          <TableRow
+                            key={`${r.staff.id}-${r.locationId}`}
+                            data-testid={`row-board-${r.staff.id}`}
+                            data-location-id={r.locationId}
+                          >
                             <TableCell className="sticky left-0 bg-background font-medium z-10">
                               <div className="text-sm">{r.staff.fullName || r.staff.code}</div>
                               {r.staff.code && (
                                 <div className="text-xs text-muted-foreground">{r.staff.code}</div>
                               )}
                             </TableCell>
+                            <TableCell>{getLocationName(r.locationId)}</TableCell>
                             {r.perDay.map((ids, idx) => (
                               <TableCell
                                 key={idx}
