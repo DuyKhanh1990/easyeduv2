@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { getAuthHeaders } from "@/lib/queryClient";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { getAssignedTeacherTimeRange, type TeacherTimeInterval } from "@shared/teacher-time-assignments";
+import { isScheduleViewOnly } from "@shared/schedule-access";
 import ExcelJS from "exceljs";
 
 type ViewMode = "list-day" | "list-week" | "week" | "month" | "room" | "teacher";
@@ -138,12 +139,10 @@ export function Schedule() {
 
   const schedulePermission = myPermissions?.permissions?.["/schedule"];
   const canEditSchedule = !!myPermissions?.isSuperAdmin || !!schedulePermission?.canEdit;
-  const hasScheduleWriteAccess = !!myPermissions?.isSuperAdmin || !!(
-    schedulePermission?.canCreate ||
-    schedulePermission?.canEdit ||
-    schedulePermission?.canDelete
+  const scheduleViewOnly = isScheduleViewOnly(
+    !!myPermissions?.isSuperAdmin,
+    schedulePermission,
   );
-  const scheduleViewOnly = !hasScheduleWriteAccess;
 
   const { from, to } = useMemo(() => {
     if (viewMode === "month") {

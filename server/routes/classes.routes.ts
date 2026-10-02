@@ -21,6 +21,7 @@ import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 import { getNextLocationCode } from "../storage/finance.storage";
 import { recordFreeClassWalletTransition } from "../storage/free-class-wallet.storage";
 import { buildTeacherTimeAssignments, getShiftScheduleKey } from "@shared/teacher-time-assignments";
+import { isScheduleEntryVisible } from "@shared/schedule-access";
 
 async function resolveStaffFullName(userId: string | undefined | null): Promise<string | null> {
   if (!userId) return null;
@@ -4757,14 +4758,14 @@ export function registerClassesRoutes(app: Express): void {
 
       const enriched = sessions
         .filter(s => {
-          if (
-            scheduleVisibleClassIds &&
-            !scheduleVisibleClassIds.has(s.classId) &&
-            !(s.teacherIds ?? []).includes(req.staffId ?? "") &&
-            !(teacherTimeAssignmentsBySession.get(s.id) ?? []).some(
-              (assignment) => assignment.teacherId === req.staffId,
-            )
-          ) {
+          if (!isScheduleEntryVisible({
+            visibleClassIds: scheduleVisibleClassIds,
+            staffId: req.staffId,
+            classId: s.classId,
+            teacherIds: s.teacherIds,
+            sessionTeacherIds: (teacherTimeAssignmentsBySession.get(s.id) ?? [])
+              .map((assignment) => assignment.teacherId),
+          })) {
             return false;
           }
           if (teacherId) {
@@ -5166,9 +5167,12 @@ export function registerClassesRoutes(app: Express): void {
 
       const freeSessions = Array.from(freeSessionMap.values())
         .filter(s =>
-          (!scheduleVisibleClassIds ||
-            scheduleVisibleClassIds.has(s.classId) ||
-            s.teacherIds.includes(req.staffId ?? "")) &&
+          isScheduleEntryVisible({
+            visibleClassIds: scheduleVisibleClassIds,
+            staffId: req.staffId,
+            classId: s.classId,
+            teacherIds: s.teacherIds,
+          }) &&
           (!teacherId || s.teacherIds.includes(teacherId))
         )
         .map(s => ({
@@ -5205,9 +5209,11 @@ export function registerClassesRoutes(app: Express): void {
       const testRows = testResult.rows as any[];
 
       const testSessions = testRows
-        .filter((ts) =>
-          !scheduleVisibleClassIds || (ts.teacher_ids || []).includes(req.staffId),
-        )
+        .filter((ts) => isScheduleEntryVisible({
+          visibleClassIds: scheduleVisibleClassIds,
+          staffId: req.staffId,
+          teacherIds: ts.teacher_ids,
+        }))
         .map((ts) => {
         const weekday = new Date(ts.test_date + "T00:00:00").getDay();
         return {
