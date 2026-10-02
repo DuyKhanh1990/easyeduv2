@@ -292,15 +292,15 @@ export async function getStaff(
 
     const allDeptIds = Array.from(new Set(minimalAssignments.map(a => a.departmentId).filter(Boolean) as string[]));
     const deptNameMap = new Map<string, string>();
-    if (allDeptIds.length > 0) {
-    const deptRows = await db.select({
-      id: departments.id,
-      name: departments.name,
-      isSystem: departments.isSystem,
-    }).from(departments).where(inArray(departments.id, allDeptIds));
-      deptRows.forEach(d => deptNameMap.set(d.id, d.name));
     const deptSystemMap = new Map<string, boolean>();
-    deptRows.forEach(d => deptSystemMap.set(d.id, d.isSystem));
+    if (allDeptIds.length > 0) {
+      const deptRows = await db.select({
+        id: departments.id,
+        name: departments.name,
+        isSystem: departments.isSystem,
+      }).from(departments).where(inArray(departments.id, allDeptIds));
+      deptRows.forEach(d => deptNameMap.set(d.id, d.name));
+      deptRows.forEach(d => deptSystemMap.set(d.id, d.isSystem));
     }
 
     return dedupedStaff.map(s => {
