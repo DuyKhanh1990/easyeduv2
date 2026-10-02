@@ -76,8 +76,8 @@ const shiftAssignmentSchema = z.object({
   targetType: z.enum(["department", "role", "staff"]),
   targetId: z.string().min(1, "Vui lòng chọn đối tượng"),
   byWeekday: z.boolean().default(true),
-  weekdayScheduleByLocation: z.record(z.record(z.array(z.string()))).optional(),
-  shiftTemplateIdsByLocation: z.record(z.string()).optional(),
+  weekdayScheduleKeysByWeekday: z.record(z.array(z.string())).optional(),
+  shiftTemplateKey: z.string().optional(),
   effectiveFrom: z.string().optional(),
   effectiveTo: z.string().optional(),
 });
@@ -97,6 +97,11 @@ const shiftConfigSchema = z.object({
 });
 
 type TabKey = "register" | "board" | "assign" | "config";
+type SharedShiftOption = {
+  value: string;
+  label: string;
+  templateIdsByLocation: Record<string, string>;
+};
 
 function getTabFromUrl(): TabKey {
   if (typeof window === "undefined") return "register";
@@ -431,8 +436,8 @@ export function ShiftManagement() {
       targetType: "department",
       targetId: "",
       byWeekday: true,
-      weekdayScheduleByLocation: {},
-      shiftTemplateIdsByLocation: {},
+      weekdayScheduleKeysByWeekday: emptyWeekdaySchedule(),
+      shiftTemplateKey: "",
       effectiveFrom: format(new Date(), "yyyy-MM-dd"),
       effectiveTo: "",
     },
@@ -441,8 +446,8 @@ export function ShiftManagement() {
   const assignLocationIds = assignForm.watch("locationIds") || [];
   const assignTargetType = assignForm.watch("targetType");
   const assignByWeekday = assignForm.watch("byWeekday");
-  const assignWeekdayScheduleByLocation = assignForm.watch("weekdayScheduleByLocation") || {};
-  const assignShiftTemplateIdsByLocation = assignForm.watch("shiftTemplateIdsByLocation") || {};
+  const assignWeekdayScheduleKeysByWeekday = assignForm.watch("weekdayScheduleKeysByWeekday") || emptyWeekdaySchedule();
+  const assignShiftTemplateKey = assignForm.watch("shiftTemplateKey") || "";
 
   const allRoles = departments.flatMap((d: any) =>
     (d.roles || []).map((r: any) => ({ ...r, departmentName: d.name }))
@@ -462,13 +467,51 @@ export function ShiftManagement() {
     return filtered.map((s: any) => ({ value: s.id, label: s.fullName }));
   })();
 
-  const getShiftOptionsForLocation = (locationId: string) =>
-    (Array.isArray(allShiftTemplates) ? allShiftTemplates : [])
-      .filter((s: any) => s.locationId === locationId && s.status === "active")
-      .map((s: any) => ({
-        value: s.id,
-        label: s.code ? `${s.code} - ${s.name}` : s.name,
-      }));
+  const getShiftMatchKey = (shift: any) => JSON.stringify([
+    String(shift.code ?? "").trim(),
+    String(shift.name ?? "").trim(),
+    String(shift.startTime ?? "").trim(),
+    String(shift.endTime ?? "").trim(),
+  ]);
+
+  const getShiftMatchKeyById = (shiftId: string | null | undefined) => {
+    if (!shiftId || !Array.isArray(allShiftTemplates)) return "";
+    const shift = allShiftTemplates.find((item: any) => item.id === shiftId);
+    return shift ? getShiftMatchKey(shift) : "";
+  };
+
+  const getSharedShiftOptionsForLocations = (locationIds: string[]): SharedShiftOption[] => {
+    if (locationIds.length === 0 || !Array.isArray(allShiftTemplates)) return [];
+
+    const shiftsByLocation = new Map<string, Map<string, any>>();
+    for (const locationId of locationIds) shiftsByLocation.set(locationId, new Map());
+
+    for (const shift of allShiftTemplates) {
+      if (shift.status !== "active" || !shiftsByLocation.has(shift.locationId)) continue;
+      const locationShifts = shiftsByLocation.get(shift.locationId)!;
+      const matchKey = getShiftMatchKey(shift);
+      if (!locationShifts.has(matchKey)) locationShifts.set(matchKey, shift);
+    }
+
+    const firstLocationShifts = shiftsByLocation.get(locationIds[0]);
+    if (!firstLocationShifts) return [];
+
+    return Array.from(firstLocationShifts.entries()).flatMap(([matchKey, shift]) => {
+      const matchedShifts = locationIds.map((locationId) => shiftsByLocation.get(locationId)?.get(matchKey));
+      if (!matchedShifts.every(Boolean)) return [];
+      const templateIdsByLocation: Record<string, string> = {};
+      for (let index = 0; index < locationIds.length; index++) {
+        const matchedShift = matchedShifts[index];
+        if (!matchedShift) return [];
+        templateIdsByLocation[locationIds[index]] = matchedShift.id;
+      }
+      return [{
+        value: matchKey,
+        label: shift.code ? `${shift.code} - ${shift.name}` : shift.name,
+        templateIdsByLocation,
+      }];
+    });
+  };
 
   const normalizeWeekdaySchedule = (schedule: any): Record<string, string[]> => {
     if (!schedule) return emptyWeekdaySchedule();
@@ -482,8 +525,35 @@ export function ShiftManagement() {
     return { ...emptyWeekdaySchedule(), ...schedule };
   };
 
+  const normalizeScheduleToShiftKeys = (schedule: any): Record<string, string[]> => {
+    const normalized = normalizeWeekdaySchedule(schedule);
+    return Object.fromEntries(
+      Object.entries(normalized).map(([weekday, shiftIds]) => [
+        weekday,
+        shiftIds.map((shiftId) => getShiftMatchKeyById(shiftId)).filter(Boolean),
+      ])
+    );
+  };
+
+  const assignSharedShiftOptions = getSharedShiftOptionsForLocations(assignLocationIds);
+
   const setAssignmentLocations = (locationIds: string[]) => {
     assignForm.setValue("locationIds", locationIds, { shouldDirty: true, shouldValidate: true });
+    const validShiftKeys = new Set(
+      getSharedShiftOptionsForLocations(locationIds).map((shift) => shift.value)
+    );
+    const currentWeekdaySchedule = assignForm.getValues("weekdayScheduleKeysByWeekday") || emptyWeekdaySchedule();
+    assignForm.setValue("weekdayScheduleKeysByWeekday", Object.fromEntries(
+      Object.entries({ ...emptyWeekdaySchedule(), ...currentWeekdaySchedule }).map(([weekday, shiftKeys]) => [
+        weekday,
+        shiftKeys.filter((shiftKey) => validShiftKeys.has(shiftKey)),
+      ])
+    ), { shouldDirty: true, shouldValidate: true });
+    const currentShiftKey = assignForm.getValues("shiftTemplateKey");
+    if (currentShiftKey && !validShiftKeys.has(currentShiftKey)) {
+      assignForm.setValue("shiftTemplateKey", "", { shouldDirty: true, shouldValidate: true });
+    }
+
     const currentTargetId = assignForm.getValues("targetId");
     const selectedStaff = staff.find((person: any) => person.id === currentTargetId);
     if (
@@ -497,15 +567,12 @@ export function ShiftManagement() {
     }
   };
 
-  const updateWeekdaySchedule = (locationId: string, weekday: string, shiftIds: string[]) => {
-    const current = assignForm.getValues("weekdayScheduleByLocation") || {};
-    assignForm.setValue("weekdayScheduleByLocation", {
+  const updateWeekdaySchedule = (weekday: string, shiftKeys: string[]) => {
+    const current = assignForm.getValues("weekdayScheduleKeysByWeekday") || {};
+    assignForm.setValue("weekdayScheduleKeysByWeekday", {
+      ...emptyWeekdaySchedule(),
       ...current,
-      [locationId]: {
-        ...emptyWeekdaySchedule(),
-        ...(current[locationId] || {}),
-        [weekday]: shiftIds,
-      },
+      [weekday]: shiftKeys,
     }, { shouldDirty: true, shouldValidate: true });
   };
 
@@ -518,8 +585,8 @@ export function ShiftManagement() {
       targetType: "department",
       targetId: "",
       byWeekday: true,
-      weekdayScheduleByLocation: {},
-      shiftTemplateIdsByLocation: {},
+      weekdayScheduleKeysByWeekday: emptyWeekdaySchedule(),
+      shiftTemplateKey: "",
       effectiveFrom: format(new Date(), "yyyy-MM-dd"),
       effectiveTo: "",
     });
@@ -535,12 +602,8 @@ export function ShiftManagement() {
       targetType: (a.targetType as any) ?? "department",
       targetId: a.targetId ?? "",
       byWeekday: a.byWeekday ?? true,
-      weekdayScheduleByLocation: {
-        [a.locationId]: normalizeWeekdaySchedule(a.weekdaySchedule),
-      },
-      shiftTemplateIdsByLocation: {
-        [a.locationId]: a.shiftTemplateId ?? "",
-      },
+      weekdayScheduleKeysByWeekday: normalizeScheduleToShiftKeys(a.weekdaySchedule),
+      shiftTemplateKey: getShiftMatchKeyById(a.shiftTemplateId),
       effectiveFrom: a.effectiveFrom ?? "",
       effectiveTo: a.effectiveTo ?? "",
     });
@@ -558,14 +621,8 @@ export function ShiftManagement() {
       targetType: (a.targetType as any) ?? "department",
       targetId: a.targetId ?? "",
       byWeekday: a.byWeekday ?? true,
-      weekdayScheduleByLocation: Object.fromEntries(sourceRows.map((row: any) => [
-        row.locationId,
-        normalizeWeekdaySchedule(row.weekdaySchedule),
-      ])),
-      shiftTemplateIdsByLocation: Object.fromEntries(sourceRows.map((row: any) => [
-        row.locationId,
-        row.shiftTemplateId ?? "",
-      ])),
+      weekdayScheduleKeysByWeekday: normalizeScheduleToShiftKeys(a.weekdaySchedule),
+      shiftTemplateKey: getShiftMatchKeyById(a.shiftTemplateId),
       effectiveFrom: a.effectiveFrom ?? "",
       effectiveTo: a.effectiveTo ?? "",
     });
@@ -574,15 +631,35 @@ export function ShiftManagement() {
 
   const saveAssignmentMutation = useMutation({
     mutationFn: async (values: z.infer<typeof shiftAssignmentSchema>) => {
-      const { locationIds, weekdayScheduleByLocation, shiftTemplateIdsByLocation, ...commonFields } = values;
+      const { locationIds, weekdayScheduleKeysByWeekday, shiftTemplateKey, ...commonFields } = values;
       const savedLocationIds = editingAssignment ? [editingAssignment.locationId] : locationIds;
+      const sharedShiftOptions = getSharedShiftOptionsForLocations(savedLocationIds);
+      const templateIdsByKey = new Map(
+        sharedShiftOptions.map((option) => [option.value, option.templateIdsByLocation])
+      );
+      const getLocalShiftTemplateId = (locationId: string, key: string) =>
+        templateIdsByKey.get(key)?.[locationId] || null;
+      const sharedWeekdaySchedule = {
+        ...emptyWeekdaySchedule(),
+        ...(weekdayScheduleKeysByWeekday || {}),
+      };
+
       const payload: any = {
         ...commonFields,
         locationAssignments: savedLocationIds.map((locationId) => ({
           locationId,
-          shiftTemplateId: values.byWeekday ? null : (shiftTemplateIdsByLocation?.[locationId] || null),
+          shiftTemplateId: values.byWeekday || !shiftTemplateKey
+            ? null
+            : getLocalShiftTemplateId(locationId, shiftTemplateKey),
           weekdaySchedule: values.byWeekday
-            ? (weekdayScheduleByLocation?.[locationId] || emptyWeekdaySchedule())
+            ? Object.fromEntries(
+                Object.entries(sharedWeekdaySchedule).map(([weekday, shiftKeys]) => [
+                  weekday,
+                  shiftKeys
+                    .map((shiftKey) => getLocalShiftTemplateId(locationId, shiftKey))
+                    .filter((shiftId): shiftId is string => !!shiftId),
+                ])
+              )
             : null,
         })),
         effectiveFrom: values.effectiveFrom || null,
@@ -1438,6 +1515,7 @@ export function ShiftManagement() {
                               placeholder="Chọn một hoặc nhiều cơ sở"
                               maxCount={4}
                               modalPopover
+                              disabled={!!editingAssignment}
                               data-testid="select-assignment-location"
                             />
                             <FormMessage />
@@ -1518,70 +1596,92 @@ export function ShiftManagement() {
                     />
 
                     {assignByWeekday ? (
-                      <div className="space-y-2">
-                        <div className="text-sm font-medium">Lịch ca theo từng thứ và cơ sở</div>
+                      <div className="space-y-3 rounded-md border p-3">
+                        <div>
+                          <div className="text-sm font-medium">Lịch ca theo từng thứ</div>
+                          {assignLocationIds.length > 0 && (
+                            <p className="text-sm text-muted-foreground">
+                              Áp dụng giống nhau cho: {assignLocationIds.map(getLocationName).join(", ")}
+                            </p>
+                          )}
+                        </div>
                         {assignLocationIds.length === 0 ? (
                           <p className="text-sm text-muted-foreground">Chọn cơ sở để thiết lập lịch ca.</p>
-                        ) : assignLocationIds.map((locationId) => (
-                          <div key={locationId} className="space-y-2 rounded-md border p-3">
-                            <div className="font-medium">{getLocationName(locationId)}</div>
-                            <div className="space-y-2">
-                              {[
-                                { key: "1", label: "Thứ hai" },
-                                { key: "2", label: "Thứ ba" },
-                                { key: "3", label: "Thứ tư" },
-                                { key: "4", label: "Thứ năm" },
-                                { key: "5", label: "Thứ sáu" },
-                                { key: "6", label: "Thứ bảy" },
-                                { key: "0", label: "Chủ nhật" },
-                              ].map((day) => (
-                                <div key={day.key} className="grid grid-cols-[100px_1fr] gap-3 items-center">
-                                  <div className="text-sm text-muted-foreground">{day.label}</div>
-                                  <MultiSelect
-                                    key={`${day.key}-${editingAssignment?.id || "new"}-${locationId}`}
-                                    options={getShiftOptionsForLocation(locationId)}
-                                    defaultValue={assignWeekdayScheduleByLocation[locationId]?.[day.key] || []}
-                                    onValueChange={(values) => updateWeekdaySchedule(locationId, day.key, values)}
-                                    placeholder="Chọn ca làm việc"
-                                    maxCount={5}
-                                    modalPopover
-                                    data-testid={`multi-shift-${locationId}-${day.key}`}
-                                  />
-                                </div>
-                              ))}
-                            </div>
+                        ) : assignSharedShiftOptions.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">
+                            {isShiftsLoading
+                              ? "Đang tải ca làm việc..."
+                              : "Không có ca trùng ở tất cả cơ sở đã chọn. Hãy chọn các cơ sở có ca cùng mã, tên và giờ."}
+                          </p>
+                        ) : (
+                          <div className="space-y-2">
+                            {[
+                              { key: "1", label: "Thứ hai" },
+                              { key: "2", label: "Thứ ba" },
+                              { key: "3", label: "Thứ tư" },
+                              { key: "4", label: "Thứ năm" },
+                              { key: "5", label: "Thứ sáu" },
+                              { key: "6", label: "Thứ bảy" },
+                              { key: "0", label: "Chủ nhật" },
+                            ].map((day) => (
+                              <div key={day.key} className="grid grid-cols-[100px_1fr] gap-3 items-center">
+                                <div className="text-sm text-muted-foreground">{day.label}</div>
+                                <MultiSelect
+                                  key={`${day.key}-${editingAssignment?.id || "new"}-${assignLocationIds.join(",")}`}
+                                  options={assignSharedShiftOptions}
+                                  defaultValue={assignWeekdayScheduleKeysByWeekday[day.key] || []}
+                                  onValueChange={(values) => updateWeekdaySchedule(day.key, values)}
+                                  placeholder="Chọn ca làm việc"
+                                  maxCount={5}
+                                  modalPopover
+                                  data-testid={`multi-shift-${day.key}`}
+                                />
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        )}
                       </div>
                     ) : (
-                      <div className="space-y-3">
-                        <div className="text-sm font-medium">Ca làm việc theo cơ sở</div>
+                      <div className="space-y-3 rounded-md border p-3">
+                        <div>
+                          <div className="text-sm font-medium">Ca làm việc</div>
+                          {assignLocationIds.length > 0 && (
+                            <p className="text-sm text-muted-foreground">
+                              Áp dụng giống nhau cho: {assignLocationIds.map(getLocationName).join(", ")}
+                            </p>
+                          )}
+                        </div>
                         {assignLocationIds.length === 0 ? (
                           <p className="text-sm text-muted-foreground">Chọn cơ sở để chọn ca làm việc.</p>
-                        ) : assignLocationIds.map((locationId) => (
-                          <FormItem key={locationId}>
-                            <FormLabel>{getLocationName(locationId)}</FormLabel>
+                        ) : assignSharedShiftOptions.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">
+                            {isShiftsLoading
+                              ? "Đang tải ca làm việc..."
+                              : "Không có ca trùng ở tất cả cơ sở đã chọn. Hãy chọn các cơ sở có ca cùng mã, tên và giờ."}
+                          </p>
+                        ) : (
+                          <FormItem>
+                            <FormLabel>Ca làm việc</FormLabel>
                             <Select
-                              onValueChange={(value) => assignForm.setValue(
-                                `shiftTemplateIdsByLocation.${locationId}`,
-                                value,
-                                { shouldDirty: true, shouldValidate: true },
-                              )}
-                              value={assignShiftTemplateIdsByLocation[locationId] || ""}
+                              onValueChange={(value) => assignForm.setValue("shiftTemplateKey", value, {
+                                shouldDirty: true,
+                                shouldValidate: true,
+                              })}
+                              value={assignShiftTemplateKey}
                             >
                               <FormControl>
-                                <SelectTrigger data-testid={`select-assignment-shift-${locationId}`}>
+                                <SelectTrigger data-testid="select-assignment-shift">
                                   <SelectValue placeholder="Chọn ca" />
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                {getShiftOptionsForLocation(locationId).map((shift: any) => (
+                                {assignSharedShiftOptions.map((shift) => (
                                   <SelectItem key={shift.value} value={shift.value}>{shift.label}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
                           </FormItem>
-                        ))}
+                        )}
                       </div>
                     )}
 
