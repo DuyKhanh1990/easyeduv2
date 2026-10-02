@@ -8,10 +8,12 @@ export function FreeClassScheduleSheet({
   classId,
   initialDate,
   onClose,
+  readOnly = false,
 }: {
   classId: string | null;
   initialDate?: string | null;
   onClose: () => void;
+  readOnly?: boolean;
 }) {
   const isOpen = !!classId;
   const { data: classData } = useQuery<any>({
@@ -22,7 +24,7 @@ export function FreeClassScheduleSheet({
   const isSuperAdmin = myPerms?.isSuperAdmin ?? false;
   const classPermission = myPerms?.permissions?.["/classes"];
   const classPerm = {
-    canEdit: isSuperAdmin || !!(classPermission?.canEdit || classPermission?.canDelete),
+    canEdit: !readOnly && (isSuperAdmin || !!(classPermission?.canEdit || classPermission?.canDelete)),
   };
 
   return (

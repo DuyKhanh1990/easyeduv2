@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { getAuthHeaders } from "@/lib/queryClient";
+import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { getAssignedTeacherTimeRange, type TeacherTimeInterval } from "@shared/teacher-time-assignments";
 import ExcelJS from "exceljs";
 
@@ -117,6 +118,7 @@ function getTeacherViewSession(session: ScheduleSession, teacherId: string): Sch
 
 export function Schedule() {
   const queryClient = useQueryClient();
+  const { data: myPermissions } = useMyPermissions();
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [currentDate, setCurrentDate] = useState(new Date());
   const [search, setSearch] = useState("");
@@ -133,6 +135,15 @@ export function Schedule() {
   const [hlLocations, setHlLocations] = useState<string[]>([]);
   const [hlTeachers, setHlTeachers] = useState<string[]>([]);
   const [hlHolidays, setHlHolidays] = useState<string[]>([]);
+
+  const schedulePermission = myPermissions?.permissions?.["/schedule"];
+  const canEditSchedule = !!myPermissions?.isSuperAdmin || !!schedulePermission?.canEdit;
+  const hasScheduleWriteAccess = !!myPermissions?.isSuperAdmin || !!(
+    schedulePermission?.canCreate ||
+    schedulePermission?.canEdit ||
+    schedulePermission?.canDelete
+  );
+  const scheduleViewOnly = !hasScheduleWriteAccess;
 
   const { from, to } = useMemo(() => {
     if (viewMode === "month") {
@@ -271,15 +282,17 @@ export function Schedule() {
               </Button>
             </div>
 
-            <Button
-              size="sm"
-              className="h-8 text-sm gap-1.5"
-              onClick={() => setHolidayUpdateOpen(true)}
-              variant="outline"
-            >
-              <CalendarClock className="w-3.5 h-3.5" />
-              Cập nhật nghỉ lễ
-            </Button>
+            {canEditSchedule && (
+              <Button
+                size="sm"
+                className="h-8 text-sm gap-1.5"
+                onClick={() => setHolidayUpdateOpen(true)}
+                variant="outline"
+              >
+                <CalendarClock className="w-3.5 h-3.5" />
+                Cập nhật nghỉ lễ
+              </Button>
+            )}
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -391,16 +404,19 @@ export function Schedule() {
         sessionId={selectedSession?.sessionId ?? null}
         classId={selectedSession?.classId ?? null}
         onClose={() => setSelectedSession(null)}
+        readOnly={scheduleViewOnly}
       />
       <FreeClassScheduleSheet
         classId={selectedFreeSession?.classId ?? null}
         initialDate={selectedFreeSession?.sessionDate ?? null}
         onClose={() => setSelectedFreeSession(null)}
+        readOnly={scheduleViewOnly}
       />
       {/* Test session detail dialog (lớp TEST) */}
       <TestSessionDetailDialog
         sessionId={selectedTestSessionId}
         onClose={() => setSelectedTestSessionId(null)}
+        readOnly={scheduleViewOnly}
       />
 
       {/* Cập nhật nghỉ lễ dialog */}

@@ -496,10 +496,12 @@ export function TestSessionDetailDialog({
   sessionId,
   onClose,
   onEdit,
+  readOnly = false,
 }: {
   sessionId: string | null;
   onClose: () => void;
   onEdit?: (s: TestSession) => void;
+  readOnly?: boolean;
 }) {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -603,6 +605,7 @@ export function TestSessionDetailDialog({
   });
 
   function updateResult(studentId: string, field: keyof StudentResult, value: any) {
+    if (readOnly) return;
     setLocalResults(prev => ({
       ...prev,
       [studentId]: {
@@ -642,7 +645,7 @@ export function TestSessionDetailDialog({
 
               {/* Action buttons in the highlighted area */}
               <div className="flex items-center gap-2 flex-wrap">
-                {session && (
+                {session && !readOnly && (
                   <>
                     <Button
                       variant="outline"
@@ -666,12 +669,12 @@ export function TestSessionDetailDialog({
                     </Button>
                   </>
                 )}
-                {session && onEdit && (
+                {session && onEdit && !readOnly && (
                   <Button variant="outline" size="sm" onClick={() => onEdit(session)} className="gap-1.5">
                     <Pencil className="h-3.5 w-3.5" />Chỉnh sửa
                   </Button>
                 )}
-                {dirty && (
+                {dirty && !readOnly && (
                   <Button size="sm" onClick={() => saveResultsMutation.mutate(localResults)} disabled={saveResultsMutation.isPending} className="gap-1.5">
                     <Save className="h-3.5 w-3.5" />
                     {saveResultsMutation.isPending ? "Đang lưu..." : "Lưu kết quả"}
@@ -805,14 +808,14 @@ export function TestSessionDetailDialog({
                     Danh sách học viên
                     <span className="ml-2 text-xs font-normal text-muted-foreground">({studentsData.length} học viên)</span>
                   </p>
-                  {dirty && <p className="text-xs text-amber-600 font-medium">Có thay đổi chưa lưu</p>}
+                  {dirty && !readOnly && <p className="text-xs text-amber-600 font-medium">Có thay đổi chưa lưu</p>}
                 </div>
                 <div className="flex-1 overflow-auto">
                   {studentsData.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
                       <Users className="h-8 w-8 mb-2 opacity-30" />
                       <p className="text-sm">Chưa có học viên nào.</p>
-                      <p className="text-xs mt-1">Dùng nút "Thêm học viên" ở trên để thêm.</p>
+                      {!readOnly && <p className="text-xs mt-1">Dùng nút "Thêm học viên" ở trên để thêm.</p>}
                     </div>
                   ) : (
                     <Table>
@@ -823,7 +826,7 @@ export function TestSessionDetailDialog({
                           <TableHead className="w-36">Điểm danh</TableHead>
                           <TableHead className="w-28 text-center">Điểm (online)</TableHead>
                           <TableHead className="w-28 text-center">Điểm (offline)</TableHead>
-                          <TableHead className="w-16 text-center">Thao tác</TableHead>
+                          {!readOnly && <TableHead className="w-16 text-center">Thao tác</TableHead>}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -840,6 +843,7 @@ export function TestSessionDetailDialog({
                                 <Select
                                   value={result.attendance ?? "none"}
                                   onValueChange={v => updateResult(stu.id, "attendance", v === "none" ? null : v as "present" | "absent")}
+                                  disabled={readOnly}
                                 >
                                   <SelectTrigger className="h-8 text-xs w-full">
                                     <SelectValue placeholder="Chưa chọn" />
@@ -857,6 +861,7 @@ export function TestSessionDetailDialog({
                                   className="h-8 text-xs text-center"
                                   value={result.scoreOnline ?? ""}
                                   onChange={e => updateResult(stu.id, "scoreOnline", e.target.value === "" ? null : parseFloat(e.target.value))}
+                                  disabled={readOnly}
                                 />
                               </TableCell>
                               <TableCell>
@@ -865,20 +870,23 @@ export function TestSessionDetailDialog({
                                   className="h-8 text-xs text-center"
                                   value={result.scoreOffline ?? ""}
                                   onChange={e => updateResult(stu.id, "scoreOffline", e.target.value === "" ? null : parseFloat(e.target.value))}
+                                  disabled={readOnly}
                                 />
                               </TableCell>
-                              <TableCell className="text-center">
-                                <button
-                                  onClick={() => {
-                                    if (confirm(`Xóa ${stu.fullName} khỏi lớp test?`)) {
-                                      removeStudentMutation.mutate({ studentId: stu.id });
-                                    }
-                                  }}
-                                  className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </TableCell>
+                              {!readOnly && (
+                                <TableCell className="text-center">
+                                  <button
+                                    onClick={() => {
+                                      if (confirm(`Xóa ${stu.fullName} khỏi lớp test?`)) {
+                                        removeStudentMutation.mutate({ studentId: stu.id });
+                                      }
+                                    }}
+                                    className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </TableCell>
+                              )}
                             </TableRow>
                           );
                         })}

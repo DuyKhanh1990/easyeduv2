@@ -22,6 +22,7 @@
 - [Imported encrypted provider settings](imported-encrypted-provider-settings.md) — sau khi import, secret mã hóa có thể khác; giữ cấu hình đọc được để admin thay credential thay vì trả 500.
 - [Page guide edit permissions](page-guide-edit-permissions.md) — tài liệu riêng theo từng trang; chỉ host gốc và Super Admin được sửa, host khác chỉ đọc.
 - [Schedule popup responsiveness](schedule-popup-responsiveness.md) — ưu tiên hiển thị popup lịch học trước khi mount cây component nặng; không thay đổi cơ chế chi tiết theo session.
+- [Schedule read access](schedule-permission-read-scope.md) — scope API đọc theo lớp/vị trí được giao; giữ API TEST dùng chung tách biệt và quyền ghi riêng.
 - [CRM relationship history preservation](crm-relationship-history-preservation.md) — không backfill relationship IDs bằng tên pipeline lúc khởi động; tên trùng có thể khôi phục nhầm quan hệ đã xóa.
 - [Invoice editable dates](invoice-editable-dates.md) — ngày tạo và ngày thanh toán được sửa inline; ngày thanh toán không được trước ngày tạo và mọi thay đổi phải vào audit history.
 - [Invoice confirmed status](invoice-confirmed-status.md) — trạng thái confirmed hiển thị riêng nhưng dùng toàn bộ nghiệp vụ paid: tab, thu/chi, ví, đối soát, thông báo và hoa hồng.

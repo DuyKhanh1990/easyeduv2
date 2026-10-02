@@ -65,6 +65,7 @@ import { storage } from "../storage";
 import { eq, and, gte, lte, sql, inArray, isNotNull, isNull, or, desc } from "drizzle-orm";
 import { updateStudentAttendance } from "../storage/attendance.storage";
 import { getTeacherIdsForTimeRange } from "@shared/teacher-time-assignments";
+import { canViewClass } from "../lib/class-access";
 
 async function getStudentForUser(userId: string) {
   const [student] = await db
@@ -755,7 +756,33 @@ export function registerMySpaceRoutes(app: Express): void {
         return res.status(400).json({ message: "Ngày buổi học không hợp lệ" });
       }
       const rows = await getStaffFreeSessionRows(classId, sessionDate, staffRecord.id);
-      if (rows.length === 0 && !(await canManageFreeClass(classId, staffRecord.id, req.isSuperAdmin))) {
+      const schedulePermissions = await storage.getEffectivePermissions(req.roleIds ?? [], "/schedule");
+      let canReadFromSchedule = false;
+      if (schedulePermissions.canView || schedulePermissions.canViewAll) {
+        canReadFromSchedule = await canViewClass({
+          userId: String(user.id),
+          staffId: staffRecord.id,
+          allowedLocationIds: Array.isArray(req.allowedLocationIds)
+            ? req.allowedLocationIds
+            : [],
+          canViewAll: schedulePermissions.canViewAll,
+        }, classId);
+      }
+      const [assignedDay] = await db
+        .select({ id: freeClassDayAssignments.id })
+        .from(freeClassDayAssignments)
+        .where(and(
+          eq(freeClassDayAssignments.classId, classId),
+          eq(freeClassDayAssignments.assignmentDate, sessionDate),
+          eq(freeClassDayAssignments.teacherId, staffRecord.id),
+        ))
+        .limit(1);
+      if (
+        rows.length === 0 &&
+        !canReadFromSchedule &&
+        !assignedDay &&
+        !(await canManageFreeClass(classId, staffRecord.id, req.isSuperAdmin))
+      ) {
         return res.status(404).json({ message: "Không tìm thấy lớp tự do hoặc bạn không có quyền" });
       }
 

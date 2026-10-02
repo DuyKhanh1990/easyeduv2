@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { classes } from "@shared/schema";
+import { classes, classSessions, classSessionTeacherAssignments } from "@shared/schema";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { getEffectivePermissions } from "../storage/permissions.storage";
 
@@ -23,7 +23,10 @@ export type ClassViewAccess = {
  * Keep those identifiers separate here so the row-level predicate cannot
  * accidentally compare values from the wrong table.
  */
-export async function resolveClassViewAccess(req: any): Promise<ClassViewAccess> {
+export async function resolveClassViewAccess(
+  req: any,
+  includeSchedulePermissions = false,
+): Promise<ClassViewAccess> {
   const user = req.user as { id?: string; username?: string } | undefined;
   const userId = user?.id ?? "";
   const isSuperAdmin = req.isSuperAdmin === true || user?.username === "admin";
@@ -41,16 +44,20 @@ export async function resolveClassViewAccess(req: any): Promise<ClassViewAccess>
     };
   }
 
-  const permissions = await getEffectivePermissions(req.roleIds ?? [], "/classes");
+  const classPermissions = await getEffectivePermissions(req.roleIds ?? [], "/classes");
+  const schedulePermissions = includeSchedulePermissions
+    ? await getEffectivePermissions(req.roleIds ?? [], "/schedule")
+    : null;
+  const canViewAll = classPermissions.canViewAll || !!schedulePermissions?.canViewAll;
   return {
     scope: {
       userId,
       staffId: req.staffId ?? null,
       allowedLocationIds: Array.isArray(req.allowedLocationIds) ? req.allowedLocationIds : [],
-      canViewAll: permissions.canViewAll,
+      canViewAll,
     },
-    canView: permissions.canView,
-    canViewAll: permissions.canViewAll,
+    canView: classPermissions.canView || !!schedulePermissions?.canView,
+    canViewAll,
   };
 }
 
@@ -117,5 +124,28 @@ export async function canViewClass(scope: ClassViewScope, classId: string): Prom
     .from(classes)
     .where(and(eq(classes.id, classId), buildClassVisibilityCondition(scope)))
     .limit(1);
-  return !!row;
+  if (row) return true;
+  if (!scope.staffId || scope.canViewAll) return false;
+
+  const locationCondition =
+    scope.allowedLocationIds === null
+      ? undefined
+      : scope.allowedLocationIds.length > 0
+        ? inArray(classes.locationId, scope.allowedLocationIds)
+        : sql`FALSE`;
+  const [sessionAssignment] = await db
+    .select({ id: classSessions.id })
+    .from(classes)
+    .innerJoin(classSessions, eq(classSessions.classId, classes.id))
+    .innerJoin(
+      classSessionTeacherAssignments,
+      eq(classSessionTeacherAssignments.classSessionId, classSessions.id),
+    )
+    .where(and(
+      eq(classes.id, classId),
+      locationCondition,
+      eq(classSessionTeacherAssignments.teacherId, scope.staffId),
+    ))
+    .limit(1);
+  return !!sessionAssignment;
 }

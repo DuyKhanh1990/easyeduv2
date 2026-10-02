@@ -16,7 +16,7 @@ import { sendNotificationToMany } from "../lib/notification";
 import { emitToUser } from "../lib/ws-hub";
 import { sendUpdateSessionNotification, sendCancelSessionNotification, sendUpdateCycleNotification, sendExcludeDatesNotification } from "../lib/schedule-notification";
 import { notificationService } from "../application/notification/services/NotificationService";
-import { buildClassVisibilitySql, canViewClass, resolveClassViewAccess, type ClassViewScope } from "../lib/class-access";
+import { buildClassVisibilityCondition, buildClassVisibilitySql, canViewClass, resolveClassViewAccess, type ClassViewScope } from "../lib/class-access";
 import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 import { getNextLocationCode } from "../storage/finance.storage";
 import { recordFreeClassWalletTransition } from "../storage/free-class-wallet.storage";
@@ -59,15 +59,23 @@ function getBangkokDateString(): string {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-async function getClassReadScope(req: any): Promise<{ scope: ClassViewScope; canView: boolean; canViewAll: boolean }> {
-  return resolveClassViewAccess(req);
+async function getClassReadScope(
+  req: any,
+  includeSchedulePermissions = false,
+): Promise<{ scope: ClassViewScope; canView: boolean; canViewAll: boolean }> {
+  return resolveClassViewAccess(req, includeSchedulePermissions);
 }
 
-async function assertClassReadable(req: any, res: any, classId: string): Promise<boolean> {
+async function assertClassReadable(
+  req: any,
+  res: any,
+  classId: string,
+  includeSchedulePermissions = false,
+): Promise<boolean> {
   // Student routes use their existing enrollment-based access rules.
   if (req.isStudent) return true;
 
-  const access = await getClassReadScope(req);
+  const access = await getClassReadScope(req, includeSchedulePermissions);
   if (!access.canView && !access.canViewAll) {
     res.status(403).json({ message: "Bạn không có quyền xem lớp học." });
     return false;
@@ -130,14 +138,35 @@ async function assertFreeClassReadable(
   res: any,
   classId: string,
   context: FreeClassAccessContext = {},
+  includeSchedulePermissions = false,
 ): Promise<boolean> {
   if (req.isStudent) return true;
 
-  const access = await getClassReadScope(req);
+  const access = await getClassReadScope(req, includeSchedulePermissions);
   const hasRegularReadAccess =
-    access.canView &&
+    (access.canView || access.canViewAll) &&
     await canViewClass(access.scope, classId);
-  if (hasRegularReadAccess || await isAssignedToFreeClass(req, classId, context)) {
+  let assignedToFreeClassDay = false;
+  if (includeSchedulePermissions && req.staffId) {
+    const assignmentConditions = [
+      eq(freeClassDayAssignments.classId, classId),
+      eq(freeClassDayAssignments.teacherId, req.staffId),
+    ];
+    if (context.date) {
+      assignmentConditions.push(eq(freeClassDayAssignments.assignmentDate, context.date));
+    }
+    const [assignment] = await db
+      .select({ id: freeClassDayAssignments.id })
+      .from(freeClassDayAssignments)
+      .where(and(...assignmentConditions))
+      .limit(1);
+    assignedToFreeClassDay = !!assignment;
+  }
+  if (
+    hasRegularReadAccess ||
+    assignedToFreeClassDay ||
+    await isAssignedToFreeClass(req, classId, context)
+  ) {
     return true;
   }
 
@@ -162,7 +191,12 @@ async function assertFreeClassEditable(
   return false;
 }
 
-async function assertClassSessionReadable(req: any, res: any, classSessionId: string): Promise<boolean> {
+async function assertClassSessionReadable(
+  req: any,
+  res: any,
+  classSessionId: string,
+  includeSchedulePermissions = false,
+): Promise<boolean> {
   if (req.isStudent) return true;
   const [row] = await db
     .select({ classId: classSessions.classId })
@@ -173,7 +207,7 @@ async function assertClassSessionReadable(req: any, res: any, classSessionId: st
     res.status(404).json({ message: "Không tìm thấy buổi học." });
     return false;
   }
-  return assertClassReadable(req, res, row.classId);
+  return assertClassReadable(req, res, row.classId, includeSchedulePermissions);
 }
 
 async function getClassPermissions(req: any) {
@@ -181,6 +215,24 @@ async function getClassPermissions(req: any) {
     return { canView: true, canViewAll: true, canCreate: true, canEdit: true, canDelete: true };
   }
   return storage.getEffectivePermissions(req.roleIds || [], CLASSES_RESOURCE);
+}
+
+async function assertScheduleMutationPermission(
+  req: any,
+  res: any,
+  action: "canEdit" | "canDelete",
+): Promise<boolean> {
+  const user = req.user as { username?: string } | undefined;
+  if (req.isSuperAdmin === true || user?.username === "admin") return true;
+
+  const [schedulePermissions, classPermissions] = await Promise.all([
+    storage.getEffectivePermissions(req.roleIds ?? [], "/schedule"),
+    getClassPermissions(req),
+  ]);
+  if (schedulePermissions[action] || classPermissions[action]) return true;
+
+  res.status(403).json({ message: "Bạn không có quyền chỉnh sửa lịch học." });
+  return false;
 }
 
 const SCHEDULE_WEEKDAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
@@ -1002,12 +1054,12 @@ export function registerClassesRoutes(app: Express): void {
   // Classes - GET
   app.get(api.classes.list.path, async (req, res) => {
     if (req.isStudent) return res.status(403).json({ message: "Bạn không có quyền xem danh sách lớp học." });
-    const readAccess = await getClassReadScope(req);
+    const minimal = req.query.minimal === "true";
+    const readAccess = await getClassReadScope(req, minimal);
     if (!readAccess.canView && !readAccess.canViewAll) {
       return res.status(403).json({ message: "Bạn không có quyền xem lớp học." });
     }
     const locationId = req.query.locationId as string | undefined;
-    const minimal = req.query.minimal === "true";
     const view = req.query.view as string | undefined;
     const allowedLocationIds = await getAllowedLocationIds(req);
     if (minimal) {
@@ -1339,7 +1391,7 @@ export function registerClassesRoutes(app: Express): void {
 
   app.get(api.classes.get.path, async (req, res) => {
     const classId = String(req.params.id);
-    if (!(await assertClassReadable(req, res, classId))) return;
+    if (!(await assertClassReadable(req, res, classId, true))) return;
     const cls = await storage.getClass(classId);
     if (!cls) return res.status(404).json({ message: "Not found" });
     res.json(cls);
@@ -1355,14 +1407,14 @@ export function registerClassesRoutes(app: Express): void {
 
   app.get(api.classes.waitingStudents.path, async (req, res) => {
     const classId = String(req.params.id);
-    if (!(await assertClassReadable(req, res, classId))) return;
+    if (!(await assertClassReadable(req, res, classId, true))) return;
     const studentList = await storage.getClassStudents(classId, "waiting");
     res.json(studentList);
   });
 
   app.get(api.classes.activeStudents.path, async (req, res) => {
     const classId = String(req.params.id);
-    if (!(await assertClassReadable(req, res, classId))) return;
+    if (!(await assertClassReadable(req, res, classId, true))) return;
     const studentList = await storage.getClassStudents(classId, "active");
     res.json(studentList);
   });
@@ -1643,7 +1695,7 @@ export function registerClassesRoutes(app: Express): void {
 
   app.get(api.classes.freeSchedule.path, async (req, res) => {
     const classId = String(req.params.id);
-    if (!(await assertFreeClassReadable(req, res, classId))) return;
+    if (!(await assertFreeClassReadable(req, res, classId, {}, true))) return;
     try {
       const [classRow] = await db
         .select({
@@ -1751,7 +1803,7 @@ export function registerClassesRoutes(app: Express): void {
     if (!studentClassId) {
       return res.status(400).json({ message: "Thiếu học viên cần xem lịch" });
     }
-    if (!(await assertFreeClassReadable(req, res, classId, { studentClassId }))) return;
+    if (!(await assertFreeClassReadable(req, res, classId, { studentClassId }, true))) return;
 
     try {
       const [studentClass] = await db
@@ -2358,7 +2410,7 @@ export function registerClassesRoutes(app: Express): void {
 
   app.get(api.classes.sessions.path, async (req, res) => {
     const classId = String(req.params.id);
-    if (!(await assertClassReadable(req, res, classId))) return;
+    if (!(await assertClassReadable(req, res, classId, true))) return;
     const sessions = await storage.getClassSessions(classId);
     res.json(sessions);
   });
@@ -2628,7 +2680,7 @@ export function registerClassesRoutes(app: Express): void {
   // Class Sessions - student sessions
   app.get(api.classSessions.studentSessions.path, async (req, res) => {
     const classSessionId = String(req.params.id);
-    if (!(await assertClassSessionReadable(req, res, classSessionId))) return;
+    if (!(await assertClassSessionReadable(req, res, classSessionId, true))) return;
     const sessions = await storage.getStudentSessionsByClassSession(classSessionId);
     res.json(sessions);
   });
@@ -3613,6 +3665,7 @@ export function registerClassesRoutes(app: Express): void {
   // Change Teacher
   app.post(api.classes.changeTeacher.path, async (req, res) => {
     try {
+      if (!(await assertScheduleMutationPermission(req, res, "canEdit"))) return;
       const { newTeacherIds, fromSessionId, toSessionId } = req.body;
       const classId = req.params.id;
       const userId = (req.user as any)?.id ?? null;
@@ -3813,6 +3866,7 @@ export function registerClassesRoutes(app: Express): void {
   // Delete sessions
   app.post(api.classes.deleteSessions.path, async (req, res) => {
     try {
+      if (!(await assertScheduleMutationPermission(req, res, "canDelete"))) return;
       const validatedData = deleteSessionsSchema.parse(req.body);
       const userId = (req.user as any)?.id ?? null;
 
@@ -3965,10 +4019,7 @@ export function registerClassesRoutes(app: Express): void {
   // Update cycle
   app.post(api.classes.updateCycle.path, async (req, res) => {
     try {
-      const clsPerms = await getClassPermissions(req);
-      if (!clsPerms.canEdit) {
-        return res.status(403).json({ message: "Bạn không có quyền chỉnh sửa lớp học." });
-      }
+      if (!(await assertScheduleMutationPermission(req, res, "canEdit"))) return;
 
       const { fromSessionId, toSessionId, startDate, weekdays, weekdayConfigs, reason } = req.body;
       const classId = req.params.id;
@@ -4258,6 +4309,7 @@ export function registerClassesRoutes(app: Express): void {
   // Cancel sessions
   app.post(api.classes.cancelSessions.path, async (req, res) => {
     try {
+      if (!(await assertScheduleMutationPermission(req, res, "canEdit"))) return;
       const { fromSessionId, toSessionId, reason } = req.body;
       const classId = req.params.id;
       const userId = (req.user as any).id;
@@ -4347,6 +4399,7 @@ export function registerClassesRoutes(app: Express): void {
   // Exclude sessions (supports multi-range via ranges[])
   app.post(api.classes.excludeSessions.path, async (req, res) => {
     try {
+      if (!(await assertScheduleMutationPermission(req, res, "canEdit"))) return;
       const { classId, reason } = req.body;
       const userId = (req.user as any).id;
 
@@ -4559,6 +4612,22 @@ export function registerClassesRoutes(app: Express): void {
       const { from, to, teacherId, locationId } = req.query as Record<string, string>;
       if (!from || !to) return res.status(400).json({ message: "from and to are required" });
       const todayInBangkok = getBangkokDateString();
+      const user = req.user as { id?: string; username?: string } | undefined;
+      const isSuperAdmin = req.isSuperAdmin === true || user?.username === "admin";
+      const isStaffScheduleUser = !req.isStudent && !isSuperAdmin;
+      const schedulePermissions = isStaffScheduleUser
+        ? await storage.getEffectivePermissions(req.roleIds ?? [], "/schedule")
+        : null;
+      if (
+        isStaffScheduleUser &&
+        !schedulePermissions?.canView &&
+        !schedulePermissions?.canViewAll &&
+        !schedulePermissions?.canCreate &&
+        !schedulePermissions?.canEdit &&
+        !schedulePermissions?.canDelete
+      ) {
+        return res.status(403).json({ message: "Bạn không có quyền xem lịch học." });
+      }
 
       const allowedLocationIds = await getAllowedLocationIds(req);
 
@@ -4566,6 +4635,16 @@ export function registerClassesRoutes(app: Express): void {
       if (allowedLocationIds !== null && allowedLocationIds.length === 0) {
         return res.json([]);
       }
+      const scheduleVisibleClassIds = isStaffScheduleUser && !schedulePermissions?.canViewAll
+        ? new Set((await db.select({ id: classes.id })
+            .from(classes)
+            .where(buildClassVisibilityCondition({
+              userId: user?.id ?? "",
+              staffId: req.staffId ?? null,
+              allowedLocationIds,
+              canViewAll: false,
+            }))).map((row) => row.id))
+        : null;
 
       // Determine effective location filter
       let effectiveLocationId: string | undefined = locationId;
@@ -4678,6 +4757,16 @@ export function registerClassesRoutes(app: Express): void {
 
       const enriched = sessions
         .filter(s => {
+          if (
+            scheduleVisibleClassIds &&
+            !scheduleVisibleClassIds.has(s.classId) &&
+            !(s.teacherIds ?? []).includes(req.staffId ?? "") &&
+            !(teacherTimeAssignmentsBySession.get(s.id) ?? []).some(
+              (assignment) => assignment.teacherId === req.staffId,
+            )
+          ) {
+            return false;
+          }
           if (teacherId) {
             return (s.teacherIds?.includes(teacherId) ?? false) ||
               (teacherTimeAssignmentsBySession.get(s.id) ?? []).some((assignment) => assignment.teacherId === teacherId);
@@ -5076,7 +5165,12 @@ export function registerClassesRoutes(app: Express): void {
       }
 
       const freeSessions = Array.from(freeSessionMap.values())
-        .filter(s => !teacherId || s.teacherIds.includes(teacherId))
+        .filter(s =>
+          (!scheduleVisibleClassIds ||
+            scheduleVisibleClassIds.has(s.classId) ||
+            s.teacherIds.includes(req.staffId ?? "")) &&
+          (!teacherId || s.teacherIds.includes(teacherId))
+        )
         .map(s => ({
           ...s,
           teachers: s.teacherIds.map(id => staffMap.get(id) || "").filter(Boolean),
@@ -5110,7 +5204,11 @@ export function registerClassesRoutes(app: Express): void {
       const testResult = await pool.query(testSessionQuery, testQueryParams);
       const testRows = testResult.rows as any[];
 
-      const testSessions = testRows.map((ts) => {
+      const testSessions = testRows
+        .filter((ts) =>
+          !scheduleVisibleClassIds || (ts.teacher_ids || []).includes(req.staffId),
+        )
+        .map((ts) => {
         const weekday = new Date(ts.test_date + "T00:00:00").getDay();
         return {
           id: ts.id,
@@ -5139,7 +5237,7 @@ export function registerClassesRoutes(app: Express): void {
           curriculums: [],
           isTestSession: true,
         };
-      });
+        });
 
       res.json([...enriched, ...freeSessions, ...testSessions]);
     } catch (err: any) {
@@ -5258,6 +5356,7 @@ export function registerClassesRoutes(app: Express): void {
   // POST /api/schedule/preview-apply-holidays — dry-run, returns what WOULD be affected
   app.post("/api/schedule/preview-apply-holidays", async (req, res) => {
     try {
+      if (!(await assertScheduleMutationPermission(req, res, "canEdit"))) return;
       const { locationIds, teacherIds, holidayIds } = req.body;
       if (!holidayIds || holidayIds.length === 0) {
         return res.status(400).json({ message: "Chưa chọn ngày nghỉ lễ" });
@@ -5272,6 +5371,7 @@ export function registerClassesRoutes(app: Express): void {
   // POST /api/schedule/apply-holidays — actually applies the bulk exclusion
   app.post("/api/schedule/apply-holidays", async (req, res) => {
     try {
+      if (!(await assertScheduleMutationPermission(req, res, "canEdit"))) return;
       const { locationIds, teacherIds, holidayIds } = req.body;
       const userId = (req.user as any).id;
 
@@ -5358,6 +5458,7 @@ export function registerClassesRoutes(app: Express): void {
   // Update class session
   app.patch(api.classSessions.update.path, async (req, res) => {
     try {
+      if (!(await assertScheduleMutationPermission(req, res, "canEdit"))) return;
       const sessionId = req.params.id;
 
       // Fetch existing session before update for notification comparison + activity log

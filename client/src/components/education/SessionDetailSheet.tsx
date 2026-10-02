@@ -13,11 +13,15 @@ interface SessionDetailSheetProps {
   sessionId: string | null;
   classId: string | null;
   onClose: () => void;
+  readOnly?: boolean;
 }
 
-export function SessionDetailSheet({ sessionId, classId, onClose }: SessionDetailSheetProps) {
+export function SessionDetailSheet({ sessionId, classId, onClose, readOnly = false }: SessionDetailSheetProps) {
   const isOpen = !!(sessionId && classId);
   const [scheduleActions, setScheduleActions] = useState<ScheduleHeaderActions | null>(null);
+  const readOnlyClassPerm = readOnly
+    ? { canAdd: false, canEdit: false, canDelete: false }
+    : undefined;
   const actionBtn = (grad: string, extra?: string) =>
     `inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gradient-to-r ${grad} text-white text-[11px] font-semibold shadow-sm hover:opacity-90 active:scale-95 transition-all shrink-0 ${extra ?? ""}`;
 
@@ -64,36 +68,40 @@ export function SessionDetailSheet({ sessionId, classId, onClose }: SessionDetai
 
             {/* Center: action buttons */}
             <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 flex-nowrap justify-center">
-              <button
-                onClick={() => scheduleActions?.openContent()}
-                className={actionBtn("from-violet-500 to-indigo-600")}
-              >
-                <Plus className="h-3 w-3" /> Nội dung
-              </button>
-              {scheduleActions && (
+              {!readOnly && (
                 <>
-                  <button onClick={() => scheduleActions.openUpdateSession()} className={actionBtn("from-sky-500 to-blue-500")}>
-                    <Calendar className="h-3 w-3" /> Cập nhật buổi
-                  </button>
-                  <button onClick={() => scheduleActions.openChangeTeacher()} className={actionBtn("from-amber-500 to-orange-500")}>
-                    <UserCog className="h-3 w-3" /> Đổi giáo viên
-                  </button>
                   <button
-                    className={actionBtn("from-red-500 to-rose-500", scheduleActions.isCancelled ? "opacity-50 cursor-not-allowed" : "")}
-                    onClick={() => scheduleActions.openCancelSession()}
-                    disabled={scheduleActions.isCancelled}
+                    onClick={() => scheduleActions?.openContent()}
+                    className={actionBtn("from-violet-500 to-indigo-600")}
                   >
-                    <XCircle className="h-3 w-3" /> Huỷ buổi
+                    <Plus className="h-3 w-3" /> Nội dung
                   </button>
-                  <button onClick={() => scheduleActions.openUpdateCycle()} className={actionBtn("from-emerald-500 to-teal-500")}>
-                    <Calendar className="h-3 w-3" /> Cập nhật chu kỳ
-                  </button>
-                  <button onClick={() => scheduleActions.openExcludeSession()} className={actionBtn("from-slate-500 to-slate-600")}>
-                    Loại trừ ngày
-                  </button>
-                  <button onClick={() => scheduleActions.openDeleteSchedule()} className={actionBtn("from-rose-500 to-red-600")}>
-                    <Trash2 className="h-3 w-3" /> Xoá lịch
-                  </button>
+                  {scheduleActions && (
+                    <>
+                      <button onClick={() => scheduleActions.openUpdateSession()} className={actionBtn("from-sky-500 to-blue-500")}>
+                        <Calendar className="h-3 w-3" /> Cập nhật buổi
+                      </button>
+                      <button onClick={() => scheduleActions.openChangeTeacher()} className={actionBtn("from-amber-500 to-orange-500")}>
+                        <UserCog className="h-3 w-3" /> Đổi giáo viên
+                      </button>
+                      <button
+                        className={actionBtn("from-red-500 to-rose-500", scheduleActions.isCancelled ? "opacity-50 cursor-not-allowed" : "")}
+                        onClick={() => scheduleActions.openCancelSession()}
+                        disabled={scheduleActions.isCancelled}
+                      >
+                        <XCircle className="h-3 w-3" /> Huỷ buổi
+                      </button>
+                      <button onClick={() => scheduleActions.openUpdateCycle()} className={actionBtn("from-emerald-500 to-teal-600")}>
+                        <Calendar className="h-3 w-3" /> Cập nhật chu kỳ
+                      </button>
+                      <button onClick={() => scheduleActions.openExcludeSession()} className={actionBtn("from-slate-500 to-slate-600")}>
+                        Loại trừ ngày
+                      </button>
+                      <button onClick={() => scheduleActions.openDeleteSchedule()} className={actionBtn("from-rose-500 to-red-600")}>
+                        <Trash2 className="h-3 w-3" /> Xoá lịch
+                      </button>
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -110,6 +118,7 @@ export function SessionDetailSheet({ sessionId, classId, onClose }: SessionDetai
               feePackages={feePackages}
               onActionsChange={setScheduleActions}
               initialSessionId={sessionId}
+              classPerm={readOnlyClassPerm}
             />
           </div>
         </div>
