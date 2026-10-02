@@ -6,7 +6,7 @@ import {
   staff, students, studentLocations, shiftTemplates,
   courseFeePackages, financePromotions, invoices, invoiceItems,
 } from "./base";
-import { attendanceFeeRules, sessionContents, activityLogs, publicHolidays, classSessionTeacherAssignments } from "@shared/schema";
+import { attendanceFeeRules, sessionContents, activityLogs, publicHolidays, classSessionTeacherAssignments, roles, staffAssignments } from "@shared/schema";
 import { studentWalletTransactions } from "@shared/schema";
 import {
   buildTeacherTimeAssignments,
@@ -1782,10 +1782,48 @@ export async function getClassSessions(classId: string): Promise<any[]> {
   });
 
   const allTeacherIds = Array.from(new Set(results.flatMap(s => s.teacherIds || [])));
+  const [classInfo] = await db.select({
+    locationId: classes.locationId,
+    teachersConfig: classes.teachersConfig,
+  }).from(classes).where(eq(classes.id, classId)).limit(1);
+  const teachersConfig = Array.isArray(classInfo?.teachersConfig) ? classInfo.teachersConfig as any[] : [];
+  const configuredRoleIds = new Map<string, string>(
+    teachersConfig
+      .filter((teacher) => teacher?.teacher_id && (teacher?.role_id || teacher?.roleId))
+      .map((teacher) => [String(teacher.teacher_id), String(teacher.role_id || teacher.roleId)]),
+  );
   let staffMap: Record<string, { id: string; fullName: string }> = {};
   if (allTeacherIds.length > 0) {
     const staffList = await db.select({ id: staff.id, fullName: staff.fullName }).from(staff).where(inArray(staff.id, allTeacherIds));
     staffMap = Object.fromEntries(staffList.map(s => [s.id, s]));
+  }
+  const roleAssignments = allTeacherIds.length > 0 && classInfo?.locationId
+    ? await db.select({
+        staffId: staffAssignments.staffId,
+        roleId: staffAssignments.roleId,
+      })
+      .from(staffAssignments)
+      .where(and(
+        inArray(staffAssignments.staffId, allTeacherIds),
+        eq(staffAssignments.locationId, classInfo.locationId),
+      ))
+    : [];
+  const roleIdsForLookup = Array.from(new Set([
+    ...roleAssignments.map((assignment) => assignment.roleId).filter(Boolean),
+    ...configuredRoleIds.values(),
+  ] as string[]));
+  const roleRows = roleIdsForLookup.length > 0
+    ? await db.select({ id: roles.id, name: roles.name }).from(roles).where(inArray(roles.id, roleIdsForLookup))
+    : [];
+  const roleNameMap = new Map(roleRows.map((role) => [role.id, role.name]));
+  const roleOptionsByStaffId = new Map<string, { roleId: string; roleName: string }[]>();
+  for (const assignment of roleAssignments) {
+    if (!assignment.roleId) continue;
+    const options = roleOptionsByStaffId.get(assignment.staffId) || [];
+    if (!options.some((option) => option.roleId === assignment.roleId)) {
+      options.push({ roleId: assignment.roleId, roleName: roleNameMap.get(assignment.roleId) || "" });
+      roleOptionsByStaffId.set(assignment.staffId, options);
+    }
   }
 
   const allProgramIds = Array.from(new Set(results.map(s => (s as any).programId).filter(Boolean)));
@@ -1814,7 +1852,17 @@ export async function getClassSessions(classId: string): Promise<any[]> {
 
   return results.map(s => ({
     ...s,
-    teachers: (s.teacherIds || []).map((id: string) => staffMap[id]).filter(Boolean),
+    teachers: (s.teacherIds || []).map((id: string) => {
+      const teacher = staffMap[id];
+      if (!teacher) return null;
+      const selectedRoleId = configuredRoleIds.get(id) ||
+        ((roleOptionsByStaffId.get(id) || []).length === 1 ? roleOptionsByStaffId.get(id)![0].roleId : "");
+      return {
+        ...teacher,
+        roleId: selectedRoleId || null,
+        roleName: selectedRoleId ? roleNameMap.get(selectedRoleId) || null : null,
+      };
+    }).filter(Boolean),
     program: (s as any).programId ? (programMap[(s as any).programId] || null) : null,
     sessionContents: (contentsMap[s.id] || []).sort((a: any, b: any) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0)),
   }));

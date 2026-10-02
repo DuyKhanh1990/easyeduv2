@@ -394,6 +394,10 @@ export function useClassMutations(
       queryClient.invalidateQueries({ queryKey: ["/api/classes"] });
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${id}`] });
       queryClient.invalidateQueries({ queryKey: ["/api/classes", id] });
+      if (data?.teachers_config !== undefined) {
+        queryClient.invalidateQueries({ queryKey: [`/api/classes/${id}/sessions`] });
+        queryClient.invalidateQueries({ queryKey: ["/api/classes", id, "sessions"] });
+      }
       if (data?.regenerateSessions) {
         queryClient.invalidateQueries({ queryKey: ["/api/classes", id, "sessions"] });
         queryClient.invalidateQueries({ queryKey: [`/api/classes/${id}/sessions`] });

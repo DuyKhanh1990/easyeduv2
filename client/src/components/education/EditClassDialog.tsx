@@ -22,6 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { TeacherShiftTimeEditor } from "@/components/education/TeacherShiftTimeEditor";
 import { resolveShiftScheduleKey, validateTeacherTimeCoverage } from "@shared/teacher-time-assignments";
+import { getStaffRoleOptions, resolveTeacherRoleId } from "@/lib/staff-role-options";
 
 const STEPS = [
   { id: 1, name: "Thông tin cơ bản" },
@@ -80,6 +81,7 @@ const editSchema = z.object({
   })).optional(),
   teachers_config: z.array(z.object({
     teacher_id: z.string(),
+    role_id: z.string().optional(),
     mode: z.enum(["all", "specific"]),
     shift_keys: z.array(z.string()),
     shift_time_ranges: z.record(z.any()).optional(),
@@ -101,6 +103,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
   const { updateClassMutation } = useClassMutations();
   const [step, setStep] = useState(1);
   const [teacherAssignmentsDirty, setTeacherAssignmentsDirty] = useState(false);
+  const [teacherRolesDirty, setTeacherRolesDirty] = useState(false);
   const [selectedColor, setSelectedColor] = useState<string>(CLASS_PALETTE[5]);
   const [endType, setEndType] = useState<"date" | "sessions">("date");
   const [sessionCount, setSessionCount] = useState<string>("10");
@@ -265,6 +268,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
             allScheduleKeys.every((key: string) => keys.includes(key));
           return {
             teacher_id,
+            role_id: stored?.role_id || stored?.roleId || "",
             mode: assignedEveryShift ? "all" as const : "specific" as const,
             shift_keys: assignedEveryShift ? [] : keys,
             shift_time_ranges: stored?.shift_time_ranges || {},
@@ -273,7 +277,14 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
         const allTeacherIds: string[] = Array.isArray(cls.teacherIds) ? cls.teacherIds : (cls.teacherId ? [cls.teacherId] : []);
         if (teacherMap.size === 0) {
           for (const tid of allTeacherIds) {
-            teachers_config.push({ teacher_id: tid, mode: "all" as const, shift_keys: [], shift_time_ranges: {} });
+            const stored = storedTeachers.find((teacher) => String(teacher.teacher_id) === tid);
+            teachers_config.push({
+              teacher_id: tid,
+              role_id: stored?.role_id || stored?.roleId || "",
+              mode: "all" as const,
+              shift_keys: [],
+              shift_time_ranges: stored?.shift_time_ranges || {},
+            });
           }
         }
       } else if (cls.teachersConfig && Array.isArray(cls.teachersConfig) && cls.teachersConfig.length > 0) {
@@ -315,6 +326,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
          freeClassMode,
       });
       setTeacherAssignmentsDirty(false);
+      setTeacherRolesDirty(false);
       setStep(1);
       setSelectedColor(cls.color || CLASS_PALETTE[5]);
       setEndType("date");
@@ -409,6 +421,25 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
     const data = form.getValues();
     const valOrUndefined = (val: string | undefined) => (val && val.trim() !== "" ? val : undefined);
     const valOrNull = (val: string | undefined) => (val && val.trim() !== "" ? val : null);
+    const normalizedTeachersConfig = (data.teachers_config || []).map((teacher: any) => {
+      const roleOptions = getStaffRoleOptions(
+        staff?.find((member: any) => member.id === teacher.teacher_id),
+        data.locationId,
+      );
+      const roleId = resolveTeacherRoleId(teacher, roleOptions);
+      return roleId ? { ...teacher, role_id: roleId } : teacher;
+    });
+    const savedTeachersConfig = Array.isArray(cls?.teachersConfig) ? cls.teachersConfig : [];
+    const savedRoleByTeacherId = new Map(
+      savedTeachersConfig.map((teacher: any) => [
+        String(teacher.teacher_id),
+        String(teacher.role_id ?? teacher.roleId ?? ""),
+      ]),
+    );
+    const roleConfigChanged = normalizedTeachersConfig.some((teacher: any) =>
+      String(teacher.role_id ?? teacher.roleId ?? "") !==
+      (savedRoleByTeacherId.get(String(teacher.teacher_id)) || ""),
+    );
 
     if (scheduleGenerated && !isFreeClass) {
       // Case 1: Schedule already generated — only save basic class info, do not touch sessions
@@ -432,8 +463,11 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
       };
       if (teacherAssignmentsDirty) {
         submitData.schedule_config = data.schedule_config || [];
-        submitData.teachers_config = data.teachers_config || [];
+        submitData.teachers_config = normalizedTeachersConfig;
         submitData.requireTeacherCoverage = true;
+      } else if (teacherRolesDirty || roleConfigChanged) {
+        // Store role metadata without rebuilding or rewriting existing session assignments.
+        submitData.teachers_config = normalizedTeachersConfig;
       }
       updateClassMutation.mutate(
         { id: classId!, data: submitData },
@@ -496,7 +530,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
               mode: "all",
               shift_keys: [],
             }))
-          : data.teachers_config || [],
+           : normalizedTeachersConfig,
          freeClassMode: isFreeClass ? data.freeClassMode : undefined,
         requireTeacherCoverage: !isFreeClass,
         skipHolidays,
@@ -956,15 +990,43 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                             <Users className="h-3.5 w-3.5" />Giáo viên
                           </div>
                           <div className="flex flex-wrap gap-2">
-                            {teachersConfig.map((t: any) => {
+                            {teachersConfig.map((t: any, idx: number) => {
                               const member = staff?.find((s: any) => s.id === t.teacher_id);
+                              const roleOptions = getStaffRoleOptions(member, effectiveLocationId);
+                              const selectedRoleId = resolveTeacherRoleId(t, roleOptions);
                               return (
                                 <div key={t.teacher_id} className="w-full max-w-xl space-y-3 rounded-lg border bg-muted/20 p-3">
-                                  <div className="flex items-center gap-2 text-sm">
+                                  <div className="flex flex-wrap items-center gap-3 text-sm">
                                     <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
                                       <User className="h-3 w-3 text-primary" />
                                     </div>
                                     <span className="font-medium">{member?.fullName || t.teacher_id}</span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-medium text-muted-foreground">Vai trò:</span>
+                                      {roleOptions.length > 0 ? (
+                                        <Select
+                                          value={selectedRoleId}
+                                          disabled={roleOptions.length === 1}
+                                          onValueChange={(roleId) => {
+                                            const current = [...(form.getValues("teachers_config") || [])];
+                                            current[idx] = { ...current[idx], role_id: roleId };
+                                            form.setValue("teachers_config", current, { shouldDirty: true });
+                                            setTeacherRolesDirty(true);
+                                          }}
+                                        >
+                                          <SelectTrigger className="h-8 w-[180px] text-xs" aria-label={`Vai trò của ${member?.fullName || "giáo viên"}`}>
+                                            <SelectValue placeholder="Chọn vai trò" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {roleOptions.map((role) => (
+                                              <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      ) : (
+                                        <span className="text-xs text-muted-foreground">Chưa gán vai trò tại cơ sở</span>
+                                      )}
+                                    </div>
                                     <Badge variant="outline" className="text-xs">{t.mode === "all" ? "Tất cả" : "Theo ca"}</Badge>
                                   </div>
                                   <TeacherShiftTimeEditor
@@ -1194,7 +1256,14 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                             onChange={(val) => {
                               const current = form.getValues("teachers_config") || [];
                               if (!current.some((t: any) => t.teacher_id === val)) {
-                                form.setValue("teachers_config", [...current, { teacher_id: val, mode: "all", shift_keys: [] }]);
+                                const member = staff?.find((s: any) => s.id === val);
+                                const roleOptions = getStaffRoleOptions(member, effectiveLocationId);
+                                form.setValue("teachers_config", [...current, {
+                                  teacher_id: val,
+                                  role_id: roleOptions.length === 1 ? roleOptions[0].id : "",
+                                  mode: "all",
+                                  shift_keys: [],
+                                }]);
                               }
                             }}
                             placeholder="Thêm giáo viên..."
@@ -1206,15 +1275,43 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                         <div className="space-y-3">
                           {teachersConfig.map((teacher: any, idx: number) => {
                             const staffMember = staff?.find((s: any) => s.id === teacher.teacher_id);
+                            const roleOptions = getStaffRoleOptions(staffMember, effectiveLocationId);
+                            const selectedRoleId = resolveTeacherRoleId(teacher, roleOptions);
                             return (
                               <Card key={teacher.teacher_id} className="bg-muted/10 border-dashed">
                                 <CardContent className="pt-4 space-y-3">
                                   <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-3 flex-wrap">
                                       <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
                                         <User className="h-4 w-4 text-primary" />
                                       </div>
                                       <span className="font-bold text-sm">{staffMember?.fullName || teacher.teacher_id}</span>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs font-medium text-muted-foreground">Vai trò:</span>
+                                        {roleOptions.length > 0 ? (
+                                          <Select
+                                            value={selectedRoleId}
+                                            disabled={roleOptions.length === 1}
+                                            onValueChange={(roleId) => {
+                                              const current = [...(form.getValues("teachers_config") || [])];
+                                              current[idx] = { ...current[idx], role_id: roleId };
+                                              form.setValue("teachers_config", current, { shouldDirty: true });
+                                              setTeacherRolesDirty(true);
+                                            }}
+                                          >
+                                            <SelectTrigger className="h-8 w-[180px] text-xs" aria-label={`Vai trò của ${staffMember?.fullName || "giáo viên"}`}>
+                                              <SelectValue placeholder="Chọn vai trò" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {roleOptions.map((role) => (
+                                                <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        ) : (
+                                          <span className="text-xs text-muted-foreground">Chưa gán vai trò tại cơ sở</span>
+                                        )}
+                                      </div>
                                     </div>
                                     <Button type="button" variant="ghost" size="sm" className="text-destructive h-7 px-2"
                                       onClick={() => {

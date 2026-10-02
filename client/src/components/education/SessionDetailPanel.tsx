@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { RichContentRenderer } from "@/components/ui/rich-content-renderer";
 import { format } from "date-fns";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -243,13 +243,20 @@ export function SessionDetailPanel({
   const totalSessions = classSessions?.length || 0;
   const sessionIndex = session?.sessionIndex ?? "?";
   const isOnline = classData?.learningFormat === "online";
-  const teacherName =
-    (session?.teachers?.length > 0
-      ? session.teachers.map((t: any) => t.fullName).join(", ")
-      : null) ||
-    (classData?.teachers?.length > 0
-      ? classData.teachers.map((t: any) => t.fullName).join(", ")
-      : "Chưa gán");
+  const displayedTeachers = session?.teachers?.length > 0
+    ? session.teachers
+    : classData?.teachers || [];
+  const teacherName = displayedTeachers.length > 0
+    ? displayedTeachers.map((teacher: any, index: number) => (
+        <Fragment key={teacher.id || index}>
+          {teacher.fullName}
+          {teacher.roleName && (
+            <span className="ml-1 text-xs font-normal text-black">({teacher.roleName})</span>
+          )}
+          {index < displayedTeachers.length - 1 ? ", " : ""}
+        </Fragment>
+      ))
+    : "Chưa gán";
   const sessionDate = session?.sessionDate ? new Date(session.sessionDate) : null;
   const dayOfWeekLabels = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
   const dayLabel = sessionDate ? dayOfWeekLabels[sessionDate.getDay()] : "";

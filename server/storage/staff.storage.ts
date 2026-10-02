@@ -312,6 +312,7 @@ export async function getStaff(
         roleNames: rIds.map(rid => roleNameMap.get(rid)).filter(Boolean) as string[],
         assignments: rawAssignments.map(a => ({
           ...a,
+          role: a.roleId ? { id: a.roleId, name: roleNameMap.get(a.roleId) || "" } : null,
           department: a.departmentId ? { id: a.departmentId, name: deptNameMap.get(a.departmentId) || "" } : null,
         })),
       };
