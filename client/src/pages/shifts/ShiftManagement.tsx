@@ -339,11 +339,8 @@ export function ShiftManagement() {
 
   const openEditShift = (s: any) => {
     setEditingShift(s);
-    const groupRows = allShiftTemplates.filter((row: any) =>
-      s.groupId ? row.groupId === s.groupId : row.id === s.id
-    );
     shiftForm.reset({
-      locationIds: groupRows.filter((row: any) => row.status !== "inactive").map((row: any) => row.locationId),
+      locationIds: [s.locationId],
       code: s.code ?? "",
       name: s.name ?? "",
       startTime: s.startTime ?? "",
@@ -473,11 +470,6 @@ export function ShiftManagement() {
         label: s.code ? `${s.code} - ${s.name}` : s.name,
       }));
 
-  const getAssignmentGroupRows = (assignment: any) =>
-    shiftAssignments.filter((row: any) =>
-      assignment.groupId ? row.groupId === assignment.groupId : row.id === assignment.id
-    );
-
   const normalizeWeekdaySchedule = (schedule: any): Record<string, string[]> => {
     if (!schedule) return emptyWeekdaySchedule();
     if (typeof schedule === "string") {
@@ -517,11 +509,6 @@ export function ShiftManagement() {
     }, { shouldDirty: true, shouldValidate: true });
   };
 
-  const getAssignmentEntries = (assignment: any) => {
-    const groupRows = getAssignmentGroupRows(assignment);
-    return groupRows.filter((row: any) => row.status !== "inactive");
-  };
-
   const openCreateAssignment = () => {
     setEditingAssignment(null);
     setIsCopyingAssignment(false);
@@ -542,21 +529,18 @@ export function ShiftManagement() {
   const openEditAssignment = (a: any) => {
     setEditingAssignment(a);
     setIsCopyingAssignment(false);
-    const groupRows = getAssignmentGroupRows(a);
     assignForm.reset({
       name: a.name ?? "",
-      locationIds: getAssignmentEntries(a).map((row: any) => row.locationId),
+      locationIds: [a.locationId],
       targetType: (a.targetType as any) ?? "department",
       targetId: a.targetId ?? "",
       byWeekday: a.byWeekday ?? true,
-      weekdayScheduleByLocation: Object.fromEntries(groupRows.map((row: any) => [
-        row.locationId,
-        normalizeWeekdaySchedule(row.weekdaySchedule),
-      ])),
-      shiftTemplateIdsByLocation: Object.fromEntries(groupRows.map((row: any) => [
-        row.locationId,
-        row.shiftTemplateId ?? "",
-      ])),
+      weekdayScheduleByLocation: {
+        [a.locationId]: normalizeWeekdaySchedule(a.weekdaySchedule),
+      },
+      shiftTemplateIdsByLocation: {
+        [a.locationId]: a.shiftTemplateId ?? "",
+      },
       effectiveFrom: a.effectiveFrom ?? "",
       effectiveTo: a.effectiveTo ?? "",
     });
@@ -564,21 +548,21 @@ export function ShiftManagement() {
   };
 
   const openCopyAssignment = (a: any) => {
-    // Keep editingAssignment empty so saving the copy always creates a new row.
+    // Copy one facility's row; selecting more facilities creates independent rows.
     setEditingAssignment(null);
     setIsCopyingAssignment(true);
-    const groupRows = getAssignmentEntries(a);
+    const sourceRows = [a];
     assignForm.reset({
       name: `${a.name ?? "Phân ca"} - Bản sao`,
-      locationIds: groupRows.map((row: any) => row.locationId),
+      locationIds: sourceRows.map((row: any) => row.locationId),
       targetType: (a.targetType as any) ?? "department",
       targetId: a.targetId ?? "",
       byWeekday: a.byWeekday ?? true,
-      weekdayScheduleByLocation: Object.fromEntries(groupRows.map((row: any) => [
+      weekdayScheduleByLocation: Object.fromEntries(sourceRows.map((row: any) => [
         row.locationId,
         normalizeWeekdaySchedule(row.weekdaySchedule),
       ])),
-      shiftTemplateIdsByLocation: Object.fromEntries(groupRows.map((row: any) => [
+      shiftTemplateIdsByLocation: Object.fromEntries(sourceRows.map((row: any) => [
         row.locationId,
         row.shiftTemplateId ?? "",
       ])),

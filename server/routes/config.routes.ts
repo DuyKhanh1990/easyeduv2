@@ -1758,10 +1758,9 @@ export function registerConfigRoutes(app: Express): void {
         return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở đã chọn" });
       }
       const { locationIds: _locationIds, ...rawInput } = req.body ?? {};
-      const input = insertShiftTemplateSchema.parse({ ...rawInput, locationId: locationIds[0] });
-      const groupId = randomUUID();
+      const input = insertShiftTemplateSchema.parse({ ...rawInput, locationId: locationIds[0], groupId: null });
       const shifts = await db.insert(shiftTemplates).values(
-        locationIds.map((locationId) => ({ ...input, locationId, groupId }))
+        locationIds.map((locationId) => ({ ...input, locationId, groupId: null }))
       ).returning();
       res.status(201).json(shifts.length === 1 ? shifts[0] : shifts);
     } catch (err) {
@@ -1781,54 +1780,21 @@ export function registerConfigRoutes(app: Express): void {
         return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở này" });
       }
 
-      const rawLocationIds = req.body?.locationIds ?? (req.body?.locationId ? [req.body.locationId] : [current.locationId]);
-      const locationIds = z.array(z.string().uuid()).min(1).parse(rawLocationIds);
-      if (!req.isSuperAdmin && locationIds.some((id) => !(req.allowedLocationIds ?? []).includes(id))) {
-        return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở đã chọn" });
-      }
-      const { locationIds: _locationIds, ...rawInput } = req.body ?? {};
-      const input = insertShiftTemplateSchema.partial().parse({ ...rawInput, locationId: locationIds[0] });
-      const groupRows = current.groupId
-        ? await db.select().from(shiftTemplateTable).where(eq(shiftTemplateTable.groupId, current.groupId))
-        : [current];
-      const managedRows = groupRows.filter((row) =>
-        req.isSuperAdmin || (req.allowedLocationIds ?? []).includes(row.locationId)
-      );
-      const groupId = current.groupId ?? randomUUID();
-      const selected = new Set(locationIds);
-      const updatedRows: any[] = [];
-      const oldRowsByLocation = new Map(managedRows.map((row) => [row.locationId, row]));
+      const { locationIds: _locationIds, locationId: _locationId, ...rawInput } = req.body ?? {};
+      const input = insertShiftTemplateSchema.partial().parse(rawInput);
+      const [updatedShift] = await db.update(shiftTemplateTable)
+        .set({
+          ...input,
+          locationId: current.locationId,
+          groupId: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(shiftTemplateTable.id, current.id))
+        .returning();
+      res.json(updatedShift);
 
-      for (const row of managedRows) {
-        if (!selected.has(row.locationId) && row.status !== "inactive") {
-          await db.update(shiftTemplateTable)
-            .set({ status: "inactive", updatedAt: new Date(), groupId })
-            .where(eq(shiftTemplateTable.id, row.id));
-        }
-      }
-
-      const base = { ...current, ...input };
-      const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...cloneFields } = base;
-      for (const locationId of locationIds) {
-        const existing = oldRowsByLocation.get(locationId);
-        if (existing) {
-          const [updated] = await db.update(shiftTemplateTable)
-            .set({ ...input, locationId, groupId, updatedAt: new Date() })
-            .where(eq(shiftTemplateTable.id, existing.id))
-            .returning();
-          updatedRows.push(updated);
-        } else {
-          const [created] = await db.insert(shiftTemplateTable)
-            .values({ ...cloneFields, locationId, groupId })
-            .returning();
-          updatedRows.push(created);
-        }
-      }
-      res.json(updatedRows.length === 1 ? updatedRows[0] : updatedRows);
-
-      const changedShiftIds = managedRows
-        .filter((row) => selected.has(row.locationId) && input.startTime && row.startTime !== input.startTime)
-        .map((row) => row.id);
+      const changedShiftIds =
+        input.startTime && current.startTime !== input.startTime ? [current.id] : [];
       if (changedShiftIds.length > 0 && input.startTime) {
         const newTime = String(input.startTime).slice(0, 5);
         setImmediate(async () => {
@@ -1887,15 +1853,9 @@ export function registerConfigRoutes(app: Express): void {
       if (!req.isSuperAdmin && !(req.allowedLocationIds ?? []).includes(current.locationId)) {
         return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở này" });
       }
-      const groupRows = current.groupId
-        ? await db.select().from(shiftTemplates).where(eq(shiftTemplates.groupId, current.groupId))
-        : [current];
-      for (const row of groupRows) {
-        if (req.isSuperAdmin || (req.allowedLocationIds ?? []).includes(row.locationId)) {
-          await db.update(shiftTemplates).set({ status: "inactive", updatedAt: new Date() })
-            .where(eq(shiftTemplates.id, row.id));
-        }
-      }
+      await db.update(shiftTemplates)
+        .set({ status: "inactive", groupId: null, updatedAt: new Date() })
+        .where(eq(shiftTemplates.id, current.id));
       res.status(204).send();
     } catch (err) {
       res.status(500).json({ message: (err as any).message });
@@ -1935,7 +1895,7 @@ export function registerConfigRoutes(app: Express): void {
         if (!req.isSuperAdmin && !(req.allowedLocationIds ?? []).includes(input.locationId)) {
           return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở này" });
         }
-        const [row] = await db.insert(shiftAssignments).values(input).returning();
+        const [row] = await db.insert(shiftAssignments).values({ ...input, groupId: null }).returning();
         return res.status(201).json(row);
       }
 
@@ -1985,13 +1945,12 @@ export function registerConfigRoutes(app: Express): void {
         }
       }
 
-      const groupId = randomUUID();
       const { locationId: _locationId, shiftTemplateId: _shiftTemplateId, weekdaySchedule: _weekdaySchedule, ...common } = input;
       const rows = await db.transaction(async (tx) => tx.insert(shiftAssignments).values(
         entries.map((entry) => ({
           ...common,
           ...entry,
-          groupId,
+          groupId: null,
           status: "active",
         }))
       ).returning());
@@ -2015,12 +1974,10 @@ export function registerConfigRoutes(app: Express): void {
 
       const rawEntries = req.body?.locationAssignments;
       if (!Array.isArray(rawEntries)) {
-        const input = insertShiftAssignmentSchema.partial().parse(req.body);
-        if (input.locationId && !req.isSuperAdmin && !(req.allowedLocationIds ?? []).includes(input.locationId)) {
-          return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở này" });
-        }
+        const { locationId: _locationId, ...rawInput } = req.body ?? {};
+        const input = insertShiftAssignmentSchema.partial().parse(rawInput);
         const [row] = await db.update(shiftAssignments)
-          .set({ ...input, updatedAt: new Date() })
+          .set({ ...input, locationId: current.locationId, groupId: null, updatedAt: new Date() })
           .where(eq(shiftAssignments.id, req.params.id))
           .returning();
         return res.json(row);
@@ -2030,21 +1987,21 @@ export function registerConfigRoutes(app: Express): void {
         locationId: z.string().uuid(),
         shiftTemplateId: z.string().uuid().nullable(),
         weekdaySchedule: z.record(z.array(z.string().uuid())).nullable(),
-      })).min(1).parse(rawEntries);
-      const locationIds = entries.map((entry) => entry.locationId);
-      if (new Set(locationIds).size !== locationIds.length) {
-        return res.status(400).json({ message: "Không thể chọn trùng cơ sở" });
+      })).length(1).parse(rawEntries);
+      const entry = entries[0];
+      if (entry.locationId !== current.locationId) {
+        return res.status(400).json({ message: "Không thể đổi cơ sở của phân ca đã tạo; hãy tạo dòng riêng tại cơ sở mới" });
       }
-      if (!req.isSuperAdmin && locationIds.some((id) => !(req.allowedLocationIds ?? []).includes(id))) {
-        return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở đã chọn" });
+      if (!req.isSuperAdmin && !(req.allowedLocationIds ?? []).includes(entry.locationId)) {
+        return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở này" });
       }
 
-      const { locationAssignments: _entries, ...rawCommon } = req.body;
+      const { locationAssignments: _entries, locationIds: _locationIds, locationId: _locationId, ...rawCommon } = req.body;
       const input = insertShiftAssignmentSchema.partial().parse({
         ...rawCommon,
-        locationId: entries[0].locationId,
-        shiftTemplateId: entries[0].shiftTemplateId,
-        weekdaySchedule: entries[0].weekdaySchedule,
+        locationId: current.locationId,
+        shiftTemplateId: entry.shiftTemplateId,
+        weekdaySchedule: entry.weekdaySchedule,
       });
       const shiftIds = [...new Set(entries.flatMap((entry) =>
         entry.shiftTemplateId
@@ -2072,63 +2029,15 @@ export function registerConfigRoutes(app: Express): void {
         }
       }
 
-      const groupRows = current.groupId
-        ? await db.select().from(shiftAssignments).where(eq(shiftAssignments.groupId, current.groupId))
-        : [current];
-      const managedRows = groupRows.filter((row) =>
-        req.isSuperAdmin || (req.allowedLocationIds ?? []).includes(row.locationId)
-      );
-      const groupId = current.groupId ?? randomUUID();
-      const selected = new Set(locationIds);
-      const rowsByLocation = new Map(managedRows.map((row) => [row.locationId, row]));
-      const cutoffDate = getBangkokDateOnly();
-      const rows = await db.transaction(async (tx) => {
-        for (const row of managedRows) {
-          if (selected.has(row.locationId) || row.status === "inactive") continue;
-          const previousEnd = row.effectiveTo ? String(row.effectiveTo).slice(0, 10) : null;
-          const effectiveTo = previousEnd && previousEnd < cutoffDate ? previousEnd : cutoffDate;
-          await tx.update(shiftAssignments).set({
-            status: "inactive",
-            effectiveTo,
-            groupId,
-            updatedAt: new Date(),
-          }).where(eq(shiftAssignments.id, row.id));
-        }
-
-        const mergedBase = { ...current, ...input };
-        const {
-          id: _id,
-          createdAt: _createdAt,
-          updatedAt: _updatedAt,
-          ...baseFields
-        } = mergedBase;
-        const savedRows = [];
-        for (const entry of entries) {
-          const existing = rowsByLocation.get(entry.locationId);
-          if (existing) {
-            const [updated] = await tx.update(shiftAssignments).set({
-              ...input,
-              ...entry,
-              locationId: entry.locationId,
-              groupId,
-              status: "active",
-              updatedAt: new Date(),
-            }).where(eq(shiftAssignments.id, existing.id)).returning();
-            savedRows.push(updated);
-          } else {
-            const [created] = await tx.insert(shiftAssignments).values({
-              ...baseFields,
-              ...entry,
-              locationId: entry.locationId,
-              groupId,
-              status: "active",
-            }).returning();
-            savedRows.push(created);
-          }
-        }
-        return savedRows;
-      });
-      res.json(rows);
+      const [updated] = await db.update(shiftAssignments).set({
+        ...input,
+        ...entry,
+        locationId: current.locationId,
+        groupId: null,
+        status: "active",
+        updatedAt: new Date(),
+      }).where(eq(shiftAssignments.id, current.id)).returning();
+      res.json(updated);
     } catch (err) {
       if (err instanceof z.ZodError) return res.status(400).json(err.errors);
       res.status(500).json({ message: (err as any).message });
@@ -2145,20 +2054,15 @@ export function registerConfigRoutes(app: Express): void {
       if (!req.isSuperAdmin && !(req.allowedLocationIds ?? []).includes(current.locationId)) {
         return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở này" });
       }
-      const groupRows = current.groupId
-        ? await db.select().from(shiftAssignments).where(eq(shiftAssignments.groupId, current.groupId))
-        : [current];
       const cutoffDate = getBangkokDateOnly();
-      for (const row of groupRows) {
-        if (!req.isSuperAdmin && !(req.allowedLocationIds ?? []).includes(row.locationId)) continue;
-        const previousEnd = row.effectiveTo ? String(row.effectiveTo).slice(0, 10) : null;
-        const effectiveTo = previousEnd && previousEnd < cutoffDate ? previousEnd : cutoffDate;
-        await db.update(shiftAssignments).set({
-          status: "inactive",
-          effectiveTo,
-          updatedAt: new Date(),
-        }).where(eq(shiftAssignments.id, row.id));
-      }
+      const previousEnd = current.effectiveTo ? String(current.effectiveTo).slice(0, 10) : null;
+      const effectiveTo = previousEnd && previousEnd < cutoffDate ? previousEnd : cutoffDate;
+      await db.update(shiftAssignments).set({
+        status: "inactive",
+        effectiveTo,
+        groupId: null,
+        updatedAt: new Date(),
+      }).where(eq(shiftAssignments.id, current.id));
       res.status(204).send();
     } catch (err) {
       res.status(500).json({ message: (err as any).message });

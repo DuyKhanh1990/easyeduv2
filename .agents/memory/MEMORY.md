@@ -81,4 +81,4 @@
 - [Score conversion pass threshold](score-conversion-pass-threshold.md) — “Đạt” means the selected total is at least the “Từ” score; the “Đến” value does not cap higher scores.
 - [Score conversion range boundaries](score-conversion-mapping-boundaries.md) — displayed “Từ–Đến” ranges include the upper bound unless the next range starts at that same boundary.
 - [Invoice date-filter row parity](invoice-date-filter-row-parity.md) — counts and date filters must use the same installment-level rows the client renders.
-- [Facility shift history](shift-facility-history.md) — removing a facility stops its current shift rows without deleting assignment or attendance history.
+- [Facility shift history](shift-facility-history.md) — shift rows are independent per facility; stopping one preserves its assignment and attendance history.
