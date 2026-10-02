@@ -93,6 +93,7 @@ function getShiftIdsForStaffOnDate(s: any, date: Date, shiftAssignments: any[], 
   const dowKey = String(date.getDay());
   const ids: string[] = [];
   for (const a of shiftAssignments) {
+    if (a.status === "inactive") continue;
     if (!staffMatchesAssignment(s, a, locationId)) continue;
     if (a.effectiveFrom && ymd < format(new Date(a.effectiveFrom), "yyyy-MM-dd")) continue;
     if (a.effectiveTo && ymd > format(new Date(a.effectiveTo), "yyyy-MM-dd")) continue;

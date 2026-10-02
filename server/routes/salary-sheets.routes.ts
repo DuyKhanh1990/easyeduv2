@@ -332,7 +332,8 @@ export function registerSalarySheetRoutes(app: Express): void {
       const legacyAdjustmentsApplied = new Set<string>();
 
       for (const locationId of locationIds) {
-      // Get all active staff at this facility
+      // Candidate staff at this facility; the monthly shift board determines
+      // which staff actually receive a salary row below.
       const assignments = await db
         .select({
           staffId: staffAssignments.staffId,
@@ -343,10 +344,7 @@ export function registerSalarySheetRoutes(app: Express): void {
         .from(staffAssignments)
         .innerJoin(staff, eq(staffAssignments.staffId, staff.id))
         .leftJoin(roles, eq(staffAssignments.roleId, roles.id))
-        .where(and(
-          eq(staffAssignments.locationId, locationId),
-          eq(staff.status, "Hoạt động")
-        ));
+        .where(eq(staffAssignments.locationId, locationId));
 
       // Get location name
       const loc = await db
@@ -373,10 +371,7 @@ export function registerSalarySheetRoutes(app: Express): void {
                  weekday_schedule, effective_from, effective_to
           FROM shift_assignments
           WHERE location_id = ${locationId}::uuid
-            AND (
-              status = 'active'
-              OR (status = 'inactive' AND effective_to IS NOT NULL)
-            )
+            AND status IS DISTINCT FROM 'inactive'
         `),
         db.execute(sql`
           SELECT id, work_units, start_time, end_time, lunch_break_minutes
@@ -465,6 +460,7 @@ export function registerSalarySheetRoutes(app: Express): void {
       }
 
       const soCongMap: Record<string, number> = {};
+      const staffWithAssignedShifts = new Set<string>();
       for (const emp of unique) {
         let total = 0;
         const myAssignments = assignmentsByStaff[emp.staffId];
@@ -480,10 +476,15 @@ export function registerSalarySheetRoutes(app: Express): void {
               if (!ids.includes(a.shift_template_id)) ids.push(a.shift_template_id);
             }
           }
+          if (ids.length > 0) staffWithAssignedShifts.add(emp.staffId);
           for (const id of ids) total += getShiftWorkUnits(templateMap[id]);
         }
         soCongMap[emp.staffId] = Math.round(total * 100) / 100;
       }
+      // Match the monthly shift board and /cham-cong: a salary row exists only
+      // for each staff/facility pair with at least one assigned work shift.
+      const scheduledStaff = unique.filter(emp => staffWithAssignedShifts.has(emp.staffId));
+      if (scheduledStaff.length === 0) continue;
 
       // ── 2. Công thực: SUM(tong_cong) từ bảng chấm công (/cham-cong) ────────
       const attendanceRes = await db.execute(sql`
@@ -570,7 +571,7 @@ export function registerSalarySheetRoutes(app: Express): void {
       }
 
       // ── 4. Fetch staff HR salary configs for this location ──────────────────
-      const staffIds = unique.map(a => a.staffId);
+      const staffIds = scheduledStaff.map(a => a.staffId);
       const hrConfigs = staffIds.length > 0
         ? await db
             .select()
@@ -630,7 +631,7 @@ export function registerSalarySheetRoutes(app: Express): void {
           FROM staff_rewards
           WHERE date >= ${fromDate}::date
             AND date <= ${toDate}::date
-            AND staff_id = ANY(${staffIds}::uuid[])
+            AND staff_id IN (${sql.join(staffIds.map(staffId => sql`${staffId}::uuid`), sql`, `)})
             AND (location_id = ${locationId}::uuid OR location_id IS NULL)
           GROUP BY staff_id, location_id, type
         `);
@@ -665,7 +666,7 @@ export function registerSalarySheetRoutes(app: Express): void {
         }
       }
 
-      generatedRows.push(...unique.map(a => {
+      generatedRows.push(...scheduledStaff.map(a => {
           const includeLegacyAdjustments = !legacyAdjustmentsApplied.has(a.staffId);
           legacyAdjustmentsApplied.add(a.staffId);
           const luongDL = Math.round(luongDungLopMap[a.staffId] ?? 0);
