@@ -1987,10 +1987,10 @@ export function registerConfigRoutes(app: Express): void {
         locationId: z.string().uuid(),
         shiftTemplateId: z.string().uuid().nullable(),
         weekdaySchedule: z.record(z.array(z.string().uuid())).nullable(),
-      })).length(1).parse(rawEntries);
-      const entry = entries[0];
-      if (entry.locationId !== current.locationId) {
-        return res.status(400).json({ message: "Không thể đổi cơ sở của phân ca đã tạo; hãy tạo dòng riêng tại cơ sở mới" });
+      })).min(1).parse(rawEntries);
+      const entry = entries.find((candidate) => candidate.locationId === current.locationId);
+      if (!entry) {
+        return res.status(400).json({ message: "Dữ liệu cập nhật không chứa cơ sở của phân ca này" });
       }
       if (!req.isSuperAdmin && !(req.allowedLocationIds ?? []).includes(entry.locationId)) {
         return res.status(403).json({ message: "Bạn không có quyền thao tác tại cơ sở này" });
@@ -2003,11 +2003,9 @@ export function registerConfigRoutes(app: Express): void {
         shiftTemplateId: entry.shiftTemplateId,
         weekdaySchedule: entry.weekdaySchedule,
       });
-      const shiftIds = [...new Set(entries.flatMap((entry) =>
-        entry.shiftTemplateId
-          ? [entry.shiftTemplateId]
-          : Object.values(entry.weekdaySchedule ?? {}).flat()
-      ))];
+      const shiftIds = entry.shiftTemplateId
+        ? [entry.shiftTemplateId]
+        : Object.values(entry.weekdaySchedule ?? {}).flat();
       if (shiftIds.length > 0) {
         const { shiftTemplates } = await import("@shared/schema");
         const templates = await db.select({
@@ -2016,16 +2014,11 @@ export function registerConfigRoutes(app: Express): void {
           status: shiftTemplates.status,
         }).from(shiftTemplates).where(inArray(shiftTemplates.id, shiftIds));
         const templateById = new Map(templates.map((template) => [template.id, template]));
-        for (const entry of entries) {
-          const selectedIds = entry.shiftTemplateId
-            ? [entry.shiftTemplateId]
-            : Object.values(entry.weekdaySchedule ?? {}).flat();
-          if (selectedIds.some((id) => {
-            const template = templateById.get(id);
-            return !template || template.locationId !== entry.locationId || template.status !== "active";
-          })) {
-            return res.status(400).json({ message: "Ca được chọn không thuộc cơ sở hoặc đã ngừng hoạt động" });
-          }
+        if (shiftIds.some((id) => {
+          const template = templateById.get(id);
+          return !template || template.locationId !== entry.locationId || template.status !== "active";
+        })) {
+          return res.status(400).json({ message: "Ca được chọn không thuộc cơ sở hoặc đã ngừng hoạt động" });
         }
       }
 
