@@ -3948,7 +3948,10 @@ export function registerMySpaceRoutes(app: Express): void {
                 'categoryId', gbs.category_id,
                 'categoryName', sc.name,
                 'score', gbs.score
-              ) ORDER BY sci.order)
+              ) ORDER BY CASE
+                WHEN gb.score_sheet_category_order_snapshot IS NULL THEN sci.order
+                ELSE COALESCE(array_position(gb.score_sheet_category_order_snapshot, gbs.category_id), 2147483647)
+              END)
               FROM class_grade_book_scores gbs
               JOIN score_categories sc ON sc.id = gbs.category_id
               LEFT JOIN score_sheet_items sci ON sci.category_id = gbs.category_id AND sci.score_sheet_id = gb.score_sheet_id

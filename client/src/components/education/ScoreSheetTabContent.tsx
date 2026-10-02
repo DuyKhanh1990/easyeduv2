@@ -48,6 +48,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { downloadClassGradeBookExcel } from "@/lib/gradeBookExcelExport";
 import { GradeBookViewDialog } from "./GradeBookViewDialog";
+import { orderScoreSheetItemsByCategorySnapshot } from "@/lib/score-sheet-order";
 
 interface ScoreSheetTabContentProps {
   classId: string;
@@ -68,6 +69,7 @@ export function ScoreSheetTabContent({
   const [title, setTitle] = useState("");
   const [selectedSessionId, setSelectedSessionId] = useState<string>(NONE_VALUE);
   const [selectedScoreSheetId, setSelectedScoreSheetId] = useState<string>("");
+  const [editOrderSnapshot, setEditOrderSnapshot] = useState<{ scoreSheetId: string; categoryIds: string[] } | null>(null);
   const [scores, setScores] = useState<Record<string, Record<string, string>>>({});
   const [includedStudentIds, setIncludedStudentIds] = useState<Set<string>>(new Set());
   const [removedStudentIds, setRemovedStudentIds] = useState<Set<string>>(new Set());
@@ -118,7 +120,13 @@ export function ScoreSheetTabContent({
     (s: any) => s.id === selectedScoreSheetId
   );
 
-  const categories = selectedScoreSheet?.items?.map((item: any) => item.category).filter(Boolean) || [];
+  const orderedSheetItems = orderScoreSheetItemsByCategorySnapshot(
+    selectedScoreSheet?.items,
+    isEditMode && editOrderSnapshot?.scoreSheetId === selectedScoreSheetId
+      ? editOrderSnapshot.categoryIds
+      : null,
+  );
+  const categories = orderedSheetItems.map((item: any) => item.category).filter(Boolean);
 
   const allStudents = activeStudents || [];
   const displayedStudents = allStudents.filter((s: any) => {
@@ -186,6 +194,7 @@ export function ScoreSheetTabContent({
 
   const handleOpenDialog = () => {
     setEditingBookId(null);
+    setEditOrderSnapshot(null);
     setTitle("");
     setSelectedSessionId(NONE_VALUE);
     setSelectedScoreSheetId(classData?.scoreSheetId || "");
@@ -204,6 +213,7 @@ export function ScoreSheetTabContent({
 
   const handleOpenEditDialog = async (book: any) => {
     setEditingBookId(book.id);
+    setEditOrderSnapshot(null);
     setTitle(book.title);
     setSelectedSessionId(book.session_id || NONE_VALUE);
     setSelectedScoreSheetId(book.score_sheet_id);
@@ -221,6 +231,12 @@ export function ScoreSheetTabContent({
     try {
       const resp = await fetch(`/api/classes/${classId}/grade-books/${book.id}`);
       const data = await resp.json();
+      setEditOrderSnapshot({
+        scoreSheetId: book.score_sheet_id,
+        categoryIds: Array.isArray(data.scoreSheetCategoryOrderSnapshot)
+          ? data.scoreSheetCategoryOrderSnapshot
+          : [],
+      });
       const existingScores: any[] = data.scores || [];
       const existingComments: Record<string, string> = data.studentComments || {};
       setIncludedStudentIds(new Set(
@@ -287,6 +303,7 @@ export function ScoreSheetTabContent({
   const handleCloseDialog = () => {
     setDialogOpen(false);
     setEditingBookId(null);
+    setEditOrderSnapshot(null);
   };
 
   const sheetItems = selectedScoreSheet?.items || [];

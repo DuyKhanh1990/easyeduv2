@@ -24,7 +24,7 @@ import {
   type ScoreSheetAssessment,
 } from "@shared/score-sheet-assessment";
 import { selectScoreSheetAssessmentAttemptSummary } from "@shared/score-sheet-assessment-scoring";
-import { eq, and, sql, notExists, inArray, ne } from "drizzle-orm";
+import { eq, and, sql, notExists, inArray, ne, isNull } from "drizzle-orm";
 import {
   staffAssignments, departments, users, roles, students, shiftTemplates, classes, studentClasses, centerConfig,
   studentSessions, scoreSheetAssessmentStudentAttempts,
@@ -3324,7 +3324,7 @@ export function registerConfigRoutes(app: Express): void {
 
   app.put("/api/score-sheets/:id", async (req, res) => {
     try {
-      const { scoreSheets, scoreSheetItems } = await import("@shared/schema");
+      const { scoreSheets, scoreSheetItems, classGradeBooks } = await import("@shared/schema");
       const body = z.object({
         name: z.string().min(1),
         items: z.array(z.object({
@@ -3333,13 +3333,38 @@ export function registerConfigRoutes(app: Express): void {
           order: z.number().int().default(0),
         })).default([]),
       }).parse(req.body);
-      const [sheet] = await db.update(scoreSheets).set({ name: body.name }).where(eq(scoreSheets.id, req.params.id)).returning();
-      await db.delete(scoreSheetItems).where(eq(scoreSheetItems.scoreSheetId, req.params.id));
-      if (body.items.length > 0) {
-        await db.insert(scoreSheetItems).values(
-          body.items.map((item, idx) => ({ ...item, scoreSheetId: req.params.id, order: item.order ?? idx }))
-        );
-      }
+      const sheet = await db.transaction(async (tx) => {
+        const previousItems = await tx
+          .select({ categoryId: scoreSheetItems.categoryId })
+          .from(scoreSheetItems)
+          .where(eq(scoreSheetItems.scoreSheetId, req.params.id))
+          .orderBy(scoreSheetItems.order);
+        const previousOrder = previousItems.map((item) => item.categoryId);
+        const nextOrder = body.items.map((item) => item.categoryId);
+        const orderChanged = previousOrder.length !== nextOrder.length
+          || previousOrder.some((categoryId, index) => categoryId !== nextOrder[index]);
+
+        if (orderChanged) {
+          await tx.update(classGradeBooks)
+            .set({ scoreSheetCategoryOrderSnapshot: previousOrder })
+            .where(and(
+              eq(classGradeBooks.scoreSheetId, req.params.id),
+              isNull(classGradeBooks.scoreSheetCategoryOrderSnapshot),
+            ));
+        }
+
+        const [updatedSheet] = await tx.update(scoreSheets)
+          .set({ name: body.name })
+          .where(eq(scoreSheets.id, req.params.id))
+          .returning();
+        await tx.delete(scoreSheetItems).where(eq(scoreSheetItems.scoreSheetId, req.params.id));
+        if (body.items.length > 0) {
+          await tx.insert(scoreSheetItems).values(
+            body.items.map((item, idx) => ({ ...item, scoreSheetId: req.params.id, order: item.order ?? idx }))
+          );
+        }
+        return updatedSheet;
+      });
       res.json(sheet);
     } catch (err: any) {
       if (err instanceof z.ZodError) return res.status(400).json(err.errors);

@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { ClipboardList, MessageSquare } from "lucide-react";
 import { StudentNameLink } from "@/components/ui/StudentNameLink";
+import { orderScoreSheetItemsByCategorySnapshot } from "@/lib/score-sheet-order";
 
 interface GradeBookViewDialogProps {
   open: boolean;
@@ -46,6 +47,7 @@ export function GradeBookViewDialog({
   const [gradeBookStudentIds, setGradeBookStudentIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [scoreSheetCategoryOrderSnapshot, setScoreSheetCategoryOrderSnapshot] = useState<string[] | null>(null);
   const [commentViewOpen, setCommentViewOpen] = useState(false);
   const [commentViewName, setCommentViewName] = useState("");
   const [commentViewText, setCommentViewText] = useState("");
@@ -59,7 +61,10 @@ export function GradeBookViewDialog({
   });
 
   const selectedScoreSheet = allScoreSheets?.find((s: any) => s.id === book.score_sheet_id);
-  const sheetItems = selectedScoreSheet?.items || [];
+  const sheetItems = orderScoreSheetItemsByCategorySnapshot(
+    selectedScoreSheet?.items,
+    scoreSheetCategoryOrderSnapshot,
+  );
   const categories = sheetItems.map((item: any) => item.category).filter(Boolean);
 
   const computedCategoryIds = new Set<string>(
@@ -89,6 +94,7 @@ export function GradeBookViewDialog({
     setComments({});
     setExcludedStudentIds(new Set());
     setGradeBookStudentIds(new Set());
+    setScoreSheetCategoryOrderSnapshot(null);
     setLoadError(false);
     setLoading(true);
 
@@ -101,6 +107,11 @@ export function GradeBookViewDialog({
         if (cancelled) return;
         const existingScores: any[] = data.scores || [];
         const existingComments: Record<string, string> = data.studentComments || {};
+        setScoreSheetCategoryOrderSnapshot(
+          Array.isArray(data.scoreSheetCategoryOrderSnapshot)
+            ? data.scoreSheetCategoryOrderSnapshot
+            : null,
+        );
         setExcludedStudentIds(new Set(data.excludedStudentIds || []));
 
         const studentIdToEnrollmentId: Record<string, string> = {};

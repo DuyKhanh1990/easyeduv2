@@ -7755,6 +7755,7 @@ export function registerClassesRoutes(app: Express): void {
           gb.class_id,
           gb.title,
           gb.score_sheet_id,
+          gb.score_sheet_category_order_snapshot,
           gb.session_id,
           gb.published,
           gb.excluded_student_ids,
@@ -7870,6 +7871,7 @@ export function registerClassesRoutes(app: Express): void {
         .select({
           excludedStudentIds: classGradeBooks.excludedStudentIds,
           studentIds: classGradeBooks.studentIds,
+          scoreSheetCategoryOrderSnapshot: classGradeBooks.scoreSheetCategoryOrderSnapshot,
           createdAt: classGradeBooks.createdAt,
         })
         .from(classGradeBooks)
@@ -7910,6 +7912,7 @@ export function registerClassesRoutes(app: Express): void {
         studentComments,
         excludedStudentIds: book?.excludedStudentIds || [],
         studentIds,
+        scoreSheetCategoryOrderSnapshot: book?.scoreSheetCategoryOrderSnapshot ?? null,
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -7936,7 +7939,12 @@ export function registerClassesRoutes(app: Express): void {
       }).parse(req.body);
 
       // Fetch current state before update to detect publish transition
-      const [existing] = await db.select({ published: classGradeBooks.published, title: classGradeBooks.title, classId: classGradeBooks.classId })
+      const [existing] = await db.select({
+        published: classGradeBooks.published,
+        title: classGradeBooks.title,
+        classId: classGradeBooks.classId,
+        scoreSheetId: classGradeBooks.scoreSheetId,
+      })
         .from(classGradeBooks).where(eq(classGradeBooks.id, id)).limit(1);
       const wasPublished = existing?.published ?? false;
 
@@ -8028,7 +8036,12 @@ export function registerClassesRoutes(app: Express): void {
 
       const updateData: any = { updatedBy: userId, updatedAt: new Date() };
       if (body.title) updateData.title = body.title;
-      if (body.scoreSheetId) updateData.scoreSheetId = body.scoreSheetId;
+      if (body.scoreSheetId) {
+        updateData.scoreSheetId = body.scoreSheetId;
+        if (body.scoreSheetId !== existing?.scoreSheetId) {
+          updateData.scoreSheetCategoryOrderSnapshot = null;
+        }
+      }
       if ('sessionId' in body) updateData.sessionId = body.sessionId;
       if ('published' in body) updateData.published = body.published;
       if ('excludedStudentIds' in body) updateData.excludedStudentIds = body.excludedStudentIds;

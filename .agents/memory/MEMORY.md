@@ -77,6 +77,7 @@
 - [Invoice installment adjustments](invoice-schedule-adjustments.md) — đợt chưa thanh toán tính từ tiền cơ sở; server khóa đợt đã thu và đồng bộ tổng hóa đơn cha.
 - [Mockup sandbox screenshots](mockup-sandbox-screenshots.md) — screenshot isolated previews from the sandbox URL; appPreview paths load the main app instead.
 - [Score-sheet template configuration](score-sheet-template-configuration.md) — scoring keeps its saved snapshot; linked templates supply current deadlines and evaluation criteria.
+- [Score-sheet category order snapshots](score-sheet-category-order.md) — existing gradebooks keep their category order when a shared score sheet is reordered; new books use the new order.
 - [Score conversion publication](score-assessment-publication.md) — publish state belongs to each class session; students only see their enrolled session's policy-selected result.
 - [Finance translation parity](finance-translation-parity.md) — invoice English audits must compare vi/en key sets and scan child dialogs, not only the main Invoices page.
 - [Score conversion pass threshold](score-conversion-pass-threshold.md) — “Đạt” means the selected total is at least the “Từ” score; the “Đến” value does not cap higher scores.

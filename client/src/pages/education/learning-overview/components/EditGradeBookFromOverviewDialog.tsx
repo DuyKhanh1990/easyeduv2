@@ -45,6 +45,7 @@ import { ClipboardList, Loader2, MessageSquarePlus, Trash2 } from "lucide-react"
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { GradeBookRow } from "../types";
+import { orderScoreSheetItemsByCategorySnapshot } from "@/lib/score-sheet-order";
 
 const NONE_VALUE = "__none__";
 
@@ -74,6 +75,8 @@ export function EditGradeBookFromOverviewDialog({ book, open, onClose }: Props) 
   const [commentStudentName, setCommentStudentName] = useState<string>("");
   const [studentComments, setStudentComments] = useState<Record<string, string>>({});
   const [loadingEdit, setLoadingEdit] = useState(false);
+  const [scoreSheetCategoryOrderSnapshot, setScoreSheetCategoryOrderSnapshot] = useState<string[] | null>(null);
+  const [snapshotScoreSheetId, setSnapshotScoreSheetId] = useState<string | null>(null);
 
   // Prevent double-fetching scores
   const scoresFetchedForBookId = useRef<string | null>(null);
@@ -120,9 +123,11 @@ export function EditGradeBookFromOverviewDialog({ book, open, onClose }: Props) 
   });
 
   const selectedScoreSheet = allScoreSheets?.find((s: any) => s.id === selectedScoreSheetId);
-  const categories =
-    selectedScoreSheet?.items?.map((item: any) => item.category).filter(Boolean) || [];
-  const sheetItems = selectedScoreSheet?.items || [];
+  const sheetItems = orderScoreSheetItemsByCategorySnapshot(
+    selectedScoreSheet?.items,
+    snapshotScoreSheetId === selectedScoreSheetId ? scoreSheetCategoryOrderSnapshot : null,
+  );
+  const categories = sheetItems.map((item: any) => item.category).filter(Boolean);
 
   const computedCategoryIds = new Set<string>(
     sheetItems
@@ -154,6 +159,8 @@ export function EditGradeBookFromOverviewDialog({ book, open, onClose }: Props) 
       setRemovedStudentIds(new Set());
       setPendingRemoval(null);
       setStudentComments({});
+      setScoreSheetCategoryOrderSnapshot(null);
+      setSnapshotScoreSheetId(null);
       setLoadingEdit(true);
     }
   }, [open, book?.id]);
@@ -174,6 +181,12 @@ export function EditGradeBookFromOverviewDialog({ book, open, onClose }: Props) 
       .then((data) => {
         const existingScores: any[] = data.scores || [];
         const existingComments: Record<string, string> = data.studentComments || {};
+        setSnapshotScoreSheetId(book.scoreSheetId || null);
+        setScoreSheetCategoryOrderSnapshot(
+          Array.isArray(data.scoreSheetCategoryOrderSnapshot)
+            ? data.scoreSheetCategoryOrderSnapshot
+            : null,
+        );
         setIncludedStudentIds(new Set(
           Array.isArray(data.studentIds)
             ? data.studentIds

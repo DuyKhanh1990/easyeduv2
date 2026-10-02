@@ -2385,7 +2385,10 @@ export function registerStudentsRoutes(app: Express): void {
             SELECT json_agg(json_build_object(
               'categoryName', sc.name,
               'score', gbs.score
-            ) ORDER BY sci.ord)
+            ) ORDER BY CASE
+              WHEN gb.score_sheet_category_order_snapshot IS NULL THEN sci.ord
+              ELSE COALESCE(array_position(gb.score_sheet_category_order_snapshot, gbs.category_id), 2147483647)
+            END)
             FROM class_grade_book_scores gbs
             JOIN score_categories sc ON sc.id = gbs.category_id
             LEFT JOIN (

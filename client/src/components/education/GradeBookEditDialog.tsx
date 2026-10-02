@@ -37,6 +37,7 @@ import { ClipboardList, MessageSquarePlus, Trash2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/hooks/use-language";
+import { orderScoreSheetItemsByCategorySnapshot } from "@/lib/score-sheet-order";
 
 interface GradeBookEditDialogProps {
   open: boolean;
@@ -74,6 +75,7 @@ export function GradeBookEditDialog({
   const [commentStudentId, setCommentStudentId] = useState("");
   const [commentStudentName, setCommentStudentName] = useState("");
   const [loadingEdit, setLoadingEdit] = useState(false);
+  const [scoreSheetCategoryOrderSnapshot, setScoreSheetCategoryOrderSnapshot] = useState<string[] | null>(null);
   // Theo dõi book.id đã init trong lần mở này — tránh chạy lại khi activeStudents refetch
   const initializedForBookId = useRef<string | null>(null);
 
@@ -84,7 +86,10 @@ export function GradeBookEditDialog({
   });
 
   const selectedScoreSheet = allScoreSheets?.find((s: any) => s.id === book.scoreSheetId);
-  const sheetItems = selectedScoreSheet?.items || [];
+  const sheetItems = orderScoreSheetItemsByCategorySnapshot(
+    selectedScoreSheet?.items,
+    scoreSheetCategoryOrderSnapshot,
+  );
   const categories = sheetItems.map((item: any) => item.category).filter(Boolean);
 
   const computedCategoryIds = new Set<string>(
@@ -134,6 +139,7 @@ export function GradeBookEditDialog({
     setStudentComments({});
     setRemovedStudentIds(new Set());
     setPendingRemoval(null);
+    setScoreSheetCategoryOrderSnapshot(null);
     setLoadingEdit(true);
 
     fetch(`/api/classes/${classId}/grade-books/${book.id}`, { credentials: "include" })
@@ -141,6 +147,11 @@ export function GradeBookEditDialog({
       .then((data) => {
         const existingScores: any[] = data.scores || [];
         const existingComments: Record<string, string> = data.studentComments || {};
+        setScoreSheetCategoryOrderSnapshot(
+          Array.isArray(data.scoreSheetCategoryOrderSnapshot)
+            ? data.scoreSheetCategoryOrderSnapshot
+            : null,
+        );
         setIncludedStudentIds(new Set(
           Array.isArray(data.studentIds)
             ? data.studentIds

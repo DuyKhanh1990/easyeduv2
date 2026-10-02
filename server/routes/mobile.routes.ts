@@ -2060,7 +2060,10 @@ export function registerMobileRoutes(app: Express) {
                   'categoryId', gbs.category_id,
                   'categoryName', sc.name,
                   'score', gbs.score
-                ) ORDER BY sci.order)
+                ) ORDER BY CASE
+                  WHEN gb.score_sheet_category_order_snapshot IS NULL THEN sci.order
+                  ELSE COALESCE(array_position(gb.score_sheet_category_order_snapshot, gbs.category_id), 2147483647)
+                END)
                 FROM class_grade_book_scores gbs
                 JOIN score_categories sc ON sc.id = gbs.category_id
                 LEFT JOIN score_sheet_items sci ON sci.category_id = gbs.category_id AND sci.score_sheet_id = gb.score_sheet_id
@@ -4606,7 +4609,8 @@ export function registerMobileRoutes(app: Express) {
 
       const result = await db.execute(sql`
         SELECT
-          gb.id, gb.class_id, gb.title, gb.score_sheet_id, gb.session_id,
+          gb.id, gb.class_id, gb.title, gb.score_sheet_id,
+          gb.score_sheet_category_order_snapshot, gb.session_id,
           gb.published, gb.created_by, gb.updated_by, gb.created_at, gb.updated_at,
           ss.name AS score_sheet_name,
           COALESCE(st_c.full_name, cu.username) AS created_by_name,
@@ -4625,6 +4629,7 @@ export function registerMobileRoutes(app: Express) {
         classId: r.class_id,
         title: r.title,
         scoreSheetId: r.score_sheet_id,
+        scoreSheetCategoryOrderSnapshot: r.score_sheet_category_order_snapshot,
         scoreSheetName: r.score_sheet_name,
         sessionId: r.session_id,
         published: r.published,
@@ -4664,14 +4669,22 @@ export function registerMobileRoutes(app: Express) {
       const scores = await db.select().from(classGradeBookScores).where(eq(classGradeBookScores.gradeBookId, id));
       const commentRows = await db.select().from(classGradeBookStudentComments).where(eq(classGradeBookStudentComments.gradeBookId, id));
       const [gradeBook] = await db
-        .select({ studentIds: classGradeBooks.studentIds })
+        .select({
+          studentIds: classGradeBooks.studentIds,
+          scoreSheetCategoryOrderSnapshot: classGradeBooks.scoreSheetCategoryOrderSnapshot,
+        })
         .from(classGradeBooks)
         .where(eq(classGradeBooks.id, id))
         .limit(1);
       const studentComments: Record<string, string> = {};
       commentRows.forEach(row => { studentComments[row.studentId] = row.comment; });
 
-      return res.json({ scores, studentComments, studentIds: gradeBook?.studentIds ?? null });
+      return res.json({
+        scores,
+        studentComments,
+        studentIds: gradeBook?.studentIds ?? null,
+        scoreSheetCategoryOrderSnapshot: gradeBook?.scoreSheetCategoryOrderSnapshot ?? null,
+      });
     } catch (err: any) {
       console.error("[Mobile] staff/classes/grade-books/:id GET error:", err);
       return res.status(500).json({ message: err.message || "Lỗi khi tải chi tiết bảng điểm" });
@@ -4813,14 +4826,23 @@ export function registerMobileRoutes(app: Express) {
       if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0].message });
       const body = parsed.data;
 
-      const [existing] = await db.select({ published: classGradeBooks.published, title: classGradeBooks.title })
+      const [existing] = await db.select({
+        published: classGradeBooks.published,
+        title: classGradeBooks.title,
+        scoreSheetId: classGradeBooks.scoreSheetId,
+      })
         .from(classGradeBooks).where(eq(classGradeBooks.id, id)).limit(1);
       if (!existing) return res.status(404).json({ message: "Không tìm thấy bảng điểm" });
       const wasPublished = existing.published ?? false;
 
       const updateData: any = { updatedBy: userId, updatedAt: new Date() };
       if (body.title) updateData.title = body.title;
-      if (body.scoreSheetId) updateData.scoreSheetId = body.scoreSheetId;
+      if (body.scoreSheetId) {
+        updateData.scoreSheetId = body.scoreSheetId;
+        if (body.scoreSheetId !== existing.scoreSheetId) {
+          updateData.scoreSheetCategoryOrderSnapshot = null;
+        }
+      }
       if ("sessionId" in body) updateData.sessionId = body.sessionId;
       if ("published" in body) updateData.published = body.published;
       if ("studentIds" in body) updateData.studentIds = body.studentIds;

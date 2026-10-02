@@ -28,7 +28,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertShiftTemplateSchema } from "@shared/schema";
-import { Plus, Pencil, Trash2, Clock, Building2, BookOpen, ListChecks, School, Banknote, X, FileSpreadsheet, Check, Monitor, Timer, History } from "lucide-react";
+import { Plus, Pencil, Trash2, Clock, Building2, BookOpen, ListChecks, School, Banknote, X, FileSpreadsheet, Check, Monitor, Timer, History, GripVertical } from "lucide-react";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { useToast } from "@/hooks/use-toast";
 import { useSidebarVisibility } from "@/hooks/use-sidebar-visibility";
@@ -855,6 +855,7 @@ function ScoreSheetTab() {
 
   const [rightItems, setRightItems] = useState<SheetFormItem[]>([{ categoryId: "", formula: "" }]);
   const [rightDirty, setRightDirty] = useState(false);
+  const [draggedRightItemIndex, setDraggedRightItemIndex] = useState<number | null>(null);
 
   // ── Queries ────────────────────────────────────────────────────────────────
   const { data: cats = [], isLoading: catsLoading } = useQuery<ScoreCategory[]>({
@@ -1033,6 +1034,18 @@ function ScoreSheetTab() {
 
   const removeRightItem = (idx: number) => {
     setRightItems((prev) => prev.filter((_, i) => i !== idx));
+    setRightDirty(true);
+  };
+
+  const moveRightItem = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+    setRightItems((prev) => {
+      if (fromIndex < 0 || fromIndex >= prev.length || toIndex < 0 || toIndex >= prev.length) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
     setRightDirty(true);
   };
 
@@ -1221,7 +1234,9 @@ function ScoreSheetTab() {
             <div className="px-4 py-3 border-b bg-muted/20 flex items-center justify-between">
               <div>
                 <p className="text-sm font-semibold">{selectedSheet.name}</p>
-                <p className="text-xs text-muted-foreground">Công thức cho từng danh mục điểm</p>
+                <p className="text-xs text-muted-foreground">
+                  Kéo biểu tượng để đổi thứ tự; bảng điểm đã tạo giữ nguyên vị trí.
+                </p>
               </div>
               <Button
                 size="sm"
@@ -1234,7 +1249,8 @@ function ScoreSheetTab() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-2 items-center px-1 mb-1">
+              <div className="grid grid-cols-[auto_1fr_auto_1fr_auto] gap-2 items-center px-1 mb-1">
+                <span />
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Danh mục</p>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Mã</p>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Công thức</p>
@@ -1244,7 +1260,47 @@ function ScoreSheetTab() {
               {rightItems.map((item, idx) => {
                 const selectedCat = getCatById(item.categoryId);
                 return (
-                  <div key={idx} className="grid grid-cols-[1fr_auto_1fr_auto] gap-2 items-center">
+                  <div
+                    key={idx}
+                    onDragOver={(event) => {
+                      if (draggedRightItemIndex !== null) event.preventDefault();
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      if (draggedRightItemIndex !== null) moveRightItem(draggedRightItemIndex, idx);
+                      setDraggedRightItemIndex(null);
+                    }}
+                    className={`grid grid-cols-[auto_1fr_auto_1fr_auto] gap-2 items-center rounded-md ${
+                      draggedRightItemIndex === idx ? "opacity-50" : ""
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", String(idx));
+                        setDraggedRightItemIndex(idx);
+                      }}
+                      onDragEnd={() => setDraggedRightItemIndex(null)}
+                      onKeyDown={(event) => {
+                        if (event.key === "ArrowUp" && idx > 0) {
+                          event.preventDefault();
+                          moveRightItem(idx, idx - 1);
+                        }
+                        if (event.key === "ArrowDown" && idx < rightItems.length - 1) {
+                          event.preventDefault();
+                          moveRightItem(idx, idx + 1);
+                        }
+                      }}
+                      aria-label={`Kéo để sắp xếp danh mục thứ ${idx + 1}`}
+                      aria-keyshortcuts="ArrowUp ArrowDown"
+                      title="Kéo để đổi thứ tự"
+                      className="cursor-grab touch-none p-1 text-muted-foreground hover:text-foreground active:cursor-grabbing"
+                      data-testid={`drag-handle-sheet-item-${idx}`}
+                    >
+                      <GripVertical className="h-4 w-4" />
+                    </button>
                     <Select
                       value={item.categoryId}
                       onValueChange={(v) => updateRightItem(idx, "categoryId", v)}

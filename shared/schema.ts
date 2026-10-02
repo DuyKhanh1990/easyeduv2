@@ -1847,6 +1847,7 @@ export const classGradeBooks = pgTable("class_grade_books", {
   classId: uuid("class_id").notNull().references(() => classes.id, { onDelete: "cascade" }),
   title: varchar("title", { length: 255 }).notNull(),
   scoreSheetId: uuid("score_sheet_id").notNull().references(() => scoreSheets.id, { onDelete: "restrict" }),
+  scoreSheetCategoryOrderSnapshot: uuid("score_sheet_category_order_snapshot").array(),
   sessionId: uuid("session_id").references(() => classSessions.id, { onDelete: "set null" }),
   published: boolean("published").default(false).notNull(),
   excludedStudentIds: uuid("excluded_student_ids").array().notNull().default(sql`'{}'`),

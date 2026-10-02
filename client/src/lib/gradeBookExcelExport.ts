@@ -1,3 +1,5 @@
+import { orderScoreSheetItemsByCategorySnapshot } from "./score-sheet-order";
+
 export type GradeBookExcelCategory = {
   id: string;
   name: string;
@@ -37,6 +39,7 @@ type GradeBookDetails = {
   }>;
   studentComments?: Record<string, string>;
   excludedStudentIds?: string[];
+  scoreSheetCategoryOrderSnapshot?: string[] | null;
 };
 
 type ClassStudentResponse = {
@@ -152,7 +155,10 @@ export async function downloadClassGradeBookExcel(
   ]);
 
   const selectedScoreSheet = scoreSheets.find((sheet) => sheet.id === options.scoreSheetId);
-  const categories = (selectedScoreSheet?.items ?? [])
+  const categories = orderScoreSheetItemsByCategorySnapshot(
+    selectedScoreSheet?.items,
+    bookDetails.scoreSheetCategoryOrderSnapshot,
+  )
     .flatMap((item) => item.category ? [item.category] : []);
   const excludedIds = new Set(bookDetails.excludedStudentIds ?? []);
   const scoresByStudent = new Map<string, Record<string, string | number | null>>();
