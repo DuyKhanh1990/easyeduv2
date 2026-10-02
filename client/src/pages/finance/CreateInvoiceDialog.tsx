@@ -30,6 +30,7 @@ import { fmtMoney, getTodayVietnamDate, isInvoicePaidLike } from "@/types/invoic
 import { isLegacyAutoInvoiceDepositDoubleCount } from "@shared/invoice-deposit-accounting";
 import { FinancePromotionDialog, type FinancePromotionType } from "./components/FinancePromotionDialog";
 import { useLanguage } from "@/hooks/use-language";
+import { getInvoiceScopeKey, type InvoiceScopeKey } from "@shared/invoice-permissions";
 
 interface Product {
   id: string;
@@ -324,7 +325,19 @@ function AdjustmentRowsEditor({
   );
 }
 
-export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }: { open: boolean; onClose: () => void; invoiceId?: string | null; defaultStudent?: { id: string; fullName: string; code: string } | null }) {
+function canCreateInvoiceType(type: "income" | "expense", allowedScopes?: InvoiceScopeKey[]): boolean {
+  return !allowedScopes || allowedScopes.some(scope =>
+    scope.startsWith(type === "income" ? "thu_" : "chi_"),
+  );
+}
+
+export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent, allowedInvoiceCreateScopes }: {
+  open: boolean;
+  onClose: () => void;
+  invoiceId?: string | null;
+  defaultStudent?: { id: string; fullName: string; code: string } | null;
+  allowedInvoiceCreateScopes?: InvoiceScopeKey[];
+}) {
   const isEdit = Boolean(invoiceId);
   const { lang, t } = useLanguage();
 
@@ -373,6 +386,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const [scheduleAdjustmentDelta, setScheduleAdjustmentDelta] = useState(0);
   const [openDuePicker, setOpenDuePicker] = useState<string | null>(null);
   const [splitPaymentId, setSplitPaymentId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || isEdit || canCreateInvoiceType(invoiceType, allowedInvoiceCreateScopes)) return;
+    setInvoiceType(canCreateInvoiceType("income", allowedInvoiceCreateScopes) ? "income" : "expense");
+  }, [open, isEdit, invoiceType, allowedInvoiceCreateScopes]);
   const [splitAmount, setSplitAmount] = useState<number>(0);
   const [splitDueDate, setSplitDueDate] = useState<string>("");
   const [note, setNote] = useState("");
@@ -1440,9 +1458,25 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     const selectedBank = !hasSchedule && directPaymentMethod === "transfer" && directBank
       ? locationBanks.find(b => b.bankAccount === directBank) ?? { bankAccount: directBank }
       : null;
+    const submittedStatus = (grandTotal === 0 && subTotal > 0) || (effectivePaid >= grandTotal && grandTotal > 0)
+      ? "paid"
+      : effectivePaid > 0
+        ? "partial"
+        : (isEdit ? undefined : "unpaid");
+    const submittedType = invoiceType === "income" ? "Thu" : "Chi";
+    if (!isEdit && allowedInvoiceCreateScopes) {
+      const scope = getInvoiceScopeKey(submittedType, submittedStatus ?? "unpaid");
+      if (!scope || !allowedInvoiceCreateScopes.includes(scope)) {
+        toast({
+          title: "Bạn không có quyền tạo phiếu trong phạm vi này.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
 
     saveMutation.mutate({
-      type: invoiceType === "income" ? "Thu" : "Chi",
+      type: submittedType,
       locationId,
       category: firstCat?.name ?? "",
       classId: classId || null,
@@ -1465,7 +1499,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       appliedBankAccount: selectedBank,
       note,
       dueDate: dueDate || null,
-      status: (grandTotal === 0 && subTotal > 0) || (effectivePaid >= grandTotal && grandTotal > 0) ? "paid" : effectivePaid > 0 ? "partial" : (isEdit ? undefined : "unpaid"),
+      status: submittedStatus,
       items,
       paymentSchedule: schedule,
       commissions: commissions.length > 0 ? commissions : [],
@@ -1624,20 +1658,20 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
           <div className="flex-1 overflow-y-auto px-6 py-4 border-r space-y-4 min-w-0">
 
             <div className="flex items-center gap-1 p-1 rounded-lg border bg-muted/30 w-fit">
-              <button
+              {(isEdit || canCreateInvoiceType("income", allowedInvoiceCreateScopes)) && <button
                 onClick={() => { setInvoiceType("income"); setProducts(prev => prev.map(p => ({ ...p, categoryId: "" }))); }}
                 className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${invoiceType === "income" ? "bg-purple-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                 data-testid="toggle-income"
               >
                 {t("finance.invoiceTypeIncome")}
-              </button>
-              <button
+              </button>}
+              {(isEdit || canCreateInvoiceType("expense", allowedInvoiceCreateScopes)) && <button
                 onClick={() => { setInvoiceType("expense"); setProducts(prev => prev.map(p => ({ ...p, categoryId: "" }))); }}
                 className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${invoiceType === "expense" ? "bg-purple-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                 data-testid="toggle-expense"
               >
                 {t("finance.invoiceTypeExpense")}
-              </button>
+              </button>}
             </div>
 
             {/* Row 1: Cơ sở, Tên, Lớp */}

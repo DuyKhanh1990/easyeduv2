@@ -69,6 +69,18 @@ type MyPermissionEntry = InvoicePermissionFlags & {
   invoiceScopeLegacyPermissions?: InvoicePermissionFlags;
 };
 
+function applyInvoiceScopePermissions(
+  permission: MyPermissionEntry,
+  rows: Array<InvoicePermissionFlags & { resource: string; invoiceScopes?: string[] | null }>,
+): void {
+  const scopes = buildInvoiceScopePermissions(rows);
+  for (const action of ["canView", "canViewAll", "canCreate", "canEdit", "canDelete"] as const) {
+    permission[action] = INVOICE_SCOPE_KEYS.some(scope => scopes[scope][action]);
+  }
+  permission.invoiceScopePermissions = scopes;
+  permission.invoiceScopeLegacyPermissions = buildLegacyInvoicePermissions(rows);
+}
+
 function parseScoreConversionTemplates(value: string): ScoreConversionTemplate[] {
   return parseScoreConversionTemplatesJson(value);
 }
@@ -2294,8 +2306,7 @@ export function registerConfigRoutes(app: Express): void {
             studentPermMap[p.resource] = { canView: p.canView, canViewAll: p.canViewAll, canCreate: p.canCreate, canEdit: p.canEdit, canDelete: p.canDelete };
           }
           if (studentPermMap["/invoices"]) {
-            studentPermMap["/invoices"].invoiceScopePermissions = buildInvoiceScopePermissions(studentPerms);
-            studentPermMap["/invoices"].invoiceScopeLegacyPermissions = buildLegacyInvoicePermissions(studentPerms);
+            applyInvoiceScopePermissions(studentPermMap["/invoices"], studentPerms);
           }
         }
 
@@ -2331,8 +2342,7 @@ export function registerConfigRoutes(app: Express): void {
         }
       }
       if (permMap["/invoices"]) {
-        permMap["/invoices"].invoiceScopePermissions = buildInvoiceScopePermissions(allPerms);
-        permMap["/invoices"].invoiceScopeLegacyPermissions = buildLegacyInvoicePermissions(allPerms);
+        applyInvoiceScopePermissions(permMap["/invoices"], allPerms);
       }
 
       let departmentNames: string[] = [];

@@ -14,6 +14,65 @@ import type {
   FinanceVoucher, InsertFinanceVoucher,
   InvoicePrintTemplateRow, InsertInvoicePrintTemplate,
 } from "@shared/schema";
+import { INVOICE_SCOPE_KEYS, type InvoiceScopePermissions, type LegacyInvoicePermissions } from "@shared/invoice-permissions";
+
+function buildInvoiceReadScopeCondition(
+  scopePermissions?: InvoiceScopePermissions,
+  legacyPermissions?: LegacyInvoicePermissions,
+) {
+  if (!scopePermissions || legacyPermissions?.canView || legacyPermissions?.canViewAll) return undefined;
+
+  const readableScopes = INVOICE_SCOPE_KEYS.filter((key) =>
+    scopePermissions[key].canView || scopePermissions[key].canViewAll,
+  );
+  if (readableScopes.length === 0) return sql`FALSE`;
+
+  const noSchedules = sql`NOT EXISTS (
+    SELECT 1 FROM invoice_payment_schedule AS permission_scope_no_schedule
+    WHERE permission_scope_no_schedule.invoice_id = ${invoices.id}
+  )`;
+  const hasSchedules = sql`EXISTS (
+    SELECT 1 FROM invoice_payment_schedule AS permission_scope_has_schedule
+    WHERE permission_scope_has_schedule.invoice_id = ${invoices.id}
+  )`;
+  const hasUnpaidSchedule = sql`EXISTS (
+    SELECT 1 FROM invoice_payment_schedule AS permission_scope_unpaid
+    WHERE permission_scope_unpaid.invoice_id = ${invoices.id}
+      AND permission_scope_unpaid.status NOT IN ('paid', 'confirmed')
+  )`;
+  const allSchedulesPaid = sql`NOT EXISTS (
+    SELECT 1 FROM invoice_payment_schedule AS permission_scope_not_paid
+    WHERE permission_scope_not_paid.invoice_id = ${invoices.id}
+      AND permission_scope_not_paid.status NOT IN ('paid', 'confirmed')
+  )`;
+  const allSchedulesConfirmed = sql`NOT EXISTS (
+    SELECT 1 FROM invoice_payment_schedule AS permission_scope_not_confirmed
+    WHERE permission_scope_not_confirmed.invoice_id = ${invoices.id}
+      AND permission_scope_not_confirmed.status <> 'confirmed'
+  )`;
+
+  return or(...readableScopes.map((key) => {
+    const type = key.startsWith("thu_") ? "Thu" : "Chi";
+    const directStatus = key.endsWith("_unpaid")
+      ? inArray(invoices.status, ["unpaid", "partial", "debt"])
+      : key.endsWith("_paid")
+        ? eq(invoices.status, "paid")
+        : eq(invoices.status, "confirmed");
+    const scheduledStatus = key.endsWith("_unpaid")
+      ? hasUnpaidSchedule
+      : key.endsWith("_paid")
+        ? and(allSchedulesPaid, sql`NOT (${invoices.status} = 'confirmed' OR ${allSchedulesConfirmed})`)
+        : and(allSchedulesPaid, sql`(${invoices.status} = 'confirmed' OR ${allSchedulesConfirmed})`);
+
+    return and(
+      eq(invoices.type, type),
+      or(
+        and(noSchedules, directStatus),
+        and(hasSchedules, scheduledStatus),
+      ),
+    );
+  })) ?? sql`FALSE`;
+}
 
 function getBusinessDateString(date = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -521,6 +580,8 @@ export async function getInvoices(filters: {
   page?: number;
   limit?: number;
   includeTabCounts?: boolean;
+  invoiceScopePermissions?: InvoiceScopePermissions;
+  invoiceScopeLegacyPermissions?: LegacyInvoicePermissions;
 } = {}): Promise<{
   data: any[];
   total: number;
@@ -544,6 +605,11 @@ export async function getInvoices(filters: {
     FROM invoice_payment_schedule AS date_filter_parent_schedule
     WHERE date_filter_parent_schedule.invoice_id = ${invoices.id}
   )`;
+  const invoiceReadScope = buildInvoiceReadScopeCondition(
+    f.invoiceScopePermissions,
+    f.invoiceScopeLegacyPermissions,
+  );
+  if (invoiceReadScope) conditions.push(invoiceReadScope as any);
 
   if (f.type)          conditions.push(eq(invoices.type, f.type));
   if (f.types?.length) conditions.push(inArray(invoices.type, f.types) as any);
@@ -1255,8 +1321,15 @@ export async function getInvoiceFilterOptions(filters: {
   dueDateTo?: string;
   allowedLocationIds?: string[] | null;
   isSuperAdmin?: boolean;
+  invoiceScopePermissions?: InvoiceScopePermissions;
+  invoiceScopeLegacyPermissions?: LegacyInvoicePermissions;
 } = {}): Promise<Record<string, string[]>> {
   const conditions: any[] = [];
+  const invoiceReadScope = buildInvoiceReadScopeCondition(
+    filters.invoiceScopePermissions,
+    filters.invoiceScopeLegacyPermissions,
+  );
+  if (invoiceReadScope) conditions.push(invoiceReadScope);
   if (!filters.isSuperAdmin && filters.allowedLocationIds !== null && filters.allowedLocationIds !== undefined) {
     if (filters.allowedLocationIds.length === 0) {
       return { locationNames: [], categories: [], classNames: [], creatorNames: [], payerNames: [], commissionStaffNames: [], paymentMethods: [] };
@@ -1495,6 +1568,8 @@ export async function getInvoicesSummary(filters: {
   paymentMethods?: string[];
   allowedLocationIds?: string[] | null;
   isSuperAdmin?: boolean;
+  invoiceScopePermissions?: InvoiceScopePermissions;
+  invoiceScopeLegacyPermissions?: LegacyInvoicePermissions;
 } = {}): Promise<{
   totalCount: number;
   byStatus: { unpaid: number; partial: number; paid: number; debt: number; cancelled: number };

@@ -22,6 +22,14 @@ import { staff, classes, invoices, invoicePaymentSchedule, students, classSessio
 import { eq, asc, sql, and, isNotNull, gte, lte, inArray } from "drizzle-orm";
 import { ensureVirtualAccount } from "../services/bidv/bidv-virtual-account.service";
 import { resolveInvoiceRecipientUserIds, sendInvoiceCreatedNotification, sendInvoicePaidNotification } from "../lib/invoice-notification";
+import {
+  buildInvoiceScopePermissions,
+  buildLegacyInvoicePermissions,
+  fullInvoiceScopePermissions,
+  getInvoiceScopeKey,
+  hasInvoiceScopePermission,
+  type InvoicePermissionAction,
+} from "@shared/invoice-permissions";
 
 async function generateNextSettleCode(locationId?: string | null): Promise<string> {
   return getNextLocationCode(locationId, "KT");
@@ -254,9 +262,82 @@ const INVOICE_RESOURCE = "/invoices";
 
 async function getInvoicePermissions(req: any) {
   if (req.isSuperAdmin) {
-    return { canView: true, canViewAll: true, canCreate: true, canEdit: true, canDelete: true };
+    return {
+      canView: true,
+      canViewAll: true,
+      canCreate: true,
+      canEdit: true,
+      canDelete: true,
+      invoiceScopePermissions: fullInvoiceScopePermissions(),
+      invoiceScopeLegacyPermissions: { canView: true, canViewAll: true, canCreate: true, canEdit: true, canDelete: true },
+    };
   }
-  return storage.getEffectivePermissions(req.roleIds || [], INVOICE_RESOURCE);
+  const roleIds = req.roleIds || [];
+  const [permissions, rows] = await Promise.all([
+    storage.getEffectivePermissions(roleIds, INVOICE_RESOURCE),
+    storage.getAllPermissionsForRoles(roleIds),
+  ]);
+  return {
+    ...permissions,
+    invoiceScopePermissions: buildInvoiceScopePermissions(rows),
+    invoiceScopeLegacyPermissions: buildLegacyInvoicePermissions(rows),
+  };
+}
+
+function canUseInvoiceScope(
+  permissions: Awaited<ReturnType<typeof getInvoicePermissions>>,
+  action: InvoicePermissionAction,
+  type: string | null | undefined,
+  status: string | null | undefined,
+): boolean {
+  const effectiveAction = (candidate: InvoicePermissionAction) => {
+    const scopeKey = getInvoiceScopeKey(type, status);
+    if (scopeKey) return hasInvoiceScopePermission(permissions.invoiceScopePermissions, candidate, type, status);
+    return permissions.invoiceScopeLegacyPermissions[candidate];
+  };
+  if (action === "canView") return effectiveAction("canView") || effectiveAction("canViewAll");
+  const scopeKey = getInvoiceScopeKey(type, status);
+  if (scopeKey) return hasInvoiceScopePermission(permissions.invoiceScopePermissions, action, type, status);
+  return permissions.invoiceScopeLegacyPermissions[action];
+}
+
+function invoiceListFilters(req: any, permissions?: Awaited<ReturnType<typeof getInvoicePermissions>>) {
+  const q = req.query as Record<string, any>;
+  const getArr = (v: any): string[] | undefined => {
+    if (!v) return undefined;
+    const a = Array.isArray(v) ? v : [v];
+    return a.length > 0 ? a : undefined;
+  };
+  return {
+    tabFilter:              q.tabFilter as string | undefined,
+    type:                   q.type as string | undefined,
+    types:                  getArr(q.types),
+    locationId:             q.locationId as string | undefined,
+    locationNames:          getArr(q.locationNames),
+    search:                 q.search as string | undefined,
+    dateFrom:               q.dateFrom as string | undefined,
+    dateTo:                 q.dateTo as string | undefined,
+    dueDateFrom:            q.dueDateFrom as string | undefined,
+    dueDateTo:              q.dueDateTo as string | undefined,
+    paidAtFrom:             q.paidAtFrom as string | undefined,
+    paidAtTo:               q.paidAtTo as string | undefined,
+    salaryTableId:          q.salaryTableId as string | undefined,
+    categories:             getArr(q.categories),
+    classNames:             getArr(q.classNames),
+    creatorNames:           getArr(q.creatorNames),
+    payerNames:             getArr(q.payerNames),
+    commissionStaffNames:   getArr(q.commissionStaffNames),
+    paymentMethods:         getArr(q.paymentMethods),
+    sortKey:                q.sortKey as string | undefined,
+    sortDir:                q.sortDir as "asc" | "desc" | undefined,
+    page:                   q.page   ? parseInt(q.page as string)  : undefined,
+    limit:                  q.limit  ? parseInt(q.limit as string) : undefined,
+    includeTabCounts:       q.includeTabCounts === "true",
+    allowedLocationIds:     req.allowedLocationIds,
+    isSuperAdmin:           req.isSuperAdmin,
+    invoiceScopePermissions: permissions?.invoiceScopePermissions,
+    invoiceScopeLegacyPermissions: permissions?.invoiceScopeLegacyPermissions,
+  };
 }
 
 export function registerFinanceRoutes(app: Express): void {
@@ -439,41 +520,16 @@ export function registerFinanceRoutes(app: Express): void {
 
   app.get("/api/finance/invoices", async (req, res) => {
     try {
-      const q = req.query as Record<string, any>;
-      const getArr = (v: any): string[] | undefined => {
-        if (!v) return undefined;
-        const a = Array.isArray(v) ? v : [v];
-        return a.length > 0 ? a : undefined;
-      };
-      const data = await storage.getInvoices({
-        tabFilter:              q.tabFilter as string | undefined,
-        type:                   q.type as string | undefined,
-        types:                  getArr(q.types),
-        locationId:             q.locationId as string | undefined,
-        locationNames:          getArr(q.locationNames),
-        search:                 q.search as string | undefined,
-        dateFrom:               q.dateFrom as string | undefined,
-        dateTo:                 q.dateTo as string | undefined,
-        dueDateFrom:            q.dueDateFrom as string | undefined,
-        dueDateTo:              q.dueDateTo as string | undefined,
-        paidAtFrom:             q.paidAtFrom as string | undefined,
-        paidAtTo:               q.paidAtTo as string | undefined,
-        salaryTableId:          q.salaryTableId as string | undefined,
-        categories:             getArr(q.categories),
-        classNames:             getArr(q.classNames),
-        creatorNames:           getArr(q.creatorNames),
-        payerNames:             getArr(q.payerNames),
-        commissionStaffNames:   getArr(q.commissionStaffNames),
-        paymentMethods:         getArr(q.paymentMethods),
-        sortKey:                q.sortKey as string | undefined,
-        sortDir:                q.sortDir as "asc" | "desc" | undefined,
-        page:                   q.page   ? parseInt(q.page as string)  : undefined,
-        limit:                  q.limit  ? parseInt(q.limit as string) : undefined,
-        includeTabCounts:       q.includeTabCounts === "true",
-        allowedLocationIds:     req.allowedLocationIds,
-        isSuperAdmin:           req.isSuperAdmin,
-      });
-      res.json(data);
+      res.json(await storage.getInvoices(invoiceListFilters(req)));
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/finance/invoices/managed", async (req, res) => {
+    try {
+      const permissions = await getInvoicePermissions(req);
+      res.json(await storage.getInvoices(invoiceListFilters(req, permissions)));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -483,6 +539,26 @@ export function registerFinanceRoutes(app: Express): void {
     try {
        const { dateFrom, dateTo, dueDateFrom, dueDateTo } = req.query as Record<string, string>;
        const data = await getInvoiceFilterOptions({ dateFrom, dateTo, dueDateFrom, dueDateTo, allowedLocationIds: req.allowedLocationIds, isSuperAdmin: req.isSuperAdmin });
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/finance/invoices/managed/filter-options", async (req, res) => {
+    try {
+      const permissions = await getInvoicePermissions(req);
+      const { dateFrom, dateTo, dueDateFrom, dueDateTo } = req.query as Record<string, string>;
+      const data = await getInvoiceFilterOptions({
+        dateFrom,
+        dateTo,
+        dueDateFrom,
+        dueDateTo,
+        allowedLocationIds: req.allowedLocationIds,
+        isSuperAdmin: req.isSuperAdmin,
+        invoiceScopePermissions: permissions.invoiceScopePermissions,
+        invoiceScopeLegacyPermissions: permissions.invoiceScopeLegacyPermissions,
+      });
       res.json(data);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -542,6 +618,42 @@ export function registerFinanceRoutes(app: Express): void {
         paymentMethods: getArr(q.paymentMethods),
         allowedLocationIds: req.allowedLocationIds,
         isSuperAdmin: req.isSuperAdmin,
+      });
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/finance/invoices/managed/summary", async (req, res) => {
+    try {
+      const q = req.query as Record<string, any>;
+      const getArr = (v: any): string[] | undefined => {
+        if (!v) return undefined;
+        const a = Array.isArray(v) ? v : [v];
+        return a.length > 0 ? a : undefined;
+      };
+      const permissions = await getInvoicePermissions(req);
+      const data = await storage.getInvoicesSummary({
+        locationId: q.locationId as string | undefined,
+        locationNames: getArr(q.locationNames),
+        search: q.search as string | undefined,
+        dateFrom: q.dateFrom as string | undefined,
+        dateTo: q.dateTo as string | undefined,
+        dueDateFrom: q.dueDateFrom as string | undefined,
+        dueDateTo: q.dueDateTo as string | undefined,
+        paidAtFrom: q.paidAtFrom as string | undefined,
+        paidAtTo: q.paidAtTo as string | undefined,
+        categories: getArr(q.categories),
+        classNames: getArr(q.classNames),
+        creatorNames: getArr(q.creatorNames),
+        payerNames: getArr(q.payerNames),
+        commissionStaffNames: getArr(q.commissionStaffNames),
+        paymentMethods: getArr(q.paymentMethods),
+        allowedLocationIds: req.allowedLocationIds,
+        isSuperAdmin: req.isSuperAdmin,
+        invoiceScopePermissions: permissions.invoiceScopePermissions,
+        invoiceScopeLegacyPermissions: permissions.invoiceScopeLegacyPermissions,
       });
       res.json(data);
     } catch (err: any) {
@@ -841,6 +953,10 @@ export function registerFinanceRoutes(app: Express): void {
     try {
       const data = await storage.getInvoice(req.params.id);
       if (!data) return res.status(404).json({ message: "Không tìm thấy phiếu" });
+      const permissions = await getInvoicePermissions(req);
+      if (!canUseInvoiceScope(permissions, "canView", data.type, data.status)) {
+        return res.status(403).json({ message: "Bạn không có quyền xem phiếu này." });
+      }
       res.json(data);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -1027,6 +1143,9 @@ export function registerFinanceRoutes(app: Express): void {
       if (!parsed.success) {
         return res.status(400).json({ message: "Dữ liệu không hợp lệ", errors: parsed.error.errors });
       }
+      if (!canUseInvoiceScope(invPerms, "canCreate", parsed.data.type, parsed.data.status ?? "unpaid")) {
+        return res.status(403).json({ message: "Bạn không có quyền tạo phiếu trong phạm vi này." });
+      }
       const userId = (req as any).user?.id;
       const { data, staffRecipientUserId } = await createOneInvoiceWithSideEffects(parsed.data, userId);
       if (rawCommissions.length > 0) {
@@ -1070,6 +1189,10 @@ export function registerFinanceRoutes(app: Express): void {
           });
           continue;
         }
+        if (!canUseInvoiceScope(invPerms, "canCreate", parsed.data.type, parsed.data.status ?? "unpaid")) {
+          results.push({ index: i, ok: false, error: "Bạn không có quyền tạo phiếu trong phạm vi này." });
+          continue;
+        }
         try {
           const { data, staffRecipientUserId } = await createOneInvoiceWithSideEffects(parsed.data, userId);
           results.push({ index: i, ok: true, id: data.id, code: data.code });
@@ -1109,6 +1232,10 @@ export function registerFinanceRoutes(app: Express): void {
       }
       const userId = (req as any).user?.id;
       const before = await storage.getInvoice(req.params.id);
+      if (!before) return res.status(404).json({ message: "Không tìm thấy hoá đơn." });
+      if (!canUseInvoiceScope(invPerms, "canEdit", before.type, before.status)) {
+        return res.status(403).json({ message: "Bạn không có quyền sửa phiếu trong phạm vi này." });
+      }
       const effectiveCreatedAt = invoiceBusinessDateOnly(
         parsed.data.createdAt ?? before?.createdAt,
         parsed.data.createdAt !== undefined ? req.body?.createdAt : undefined,
@@ -1415,6 +1542,12 @@ export function registerFinanceRoutes(app: Express): void {
   // Returns linked phiếu xuất kho for an invoice (used by delete dialog warning)
   app.get("/api/finance/invoices/:id/linked-store-receipts", async (req, res) => {
     try {
+      const invoice = await storage.getInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ message: "Không tìm thấy hoá đơn" });
+      const permissions = await getInvoicePermissions(req);
+      if (!canUseInvoiceScope(permissions, "canView", invoice.type, invoice.status)) {
+        return res.status(403).json({ message: "Bạn không có quyền xem phiếu này." });
+      }
       const rows = await db.execute(sql`
         SELECT id, code, status FROM store_issue_receipts
         WHERE invoice_id = ${req.params.id}
@@ -1432,6 +1565,9 @@ export function registerFinanceRoutes(app: Express): void {
       if (!invPerms.canDelete) return res.status(403).json({ message: "Bạn không có quyền xóa hoá đơn." });
       const inv = await storage.getInvoice(req.params.id);
       if (!inv) return res.status(404).json({ message: "Không tìm thấy hoá đơn" });
+      if (!canUseInvoiceScope(invPerms, "canDelete", inv.type, inv.status)) {
+        return res.status(403).json({ message: "Bạn không có quyền xóa phiếu trong phạm vi này." });
+      }
 
       if (isPaidInvoiceStatus(inv.status) || inv.status === "partial") {
         const statusLabel = isPaidInvoiceStatus(inv.status) ? (STATUS_LABEL[inv.status] ?? "Đã thanh toán") : "Thanh toán một phần";
@@ -1478,6 +1614,10 @@ export function registerFinanceRoutes(app: Express): void {
     try {
       const inv = await storage.getInvoice(req.params.id);
       if (!inv) return res.status(404).json({ message: "Không tìm thấy hoá đơn" });
+      const invoicePermissions = await getInvoicePermissions(req);
+      if (!canUseInvoiceScope(invoicePermissions, "canEdit", inv.type, inv.status)) {
+        return res.status(403).json({ message: "Bạn không có quyền sửa phiếu trong phạm vi này." });
+      }
       if (!inv.studentId || !inv.classId) {
         return res.status(400).json({ message: "Hoá đơn không có học viên hoặc lớp học" });
       }
@@ -1490,6 +1630,12 @@ export function registerFinanceRoutes(app: Express): void {
 
   app.get("/api/finance/invoices/:id/payment-schedules", async (req, res) => {
     try {
+      const invoice = await storage.getInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ message: "Không tìm thấy hoá đơn" });
+      const permissions = await getInvoicePermissions(req);
+      if (!canUseInvoiceScope(permissions, "canView", invoice.type, invoice.status)) {
+        return res.status(403).json({ message: "Bạn không có quyền xem phiếu này." });
+      }
       const schedules = await storage.getInvoicePaymentSchedules(req.params.id);
       res.json(schedules);
     } catch (err: any) {
@@ -1499,6 +1645,15 @@ export function registerFinanceRoutes(app: Express): void {
 
   app.post("/api/finance/invoice-schedules/:id/split", async (req, res) => {
     try {
+      const invPerms = await getInvoicePermissions(req);
+      const [schedule] = await db.select().from(invoicePaymentSchedule)
+        .where(eq(invoicePaymentSchedule.id, req.params.id)).limit(1);
+      if (!schedule) return res.status(404).json({ message: "Không tìm thấy đợt thanh toán" });
+      const parentInvoice = await storage.getInvoice(schedule.invoiceId);
+      if (!parentInvoice) return res.status(404).json({ message: "Không tìm thấy hoá đơn" });
+      if (!canUseInvoiceScope(invPerms, "canEdit", parentInvoice.type, parentInvoice.status)) {
+        return res.status(403).json({ message: "Bạn không có quyền sửa phiếu trong phạm vi này." });
+      }
       const parsed = splitScheduleBodySchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ message: "splitAmount không hợp lệ", errors: parsed.error.errors });
@@ -1527,6 +1682,11 @@ export function registerFinanceRoutes(app: Express): void {
         .limit(1);
       if (!before) {
         return res.status(404).json({ message: "Không tìm thấy đợt thanh toán" });
+      }
+      const parentInvoice = await storage.getInvoice(before.invoiceId);
+      if (!parentInvoice) return res.status(404).json({ message: "Không tìm thấy hoá đơn" });
+      if (!canUseInvoiceScope(invPerms, "canEdit", parentInvoice.type, parentInvoice.status)) {
+        return res.status(403).json({ message: "Bạn không có quyền sửa phiếu trong phạm vi này." });
       }
 
       const effectiveCreatedAt = invoiceBusinessDateOnly(
@@ -1673,6 +1833,11 @@ export function registerFinanceRoutes(app: Express): void {
 
       if (scheduleBefore?.invoiceId) {
         const invoice = await storage.getInvoice(scheduleBefore.invoiceId);
+        if (!invoice) return res.status(404).json({ message: "Không tìm thấy hoá đơn" });
+        const invPerms = await getInvoicePermissions(req);
+        if (!canUseInvoiceScope(invPerms, "canEdit", invoice.type, invoice.status)) {
+          return res.status(403).json({ message: "Bạn không có quyền sửa phiếu trong phạm vi này." });
+        }
         if (isTuitionRefundInvoice(invoice)) {
           const schedules = await db
             .select()
@@ -1854,11 +2019,16 @@ export function registerFinanceRoutes(app: Express): void {
       }
 
       const results: { id: string; ok: boolean; code?: string; error?: string }[] = [];
+      const invoicePermissions = await getInvoicePermissions(req);
 
       for (const id of invoiceIds) {
         try {
           const before = await storage.getInvoice(id);
           if (!before) { results.push({ id, ok: false, error: "Không tìm thấy hoá đơn" }); continue; }
+          if (!canUseInvoiceScope(invoicePermissions, "canEdit", before.type, before.status)) {
+            results.push({ id, ok: false, error: "Bạn không có quyền sửa phiếu trong phạm vi này." });
+            continue;
+          }
           if ((before.paymentSchedule?.length ?? 0) > 0) {
             results.push({
               id,
@@ -1961,6 +2131,17 @@ export function registerFinanceRoutes(app: Express): void {
 
           if (!scheduleBefore) {
             results.push({ id: schedId, ok: false, error: "Không tìm thấy đợt thanh toán" });
+            continue;
+          }
+          const scheduleInvoice = scheduleBefore.invoiceId
+            ? await storage.getInvoice(scheduleBefore.invoiceId)
+            : null;
+          if (!scheduleInvoice) {
+            results.push({ id: schedId, ok: false, error: "Không tìm thấy hoá đơn" });
+            continue;
+          }
+          if (!canUseInvoiceScope(invoicePermissions, "canEdit", scheduleInvoice.type, scheduleInvoice.status)) {
+            results.push({ id: schedId, ok: false, error: "Bạn không có quyền sửa phiếu trong phạm vi này." });
             continue;
           }
           if (isPaidInvoiceStatus(scheduleBefore.status)) {
@@ -2143,6 +2324,11 @@ export function registerFinanceRoutes(app: Express): void {
       }
       const userId = (req as any).user?.id;
       const before = await storage.getInvoice(req.params.id);
+      if (!before) return res.status(404).json({ message: "Không tìm thấy hoá đơn." });
+      const invoicePermissions = await getInvoicePermissions(req);
+      if (!canUseInvoiceScope(invoicePermissions, "canEdit", before.type, before.status)) {
+        return res.status(403).json({ message: "Bạn không có quyền sửa phiếu trong phạm vi này." });
+      }
       if ((before?.paymentSchedule?.length ?? 0) > 0) {
         return res.status(400).json({
           message: "Hoá đơn có các đợt thanh toán; hãy thao tác trên từng đợt con.",
@@ -2247,6 +2433,15 @@ export function registerFinanceRoutes(app: Express): void {
 
   app.delete("/api/finance/invoice-schedules/:id", async (req, res) => {
     try {
+      const [schedule] = await db.select().from(invoicePaymentSchedule)
+        .where(eq(invoicePaymentSchedule.id, req.params.id)).limit(1);
+      if (!schedule) return res.status(404).json({ message: "Không tìm thấy đợt thanh toán" });
+      const parentInvoice = await storage.getInvoice(schedule.invoiceId);
+      if (!parentInvoice) return res.status(404).json({ message: "Không tìm thấy hoá đơn" });
+      const invoicePermissions = await getInvoicePermissions(req);
+      if (!canUseInvoiceScope(invoicePermissions, "canEdit", parentInvoice.type, parentInvoice.status)) {
+        return res.status(403).json({ message: "Bạn không có quyền sửa phiếu trong phạm vi này." });
+      }
       await storage.deleteInvoiceSchedule(req.params.id);
       res.status(204).send();
     } catch (err: any) {
@@ -2256,6 +2451,12 @@ export function registerFinanceRoutes(app: Express): void {
 
   app.post("/api/finance/invoices/:id/append-salary-payment", async (req, res) => {
     try {
+      const invoice = await storage.getInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ message: "Không tìm thấy hoá đơn" });
+      const invoicePermissions = await getInvoicePermissions(req);
+      if (!canUseInvoiceScope(invoicePermissions, "canEdit", invoice.type, invoice.status)) {
+        return res.status(403).json({ message: "Bạn không có quyền sửa phiếu trong phạm vi này." });
+      }
       const amountPaid = Number(req.body.amountPaid);
       if (!amountPaid || amountPaid <= 0) {
         return res.status(400).json({ message: "amountPaid phải là số dương" });
@@ -2812,8 +3013,18 @@ export function registerFinanceRoutes(app: Express): void {
         return res.status(400).json({ message: "Vui lòng chọn ít nhất một hoá đơn" });
       }
       const results: { id: string; ok: boolean; error?: string }[] = [];
+      const invoicePermissions = await getInvoicePermissions(req);
       for (const id of invoiceIds) {
         try {
+          const invoice = await storage.getInvoice(id);
+          if (!invoice) {
+            results.push({ id, ok: false, error: "Không tìm thấy hoá đơn" });
+            continue;
+          }
+          if (!canUseInvoiceScope(invoicePermissions, "canEdit", invoice.type, invoice.status)) {
+            results.push({ id, ok: false, error: "Bạn không có quyền sửa phiếu trong phạm vi này." });
+            continue;
+          }
           await saveInvoiceCommissions(id, comms);
           results.push({ id, ok: true });
         } catch (err: any) {

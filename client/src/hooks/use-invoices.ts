@@ -56,7 +56,8 @@ export async function fetchAllInvoicesForExport(queryParams: InvoiceQueryParams 
   params.delete("limit");
   params.delete("includeTabCounts");
 
-  const res = await fetch(`${BASE_KEY}?${params.toString()}`, {
+  const listKey = queryParams.tabFilter === "debt" ? BASE_KEY : MANAGED_KEY;
+  const res = await fetch(`${listKey}?${params.toString()}`, {
     credentials: "include",
     headers: getAuthHeaders(),
   });
@@ -120,7 +121,6 @@ export function getPreviousInvoicePeriodParams(
     limit: undefined,
     sortKey: undefined,
     sortDir: undefined,
-    tabFilter: undefined,
   };
 }
 
@@ -145,16 +145,19 @@ function buildSummaryQS(params: InvoiceQueryParams): string {
 
 const BASE_KEY = "/api/finance/invoices";
 const SUMMARY_KEY = "/api/finance/invoices/summary";
+const MANAGED_KEY = "/api/finance/invoices/managed";
+const MANAGED_SUMMARY_KEY = "/api/finance/invoices/managed/summary";
 
 export function useInvoiceSummary(
   queryParams: InvoiceQueryParams = {},
   options: { enabled?: boolean; staleTime?: number } = {},
 ) {
   const qs = buildSummaryQS(queryParams);
+  const summaryKey = queryParams.tabFilter === "debt" ? SUMMARY_KEY : MANAGED_SUMMARY_KEY;
   const { data, isLoading } = useQuery<InvoiceSummary>({
-    queryKey: [SUMMARY_KEY, qs],
+    queryKey: [summaryKey, qs],
     queryFn: async () => {
-      const res = await fetch(`${SUMMARY_KEY}?${qs}`, {
+      const res = await fetch(`${summaryKey}?${qs}`, {
         credentials: "include",
         headers: getAuthHeaders(),
       });
@@ -170,7 +173,10 @@ export function useInvoiceSummary(
 
 export function useInvoices(queryParams: InvoiceQueryParams = {}) {
   const qs = buildQS(queryParams);
-  const queryKey = [BASE_KEY, qs];
+  const listKey = queryParams.tabFilter === "debt" ? BASE_KEY : MANAGED_KEY;
+  const queryKey = listKey === MANAGED_KEY
+    ? [BASE_KEY, "managed", qs]
+    : [BASE_KEY, qs];
 
   const { data, isLoading } = useQuery<{
     data: any[];
@@ -181,7 +187,7 @@ export function useInvoices(queryParams: InvoiceQueryParams = {}) {
   }>({
     queryKey,
     queryFn: async () => {
-      const res = await fetch(`${BASE_KEY}?${qs}`, { credentials: "include", headers: getAuthHeaders() });
+      const res = await fetch(`${listKey}?${qs}`, { credentials: "include", headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch invoices");
       return res.json();
     },
