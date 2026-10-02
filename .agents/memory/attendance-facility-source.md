@@ -7,6 +7,8 @@ The monthly `/shifts?tab=board` assignments are the source of truth for `/cham-c
 
 In the salary detail table, keep every row for the same staff member adjacent; order facilities within that staff group for easy comparison.
 
-**Why:** The user specified that attendance and salary headcount/facility rows must match the selected month's assigned shifts on the shifts board.
+Salary detail rows are snapshots: running “Tạo chi tiết lương” again recalculates from current rewards/penalties, but replaces all existing detail rows.
 
-**How to apply:** Derive attendance and payroll rows from effective monthly shift assignments and their facility IDs, not from staff headcount alone. In salary detail, group by staff ID before sorting facilities. Leave the shift board itself unchanged.
+**Why:** The user specified that attendance and salary headcount/facility rows must match the selected month's assigned shifts on the shifts board, and confirmed that regenerating the sheet applies later reward/penalty entries.
+
+**How to apply:** Derive attendance and payroll rows from effective monthly shift assignments and their facility IDs, not from staff headcount alone. In salary detail, group by staff ID before sorting facilities. When recalculating, account for the fact that the generator replaces every detail row. Leave the shift board itself unchanged.
