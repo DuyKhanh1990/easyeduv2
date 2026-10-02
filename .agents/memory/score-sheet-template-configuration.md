@@ -28,3 +28,9 @@ Manual class-session assignment keeps ordinary legacy score sheets in their own 
 **Why:** The user explicitly wants the whole sample-template list as the source; filtering to templates with a conversion link omits valid choices.
 
 **How to apply:** Continue using `/api/score-sheets` for ordinary sheets and all score-sheet templates for the conversion-side picker. Apply a selected template through the existing template-to-assessment path; do not change the scoring logic.
+
+When reopening a class-session score-sheet assignment from its pencil control, preselect the assigned assessment's source `scoreSheetTemplateId` in the picker rather than the generated assessment ID.
+
+**Why:** The picker is populated from score-sheet templates, while a class session stores the generated assessment ID; using the latter displays a value that does not correspond to a selectable template.
+
+**How to apply:** Resolve the current assessment to its template for the picker selection, while retaining the existing assessment as the session assignment. Saving the same template should use the existing reuse path and must not create a duplicate assessment or alter scoring.
