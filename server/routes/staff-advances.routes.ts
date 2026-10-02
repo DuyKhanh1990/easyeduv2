@@ -18,7 +18,7 @@ async function refreshDraftSalaryRows(staffId: string) {
 
   const [advances, sheets] = await Promise.all([
     db
-      .select({ date: staffAdvances.date, amount: staffAdvances.amount })
+      .select({ date: staffAdvances.date, amount: staffAdvances.amount, locationId: staffAdvances.locationId })
       .from(staffAdvances)
       .where(eq(staffAdvances.staffId, staffId)),
     db
@@ -34,9 +34,9 @@ async function refreshDraftSalaryRows(staffId: string) {
   ]);
 
   for (const sheet of sheets) {
-    const amount = advances
-      .filter((advance) => String(advance.date) >= String(sheet.fromDate) && String(advance.date) <= String(sheet.toDate))
-      .reduce((total, advance) => total + Number(advance.amount || 0), 0);
+    const advancesInPeriod = advances.filter(
+      (advance) => String(advance.date) >= String(sheet.fromDate) && String(advance.date) <= String(sheet.toDate),
+    );
 
     const rows = await db
       .select()
@@ -50,10 +50,14 @@ async function refreshDraftSalaryRows(staffId: string) {
       (sheet.locationIds?.length ? sheet.locationIds : [sheet.locationId])
         .map((locationId, index) => [locationId, index])
     );
-    const targetRow = [...rows].sort((a, b) =>
+    const orderedRows = [...rows].sort((a, b) =>
       (locationOrder.get(a.locationId ?? "") ?? Number.MAX_SAFE_INTEGER) -
       (locationOrder.get(b.locationId ?? "") ?? Number.MAX_SAFE_INTEGER)
-    )[0];
+    );
+    const legacyAdvanceTotal = advancesInPeriod
+      .filter((advance) => !advance.locationId)
+      .reduce((total, advance) => total + Number(advance.amount || 0), 0);
+    const legacyTargetRow = orderedRows[0];
 
     for (const row of rows) {
       const tongLuong = Number(row.tongLuong || 0);
@@ -62,7 +66,13 @@ async function refreshDraftSalaryRows(staffId: string) {
         Number(row.bhyt || 0) +
         Number(row.bhtn || 0) +
         Number(row.thueTNCN || 0);
-      const rowAdvanceAmount = row.id === targetRow?.id ? amount : 0;
+      const effectiveLocationId = row.locationId ?? (row.id === legacyTargetRow?.id ? sheet.locationId : null);
+      const locationAdvanceTotal = effectiveLocationId
+        ? advancesInPeriod
+            .filter((advance) => advance.locationId === effectiveLocationId)
+            .reduce((total, advance) => total + Number(advance.amount || 0), 0)
+        : 0;
+      const rowAdvanceAmount = locationAdvanceTotal + (row.id === legacyTargetRow?.id ? legacyAdvanceTotal : 0);
       await db
         .update(salarySheetEmployees)
         .set({
@@ -98,6 +108,7 @@ export function registerStaffAdvanceRoutes(app: Express) {
   app.post("/api/staff-advances", async (req, res) => {
     try {
       if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+      if (!req.body?.locationId) return res.status(400).json({ message: "Vui lòng chọn cơ sở" });
       const { db } = await import("../storage/base");
       const { staffAdvances, insertStaffAdvanceSchema } = await import("@shared/schema");
       const userId = (req as any).user?.id ?? null;
@@ -128,9 +139,13 @@ export function registerStaffAdvanceRoutes(app: Express) {
         .where(eq(staffAdvances.id, req.params.id))
         .limit(1);
       if (!existing) return res.status(404).json({ message: "Không tìm thấy phiếu tạm ứng" });
+      if (!req.body?.locationId && !existing.locationId) {
+        return res.status(400).json({ message: "Vui lòng chọn cơ sở" });
+      }
 
       const input = insertStaffAdvanceSchema.parse({
         staffId: req.body?.staffId,
+        locationId: req.body?.locationId ?? existing.locationId ?? null,
         date: req.body?.date,
         documentDueDate: req.body?.documentDueDate || null,
         amount: req.body?.amount,
@@ -141,6 +156,7 @@ export function registerStaffAdvanceRoutes(app: Express) {
         .update(staffAdvances)
         .set({
           staffId: input.staffId,
+          locationId: input.locationId,
           date: input.date,
           documentDueDate: input.documentDueDate,
           amount: input.amount,

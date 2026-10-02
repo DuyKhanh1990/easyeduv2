@@ -23,6 +23,7 @@ function formatVND(amount: number) {
 interface StaffAdvance {
   id: string;
   staffId: string;
+  locationId?: string | null;
   date: string;
   amount: number;
   documentDueDate?: string | null;
@@ -35,7 +36,8 @@ interface Staff {
   fullName: string;
   code?: string;
   assignments?: Array<{
-    location?: { name?: string } | null;
+    locationId?: string;
+    location?: { id?: string; name?: string } | null;
     department?: { name?: string } | null;
     role?: { name?: string } | null;
   }>;
@@ -105,6 +107,7 @@ export function TamUngTab({ canCreate = false, canEdit = false, canDelete = fals
   const [dialogMode, setDialogMode] = useState<"create" | "edit" | "view">("create");
   const [form, setForm] = useState({
     staffId: "",
+    locationId: "",
     date: format(new Date(), "yyyy-MM-dd"),
     documentDueDate: format(addDays(new Date(), 7), "yyyy-MM-dd"),
     amount: "",
@@ -130,6 +133,10 @@ export function TamUngTab({ canCreate = false, canEdit = false, canDelete = fals
     },
   });
 
+  const { data: locations = [] } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ["/api/locations"],
+  });
+
   const filteredStaff = useMemo(() => {
     const q = staffSearch.trim().toLowerCase();
     if (!q) return staff;
@@ -139,6 +146,16 @@ export function TamUngTab({ canCreate = false, canEdit = false, canDelete = fals
   }, [staff, staffSearch]);
 
   const selectedStaff = staff.find((s) => s.id === form.staffId);
+  const selectedStaffLocationIds = Array.from(new Set(
+    (selectedStaff?.assignments ?? [])
+      .map((assignment) => assignment.locationId ?? assignment.location?.id)
+      .filter((id): id is string => !!id),
+  ));
+  const facilityOptions = locations.filter((location) =>
+    selectedStaffLocationIds.length === 0 ||
+    selectedStaffLocationIds.includes(location.id) ||
+    location.id === form.locationId
+  );
   const totalAmount = records.reduce((sum, record) => sum + Number(record.amount || 0), 0);
   const totalPages = Math.max(1, Math.ceil(records.length / pageSize));
   const paginated = records.slice((page - 1) * pageSize, page * pageSize);
@@ -146,6 +163,7 @@ export function TamUngTab({ canCreate = false, canEdit = false, canDelete = fals
   const resetForm = () => {
     setForm({
       staffId: "",
+      locationId: "",
       date: format(new Date(), "yyyy-MM-dd"),
       documentDueDate: format(addDays(new Date(), 7), "yyyy-MM-dd"),
       amount: "",
@@ -203,6 +221,10 @@ export function TamUngTab({ canCreate = false, canEdit = false, canDelete = fals
       toast({ title: "Lỗi", description: "Vui lòng chọn nhân viên", variant: "destructive" });
       return;
     }
+    if (!form.locationId) {
+      toast({ title: "Lỗi", description: "Vui lòng chọn cơ sở", variant: "destructive" });
+      return;
+    }
     const amount = parseInt(form.amount.replace(/\D/g, ""), 10);
     if (!amount || amount <= 0) {
       toast({ title: "Lỗi", description: "Số tiền phải lớn hơn 0", variant: "destructive" });
@@ -224,7 +246,7 @@ export function TamUngTab({ canCreate = false, canEdit = false, canDelete = fals
       toast({ title: "Lỗi", description: "Vui lòng nhập đầy đủ tên khoản và số tiền", variant: "destructive" });
       return;
     }
-    const data = { staffId: form.staffId, date: form.date, documentDueDate: form.documentDueDate, amount, reason: form.reason, items };
+    const data = { staffId: form.staffId, locationId: form.locationId, date: form.date, documentDueDate: form.documentDueDate, amount, reason: form.reason, items };
     if (dialogMode === "edit" && activeRecordId) {
       updateMutation.mutate({ id: activeRecordId, data });
     } else {
@@ -243,6 +265,7 @@ export function TamUngTab({ canCreate = false, canEdit = false, canDelete = fals
     setDialogMode(mode);
     setForm({
       staffId: record.staffId,
+      locationId: record.locationId ?? "",
       date: String(record.date).slice(0, 10),
       documentDueDate: record.documentDueDate ? String(record.documentDueDate).slice(0, 10) : "",
       amount: record.amount ? new Intl.NumberFormat("vi-VN").format(Number(record.amount)) : "",
@@ -269,9 +292,14 @@ export function TamUngTab({ canCreate = false, canEdit = false, canDelete = fals
     const person = staff.find((s) => s.id === staffId);
     return person ? `${person.code ? `${person.code} ` : ""}${person.fullName}` : staffId;
   };
+  const getLocationName = (locationId?: string | null) =>
+    locations.find((location) => location.id === locationId)?.name || (locationId ? "Cơ sở đã xóa" : "Chưa gán cơ sở");
 
   const getStaffForPrint = (staffId: string) => staff.find((person) => person.id === staffId);
-  const getCompanyName = (person?: Staff) => person?.assignments?.find((assignment) => assignment.location?.name)?.location?.name || "................................";
+  const getCompanyName = (person?: Staff, locationId?: string | null) =>
+    locations.find((location) => location.id === locationId)?.name ||
+    person?.assignments?.find((assignment) => assignment.location?.name)?.location?.name ||
+    "................................";
   const getDepartmentRoles = (person?: Staff) => {
     const pairs = (person?.assignments ?? [])
       .map((assignment) => [assignment.department?.name, assignment.role?.name].filter(Boolean).join("|"))
@@ -345,7 +373,7 @@ export function TamUngTab({ canCreate = false, canEdit = false, canDelete = fals
           size: 26,
         })],
       }),
-      labelParagraph("Kính gửi: ", `Ban Giám đốc và Phòng Kế toán ${getCompanyName(printStaff)}`),
+      labelParagraph("Kính gửi: ", `Ban Giám đốc và Phòng Kế toán ${getCompanyName(printStaff, printRecord.locationId)}`),
       labelParagraph("Tôi tên là: ", printStaff?.fullName || "................................"),
       labelParagraph("Bộ phận/Chức vụ: ", getDepartmentRoles(printStaff)),
       labelParagraph("Số tiền đề nghị tạm ứng: ", `${new Intl.NumberFormat("vi-VN").format(amount)} VNĐ`),
@@ -424,11 +452,12 @@ export function TamUngTab({ canCreate = false, canEdit = false, canDelete = fals
           )}
         </div>
 
-        <div className="flex-1 overflow-auto">
-          <table className="w-full border-collapse" style={{ minWidth: 640 }}>
+      <div className="flex-1 overflow-auto">
+          <table className="w-full border-collapse" style={{ minWidth: 780 }}>
             <thead className="sticky top-0 z-10">
               <tr className="bg-slate-100 dark:bg-slate-900" style={{ boxShadow: "0 1px 0 0 #e2e8f0" }}>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-48">Nhân viên</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-36">Cơ sở</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-28">Ngày</th>
                 <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-36">Số tiền</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Lý do</th>
@@ -437,10 +466,10 @@ export function TamUngTab({ canCreate = false, canEdit = false, canDelete = fals
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={5} className="text-center py-16 text-sm text-slate-400">Đang tải...</td></tr>
+                <tr><td colSpan={6} className="text-center py-16 text-sm text-slate-400">Đang tải...</td></tr>
               ) : paginated.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-16">
+                  <td colSpan={6} className="text-center py-16">
                     <div className="flex flex-col items-center gap-2 text-slate-400">
                       <Wallet className="w-10 h-10 opacity-25" />
                       <p className="text-sm font-medium">Chưa có phiếu tạm ứng</p>
@@ -457,6 +486,9 @@ export function TamUngTab({ canCreate = false, canEdit = false, canDelete = fals
                       </div>
                       <span className="text-xs font-semibold text-slate-700 truncate max-w-[180px]">{getStaffName(record.staffId)}</span>
                     </div>
+                  </td>
+                  <td className="px-4 py-3 border-b border-slate-100 text-xs text-slate-600">
+                    {getLocationName(record.locationId)}
                   </td>
                   <td className="px-4 py-3 border-b border-slate-100 text-xs text-slate-600 font-medium">
                     {record.date ? format(new Date(record.date), "dd/MM/yyyy") : "—"}
@@ -539,7 +571,7 @@ export function TamUngTab({ canCreate = false, canEdit = false, canDelete = fals
                     <div className="p-2 border-b border-slate-100 flex items-center gap-2"><Search className="h-3.5 w-3.5 text-slate-400" /><input autoFocus className="flex-1 text-sm outline-none" placeholder="Tìm theo tên hoặc mã..." value={staffSearch} onChange={(e) => setStaffSearch(e.target.value)} /></div>
                     <div className="max-h-44 overflow-y-auto">
                       {filteredStaff.map((person) => (
-                        <button key={person.id} type="button" onClick={() => { setForm((value) => ({ ...value, staffId: person.id })); setStaffDropdownOpen(false); setStaffSearch(""); }} className={cn("w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-violet-50", form.staffId === person.id && "bg-violet-50 font-semibold text-violet-700")}>
+                        <button key={person.id} type="button" onClick={() => { setForm((value) => ({ ...value, staffId: person.id, locationId: "" })); setStaffDropdownOpen(false); setStaffSearch(""); }} className={cn("w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-violet-50", form.staffId === person.id && "bg-violet-50 font-semibold text-violet-700")}>
                           <span className="w-6 h-6 rounded-full bg-violet-100 flex items-center justify-center text-[10px] font-bold text-violet-600">{person.fullName.charAt(0)}</span>
                           <span className="font-medium text-slate-800">{person.fullName}{person.code && <span className="ml-2 text-xs text-slate-400">{person.code}</span>}</span>
                         </button>
@@ -549,6 +581,18 @@ export function TamUngTab({ canCreate = false, canEdit = false, canDelete = fals
                   </div>
                 )}
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Cơ sở <span className="text-red-500">*</span></Label>
+              <select
+                disabled={dialogMode === "view"}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 font-medium disabled:cursor-default disabled:opacity-80"
+                value={form.locationId}
+                onChange={(e) => setForm((value) => ({ ...value, locationId: e.target.value }))}
+              >
+                <option value="">Chọn cơ sở...</option>
+                {facilityOptions.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
+              </select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -642,7 +686,7 @@ export function TamUngTab({ canCreate = false, canEdit = false, canDelete = fals
                     </p>
 
                     <div className="mt-12 space-y-3">
-                      <p><strong>Kính gửi:</strong> Ban Giám đốc và Phòng Kế toán <strong>{getCompanyName(printStaff)}</strong></p>
+                      <p><strong>Kính gửi:</strong> Ban Giám đốc và Phòng Kế toán <strong>{getCompanyName(printStaff, printRecord.locationId)}</strong></p>
                       <p><strong>Tôi tên là:</strong> {printStaff?.fullName || "................................"}</p>
                       <p><strong>Bộ phận/Chức vụ:</strong> {getDepartmentRoles(printStaff)}</p>
                       <p><strong>Số tiền đề nghị tạm ứng:</strong> {new Intl.NumberFormat("vi-VN").format(amount)} VNĐ</p>

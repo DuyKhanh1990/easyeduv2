@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { vi } from "date-fns/locale";
 import {
-  Plus, Trash2, Gift, AlertTriangle, Search,
+  Plus, Trash2, Gift, AlertTriangle, Search, Pencil,
   ChevronLeft, ChevronRight, CalendarDays,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ function formatVND(amount: number) {
 interface StaffReward {
   id: string;
   staffId: string;
+  locationId?: string | null;
   type: "reward" | "penalty";
   date: string;
   amount: number;
@@ -46,21 +47,25 @@ interface Staff {
   id: string;
   fullName: string;
   code?: string;
+  assignments?: Array<{ locationId?: string }>;
 }
 
 interface ThuongPhatTabProps {
   canCreate?: boolean;
+  canEdit?: boolean;
   canDelete?: boolean;
 }
 
-export function ThuongPhatTab({ canCreate = false, canDelete = false }: ThuongPhatTabProps) {
+export function ThuongPhatTab({ canCreate = false, canEdit = false, canDelete = false }: ThuongPhatTabProps) {
   const { toast } = useToast();
 
   // ── Dialog state ─────────────────────────────────────────────────────────────
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [rewardType, setRewardType] = useState<"reward" | "penalty">("reward");
   const [form, setForm] = useState({
     staffId: "",
+    locationId: "",
     date: format(new Date(), "yyyy-MM-dd"),
     amount: "",
     reason: "",
@@ -95,6 +100,10 @@ export function ThuongPhatTab({ canCreate = false, canDelete = false }: ThuongPh
     },
   });
 
+  const { data: locations = [] } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ["/api/locations"],
+  });
+
   const filteredStaff = useMemo(() => {
     if (!staffSearch.trim()) return staff as Staff[];
     const q = staffSearch.toLowerCase();
@@ -104,6 +113,16 @@ export function ThuongPhatTab({ canCreate = false, canDelete = false }: ThuongPh
   }, [staff, staffSearch]);
 
   const selectedStaff = (staff as Staff[]).find((s) => s.id === form.staffId);
+  const selectedStaffLocationIds = Array.from(new Set(
+    (selectedStaff?.assignments ?? [])
+      .map((assignment) => assignment.locationId)
+      .filter((id): id is string => !!id),
+  ));
+  const facilityOptions = locations.filter((location) =>
+    selectedStaffLocationIds.length === 0 ||
+    selectedStaffLocationIds.includes(location.id) ||
+    location.id === form.locationId
+  );
 
   function getStaffName(staffId: string) {
     const s = (staff as Staff[]).find((x) => x.id === staffId);
@@ -124,6 +143,19 @@ export function ThuongPhatTab({ canCreate = false, canDelete = false }: ThuongPh
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => apiRequest("PUT", `/api/staff-rewards/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/staff-rewards"] });
+      toast({ title: "Thành công", description: `Đã cập nhật phiếu ${rewardType === "reward" ? "thưởng" : "phạt"}` });
+      setOpen(false);
+      resetForm();
+    },
+    onError: (err: any) => {
+      toast({ title: "Lỗi", description: err?.message || "Không thể cập nhật phiếu", variant: "destructive" });
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/staff-rewards/${id}`),
     onSuccess: () => {
@@ -133,14 +165,19 @@ export function ThuongPhatTab({ canCreate = false, canDelete = false }: ThuongPh
   });
 
   function resetForm() {
-    setForm({ staffId: "", date: format(new Date(), "yyyy-MM-dd"), amount: "", reason: "" });
+    setForm({ staffId: "", locationId: "", date: format(new Date(), "yyyy-MM-dd"), amount: "", reason: "" });
     setStaffSearch("");
     setRewardType("reward");
+    setEditingId(null);
   }
 
   function handleSubmit() {
     if (!form.staffId) {
       toast({ title: "Lỗi", description: "Vui lòng chọn nhân viên", variant: "destructive" });
+      return;
+    }
+    if (!form.locationId) {
+      toast({ title: "Lỗi", description: "Vui lòng chọn cơ sở", variant: "destructive" });
       return;
     }
     const amount = parseInt(form.amount.replace(/\D/g, ""), 10);
@@ -152,7 +189,27 @@ export function ThuongPhatTab({ canCreate = false, canDelete = false }: ThuongPh
       toast({ title: "Lỗi", description: "Vui lòng chọn ngày", variant: "destructive" });
       return;
     }
-    createMutation.mutate({ staffId: form.staffId, type: rewardType, date: form.date, amount, reason: form.reason });
+    const data = { staffId: form.staffId, locationId: form.locationId, type: rewardType, date: form.date, amount, reason: form.reason };
+    if (editingId) updateMutation.mutate({ id: editingId, data });
+    else createMutation.mutate(data);
+  }
+
+  function openEditDialog(record: StaffReward) {
+    setEditingId(record.id);
+    setRewardType(record.type);
+    setForm({
+      staffId: record.staffId,
+      locationId: record.locationId ?? "",
+      date: String(record.date).slice(0, 10),
+      amount: new Intl.NumberFormat("vi-VN").format(Number(record.amount || 0)),
+      reason: record.reason ?? "",
+    });
+    setStaffSearch("");
+    setOpen(true);
+  }
+
+  function getLocationName(locationId?: string | null) {
+    return locations.find((location) => location.id === locationId)?.name || (locationId ? "Cơ sở đã xóa" : "Chưa gán cơ sở");
   }
 
   // Pagination
@@ -256,15 +313,16 @@ export function ThuongPhatTab({ canCreate = false, canDelete = false }: ThuongPh
 
         {/* Table */}
         <div className="flex-1 overflow-auto">
-          <table className="w-full border-collapse" style={{ minWidth: 640 }}>
+          <table className="w-full border-collapse" style={{ minWidth: 820 }}>
             <thead className="sticky top-0 z-10">
               <tr className="bg-slate-100 dark:bg-slate-900" style={{ boxShadow: "0 1px 0 0 #e2e8f0" }}>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-48">Nhân viên</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-36">Cơ sở</th>
                 <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-24">Loại</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-28">Ngày</th>
                 <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-36">Số tiền</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Lý do</th>
-                {canDelete && (
+                {(canEdit || canDelete) && (
                   <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-16"></th>
                 )}
               </tr>
@@ -272,7 +330,7 @@ export function ThuongPhatTab({ canCreate = false, canDelete = false }: ThuongPh
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-16">
+                  <td colSpan={canEdit || canDelete ? 7 : 6} className="text-center py-16">
                     <div className="flex flex-col items-center gap-2 text-slate-400">
                       <div className="w-8 h-8 border-2 border-violet-300 border-t-violet-600 rounded-full animate-spin" />
                       <span className="text-sm">Đang tải...</span>
@@ -281,7 +339,7 @@ export function ThuongPhatTab({ canCreate = false, canDelete = false }: ThuongPh
                 </tr>
               ) : paginated.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-16">
+                  <td colSpan={canEdit || canDelete ? 7 : 6} className="text-center py-16">
                     <div className="flex flex-col items-center gap-2 text-slate-400">
                       <Gift className="w-10 h-10 opacity-25" />
                       <p className="text-sm font-medium">Chưa có phiếu thưởng / phạt</p>
@@ -307,6 +365,9 @@ export function ThuongPhatTab({ canCreate = false, canDelete = false }: ThuongPh
                             {getStaffName(r.staffId)}
                           </span>
                         </div>
+                      </td>
+                      <td className="px-4 py-3 border-b border-slate-100 text-xs text-slate-600">
+                        {getLocationName(r.locationId)}
                       </td>
                       <td className="px-4 py-3 border-b border-slate-100 text-center">
                         <span className={cn(
@@ -335,15 +396,28 @@ export function ThuongPhatTab({ canCreate = false, canDelete = false }: ThuongPh
                           ? <p className="text-xs text-slate-600 truncate" title={r.reason}>{r.reason}</p>
                           : <span className="text-slate-300 text-xs">—</span>}
                       </td>
-                      {canDelete && (
+                      {(canEdit || canDelete) && (
                         <td className="px-4 py-3 border-b border-slate-100 text-center">
-                          <button
-                            title="Xoá"
-                            className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-red-100 text-slate-400 hover:text-red-500 flex items-center justify-center transition-colors mx-auto opacity-0 group-hover:opacity-100"
-                            onClick={() => { if (confirm("Xoá phiếu này?")) deleteMutation.mutate(r.id); }}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100">
+                            {canEdit && (
+                              <button
+                                title="Sửa"
+                                className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-amber-100 text-slate-400 hover:text-amber-600 flex items-center justify-center transition-colors"
+                                onClick={() => openEditDialog(r)}
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button
+                                title="Xoá"
+                                className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-red-100 text-slate-400 hover:text-red-500 flex items-center justify-center transition-colors"
+                                onClick={() => { if (confirm("Xoá phiếu này?")) deleteMutation.mutate(r.id); }}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       )}
                     </tr>
@@ -389,7 +463,7 @@ export function ThuongPhatTab({ canCreate = false, canDelete = false }: ThuongPh
         </div>
       </div>
 
-      {/* ── CREATE DIALOG ── */}
+      {/* ── CREATE / EDIT DIALOG ── */}
       <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
         <DialogContent className="sm:max-w-[420px] p-0 overflow-hidden">
           <DialogHeader className="px-6 pt-6 pb-4 border-b border-slate-100">
@@ -402,7 +476,7 @@ export function ThuongPhatTab({ canCreate = false, canDelete = false }: ThuongPh
                   ? <Gift className="h-4 w-4 text-emerald-600" />
                   : <AlertTriangle className="h-4 w-4 text-red-500" />}
               </div>
-              Tạo phiếu {rewardType === "reward" ? "thưởng" : "phạt"}
+              {editingId ? "Sửa" : "Tạo"} phiếu {rewardType === "reward" ? "thưởng" : "phạt"}
             </DialogTitle>
           </DialogHeader>
 
@@ -484,7 +558,7 @@ export function ThuongPhatTab({ canCreate = false, canDelete = false }: ThuongPh
                             key={s.id}
                             type="button"
                             onClick={() => {
-                              setForm((f) => ({ ...f, staffId: s.id }));
+                              setForm((f) => ({ ...f, staffId: s.id, locationId: "" }));
                               setStaffDropdownOpen(false);
                               setStaffSearch("");
                             }}
@@ -509,6 +583,20 @@ export function ThuongPhatTab({ canCreate = false, canDelete = false }: ThuongPh
                   </div>
                 )}
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                Cơ sở <span className="text-red-500">*</span>
+              </Label>
+              <select
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 font-medium"
+                value={form.locationId}
+                onChange={(e) => setForm((f) => ({ ...f, locationId: e.target.value }))}
+              >
+                <option value="">Chọn cơ sở...</option>
+                {facilityOptions.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
+              </select>
             </div>
 
             {/* ── Date + Amount ── */}
@@ -593,9 +681,11 @@ export function ThuongPhatTab({ canCreate = false, canDelete = false }: ThuongPh
                   : "bg-red-500 hover:bg-red-600"
               )}
               onClick={handleSubmit}
-              disabled={createMutation.isPending}
+              disabled={createMutation.isPending || updateMutation.isPending}
             >
-              {createMutation.isPending ? "Đang lưu..." : `Tạo phiếu ${rewardType === "reward" ? "thưởng" : "phạt"}`}
+              {createMutation.isPending || updateMutation.isPending
+                ? "Đang lưu..."
+                : `${editingId ? "Lưu phiếu" : "Tạo phiếu"} ${rewardType === "reward" ? "thưởng" : "phạt"}`}
             </Button>
           </DialogFooter>
         </DialogContent>

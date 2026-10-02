@@ -34,28 +34,55 @@ export function registerStaffRewardRoutes(app: Express) {
   app.post("/api/staff-rewards", async (req, res) => {
     try {
       const { db } = await import("../storage/base");
-      const { sql } = await import("drizzle-orm");
-
-      // Ensure table exists (idempotent)
-      await db.execute(sql`
-        CREATE TABLE IF NOT EXISTS staff_rewards (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          staff_id UUID NOT NULL,
-          type VARCHAR(10) NOT NULL CHECK (type IN ('reward', 'penalty')),
-          date DATE NOT NULL,
-          amount INTEGER NOT NULL DEFAULT 0,
-          reason TEXT,
-          created_by UUID,
-          created_at TIMESTAMP DEFAULT NOW() NOT NULL,
-          updated_at TIMESTAMP DEFAULT NOW() NOT NULL
-        )
-      `);
+      if (!req.body?.locationId) return res.status(400).json({ message: "Vui lòng chọn cơ sở" });
 
       const { staffRewards, insertStaffRewardSchema } = await import("@shared/schema");
       const userId = (req as any).user?.id ?? null;
       const input = insertStaffRewardSchema.parse({ ...req.body, createdBy: userId });
       const [row] = await db.insert(staffRewards).values(input).returning();
       res.status(201).json(row);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) return res.status(400).json(err.errors);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/staff-rewards/:id", async (req, res) => {
+    try {
+      const { db } = await import("../storage/base");
+      const { staffRewards, insertStaffRewardSchema } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const [existing] = await db
+        .select()
+        .from(staffRewards)
+        .where(eq(staffRewards.id, req.params.id))
+        .limit(1);
+      if (!existing) return res.status(404).json({ message: "Không tìm thấy phiếu thưởng / phạt" });
+
+      const input = insertStaffRewardSchema.parse({
+        staffId: req.body?.staffId ?? existing.staffId,
+        locationId: req.body?.locationId ?? existing.locationId ?? null,
+        type: req.body?.type ?? existing.type,
+        date: req.body?.date ?? existing.date,
+        amount: req.body?.amount ?? existing.amount,
+        reason: req.body?.reason ?? existing.reason ?? null,
+        createdBy: existing.createdBy,
+      });
+      if (!input.locationId) return res.status(400).json({ message: "Vui lòng chọn cơ sở" });
+      const [row] = await db
+        .update(staffRewards)
+        .set({
+          staffId: input.staffId,
+          locationId: input.locationId,
+          type: input.type,
+          date: input.date,
+          amount: input.amount,
+          reason: input.reason,
+          updatedAt: new Date(),
+        })
+        .where(eq(staffRewards.id, req.params.id))
+        .returning();
+      res.json(row);
     } catch (err: any) {
       if (err instanceof z.ZodError) return res.status(400).json(err.errors);
       res.status(500).json({ message: err.message });

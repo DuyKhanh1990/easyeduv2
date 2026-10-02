@@ -324,7 +324,7 @@ export function DonTuPage() {
         {/* ── THƯỞNG/PHẠT TAB CONTENT ── */}
         {mainTab === "thuong-phat" && (
           <div className="flex-1 overflow-hidden pt-3">
-            <ThuongPhatTab canCreate={canCreate} canDelete={canDelete} />
+            <ThuongPhatTab canCreate={canCreate} canEdit={canEdit} canDelete={canDelete} />
           </div>
         )}
 

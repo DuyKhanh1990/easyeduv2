@@ -77,22 +77,23 @@ function getShiftTotalHours(tpl: any): number {
   return minutesToHours(Math.max(0, mins));
 }
 
-function staffMatchesAssignment(s: any, a: any): boolean {
+function staffMatchesAssignment(s: any, a: any, locationId: string): boolean {
   if (!a.targetId) return false;
+  if (a.locationId !== locationId) return false;
   const sA: any[] = s.assignments || [];
   if (a.targetType === "staff") return s.id === a.targetId;
   if (a.targetType === "department")
-    return sA.some(sa => sa.departmentId === a.targetId && (!a.locationId || sa.locationId === a.locationId));
+    return sA.some(sa => sa.departmentId === a.targetId && sa.locationId === locationId);
   if (a.targetType === "role")
-    return sA.some(sa => sa.roleId === a.targetId && (!a.locationId || sa.locationId === a.locationId));
+    return sA.some(sa => sa.roleId === a.targetId && sa.locationId === locationId);
   return false;
 }
-function getShiftIdsForStaffOnDate(s: any, date: Date, shiftAssignments: any[]): string[] {
+function getShiftIdsForStaffOnDate(s: any, date: Date, shiftAssignments: any[], locationId: string): string[] {
   const ymd = format(date, "yyyy-MM-dd");
   const dowKey = String(date.getDay());
   const ids: string[] = [];
   for (const a of shiftAssignments) {
-    if (!staffMatchesAssignment(s, a)) continue;
+    if (!staffMatchesAssignment(s, a, locationId)) continue;
     if (a.effectiveFrom && ymd < format(new Date(a.effectiveFrom), "yyyy-MM-dd")) continue;
     if (a.effectiveTo && ymd > format(new Date(a.effectiveTo), "yyyy-MM-dd")) continue;
     if (a.byWeekday) {
@@ -103,6 +104,10 @@ function getShiftIdsForStaffOnDate(s: any, date: Date, shiftAssignments: any[]):
     }
   }
   return ids;
+}
+
+function attendanceRowKey(staffId: string, locationId: string): string {
+  return `${staffId}__${locationId}`;
 }
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -484,14 +489,32 @@ export function ChamCong() {
     return staffInSelectedLocs;
   }, [staffInSelectedLocs, effectiveStaffIds]);
 
+  const locationNameById = useMemo(
+    () => new Map((locations as any[]).map(location => [location.id, location.name])),
+    [locations],
+  );
+
   const allRows = useMemo(() =>
-    filteredStaff
-      .map(s => {
-        const perDay = days.map(d => getShiftIdsForStaffOnDate(s, d.date, shiftAssignments as any[]));
-        return { staff: s, perDay, hasAny: perDay.some(ids => ids.length > 0) };
-      })
-      .filter(r => r.hasAny),
-    [filteredStaff, days, shiftAssignments]);
+    filteredStaff.flatMap(s => {
+      const assignedLocationIds = Array.from(new Set<string>(
+        (s.assignments || [])
+          .map((assignment: any): string | null | undefined => assignment.locationId)
+          .filter((id: string | null | undefined): id is string =>
+            !!id && (locationIds.length === 0 || locationIds.includes(id))
+          ),
+      ));
+      return assignedLocationIds.map(locationId => {
+        const perDay = days.map(d => getShiftIdsForStaffOnDate(s, d.date, shiftAssignments as any[], locationId));
+        return {
+          staff: s,
+          locationId,
+          locationName: locationNameById.get(locationId) || "Chưa rõ cơ sở",
+          perDay,
+          hasAny: perDay.some(ids => ids.length > 0),
+        };
+      });
+    }).filter(row => row.hasAny),
+    [filteredStaff, days, shiftAssignments, locationIds, locationNameById]);
 
   const totalRows = allRows.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
@@ -614,20 +637,24 @@ export function ChamCong() {
     }
 
     const records: any[] = [];
+    const emittedRecords = new Set<string>();
     let totalSkipped = 0;
 
     for (const ymd of dateList) {
       const dateObj = new Date(ymd + "T00:00:00");
-      for (const staffId of Array.from(selectedIds)) {
-        const staffRow = allRows.find(r => r.staff.id === staffId);
+      for (const rowKey of Array.from(selectedIds)) {
+        const staffRow = allRows.find(r => attendanceRowKey(r.staff.id, r.locationId) === rowKey);
         if (!staffRow) { totalSkipped++; continue; }
 
         // Dùng hàm getShiftIdsForStaffOnDate để tìm ca theo ngày bất kỳ
-        const shiftIds = getShiftIdsForStaffOnDate(staffRow.staff, dateObj, shiftAssignments as any[]);
+        const shiftIds = getShiftIdsForStaffOnDate(staffRow.staff, dateObj, shiftAssignments as any[], staffRow.locationId);
         if (shiftIds.length === 0) { totalSkipped++; continue; }
 
         const tpl = getTpl(shiftIds[0]);
         if (!tpl || !tpl.startTime || !tpl.endTime) { totalSkipped++; continue; }
+        const recordKey = `${staffRow.staff.id}__${ymd}__${shiftIds[0]}`;
+        if (emittedRecords.has(recordKey)) continue;
+        emittedRecords.add(recordKey);
 
         const shiftStart = tpl.startTime.slice(0, 5);
         const shiftEnd   = tpl.endTime.slice(0, 5);
@@ -641,7 +668,7 @@ export function ChamCong() {
         const soCong      = tpl.workUnits != null ? Number(tpl.workUnits) : 1;
         const tongCong    = shiftHours > 0 ? (workedHours * soCong) / shiftHours : 0;
 
-        records.push({ staffId, workDate: ymd, shiftTemplateId: shiftIds[0], timeIn, timeOut, workedHours, tongCong });
+        records.push({ staffId: staffRow.staff.id, workDate: ymd, shiftTemplateId: shiftIds[0], timeIn, timeOut, workedHours, tongCong });
       }
     }
 
@@ -719,7 +746,7 @@ export function ChamCong() {
     const ws = wb.addWorksheet("Chấm công");
 
     const templateRows = uploadLocationId
-      ? allRows.filter(r => (r.staff.assignments || []).some((a: any) => a.locationId === uploadLocationId))
+      ? allRows.filter(r => r.locationId === uploadLocationId)
       : allRows;
 
     // Tìm index ngày được chọn trong mảng days
@@ -739,6 +766,7 @@ export function ChamCong() {
       { key: "timeTo",         header: "Thời gian đến",    width: 15 },
       { key: "timeIn",         header: "Thời gian vào",    width: 15 },
       { key: "timeOut",        header: "Thời gian ra",     width: 15 },
+      { key: "locationName",   header: "Cơ sở",            width: 24 },
     ];
 
     const headerRow = ws.getRow(1);
@@ -780,6 +808,7 @@ export function ChamCong() {
           timeTo,
           timeIn: timeFrom,
           timeOut: timeTo,
+          locationName: r.locationName,
         });
         row.getCell(11).fill = orangeFill;
         row.getCell(12).fill = orangeFill;
@@ -807,6 +836,7 @@ export function ChamCong() {
             timeTo,
             timeIn: timeFrom,
             timeOut: timeTo,
+            locationName: r.locationName,
           });
           row.getCell(11).fill = orangeFill;
           row.getCell(12).fill = orangeFill;
@@ -1004,9 +1034,9 @@ export function ChamCong() {
                     <input
                       type="checkbox"
                       className="accent-violet-600 cursor-pointer"
-                      checked={rows.length > 0 && rows.every(r => selectedIds.has(r.staff.id))}
+                      checked={rows.length > 0 && rows.every(r => selectedIds.has(attendanceRowKey(r.staff.id, r.locationId)))}
                       onChange={e => {
-                        if (e.target.checked) setSelectedIds(new Set(rows.map(r => r.staff.id)));
+                        if (e.target.checked) setSelectedIds(new Set(rows.map(r => attendanceRowKey(r.staff.id, r.locationId))));
                         else setSelectedIds(new Set());
                       }}
                     />
@@ -1040,9 +1070,10 @@ export function ChamCong() {
                   rows.map((r, idx) => {
                     const roleName = Array.isArray(r.staff.roleNames) && r.staff.roleNames.length > 0 ? r.staff.roleNames[0] : "—";
                     const sum = rowSummary(r.staff, r.perDay);
-                    const isSelected = selectedIds.has(r.staff.id);
+                    const rowKey = attendanceRowKey(r.staff.id, r.locationId);
+                    const isSelected = selectedIds.has(rowKey);
                     return (
-                      <tr key={r.staff.id} className={cn("hover:bg-gray-50/40", isSelected && "bg-violet-50/60")}>
+                      <tr key={rowKey} className={cn("hover:bg-gray-50/40", isSelected && "bg-violet-50/60")}>
                         {/* Checkbox */}
                         <td className={cn(tdBase, "sticky z-20 bg-white text-center border-l", isSelected && "bg-violet-50/60")} style={{ left: 0, width: COL_CB }}>
                           <input
@@ -1051,8 +1082,8 @@ export function ChamCong() {
                             checked={isSelected}
                             onChange={e => {
                               const next = new Set(selectedIds);
-                              if (e.target.checked) next.add(r.staff.id);
-                              else next.delete(r.staff.id);
+                              if (e.target.checked) next.add(rowKey);
+                              else next.delete(rowKey);
                               setSelectedIds(next);
                             }}
                           />
@@ -1061,6 +1092,7 @@ export function ChamCong() {
                         <td className={cn(tdBase, "sticky z-20 bg-white px-3 py-2", isSelected && "bg-violet-50/60")} style={{ left: COL_CB + COL_NV, width: COL_NAME }}>
                           <div className="font-medium truncate">{r.staff.fullName || r.staff.code}</div>
                           {r.staff.code && <div className="text-xs text-muted-foreground">{r.staff.code}</div>}
+                          <div className="text-[11px] text-violet-700 truncate" title={r.locationName}>{r.locationName}</div>
                         </td>
                         <td className={cn(tdBase, "sticky z-20 bg-white px-3 py-2 text-muted-foreground", isSelected && "bg-violet-50/60")} style={{ left: COL_CB + COL_NV + COL_NAME, width: COL_ROLE, boxShadow: "2px 0 4px -1px rgba(0,0,0,0.08)" }}>{roleName}</td>
                         {r.perDay.map((ids, dayIdx) => {
@@ -1721,7 +1753,7 @@ export function ChamCong() {
             {/* Thống kê chọn */}
             <div className="rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground flex items-center gap-1.5">
               <Users className="h-3.5 w-3.5" />
-              Áp dụng cho <span className="font-semibold text-foreground">{selectedIds.size} nhân sự</span> đã chọn
+              Áp dụng cho <span className="font-semibold text-foreground">{selectedIds.size} dòng cơ sở</span> đã chọn
             </div>
 
             {/* Kết quả */}

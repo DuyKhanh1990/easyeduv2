@@ -3012,6 +3012,7 @@ export type InsertLeaveRequest = typeof leaveRequests.$inferInsert;
 export const staffRewards = pgTable("staff_rewards", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   staffId: uuid("staff_id").notNull(),
+  locationId: uuid("location_id").references(() => locations.id, { onDelete: "set null" }),
   type: varchar("type", { length: 10 }).notNull(), // 'reward' | 'penalty'
   date: date("date").notNull(),
   amount: integer("amount").notNull().default(0), // VND
@@ -3019,7 +3020,9 @@ export const staffRewards = pgTable("staff_rewards", {
   createdBy: uuid("created_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  locationDateIdx: index("staff_rewards_location_date_idx").on(t.locationId, t.date),
+}));
 
 export const insertStaffRewardSchema = createInsertSchema(staffRewards).omit({ id: true, createdAt: true, updatedAt: true });
 export type StaffReward = typeof staffRewards.$inferSelect;
@@ -3028,6 +3031,7 @@ export type InsertStaffReward = typeof staffRewards.$inferInsert;
 export const staffAdvances = pgTable("staff_advances", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   staffId: uuid("staff_id").notNull(),
+  locationId: uuid("location_id").references(() => locations.id, { onDelete: "set null" }),
   date: date("date").notNull(),
   documentDueDate: date("document_due_date"),
   amount: integer("amount").notNull().default(0),
@@ -3036,7 +3040,9 @@ export const staffAdvances = pgTable("staff_advances", {
   createdBy: uuid("created_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  locationDateIdx: index("staff_advances_location_date_idx").on(t.locationId, t.date),
+}));
 
 export const insertStaffAdvanceSchema = createInsertSchema(staffAdvances).omit({ id: true, createdAt: true, updatedAt: true });
 export type StaffAdvance = typeof staffAdvances.$inferSelect;

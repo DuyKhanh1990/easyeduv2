@@ -329,7 +329,7 @@ export function registerSalarySheetRoutes(app: Express): void {
       if (status === "locked") return res.status(400).json({ message: "Không thể chỉnh sửa bảng lương đã chốt" });
 
       const generatedRows: any[] = [];
-      const staffWideAdjustmentsApplied = new Set<string>();
+      const legacyAdjustmentsApplied = new Set<string>();
 
       for (const locationId of locationIds) {
       // Get all active staff at this facility
@@ -486,17 +486,13 @@ export function registerSalarySheetRoutes(app: Express): void {
       }
 
       // ── 2. Công thực: SUM(tong_cong) từ bảng chấm công (/cham-cong) ────────
-      const includeUnassignedAttendance = locationId === primaryLocationId;
       const attendanceRes = await db.execute(sql`
         SELECT sa.staff_id, COALESCE(SUM(ROUND(sa.tong_cong::NUMERIC, 2)), 0) AS total_cong
         FROM staff_attendances sa
         LEFT JOIN shift_templates st ON st.id = sa.shift_template_id
         WHERE sa.work_date >= ${fromDate}::date
           AND sa.work_date <= ${toDate}::date
-          AND (
-            st.location_id = ${locationId}::uuid
-            OR (${includeUnassignedAttendance}::boolean AND st.id IS NULL)
-          )
+          AND st.location_id = ${locationId}::uuid
         GROUP BY sa.staff_id
       `);
       const congThucMap: Record<string, number> = {};
@@ -624,31 +620,36 @@ export function registerSalarySheetRoutes(app: Express): void {
       const thuongMap: Record<string, number> = {};
       const phatMap: Record<string, number> = {};
       const tamUngMap: Record<string, number> = {};
+      const legacyThuongMap: Record<string, number> = {};
+      const legacyPhatMap: Record<string, number> = {};
+      const legacyTamUngMap: Record<string, number> = {};
       if (staffIds.length > 0) {
-        // Build safe UUID list — UUIDs are hex+dash only, safe to interpolate
-        const uuidLiteral = staffIds.map(id => `'${id.replace(/[^a-f0-9-]/gi, "")}'`).join(",");
         console.log(`[Generate] Fetching rewards: fromDate=${fromDate} toDate=${toDate} staffCount=${staffIds.length}`);
-        const rewardsRes = await db.execute(sql.raw(`
-          SELECT staff_id, type, SUM(amount) AS total
+        const rewardsRes = await db.execute(sql`
+          SELECT staff_id, location_id, type, SUM(amount) AS total
           FROM staff_rewards
-          WHERE date >= '${fromDate}'
-            AND date <= '${toDate}'
-            AND staff_id IN (${uuidLiteral})
-          GROUP BY staff_id, type
-        `));
+          WHERE date >= ${fromDate}::date
+            AND date <= ${toDate}::date
+            AND staff_id = ANY(${staffIds}::uuid[])
+            AND (location_id = ${locationId}::uuid OR location_id IS NULL)
+          GROUP BY staff_id, location_id, type
+        `);
         console.log(`[Generate] Rewards found:`, JSON.stringify(rewardsRes.rows));
         for (const r of rewardsRes.rows as any[]) {
           const amt = Number(r.total) || 0;
+          const rewardMap = r.location_id ? thuongMap : legacyThuongMap;
+          const penaltyMap = r.location_id ? phatMap : legacyPhatMap;
           if (r.type === "reward") {
-            thuongMap[r.staff_id] = (thuongMap[r.staff_id] ?? 0) + amt;
+            rewardMap[r.staff_id] = (rewardMap[r.staff_id] ?? 0) + amt;
           } else if (r.type === "penalty") {
-            phatMap[r.staff_id] = (phatMap[r.staff_id] ?? 0) + amt;
+            penaltyMap[r.staff_id] = (penaltyMap[r.staff_id] ?? 0) + amt;
           }
         }
 
         const advances = await db
           .select({
             staffId: staffAdvances.staffId,
+            locationId: staffAdvances.locationId,
             amount: staffAdvances.amount,
           })
           .from(staffAdvances)
@@ -656,15 +657,17 @@ export function registerSalarySheetRoutes(app: Express): void {
             inArray(staffAdvances.staffId, staffIds),
             sql`${staffAdvances.date} >= ${fromDate}::date`,
             sql`${staffAdvances.date} <= ${toDate}::date`,
+            sql`(${staffAdvances.locationId} = ${locationId}::uuid OR ${staffAdvances.locationId} IS NULL)`,
           ));
         for (const advance of advances) {
-          tamUngMap[advance.staffId] = (tamUngMap[advance.staffId] ?? 0) + Number(advance.amount || 0);
+          const advanceMap = advance.locationId ? tamUngMap : legacyTamUngMap;
+          advanceMap[advance.staffId] = (advanceMap[advance.staffId] ?? 0) + Number(advance.amount || 0);
         }
       }
 
       generatedRows.push(...unique.map(a => {
-          const includeStaffWideAdjustments = !staffWideAdjustmentsApplied.has(a.staffId);
-          staffWideAdjustmentsApplied.add(a.staffId);
+          const includeLegacyAdjustments = !legacyAdjustmentsApplied.has(a.staffId);
+          legacyAdjustmentsApplied.add(a.staffId);
           const luongDL = Math.round(luongDungLopMap[a.staffId] ?? 0);
           const cfg = hrConfigMap[a.staffId];
 
@@ -703,9 +706,12 @@ export function registerSalarySheetRoutes(app: Express): void {
           const bhtnPct  = cfg ? parseFloat(String(cfg.bhtnPercent ?? 1)) : 1;
           const bhtnVal  = Math.round(bhxhBase2 * bhtnPct / 100);
           const luongTheoCong = soCong > 0 ? Math.round((luongCBVal / soCong) * congThuc) : 0;
-          const thuongVal = includeStaffWideAdjustments ? (thuongMap[a.staffId] ?? 0) : 0;
-          const phatVal   = includeStaffWideAdjustments ? (phatMap[a.staffId] ?? 0) : 0;
-          const tamUngVal = includeStaffWideAdjustments ? (tamUngMap[a.staffId] ?? 0) : 0;
+          const thuongVal = (thuongMap[a.staffId] ?? 0) +
+            (includeLegacyAdjustments ? legacyThuongMap[a.staffId] ?? 0 : 0);
+          const phatVal = (phatMap[a.staffId] ?? 0) +
+            (includeLegacyAdjustments ? legacyPhatMap[a.staffId] ?? 0 : 0);
+          const tamUngVal = (tamUngMap[a.staffId] ?? 0) +
+            (includeLegacyAdjustments ? legacyTamUngMap[a.staffId] ?? 0 : 0);
           const tongLuong = Math.round(luongTheoCong + phuCapVal + thuongVal - phatVal + luongDL);
 
           // ThueTNCN: only if mode === "fixed"
