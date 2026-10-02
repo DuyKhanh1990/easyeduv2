@@ -824,11 +824,17 @@ export function ShiftManagement() {
 
   // Build one board row per staff/facility pair that has an assigned shift in the month.
   const boardRowsAll = boardStaffAll.flatMap((s: any) => {
-    const locationIds = [...new Set(
-      (s.assignments || [])
-        .map((assignment: any) => assignment.locationId)
-        .filter((locationId: string) => locationId && (boardLocationId === "all" || locationId === boardLocationId))
-    )];
+    const locationIdSet = new Set<string>();
+    for (const assignment of (s.assignments || []) as any[]) {
+      const locationId = assignment.locationId;
+      if (
+        typeof locationId === "string" &&
+        (boardLocationId === "all" || locationId === boardLocationId)
+      ) {
+        locationIdSet.add(locationId);
+      }
+    }
+    const locationIds = [...locationIdSet];
 
     return locationIds.flatMap((locationId: string) => {
       const perDay = boardDays.map((d) => getShiftIdsForStaffOnDate(s, d.date, locationId));
