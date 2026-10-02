@@ -19,6 +19,7 @@ import {
   draftFromTemplate,
   SCORE_CONVERSION_TYPES,
 } from "./score-conversion-presets";
+import { generateRawScoreRanges } from "./score-conversion-range-generator";
 import { ScoreConversionSectionEditor } from "./ScoreConversionSectionEditor";
 
 type ScoreConversionTemplateDialogProps = {
@@ -32,7 +33,6 @@ type ScoreConversionTemplateDialogProps = {
 };
 
 const numericValue = (value: string) => (value === "" ? 0 : Number(value));
-const MAX_GENERATED_MAPPINGS = 500;
 
 export function ScoreConversionTemplateDialog({
   open,
@@ -159,18 +159,16 @@ export function ScoreConversionTemplateDialog({
 
   const generateMappingTable = (section: ScoreConversionTemplateInput["sections"][number]) => {
     const { rawMinScore, rawMaxScore, rawStep } = section;
-    if (
-      !Number.isFinite(rawMinScore) ||
-      !Number.isFinite(rawMaxScore) ||
-      !Number.isFinite(rawStep) ||
-      rawMaxScore < rawMinScore ||
-      rawStep < 0
-    ) {
-      setFormError(`Vui lòng kiểm tra khoảng điểm và bước điểm thô của phần ${section.name}.`);
-      return;
-    }
-    if (rawStep === 0 && (!Number.isInteger(rawMinScore) || !Number.isInteger(rawMaxScore))) {
-      setFormError("Khi bước điểm thô bằng 0, điểm từ và điểm đến phải là số nguyên.");
+    const generatedRanges = generateRawScoreRanges(rawMinScore, rawMaxScore, rawStep);
+    if (!generatedRanges.ok) {
+      const errorMessage = generatedRanges.reason === "invalid-range"
+        ? `Vui lòng kiểm tra khoảng điểm và bước điểm thô của phần ${section.name}.`
+        : generatedRanges.reason === "fractional-zero-step"
+          ? "Khi bước điểm thô bằng 0, điểm từ và điểm đến phải là số nguyên."
+          : generatedRanges.reason === "too-many"
+            ? "Không thể tạo quá 500 khoảng điểm. Hãy tăng bước điểm hoặc thu hẹp thang điểm."
+            : "Không thể tạo bảng với bước điểm này. Hãy tăng bước điểm hoặc thu hẹp thang điểm.";
+      setFormError(errorMessage);
       return;
     }
 
@@ -178,38 +176,22 @@ export function ScoreConversionTemplateDialog({
       `${mapping.rawFrom}:${mapping.rawTo}`,
       { internalScore: mapping.internalScore, convertedScore: mapping.convertedScore },
     ]));
-    const generatedMappings: ScoreConversionTemplateInput["sections"][number]["mappings"] = [];
-    let upper = rawMaxScore;
-    let lower = rawStep === 0 ? upper : Math.max(rawMinScore, upper - rawStep);
-
-    while (true) {
-      if (generatedMappings.length >= MAX_GENERATED_MAPPINGS) {
-        setFormError(`Không thể tạo quá ${MAX_GENERATED_MAPPINGS} khoảng điểm. Hãy tăng bước điểm hoặc thu hẹp thang điểm.`);
-        return;
-      }
-
-      const key = `${lower}:${upper}`;
-      const existingScore = existingScores.get(key);
-      generatedMappings.push({
-        id: createEmptyMapping().id,
-        rawFrom: lower,
-        rawTo: upper,
-        internalScore: existingScore?.internalScore ?? 0,
-        convertedScore: existingScore?.convertedScore ?? 0,
+    const existingScoresByStart = new Map(section.mappings.map((mapping) => [
+      mapping.rawFrom,
+      { internalScore: mapping.internalScore, convertedScore: mapping.convertedScore },
+    ]));
+    const generatedMappings: ScoreConversionTemplateInput["sections"][number]["mappings"] =
+      generatedRanges.ranges.map(({ rawFrom, rawTo }) => {
+        const existingScore = existingScores.get(`${rawFrom}:${rawTo}`)
+          ?? existingScoresByStart.get(rawFrom);
+        return {
+          id: createEmptyMapping().id,
+          rawFrom,
+          rawTo,
+          internalScore: existingScore?.internalScore ?? 0,
+          convertedScore: existingScore?.convertedScore ?? 0,
+        };
       });
-
-      if (lower <= rawMinScore) break;
-      const nextUpper = rawStep === 0 ? lower - 1 : lower;
-      const nextLower = rawStep === 0
-        ? Math.max(rawMinScore, nextUpper)
-        : Math.max(rawMinScore, nextUpper - rawStep - 1);
-      if (nextLower >= lower) {
-        setFormError("Không thể tạo bảng với bước điểm này. Hãy tăng bước điểm hoặc thu hẹp thang điểm.");
-        return;
-      }
-      upper = nextUpper;
-      lower = nextLower;
-    }
 
     if (
       section.mappings.length > 0 &&
