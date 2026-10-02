@@ -575,9 +575,10 @@ export function ShiftManagement() {
   const saveAssignmentMutation = useMutation({
     mutationFn: async (values: z.infer<typeof shiftAssignmentSchema>) => {
       const { locationIds, weekdayScheduleByLocation, shiftTemplateIdsByLocation, ...commonFields } = values;
+      const savedLocationIds = editingAssignment ? [editingAssignment.locationId] : locationIds;
       const payload: any = {
         ...commonFields,
-        locationAssignments: locationIds.map((locationId) => ({
+        locationAssignments: savedLocationIds.map((locationId) => ({
           locationId,
           shiftTemplateId: values.byWeekday ? null : (shiftTemplateIdsByLocation?.[locationId] || null),
           weekdaySchedule: values.byWeekday
