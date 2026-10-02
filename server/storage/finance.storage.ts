@@ -22,7 +22,10 @@ function buildInvoiceReadScopeCondition(
   if (!scopePermissions) return undefined;
 
   const readableScopes = INVOICE_SCOPE_KEYS.filter((key) => scopePermissions[key]);
-  if (readableScopes.length === 0) return sql`FALSE`;
+  // Canceled/history states are not one of the six permission scopes, so keep
+  // their existing visibility behavior unchanged.
+  const outsideScopedStatuses = sql`${invoices.status} NOT IN ('unpaid', 'partial', 'debt', 'paid', 'confirmed')`;
+  if (readableScopes.length === 0) return outsideScopedStatuses;
 
   const noSchedules = sql`NOT EXISTS (
     SELECT 1 FROM invoice_payment_schedule AS permission_scope_no_schedule
@@ -48,7 +51,7 @@ function buildInvoiceReadScopeCondition(
       AND permission_scope_not_confirmed.status <> 'confirmed'
   )`;
 
-  return or(...readableScopes.map((key) => {
+  return or(outsideScopedStatuses, ...readableScopes.map((key) => {
     const type = key.startsWith("thu_") ? "Thu" : "Chi";
     const directStatus = key.endsWith("_unpaid")
       ? inArray(invoices.status, ["unpaid", "partial", "debt"])
@@ -68,7 +71,7 @@ function buildInvoiceReadScopeCondition(
         and(hasSchedules, scheduledStatus),
       ),
     );
-  })) ?? sql`FALSE`;
+  })) ?? outsideScopedStatuses;
 }
 
 function getBusinessDateString(date = new Date()): string {
