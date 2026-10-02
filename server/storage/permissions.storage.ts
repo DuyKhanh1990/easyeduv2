@@ -49,24 +49,36 @@ export async function upsertRolePermission(
     canCreate: boolean;
     canEdit: boolean;
     canDelete: boolean;
+    invoiceScopes?: string[] | null;
   }
 ): Promise<RolePermission> {
+  const { invoiceScopes, ...permissionFlags } = permissions;
   const existing = await db
     .select()
     .from(rolePermissions)
     .where(and(eq(rolePermissions.roleId, roleId), eq(rolePermissions.resource, resource)));
 
   if (existing.length > 0) {
+    const update: Partial<typeof rolePermissions.$inferInsert> = {
+      ...permissionFlags,
+      updatedAt: new Date(),
+    };
+    if (invoiceScopes !== undefined) update.invoiceScopes = invoiceScopes;
     const [updated] = await db
       .update(rolePermissions)
-      .set({ ...permissions, updatedAt: new Date() })
+      .set(update)
       .where(and(eq(rolePermissions.roleId, roleId), eq(rolePermissions.resource, resource)))
       .returning();
     return updated;
   } else {
     const [created] = await db
       .insert(rolePermissions)
-      .values({ roleId, resource, ...permissions })
+      .values({
+        roleId,
+        resource,
+        ...permissionFlags,
+        invoiceScopes: resource === "/invoices" ? invoiceScopes ?? [] : invoiceScopes ?? null,
+      })
       .returning();
     return created;
   }

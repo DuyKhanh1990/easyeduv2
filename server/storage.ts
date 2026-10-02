@@ -189,7 +189,7 @@ export interface IStorage {
 
   // Role Permissions
   getRolePermissions(roleId: string): Promise<RolePermission[]>;
-  upsertRolePermission(roleId: string, resource: string, permissions: { canView: boolean; canViewAll: boolean; canCreate: boolean; canEdit: boolean; canDelete: boolean }): Promise<RolePermission>;
+  upsertRolePermission(roleId: string, resource: string, permissions: { canView: boolean; canViewAll: boolean; canCreate: boolean; canEdit: boolean; canDelete: boolean; invoiceScopes?: string[] | null }): Promise<RolePermission>;
   getEffectivePermissions(roleIds: string[], resource: string): Promise<{ canView: boolean; canViewAll: boolean; canCreate: boolean; canEdit: boolean; canDelete: boolean }>;
   getAllPermissionsForRoles(roleIds: string[]): Promise<RolePermission[]>;
 
@@ -521,7 +521,7 @@ export class DatabaseStorage implements IStorage {
     return permissionsStorage.getRolePermissions(roleId);
   }
 
-  async upsertRolePermission(roleId: string, resource: string, permissions: { canView: boolean; canViewAll: boolean; canCreate: boolean; canEdit: boolean; canDelete: boolean }): Promise<RolePermission> {
+  async upsertRolePermission(roleId: string, resource: string, permissions: { canView: boolean; canViewAll: boolean; canCreate: boolean; canEdit: boolean; canDelete: boolean; invoiceScopes?: string[] | null }): Promise<RolePermission> {
     return permissionsStorage.upsertRolePermission(roleId, resource, permissions);
   }
 

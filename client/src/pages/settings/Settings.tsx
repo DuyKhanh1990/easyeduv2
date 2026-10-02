@@ -37,6 +37,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertLocationSchema, insertDepartmentSchema, insertRoleSchema } from "@shared/schema";
+import {
+  INVOICE_SCOPE_KEYS,
+  INVOICE_SCOPE_LABEL_KEYS,
+  type InvoiceScopeKey,
+} from "@shared/invoice-permissions";
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -1794,6 +1799,7 @@ type PermMap = Record<string, {
   canCreate: boolean;
   canEdit: boolean;
   canDelete: boolean;
+  invoiceScopes: InvoiceScopeKey[];
 }>;
 
 type RolePermissionRecord = {
@@ -1804,16 +1810,17 @@ type RolePermissionRecord = {
   canCreate: boolean;
   canEdit: boolean;
   canDelete: boolean;
+  invoiceScopes?: InvoiceScopeKey[] | null;
 };
 
 function defaultPerm(resource?: string, deptName?: string) {
   if (resource === "/tasks#list" && deptName !== "Phòng Khách hàng") {
-    return { canView: true, canViewAll: false, canCreate: false, canEdit: false, canDelete: false };
+    return { canView: true, canViewAll: false, canCreate: false, canEdit: false, canDelete: false, invoiceScopes: [] as InvoiceScopeKey[] };
   }
   if (resource === "/news-feed") {
-    return { canView: true, canViewAll: false, canCreate: false, canEdit: false, canDelete: false };
+    return { canView: true, canViewAll: false, canCreate: false, canEdit: false, canDelete: false, invoiceScopes: [] as InvoiceScopeKey[] };
   }
-  return { canView: false, canViewAll: false, canCreate: false, canEdit: false, canDelete: false };
+  return { canView: false, canViewAll: false, canCreate: false, canEdit: false, canDelete: false, invoiceScopes: [] as InvoiceScopeKey[] };
 }
 
 // /chat cho phép canView + canCreate + canDelete (không có canViewAll, canEdit)
@@ -1915,7 +1922,7 @@ const PERM_DESCRIPTIONS: Record<string, string> = {
   // CRM - Notification logs
   "/notification-logs": "Xem: nhân sự có quyền xem lịch sử thông báo liên quan đến khách hàng của mình. Xem all: nhân sự có quyền xem tất cả lịch sử thông báo thuộc cơ sở.",
   // FINANCE
-  "/invoices": "Xem: nhân sự có quyền xem hoá đơn liên quan đến mình. Xem all: nhân sự có quyền xem tất cả hoá đơn thuộc cơ sở. Thêm / Sửa / Xoá: nhân sự có quyền thêm mới, chỉnh sửa và xoá hoá đơn học phí.",
+  "/invoices": "Xem: nhân sự có quyền xem hoá đơn liên quan đến mình. Xem all: nhân sự có quyền xem tất cả hoá đơn thuộc cơ sở. Thêm / Sửa / Xoá: thao tác trên hoá đơn trong các phạm vi được tích bên dưới.",
   "/finance-config#promotions": "Xem: nhân sự có quyền xem danh sách khuyến mãi / phụ thu. Xem all: nhân sự có quyền xem tất cả. Thêm / Sửa / Xoá: nhân sự có quyền thêm mới, chỉnh sửa và xoá chương trình khuyến mãi và khoản phụ thu.",
   "/finance-config#categories": "Xem: nhân sự có quyền xem danh mục thu chi. Xem all: nhân sự có quyền xem tất cả. Thêm / Sửa / Xoá: nhân sự có quyền thêm mới, chỉnh sửa và xoá danh mục thu và chi trong hệ thống tài chính.",
   "/finance-config#voucher": "Xem: nhân sự có quyền xem cấu hình voucher. Xem all: nhân sự có quyền xem tất cả cấu hình voucher.",
@@ -2006,7 +2013,7 @@ const PERM_DESCRIPTIONS_EN: Record<string, string> = {
   "/store#san-pham": "View: view products. View All: view all products. Create / Edit / Delete: manage product information.",
   "/store#cau-hinh": "View: view warehouse settings. View All: view all settings. Create / Edit / Delete: manage categories, units, and warehouse settings.",
   "/notification-logs": "View: view notification history related to your customers. View All: view all notification history in the branch.",
-  "/invoices": "View: view related invoices. View All: view all invoices in the branch. Create / Edit / Delete: manage tuition invoices.",
+  "/invoices": "View: view related invoices. View All: view all invoices in the branch. Create / Edit / Delete: manage invoices. These actions only apply to the selected invoice type and status scopes.",
   "/finance-config#promotions": "View: view promotions and surcharges. View All: view all items. Create / Edit / Delete: manage promotions and surcharges.",
   "/finance-config#categories": "View: view income and expense categories. View All: view all categories. Create / Edit / Delete: manage finance categories.",
   "/finance-config#voucher": "View: view voucher settings. View All: view all voucher settings.",
@@ -2103,7 +2110,15 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
           : EDIT_ONLY_RESOURCES.has(resource)
           ? { canView: false, canViewAll: false, canCreate: false, canEdit: perms.canEdit, canDelete: false }
           : perms;
-        return { resource, ...effectivePerms };
+        return {
+          resource,
+          canView: effectivePerms.canView,
+          canViewAll: effectivePerms.canViewAll,
+          canCreate: effectivePerms.canCreate,
+          canEdit: effectivePerms.canEdit,
+          canDelete: effectivePerms.canDelete,
+          ...(resource === "/invoices" ? { invoiceScopes: perms.invoiceScopes } : {}),
+        };
       });
       const res = await fetch("/api/role-permissions/batch", {
         method: "PUT",
@@ -2248,12 +2263,42 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
     queuePermissionUpdate(resource, updated);
   };
 
+  const handleInvoiceScopeToggle = (scope: InvoiceScopeKey, checked: boolean) => {
+    if (!selectedRoleId) return;
+    const current = getResourcePerm("/invoices");
+    const wasChecked = current.invoiceScopes.includes(scope);
+    if (checked === wasChecked) return;
+    if (checked && !canCreate) {
+      toast({ title: t("settings.permissions.noAccess"), description: t("settings.permissions.grantDenied"), variant: "destructive" });
+      return;
+    }
+    if (!checked && !canEdit) {
+      toast({ title: t("settings.permissions.noAccess"), description: t("settings.permissions.revokeDenied"), variant: "destructive" });
+      return;
+    }
+    const invoiceScopes = checked
+      ? [...current.invoiceScopes, scope]
+      : current.invoiceScopes.filter(value => value !== scope);
+    const updated = { ...current, invoiceScopes };
+    setLocalPerms(prev => ({ ...prev, "/invoices": updated }));
+    queuePermissionUpdate("/invoices", updated);
+  };
+
   // localPerms = overlay optimistic; fetchedPerms = dữ liệu gốc từ server/cache.
   // Khi remount, localPerms rỗng nhưng fetchedPerms có cache → vẫn hiển thị đúng.
   const getResourcePerm = (resource: string): PermMap[string] => {
     if (resource in localPerms) return localPerms[resource];
     const fromServer = fetchedPerms?.find(p => p.resource === resource);
-    if (fromServer) return { canView: fromServer.canView, canViewAll: fromServer.canViewAll, canCreate: fromServer.canCreate, canEdit: fromServer.canEdit, canDelete: fromServer.canDelete };
+    if (fromServer) return {
+      canView: fromServer.canView,
+      canViewAll: fromServer.canViewAll,
+      canCreate: fromServer.canCreate,
+      canEdit: fromServer.canEdit,
+      canDelete: fromServer.canDelete,
+      invoiceScopes: resource === "/invoices" && fromServer.invoiceScopes == null
+        ? [...INVOICE_SCOPE_KEYS]
+        : (fromServer.invoiceScopes ?? []) as InvoiceScopeKey[],
+    };
     return defaultPerm(resource, selectedDept?.name);
   };
 
@@ -2914,6 +2959,24 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                             {!hasSubTabs && getPermissionDescription(item.href, lang) && (
                               <div className="px-5 pb-2.5 pt-0 pl-[4.5rem]">
                                 <p className="text-[11px] text-muted-foreground/65 italic leading-relaxed">{getPermissionDescription(item.href, lang)}</p>
+                              </div>
+                            )}
+
+                            {item.href === "/invoices" && !isStudentDefaultLocked && (
+                              <div className="border-t border-border/40 bg-muted/10 px-5 py-3 pl-[4.5rem]">
+                                <div className="grid grid-cols-1 gap-x-5 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+                                  {INVOICE_SCOPE_KEYS.map(scope => (
+                                    <label key={scope} className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
+                                      <Checkbox
+                                        data-testid={`perm-invoices-scope-${scope}`}
+                                        checked={itemPerms.invoiceScopes.includes(scope)}
+                                        onCheckedChange={checked => handleInvoiceScopeToggle(scope, checked === true)}
+                                        className="h-4 w-4"
+                                      />
+                                      <span>{t(INVOICE_SCOPE_LABEL_KEYS[scope])}</span>
+                                    </label>
+                                  ))}
+                                </div>
                               </div>
                             )}
 
