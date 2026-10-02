@@ -23,8 +23,8 @@ Deletion eligibility is based on current class-session assignments resolved thro
 
 **How to apply:** Keep API validation, edit-form state, and conversion switching consistent with these rules. Preserve old linked templates that lack an explicit overall rule. Use the current linked template for relative deadlines and evaluation criteria, but use the saved template snapshot for score calculation. Include assigned assessments in the staff score-sheet timeline by `sessionDate`, with the existing row style and a conversion label. Persist per-student criterion responses with that attempt, separately from calculated score fields. Assignment pickers may display current template code/name alongside the assessment's own label.
 
-Manual class-session assignment keeps ordinary legacy score sheets in their own list. Conversion choices come from score-sheet templates linked to a conversion configuration in the `/score-conversion` “Bảng điểm mẫu” tab.
+Manual class-session assignment keeps ordinary legacy score sheets in their own list. Its conversion-side picker uses every score-sheet template in the `/score-conversion` “Bảng điểm mẫu” tab, whether or not it links a conversion configuration.
 
-**Why:** The picker source should follow the user's chosen template catalog without changing score calculation or conversion behavior.
+**Why:** The user explicitly wants the whole sample-template list as the source; filtering to templates with a conversion link omits valid choices.
 
-**How to apply:** Continue using `/api/score-sheets` for ordinary sheets and linked score-sheet templates for conversion choices. Apply a selected conversion template through the existing template-to-assessment path; do not replace scoring logic with direct raw conversion-template selection.
+**How to apply:** Continue using `/api/score-sheets` for ordinary sheets and all score-sheet templates for the conversion-side picker. Apply a selected template through the existing template-to-assessment path; do not change the scoring logic.

@@ -135,12 +135,7 @@ export function SessionApplyProgramSection({
   const selectedScoreSheetTemplate = selectedScoreSheetKind === "template"
     ? allScoreSheetTemplates?.find((template) => template.id === selectedScoreSheetId)
     : null;
-  const linkedConversionScoreSheetTemplates = (allScoreSheetTemplates ?? []).filter((template) => (
-    Boolean(template.scoreConversionTemplateId)
-  ));
-  const manualScoreSheetTemplates = (allScoreSheetTemplates ?? []).filter((template) => (
-    !template.scoreConversionTemplateId
-  ));
+  const scoreSheetTemplateOptions = allScoreSheetTemplates ?? [];
   const selectedAssessmentTemplate =
     selectedAssessment?.currentTemplate ?? selectedAssessment?.templateSnapshot;
   const selectedAssessmentTemplateName =
@@ -410,9 +405,9 @@ export function SessionApplyProgramSection({
                           ))}
                         </CommandGroup>
                       )}
-                      {linkedConversionScoreSheetTemplates.length > 0 && (
+                      {scoreSheetTemplateOptions.length > 0 && (
                         <CommandGroup heading="Bảng điểm quy đổi">
-                          {linkedConversionScoreSheetTemplates.map((template) => (
+                          {scoreSheetTemplateOptions.map((template) => (
                             <CommandItem
                               key={`template:${template.id}`}
                               value={[
@@ -428,37 +423,11 @@ export function SessionApplyProgramSection({
                               <Check className={`mr-2 h-4 w-4 ${normalizedScoreSheetSelection === `template:${template.id}` ? "opacity-100" : "opacity-0"}`} />
                               <span className="min-w-0">
                                 <span className="block truncate">{template.code} — {template.name}</span>
-                                <span className="block truncate text-xs text-muted-foreground">
-                                    Mẫu bảng điểm có liên kết quy đổi
-                                </span>
-                              </span>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      )}
-                      {manualScoreSheetTemplates.length > 0 && (
-                        <CommandGroup heading="Bảng điểm mẫu">
-                          {manualScoreSheetTemplates.map((template) => (
-                            <CommandItem
-                              key={`template:${template.id}`}
-                              value={[
-                                template.code,
-                                template.name,
-                                template.id,
-                              ].filter(Boolean).join(" ")}
-                              onSelect={() => {
-                                setApplyScoreSheetId(`template:${template.id}`);
-                                setScoreSheetPickerOpen(false);
-                              }}
-                            >
-                              <Check className={`mr-2 h-4 w-4 ${normalizedScoreSheetSelection === `template:${template.id}` ? "opacity-100" : "opacity-0"}`} />
-                              <span className="min-w-0">
-                                <span className="block truncate">{template.code} — {template.name}</span>
-                                <span className="block truncate text-xs text-muted-foreground">
-                                  {template.scoreConversionTemplateId
-                                    ? "Có cấu hình bảng quy đổi"
-                                    : "Không áp dụng bảng quy đổi"}
-                                </span>
+                                  <span className="block truncate text-xs text-muted-foreground">
+                                    {template.scoreConversionTemplateId
+                                      ? "Có bảng quy đổi"
+                                      : "Không áp dụng bảng quy đổi"}
+                                  </span>
                               </span>
                             </CommandItem>
                           ))}
