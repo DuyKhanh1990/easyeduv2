@@ -27,7 +27,6 @@ import { selectScoreSheetAssessmentAttemptSummary } from "@shared/score-sheet-as
 import {
   INVOICE_SCOPE_KEYS,
   buildInvoiceScopePermissions,
-  type InvoicePermissionFlags,
   type InvoiceScopePermissions,
 } from "@shared/invoice-permissions";
 import { eq, and, sql, notExists, inArray, ne, isNull } from "drizzle-orm";
@@ -63,7 +62,12 @@ const SCORE_CONVERSION_SETTINGS_KEY = "scoreConversionTemplates";
 const SCORE_SHEET_TEMPLATE_SETTINGS_KEY = "scoreSheetTemplates";
 const SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY = "scoreSheetAssessments";
 const SCORE_CONVERSION_PERMISSION_RESOURCE = "/assessments#list";
-type MyPermissionEntry = InvoicePermissionFlags & {
+type MyPermissionEntry = {
+  canView: boolean;
+  canViewAll: boolean;
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
   invoiceScopePermissions?: InvoiceScopePermissions;
 };
 
@@ -2448,7 +2452,15 @@ export function registerConfigRoutes(app: Express): void {
           .leftJoin(departments, eq(roles.departmentId, departments.id))
           .where(eq(roles.id, body.roleId))
           .limit(1);
-        const permissionSnapshot = (items: typeof body.permissions) => ({
+        const permissionSnapshot = (items: Array<{
+          resource: string;
+          canView: boolean;
+          canViewAll: boolean;
+          canCreate: boolean;
+          canEdit: boolean;
+          canDelete: boolean;
+          invoiceScopes?: string[] | null;
+        }>) => ({
           roleId: body.roleId,
           roleName: role?.name ?? null,
           departmentName: role?.departmentName ?? null,

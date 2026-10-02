@@ -146,18 +146,16 @@ function buildSummaryQS(params: InvoiceQueryParams): string {
 const BASE_KEY = "/api/finance/invoices";
 const SUMMARY_KEY = "/api/finance/invoices/summary";
 const MANAGED_KEY = "/api/finance/invoices/managed";
-const MANAGED_SUMMARY_KEY = "/api/finance/invoices/managed/summary";
 
 export function useInvoiceSummary(
   queryParams: InvoiceQueryParams = {},
   options: { enabled?: boolean; staleTime?: number } = {},
 ) {
   const qs = buildSummaryQS(queryParams);
-  const summaryKey = queryParams.tabFilter === "debt" ? SUMMARY_KEY : MANAGED_SUMMARY_KEY;
   const { data, isLoading } = useQuery<InvoiceSummary>({
-    queryKey: [summaryKey, qs],
+    queryKey: [SUMMARY_KEY, qs],
     queryFn: async () => {
-      const res = await fetch(`${summaryKey}?${qs}`, {
+      const res = await fetch(`${SUMMARY_KEY}?${qs}`, {
         credentials: "include",
         headers: getAuthHeaders(),
       });

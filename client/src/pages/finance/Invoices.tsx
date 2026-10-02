@@ -70,9 +70,6 @@ import {
   INVOICE_SCOPE_KEYS,
   emptyInvoiceScopePermissions,
   fullInvoiceScopePermissions,
-  getInvoiceScopeKey,
-  hasInvoiceScopePermission,
-  type InvoicePermissionAction,
 } from "@shared/invoice-permissions";
 
 type TabKey = "all" | "unpaid" | "paid" | "confirmed" | "debt" | "history" | "print-template";
@@ -1852,49 +1849,37 @@ export default function Invoices() {
 
   const { data: myPerms } = useMyPermissions();
   const invPerm = (() => {
-    const noLegacyPermissions = { canView: false, canViewAll: false, canCreate: false, canEdit: false, canDelete: false };
     if (!myPerms) return {
       canCreate: false,
       canEdit: false,
       canDelete: false,
       invoiceScopePermissions: emptyInvoiceScopePermissions(),
-      invoiceScopeLegacyPermissions: noLegacyPermissions,
     };
     if (myPerms.isSuperAdmin) return {
       canCreate: true,
       canEdit: true,
       canDelete: true,
       invoiceScopePermissions: fullInvoiceScopePermissions(),
-      invoiceScopeLegacyPermissions: { canView: true, canViewAll: true, canCreate: true, canEdit: true, canDelete: true },
     };
     const p = myPerms.permissions["/invoices"];
     const invoiceScopePermissions = p?.invoiceScopePermissions ?? emptyInvoiceScopePermissions();
-    const invoiceScopeLegacyPermissions = p?.invoiceScopeLegacyPermissions ?? noLegacyPermissions;
-    const anyScope = (action: InvoicePermissionAction) =>
-      INVOICE_SCOPE_KEYS.some(scope => invoiceScopePermissions[scope][action]);
     return {
-      canCreate: anyScope("canCreate") || invoiceScopeLegacyPermissions.canCreate,
-      canEdit: anyScope("canEdit") || invoiceScopeLegacyPermissions.canEdit,
-      canDelete: anyScope("canDelete") || invoiceScopeLegacyPermissions.canDelete,
+      canCreate: p?.canCreate ?? false,
+      canEdit: p?.canEdit ?? false,
+      canDelete: p?.canDelete ?? false,
       invoiceScopePermissions,
-      invoiceScopeLegacyPermissions,
     };
   })();
   const canReadInvoiceStatus = (status: string) => INVOICE_SCOPE_KEYS.some(scope =>
     scope.endsWith(`_${status}`)
-    && (invPerm.invoiceScopePermissions[scope].canView || invPerm.invoiceScopePermissions[scope].canViewAll),
+    && invPerm.invoiceScopePermissions[scope],
   );
   const availableInvoiceTypes = myPerms?.isSuperAdmin
     ? ["Thu", "Chi"]
     : ["Thu", "Chi"].filter(type => INVOICE_SCOPE_KEYS.some(scope =>
         scope.startsWith(type === "Thu" ? "thu_" : "chi_")
-        && (invPerm.invoiceScopePermissions[scope].canView || invPerm.invoiceScopePermissions[scope].canViewAll),
+        && invPerm.invoiceScopePermissions[scope],
       ));
-  const canUseInvoiceAction = (action: InvoicePermissionAction, type: string | null | undefined, status: string | null | undefined) => {
-    const scopeKey = getInvoiceScopeKey(type, status);
-    if (!scopeKey) return invPerm.invoiceScopeLegacyPermissions[action];
-    return hasInvoiceScopePermission(invPerm.invoiceScopePermissions, action, type, status);
-  };
   const {
     search, setSearch,
     dateRange, setDateRange,
@@ -2057,11 +2042,7 @@ export default function Invoices() {
   ];
   const selectedHasThu = selectedBusinessTypes.includes("Thu");
   const selectedHasChi = selectedBusinessTypes.includes("Chi");
-  const deletableDisplayInvoices = displayInvoices.filter(i => {
-    const parent = i.parentInvoice ?? i;
-    return canUseInvoiceAction("canDelete", parent.type, parent.status);
-  });
-  const allSelected = deletableDisplayInvoices.length > 0 && deletableDisplayInvoices.every(i =>
+  const allSelected = displayInvoices.length > 0 && displayInvoices.every(i =>
     i.isScheduleRow
       ? !!i.scheduleId && selectedScheduleIdSet.has(i.scheduleId)
       : selectedIds.has(i.id),
@@ -2073,8 +2054,8 @@ export default function Invoices() {
       setSelectedSchedules(new Map());
       return;
     }
-    const parentIds = deletableDisplayInvoices.filter(i => !i.isScheduleRow).map(i => i.id);
-    const scheduleEntries = deletableDisplayInvoices
+    const parentIds = displayInvoices.filter(i => !i.isScheduleRow).map(i => i.id);
+    const scheduleEntries = displayInvoices
       .map(i => getScheduleForRow(i))
       .filter((s): s is ScheduleItem => !!s);
     setSelectedIds(new Set(parentIds));
@@ -2643,7 +2624,7 @@ export default function Invoices() {
           <table className="w-full min-w-[1120px] text-xs border-separate border-spacing-0">
             <thead>
               <tr className="border-b border-border">
-                <th className="p-3 w-10 sticky top-0 left-0 z-40 bg-muted">{deletableDisplayInvoices.length > 0 && <Checkbox checked={allSelected} onCheckedChange={checked => {
+                <th className="p-3 w-10 sticky top-0 left-0 z-40 bg-muted">{invPerm.canDelete && <Checkbox checked={allSelected} onCheckedChange={checked => {
                   const nextChecked = checked === true;
                   toggleAll(nextChecked);
                   if (nextChecked) reopenActionMenuAfterCheckboxClick();
@@ -2682,8 +2663,8 @@ export default function Invoices() {
                 const isScheduleRow = !!inv.isScheduleRow;
                 const schedule = getScheduleForRow(inv);
                 const parentInvoice = inv.parentInvoice ?? inv;
-                const canEditThisInvoice = canUseInvoiceAction("canEdit", parentInvoice.type, parentInvoice.status);
-                const canDeleteThisInvoice = canUseInvoiceAction("canDelete", parentInvoice.type, parentInvoice.status);
+                const canEditThisInvoice = invPerm.canEdit;
+                const canDeleteThisInvoice = invPerm.canDelete;
                 const isSelected = isScheduleRow
                   ? !!inv.scheduleId && selectedScheduleIdSet.has(inv.scheduleId)
                   : selectedIds.has(inv.id);
@@ -3164,7 +3145,6 @@ export default function Invoices() {
         open={dialogOpen}
         invoiceId={editInvoiceId}
         defaultStudent={defaultStudent}
-        allowedInvoiceCreateScopes={INVOICE_SCOPE_KEYS.filter(scope => invPerm.invoiceScopePermissions[scope].canCreate)}
         onClose={handleCloseDialog}
       />
 

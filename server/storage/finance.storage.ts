@@ -14,17 +14,14 @@ import type {
   FinanceVoucher, InsertFinanceVoucher,
   InvoicePrintTemplateRow, InsertInvoicePrintTemplate,
 } from "@shared/schema";
-import { INVOICE_SCOPE_KEYS, type InvoiceScopePermissions, type LegacyInvoicePermissions } from "@shared/invoice-permissions";
+import { INVOICE_SCOPE_KEYS, type InvoiceScopePermissions } from "@shared/invoice-permissions";
 
 function buildInvoiceReadScopeCondition(
   scopePermissions?: InvoiceScopePermissions,
-  legacyPermissions?: LegacyInvoicePermissions,
 ) {
-  if (!scopePermissions || legacyPermissions?.canView || legacyPermissions?.canViewAll) return undefined;
+  if (!scopePermissions) return undefined;
 
-  const readableScopes = INVOICE_SCOPE_KEYS.filter((key) =>
-    scopePermissions[key].canView || scopePermissions[key].canViewAll,
-  );
+  const readableScopes = INVOICE_SCOPE_KEYS.filter((key) => scopePermissions[key]);
   if (readableScopes.length === 0) return sql`FALSE`;
 
   const noSchedules = sql`NOT EXISTS (
@@ -581,7 +578,6 @@ export async function getInvoices(filters: {
   limit?: number;
   includeTabCounts?: boolean;
   invoiceScopePermissions?: InvoiceScopePermissions;
-  invoiceScopeLegacyPermissions?: LegacyInvoicePermissions;
 } = {}): Promise<{
   data: any[];
   total: number;
@@ -605,10 +601,7 @@ export async function getInvoices(filters: {
     FROM invoice_payment_schedule AS date_filter_parent_schedule
     WHERE date_filter_parent_schedule.invoice_id = ${invoices.id}
   )`;
-  const invoiceReadScope = buildInvoiceReadScopeCondition(
-    f.invoiceScopePermissions,
-    f.invoiceScopeLegacyPermissions,
-  );
+  const invoiceReadScope = buildInvoiceReadScopeCondition(f.invoiceScopePermissions);
   if (invoiceReadScope) conditions.push(invoiceReadScope as any);
 
   if (f.type)          conditions.push(eq(invoices.type, f.type));
@@ -1322,13 +1315,9 @@ export async function getInvoiceFilterOptions(filters: {
   allowedLocationIds?: string[] | null;
   isSuperAdmin?: boolean;
   invoiceScopePermissions?: InvoiceScopePermissions;
-  invoiceScopeLegacyPermissions?: LegacyInvoicePermissions;
 } = {}): Promise<Record<string, string[]>> {
   const conditions: any[] = [];
-  const invoiceReadScope = buildInvoiceReadScopeCondition(
-    filters.invoiceScopePermissions,
-    filters.invoiceScopeLegacyPermissions,
-  );
+  const invoiceReadScope = buildInvoiceReadScopeCondition(filters.invoiceScopePermissions);
   if (invoiceReadScope) conditions.push(invoiceReadScope);
   if (!filters.isSuperAdmin && filters.allowedLocationIds !== null && filters.allowedLocationIds !== undefined) {
     if (filters.allowedLocationIds.length === 0) {
@@ -1568,8 +1557,6 @@ export async function getInvoicesSummary(filters: {
   paymentMethods?: string[];
   allowedLocationIds?: string[] | null;
   isSuperAdmin?: boolean;
-  invoiceScopePermissions?: InvoiceScopePermissions;
-  invoiceScopeLegacyPermissions?: LegacyInvoicePermissions;
 } = {}): Promise<{
   totalCount: number;
   byStatus: { unpaid: number; partial: number; paid: number; debt: number; cancelled: number };

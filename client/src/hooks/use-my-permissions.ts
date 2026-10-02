@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { getAuthHeaders } from "@/lib/queryClient";
-import type { InvoiceScopePermissions, LegacyInvoicePermissions } from "@shared/invoice-permissions";
+import type { InvoiceScopePermissions } from "@shared/invoice-permissions";
 
 export type ResourcePermission = {
   canView: boolean;
@@ -9,7 +9,6 @@ export type ResourcePermission = {
   canEdit: boolean;
   canDelete: boolean;
   invoiceScopePermissions?: InvoiceScopePermissions;
-  invoiceScopeLegacyPermissions?: LegacyInvoicePermissions;
 };
 
 export type MyPermissionsResult = {
