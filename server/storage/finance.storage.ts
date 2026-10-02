@@ -14,7 +14,15 @@ import type {
   FinanceVoucher, InsertFinanceVoucher,
   InvoicePrintTemplateRow, InsertInvoicePrintTemplate,
 } from "@shared/schema";
-import { INVOICE_SCOPE_KEYS, type InvoiceScopePermissions } from "@shared/invoice-permissions";
+import { INVOICE_SCOPE_KEYS, type InvoiceScopeKey, type InvoiceScopePermissions } from "@shared/invoice-permissions";
+
+function invoiceScheduleStatusScopeCondition(scope: InvoiceScopeKey, statusColumn: any) {
+  if (scope.endsWith("_unpaid")) {
+    return sql`${statusColumn} NOT IN ('paid', 'confirmed')`;
+  }
+  const status = scope.endsWith("_paid") ? "paid" : "confirmed";
+  return sql`${statusColumn} = ${status}`;
+}
 
 function buildInvoiceReadScopeCondition(
   scopePermissions?: InvoiceScopePermissions,
@@ -31,26 +39,6 @@ function buildInvoiceReadScopeCondition(
     SELECT 1 FROM invoice_payment_schedule AS permission_scope_no_schedule
     WHERE permission_scope_no_schedule.invoice_id = ${invoices.id}
   )`;
-  const hasSchedules = sql`EXISTS (
-    SELECT 1 FROM invoice_payment_schedule AS permission_scope_has_schedule
-    WHERE permission_scope_has_schedule.invoice_id = ${invoices.id}
-  )`;
-  const hasUnpaidSchedule = sql`EXISTS (
-    SELECT 1 FROM invoice_payment_schedule AS permission_scope_unpaid
-    WHERE permission_scope_unpaid.invoice_id = ${invoices.id}
-      AND permission_scope_unpaid.status NOT IN ('paid', 'confirmed')
-  )`;
-  const allSchedulesPaid = sql`NOT EXISTS (
-    SELECT 1 FROM invoice_payment_schedule AS permission_scope_not_paid
-    WHERE permission_scope_not_paid.invoice_id = ${invoices.id}
-      AND permission_scope_not_paid.status NOT IN ('paid', 'confirmed')
-  )`;
-  const allSchedulesConfirmed = sql`NOT EXISTS (
-    SELECT 1 FROM invoice_payment_schedule AS permission_scope_not_confirmed
-    WHERE permission_scope_not_confirmed.invoice_id = ${invoices.id}
-      AND permission_scope_not_confirmed.status <> 'confirmed'
-  )`;
-
   return or(outsideScopedStatuses, ...readableScopes.map((key) => {
     const type = key.startsWith("thu_") ? "Thu" : "Chi";
     const directStatus = key.endsWith("_unpaid")
@@ -58,20 +46,39 @@ function buildInvoiceReadScopeCondition(
       : key.endsWith("_paid")
         ? eq(invoices.status, "paid")
         : eq(invoices.status, "confirmed");
-    const scheduledStatus = key.endsWith("_unpaid")
-      ? hasUnpaidSchedule
-      : key.endsWith("_paid")
-        ? and(allSchedulesPaid, sql`NOT (${invoices.status} = 'confirmed' OR ${allSchedulesConfirmed})`)
-        : and(allSchedulesPaid, sql`(${invoices.status} = 'confirmed' OR ${allSchedulesConfirmed})`);
+    const scheduleAlias = `permission_scope_${key}`;
+    const scheduledStatus = sql`EXISTS (
+      SELECT 1 FROM invoice_payment_schedule AS ${sql.raw(scheduleAlias)}
+      WHERE ${sql.raw(`${scheduleAlias}.invoice_id`)} = ${invoices.id}
+        AND ${invoiceScheduleStatusScopeCondition(key, sql.raw(`${scheduleAlias}.status`))}
+    )`;
 
     return and(
       eq(invoices.type, type),
       or(
         and(noSchedules, directStatus),
-        and(hasSchedules, scheduledStatus),
+        scheduledStatus,
       ),
     );
   })) ?? outsideScopedStatuses;
+}
+
+function buildInvoiceScheduleRowScopeCondition(
+  scopePermissions: InvoiceScopePermissions | undefined,
+  tableAlias: string,
+) {
+  if (!scopePermissions) return undefined;
+
+  const outsideScopedStatuses = sql`${invoices.status} NOT IN ('unpaid', 'partial', 'debt', 'paid', 'confirmed')`;
+  const scheduleStatus = sql.raw(`${tableAlias}.status`);
+  const readableScopes = INVOICE_SCOPE_KEYS.filter((key) => scopePermissions[key]);
+  return or(
+    outsideScopedStatuses,
+    ...readableScopes.map((key) => and(
+      eq(invoices.type, key.startsWith("thu_") ? "Thu" : "Chi"),
+      invoiceScheduleStatusScopeCondition(key, scheduleStatus),
+    )),
+  ) ?? outsideScopedStatuses;
 }
 
 function getBusinessDateString(date = new Date()): string {
@@ -866,6 +873,8 @@ export async function getInvoices(filters: {
   const scheduleRowFilterCondition = (tableAlias: string) => {
     const column = (name: string) => sql.raw(`${tableAlias}.${name}`);
     const rowConditions: any[] = [scheduleRowDateCondition(tableAlias)];
+    const invoiceScopeCondition = buildInvoiceScheduleRowScopeCondition(f.invoiceScopePermissions, tableAlias);
+    if (invoiceScopeCondition) rowConditions.push(invoiceScopeCondition);
     if (f.paymentMethods?.length) {
       rowConditions.push(sql`
         COALESCE(${column("payment_method")}, ${invoices.paymentMethod}, '') = ANY(${f.paymentMethods}::text[])
@@ -1252,6 +1261,12 @@ export async function getInvoices(filters: {
     const scheduleCreatorStaff = alias(staff, "list_schedule_creator");
     const schedulePaidByStaff = alias(staff, "list_schedule_paid_by");
     const scheduleUpdaterStaff = alias(staff, "list_schedule_updater");
+    const scheduleConditions: any[] = [inArray(invoicePaymentSchedule.invoiceId, invoiceIds)];
+    const scheduleScopeCondition = buildInvoiceScheduleRowScopeCondition(
+      f.invoiceScopePermissions,
+      "invoice_payment_schedule",
+    );
+    if (scheduleScopeCondition) scheduleConditions.push(scheduleScopeCondition);
     const scheduleRows = await db
       .select({
         schedule: invoicePaymentSchedule,
@@ -1260,10 +1275,11 @@ export async function getInvoices(filters: {
         updatedByName: scheduleUpdaterStaff.fullName,
       })
       .from(invoicePaymentSchedule)
+      .innerJoin(invoices, eq(invoicePaymentSchedule.invoiceId, invoices.id))
       .leftJoin(scheduleCreatorStaff, eq(invoicePaymentSchedule.createdBy, scheduleCreatorStaff.userId))
       .leftJoin(schedulePaidByStaff, eq(invoicePaymentSchedule.paidBy, schedulePaidByStaff.userId))
       .leftJoin(scheduleUpdaterStaff, eq(invoicePaymentSchedule.updatedBy, scheduleUpdaterStaff.userId))
-      .where(inArray(invoicePaymentSchedule.invoiceId, invoiceIds))
+      .where(and(...scheduleConditions))
       .orderBy(asc(invoicePaymentSchedule.sortOrder));
 
     const schedulesByInvoice: Record<string, any[]> = {};
