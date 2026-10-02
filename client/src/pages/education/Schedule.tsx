@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils";
 import { getAuthHeaders } from "@/lib/queryClient";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { getAssignedTeacherTimeRange, type TeacherTimeInterval } from "@shared/teacher-time-assignments";
-import { isScheduleViewOnly } from "@shared/schedule-access";
+import { getScheduleWriteCapabilities, isScheduleViewOnly } from "@shared/schedule-access";
 import ExcelJS from "exceljs";
 
 type ViewMode = "list-day" | "list-week" | "week" | "month" | "room" | "teacher";
@@ -138,7 +138,11 @@ export function Schedule() {
   const [hlHolidays, setHlHolidays] = useState<string[]>([]);
 
   const schedulePermission = myPermissions?.permissions?.["/schedule"];
-  const canEditSchedule = !!myPermissions?.isSuperAdmin || !!schedulePermission?.canEdit;
+  const scheduleWriteCapabilities = getScheduleWriteCapabilities(
+    !!myPermissions?.isSuperAdmin,
+    schedulePermission,
+  );
+  const canEditSchedule = scheduleWriteCapabilities.canEdit;
   const scheduleViewOnly = isScheduleViewOnly(
     !!myPermissions?.isSuperAdmin,
     schedulePermission,
@@ -404,18 +408,20 @@ export function Schedule() {
         classId={selectedSession?.classId ?? null}
         onClose={() => setSelectedSession(null)}
         readOnly={scheduleViewOnly}
+        classPerm={scheduleWriteCapabilities}
       />
       <FreeClassScheduleSheet
         classId={selectedFreeSession?.classId ?? null}
         initialDate={selectedFreeSession?.sessionDate ?? null}
         onClose={() => setSelectedFreeSession(null)}
         readOnly={scheduleViewOnly}
+        classPerm={scheduleWriteCapabilities}
       />
       {/* Test session detail dialog (lớp TEST) */}
       <TestSessionDetailDialog
         sessionId={selectedTestSessionId}
         onClose={() => setSelectedTestSessionId(null)}
-        readOnly={scheduleViewOnly}
+        readOnly
       />
 
       {/* Cập nhật nghỉ lễ dialog */}

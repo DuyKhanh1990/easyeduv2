@@ -24,6 +24,12 @@ import type { ReactNode } from "react";
 import { ExamTakingDialog } from "@/pages/courses/dialogs/ExamTakingDialog";
 import { useLanguage } from "@/hooks/use-language";
 
+type SessionContentPermissions = {
+  canAdd?: boolean;
+  canEdit?: boolean;
+  canDelete?: boolean;
+};
+
 interface SessionContentDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -33,6 +39,7 @@ interface SessionContentDialogProps {
   freeClassId?: string;
   freeSessionDate?: string;
   freeStudents?: Array<{ id: string; name: string; code?: string | null }>;
+  classPerm?: SessionContentPermissions;
 }
 
 interface SelectedContent {
@@ -321,8 +328,8 @@ interface ContentTypeCardProps {
   type: string;
   label: string;
   selectedItems: SelectedContent[];
-  onAddClick: () => void;
-  onRemoveItem: (itemId: string) => void;
+  onAddClick?: () => void;
+  onRemoveItem?: (itemId: string) => void;
   onViewItem: (item: SelectedContent) => void;
   onUpdateDueDate?: (itemKey: string, dueDate: string | null) => void;
 }
@@ -330,8 +337,8 @@ interface ContentTypeCardProps {
 interface PersonalContentTableProps {
   students: Array<{ id: string; name: string }>;
   selectedItems: SelectedContent[];
-  onAddClick: (studentId: string, contentType: string) => void;
-  onRemoveItem: (itemId: string) => void;
+  onAddClick?: (studentId: string, contentType: string) => void;
+  onRemoveItem?: (itemId: string) => void;
   onUpdateDueDate?: (itemKey: string, dueDate: string | null) => void;
 }
 
@@ -384,7 +391,7 @@ function PersonalContentTable({
                     return (
                       <td key={type.key} className="px-4 py-3">
                         <div className="flex flex-col gap-1">
-                          <Button
+                          {onAddClick && <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => onAddClick(student.id, type.key)}
@@ -392,7 +399,7 @@ function PersonalContentTable({
                             data-testid={`button-add-content-${student.id}-${type.key}`}
                           >
                             <Plus className="h-4 w-4" />
-                          </Button>
+                          </Button>}
                           {assigned.map((item) => (
                             <div
                               key={item.id}
@@ -400,7 +407,7 @@ function PersonalContentTable({
                             >
                               <div className="flex items-center gap-1 max-w-[160px]">
                                 <span className="truncate flex-1">{item.title}</span>
-                                <Button
+                                {onRemoveItem && <Button
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => onRemoveItem(item.id)}
@@ -408,17 +415,17 @@ function PersonalContentTable({
                                   data-testid={`button-remove-personal-${item.id}`}
                                 >
                                   <X className="h-2 w-2" />
-                                </Button>
+                                </Button>}
                               </div>
                               {isHomework && (
                                 <div className="flex items-center gap-1">
                                   <span className="text-[10px] text-muted-foreground whitespace-nowrap">{t("mySpace.calendar.dueDate")}</span>
-                                  <input
+                                  {onUpdateDueDate && <input
                                     type="datetime-local"
                                     value={item.dueDate ? toLocalDatetimeValue(item.dueDate) : ""}
                                     onChange={(e) => onUpdateDueDate?.(item.dbId || item.id, e.target.value ? new Date(e.target.value).toISOString() : null)}
                                     className="text-[10px] border rounded px-1 py-0.5 bg-background text-foreground w-full focus:outline-none focus:ring-1 focus:ring-primary/50"
-                                  />
+                                  />}
                                 </div>
                               )}
                             </div>
@@ -458,7 +465,7 @@ function ContentTypeCard({
     <div className="border rounded-lg p-4 space-y-3 flex flex-col h-full">
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-sm">{label}</h3>
-        <Button
+        {onAddClick && <Button
           variant="ghost"
           size="sm"
           onClick={onAddClick}
@@ -466,7 +473,7 @@ function ContentTypeCard({
           title={t("mySpace.calendar.addFromLibrary")}
         >
           <Plus className="h-4 w-4" />
-        </Button>
+        </Button>}
       </div>
 
       <ScrollArea className="flex-1">
@@ -500,7 +507,7 @@ function ContentTypeCard({
                   >
                     <Eye className="h-4 w-4" />
                   </Button>
-                  <Button
+                  {onRemoveItem && <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => onRemoveItem(item.dbId || item.id)}
@@ -508,17 +515,17 @@ function ContentTypeCard({
                     data-testid={`button-remove-${item.dbId || item.id}`}
                   >
                     <X className="h-4 w-4" />
-                  </Button>
+                  </Button>}
                 </div>
                 {isHomework && (
                   <div className="flex items-center gap-1.5 pl-0.5">
                     <span className="text-[10px] text-muted-foreground whitespace-nowrap">{t("mySpace.calendar.dueDate")}</span>
-                    <input
+                    {onUpdateDueDate && <input
                       type="datetime-local"
                       value={item.dueDate ? toLocalDatetimeValue(item.dueDate) : ""}
                       onChange={(e) => onUpdateDueDate?.(item.dbId || item.id, e.target.value ? new Date(e.target.value).toISOString() : null)}
                       className="text-[11px] border rounded px-1.5 py-0.5 bg-background text-foreground flex-1 min-w-0 focus:outline-none focus:ring-1 focus:ring-primary/50"
-                    />
+                    />}
                   </div>
                 )}
               </div>
@@ -978,10 +985,14 @@ export function SessionContentDialog({
   freeClassId,
   freeSessionDate,
   freeStudents,
+  classPerm,
 }: SessionContentDialogProps) {
   const { t } = useLanguage();
   const { toast } = useToast();
   const isFreeSession = !!freeClassId && !!freeSessionDate;
+  const canAdd = classPerm?.canAdd ?? true;
+  const canEdit = classPerm?.canEdit ?? true;
+  const canDelete = classPerm?.canDelete ?? true;
   const freeContentPath = isFreeSession
     ? `/api/free-class-sessions/${freeClassId}/${freeSessionDate}`
     : "";
@@ -1482,10 +1493,10 @@ export function SessionContentDialog({
                       type={contentType.key}
                        label={translateContentType(t, contentType.key)}
                       selectedItems={getContentsByType(selectedCommon, contentType.key)}
-                      onAddClick={() => handleAddContent(contentType.key, "common")}
-                      onRemoveItem={handleRemoveCommonItem}
+                       onAddClick={canAdd ? () => handleAddContent(contentType.key, "common") : undefined}
+                       onRemoveItem={canDelete ? handleRemoveCommonItem : undefined}
                       onViewItem={handleViewItem}
-                      onUpdateDueDate={contentType.key === "Bài tập về nhà" ? handleUpdateDueDate : undefined}
+                       onUpdateDueDate={canEdit && contentType.key === "Bài tập về nhà" ? handleUpdateDueDate : undefined}
                     />
                   ))}
                 </div>
@@ -1495,7 +1506,7 @@ export function SessionContentDialog({
                 <PersonalContentTable
                   students={students}
                   selectedItems={selectedPersonal}
-                  onAddClick={(studentId, contentType) => {
+                   onAddClick={canAdd ? (studentId, contentType) => {
                     setCurrentStudentId(studentId);
                     setSelectedContentType(contentType);
                     setSelectedTab("personal");
@@ -1505,9 +1516,9 @@ export function SessionContentDialog({
                     } else {
                       setLibraryOpen(true);
                     }
-                  }}
-                  onRemoveItem={handleRemovePersonalItem}
-                  onUpdateDueDate={handleUpdatePersonalDueDate}
+                   } : undefined}
+                   onRemoveItem={canDelete ? handleRemovePersonalItem : undefined}
+                   onUpdateDueDate={canEdit ? handleUpdatePersonalDueDate : undefined}
                 />
               </TabsContent>
             </Tabs>
@@ -1523,7 +1534,7 @@ export function SessionContentDialog({
             </Button>
             <Button
               onClick={handleSave}
-              disabled={isSaving || isLoadingExisting}
+              disabled={isSaving || isLoadingExisting || (!canAdd && !canEdit && !canDelete)}
               data-testid="button-save-content-dialog"
             >
               {t("mySpace.calendar.save")}

@@ -11,6 +11,8 @@ vi.mock("../server/storage/permissions.storage", () => ({
 
 import { buildClassVisibilitySql, resolveClassViewAccess } from "../server/lib/class-access";
 import {
+  canScheduleWrite,
+  getScheduleWriteCapabilities,
   isScheduleEntryVisible,
   isScheduleViewOnly,
 } from "../shared/schedule-access";
@@ -123,5 +125,40 @@ describe("schedule permissions", () => {
     expect(isScheduleViewOnly(false, { canEdit: true })).toBe(false);
     expect(isScheduleViewOnly(false, { canDelete: true })).toBe(false);
     expect(isScheduleViewOnly(true, null)).toBe(false);
+  });
+
+  it("grants create-only users only the explicitly allowed add workflows", () => {
+    const permissions = { canCreate: true };
+
+    expect(getScheduleWriteCapabilities(false, permissions)).toEqual({
+      canAdd: true,
+      canEdit: false,
+      canDelete: false,
+    });
+    expect(canScheduleWrite(permissions, "canCreate")).toBe(true);
+    expect(canScheduleWrite(permissions, "canEdit")).toBe(false);
+    expect(canScheduleWrite(permissions, "canDelete")).toBe(false);
+  });
+
+  it("lets edit users perform all non-delete work and delete users perform every workflow", () => {
+    const editPermissions = { canEdit: true };
+    expect(getScheduleWriteCapabilities(false, editPermissions)).toEqual({
+      canAdd: true,
+      canEdit: true,
+      canDelete: false,
+    });
+    expect(canScheduleWrite(editPermissions, "canCreate")).toBe(true);
+    expect(canScheduleWrite(editPermissions, "canEdit")).toBe(true);
+    expect(canScheduleWrite(editPermissions, "canDelete")).toBe(false);
+
+    const deletePermissions = { canDelete: true };
+    expect(getScheduleWriteCapabilities(false, deletePermissions)).toEqual({
+      canAdd: true,
+      canEdit: true,
+      canDelete: true,
+    });
+    expect(canScheduleWrite(deletePermissions, "canCreate")).toBe(true);
+    expect(canScheduleWrite(deletePermissions, "canEdit")).toBe(true);
+    expect(canScheduleWrite(deletePermissions, "canDelete")).toBe(true);
   });
 });

@@ -4,6 +4,35 @@ export type ScheduleWritePermissions = {
   canDelete?: boolean;
 };
 
+export type ScheduleWriteCapabilities = {
+  canAdd: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+};
+
+export function getScheduleWriteCapabilities(
+  isSuperAdmin: boolean,
+  permissions?: ScheduleWritePermissions | null,
+): ScheduleWriteCapabilities {
+  const canDelete = isSuperAdmin || !!permissions?.canDelete;
+  const canEdit = canDelete || !!permissions?.canEdit;
+  return {
+    canAdd: canEdit || !!permissions?.canCreate,
+    canEdit,
+    canDelete,
+  };
+}
+
+export function canScheduleWrite(
+  permissions: ScheduleWritePermissions | null | undefined,
+  action: "canCreate" | "canEdit" | "canDelete",
+): boolean {
+  if (permissions?.canDelete) return true;
+  if (action === "canDelete") return false;
+  if (permissions?.canEdit) return true;
+  return action === "canCreate" && !!permissions?.canCreate;
+}
+
 export function isScheduleViewOnly(
   isSuperAdmin: boolean,
   permissions?: ScheduleWritePermissions | null,

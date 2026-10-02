@@ -44,7 +44,7 @@ import {
 interface FreeClassCalendarProps {
   classId: string;
   classData: any;
-  classPerm?: { canEdit: boolean };
+  classPerm?: { canAdd?: boolean; canEdit?: boolean; canDelete?: boolean };
   initialDate?: string | null;
 }
 
@@ -111,6 +111,10 @@ function parseCalendarDate(value?: string | null) {
 }
 
 export function FreeClassCalendar({ classId, classData, classPerm, initialDate }: FreeClassCalendarProps) {
+  const canAdd = classPerm?.canAdd ?? classPerm?.canEdit ?? true;
+  const canEdit = classPerm?.canEdit ?? true;
+  const canDelete = classPerm?.canDelete ?? classPerm?.canEdit ?? true;
+  const canWriteContent = canAdd || canEdit || canDelete;
   const requestedDate = parseCalendarDate(initialDate);
   const [monthDate, setMonthDate] = useState(() => startOfMonth(requestedDate ?? new Date()));
   const [mode, setMode] = useState<CalendarMode>(() =>
@@ -743,7 +747,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
   });
 
   const toggle = (student: any, date: string, current: any) => {
-    if (!classPerm?.canEdit || updateMutation.isPending) return;
+    if (!canEdit || updateMutation.isPending) return;
     updateMutation.mutate({
       studentClassId: student.id,
       date,
@@ -802,7 +806,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
           <span className="text-slate-300">|</span>
           <span className="font-medium text-slate-500">Tiêu chí:</span>
           <span className="font-semibold text-blue-600">{criteriaLabel}</span>
-          {classPerm?.canEdit && (
+          {(evaluationCriteriaIds.length > 0 ? canEdit : canAdd) && (
             <button
               type="button"
               className="text-slate-400 hover:text-indigo-500"
@@ -836,7 +840,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                 size="sm"
                 variant="outline"
                 className="h-7 border-blue-200 px-2 text-xs text-blue-700 hover:bg-blue-50"
-                disabled={!classPerm?.canEdit || !selectedDate || selectedRegisteredStudentIds.length === 0 || bulkMutation.isPending}
+                disabled={!canEdit || !selectedDate || selectedRegisteredStudentIds.length === 0 || bulkMutation.isPending}
                 onClick={openBulkAttendance}
               >
                 Điểm danh
@@ -847,7 +851,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
             size="sm"
             variant="outline"
             className="h-7 gap-1 border-emerald-200 px-2 text-xs text-emerald-700 hover:bg-emerald-50"
-            disabled={!classPerm?.canEdit || !selectedDate || isSummaryTab}
+            disabled={!canWriteContent || !selectedDate || isSummaryTab}
             onClick={() => selectedDate && setContentDialogDate(selectedDate)}
           >
             <BookOpen className="h-3.5 w-3.5" />
@@ -1022,7 +1026,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                         size="sm"
                         variant="default"
                         className="h-8 gap-1.5 text-xs"
-                        disabled={!classPerm?.canEdit || bulkRegisterStudentIds.length === 0}
+                        disabled={!canAdd || bulkRegisterStudentIds.length === 0}
                         onClick={() => {
                           setRegistrationPlannerMonthDate(startOfMonth(monthDate));
                           setBulkRegisterDates([]);
@@ -1312,7 +1316,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                         size="sm"
                         className="h-8 gap-1.5 text-xs"
                         disabled={
-                          !classPerm?.canEdit
+                          !canAdd
                           || selectedRegistrationPairs.length === 0
                           || bulkRegisterMutation.isPending
                         }
@@ -1446,7 +1450,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                             </div>
                             <Select
                               value={status}
-                              disabled={updateMutation.isPending}
+                              disabled={!canEdit || updateMutation.isPending}
                               onValueChange={(nextStatus) => {
                                 updateMutation.mutate(
                                   {
@@ -1499,15 +1503,15 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                             </Select>
                             <button
                               type="button"
-                              disabled={!classPerm?.canEdit || !registration?.id}
+                              disabled={!canEdit || !registration?.id}
                               className={cn(
                                 "group flex min-w-0 items-center gap-1 text-left text-xs",
-                                classPerm?.canEdit && registration?.id
+                                canEdit && registration?.id
                                   ? "cursor-pointer hover:text-primary"
                                   : "cursor-default",
                               )}
                               onClick={() => {
-                                if (!classPerm?.canEdit || !registration?.id) return;
+                                if (!canEdit || !registration?.id) return;
                                 setNoteDialog({
                                   studentClassId: student.id,
                                   registrationId: registration.id,
@@ -1525,7 +1529,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                               )}>
                                  {registration?.note || "Ghi chú..."}
                               </span>
-                              {classPerm?.canEdit && (
+                              {canEdit && (
                                 <Pencil className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-50" />
                               )}
                             </button>
@@ -1538,9 +1542,21 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                 ) ? "secondary" : "outline"}
                                 size="sm"
                                 className="h-8 gap-1.5 text-xs"
-                                disabled={!classPerm?.canEdit || !registration?.id}
+                                disabled={
+                                  (
+                                    !!((registration?.id ? reviewOverrides[registration.id]?.reviewData : undefined)
+                                      ?? registration?.reviewData)
+                                      ? !canEdit
+                                      : !canAdd
+                                  ) || !registration?.id
+                                }
                                 onClick={() => {
-                                  if (!classPerm?.canEdit || !registration?.id) return;
+                                  if (
+                                    !((registration?.id ? reviewOverrides[registration.id]?.reviewData : undefined)
+                                      ?? registration?.reviewData)
+                                      ? !canAdd || !registration?.id
+                                      : !canEdit || !registration?.id
+                                  ) return;
                                   setReviewTarget({ student, registration });
                                 }}
                               >
@@ -1599,9 +1615,9 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                          variant="outline"
                          size="sm"
                          className="ml-auto h-8 gap-1.5 text-xs"
-                         disabled={!classPerm?.canEdit}
+                         disabled={!canEdit}
                          onClick={() => {
-                           if (!classPerm?.canEdit) return;
+                           if (!canEdit) return;
                            setAssignmentEditor({
                              scope: "day",
                              studentClassId: "",
@@ -1671,7 +1687,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                  </div>
                                  <button
                                    type="button"
-                                   disabled={!classPerm?.canEdit || !registration.id}
+                                   disabled={!canEdit || !registration.id}
                                    className={cn(
                                      "shrink-0 text-slate-400 hover:text-indigo-500 disabled:cursor-default disabled:opacity-50",
                                      hasStudentAssignment && "text-indigo-600",
@@ -1682,7 +1698,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                        : "Chọn GV/ca riêng cho học viên"
                                    }
                                    onClick={() => {
-                                     if (!classPerm?.canEdit || !registration.id) return;
+                                     if (!canEdit || !registration.id) return;
                                      setAssignmentEditor({
                                        scope: "student",
                                        studentClassId: student.id,
@@ -1700,7 +1716,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                             <td className="px-3 py-3">
                               <Select
                                 value={status}
-                                disabled={updateMutation.isPending}
+                              disabled={!canEdit || updateMutation.isPending}
                                 onValueChange={(nextStatus) => updateMutation.mutate({
                                   studentClassId: student.id,
                                   date: selectedRegistrationDay.value,
@@ -1727,15 +1743,15 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                             <td className="px-3 py-3">
                               <button
                                 type="button"
-                                disabled={!classPerm?.canEdit || !registration.id}
+                                disabled={!canEdit || !registration.id}
                                 className={cn(
                                   "group flex max-w-[260px] items-center gap-1 text-left text-xs",
-                                  classPerm?.canEdit && registration.id
+                                  canEdit && registration.id
                                     ? "cursor-pointer hover:text-primary"
                                     : "cursor-default",
                                 )}
                                 onClick={() => {
-                                  if (!classPerm?.canEdit || !registration.id) return;
+                                  if (!canEdit || !registration.id) return;
                                   setNoteDialog({
                                     studentClassId: student.id,
                                     registrationId: registration.id,
@@ -1751,7 +1767,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                 )}>
                                   {note || "Ghi chú..."}
                                 </span>
-                                {classPerm?.canEdit && <Pencil className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-50" />}
+                                {canEdit && <Pencil className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-50" />}
                               </button>
                             </td>
                             <td className="px-4 py-3">
@@ -1760,7 +1776,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                 variant={hasReview ? "secondary" : "outline"}
                                 size="sm"
                                 className="h-8 gap-1.5 text-xs"
-                                disabled={!classPerm?.canEdit || !registration.id}
+                                disabled={!(hasReview ? canEdit : canAdd) || !registration.id}
                                 onClick={() => setReviewTarget({ student, registration })}
                               >
                                 {hasReview
@@ -1826,7 +1842,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                       <div className="mt-1 flex items-center justify-center px-0.5">
                         <button
                           type="button"
-                          disabled={!classPerm?.canEdit}
+                          disabled={!canEdit}
                           className={cn(
                             "inline-flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-default disabled:opacity-50",
                             (dayAssignment?.teacherId || dayAssignment?.shiftTemplateId) && "text-indigo-600",
@@ -1834,7 +1850,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                           title="Phân công GV/ca cho cả ngày"
                           aria-label={`Phân công GV/ca cho ngày ${day.label}/${monthLabel}`}
                           onClick={() => {
-                            if (!classPerm?.canEdit) return;
+                            if (!canEdit) return;
                             setAssignmentEditor({
                               scope: "day",
                               studentClassId: "",
@@ -1994,7 +2010,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                               hideIndicator
                               checked={!!current}
                                 disabled={
-                                  !classPerm?.canEdit
+                                  !canEdit
                                   || updateMutation.isPending
                                   || registrationBlocked
                                 }
@@ -2006,7 +2022,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                             <>
                               <Select
                                 value={status}
-                                disabled={!classPerm?.canEdit || updateMutation.isPending}
+                                disabled={!canEdit || updateMutation.isPending}
                                 onValueChange={(nextStatus) =>
                                   updateMutation.mutate({
                                     studentClassId: student.id,
@@ -2050,7 +2066,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                               <div className="flex items-center gap-1">
                                 <button
                                   type="button"
-                                  disabled={!classPerm?.canEdit}
+                                  disabled={!canEdit}
                                   className={cn(
                                     "text-slate-400 hover:text-indigo-500 disabled:cursor-default disabled:opacity-50",
                                     hasStudentAssignment && "text-indigo-600",
@@ -2061,7 +2077,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                       : "Chọn GV/ca riêng cho học viên"
                                   }
                                   onClick={() => {
-                                    if (!classPerm?.canEdit) return;
+                                    if (!canEdit) return;
                                     setAssignmentEditor({
                                       scope: "student",
                                       studentClassId: student.id,
@@ -2076,11 +2092,11 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                 </button>
                                 <button
                                   type="button"
-                                    disabled={!classPerm?.canEdit || !current?.id}
+                                    disabled={!canEdit || !current?.id}
                                   className="text-slate-400 hover:text-primary disabled:cursor-default disabled:opacity-50"
                                   title={note || "Ghi chú"}
                                   onClick={() => {
-                                      if (!classPerm?.canEdit || !current?.id) return;
+                                      if (!canEdit || !current?.id) return;
                                     setNoteDialog({
                                       studentClassId: student.id,
                                       registrationId: current.id,
@@ -2099,11 +2115,11 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
                                 </button>
                                 <button
                                   type="button"
-                                    disabled={!classPerm?.canEdit || !current?.id}
+                                    disabled={!(hasReview ? canEdit : canAdd) || !current?.id}
                                   className="text-slate-400 hover:text-yellow-500 disabled:cursor-default disabled:opacity-50"
                                   title={hasReview ? "Xem / sửa nhận xét" : "Nhập nhận xét"}
                                   onClick={() => {
-                                      if (!classPerm?.canEdit || !current?.id) return;
+                                      if (!(hasReview ? canEdit : canAdd) || !current?.id) return;
                                     setReviewTarget({ student, registration: current });
                                   }}
                                 >
@@ -2415,6 +2431,7 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
         freeClassId={classId}
         freeSessionDate={contentDialogDate ?? undefined}
         freeStudents={contentDialogStudents}
+        classPerm={classPerm}
       />
       <ReviewDialog
         open={!!reviewTarget}

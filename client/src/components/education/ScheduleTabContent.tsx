@@ -623,6 +623,7 @@ export function ScheduleTabContent({
         onOpenChange={setIsSessionContentDialogOpen}
         classSessionId={selectedClassSessionId || ""}
         programId={classData?.programId}
+        classPerm={classPerm}
       />
       <ContentViewDialog
         isOpen={!!viewingContentId || !!viewingFallbackContent}

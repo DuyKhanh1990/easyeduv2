@@ -8,20 +8,25 @@ import {
 } from "lucide-react";
 import { ScheduleTabContent } from "@/components/education/ScheduleTabContent";
 import { ScheduleHeaderActions } from "@/hooks/use-schedule-tab";
+import type { ClassPermissions } from "@/pages/education/ClassDetail";
 
 interface SessionDetailSheetProps {
   sessionId: string | null;
   classId: string | null;
   onClose: () => void;
   readOnly?: boolean;
+  classPerm?: ClassPermissions;
 }
 
-export function SessionDetailSheet({ sessionId, classId, onClose, readOnly = false }: SessionDetailSheetProps) {
+export function SessionDetailSheet({ sessionId, classId, onClose, readOnly = false, classPerm }: SessionDetailSheetProps) {
   const isOpen = !!(sessionId && classId);
   const [scheduleActions, setScheduleActions] = useState<ScheduleHeaderActions | null>(null);
-  const readOnlyClassPerm = readOnly
+  const effectiveClassPerm = readOnly
     ? { canAdd: false, canEdit: false, canDelete: false }
-    : undefined;
+    : classPerm;
+  const canAdd = effectiveClassPerm?.canAdd ?? true;
+  const canEdit = effectiveClassPerm?.canEdit ?? true;
+  const canDelete = effectiveClassPerm?.canDelete ?? true;
   const actionBtn = (grad: string, extra?: string) =>
     `inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gradient-to-r ${grad} text-white text-[11px] font-semibold shadow-sm hover:opacity-90 active:scale-95 transition-all shrink-0 ${extra ?? ""}`;
 
@@ -68,22 +73,28 @@ export function SessionDetailSheet({ sessionId, classId, onClose, readOnly = fal
 
             {/* Center: action buttons */}
             <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 flex-nowrap justify-center">
-              {!readOnly && (
-                <>
+              <>
+                {canAdd && (
                   <button
                     onClick={() => scheduleActions?.openContent()}
                     className={actionBtn("from-violet-500 to-indigo-600")}
                   >
                     <Plus className="h-3 w-3" /> Nội dung
                   </button>
-                  {scheduleActions && (
-                    <>
+                )}
+                {scheduleActions && (
+                  <>
+                    {canEdit && (
                       <button onClick={() => scheduleActions.openUpdateSession()} className={actionBtn("from-sky-500 to-blue-500")}>
                         <Calendar className="h-3 w-3" /> Cập nhật buổi
                       </button>
+                    )}
+                    {canEdit && (
                       <button onClick={() => scheduleActions.openChangeTeacher()} className={actionBtn("from-amber-500 to-orange-500")}>
                         <UserCog className="h-3 w-3" /> Đổi giáo viên
                       </button>
+                    )}
+                    {canEdit && (
                       <button
                         className={actionBtn("from-red-500 to-rose-500", scheduleActions.isCancelled ? "opacity-50 cursor-not-allowed" : "")}
                         onClick={() => scheduleActions.openCancelSession()}
@@ -91,19 +102,25 @@ export function SessionDetailSheet({ sessionId, classId, onClose, readOnly = fal
                       >
                         <XCircle className="h-3 w-3" /> Huỷ buổi
                       </button>
+                    )}
+                    {canEdit && (
                       <button onClick={() => scheduleActions.openUpdateCycle()} className={actionBtn("from-emerald-500 to-teal-600")}>
                         <Calendar className="h-3 w-3" /> Cập nhật chu kỳ
                       </button>
+                    )}
+                    {canEdit && (
                       <button onClick={() => scheduleActions.openExcludeSession()} className={actionBtn("from-slate-500 to-slate-600")}>
                         Loại trừ ngày
                       </button>
+                    )}
+                    {canDelete && (
                       <button onClick={() => scheduleActions.openDeleteSchedule()} className={actionBtn("from-rose-500 to-red-600")}>
                         <Trash2 className="h-3 w-3" /> Xoá lịch
                       </button>
-                    </>
-                  )}
-                </>
-              )}
+                    )}
+                  </>
+                )}
+              </>
             </div>
           </div>
         </DialogHeader>
@@ -118,7 +135,7 @@ export function SessionDetailSheet({ sessionId, classId, onClose, readOnly = fal
               feePackages={feePackages}
               onActionsChange={setScheduleActions}
               initialSessionId={sessionId}
-              classPerm={readOnlyClassPerm}
+              classPerm={effectiveClassPerm}
             />
           </div>
         </div>

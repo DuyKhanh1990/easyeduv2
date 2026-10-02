@@ -21,7 +21,7 @@ import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 import { getNextLocationCode } from "../storage/finance.storage";
 import { recordFreeClassWalletTransition } from "../storage/free-class-wallet.storage";
 import { buildTeacherTimeAssignments, getShiftScheduleKey } from "@shared/teacher-time-assignments";
-import { isScheduleEntryVisible } from "@shared/schedule-access";
+import { canScheduleWrite, isScheduleEntryVisible } from "@shared/schedule-access";
 
 async function resolveStaffFullName(userId: string | undefined | null): Promise<string | null> {
   if (!userId) return null;
@@ -180,11 +180,19 @@ async function assertFreeClassEditable(
   res: any,
   classId: string,
   context: FreeClassAccessContext = {},
+  action: "canCreate" | "canEdit" | "canDelete" = "canEdit",
 ): Promise<boolean> {
-  if (!(await assertFreeClassReadable(req, res, classId, context))) return false;
+  if (!(await assertFreeClassReadable(req, res, classId, context, true))) return false;
 
-  const permissions = await getClassPermissions(req);
-  if (permissions.canEdit || await isAssignedToFreeClass(req, classId, context)) {
+  const [schedulePermissions, classPermissions] = await Promise.all([
+    storage.getEffectivePermissions(req.roleIds ?? [], "/schedule"),
+    getClassPermissions(req),
+  ]);
+  if (
+    canScheduleWrite(schedulePermissions, action)
+    || canScheduleWrite(classPermissions, action)
+    || await isAssignedToFreeClass(req, classId, context)
+  ) {
     return true;
   }
 
@@ -221,16 +229,44 @@ async function getClassPermissions(req: any) {
 async function assertScheduleMutationPermission(
   req: any,
   res: any,
-  action: "canEdit" | "canDelete",
+  action: "canCreate" | "canEdit" | "canDelete",
+  legacyPermissions: Array<{ resource: string; action: "canCreate" | "canEdit" | "canDelete" }> = [],
+  scopeClassId?: string,
 ): Promise<boolean> {
   const user = req.user as { username?: string } | undefined;
   if (req.isSuperAdmin === true || user?.username === "admin") return true;
+  let resolvedClassId = scopeClassId ?? req.params?.classId;
+  if (!resolvedClassId && String(req.originalUrl ?? req.path ?? "").startsWith("/api/classes/")) {
+    resolvedClassId = req.params?.id;
+  }
+  if (!resolvedClassId) {
+    const classSessionId = req.params?.classSessionId ?? req.params?.sessionId;
+    if (classSessionId) {
+      const [session] = await db.select({ classId: classSessions.classId })
+        .from(classSessions).where(eq(classSessions.id, classSessionId)).limit(1);
+      if (!session) {
+        res.status(404).json({ message: "Không tìm thấy buổi học." });
+        return false;
+      }
+      resolvedClassId = session.classId;
+    }
+  }
+  if (resolvedClassId && !(await assertClassReadable(req, res, resolvedClassId, true))) return false;
 
-  const [schedulePermissions, classPermissions] = await Promise.all([
+  const [schedulePermissions, classPermissions, ...legacyPermissionSets] = await Promise.all([
     storage.getEffectivePermissions(req.roleIds ?? [], "/schedule"),
     getClassPermissions(req),
+    ...legacyPermissions.map(({ resource }) =>
+      storage.getEffectivePermissions(req.roleIds ?? [], resource),
+    ),
   ]);
-  if (schedulePermissions[action] || classPermissions[action]) return true;
+  if (
+    canScheduleWrite(schedulePermissions, action)
+    || canScheduleWrite(classPermissions, action)
+    || legacyPermissions.some((permission, index) => (
+      legacyPermissionSets[index]?.[permission.action] === true
+    ))
+  ) return true;
 
   res.status(403).json({ message: "Bạn không có quyền chỉnh sửa lịch học." });
   return false;
@@ -688,6 +724,8 @@ async function getClassForLog(id: string): Promise<any | null> {
       endDate: classes.endDate,
       status: classes.status,
       maxStudents: classes.maxStudents,
+      onlineLink: classes.onlineLink,
+      evaluationCriteriaIds: classes.evaluationCriteriaIds,
     })
     .from(classes)
     .where(eq(classes.id, id))
@@ -1470,6 +1508,7 @@ export function registerClassesRoutes(app: Express): void {
       const { configs, classScheduleConfig } = req.body;
       const userId = (req.user as any)?.id;
       const classId = String(req.params.id);
+      if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
       const [classRow] = await db
         .select({
           id: classes.id,
@@ -2028,7 +2067,7 @@ export function registerClassesRoutes(app: Express): void {
     if (dates.some((date) => !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
       return res.status(400).json({ message: "Có ngày đăng ký không hợp lệ" });
     }
-    if (!(await assertFreeClassEditable(req, res, classId))) return;
+    if (!(await assertFreeClassEditable(req, res, classId, {}, "canCreate"))) return;
 
     try {
       const [classRow] = await db
@@ -2166,13 +2205,18 @@ export function registerClassesRoutes(app: Express): void {
       if (!studentClassId || !/^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
         return res.status(400).json({ message: "Thiếu học viên hoặc ngày học hợp lệ" });
       }
-      if (!(await assertFreeClassEditable(req, res, classId, {
-        studentClassId: String(studentClassId),
-        date: String(date),
-      }))) return;
       if (action !== "register" && action !== "attend") {
         return res.status(400).json({ message: "Thao tác lịch không hợp lệ" });
       }
+      const permissionAction = action === "attend"
+        ? "canEdit"
+        : value === false
+          ? "canDelete"
+          : "canCreate";
+      if (!(await assertFreeClassEditable(req, res, classId, {
+        studentClassId: String(studentClassId),
+        date: String(date),
+      }, permissionAction))) return;
       const [classRow] = await db
         .select({
           classType: classes.classType,
@@ -2380,7 +2424,10 @@ export function registerClassesRoutes(app: Express): void {
       }))) return;
 
       const [registration] = await db
-        .select({ id: freeClassRegistrations.id })
+        .select({
+          id: freeClassRegistrations.id,
+          reviewData: freeClassRegistrations.reviewData,
+        })
         .from(freeClassRegistrations)
         .where(and(
           eq(freeClassRegistrations.id, body.registrationId),
@@ -2388,6 +2435,15 @@ export function registerClassesRoutes(app: Express): void {
         ))
         .limit(1);
       if (!registration) return res.status(404).json({ message: "Không tìm thấy đăng ký lớp tự do" });
+      const hasExistingReview = !!registration.reviewData
+        && Object.keys(registration.reviewData as Record<string, unknown>).length > 0;
+      if (!(await assertFreeClassEditable(
+        req,
+        res,
+        classId,
+        { registrationId: body.registrationId },
+        hasExistingReview ? "canEdit" : "canCreate",
+      ))) return;
 
       const [updated] = await db
         .update(freeClassRegistrations)
@@ -2858,6 +2914,7 @@ export function registerClassesRoutes(app: Express): void {
       const { db: baseDb, eq: baseEq, and: baseAnd, classSessions: baseSessions, studentClasses: baseSc, studentSessions: baseSs } = await import("../storage/base");
       const [session] = await baseDb.select().from(baseSessions).where(baseEq(baseSessions.id, sessionId));
       if (!session) return res.status(404).json({ message: "Không tìm thấy buổi học" });
+      if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
 
       for (const studentId of studentIds) {
         const [existing] = await baseDb.select({ id: baseSs.id }).from(baseSs)
@@ -3181,6 +3238,9 @@ export function registerClassesRoutes(app: Express): void {
       }
       const effectiveStatus = rawStatus;
       const effectiveNote = typeof rawNote === "string" ? rawNote : undefined;
+      if (!(await assertScheduleMutationPermission(req, res, "canEdit", [
+        { resource: "/attendance", action: "canCreate" },
+      ]))) return;
       const userId = (req as any).user?.id ?? null;
       const userFullName = await resolveStaffFullName(userId);
 
@@ -3212,6 +3272,9 @@ export function registerClassesRoutes(app: Express): void {
       ) {
         return res.status(400).json({ message: "Thông tin điểm danh không hợp lệ." });
       }
+      if (!(await assertScheduleMutationPermission(req, res, "canEdit", [
+        { resource: "/attendance", action: "canCreate" },
+      ]))) return;
 
       const userId = (req as any).user?.id ?? null;
       const userFullName = hasStatus ? await resolveStaffFullName(userId) : null;
@@ -3311,6 +3374,9 @@ export function registerClassesRoutes(app: Express): void {
       )) {
         return res.status(400).json({ message: "Thông tin điểm danh không hợp lệ." });
       }
+      if (!(await assertScheduleMutationPermission(req, res, "canEdit", [
+        { resource: "/attendance", action: "canCreate" },
+      ]))) return;
 
       const userId = (req as any).user?.id ?? null;
       const userFullName = await resolveStaffFullName(userId);
@@ -3395,6 +3461,29 @@ export function registerClassesRoutes(app: Express): void {
       const { studentSessionIds, reviewData, published } = req.body;
       if (!Array.isArray(studentSessionIds) || studentSessionIds.length === 0) {
         return res.status(400).json({ message: "studentSessionIds required" });
+      }
+      const existingReviewRows = await db
+        .select({
+          id: studentSessions.id,
+          reviewData: studentSessions.reviewData,
+          classId: classSessions.classId,
+        })
+        .from(studentSessions)
+        .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
+        .where(inArray(studentSessions.id, studentSessionIds));
+      if (existingReviewRows.length !== studentSessionIds.length) {
+        return res.status(404).json({ message: "Không tìm thấy buổi học của học viên." });
+      }
+      const hasNewReviews = existingReviewRows.some((row) =>
+        !row.reviewData || Object.keys(row.reviewData as Record<string, unknown>).length === 0
+      );
+      const hasExistingReviews = existingReviewRows.some((row) =>
+        !!row.reviewData && Object.keys(row.reviewData as Record<string, unknown>).length > 0
+      );
+      const classIds = [...new Set(existingReviewRows.map((row) => row.classId))];
+      for (const classId of classIds) {
+        if (hasNewReviews && !(await assertScheduleMutationPermission(req, res, "canCreate", [], classId))) return;
+        if (hasExistingReviews && !(await assertScheduleMutationPermission(req, res, "canEdit", [], classId))) return;
       }
       await db.update(studentSessions)
         .set({ reviewData, reviewPublished: !!published, updatedAt: new Date() })
@@ -6331,10 +6420,41 @@ export function registerClassesRoutes(app: Express): void {
 
   app.patch(api.classes.update.path, async (req, res) => {
     try {
-      const clsPerms = await getClassPermissions(req);
-      if (!clsPerms.canEdit) return res.status(403).json({ message: "Bạn không có quyền chỉnh sửa lớp học." });
       const classId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const oldCls = await getClassForLog(classId);
+      const isOnlineLinkOnlyUpdate =
+        Object.keys(req.body ?? {}).length === 1 && "onlineLink" in (req.body ?? {});
+      const isCriteriaOnlyUpdate =
+        Object.keys(req.body ?? {}).length === 1 && "evaluationCriteriaIds" in (req.body ?? {});
+      if (isOnlineLinkOnlyUpdate) {
+        const oldLink = oldCls?.onlineLink ?? null;
+        const newLink = typeof req.body.onlineLink === "string"
+          ? req.body.onlineLink.trim() || null
+          : req.body.onlineLink ?? null;
+        const action = oldLink && !newLink
+          ? "canDelete"
+          : oldLink
+            ? "canEdit"
+            : "canCreate";
+        if (!(await assertScheduleMutationPermission(req, res, action, [], classId))) return;
+        req.body.onlineLink = newLink;
+      } else if (isCriteriaOnlyUpdate) {
+        const oldCriteriaIds = oldCls?.evaluationCriteriaIds ?? [];
+        const newCriteriaIds = Array.isArray(req.body.evaluationCriteriaIds)
+          ? req.body.evaluationCriteriaIds
+          : [];
+        const action = oldCriteriaIds.length > 0 && newCriteriaIds.length === 0
+          ? "canDelete"
+          : oldCriteriaIds.length > 0
+            ? "canEdit"
+            : "canCreate";
+        if (!(await assertScheduleMutationPermission(req, res, action, [], classId))) return;
+      } else {
+        const clsPerms = await getClassPermissions(req);
+        if (!clsPerms.canEdit) {
+          return res.status(403).json({ message: "Bạn không có quyền chỉnh sửa lớp học." });
+        }
+      }
       const [storedClass] = await db.select({ classType: classes.classType })
         .from(classes).where(eq(classes.id, classId)).limit(1);
       const updateData = {
@@ -7041,6 +7161,25 @@ export function registerClassesRoutes(app: Express): void {
   // Remove students from sessions
   app.post(api.students.removeFromSessions.path, async (req, res) => {
     try {
+      const requestedStudentClassIds = [
+        req.body?.studentClassId,
+        ...Object.values(req.body?.studentClassIds ?? {}),
+      ].filter((id): id is string => typeof id === "string" && !!id);
+      const targetIds = [...new Set(requestedStudentClassIds)];
+      if (targetIds.length === 0) {
+        return res.status(400).json({ message: "Thiếu thông tin lớp của học viên" });
+      }
+      const targetRows = await db.select({
+        id: studentClasses.id,
+        classId: studentClasses.classId,
+      }).from(studentClasses).where(inArray(studentClasses.id, targetIds));
+      if (targetRows.length !== targetIds.length) {
+        return res.status(404).json({ message: "Không tìm thấy học viên trong lớp" });
+      }
+      const classIds = [...new Set(targetRows.map((row) => row.classId))];
+      for (const classId of classIds) {
+        if (!(await assertScheduleMutationPermission(req, res, "canDelete", [], classId))) return;
+      }
       const result = await storage.removeStudentFromSessions(req.body);
       res.json({
         success: true,
@@ -7067,6 +7206,24 @@ export function registerClassesRoutes(app: Express): void {
         studentClassIds && typeof studentClassIds === "object" ? studentClassIds : {};
       const studentClassId =
         requestedStudentClassId || resolvedStudentClassIds[studentIds?.[0]];
+      const targetStudentClassIds = [...new Set([
+        studentClassId,
+        ...Object.values(resolvedStudentClassIds),
+      ].filter((id): id is string => typeof id === "string" && !!id))];
+      if (!Array.isArray(studentIds) || studentIds.length === 0 || targetStudentClassIds.length === 0) {
+        return res.status(400).json({ message: "Thiếu thông tin học viên cần xoá" });
+      }
+      const targetRows = await db.select({
+        id: studentClasses.id,
+        classId: studentClasses.classId,
+      }).from(studentClasses).where(inArray(studentClasses.id, targetStudentClassIds));
+      if (targetRows.length !== targetStudentClassIds.length) {
+        return res.status(404).json({ message: "Không tìm thấy học viên trong lớp" });
+      }
+      const targetClassIds = [...new Set(targetRows.map((row) => row.classId))];
+      for (const classId of targetClassIds) {
+        if (!(await assertScheduleMutationPermission(req, res, "canDelete", [], classId))) return;
+      }
 
       // --- Pre-fetch before removal for notification ---
       let notificationClosure: (() => Promise<void>) | null = null;
@@ -7347,6 +7504,7 @@ export function registerClassesRoutes(app: Express): void {
     try {
       const { insertSessionContentSchema } = await import("@shared/schema");
       const classSessionId = req.params.classSessionId;
+      if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
       const skipLog = req.query.skipLog === "true";
       const existingContents = skipLog ? [] : await storage.getSessionContents(classSessionId);
       const input = insertSessionContentSchema.parse({
@@ -7392,6 +7550,7 @@ export function registerClassesRoutes(app: Express): void {
   app.delete(api.classSessions.deleteContent.path, async (req, res) => {
     try {
       const classSessionId = req.params.classSessionId;
+      if (!(await assertScheduleMutationPermission(req, res, "canDelete"))) return;
       const contents = await storage.getSessionContents(classSessionId);
       for (const content of contents) {
         await storage.deleteSessionContent(content.id);
@@ -7404,6 +7563,7 @@ export function registerClassesRoutes(app: Express): void {
 
   app.patch("/api/class-sessions/:classSessionId/contents/:contentId", async (req, res) => {
     try {
+      if (!(await assertScheduleMutationPermission(req, res, "canEdit"))) return;
       const { contentId } = req.params;
       const { dueDate } = req.body;
       const updated = await storage.updateSessionContent(contentId, {
@@ -7417,6 +7577,7 @@ export function registerClassesRoutes(app: Express): void {
 
   app.delete("/api/class-sessions/:classSessionId/contents/:contentId", async (req, res) => {
     try {
+      if (!(await assertScheduleMutationPermission(req, res, "canDelete"))) return;
       const { classSessionId, contentId } = req.params;
       const skipLog = req.query.skipLog === "true";
       const existingContents = skipLog ? [] : await storage.getSessionContents(classSessionId);
@@ -7460,6 +7621,11 @@ export function registerClassesRoutes(app: Express): void {
         existingBefore: { title: string; type: string }[];
       };
 
+      if (!Array.isArray(added) || !Array.isArray(deleted) || !Array.isArray(existingBefore)) {
+        return res.status(400).json({ message: "Dữ liệu nhật ký nội dung không hợp lệ." });
+      }
+      if (added.length > 0 && !(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
+      if (deleted.length > 0 && !(await assertScheduleMutationPermission(req, res, "canDelete"))) return;
       if (added.length === 0 && deleted.length === 0) return res.json({ ok: true });
 
       const session = await storage.getClassSession(classSessionId);
@@ -7535,6 +7701,7 @@ export function registerClassesRoutes(app: Express): void {
   app.post("/api/class-sessions/:classSessionId/student-contents", async (req, res) => {
     try {
       const { classSessionId } = req.params;
+      if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
       const { studentId, contentType, title, description, resourceUrl } = req.body;
       if (!studentId || !contentType || !title) {
         return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
@@ -7567,6 +7734,7 @@ export function registerClassesRoutes(app: Express): void {
   app.post("/api/class-sessions/:classSessionId/notify-content", async (req, res) => {
     try {
       const { classSessionId } = req.params;
+      if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
       const { contents } = req.body as { contents: { contentType: string; title: string }[] };
       if (!Array.isArray(contents) || contents.length === 0) {
         return res.status(400).json({ message: "Không có nội dung để thông báo" });
@@ -7583,6 +7751,7 @@ export function registerClassesRoutes(app: Express): void {
   app.post("/api/classes/:classId/apply-program", async (req, res) => {
     try {
       const { classId } = req.params;
+      if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
       const { programId, fromSessionIndex, toSessionIndex } = req.body;
       if (!programId || fromSessionIndex == null || toSessionIndex == null) {
         return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
@@ -7633,6 +7802,7 @@ export function registerClassesRoutes(app: Express): void {
   app.post("/api/classes/:classId/apply-criteria", async (req, res) => {
     try {
       const { classId } = req.params;
+      if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
       const { criteriaId, fromSessionIndex, toSessionIndex } = req.body;
       if (!criteriaId || fromSessionIndex == null || toSessionIndex == null) {
         return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
@@ -7704,6 +7874,7 @@ export function registerClassesRoutes(app: Express): void {
   app.post("/api/classes/:classId/apply-score-sheet", async (req, res) => {
     try {
       const { classId } = req.params;
+      if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
       const {
         scoreSheetId,
         scoreSheetAssessmentId,
@@ -7891,6 +8062,7 @@ export function registerClassesRoutes(app: Express): void {
   app.post("/api/classes/:classId/grade-books", async (req, res) => {
     try {
       const { classId } = req.params;
+      if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
       const userId = (req.user as any)?.id;
       const body = z.object({
         title: z.string().min(1),
@@ -8029,6 +8201,7 @@ export function registerClassesRoutes(app: Express): void {
   app.put("/api/classes/:classId/grade-books/:id", async (req, res) => {
     try {
       const { classId, id } = req.params;
+      if (!(await assertScheduleMutationPermission(req, res, "canEdit"))) return;
       const userId = (req.user as any)?.id;
       const body = z.object({
         title: z.string().min(1).optional(),
@@ -8219,6 +8392,7 @@ export function registerClassesRoutes(app: Express): void {
 
   app.delete("/api/classes/:classId/grade-books/:id", async (req, res) => {
     try {
+      if (!(await assertScheduleMutationPermission(req, res, "canDelete"))) return;
       const { id } = req.params;
       await db.delete(classGradeBooks).where(eq(classGradeBooks.id, id));
       res.json({ success: true });
@@ -8230,6 +8404,7 @@ export function registerClassesRoutes(app: Express): void {
   // Student Session Contents (Personalized content for individual students)
   app.post(api.classSessions.createStudentContent.path, async (req, res) => {
     try {
+      if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
       const { insertStudentSessionContentSchema } = await import("@shared/schema");
       const input = insertStudentSessionContentSchema.parse(req.body);
       const content = await storage.createStudentSessionContent(input);

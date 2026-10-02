@@ -289,6 +289,16 @@ export function SessionDetailPanel({
   const assignedScoreSheetName = assignedScoreSheetAssessment
     ? `${assignedScoreSheetAssessment.code} — ${assignedScoreSheetAssessment.name}`
     : assignedScoreSheet?.name;
+  const canApplyProgram = (session?.programId || session?.program?.id) ? canEdit : canAdd;
+  const canApplyCriteria = assignedCriteria.length > 0 ? canEdit : canAdd;
+  const canApplyScoreSheet = (
+    assignedScoreSheetName || sessionScoreSheetAssessmentId || sessionScoreSheetId
+  ) ? canEdit : canAdd;
+  const canSetOnlineLink = classData?.onlineLink ? canEdit || canDelete : canAdd;
+  const saveOnlineLink = () => {
+    if (classData?.onlineLink && !linkInputValue.trim() && !canDelete) return;
+    updateOnlineLinkMutation.mutate(linkInputValue);
+  };
 
   const infoCard = (
     <div className={`${mode === "info" ? "w-full" : "sticky top-0"} rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-white`}>
@@ -389,7 +399,7 @@ export function SessionDetailPanel({
             </div>
             <span className="text-xs text-slate-600 w-20 shrink-0 mt-0.5 font-medium whitespace-nowrap">Chương trình:</span>
             <span className="text-xs font-semibold text-blue-600 break-words min-w-0 flex-1 mt-0.5">{session?.program?.name || classData?.program?.name || <span className="text-slate-400 italic font-normal">Chưa xác định</span>}</span>
-            {canEdit && (
+            {canApplyProgram && (
               <button data-testid="btn-apply-program" className="shrink-0 text-slate-300 hover:text-indigo-500 transition-colors mt-0.5"
                 onClick={() => { const i = session?.sessionIndex ?? 1; setApplyProgramFromIdx(i); setApplyProgramToIdx(i); setApplyProgramId(""); setIsApplyProgramOpen(true); }}>
                 <Pencil className="h-3 w-3" />
@@ -405,7 +415,7 @@ export function SessionDetailPanel({
             <span className="text-xs font-semibold text-blue-600 break-words min-w-0 flex-1 mt-0.5">
               {assignedCriteria.length > 0 ? assignedCriteria.map((c: any) => c.name).join(", ") : <span className="text-slate-400 italic font-normal">Chưa xác định</span>}
             </span>
-            {canEdit && (
+            {canApplyCriteria && (
               <button data-testid="btn-apply-criteria" className="shrink-0 text-slate-300 hover:text-indigo-500 transition-colors mt-0.5"
                 onClick={() => { const i = session?.sessionIndex ?? 1; setApplyCriteriaFromIdx(i); setApplyCriteriaToIdx(i); setApplyCriteriaId(""); setIsApplyCriteriaOpen(true); }}>
                 <Pencil className="h-3 w-3" />
@@ -426,7 +436,7 @@ export function SessionDetailPanel({
                 </span>
               )}
             </span>
-            {canEdit && (
+            {canApplyScoreSheet && (
               <button data-testid="btn-apply-score-sheet" className="shrink-0 text-slate-300 hover:text-indigo-500 transition-colors mt-0.5"
                 onClick={() => {
                   const i = session?.sessionIndex ?? 1;
@@ -455,9 +465,10 @@ export function SessionDetailPanel({
               <div className="flex items-center gap-1 flex-1 min-w-0">
                 <Input data-testid="input-online-link" className="h-6 text-[11px] px-1.5 py-0 flex-1 min-w-0"
                   value={linkInputValue} onChange={(e) => setLinkInputValue(e.target.value)} placeholder="https://..." autoFocus
-                  onKeyDown={(e) => { if (e.key === "Enter") updateOnlineLinkMutation.mutate(linkInputValue); if (e.key === "Escape") setIsEditingLink(false); }} />
+                  onKeyDown={(e) => { if (e.key === "Enter") saveOnlineLink(); if (e.key === "Escape") setIsEditingLink(false); }} />
                 <button data-testid="btn-save-online-link" className="shrink-0 text-green-600 hover:text-green-700 transition-colors"
-                  onClick={() => updateOnlineLinkMutation.mutate(linkInputValue)} disabled={updateOnlineLinkMutation.isPending}>
+                  onClick={saveOnlineLink}
+                  disabled={updateOnlineLinkMutation.isPending || (!!classData?.onlineLink && !linkInputValue.trim() && !canDelete)}>
                   <Check className="h-3.5 w-3.5" />
                 </button>
                 <button data-testid="btn-cancel-online-link" className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
@@ -477,7 +488,7 @@ export function SessionDetailPanel({
                     <span className="text-slate-400 italic font-normal">Chưa có</span>
                   )}
                 </span>
-                {canEdit && (
+                {canSetOnlineLink && (
                   <button data-testid="btn-edit-online-link" className="shrink-0 text-slate-300 hover:text-indigo-500 transition-colors mt-0.5"
                     onClick={() => { setLinkInputValue(classData?.onlineLink || ""); setIsEditingLink(true); }}>
                     <Pencil className="h-3 w-3" />
@@ -725,9 +736,20 @@ export function SessionDetailPanel({
                         const selected = currentSessionStudents?.filter((s) =>
                           selectedStudentIds.includes(s.studentId)
                         ) || [];
+                        const reviewable = canEdit
+                          ? selected
+                          : selected.filter((s) => !s.reviewData);
+                        if (reviewable.length === 0) {
+                          toast({
+                            title: "Không có nhận xét mới",
+                            description: "Quyền Thêm chỉ cho phép tạo nhận xét chưa có.",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
                         setReviewTarget({
-                          ids: selected.map((s) => s.id),
-                          names: selected.map((s) => s.student?.fullName || "Học viên"),
+                          ids: reviewable.map((s) => s.id),
+                          names: reviewable.map((s) => s.student?.fullName || "Học viên"),
                         });
                         setIsReviewDialogOpen(true);
                         setIsActionMenuOpen(false);

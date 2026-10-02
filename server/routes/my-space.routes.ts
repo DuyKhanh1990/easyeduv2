@@ -66,6 +66,7 @@ import { eq, and, gte, lte, sql, inArray, isNotNull, isNull, or, desc } from "dr
 import { updateStudentAttendance } from "../storage/attendance.storage";
 import { getTeacherIdsForTimeRange } from "@shared/teacher-time-assignments";
 import { canViewClass } from "../lib/class-access";
+import { canScheduleWrite } from "@shared/schedule-access";
 
 async function getStudentForUser(userId: string) {
   const [student] = await db
@@ -643,6 +644,38 @@ async function canManageFreeClass(classId: string, staffId: string, isSuperAdmin
   return !!row;
 }
 
+async function assertFreeClassContentWrite(
+  req: any,
+  res: any,
+  classId: string,
+  staffId: string,
+  action: "canCreate" | "canEdit" | "canDelete",
+  legacyAccess: boolean,
+): Promise<boolean> {
+  if (req.isSuperAdmin || (req.user as any)?.username === "admin") return true;
+  const [schedulePermissions, classPermissions] = await Promise.all([
+    storage.getEffectivePermissions(req.roleIds ?? [], "/schedule"),
+    storage.getEffectivePermissions(req.roleIds ?? [], "/classes"),
+  ]);
+  if (legacyAccess) return true;
+  const hasWritePermission = canScheduleWrite(schedulePermissions, action)
+    || canScheduleWrite(classPermissions, action);
+  const canViewAll = !!(schedulePermissions.canViewAll || classPermissions.canViewAll);
+  const hasReadPermission = canViewAll
+    || !!(schedulePermissions.canView || classPermissions.canView);
+  if (hasWritePermission && hasReadPermission) {
+    const allowedLocationIds = req.allowedLocationIds;
+    if (await canViewClass({
+      userId: String((req.user as any).id),
+      staffId,
+      allowedLocationIds: Array.isArray(allowedLocationIds) ? allowedLocationIds : [],
+      canViewAll,
+    }, classId)) return true;
+  }
+  res.status(403).json({ message: "Bạn không có quyền chỉnh sửa nội dung lịch học." });
+  return false;
+}
+
 async function getStudentName(studentId: string): Promise<string> {
   const [row] = await db
     .select({ fullName: students.fullName, code: students.code })
@@ -820,9 +853,9 @@ export function registerMySpaceRoutes(app: Express): void {
 
       const { classId, sessionDate } = req.params;
       const rows = await getStaffFreeSessionRows(classId, sessionDate, staffRecord.id);
-      if (rows.length === 0 && !(await canManageFreeClass(classId, staffRecord.id, req.isSuperAdmin))) {
-        return res.status(404).json({ message: "Không tìm thấy lớp tự do hoặc bạn không có quyền" });
-      }
+      const legacyAccess = rows.length > 0
+        || await canManageFreeClass(classId, staffRecord.id, req.isSuperAdmin);
+      if (!(await assertFreeClassContentWrite(req, res, classId, staffRecord.id, "canCreate", legacyAccess))) return;
 
       const { contentType, title, description, resourceUrl, dueDate } = req.body ?? {};
       if (!contentType || !title) return res.status(400).json({ message: "Thiếu loại hoặc tên nội dung" });
@@ -852,9 +885,9 @@ export function registerMySpaceRoutes(app: Express): void {
       if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
       const { classId, sessionDate, contentId } = req.params;
       const rows = await getStaffFreeSessionRows(classId, sessionDate, staffRecord.id);
-      if (rows.length === 0 && !(await canManageFreeClass(classId, staffRecord.id, req.isSuperAdmin))) {
-        return res.status(404).json({ message: "Không tìm thấy lớp tự do hoặc bạn không có quyền" });
-      }
+      const legacyAccess = rows.length > 0
+        || await canManageFreeClass(classId, staffRecord.id, req.isSuperAdmin);
+      if (!(await assertFreeClassContentWrite(req, res, classId, staffRecord.id, "canEdit", legacyAccess))) return;
       const dueDate = req.body?.dueDate;
       const [updated] = await db.update(freeClassSessionContents)
         .set({ dueDate: dueDate ? new Date(dueDate) : null })
@@ -880,9 +913,9 @@ export function registerMySpaceRoutes(app: Express): void {
       if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
       const { classId, sessionDate, contentId } = req.params;
       const rows = await getStaffFreeSessionRows(classId, sessionDate, staffRecord.id);
-      if (rows.length === 0 && !(await canManageFreeClass(classId, staffRecord.id, req.isSuperAdmin))) {
-        return res.status(404).json({ message: "Không tìm thấy lớp tự do hoặc bạn không có quyền" });
-      }
+      const legacyAccess = rows.length > 0
+        || await canManageFreeClass(classId, staffRecord.id, req.isSuperAdmin);
+      if (!(await assertFreeClassContentWrite(req, res, classId, staffRecord.id, "canDelete", legacyAccess))) return;
       const deleted = await db.delete(freeClassSessionContents).where(and(
         eq(freeClassSessionContents.id, contentId),
         eq(freeClassSessionContents.classId, classId),
@@ -904,7 +937,9 @@ export function registerMySpaceRoutes(app: Express): void {
       if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
       const { classId, sessionDate } = req.params;
       const rows = await getStaffFreeSessionRows(classId, sessionDate, staffRecord.id);
-      if (rows.length === 0) return res.status(404).json({ message: "Không tìm thấy buổi học tự do" });
+      const legacyAccess = rows.length > 0
+        || await canManageFreeClass(classId, staffRecord.id, req.isSuperAdmin);
+      if (!(await assertFreeClassContentWrite(req, res, classId, staffRecord.id, "canCreate", legacyAccess))) return;
 
       const { studentId, contentType, title, description, resourceUrl, dueDate } = req.body ?? {};
       if (!studentId || !contentType || !title) return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
@@ -937,7 +972,9 @@ export function registerMySpaceRoutes(app: Express): void {
       if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
       const { classId, sessionDate, contentId } = req.params;
       const rows = await getStaffFreeSessionRows(classId, sessionDate, staffRecord.id);
-      if (rows.length === 0) return res.status(404).json({ message: "Không tìm thấy buổi học tự do" });
+      const legacyAccess = rows.length > 0
+        || await canManageFreeClass(classId, staffRecord.id, req.isSuperAdmin);
+      if (!(await assertFreeClassContentWrite(req, res, classId, staffRecord.id, "canDelete", legacyAccess))) return;
       const deleted = await db.delete(freeClassSessionContents).where(and(
         eq(freeClassSessionContents.id, contentId),
         eq(freeClassSessionContents.classId, classId),

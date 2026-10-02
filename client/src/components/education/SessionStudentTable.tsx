@@ -401,7 +401,7 @@ export function SessionStudentTable({
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
-                      {canAdd && (
+                      {canAdd && !ss.reviewData && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -421,7 +421,7 @@ export function SessionStudentTable({
                         <Plus className="h-3.5 w-3.5" />
                       </Button>
                       )}
-                      {canAdd && ss.reviewData && (
+                      {canEdit && ss.reviewData && (
                         <Button
                           variant="ghost"
                           size="sm"

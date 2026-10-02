@@ -3,17 +3,20 @@ import { X } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader } from "@/components/ui/dialog";
 import { FreeClassCalendar } from "@/components/education/FreeClassCalendar";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
+import type { ClassPermissions } from "@/pages/education/ClassDetail";
 
 export function FreeClassScheduleSheet({
   classId,
   initialDate,
   onClose,
   readOnly = false,
+  classPerm: scheduleClassPerm,
 }: {
   classId: string | null;
   initialDate?: string | null;
   onClose: () => void;
   readOnly?: boolean;
+  classPerm?: ClassPermissions;
 }) {
   const isOpen = !!classId;
   const { data: classData } = useQuery<any>({
@@ -23,9 +26,13 @@ export function FreeClassScheduleSheet({
   const { data: myPerms } = useMyPermissions();
   const isSuperAdmin = myPerms?.isSuperAdmin ?? false;
   const classPermission = myPerms?.permissions?.["/classes"];
-  const classPerm = {
-    canEdit: !readOnly && (isSuperAdmin || !!(classPermission?.canEdit || classPermission?.canDelete)),
-  };
+  const classPerm: ClassPermissions = readOnly
+    ? { canAdd: false, canEdit: false, canDelete: false }
+    : scheduleClassPerm ?? {
+        canAdd: isSuperAdmin || !!(classPermission?.canCreate || classPermission?.canEdit || classPermission?.canDelete),
+        canEdit: isSuperAdmin || !!(classPermission?.canEdit || classPermission?.canDelete),
+        canDelete: isSuperAdmin || !!classPermission?.canDelete,
+      };
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
