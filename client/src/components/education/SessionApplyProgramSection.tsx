@@ -438,7 +438,7 @@ export function SessionApplyProgramSection({
                 </PopoverContent>
               </Popover>
             </div>
-            {selectedAssessment && (
+            {(selectedAssessment || selectedScoreSheetTemplate) && (
               <p className="text-xs text-muted-foreground">
                 Ngày thi thực tế của mỗi buổi sẽ lấy từ ngày học đã xếp trên lịch.
               </p>

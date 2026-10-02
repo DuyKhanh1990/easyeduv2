@@ -432,11 +432,13 @@ export function SessionDetailPanel({
                   const i = session?.sessionIndex ?? 1;
                   setApplyScoreSheetFromIdx(i);
                   setApplyScoreSheetToIdx(i);
-                  setApplyScoreSheetId(sessionScoreSheetAssessmentId
-                    ? `assessment:${sessionScoreSheetAssessmentId}`
-                    : sessionScoreSheetId
-                      ? `sheet:${sessionScoreSheetId}`
-                      : "");
+                  setApplyScoreSheetId(assignedScoreSheetAssessment?.scoreSheetTemplateId
+                    ? `template:${assignedScoreSheetAssessment.scoreSheetTemplateId}`
+                    : sessionScoreSheetAssessmentId
+                      ? `assessment:${sessionScoreSheetAssessmentId}`
+                      : sessionScoreSheetId
+                        ? `sheet:${sessionScoreSheetId}`
+                        : "");
                   setIsApplyScoreSheetOpen(true);
                 }}>
                 <Pencil className="h-3 w-3" />
