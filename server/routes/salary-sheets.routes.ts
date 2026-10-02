@@ -26,6 +26,7 @@ import {
   getTeacherSalaryRowPackages,
   getTeacherSalarySessionPackages,
 } from "../storage/teacher-salary.storage";
+import { getCommissionBoardRows } from "../services/commission-board.service";
 
 // ─── Salary calculation helpers (mirrors client-side logic) ──────────────────
 function findRangeSalary(value: number, ranges: any[]): number {
@@ -327,6 +328,18 @@ export function registerSalarySheetRoutes(app: Express): void {
         sheetRows[0].locationIds?.length ? sheetRows[0].locationIds : [primaryLocationId]
       )];
       if (status === "locked") return res.status(400).json({ message: "Không thể chỉnh sửa bảng lương đã chốt" });
+
+      const commissionRows = await getCommissionBoardRows({
+        dateFrom: fromDate,
+        dateTo: toDate,
+        allowedLocationIds: req.allowedLocationIds,
+        isSuperAdmin: req.isSuperAdmin,
+      });
+      const commissionByLocationStaff = new Map<string, number>(
+        commissionRows
+          .filter(row => row.locationId)
+          .map(row => [`${row.locationId}:${row.staffId}`, row.totalCommission])
+      );
 
       const generatedRows: any[] = [];
       const legacyAdjustmentsApplied = new Set<string>();
@@ -711,9 +724,10 @@ export function registerSalarySheetRoutes(app: Express): void {
             (includeLegacyAdjustments ? legacyThuongMap[a.staffId] ?? 0 : 0);
           const phatVal = (phatMap[a.staffId] ?? 0) +
             (includeLegacyAdjustments ? legacyPhatMap[a.staffId] ?? 0 : 0);
+          const hoaHongVal = commissionByLocationStaff.get(`${locationId}:${a.staffId}`) ?? 0;
           const tamUngVal = (tamUngMap[a.staffId] ?? 0) +
             (includeLegacyAdjustments ? legacyTamUngMap[a.staffId] ?? 0 : 0);
-          const tongLuong = Math.round(luongTheoCong + phuCapVal + thuongVal - phatVal + luongDL);
+          const tongLuong = Math.round(luongTheoCong + phuCapVal + thuongVal - phatVal + hoaHongVal + luongDL);
 
           // ThueTNCN: only if mode === "fixed"
           // thueTNCNAmount stores number of dependents (integer)
@@ -742,6 +756,7 @@ export function registerSalarySheetRoutes(app: Express): void {
             phuCap: String(phuCapVal),
             thuong: String(thuongVal),
             phat: String(phatVal),
+            hoaHong: String(hoaHongVal),
             luongDungLop: String(luongDL),
             tongLuong: String(tongLuong),
             bhxh: String(bhxhVal),
@@ -784,7 +799,7 @@ export function registerSalarySheetRoutes(app: Express): void {
       if (!current) return res.status(404).json({ message: "Không tìm thấy dòng lương" });
 
       const inputFields = [
-        "soCong","luongCB","congThuc","phuCap","thuong","phat",
+        "soCong","luongCB","congThuc","phuCap","thuong","phat","hoaHong",
         "luongDungLop","bhxh","bhyt","bhtn","thueTNCN","tamUng","daChi",
         "roleName","staffName","staffCode",
       ] as const;
@@ -801,6 +816,7 @@ export function registerSalarySheetRoutes(app: Express): void {
       const phuCap    = parseFloat(String(merged.phuCap    ?? 0));
       const thuong    = parseFloat(String(merged.thuong    ?? 0));
       const phat      = parseFloat(String(merged.phat      ?? 0));
+      const hoaHong   = parseFloat(String(merged.hoaHong   ?? 0));
       const luongDL   = parseFloat(String(merged.luongDungLop ?? 0));
       const bhxh      = parseFloat(String(merged.bhxh      ?? 0));
       const bhyt      = parseFloat(String(merged.bhyt      ?? 0));
@@ -810,8 +826,8 @@ export function registerSalarySheetRoutes(app: Express): void {
 
       // Lương theo công = (Lương CB / Số công) × Công thực  (0 if soCong=0)
       const luongTheoCong = soCong > 0 ? Math.round((luongCB / soCong) * congThuc) : 0;
-      // Tổng lương = Lương theo công + Phụ cấp + Thưởng - Phạt + Lương đứng lớp
-      const tongLuong     = Math.round(luongTheoCong + phuCap + thuong - phat + luongDL);
+      // Tổng lương = Lương theo công + Phụ cấp + Thưởng - Phạt + Hoa hồng + Lương đứng lớp
+      const tongLuong     = Math.round(luongTheoCong + phuCap + thuong - phat + hoaHong + luongDL);
       // Thực nhận = Tổng lương - BHXH - BHYT - BHTN - Thuế TNCN - Tạm ứng
       const thucNhan      = Math.round(tongLuong - bhxh - bhyt - bhtn - thueTNCN - tamUng);
 

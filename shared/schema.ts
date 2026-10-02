@@ -3122,6 +3122,7 @@ export const salarySheetEmployees = pgTable("salary_sheet_employees", {
   phuCap: numeric("phu_cap", { precision: 15, scale: 2 }).notNull().default("0"),
   thuong: numeric("thuong", { precision: 15, scale: 2 }).notNull().default("0"),
   phat: numeric("phat", { precision: 15, scale: 2 }).notNull().default("0"),
+  hoaHong: numeric("hoa_hong", { precision: 15, scale: 2 }).notNull().default("0"),
   luongDungLop: numeric("luong_dung_lop", { precision: 15, scale: 2 }).notNull().default("0"),
   tongLuong: numeric("tong_luong", { precision: 15, scale: 2 }).notNull().default("0"),
   bhxh: numeric("bhxh", { precision: 15, scale: 2 }).notNull().default("0"),

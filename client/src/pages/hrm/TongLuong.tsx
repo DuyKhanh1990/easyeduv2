@@ -105,6 +105,7 @@ interface EmployeeRow {
   phuCap: number;
   thuong: number;
   phat: number;
+  hoaHong: number;
   luongDungLop: number;
   tongLuong: number;
   bhxh: number;
@@ -133,6 +134,7 @@ function mapEmployee(e: any, idx: number): EmployeeRow {
     phuCap: parseFloat(e.phuCap ?? "0"),
     thuong: parseFloat(e.thuong ?? "0"),
     phat: parseFloat(e.phat ?? "0"),
+    hoaHong: parseFloat(e.hoaHong ?? "0"),
     luongDungLop: parseFloat(e.luongDungLop ?? "0"),
     tongLuong: parseFloat(e.tongLuong ?? "0"),
     bhxh: parseFloat(e.bhxh ?? "0"),
@@ -553,6 +555,7 @@ function SalarySheetDetailDialog({ open, onOpenChange, sheet }: DetailProps) {
                     { label: "Phụ cấp", w: "min-w-[90px] text-right" },
                     { label: "Thưởng", w: "min-w-[90px] text-right" },
                     { label: "Phạt", w: "min-w-[90px] text-right" },
+                    { label: "Hoa hồng", w: "min-w-[100px] text-right" },
                     { label: "Lương đứng lớp", w: "min-w-[120px] text-right" },
                     { label: "Tổng lương", w: "min-w-[110px] text-right font-semibold" },
                     { label: "BHXH", w: "min-w-[90px] text-right" },
@@ -566,7 +569,7 @@ function SalarySheetDetailDialog({ open, onOpenChange, sheet }: DetailProps) {
                     <th key={i} className={cn(
                       "px-3 py-2.5 text-left text-[11px] font-semibold text-slate-600 whitespace-nowrap border-r border-slate-200 last:border-r-0",
                       h.w,
-                      i === 20 && "shadow-[-4px_0_8px_rgba(0,0,0,0.06)]"
+                      i === 21 && "shadow-[-4px_0_8px_rgba(0,0,0,0.06)]"
                     )}>
                       {h.label}
                     </th>
@@ -576,7 +579,7 @@ function SalarySheetDetailDialog({ open, onOpenChange, sheet }: DetailProps) {
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={21} className="px-5 py-10 text-center text-muted-foreground text-sm">
+                    <td colSpan={22} className="px-5 py-10 text-center text-muted-foreground text-sm">
                       {rawEmployees.length === 0
                         ? 'Chưa có nhân viên. Bấm "Tạo chi tiết lương" để tự động thêm nhân viên từ cơ sở.'
                         : "Không tìm thấy nhân viên nào"}
@@ -617,6 +620,9 @@ function SalarySheetDetailDialog({ open, onOpenChange, sheet }: DetailProps) {
                     </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap border-r border-slate-100 tabular-nums">
                       {row.phat > 0 ? <span className="text-red-500">-{fmtMoney(row.phat)}</span> : <span className="text-muted-foreground">-0đ</span>}
+                    </td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap border-r border-slate-100 tabular-nums">
+                      {row.hoaHong > 0 ? <span className="text-orange-600">+{fmtMoney(row.hoaHong)}</span> : <span className="text-muted-foreground">+0đ</span>}
                     </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap border-r border-slate-100 tabular-nums">
                       {row.luongDungLop > 0 ? <span className="text-indigo-600 font-medium">{fmtMoney(row.luongDungLop)}</span> : <span className="text-muted-foreground">0đ</span>}
@@ -691,6 +697,7 @@ function SalarySheetDetailDialog({ open, onOpenChange, sheet }: DetailProps) {
                     <td className="px-3 py-2.5 text-right text-green-600 border-r border-slate-200 tabular-nums">+{fmtMoney(rows.reduce((s, r) => s + r.phuCap, 0))}</td>
                     <td className="px-3 py-2.5 text-right text-green-600 border-r border-slate-200 tabular-nums">+{fmtMoney(rows.reduce((s, r) => s + r.thuong, 0))}</td>
                     <td className="px-3 py-2.5 text-right text-red-500 border-r border-slate-200 tabular-nums">-{fmtMoney(rows.reduce((s, r) => s + r.phat, 0))}</td>
+                    <td className="px-3 py-2.5 text-right text-orange-600 border-r border-slate-200 tabular-nums">+{fmtMoney(rows.reduce((s, r) => s + r.hoaHong, 0))}</td>
                     <td className="px-3 py-2.5 text-right text-indigo-600 border-r border-slate-200 tabular-nums">{fmtMoney(rows.reduce((s, r) => s + r.luongDungLop, 0))}</td>
                     <td className="px-3 py-2.5 text-right border-r border-slate-200 tabular-nums">{fmtMoney(rows.reduce((s, r) => s + r.tongLuong, 0))}</td>
                     <td className="px-3 py-2.5 text-right text-red-500 border-r border-slate-200 tabular-nums">-{fmtMoney(rows.reduce((s, r) => s + r.bhxh, 0))}</td>
