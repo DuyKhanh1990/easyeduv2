@@ -92,6 +92,18 @@ type PendingTemplateDelete =
 
 type ScoreConversionViewMode = "assessments" | "students";
 type StudentResultFilter = "all" | "passed" | "failed";
+const SCORE_CONVERSION_VIEW_MODE_STORAGE_KEY = "score-conversion-view-mode";
+
+function readSavedScoreConversionViewMode(): ScoreConversionViewMode {
+  try {
+    if (typeof window === "undefined") return "assessments";
+    return window.localStorage.getItem(SCORE_CONVERSION_VIEW_MODE_STORAGE_KEY) === "students"
+      ? "students"
+      : "assessments";
+  } catch {
+    return "assessments";
+  }
+}
 
 type ScoreConversionStudentResult = {
   sessionId: string;
@@ -292,7 +304,18 @@ export default function ScoreConversion() {
     assessment: StaffAssignedScoreSheetAssessment;
     student: ScoreConversionStudentResult;
   } | null>(null);
-  const [viewMode, setViewMode] = useState<ScoreConversionViewMode>("assessments");
+  const [viewMode, setViewMode] = useState<ScoreConversionViewMode>(readSavedScoreConversionViewMode);
+  const handleViewModeChange = (nextMode: ScoreConversionViewMode) => {
+    setViewMode(nextMode);
+    try {
+      window.localStorage.setItem(SCORE_CONVERSION_VIEW_MODE_STORAGE_KEY, nextMode);
+    } catch {
+      toast({
+        title: "Không thể lưu loại xem",
+        description: "Chế độ xem đã đổi nhưng trình duyệt không cho phép lưu lựa chọn này.",
+      });
+    }
+  };
   const [assessmentStatusFilter, setAssessmentStatusFilter] = useState<AssessmentStatusFilter>("all");
   const [assessmentSearchInput, setAssessmentSearchInput] = useState("");
   const [assessmentSearchTerm, setAssessmentSearchTerm] = useState("");
@@ -975,25 +998,25 @@ export default function ScoreConversion() {
                   <div className="flex shrink-0 items-center rounded-md border bg-muted/40 p-0.5">
                     <button
                       type="button"
-                      className={`h-8 rounded px-3 text-xs font-semibold transition-colors ${
+                      className={`h-8 rounded border px-3 text-xs font-semibold transition-colors ${
                         viewMode === "assessments"
-                          ? "bg-background text-foreground shadow-sm"
-                          : "text-muted-foreground hover:text-foreground"
+                          ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                          : "border-transparent text-muted-foreground hover:bg-background hover:text-foreground"
                       }`}
                       aria-pressed={viewMode === "assessments"}
-                      onClick={() => setViewMode("assessments")}
+                      onClick={() => handleViewModeChange("assessments")}
                     >
                       Theo bảng điểm
                     </button>
                     <button
                       type="button"
-                      className={`h-8 rounded px-3 text-xs font-semibold transition-colors ${
+                      className={`h-8 rounded border px-3 text-xs font-semibold transition-colors ${
                         viewMode === "students"
-                          ? "bg-background text-foreground shadow-sm"
-                          : "text-muted-foreground hover:text-foreground"
+                          ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                          : "border-transparent text-muted-foreground hover:bg-background hover:text-foreground"
                       }`}
                       aria-pressed={viewMode === "students"}
-                      onClick={() => setViewMode("students")}
+                      onClick={() => handleViewModeChange("students")}
                     >
                       Theo học viên
                     </button>
