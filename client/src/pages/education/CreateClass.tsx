@@ -28,7 +28,12 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PageGuideButton } from "@/components/guides/PageGuideDialog";
 import { TeacherShiftTimeEditor } from "@/components/education/TeacherShiftTimeEditor";
 import { validateTeacherTimeCoverage } from "@shared/teacher-time-assignments";
-import { getStaffRoleOptions, resolveTeacherRoleId } from "@/lib/staff-role-options";
+import {
+  findTeacherMissingRole,
+  getStaffRoleOptions,
+  isDefaultTrainingDepartmentStaff,
+  resolveTeacherRoleId,
+} from "@/lib/staff-role-options";
 
 const STEPS = [
   { id: 1, name: "Thông tin cơ bản" },
@@ -295,6 +300,20 @@ export function CreateClass() {
         setStep(s => s + 1);
         return;
       }
+      const roleValues = form.getValues();
+      const missingRoleTeacher = findTeacherMissingRole(
+        roleValues.teachers_config || [],
+        staff,
+        roleValues.locationId,
+      );
+      if (missingRoleTeacher) {
+        const teacherName = staff?.find((member: any) => member.id === missingRoleTeacher.teacher_id)?.fullName;
+        return toast({
+          title: "Chưa chọn vai trò",
+          description: `Vui lòng chọn vai trò cho ${teacherName || "giáo viên"} trước khi tiếp tục.`,
+          variant: "destructive",
+        });
+      }
       const fieldsToValidate: any[] = ["weekdays", "startDate", "schedule_config", "teachers_config"];
       if (endType === "date") fieldsToValidate.push("endDate");
       const isValid = await form.trigger(fieldsToValidate);
@@ -370,22 +389,16 @@ export function CreateClass() {
         const roleId = resolveTeacherRoleId(teacher, roleOptions);
         return roleId ? { ...teacher, role_id: roleId } : teacher;
       });
-      if (!isFreeClass) {
-        const missingRoleTeacher = (data.teachers_config || []).find((teacher: any) => {
-          const roleOptions = getStaffRoleOptions(
-            staff?.find((member: any) => member.id === teacher.teacher_id),
-            data.locationId,
-          );
-          return roleOptions.length > 1 && !resolveTeacherRoleId(teacher, roleOptions);
+      const missingRoleTeacher = !isFreeClass
+        ? findTeacherMissingRole(data.teachers_config || [], staff, data.locationId)
+        : null;
+      if (missingRoleTeacher) {
+        const teacherName = staff?.find((member: any) => member.id === missingRoleTeacher.teacher_id)?.fullName;
+        return toast({
+          title: "Chưa chọn vai trò",
+          description: `Vui lòng chọn vai trò cho ${teacherName || "giáo viên"} trước khi tạo lớp.`,
+          variant: "destructive",
         });
-        if (missingRoleTeacher) {
-          const teacherName = staff?.find((member: any) => member.id === missingRoleTeacher.teacher_id)?.fullName;
-          return toast({
-            title: "Chưa chọn vai trò",
-            description: `Vui lòng chọn vai trò cho ${teacherName || "giáo viên"} trước khi tạo lớp.`,
-            variant: "destructive",
-          });
-        }
       }
       const submitData = {
         ...data,
@@ -1169,10 +1182,7 @@ export function CreateClass() {
                           <Label className="text-base font-semibold">PHẦN 3: CHỌN GIÁO VIÊN</Label>
                           <SearchableSelect
                             options={[...(staff?.filter((s: any) => {
-                              if (!s.assignments) return true;
-                              return s.assignments.some((a: any) =>
-                                a.department?.name && a.department.name.toLowerCase().includes("đào tạo")
-                              );
+                              return isDefaultTrainingDepartmentStaff(s);
                             }) || [])]
                               .sort((a: any, b: any) => {
                                 const aActive = a.status !== "Không hoạt động";

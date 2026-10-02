@@ -22,7 +22,12 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { TeacherShiftTimeEditor } from "@/components/education/TeacherShiftTimeEditor";
 import { resolveShiftScheduleKey, validateTeacherTimeCoverage } from "@shared/teacher-time-assignments";
-import { getStaffRoleOptions, resolveTeacherRoleId } from "@/lib/staff-role-options";
+import {
+  findTeacherMissingRole,
+  getStaffRoleOptions,
+  isDefaultTrainingDepartmentStaff,
+  resolveTeacherRoleId,
+} from "@/lib/staff-role-options";
 
 const STEPS = [
   { id: 1, name: "Thông tin cơ bản" },
@@ -353,6 +358,22 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
       const isValid = await form.trigger(fields);
       if (!isValid) return toast({ title: "Thiếu thông tin", description: "Vui lòng điền đầy đủ các trường bắt buộc", variant: "destructive" });
     }
+    if (step === 2 && !isFreeClass) {
+      const values = form.getValues();
+      const missingRoleTeacher = findTeacherMissingRole(
+        values.teachers_config || [],
+        staff,
+        values.locationId,
+      );
+      if (missingRoleTeacher) {
+        const teacherName = staff?.find((member: any) => member.id === missingRoleTeacher.teacher_id)?.fullName;
+        return toast({
+          title: "Chưa chọn vai trò",
+          description: `Vui lòng chọn vai trò cho ${teacherName || "giáo viên"} trước khi tiếp tục.`,
+          variant: "destructive",
+        });
+      }
+    }
     if (step === 2 && scheduleGenerated && !isFreeClass && teacherAssignmentsDirty) {
       const values = form.getValues();
       const shiftTimeLookup = new Map(
@@ -419,6 +440,17 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
       return toast({ title: "Lỗi", description: "Vui lòng kiểm tra lại thông tin. Một số trường chưa hợp lệ.", variant: "destructive" });
     }
     const data = form.getValues();
+    if (!isFreeClass) {
+      const missingRoleTeacher = findTeacherMissingRole(data.teachers_config || [], staff, data.locationId);
+      if (missingRoleTeacher) {
+        const teacherName = staff?.find((member: any) => member.id === missingRoleTeacher.teacher_id)?.fullName;
+        return toast({
+          title: "Chưa chọn vai trò",
+          description: `Vui lòng chọn vai trò cho ${teacherName || "giáo viên"} trước khi lưu lớp.`,
+          variant: "destructive",
+        });
+      }
+    }
     const valOrUndefined = (val: string | undefined) => (val && val.trim() !== "" ? val : undefined);
     const valOrNull = (val: string | undefined) => (val && val.trim() !== "" ? val : null);
     const normalizedTeachersConfig = (data.teachers_config || []).map((teacher: any) => {
@@ -1236,10 +1268,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                           <Label className="text-sm font-semibold uppercase tracking-wide">Phần 3: Chọn giáo viên</Label>
                           <SearchableSelect
                             options={[...(staff?.filter((s: any) => {
-                              if (!s.assignments) return true;
-                              return s.assignments.some((a: any) =>
-                                a.department?.name && a.department.name.toLowerCase().includes("đào tạo")
-                              );
+                              return isDefaultTrainingDepartmentStaff(s);
                             }) || [])]
                               .sort((a: any, b: any) => {
                                 const aActive = a.status !== "Không hoạt động";

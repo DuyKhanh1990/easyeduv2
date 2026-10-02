@@ -293,8 +293,14 @@ export async function getStaff(
     const allDeptIds = Array.from(new Set(minimalAssignments.map(a => a.departmentId).filter(Boolean) as string[]));
     const deptNameMap = new Map<string, string>();
     if (allDeptIds.length > 0) {
-      const deptRows = await db.select({ id: departments.id, name: departments.name }).from(departments).where(inArray(departments.id, allDeptIds));
+    const deptRows = await db.select({
+      id: departments.id,
+      name: departments.name,
+      isSystem: departments.isSystem,
+    }).from(departments).where(inArray(departments.id, allDeptIds));
       deptRows.forEach(d => deptNameMap.set(d.id, d.name));
+    const deptSystemMap = new Map<string, boolean>();
+    deptRows.forEach(d => deptSystemMap.set(d.id, d.isSystem));
     }
 
     return dedupedStaff.map(s => {
@@ -313,7 +319,11 @@ export async function getStaff(
         assignments: rawAssignments.map(a => ({
           ...a,
           role: a.roleId ? { id: a.roleId, name: roleNameMap.get(a.roleId) || "" } : null,
-          department: a.departmentId ? { id: a.departmentId, name: deptNameMap.get(a.departmentId) || "" } : null,
+          department: a.departmentId ? {
+            id: a.departmentId,
+            name: deptNameMap.get(a.departmentId) || "",
+            isSystem: deptSystemMap.get(a.departmentId) === true,
+          } : null,
         })),
       };
     });
