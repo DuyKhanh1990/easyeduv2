@@ -22,3 +22,9 @@ Deletion eligibility is based on current class-session assignments resolved thro
 **Why:** Editing the linked template's deadline or criteria must affect its assigned assessment; using the old snapshot for those fields left the wrong due date and hid configured evaluation inputs. Score formulas still need the saved snapshot so template edits do not silently recalculate existing scores.
 
 **How to apply:** Keep API validation, edit-form state, and conversion switching consistent with these rules. Preserve old linked templates that lack an explicit overall rule. Use the current linked template for relative deadlines and evaluation criteria, but use the saved template snapshot for score calculation. Include assigned assessments in the staff score-sheet timeline by `sessionDate`, with the existing row style and a conversion label. Persist per-student criterion responses with that attempt, separately from calculated score fields. Assignment pickers may display current template code/name alongside the assessment's own label.
+
+Manual class-session assignment keeps ordinary legacy score sheets in their own list. Conversion choices come from score-sheet templates linked to a conversion configuration in the `/score-conversion` “Bảng điểm mẫu” tab.
+
+**Why:** The picker source should follow the user's chosen template catalog without changing score calculation or conversion behavior.
+
+**How to apply:** Continue using `/api/score-sheets` for ordinary sheets and linked score-sheet templates for conversion choices. Apply a selected conversion template through the existing template-to-assessment path; do not replace scoring logic with direct raw conversion-template selection.

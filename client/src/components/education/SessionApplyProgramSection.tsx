@@ -135,18 +135,8 @@ export function SessionApplyProgramSection({
   const selectedScoreSheetTemplate = selectedScoreSheetKind === "template"
     ? allScoreSheetTemplates?.find((template) => template.id === selectedScoreSheetId)
     : null;
-  const conversionAssessments = (allScoreSheetAssessments ?? []).filter((assessment: any) => (
-    Boolean(
-      assessment.conversionTemplateSnapshot
-      || assessment.templateSnapshot?.scoreConversionTemplateId,
-    )
-  ));
-  const representedConversionTemplateIds = new Set(
-    conversionAssessments.map((assessment: any) => assessment.scoreSheetTemplateId),
-  );
-  const unrepresentedConversionTemplates = (allScoreSheetTemplates ?? []).filter((template) => (
+  const linkedConversionScoreSheetTemplates = (allScoreSheetTemplates ?? []).filter((template) => (
     Boolean(template.scoreConversionTemplateId)
-    && !representedConversionTemplateIds.has(template.id)
   ));
   const manualScoreSheetTemplates = (allScoreSheetTemplates ?? []).filter((template) => (
     !template.scoreConversionTemplateId
@@ -420,36 +410,9 @@ export function SessionApplyProgramSection({
                           ))}
                         </CommandGroup>
                       )}
-                      {conversionAssessments.length > 0 && (
+                      {linkedConversionScoreSheetTemplates.length > 0 && (
                         <CommandGroup heading="Bảng điểm quy đổi">
-                          {conversionAssessments.map((assessment: any) => {
-                            const template = assessment.currentTemplate ?? assessment.templateSnapshot;
-                            return (
-                              <CommandItem
-                                key={`assessment:${assessment.id}`}
-                                value={[
-                                  assessment.code,
-                                  assessment.name,
-                                  template?.code,
-                                  template?.name,
-                                  assessment.id,
-                                ].filter(Boolean).join(" ")}
-                                onSelect={() => {
-                                  setApplyScoreSheetId(`assessment:${assessment.id}`);
-                                  setScoreSheetPickerOpen(false);
-                                }}
-                              >
-                                <Check className={`mr-2 h-4 w-4 ${normalizedScoreSheetSelection === `assessment:${assessment.id}` ? "opacity-100" : "opacity-0"}`} />
-                                <span className="min-w-0">
-                                  <span className="block truncate">{assessment.code} — {assessment.name}</span>
-                                  <span className="block truncate text-xs text-muted-foreground">
-                                    Mẫu: {[template?.code, template?.name].filter(Boolean).join(" — ") || "Bảng điểm mẫu"}
-                                  </span>
-                                </span>
-                              </CommandItem>
-                            );
-                          })}
-                          {unrepresentedConversionTemplates.map((template) => (
+                          {linkedConversionScoreSheetTemplates.map((template) => (
                             <CommandItem
                               key={`template:${template.id}`}
                               value={[
@@ -466,7 +429,7 @@ export function SessionApplyProgramSection({
                               <span className="min-w-0">
                                 <span className="block truncate">{template.code} — {template.name}</span>
                                 <span className="block truncate text-xs text-muted-foreground">
-                                  Mẫu bảng điểm quy đổi
+                                    Mẫu bảng điểm có liên kết quy đổi
                                 </span>
                               </span>
                             </CommandItem>
