@@ -373,7 +373,6 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const [scheduleAdjustmentDelta, setScheduleAdjustmentDelta] = useState(0);
   const [openDuePicker, setOpenDuePicker] = useState<string | null>(null);
   const [splitPaymentId, setSplitPaymentId] = useState<string | null>(null);
-
   const [splitAmount, setSplitAmount] = useState<number>(0);
   const [splitDueDate, setSplitDueDate] = useState<string>("");
   const [note, setNote] = useState("");
@@ -1441,6 +1440,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     const selectedBank = !hasSchedule && directPaymentMethod === "transfer" && directBank
       ? locationBanks.find(b => b.bankAccount === directBank) ?? { bankAccount: directBank }
       : null;
+
     saveMutation.mutate({
       type: invoiceType === "income" ? "Thu" : "Chi",
       locationId,

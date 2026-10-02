@@ -37,7 +37,7 @@ function defaultCurrentMonth(): { from: Date; to: Date } {
 
 const TAB_FILTERS = new Set(["unpaid", "paid", "confirmed", "debt"]);
 
-export function useInvoiceFilters(activeTab: string, availableTypes: string[] = ["Thu", "Chi"]) {
+export function useInvoiceFilters(activeTab: string) {
   const isDebtTab = activeTab === "debt";
   const [search, setSearchRaw]               = useState("");
   const [createdDateRange, setCreatedDateRange] = useState<{ from?: Date; to?: Date }>(defaultCurrentMonth);
@@ -91,7 +91,7 @@ export function useInvoiceFilters(activeTab: string, availableTypes: string[] = 
   const hasPaidAtFilter = !!(paidAtFrom || paidAtTo);
 
   const { data: filterOptionsData } = useQuery<Record<string, string[]>>({
-      queryKey: [isDebtTab ? "/api/finance/invoices/filter-options" : "/api/finance/invoices/managed/filter-options", isDebtTab ? "dueDate" : "createdAt", dateFrom, dateTo],
+    queryKey: ["/api/finance/invoices/filter-options", isDebtTab ? "dueDate" : "createdAt", dateFrom, dateTo],
     queryFn: async () => {
       const p = new URLSearchParams();
       if (isDebtTab) {
@@ -101,10 +101,7 @@ export function useInvoiceFilters(activeTab: string, availableTypes: string[] = 
         if (dateFrom) p.set("dateFrom", dateFrom);
         if (dateTo)   p.set("dateTo", dateTo);
       }
-       const filterOptionsUrl = isDebtTab
-         ? "/api/finance/invoices/filter-options"
-         : "/api/finance/invoices/managed/filter-options";
-       const res = await fetch(`${filterOptionsUrl}?${p}`, { credentials: "include" });
+      const res = await fetch(`/api/finance/invoices/filter-options?${p}`, { credentials: "include" });
       if (!res.ok) return {};
       return res.json();
     },
@@ -113,7 +110,7 @@ export function useInvoiceFilters(activeTab: string, availableTypes: string[] = 
 
   const filterOptions = {
     branches:       filterOptionsData?.locationNames       ?? [],
-    types:          isDebtTab ? ["Thu", "Chi"] : availableTypes,
+    types:          ["Thu", "Chi"],
     categories:     filterOptionsData?.categories          ?? [],
     classes:        filterOptionsData?.classNames          ?? [],
     creators:       filterOptionsData?.creatorNames        ?? [],
@@ -124,9 +121,7 @@ export function useInvoiceFilters(activeTab: string, availableTypes: string[] = 
 
   const queryParams: InvoiceQueryParams = {
     tabFilter:            TAB_FILTERS.has(activeTab) ? activeTab : undefined,
-    types:                filters.types.length
-      ? filters.types.filter(type => isDebtTab || availableTypes.includes(type))
-      : undefined,
+    types:                filters.types.length       ? filters.types       : undefined,
     locationNames:        filters.branches.length    ? filters.branches    : undefined,
     categories:           filters.categories.length  ? filters.categories  : undefined,
     classNames:           filters.classes.length     ? filters.classes     : undefined,

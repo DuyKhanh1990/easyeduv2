@@ -85,4 +85,3 @@
 - [Score conversion range boundaries](score-conversion-mapping-boundaries.md) — displayed “Từ–Đến” ranges include the upper bound unless the next range starts at that same boundary.
 - [Invoice date-filter row parity](invoice-date-filter-row-parity.md) — counts and date filters must use the same installment-level rows the client renders.
 - [Facility shift history](shift-facility-history.md) — shift rows are independent per facility; stopping one preserves its assignment and attendance history.
-- [Invoice visibility scopes](invoice-visibility-scopes.md) — six scopes filter visible invoice types/statuses only; preserve existing View/View All/Create/Edit/Delete rights and financial behavior.

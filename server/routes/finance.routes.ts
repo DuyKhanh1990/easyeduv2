@@ -22,10 +22,6 @@ import { staff, classes, invoices, invoicePaymentSchedule, students, classSessio
 import { eq, asc, sql, and, isNotNull, gte, lte, inArray } from "drizzle-orm";
 import { ensureVirtualAccount } from "../services/bidv/bidv-virtual-account.service";
 import { resolveInvoiceRecipientUserIds, sendInvoiceCreatedNotification, sendInvoicePaidNotification } from "../lib/invoice-notification";
-import {
-  buildInvoiceScopePermissions,
-  fullInvoiceScopePermissions,
-} from "@shared/invoice-permissions";
 
 async function generateNextSettleCode(locationId?: string | null): Promise<string> {
   return getNextLocationCode(locationId, "KT");
@@ -258,62 +254,9 @@ const INVOICE_RESOURCE = "/invoices";
 
 async function getInvoicePermissions(req: any) {
   if (req.isSuperAdmin) {
-    return {
-      canView: true,
-      canViewAll: true,
-      canCreate: true,
-      canEdit: true,
-      canDelete: true,
-      invoiceScopePermissions: fullInvoiceScopePermissions(),
-    };
+    return { canView: true, canViewAll: true, canCreate: true, canEdit: true, canDelete: true };
   }
-  const roleIds = req.roleIds || [];
-  const [permissions, rows] = await Promise.all([
-    storage.getEffectivePermissions(roleIds, INVOICE_RESOURCE),
-    storage.getAllPermissionsForRoles(roleIds),
-  ]);
-  return {
-    ...permissions,
-    invoiceScopePermissions: buildInvoiceScopePermissions(rows),
-  };
-}
-
-function invoiceListFilters(req: any, permissions?: Awaited<ReturnType<typeof getInvoicePermissions>>) {
-  const q = req.query as Record<string, any>;
-  const getArr = (v: any): string[] | undefined => {
-    if (!v) return undefined;
-    const a = Array.isArray(v) ? v : [v];
-    return a.length > 0 ? a : undefined;
-  };
-  return {
-    tabFilter:              q.tabFilter as string | undefined,
-    type:                   q.type as string | undefined,
-    types:                  getArr(q.types),
-    locationId:             q.locationId as string | undefined,
-    locationNames:          getArr(q.locationNames),
-    search:                 q.search as string | undefined,
-    dateFrom:               q.dateFrom as string | undefined,
-    dateTo:                 q.dateTo as string | undefined,
-    dueDateFrom:            q.dueDateFrom as string | undefined,
-    dueDateTo:              q.dueDateTo as string | undefined,
-    paidAtFrom:             q.paidAtFrom as string | undefined,
-    paidAtTo:               q.paidAtTo as string | undefined,
-    salaryTableId:          q.salaryTableId as string | undefined,
-    categories:             getArr(q.categories),
-    classNames:             getArr(q.classNames),
-    creatorNames:           getArr(q.creatorNames),
-    payerNames:             getArr(q.payerNames),
-    commissionStaffNames:   getArr(q.commissionStaffNames),
-    paymentMethods:         getArr(q.paymentMethods),
-    sortKey:                q.sortKey as string | undefined,
-    sortDir:                q.sortDir as "asc" | "desc" | undefined,
-    page:                   q.page   ? parseInt(q.page as string)  : undefined,
-    limit:                  q.limit  ? parseInt(q.limit as string) : undefined,
-    includeTabCounts:       q.includeTabCounts === "true",
-    allowedLocationIds:     req.allowedLocationIds,
-    isSuperAdmin:           req.isSuperAdmin,
-    invoiceScopePermissions: permissions?.invoiceScopePermissions,
-  };
+  return storage.getEffectivePermissions(req.roleIds || [], INVOICE_RESOURCE);
 }
 
 export function registerFinanceRoutes(app: Express): void {
@@ -496,16 +439,41 @@ export function registerFinanceRoutes(app: Express): void {
 
   app.get("/api/finance/invoices", async (req, res) => {
     try {
-      res.json(await storage.getInvoices(invoiceListFilters(req)));
-    } catch (err: any) {
-      res.status(500).json({ message: err.message });
-    }
-  });
-
-  app.get("/api/finance/invoices/managed", async (req, res) => {
-    try {
-      const permissions = await getInvoicePermissions(req);
-      res.json(await storage.getInvoices(invoiceListFilters(req, permissions)));
+      const q = req.query as Record<string, any>;
+      const getArr = (v: any): string[] | undefined => {
+        if (!v) return undefined;
+        const a = Array.isArray(v) ? v : [v];
+        return a.length > 0 ? a : undefined;
+      };
+      const data = await storage.getInvoices({
+        tabFilter:              q.tabFilter as string | undefined,
+        type:                   q.type as string | undefined,
+        types:                  getArr(q.types),
+        locationId:             q.locationId as string | undefined,
+        locationNames:          getArr(q.locationNames),
+        search:                 q.search as string | undefined,
+        dateFrom:               q.dateFrom as string | undefined,
+        dateTo:                 q.dateTo as string | undefined,
+        dueDateFrom:            q.dueDateFrom as string | undefined,
+        dueDateTo:              q.dueDateTo as string | undefined,
+        paidAtFrom:             q.paidAtFrom as string | undefined,
+        paidAtTo:               q.paidAtTo as string | undefined,
+        salaryTableId:          q.salaryTableId as string | undefined,
+        categories:             getArr(q.categories),
+        classNames:             getArr(q.classNames),
+        creatorNames:           getArr(q.creatorNames),
+        payerNames:             getArr(q.payerNames),
+        commissionStaffNames:   getArr(q.commissionStaffNames),
+        paymentMethods:         getArr(q.paymentMethods),
+        sortKey:                q.sortKey as string | undefined,
+        sortDir:                q.sortDir as "asc" | "desc" | undefined,
+        page:                   q.page   ? parseInt(q.page as string)  : undefined,
+        limit:                  q.limit  ? parseInt(q.limit as string) : undefined,
+        includeTabCounts:       q.includeTabCounts === "true",
+        allowedLocationIds:     req.allowedLocationIds,
+        isSuperAdmin:           req.isSuperAdmin,
+      });
+      res.json(data);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -515,25 +483,6 @@ export function registerFinanceRoutes(app: Express): void {
     try {
        const { dateFrom, dateTo, dueDateFrom, dueDateTo } = req.query as Record<string, string>;
        const data = await getInvoiceFilterOptions({ dateFrom, dateTo, dueDateFrom, dueDateTo, allowedLocationIds: req.allowedLocationIds, isSuperAdmin: req.isSuperAdmin });
-      res.json(data);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message });
-    }
-  });
-
-  app.get("/api/finance/invoices/managed/filter-options", async (req, res) => {
-    try {
-      const permissions = await getInvoicePermissions(req);
-      const { dateFrom, dateTo, dueDateFrom, dueDateTo } = req.query as Record<string, string>;
-      const data = await getInvoiceFilterOptions({
-        dateFrom,
-        dateTo,
-        dueDateFrom,
-        dueDateTo,
-        allowedLocationIds: req.allowedLocationIds,
-        isSuperAdmin: req.isSuperAdmin,
-        invoiceScopePermissions: permissions.invoiceScopePermissions,
-      });
       res.json(data);
     } catch (err: any) {
       res.status(500).json({ message: err.message });

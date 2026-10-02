@@ -14,72 +14,6 @@ import type {
   FinanceVoucher, InsertFinanceVoucher,
   InvoicePrintTemplateRow, InsertInvoicePrintTemplate,
 } from "@shared/schema";
-import { INVOICE_SCOPE_KEYS, type InvoiceScopeKey, type InvoiceScopePermissions } from "@shared/invoice-permissions";
-
-function invoiceScheduleStatusScopeCondition(scope: InvoiceScopeKey, statusColumn: any) {
-  if (scope.endsWith("_unpaid")) {
-    return sql`${statusColumn} NOT IN ('paid', 'confirmed')`;
-  }
-  const status = scope.endsWith("_paid") ? "paid" : "confirmed";
-  return sql`${statusColumn} = ${status}`;
-}
-
-function buildInvoiceReadScopeCondition(
-  scopePermissions?: InvoiceScopePermissions,
-) {
-  if (!scopePermissions) return undefined;
-
-  const readableScopes = INVOICE_SCOPE_KEYS.filter((key) => scopePermissions[key]);
-  // Canceled/history states are not one of the six permission scopes, so keep
-  // their existing visibility behavior unchanged.
-  const outsideScopedStatuses = sql`${invoices.status} NOT IN ('unpaid', 'partial', 'debt', 'paid', 'confirmed')`;
-  if (readableScopes.length === 0) return outsideScopedStatuses;
-
-  const noSchedules = sql`NOT EXISTS (
-    SELECT 1 FROM invoice_payment_schedule AS permission_scope_no_schedule
-    WHERE permission_scope_no_schedule.invoice_id = ${invoices.id}
-  )`;
-  return or(outsideScopedStatuses, ...readableScopes.map((key) => {
-    const type = key.startsWith("thu_") ? "Thu" : "Chi";
-    const directStatus = key.endsWith("_unpaid")
-      ? inArray(invoices.status, ["unpaid", "partial", "debt"])
-      : key.endsWith("_paid")
-        ? eq(invoices.status, "paid")
-        : eq(invoices.status, "confirmed");
-    const scheduleAlias = `permission_scope_${key}`;
-    const scheduledStatus = sql`EXISTS (
-      SELECT 1 FROM invoice_payment_schedule AS ${sql.raw(scheduleAlias)}
-      WHERE ${sql.raw(`${scheduleAlias}.invoice_id`)} = ${invoices.id}
-        AND ${invoiceScheduleStatusScopeCondition(key, sql.raw(`${scheduleAlias}.status`))}
-    )`;
-
-    return and(
-      eq(invoices.type, type),
-      or(
-        and(noSchedules, directStatus),
-        scheduledStatus,
-      ),
-    );
-  })) ?? outsideScopedStatuses;
-}
-
-function buildInvoiceScheduleRowScopeCondition(
-  scopePermissions: InvoiceScopePermissions | undefined,
-  tableAlias: string,
-) {
-  if (!scopePermissions) return undefined;
-
-  const outsideScopedStatuses = sql`${invoices.status} NOT IN ('unpaid', 'partial', 'debt', 'paid', 'confirmed')`;
-  const scheduleStatus = sql.raw(`${tableAlias}.status`);
-  const readableScopes = INVOICE_SCOPE_KEYS.filter((key) => scopePermissions[key]);
-  return or(
-    outsideScopedStatuses,
-    ...readableScopes.map((key) => and(
-      eq(invoices.type, key.startsWith("thu_") ? "Thu" : "Chi"),
-      invoiceScheduleStatusScopeCondition(key, scheduleStatus),
-    )),
-  ) ?? outsideScopedStatuses;
-}
 
 function getBusinessDateString(date = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -587,7 +521,6 @@ export async function getInvoices(filters: {
   page?: number;
   limit?: number;
   includeTabCounts?: boolean;
-  invoiceScopePermissions?: InvoiceScopePermissions;
 } = {}): Promise<{
   data: any[];
   total: number;
@@ -611,8 +544,6 @@ export async function getInvoices(filters: {
     FROM invoice_payment_schedule AS date_filter_parent_schedule
     WHERE date_filter_parent_schedule.invoice_id = ${invoices.id}
   )`;
-  const invoiceReadScope = buildInvoiceReadScopeCondition(f.invoiceScopePermissions);
-  if (invoiceReadScope) conditions.push(invoiceReadScope as any);
 
   if (f.type)          conditions.push(eq(invoices.type, f.type));
   if (f.types?.length) conditions.push(inArray(invoices.type, f.types) as any);
@@ -873,8 +804,6 @@ export async function getInvoices(filters: {
   const scheduleRowFilterCondition = (tableAlias: string) => {
     const column = (name: string) => sql.raw(`${tableAlias}.${name}`);
     const rowConditions: any[] = [scheduleRowDateCondition(tableAlias)];
-    const invoiceScopeCondition = buildInvoiceScheduleRowScopeCondition(f.invoiceScopePermissions, tableAlias);
-    if (invoiceScopeCondition) rowConditions.push(invoiceScopeCondition);
     if (f.paymentMethods?.length) {
       rowConditions.push(sql`
         COALESCE(${column("payment_method")}, ${invoices.paymentMethod}, '') = ANY(${f.paymentMethods}::text[])
@@ -1261,12 +1190,6 @@ export async function getInvoices(filters: {
     const scheduleCreatorStaff = alias(staff, "list_schedule_creator");
     const schedulePaidByStaff = alias(staff, "list_schedule_paid_by");
     const scheduleUpdaterStaff = alias(staff, "list_schedule_updater");
-    const scheduleConditions: any[] = [inArray(invoicePaymentSchedule.invoiceId, invoiceIds)];
-    const scheduleScopeCondition = buildInvoiceScheduleRowScopeCondition(
-      f.invoiceScopePermissions,
-      "invoice_payment_schedule",
-    );
-    if (scheduleScopeCondition) scheduleConditions.push(scheduleScopeCondition);
     const scheduleRows = await db
       .select({
         schedule: invoicePaymentSchedule,
@@ -1275,11 +1198,10 @@ export async function getInvoices(filters: {
         updatedByName: scheduleUpdaterStaff.fullName,
       })
       .from(invoicePaymentSchedule)
-      .innerJoin(invoices, eq(invoicePaymentSchedule.invoiceId, invoices.id))
       .leftJoin(scheduleCreatorStaff, eq(invoicePaymentSchedule.createdBy, scheduleCreatorStaff.userId))
       .leftJoin(schedulePaidByStaff, eq(invoicePaymentSchedule.paidBy, schedulePaidByStaff.userId))
       .leftJoin(scheduleUpdaterStaff, eq(invoicePaymentSchedule.updatedBy, scheduleUpdaterStaff.userId))
-      .where(and(...scheduleConditions))
+      .where(inArray(invoicePaymentSchedule.invoiceId, invoiceIds))
       .orderBy(asc(invoicePaymentSchedule.sortOrder));
 
     const schedulesByInvoice: Record<string, any[]> = {};
@@ -1333,11 +1255,8 @@ export async function getInvoiceFilterOptions(filters: {
   dueDateTo?: string;
   allowedLocationIds?: string[] | null;
   isSuperAdmin?: boolean;
-  invoiceScopePermissions?: InvoiceScopePermissions;
 } = {}): Promise<Record<string, string[]>> {
   const conditions: any[] = [];
-  const invoiceReadScope = buildInvoiceReadScopeCondition(filters.invoiceScopePermissions);
-  if (invoiceReadScope) conditions.push(invoiceReadScope);
   if (!filters.isSuperAdmin && filters.allowedLocationIds !== null && filters.allowedLocationIds !== undefined) {
     if (filters.allowedLocationIds.length === 0) {
       return { locationNames: [], categories: [], classNames: [], creatorNames: [], payerNames: [], commissionStaffNames: [], paymentMethods: [] };

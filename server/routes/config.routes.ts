@@ -24,11 +24,6 @@ import {
   type ScoreSheetAssessment,
 } from "@shared/score-sheet-assessment";
 import { selectScoreSheetAssessmentAttemptSummary } from "@shared/score-sheet-assessment-scoring";
-import {
-  INVOICE_SCOPE_KEYS,
-  buildInvoiceScopePermissions,
-  type InvoiceScopePermissions,
-} from "@shared/invoice-permissions";
 import { eq, and, sql, notExists, inArray, ne, isNull } from "drizzle-orm";
 import {
   staffAssignments, departments, users, roles, students, shiftTemplates, classes, studentClasses, centerConfig,
@@ -62,14 +57,6 @@ const SCORE_CONVERSION_SETTINGS_KEY = "scoreConversionTemplates";
 const SCORE_SHEET_TEMPLATE_SETTINGS_KEY = "scoreSheetTemplates";
 const SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY = "scoreSheetAssessments";
 const SCORE_CONVERSION_PERMISSION_RESOURCE = "/assessments#list";
-type MyPermissionEntry = {
-  canView: boolean;
-  canViewAll: boolean;
-  canCreate: boolean;
-  canEdit: boolean;
-  canDelete: boolean;
-  invoiceScopePermissions?: InvoiceScopePermissions;
-};
 
 function parseScoreConversionTemplates(value: string): ScoreConversionTemplate[] {
   return parseScoreConversionTemplatesJson(value);
@@ -2289,14 +2276,11 @@ export function registerConfigRoutes(app: Express): void {
           .where(and(eq(roles.name, studentType), eq(departments.isSystem, true)))
           .limit(1);
 
-        const studentPermMap: Record<string, MyPermissionEntry> = {};
+        const studentPermMap: Record<string, { canView: boolean; canViewAll: boolean; canCreate: boolean; canEdit: boolean; canDelete: boolean }> = {};
         if (systemRole) {
           const studentPerms = await storage.getAllPermissionsForRoles([systemRole.id]);
           for (const p of studentPerms) {
             studentPermMap[p.resource] = { canView: p.canView, canViewAll: p.canViewAll, canCreate: p.canCreate, canEdit: p.canEdit, canDelete: p.canDelete };
-          }
-          if (studentPermMap["/invoices"]) {
-            studentPermMap["/invoices"].invoiceScopePermissions = buildInvoiceScopePermissions(studentPerms);
           }
         }
 
@@ -2316,7 +2300,7 @@ export function registerConfigRoutes(app: Express): void {
       const staffId = req.staffId;
 
       const allPerms = await storage.getAllPermissionsForRoles(roleIds);
-      const permMap: Record<string, MyPermissionEntry> = {};
+      const permMap: Record<string, { canView: boolean; canViewAll: boolean; canCreate: boolean; canEdit: boolean; canDelete: boolean }> = {};
       for (const p of allPerms) {
         const existing = permMap[p.resource];
         if (!existing) {
@@ -2330,9 +2314,6 @@ export function registerConfigRoutes(app: Express): void {
             canDelete: existing.canDelete || p.canDelete,
           };
         }
-      }
-      if (permMap["/invoices"]) {
-        permMap["/invoices"].invoiceScopePermissions = buildInvoiceScopePermissions(allPerms);
       }
 
       let departmentNames: string[] = [];
@@ -2388,7 +2369,6 @@ export function registerConfigRoutes(app: Express): void {
         canCreate: z.boolean(),
         canEdit: z.boolean(),
         canDelete: z.boolean(),
-        invoiceScopes: z.array(z.enum(INVOICE_SCOPE_KEYS)).optional(),
       }).parse(req.body);
       const { roleId, resource, ...permissions } = body;
       const perm = await storage.upsertRolePermission(roleId, resource, permissions);
@@ -2413,7 +2393,6 @@ export function registerConfigRoutes(app: Express): void {
           canCreate: z.boolean(),
           canEdit: z.boolean(),
           canDelete: z.boolean(),
-          invoiceScopes: z.array(z.enum(INVOICE_SCOPE_KEYS)).optional(),
         })).min(1),
       }).parse(req.body);
       const { rolePermissions } = await import("@shared/schema");
@@ -2422,16 +2401,12 @@ export function registerConfigRoutes(app: Express): void {
       const oldByResource = new Map(oldRows.map(row => [row.resource, row]));
       const changed = body.permissions.filter(next => {
         const previous = oldByResource.get(next.resource);
-        const normalizeScopes = (scopes: string[] | null | undefined) =>
-          [...(scopes ?? INVOICE_SCOPE_KEYS)].sort().join(",");
         return !previous
           || previous.canView !== next.canView
           || previous.canViewAll !== next.canViewAll
           || previous.canCreate !== next.canCreate
           || previous.canEdit !== next.canEdit
-          || previous.canDelete !== next.canDelete
-          || (next.invoiceScopes !== undefined
-            && normalizeScopes(previous.invoiceScopes) !== normalizeScopes(next.invoiceScopes));
+          || previous.canDelete !== next.canDelete;
       });
 
       const saved = [];
@@ -2442,7 +2417,6 @@ export function registerConfigRoutes(app: Express): void {
           canCreate: permission.canCreate,
           canEdit: permission.canEdit,
           canDelete: permission.canDelete,
-          ...(permission.invoiceScopes !== undefined ? { invoiceScopes: permission.invoiceScopes } : {}),
         }));
       }
 
@@ -2452,20 +2426,12 @@ export function registerConfigRoutes(app: Express): void {
           .leftJoin(departments, eq(roles.departmentId, departments.id))
           .where(eq(roles.id, body.roleId))
           .limit(1);
-        const permissionSnapshot = (items: Array<{
-          resource: string;
-          canView: boolean;
-          canViewAll: boolean;
-          canCreate: boolean;
-          canEdit: boolean;
-          canDelete: boolean;
-          invoiceScopes?: string[] | null;
-        }>) => ({
+        const permissionSnapshot = (items: typeof body.permissions) => ({
           roleId: body.roleId,
           roleName: role?.name ?? null,
           departmentName: role?.departmentName ?? null,
-          permissions: items.map(({ resource, canView, canViewAll, canCreate, canEdit, canDelete, invoiceScopes }) => ({
-            resource, canView, canViewAll, canCreate, canEdit, canDelete, invoiceScopes,
+          permissions: items.map(({ resource, canView, canViewAll, canCreate, canEdit, canDelete }) => ({
+            resource, canView, canViewAll, canCreate, canEdit, canDelete,
           })),
         });
         const oldPermissions = body.permissions.map(permission => {
@@ -2477,7 +2443,6 @@ export function registerConfigRoutes(app: Express): void {
             canCreate: previous?.canCreate ?? false,
             canEdit: previous?.canEdit ?? false,
             canDelete: previous?.canDelete ?? false,
-            invoiceScopes: previous?.invoiceScopes ?? null,
           };
         }).filter(permission => changed.some(item => item.resource === permission.resource));
         const oldSnapshot = permissionSnapshot(oldPermissions);

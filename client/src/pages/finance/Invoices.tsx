@@ -66,11 +66,6 @@ import { HistoryDialog } from "@/components/common/HistoryDialog";
 import { useLocations } from "@/hooks/use-locations";
 import type { SortKey } from "@/hooks/use-invoice-filters";
 import { useLanguage } from "@/hooks/use-language";
-import {
-  INVOICE_SCOPE_KEYS,
-  emptyInvoiceScopePermissions,
-  fullInvoiceScopePermissions,
-} from "@shared/invoice-permissions";
 
 type TabKey = "all" | "unpaid" | "paid" | "confirmed" | "debt" | "history" | "print-template";
 type DebtCondition = "all" | "overdue" | "today" | "soon" | "upcoming" | "no-due-date";
@@ -1849,37 +1844,12 @@ export default function Invoices() {
 
   const { data: myPerms } = useMyPermissions();
   const invPerm = (() => {
-    if (!myPerms) return {
-      canCreate: false,
-      canEdit: false,
-      canDelete: false,
-      invoiceScopePermissions: emptyInvoiceScopePermissions(),
-    };
-    if (myPerms.isSuperAdmin) return {
-      canCreate: true,
-      canEdit: true,
-      canDelete: true,
-      invoiceScopePermissions: fullInvoiceScopePermissions(),
-    };
+    if (!myPerms) return { canCreate: false, canEdit: false, canDelete: false };
+    if (myPerms.isSuperAdmin) return { canCreate: true, canEdit: true, canDelete: true };
     const p = myPerms.permissions["/invoices"];
-    const invoiceScopePermissions = p?.invoiceScopePermissions ?? emptyInvoiceScopePermissions();
-    return {
-      canCreate: p?.canCreate ?? false,
-      canEdit: p?.canEdit ?? false,
-      canDelete: p?.canDelete ?? false,
-      invoiceScopePermissions,
-    };
+    if (!p) return { canCreate: false, canEdit: false, canDelete: false };
+    return { canCreate: p.canCreate, canEdit: p.canEdit, canDelete: p.canDelete };
   })();
-  const canReadInvoiceStatus = (status: string) => INVOICE_SCOPE_KEYS.some(scope =>
-    scope.endsWith(`_${status}`)
-    && invPerm.invoiceScopePermissions[scope],
-  );
-  const availableInvoiceTypes = myPerms?.isSuperAdmin
-    ? ["Thu", "Chi"]
-    : ["Thu", "Chi"].filter(type => INVOICE_SCOPE_KEYS.some(scope =>
-        scope.startsWith(type === "Thu" ? "thu_" : "chi_")
-        && invPerm.invoiceScopePermissions[scope],
-      ));
   const {
     search, setSearch,
     dateRange, setDateRange,
@@ -1893,7 +1863,7 @@ export default function Invoices() {
     page, setPage,
     pageSize, setPageSize,
     queryParams,
-  } = useInvoiceFilters(activeTab, availableInvoiceTypes);
+  } = useInvoiceFilters(activeTab);
 
   const { invoices, total, rowPage, tabCounts, isLoading, deleteMutation: deleteInvoiceMutation, updateStatusMutation } = useInvoices(queryParams);
   const { summary: invoiceSummary, isLoading: isSummaryLoading } = useInvoiceSummary(queryParams);
@@ -2105,14 +2075,7 @@ export default function Invoices() {
           <div className="px-5 pt-4 pb-3 flex flex-col gap-3">
           {/* Pill tabs */}
           <div className="flex flex-wrap items-center gap-2">
-            {TABS.filter(tab =>
-              tab.key !== "history"
-              && tab.key !== "print-template"
-              && tab.key !== "debt"
-              && (tab.key === "all"
-                ? availableInvoiceTypes.length > 0
-                : canReadInvoiceStatus(tab.statusFilter ?? "unpaid")),
-            ).map(tab => {
+            {TABS.filter(tab => tab.key !== "history" && tab.key !== "print-template" && tab.key !== "debt").map(tab => {
               const count = tab.key === "all"
                 ? tabCounts.all
                 : tab.statusFilter === "debt"
@@ -2663,8 +2626,6 @@ export default function Invoices() {
                 const isScheduleRow = !!inv.isScheduleRow;
                 const schedule = getScheduleForRow(inv);
                 const parentInvoice = inv.parentInvoice ?? inv;
-                const canEditThisInvoice = invPerm.canEdit;
-                const canDeleteThisInvoice = invPerm.canDelete;
                 const isSelected = isScheduleRow
                   ? !!inv.scheduleId && selectedScheduleIdSet.has(inv.scheduleId)
                   : selectedIds.has(inv.id);
@@ -2674,7 +2635,7 @@ export default function Invoices() {
                 return [
                   <tr key={rowKey} className={`border-b border-slate-100 transition-colors hover:bg-violet-50/40 ${isSelected ? "bg-violet-50" : idx % 2 === 1 ? "bg-slate-50/60" : "bg-white"}`} data-testid={`row-invoice-${rowKey}`}>
                     <td className={`p-3 sticky left-0 z-10 will-change-transform ${isSelected ? "bg-violet-50" : idx % 2 === 1 ? "bg-slate-50" : "bg-white"}`}>
-                      {canDeleteThisInvoice && (
+                      {invPerm.canDelete && (
                         <Checkbox
                           checked={isSelected}
                           onCheckedChange={checked => {
@@ -2698,7 +2659,7 @@ export default function Invoices() {
                        t,
                       updateStatusMutation,
                       updateScheduleStatusMutation,
-                       canEditThisInvoice,
+                      invPerm.canEdit,
                       isSelected,
                       idx % 2 === 1,
                     ))}
@@ -2727,7 +2688,7 @@ export default function Invoices() {
                               <Eye className="h-3.5 w-3.5 text-blue-600" />
                                {t("finance.view")}
                             </ActionMenuItem>
-                            {canEditThisInvoice && (
+                            {invPerm.canEdit && (
                               <ActionMenuItem
                                 className="gap-2 cursor-pointer"
                                 data-testid={`menuitem-edit-${inv.id}`}
@@ -2737,7 +2698,7 @@ export default function Invoices() {
                                  {t("finance.edit")}
                               </ActionMenuItem>
                             )}
-                            {canEditThisInvoice && isScheduleRow && schedule && !isInvoicePaidLike(schedule.status) && (
+                            {invPerm.canEdit && isScheduleRow && schedule && !isInvoicePaidLike(schedule.status) && (
                               <ActionMenuItem
                                 className="gap-2 cursor-pointer"
                                 data-testid={`menuitem-adjust-schedule-${schedule.id}`}
@@ -2796,7 +2757,7 @@ export default function Invoices() {
                                 </ActionMenuItem>
                               </>
                             )}
-                            {canDeleteThisInvoice && !isScheduleRow && (
+                            {invPerm.canDelete && !isScheduleRow && (
                               <>
                                 <ActionMenuSeparator />
                                 <TooltipProvider>
@@ -2838,7 +2799,7 @@ export default function Invoices() {
                       invoice={{ id: inv.id, code: inv.code ?? undefined, name: inv.name ?? undefined, branch: inv.branch ?? undefined, dueDate: inv.dueDate ?? undefined, description: (inv as any).description ?? undefined, note: (inv as any).note ?? undefined }}
                       selectedScheduleIds={selectedScheduleIdSet}
                       onToggleSchedule={toggleSchedule}
-                       canSelect={canDeleteThisInvoice}
+                      canSelect={invPerm.canDelete}
                       payerNames={filters.payers}
                       onViewPrint={(s) => setPrintPreviewSchedule({ schedule: s, invoice: inv })}
                     />
