@@ -1870,8 +1870,14 @@ export function ShiftManagement() {
                         placeholder="Chọn một hoặc nhiều cơ sở"
                         maxCount={4}
                         modalPopover
+                        disabled={!!editingShift}
                         data-testid="select-shift-location"
                       />
+                      <p className="text-xs text-muted-foreground">
+                        {editingShift
+                          ? "Khi sửa, chỉ thay đổi ca của cơ sở này. Muốn tạo ca ở cơ sở khác, hãy thêm ca mới."
+                          : "Chọn nhiều cơ sở để tạo các ca riêng với cùng thông tin trong một lần lưu."}
+                      </p>
                       <FormMessage />
                     </FormItem>
                   )}
