@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { db } from "../db";
 import { eq, desc, sql, and, inArray } from "drizzle-orm";
+import { z } from "zod";
 import {
   salarySheets,
   salarySheetEmployees,
@@ -123,19 +124,12 @@ export function registerSalarySheetRoutes(app: Express): void {
       const isSuperAdmin: boolean = (req as any).isSuperAdmin ?? false;
       const allowedLocationIds: string[] = (req as any).allowedLocationIds ?? [];
 
-      // Location isolation: restrict to sheets whose location falls within the
-      // caller's assigned locations. SuperAdmin sees all sheets.
-      const locationFilter =
-        !isSuperAdmin && allowedLocationIds.length > 0
-          ? inArray(salarySheets.locationId, allowedLocationIds)
-          : undefined;
-
-      const rows = await db
+      const rawRows = await db
         .select({
           id: salarySheets.id,
           code: salarySheets.code,
           locationId: salarySheets.locationId,
-          locationName: locations.name,
+          locationIds: salarySheets.locationIds,
           fromDate: salarySheets.fromDate,
           toDate: salarySheets.toDate,
           note: salarySheets.note,
@@ -143,9 +137,35 @@ export function registerSalarySheetRoutes(app: Express): void {
           createdAt: salarySheets.createdAt,
         })
         .from(salarySheets)
-        .leftJoin(locations, eq(salarySheets.locationId, locations.id))
-        .where(locationFilter)
         .orderBy(desc(salarySheets.createdAt));
+
+      // Legacy sheets have an empty locationIds array; keep their original site.
+      // Combined sheets are visible only when the caller can access every site,
+      // so a shared sheet cannot expose salaries from an unassigned facility.
+      const visibleRows = rawRows
+        .map(row => ({
+          ...row,
+          locationIds: row.locationIds?.length ? row.locationIds : [row.locationId],
+        }))
+        .filter(row =>
+          isSuperAdmin ||
+          allowedLocationIds.length === 0 ||
+          row.locationIds.every(locationId => allowedLocationIds.includes(locationId))
+        );
+      const allLocationIds = [...new Set(visibleRows.flatMap(row => row.locationIds))];
+      const locationRows = allLocationIds.length
+        ? await db.select({ id: locations.id, name: locations.name })
+            .from(locations)
+            .where(inArray(locations.id, allLocationIds))
+        : [];
+      const locationNameById = new Map(locationRows.map(location => [location.id, location.name]));
+      const rows = visibleRows.map(row => ({
+        ...row,
+        locationName: row.locationIds
+          .map(locationId => locationNameById.get(locationId))
+          .filter((name): name is string => Boolean(name))
+          .join(", "),
+      }));
 
       // Attach employee counts + totals
       const ids = rows.map(r => r.id);
@@ -187,16 +207,35 @@ export function registerSalarySheetRoutes(app: Express): void {
   app.post("/api/salary-sheets", async (req, res) => {
     try {
       if (!requireAuth(req, res)) return;
-      const { locationId, fromDate, toDate, note } = req.body;
-      if (!locationId || !fromDate || !toDate) {
-        return res.status(400).json({ message: "locationId, fromDate, toDate required" });
+      const { fromDate, toDate, note } = req.body ?? {};
+      const submittedLocationIds = req.body?.locationIds ?? (req.body?.locationId ? [req.body.locationId] : []);
+      const locationIds = [...new Set(z.array(z.string().uuid()).min(1).parse(submittedLocationIds))];
+      if (!fromDate || !toDate) return res.status(400).json({ message: "fromDate, toDate required" });
+
+      const isSuperAdmin: boolean = (req as any).isSuperAdmin ?? false;
+      const allowedLocationIds: string[] = (req as any).allowedLocationIds ?? [];
+      if (
+        !isSuperAdmin &&
+        allowedLocationIds.length > 0 &&
+        locationIds.some(locationId => !allowedLocationIds.includes(locationId))
+      ) {
+        return res.status(403).json({ message: "Bạn không có quyền tạo bảng lương tại cơ sở đã chọn" });
       }
+      const locationRows = await db
+        .select({ id: locations.id, name: locations.name })
+        .from(locations)
+        .where(inArray(locations.id, locationIds));
+      if (locationRows.length !== locationIds.length) {
+        return res.status(400).json({ message: "Một hoặc nhiều cơ sở không tồn tại" });
+      }
+
       const code = await genCode();
       const [created] = await db
         .insert(salarySheets)
         .values({
           code,
-          locationId,
+          locationId: locationIds[0],
+          locationIds,
           fromDate,
           toDate,
           note: note ?? null,
@@ -205,9 +244,18 @@ export function registerSalarySheetRoutes(app: Express): void {
         })
         .returning();
 
-      const loc = await db.select({ name: locations.name }).from(locations).where(eq(locations.id, locationId)).limit(1);
-      res.status(201).json({ ...created, locationName: loc[0]?.name ?? "", totalStaff: 0, totalDaChi: 0, totalThucNhan: 0 });
+      const locationNameById = new Map(locationRows.map(location => [location.id, location.name]));
+      res.status(201).json({
+        ...created,
+        locationName: locationIds.map(id => locationNameById.get(id)).filter(Boolean).join(", "),
+        totalStaff: 0,
+        totalDaChi: 0,
+        totalThucNhan: 0,
+      });
     } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.issues[0]?.message ?? "Danh sách cơ sở không hợp lệ" });
+      }
       res.status(500).json({ message: err.message });
     }
   });
@@ -265,6 +313,7 @@ export function registerSalarySheetRoutes(app: Express): void {
       const sheetRows = await db
         .select({
           locationId: salarySheets.locationId,
+          locationIds: salarySheets.locationIds,
           fromDate: salarySheets.fromDate,
           toDate: salarySheets.toDate,
           status: salarySheets.status,
@@ -273,10 +322,17 @@ export function registerSalarySheetRoutes(app: Express): void {
         .where(eq(salarySheets.id, req.params.id))
         .limit(1);
       if (!sheetRows.length) return res.status(404).json({ message: "Sheet not found" });
-      const { locationId, fromDate, toDate, status } = sheetRows[0];
+      const { locationId: primaryLocationId, fromDate, toDate, status } = sheetRows[0];
+      const locationIds = [...new Set(
+        sheetRows[0].locationIds?.length ? sheetRows[0].locationIds : [primaryLocationId]
+      )];
       if (status === "locked") return res.status(400).json({ message: "Không thể chỉnh sửa bảng lương đã chốt" });
 
-      // Get all active staff at the location
+      const generatedRows: any[] = [];
+      const staffWideAdjustmentsApplied = new Set<string>();
+
+      for (const locationId of locationIds) {
+      // Get all active staff at this facility
       const assignments = await db
         .select({
           staffId: staffAssignments.staffId,
@@ -307,6 +363,7 @@ export function registerSalarySheetRoutes(app: Express): void {
         seen.add(a.staffId);
         return true;
       });
+      if (unique.length === 0) continue;
 
       // ── 1. Số công: Tổng công từ bảng phân ca (/shifts?tab=board) ─────────
       //    = sum of shift work_units per staff per day in the date range
@@ -429,12 +486,18 @@ export function registerSalarySheetRoutes(app: Express): void {
       }
 
       // ── 2. Công thực: SUM(tong_cong) từ bảng chấm công (/cham-cong) ────────
+      const includeUnassignedAttendance = locationId === primaryLocationId;
       const attendanceRes = await db.execute(sql`
-        SELECT staff_id, COALESCE(SUM(ROUND(tong_cong::NUMERIC, 2)), 0) AS total_cong
-        FROM staff_attendances
-        WHERE work_date >= ${fromDate}::date
-          AND work_date <= ${toDate}::date
-        GROUP BY staff_id
+        SELECT sa.staff_id, COALESCE(SUM(ROUND(sa.tong_cong::NUMERIC, 2)), 0) AS total_cong
+        FROM staff_attendances sa
+        LEFT JOIN shift_templates st ON st.id = sa.shift_template_id
+        WHERE sa.work_date >= ${fromDate}::date
+          AND sa.work_date <= ${toDate}::date
+          AND (
+            st.location_id = ${locationId}::uuid
+            OR (${includeUnassignedAttendance}::boolean AND st.id IS NULL)
+          )
+        GROUP BY sa.staff_id
       `);
       const congThucMap: Record<string, number> = {};
       for (const r of attendanceRes.rows as any[]) {
@@ -599,16 +662,9 @@ export function registerSalarySheetRoutes(app: Express): void {
         }
       }
 
-      // Delete and re-generate
-      await db.delete(salarySheetEmployees).where(eq(salarySheetEmployees.sheetId, req.params.id));
-
-      if (unique.length === 0) {
-        return res.json([]);
-      }
-
-      const inserted = await db
-        .insert(salarySheetEmployees)
-        .values(unique.map(a => {
+      generatedRows.push(...unique.map(a => {
+          const includeStaffWideAdjustments = !staffWideAdjustmentsApplied.has(a.staffId);
+          staffWideAdjustmentsApplied.add(a.staffId);
           const luongDL = Math.round(luongDungLopMap[a.staffId] ?? 0);
           const cfg = hrConfigMap[a.staffId];
 
@@ -647,9 +703,9 @@ export function registerSalarySheetRoutes(app: Express): void {
           const bhtnPct  = cfg ? parseFloat(String(cfg.bhtnPercent ?? 1)) : 1;
           const bhtnVal  = Math.round(bhxhBase2 * bhtnPct / 100);
           const luongTheoCong = soCong > 0 ? Math.round((luongCBVal / soCong) * congThuc) : 0;
-          const thuongVal = thuongMap[a.staffId] ?? 0;
-          const phatVal   = phatMap[a.staffId] ?? 0;
-          const tamUngVal = tamUngMap[a.staffId] ?? 0;
+          const thuongVal = includeStaffWideAdjustments ? (thuongMap[a.staffId] ?? 0) : 0;
+          const phatVal   = includeStaffWideAdjustments ? (phatMap[a.staffId] ?? 0) : 0;
+          const tamUngVal = includeStaffWideAdjustments ? (tamUngMap[a.staffId] ?? 0) : 0;
           const tongLuong = Math.round(luongTheoCong + phuCapVal + thuongVal - phatVal + luongDL);
 
           // ThueTNCN: only if mode === "fixed"
@@ -667,6 +723,7 @@ export function registerSalarySheetRoutes(app: Express): void {
           return {
             sheetId: req.params.id,
             staffId: a.staffId,
+            locationId,
             staffCode: a.staffCode,
             staffName: a.staffName,
             locationName,
@@ -688,8 +745,14 @@ export function registerSalarySheetRoutes(app: Express): void {
             thucNhan: String(thucNhan),
             daChi: false,
           };
-        }))
-        .returning();
+        }));
+      }
+
+      // Keep existing rows until every selected facility has been calculated.
+      await db.delete(salarySheetEmployees).where(eq(salarySheetEmployees.sheetId, req.params.id));
+      const inserted = generatedRows.length
+        ? await db.insert(salarySheetEmployees).values(generatedRows).returning()
+        : [];
 
       res.json(inserted);
     } catch (err: any) {

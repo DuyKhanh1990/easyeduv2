@@ -24,6 +24,8 @@ async function refreshDraftSalaryRows(staffId: string) {
     db
       .select({
         id: salarySheets.id,
+        locationId: salarySheets.locationId,
+        locationIds: salarySheets.locationIds,
         fromDate: salarySheets.fromDate,
         toDate: salarySheets.toDate,
       })
@@ -44,6 +46,15 @@ async function refreshDraftSalaryRows(staffId: string) {
         eq(salarySheetEmployees.staffId, staffId),
       ));
 
+    const locationOrder = new Map(
+      (sheet.locationIds?.length ? sheet.locationIds : [sheet.locationId])
+        .map((locationId, index) => [locationId, index])
+    );
+    const targetRow = [...rows].sort((a, b) =>
+      (locationOrder.get(a.locationId ?? "") ?? Number.MAX_SAFE_INTEGER) -
+      (locationOrder.get(b.locationId ?? "") ?? Number.MAX_SAFE_INTEGER)
+    )[0];
+
     for (const row of rows) {
       const tongLuong = Number(row.tongLuong || 0);
       const deductions =
@@ -51,11 +62,12 @@ async function refreshDraftSalaryRows(staffId: string) {
         Number(row.bhyt || 0) +
         Number(row.bhtn || 0) +
         Number(row.thueTNCN || 0);
+      const rowAdvanceAmount = row.id === targetRow?.id ? amount : 0;
       await db
         .update(salarySheetEmployees)
         .set({
-          tamUng: String(amount),
-          thucNhan: String(Math.round(tongLuong - deductions - amount)),
+          tamUng: String(rowAdvanceAmount),
+          thucNhan: String(Math.round(tongLuong - deductions - rowAdvanceAmount)),
           updatedAt: new Date(),
         })
         .where(eq(salarySheetEmployees.id, row.id));

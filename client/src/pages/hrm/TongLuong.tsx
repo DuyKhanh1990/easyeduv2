@@ -77,6 +77,7 @@ interface SalarySheet {
   id: string;
   code: string;
   locationId: string;
+  locationIds: string[];
   locationName: string;
   fromDate: string;
   toDate: string;
@@ -90,6 +91,7 @@ interface SalarySheet {
 
 interface EmployeeRow {
   id: string;
+  locationId: string;
   stt: number;
   maNV: string;
   hoTen: string;
@@ -116,6 +118,7 @@ interface EmployeeRow {
 function mapEmployee(e: any, idx: number): EmployeeRow {
   return {
     id: e.id,
+    locationId: e.locationId ?? "",
     stt: idx + 1,
     maNV: e.staffCode ?? "",
     hoTen: e.staffName ?? "",
@@ -175,14 +178,14 @@ function CreateSalarySheetModal({ open, onOpenChange, onCreated }: CreateModalPr
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
   const lastOfMonth = new Date(today.getFullYear(), today.getMonth(), 0);
 
-  const [locationId, setLocationId] = useState("");
+  const [locationIds, setLocationIds] = useState<string[]>([]);
   const [fromDate, setFromDate] = useState(format(firstOfMonth, "yyyy-MM-dd"));
   const [toDate, setToDate] = useState(format(lastOfMonth, "yyyy-MM-dd"));
   const [note, setNote] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const createMutation = useMutation({
-    mutationFn: async (data: { locationId: string; fromDate: string; toDate: string; note: string }) => {
+    mutationFn: async (data: { locationIds: string[]; fromDate: string; toDate: string; note: string }) => {
       const res = await apiRequest("POST", "/api/salary-sheets", data);
       return res.json();
     },
@@ -190,7 +193,7 @@ function CreateSalarySheetModal({ open, onOpenChange, onCreated }: CreateModalPr
       queryClient.invalidateQueries({ queryKey: ["/api/salary-sheets"] });
       onCreated(sheet);
       onOpenChange(false);
-      setLocationId("");
+      setLocationIds([]);
       setFromDate(format(firstOfMonth, "yyyy-MM-dd"));
       setToDate(format(lastOfMonth, "yyyy-MM-dd"));
       setNote("");
@@ -203,7 +206,7 @@ function CreateSalarySheetModal({ open, onOpenChange, onCreated }: CreateModalPr
 
   const validate = () => {
     const e: Record<string, string> = {};
-    if (!locationId) e.locationId = "Vui lòng chọn cơ sở";
+    if (locationIds.length === 0) e.locationIds = "Vui lòng chọn ít nhất một cơ sở";
     if (!fromDate) e.fromDate = "Vui lòng chọn ngày bắt đầu";
     if (!toDate) e.toDate = "Vui lòng chọn ngày kết thúc";
     if (fromDate && toDate && fromDate > toDate) e.toDate = "Ngày kết thúc phải sau ngày bắt đầu";
@@ -213,7 +216,7 @@ function CreateSalarySheetModal({ open, onOpenChange, onCreated }: CreateModalPr
 
   const handleSave = () => {
     if (!validate()) return;
-    createMutation.mutate({ locationId, fromDate, toDate, note });
+    createMutation.mutate({ locationIds, fromDate, toDate, note });
   };
 
   const saving = createMutation.isPending;
@@ -246,20 +249,17 @@ function CreateSalarySheetModal({ open, onOpenChange, onCreated }: CreateModalPr
               <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
               Cơ sở <span className="text-red-500">*</span>
             </Label>
-            <Select value={locationId} onValueChange={v => { setLocationId(v); setErrors(e => ({ ...e, locationId: "" })); }}>
-              <SelectTrigger className={cn("h-10", errors.locationId && "border-red-400 focus:ring-red-400")}>
-                <SelectValue placeholder="Chọn cơ sở" />
-              </SelectTrigger>
-              <SelectContent>
-                {locations.length === 0 && (
-                  <SelectItem value="_none" disabled>Đang tải...</SelectItem>
-                )}
-                {locations.map((loc: any) => (
-                  <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {errors.locationId && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="h-3 w-3" />{errors.locationId}</p>}
+            <MultiSelect
+              options={locations.map((loc: any) => ({ value: loc.id, label: loc.name }))}
+              defaultValue={locationIds}
+              onValueChange={value => { setLocationIds(value); setErrors(e => ({ ...e, locationIds: "" })); }}
+              placeholder="Chọn một hoặc nhiều cơ sở"
+              maxCount={3}
+              modalPopover
+              data-testid="select-salary-sheet-locations"
+            />
+            {errors.locationIds && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="h-3 w-3" />{errors.locationIds}</p>}
+            <p className="text-xs text-muted-foreground">Các cơ sở đã chọn được gộp trong cùng một bảng lương.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -395,7 +395,7 @@ function SalarySheetDetailDialog({ open, onOpenChange, sheet }: DetailProps) {
       sheetId: sheet.id,
       sheetCode: sheet.code,
       sheetPeriod: period,
-      locationId: sheet.locationId,
+      locationId: row.locationId || sheet.locationId,
     });
   };
 
