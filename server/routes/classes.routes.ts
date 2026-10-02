@@ -244,11 +244,7 @@ async function assertScheduleMutationPermission(
     if (classSessionId) {
       const [session] = await db.select({ classId: classSessions.classId })
         .from(classSessions).where(eq(classSessions.id, classSessionId)).limit(1);
-      if (!session) {
-        res.status(404).json({ message: "Không tìm thấy buổi học." });
-        return false;
-      }
-      resolvedClassId = session.classId;
+      if (session) resolvedClassId = session.classId;
     }
   }
   if (resolvedClassId && !(await assertClassReadable(req, res, resolvedClassId, true))) return false;

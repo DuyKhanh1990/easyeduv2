@@ -7,6 +7,8 @@ Schedule-only viewers should get read access to only the class and session data 
 
 For `/schedule` writes, `canCreate` grants only the designated add workflows (adding students, reviews, content, programs, criteria, score sheets, and online links). `canEdit` grants all non-delete schedule work, including additions. `canDelete` grants every schedule workflow, including additions and edits. Enforce the matching action in both UI controls and related APIs. Keep the approved TEST write exception unchanged: TEST schedule writes remain blocked in the Schedule UI, and shared TEST APIs must not be changed for this permission work.
 
-**Why:** broadly merging `/schedule` into `/classes` can expose unrelated class data, while shared test-session APIs also serve the class test tab and staff calendar.
+For permission-only work, preserve existing business logic and stored values. Avoid normalizing data or adding request validation; scope lookups are acceptable only to enforce authorization, while authorized requests must continue through the existing business path.
 
-**How to apply:** when a schedule dialog needs another data endpoint, review its row and location scope before allowing schedule readers. Keep read access separate from write capabilities, preserve class/location scope on writes, and do not alter shared test-session writes without checking the other screens that use them.
+**Why:** the user explicitly required that schedule permission changes not alter the system's existing business behavior. Broadly merging `/schedule` into `/classes` can also expose unrelated class data, while shared test-session APIs serve other screens.
+
+**How to apply:** when a schedule dialog needs another data endpoint, review its row and location scope before allowing schedule readers. Keep read access separate from write capabilities, preserve class/location scope on writes, and gate the existing mutation path without changing its data transformation or handling of valid requests. Do not alter shared test-session writes without checking the other screens that use them.
