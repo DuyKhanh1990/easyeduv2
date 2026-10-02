@@ -3413,7 +3413,7 @@ export function registerMySpaceRoutes(app: Express): void {
 
       const staffRecord = await getStaffForUser(user.id);
       if (staffRecord) {
-        const [requests, rewards, advances] = await Promise.all([
+        const [requests, rewards, advances, assignedLocations] = await Promise.all([
           db
             .select()
             .from(leaveRequests)
@@ -3429,7 +3429,32 @@ export function registerMySpaceRoutes(app: Express): void {
             .from(staffAdvances)
             .where(eq(staffAdvances.staffId, staffRecord.id))
             .orderBy(desc(staffAdvances.createdAt)),
+          db
+            .selectDistinct({ id: locations.id, name: locations.name })
+            .from(staffAssignments)
+            .innerJoin(locations, eq(locations.id, staffAssignments.locationId))
+            .where(eq(staffAssignments.staffId, staffRecord.id)),
         ]);
+
+        const usedLocationIds = Array.from(new Set([
+          ...requests.map((record) => record.locationId),
+          ...rewards.map((record) => record.locationId),
+          ...advances.map((record) => record.locationId),
+        ].filter((locationId): locationId is string => Boolean(locationId))));
+        const usedLocations = usedLocationIds.length
+          ? await db
+              .select({ id: locations.id, name: locations.name })
+              .from(locations)
+              .where(inArray(locations.id, usedLocationIds))
+          : [];
+        const locationNameById = new Map([
+          ...assignedLocations.map((location) => [location.id, location.name] as const),
+          ...usedLocations.map((location) => [location.id, location.name] as const),
+        ]);
+        const addLocationName = <T extends { locationId: string | null }>(record: T) => ({
+          ...record,
+          locationName: record.locationId ? locationNameById.get(record.locationId) ?? null : null,
+        });
 
         return res.json({
           viewerType: "staff",
@@ -3437,11 +3462,12 @@ export function registerMySpaceRoutes(app: Express): void {
             id: staffRecord.id,
             code: staffRecord.code,
             fullName: staffRecord.fullName,
+            assignedLocations,
           },
           linkedStudents: [],
-          leaveRequests: requests,
-          rewards,
-          advances,
+          leaveRequests: requests.map(addLocationName),
+          rewards: rewards.map(addLocationName),
+          advances: advances.map(addLocationName),
         });
       }
 

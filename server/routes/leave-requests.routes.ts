@@ -127,6 +127,7 @@ async function notifyStaffLeaveStatus(request: {
 
 const selfLeaveRequestSchema = z.object({
   type: z.enum(["nghi_phep", "nghi_co_luong", "tang_ca"]),
+  locationId: z.string().uuid().optional(),
   fromDate: z.string().min(1),
   toDate: z.string().min(1),
   hours: z.string().optional().nullable(),
@@ -161,16 +162,22 @@ export function registerLeaveRequestRoutes(app: Express) {
         }
       }
 
-      const [assignment] = await db
+      const assignments = await db
         .select({ locationId: staffAssignments.locationId })
         .from(staffAssignments)
         .where(eq(staffAssignments.staffId, currentStaffId))
-        .orderBy(desc(staffAssignments.createdAt))
-        .limit(1);
+      const assignedLocationIds = Array.from(new Set(assignments.map((assignment) => assignment.locationId)));
+      const locationId = input.locationId ?? (assignedLocationIds.length === 1 ? assignedLocationIds[0] : null);
+      if (!locationId) {
+        return res.status(400).json({ message: "Vui lòng chọn cơ sở cho đơn từ." });
+      }
+      if (!assignedLocationIds.includes(locationId)) {
+        return res.status(403).json({ message: "Bạn không được phân công tại cơ sở đã chọn." });
+      }
 
       const [row] = await db.insert(leaveRequests).values({
         staffId: currentStaffId,
-        locationId: assignment?.locationId ?? null,
+        locationId,
         type: input.type,
         fromDate: input.fromDate,
         toDate: input.type === "tang_ca" ? input.fromDate : input.toDate,

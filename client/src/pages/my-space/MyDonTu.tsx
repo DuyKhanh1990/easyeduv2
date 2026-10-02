@@ -33,6 +33,8 @@ type ViewerType = "staff" | "student" | "parent";
 type LeaveRequest = {
   id: string;
   staffId?: string;
+  locationId?: string | null;
+  locationName?: string | null;
   studentId?: string;
   studentName?: string;
   type?: string;
@@ -55,6 +57,8 @@ type LeaveRequest = {
 type Reward = {
   id: string;
   type: "reward" | "penalty";
+  locationId?: string | null;
+  locationName?: string | null;
   date: string;
   amount: number;
   reason?: string | null;
@@ -62,15 +66,24 @@ type Reward = {
 
 type Advance = {
   id: string;
+  locationId?: string | null;
+  locationName?: string | null;
   date: string;
   documentDueDate?: string | null;
   amount: number;
   reason?: string | null;
 };
 
+type LocationOption = { id: string; name: string };
+
 type MyDonTuData = {
   viewerType: ViewerType;
-  profile: { id: string; code?: string | null; fullName?: string | null } | null;
+  profile: {
+    id: string;
+    code?: string | null;
+    fullName?: string | null;
+    assignedLocations?: LocationOption[];
+  } | null;
   linkedStudents: { id: string; code: string; fullName: string }[];
   leaveRequests: LeaveRequest[];
   rewards: Reward[];
@@ -106,6 +119,7 @@ type StudentLeaveSchedule = {
 
 type StaffLeaveForm = {
   type: "nghi_phep" | "nghi_co_luong" | "tang_ca";
+  locationId: string;
   fromDate: string;
   toDate: string;
   overtimeFrom: string;
@@ -138,6 +152,15 @@ function formatMoney(value: number) {
 
 function todayDate() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function dateAfterDays(value: string, days: number) {
+  const date = new Date(`${value}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function calculateStaffLeaveHours(fromDate: string, toDate: string) {
@@ -205,10 +228,19 @@ export default function MyDonTu() {
   const [staffLeaveDialogOpen, setStaffLeaveDialogOpen] = useState(false);
   const [staffLeaveForm, setStaffLeaveForm] = useState<StaffLeaveForm>({
     type: "nghi_phep",
+    locationId: "",
     fromDate: todayDate(),
     toDate: todayDate(),
     overtimeFrom: "17:00",
     overtimeTo: "19:00",
+    reason: "",
+  });
+  const [advanceDialogOpen, setAdvanceDialogOpen] = useState(false);
+  const [advanceForm, setAdvanceForm] = useState({
+    locationId: "",
+    date: todayDate(),
+    documentDueDate: dateAfterDays(todayDate(), 7),
+    amount: "",
     reason: "",
   });
 
@@ -284,6 +316,7 @@ export default function MyDonTu() {
   const createStaffLeaveMutation = useMutation({
     mutationFn: async () => apiRequest("POST", "/api/leave-requests/self", {
       type: staffLeaveForm.type,
+      locationId: staffLeaveForm.locationId,
       fromDate: staffLeaveForm.fromDate,
       toDate: staffLeaveForm.type === "tang_ca" ? staffLeaveForm.fromDate : staffLeaveForm.toDate,
       hours: staffLeaveForm.type === "tang_ca"
@@ -303,10 +336,30 @@ export default function MyDonTu() {
     },
   });
 
+  const createAdvanceMutation = useMutation({
+    mutationFn: async () => apiRequest("POST", "/api/staff-advances/self", {
+      locationId: advanceForm.locationId,
+      date: advanceForm.date,
+      documentDueDate: advanceForm.documentDueDate,
+      amount: Number(advanceForm.amount),
+      reason: advanceForm.reason.trim() || null,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/my-space/don-tu"] });
+      toast({ title: tr("advanceCreated") });
+      setAdvanceDialogOpen(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: tr("advanceCreateError"), description: error.message, variant: "destructive" });
+    },
+  });
+
   function openStaffLeaveDialog() {
     const date = todayDate();
+    const assignedLocations = data?.profile?.assignedLocations ?? [];
     setStaffLeaveForm({
       type: "nghi_phep",
+      locationId: assignedLocations.length === 1 ? assignedLocations[0].id : "",
       fromDate: date,
       toDate: date,
       overtimeFrom: "17:00",
@@ -316,11 +369,33 @@ export default function MyDonTu() {
     setStaffLeaveDialogOpen(true);
   }
 
+  function openAdvanceDialog() {
+    const date = todayDate();
+    const assignedLocations = data?.profile?.assignedLocations ?? [];
+    setAdvanceForm({
+      locationId: assignedLocations.length === 1 ? assignedLocations[0].id : "",
+      date,
+      documentDueDate: dateAfterDays(date, 7),
+      amount: "",
+      reason: "",
+    });
+    setAdvanceDialogOpen(true);
+  }
+
   function closeStaffLeaveDialog() {
     if (!createStaffLeaveMutation.isPending) setStaffLeaveDialogOpen(false);
   }
 
+  function closeAdvanceDialog() {
+    if (!createAdvanceMutation.isPending) setAdvanceDialogOpen(false);
+  }
+
   function submitStaffLeaveRequest() {
+    const assignedLocations = data?.profile?.assignedLocations ?? [];
+    if (!staffLeaveForm.locationId || !assignedLocations.some((location) => location.id === staffLeaveForm.locationId)) {
+      toast({ title: tr("chooseLocation"), variant: "destructive" });
+      return;
+    }
     if (!staffLeaveForm.fromDate || !staffLeaveForm.toDate) {
       toast({ title: tr("enterLeavePeriod"), variant: "destructive" });
       return;
@@ -337,6 +412,28 @@ export default function MyDonTu() {
       return;
     }
     createStaffLeaveMutation.mutate();
+  }
+
+  function submitAdvanceRequest() {
+    const assignedLocations = data?.profile?.assignedLocations ?? [];
+    const amount = Number(advanceForm.amount);
+    if (!advanceForm.locationId || !assignedLocations.some((location) => location.id === advanceForm.locationId)) {
+      toast({ title: tr("chooseLocation"), variant: "destructive" });
+      return;
+    }
+    if (!advanceForm.date || !advanceForm.documentDueDate) {
+      toast({ title: tr("completeAdvanceDates"), variant: "destructive" });
+      return;
+    }
+    if (advanceForm.documentDueDate < advanceForm.date) {
+      toast({ title: tr("invalidAdvanceDueDate"), variant: "destructive" });
+      return;
+    }
+    if (!Number.isInteger(amount) || amount <= 0) {
+      toast({ title: tr("invalidAdvanceAmount"), variant: "destructive" });
+      return;
+    }
+    createAdvanceMutation.mutate();
   }
 
   function openStudentLeaveDialog() {
@@ -423,15 +520,15 @@ export default function MyDonTu() {
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              {data?.viewerType === "staff" ? (
+              {data?.viewerType === "staff" && mainTab !== "thuong-phat" ? (
                 <Button
                   size="sm"
-                  onClick={openStaffLeaveDialog}
+                  onClick={mainTab === "tam-ung" ? openAdvanceDialog : openStaffLeaveDialog}
                   className="h-8 gap-1 bg-white text-slate-700 hover:bg-slate-100"
-                  data-testid="button-open-staff-leave-request"
+                  data-testid={mainTab === "tam-ung" ? "button-open-staff-advance-request" : "button-open-staff-leave-request"}
                 >
                   <Plus className="h-4 w-4" />
-                  {tr("add")}
+                  {mainTab === "tam-ung" ? tr("addAdvance") : tr("add")}
                 </Button>
               ) : isStudentArea && (
                 <Button
@@ -543,7 +640,12 @@ export default function MyDonTu() {
                               </span>
                             </div>
                             {viewerType !== "student" && (
-                              <p className="mt-2 truncate text-xs font-semibold text-slate-700">{ownerName || "—"}</p>
+                              <div className="mt-2">
+                                <p className="truncate text-xs font-semibold text-slate-700">{ownerName || "—"}</p>
+                                {isStaff && request.locationName && (
+                                  <p className="mt-0.5 truncate text-[10px] text-slate-400">{tr("location")}: {request.locationName}</p>
+                                )}
+                              </div>
                             )}
                             <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-t border-slate-100 pt-2.5 dark:border-gray-800">
                               <div className="min-w-0">
@@ -603,8 +705,9 @@ export default function MyDonTu() {
                             return (
                               <tr key={request.id} className={cn(index % 2 ? "bg-slate-50/60" : "bg-white", "border-b border-slate-100 hover:bg-violet-50/30")}>
                                 {viewerType !== "student" && <td className="px-3 py-3 text-xs font-semibold text-slate-700"><span className="block truncate">{ownerName || "—"}</span></td>}
-                                <td className="px-3 py-3">
-                                  <span className={cn("inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold", type.color)}><TypeIcon className="h-3 w-3 shrink-0" /><span className="truncate">{type.label}</span></span>
+                                 <td className="px-3 py-3">
+                                   <span className={cn("inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold", type.color)}><TypeIcon className="h-3 w-3 shrink-0" /><span className="truncate">{type.label}</span></span>
+                                   {isStaff && request.locationName && <p className="mt-1 truncate text-[10px] text-slate-400">{request.locationName}</p>}
                                 </td>
                                 <td className="break-words px-3 py-3 text-xs font-medium text-slate-600">{requestType === "tang_ca" && request.overtimeFrom && request.overtimeTo ? `${formatDate(startDate)} · ${request.overtimeFrom}–${request.overtimeTo}` : `${formatDate(startDate)} – ${formatDate(endDate)}`}</td>
                                 <td className="break-words px-3 py-3 text-center text-xs font-bold text-slate-600">{requestType === "student_leave" ? (scheduleCount > 0 ? `${scheduleCount} ${tr("session")}` : "—") : request.hours ? `${request.hours}${requestType === "tang_ca" ? "h" : ""}` : "—"}</td>
@@ -632,9 +735,9 @@ export default function MyDonTu() {
                 {(["all", "reward", "penalty"] as const).map((value) => <button key={value} onClick={() => setRewardFilter(value)} className={cn("rounded-full border px-3 py-1 text-xs font-medium", rewardFilter === value ? value === "reward" ? "border-emerald-200 bg-emerald-100 text-emerald-700" : value === "penalty" ? "border-red-200 bg-red-100 text-red-600" : "border-violet-200 bg-violet-100 text-violet-700" : "border-slate-200 bg-white text-slate-500")}>{value === "all" ? tr("all") : value === "reward" ? tr("reward") : tr("penalty")}</button>)}
               </div>
               {filteredRewards.length === 0 ? <EmptyState message={tr("noRewards")} /> : (
-                <table className="w-full min-w-[620px] border-collapse">
-              <thead className="bg-slate-100 dark:bg-slate-900"><tr><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("type")}</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("date")}</th><th className="px-4 py-3 text-right text-xs font-semibold uppercase text-slate-500">{tr("amount")}</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("reason")}</th></tr></thead>
-                  <tbody>{filteredRewards.map((record, index) => <tr key={record.id} className={cn(index % 2 ? "bg-slate-50/60" : "bg-white", "border-b border-slate-100")}><td className="px-4 py-3 text-xs font-semibold">{record.type === "reward" ? <span className="inline-flex items-center gap-1 text-emerald-600"><Gift className="h-3.5 w-3.5" />{tr("reward")}</span> : <span className="inline-flex items-center gap-1 text-red-600"><AlertTriangle className="h-3.5 w-3.5" />{tr("penalty")}</span>}</td><td className="px-4 py-3 text-xs text-slate-600">{formatDate(record.date)}</td><td className={cn("px-4 py-3 text-right text-xs font-bold", record.type === "reward" ? "text-emerald-700" : "text-red-600")}>{formatMoney(record.amount)}</td><td className="max-w-[320px] truncate px-4 py-3 text-xs text-slate-600">{record.reason || "—"}</td></tr>)}</tbody>
+                <table className="w-full min-w-[720px] border-collapse">
+              <thead className="bg-slate-100 dark:bg-slate-900"><tr><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("type")}</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("date")}</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("location")}</th><th className="px-4 py-3 text-right text-xs font-semibold uppercase text-slate-500">{tr("amount")}</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("reason")}</th></tr></thead>
+                  <tbody>{filteredRewards.map((record, index) => <tr key={record.id} className={cn(index % 2 ? "bg-slate-50/60" : "bg-white", "border-b border-slate-100")}><td className="px-4 py-3 text-xs font-semibold">{record.type === "reward" ? <span className="inline-flex items-center gap-1 text-emerald-600"><Gift className="h-3.5 w-3.5" />{tr("reward")}</span> : <span className="inline-flex items-center gap-1 text-red-600"><AlertTriangle className="h-3.5 w-3.5" />{tr("penalty")}</span>}</td><td className="px-4 py-3 text-xs text-slate-600">{formatDate(record.date)}</td><td className="px-4 py-3 text-xs text-slate-600">{record.locationName || "—"}</td><td className={cn("px-4 py-3 text-right text-xs font-bold", record.type === "reward" ? "text-emerald-700" : "text-red-600")}>{formatMoney(record.amount)}</td><td className="max-w-[320px] truncate px-4 py-3 text-xs text-slate-600">{record.reason || "—"}</td></tr>)}</tbody>
                 </table>
               )}
             </div>
@@ -645,8 +748,8 @@ export default function MyDonTu() {
             <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950">
               {(data?.advances ?? []).length === 0 ? <EmptyState message={tr("noAdvances")} /> : (
                 <table className="w-full min-w-[620px] border-collapse">
-                  <thead className="bg-slate-100 dark:bg-slate-900"><tr><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("date")}</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("documentDueDate")}</th><th className="px-4 py-3 text-right text-xs font-semibold uppercase text-slate-500">{tr("amount")}</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("reason")}</th></tr></thead>
-                  <tbody>{data?.advances.map((record, index) => <tr key={record.id} className={cn(index % 2 ? "bg-slate-50/60" : "bg-white", "border-b border-slate-100")}><td className="px-4 py-3 text-xs text-slate-600">{formatDate(record.date)}</td><td className="px-4 py-3 text-xs text-slate-600">{formatDate(record.documentDueDate)}</td><td className="px-4 py-3 text-right text-xs font-bold text-violet-700">{formatMoney(record.amount)}</td><td className="max-w-[320px] truncate px-4 py-3 text-xs text-slate-600">{record.reason || "—"}</td></tr>)}</tbody>
+                  <thead className="bg-slate-100 dark:bg-slate-900"><tr><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("date")}</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("location")}</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("documentDueDate")}</th><th className="px-4 py-3 text-right text-xs font-semibold uppercase text-slate-500">{tr("amount")}</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">{tr("reason")}</th></tr></thead>
+                  <tbody>{data?.advances.map((record, index) => <tr key={record.id} className={cn(index % 2 ? "bg-slate-50/60" : "bg-white", "border-b border-slate-100")}><td className="px-4 py-3 text-xs text-slate-600">{formatDate(record.date)}</td><td className="px-4 py-3 text-xs text-slate-600">{record.locationName || "—"}</td><td className="px-4 py-3 text-xs text-slate-600">{formatDate(record.documentDueDate)}</td><td className="px-4 py-3 text-right text-xs font-bold text-violet-700">{formatMoney(record.amount)}</td><td className="max-w-[320px] truncate px-4 py-3 text-xs text-slate-600">{record.reason || "—"}</td></tr>)}</tbody>
                 </table>
               )}
             </div>
@@ -856,6 +959,28 @@ export default function MyDonTu() {
             </div>
 
             <div className="space-y-1.5">
+              <label className="text-sm font-medium">{tr("location")}</label>
+              {(data?.profile?.assignedLocations ?? []).length > 1 ? (
+                <Select
+                  value={staffLeaveForm.locationId}
+                  onValueChange={(locationId) => setStaffLeaveForm((current) => ({ ...current, locationId }))}
+                  disabled={createStaffLeaveMutation.isPending}
+                >
+                  <SelectTrigger className="h-10 w-full"><SelectValue placeholder={tr("chooseLocation")} /></SelectTrigger>
+                  <SelectContent>
+                    {data?.profile?.assignedLocations?.map((location) => (
+                      <SelectItem key={location.id} value={location.id}>{location.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="rounded-lg border bg-muted/20 px-3 py-2.5 text-sm">
+                  {data?.profile?.assignedLocations?.[0]?.name || tr("noLocation")}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
               <label className="text-sm font-medium">{tr("requestType")}</label>
               <Select
                 value={staffLeaveForm.type}
@@ -939,6 +1064,99 @@ export default function MyDonTu() {
             <Button onClick={submitStaffLeaveRequest} disabled={createStaffLeaveMutation.isPending}>
               {createStaffLeaveMutation.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
               {tr("createRequest")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={advanceDialogOpen} onOpenChange={(open) => open ? setAdvanceDialogOpen(true) : closeAdvanceDialog()}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{tr("addAdvance")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="rounded-lg border bg-muted/20 px-3 py-2.5">
+              <p className="text-xs text-muted-foreground">{tr("staff")}</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">
+                {data?.profile?.fullName || tr("loading")}
+                {data?.profile?.code && <span className="ml-1 font-normal text-muted-foreground">({data.profile.code})</span>}
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">{tr("location")}</label>
+              {(data?.profile?.assignedLocations ?? []).length > 1 ? (
+                <Select
+                  value={advanceForm.locationId}
+                  onValueChange={(locationId) => setAdvanceForm((current) => ({ ...current, locationId }))}
+                  disabled={createAdvanceMutation.isPending}
+                >
+                  <SelectTrigger className="h-10 w-full"><SelectValue placeholder={tr("chooseLocation")} /></SelectTrigger>
+                  <SelectContent>
+                    {data?.profile?.assignedLocations?.map((location) => (
+                      <SelectItem key={location.id} value={location.id}>{location.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="rounded-lg border bg-muted/20 px-3 py-2.5 text-sm">
+                  {data?.profile?.assignedLocations?.[0]?.name || tr("noLocation")}
+                </div>
+              )}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">{tr("date")}</label>
+                <Input
+                  type="date"
+                  value={advanceForm.date}
+                  onChange={(event) => setAdvanceForm((current) => ({ ...current, date: event.target.value }))}
+                  disabled={createAdvanceMutation.isPending}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">{tr("documentDueDate")}</label>
+                <Input
+                  type="date"
+                  value={advanceForm.documentDueDate}
+                  onChange={(event) => setAdvanceForm((current) => ({ ...current, documentDueDate: event.target.value }))}
+                  disabled={createAdvanceMutation.isPending}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">{tr("amount")}</label>
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                value={advanceForm.amount}
+                onChange={(event) => setAdvanceForm((current) => ({ ...current, amount: event.target.value }))}
+                disabled={createAdvanceMutation.isPending}
+                placeholder="0"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">{tr("reason")}</label>
+              <Textarea
+                rows={3}
+                placeholder={tr("reasonPlaceholder")}
+                value={advanceForm.reason}
+                onChange={(event) => setAdvanceForm((current) => ({ ...current, reason: event.target.value }))}
+                disabled={createAdvanceMutation.isPending}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeAdvanceDialog} disabled={createAdvanceMutation.isPending}>
+              {tr("cancel")}
+            </Button>
+            <Button
+              onClick={submitAdvanceRequest}
+              disabled={createAdvanceMutation.isPending || !(data?.profile?.assignedLocations?.length)}
+              data-testid="button-save-staff-advance-request"
+            >
+              {createAdvanceMutation.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              {tr("createAdvance")}
             </Button>
           </DialogFooter>
         </DialogContent>

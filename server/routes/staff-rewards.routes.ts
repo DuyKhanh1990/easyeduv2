@@ -1,6 +1,15 @@
 import type { Express } from "express";
 import { z } from "zod";
 
+type StaffFinancePermission = "canCreate" | "canEdit" | "canDelete";
+
+async function hasStaffFinancePermission(req: any, permission: StaffFinancePermission) {
+  if (req.isSuperAdmin) return true;
+  const { getEffectivePermissions } = await import("../storage/permissions.storage");
+  const permissions = await getEffectivePermissions(req.roleIds ?? [], "/don-tu");
+  return permissions[permission];
+}
+
 export function registerStaffRewardRoutes(app: Express) {
   // Ensure table exists on startup
   app.get("/api/staff-rewards", async (req, res) => {
@@ -33,6 +42,10 @@ export function registerStaffRewardRoutes(app: Express) {
 
   app.post("/api/staff-rewards", async (req, res) => {
     try {
+      if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+      if (!(await hasStaffFinancePermission(req, "canCreate"))) {
+        return res.status(403).json({ message: "Bạn không có quyền tạo phiếu thưởng / phạt." });
+      }
       const { db } = await import("../storage/base");
       if (!req.body?.locationId) return res.status(400).json({ message: "Vui lòng chọn cơ sở" });
 
@@ -49,6 +62,10 @@ export function registerStaffRewardRoutes(app: Express) {
 
   app.put("/api/staff-rewards/:id", async (req, res) => {
     try {
+      if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+      if (!(await hasStaffFinancePermission(req, "canEdit"))) {
+        return res.status(403).json({ message: "Bạn không có quyền sửa phiếu thưởng / phạt." });
+      }
       const { db } = await import("../storage/base");
       const { staffRewards, insertStaffRewardSchema } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
@@ -91,6 +108,10 @@ export function registerStaffRewardRoutes(app: Express) {
 
   app.delete("/api/staff-rewards/:id", async (req, res) => {
     try {
+      if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+      if (!(await hasStaffFinancePermission(req, "canDelete"))) {
+        return res.status(403).json({ message: "Bạn không có quyền xoá phiếu thưởng / phạt." });
+      }
       const { db } = await import("../storage/base");
       const { staffRewards } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");

@@ -6,6 +6,22 @@ const advanceItemSchema = z.object({
   amount: z.coerce.number().int().nonnegative(),
 });
 const advanceItemsSchema = z.array(advanceItemSchema).max(100).default([]);
+const selfAdvanceSchema = z.object({
+  locationId: z.string().uuid(),
+  date: z.string().min(1),
+  documentDueDate: z.string().min(1),
+  amount: z.coerce.number().int().positive(),
+  reason: z.string().trim().max(5000).optional().nullable(),
+});
+
+type StaffFinancePermission = "canCreate" | "canEdit" | "canDelete";
+
+async function hasStaffFinancePermission(req: any, permission: StaffFinancePermission) {
+  if (req.isSuperAdmin) return true;
+  const { getEffectivePermissions } = await import("../storage/permissions.storage");
+  const permissions = await getEffectivePermissions(req.roleIds ?? [], "/don-tu");
+  return permissions[permission];
+}
 
 function parseAdvanceItems(value: unknown) {
   return advanceItemsSchema.parse(value ?? []);
@@ -86,6 +102,50 @@ async function refreshDraftSalaryRows(staffId: string) {
 }
 
 export function registerStaffAdvanceRoutes(app: Express) {
+  app.post("/api/staff-advances/self", async (req, res) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+      if (!req.staffId) return res.status(403).json({ message: "Tài khoản không phải nhân sự." });
+
+      const input = selfAdvanceSchema.parse(req.body);
+      if (input.documentDueDate < input.date) {
+        return res.status(400).json({ message: "Hạn hoàn chứng từ không được trước ngày tạm ứng." });
+      }
+
+      const { db } = await import("../storage/base");
+      const { staffAdvances, staffAssignments, insertStaffAdvanceSchema } = await import("@shared/schema");
+      const { and, eq } = await import("drizzle-orm");
+      const [assignment] = await db
+        .select({ id: staffAssignments.id })
+        .from(staffAssignments)
+        .where(and(
+          eq(staffAssignments.staffId, req.staffId),
+          eq(staffAssignments.locationId, input.locationId),
+        ))
+        .limit(1);
+      if (!assignment) {
+        return res.status(403).json({ message: "Bạn không được phân công tại cơ sở đã chọn." });
+      }
+
+      const values = insertStaffAdvanceSchema.parse({
+        staffId: req.staffId,
+        locationId: input.locationId,
+        date: input.date,
+        documentDueDate: input.documentDueDate,
+        amount: input.amount,
+        reason: input.reason?.trim() || null,
+        items: [],
+        createdBy: (req.user as any).id ?? null,
+      });
+      const [row] = await db.insert(staffAdvances).values(values).returning();
+      await refreshDraftSalaryRows(req.staffId);
+      res.status(201).json(row);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) return res.status(400).json(err.issues);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/staff-advances", async (req, res) => {
     try {
       if (!req.user) return res.status(401).json({ message: "Unauthorized" });
@@ -108,6 +168,9 @@ export function registerStaffAdvanceRoutes(app: Express) {
   app.post("/api/staff-advances", async (req, res) => {
     try {
       if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+      if (!(await hasStaffFinancePermission(req, "canCreate"))) {
+        return res.status(403).json({ message: "Bạn không có quyền tạo phiếu tạm ứng." });
+      }
       if (!req.body?.locationId) return res.status(400).json({ message: "Vui lòng chọn cơ sở" });
       const { db } = await import("../storage/base");
       const { staffAdvances, insertStaffAdvanceSchema } = await import("@shared/schema");
@@ -130,6 +193,9 @@ export function registerStaffAdvanceRoutes(app: Express) {
   app.put("/api/staff-advances/:id", async (req, res) => {
     try {
       if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+      if (!(await hasStaffFinancePermission(req, "canEdit"))) {
+        return res.status(403).json({ message: "Bạn không có quyền sửa phiếu tạm ứng." });
+      }
       const { db } = await import("../storage/base");
       const { staffAdvances, insertStaffAdvanceSchema } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
@@ -178,6 +244,9 @@ export function registerStaffAdvanceRoutes(app: Express) {
   app.delete("/api/staff-advances/:id", async (req, res) => {
     try {
       if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+      if (!(await hasStaffFinancePermission(req, "canDelete"))) {
+        return res.status(403).json({ message: "Bạn không có quyền xoá phiếu tạm ứng." });
+      }
       const { db } = await import("../storage/base");
       const { staffAdvances } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
