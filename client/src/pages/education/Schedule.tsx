@@ -45,6 +45,7 @@ interface ScheduleSession {
   enrolledCount: number;
   status: string;
   teachers: string[];
+  teacherDisplayNames?: string[];
   shiftStart: string;
   shiftEnd: string;
   shiftName: string;
@@ -105,6 +106,10 @@ function getScheduleTimeLabel(session: Pick<ScheduleSession, "isFreeSession" | "
   if (start && end) return `${start} – ${end}`;
   if (start || end) return `${start || end}`;
   return session.isFreeSession ? "Lớp tự do" : "—";
+}
+
+function getScheduleTeacherDisplayNames(session: ScheduleSession): string[] {
+  return session.teacherDisplayNames ?? session.teachers ?? [];
 }
 
 function getTeacherViewSession(session: ScheduleSession, teacherId: string): ScheduleSession {
@@ -1202,7 +1207,11 @@ function ListView({
                         </div>
                       </td>
                       <td className="px-4 py-2.5 text-xs">
-                        <ContentLines items={s.teachers.length > 0 ? s.teachers : []} emptyLabel="Chưa phân công" emptyItalic />
+                        <ContentLines
+                          items={s.teachers.length > 0 ? getScheduleTeacherDisplayNames(s) : []}
+                          emptyLabel="Chưa phân công"
+                          emptyItalic
+                        />
                       </td>
                       <td className="px-4 py-2.5 text-xs text-center whitespace-nowrap">
                         {s.enrolledCount > 0 ? s.enrolledCount : <span className="text-muted-foreground">–</span>}
@@ -1393,7 +1402,7 @@ function SessionCard({
   } : undefined;
   const timeStr = getScheduleTimeLabel(s);
   const formatLabel = s.learningFormat === "offline" ? "Offline" : s.learningFormat === "online" ? "Online" : (s.learningFormat ?? "");
-  const teacherStr = s.teachers.join(", ");
+  const teacherStr = getScheduleTeacherDisplayNames(s).join(", ");
 
   const tooltipContent = (
     <div className="text-xs space-y-1 min-w-[180px]">
@@ -1770,7 +1779,7 @@ function RoomView({
                                         </div>
                                         {s.teachers.length > 0 && (
                                           <div className="text-[10px] leading-tight truncate mt-0.5 opacity-70">
-                                            {s.teachers.join(", ")}
+                                            {getScheduleTeacherDisplayNames(s).join(", ")}
                                           </div>
                                         )}
                                       </button>
@@ -1794,7 +1803,7 @@ function RoomView({
                                       {s.teachers.length > 0 && (
                                         <div className="flex items-center gap-1.5 text-muted-foreground">
                                           <User className="w-3 h-3 shrink-0" />
-                                          <span>{s.teachers.join(", ")}</span>
+                                          <span>{getScheduleTeacherDisplayNames(s).join(", ")}</span>
                                         </div>
                                       )}
                                       {s.enrolledCount > 0 && (
@@ -2010,7 +2019,7 @@ function RoomView({
                                   {cardHeight > 50 && s.teachers.length > 0 && (
                                     <div className="text-[10px] font-medium leading-tight truncate mt-0.5 flex items-center gap-0.5">
                                       <User className="w-2.5 h-2.5 shrink-0 opacity-70" />
-                                      <span className="truncate">{s.teachers.join(", ")}</span>
+                                      <span className="truncate">{getScheduleTeacherDisplayNames(s).join(", ")}</span>
                                     </div>
                                   )}
                                   {cardHeight > 36 && (
@@ -2039,7 +2048,7 @@ function RoomView({
                                 {s.teachers.length > 0 && (
                                   <div className="flex items-center gap-1.5 text-muted-foreground">
                                     <User className="w-3 h-3 shrink-0" />
-                                    <span>{s.teachers.join(", ")}</span>
+                                    <span>{getScheduleTeacherDisplayNames(s).join(", ")}</span>
                                   </div>
                                 )}
                                 {s.enrolledCount > 0 && (
@@ -2548,7 +2557,7 @@ function TeacherView({
                                 {s.teachers.length > 1 && (
                                   <div className="flex items-center gap-1.5 text-muted-foreground">
                                     <User className="w-3 h-3 shrink-0" />
-                                    <span>{s.teachers.join(", ")}</span>
+                                    <span>{getScheduleTeacherDisplayNames(s).join(", ")}</span>
                                   </div>
                                 )}
                                 {s.enrolledCount > 0 && (

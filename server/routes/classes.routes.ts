@@ -4739,7 +4739,7 @@ export function registerClassesRoutes(app: Express): void {
       }
 
       const { db: baseDb, eq: baseEq, and: baseAnd, sql: baseSql, classSessions: baseSessions, classes: baseClasses, shiftTemplates: baseShifts, locations, staff, studentSessions: baseSs, inArray: baseInArray, sessionContents: baseContents } = await import("../storage/base");
-      const { classrooms, classSessionTeacherAssignments } = await import("@shared/schema");
+      const { classrooms, classSessionTeacherAssignments, roles, staffAssignments } = await import("@shared/schema");
 
       const locationConditions = [];
       if (effectiveLocationId) {
@@ -4760,6 +4760,7 @@ export function registerClassesRoutes(app: Express): void {
         sessionIndex: baseSessions.sessionIndex,
         status: baseSessions.status,
         teacherIds: baseSessions.teacherIds,
+        teachersConfig: baseClasses.teachersConfig,
         roomId: baseSessions.roomId,
         roomName: classrooms.name,
         shiftStart: baseShifts.startTime,
@@ -4814,6 +4815,71 @@ export function registerClassesRoutes(app: Express): void {
         teacherTimeAssignmentsBySession.set(assignment.classSessionId, assignments);
       }
 
+      const visibleScheduleSessions = sessions.filter((s) => isScheduleEntryVisible({
+        visibleClassIds: scheduleVisibleClassIds,
+        staffId: req.staffId,
+        classId: s.classId,
+        teacherIds: s.teacherIds,
+        sessionTeacherIds: (teacherTimeAssignmentsBySession.get(s.id) ?? [])
+          .map((assignment) => assignment.teacherId),
+      }));
+      const responseSessions = visibleScheduleSessions.filter((s) =>
+        !teacherId ||
+        (s.teacherIds?.includes(teacherId) ?? false) ||
+        (teacherTimeAssignmentsBySession.get(s.id) ?? []).some((assignment) => assignment.teacherId === teacherId),
+      );
+      const teacherIdsBySession = new Map<string, string[]>();
+      const configuredRoleByClassTeacher = new Map<string, string>();
+      for (const session of responseSessions) {
+        const teacherIds = [...new Set([
+          ...(session.teacherIds ?? []),
+          ...(teacherTimeAssignmentsBySession.get(session.id) ?? []).map((assignment) => assignment.teacherId),
+        ])];
+        teacherIdsBySession.set(session.id, teacherIds);
+        const classTeacherConfigs = Array.isArray(session.teachersConfig) ? session.teachersConfig : [];
+        for (const config of classTeacherConfigs) {
+          const configuredTeacherId = String(config?.teacher_id ?? config?.teacherId ?? "");
+          const roleId = String(config?.role_id ?? config?.roleId ?? "");
+          if (configuredTeacherId && roleId) {
+            configuredRoleByClassTeacher.set(`${session.classId}:${configuredTeacherId}`, roleId);
+          }
+        }
+      }
+      const scheduleTeacherIds = Array.from(new Set(
+        Array.from(teacherIdsBySession.values()).flat(),
+      ));
+      const scheduleLocationIds = Array.from(new Set(responseSessions.map((session) => session.locationId)));
+      const roleAssignmentRows = scheduleTeacherIds.length > 0 && scheduleLocationIds.length > 0
+        ? await baseDb.select({
+            staffId: staffAssignments.staffId,
+            locationId: staffAssignments.locationId,
+            roleId: staffAssignments.roleId,
+          })
+          .from(staffAssignments)
+          .where(baseAnd(
+            baseInArray(staffAssignments.staffId, scheduleTeacherIds),
+            baseInArray(staffAssignments.locationId, scheduleLocationIds),
+          ))
+        : [];
+      const roleIdsForLookup = Array.from(new Set([
+        ...roleAssignmentRows.map((assignment) => assignment.roleId).filter(Boolean),
+        ...configuredRoleByClassTeacher.values(),
+      ] as string[]));
+      const scheduleRoleRows = roleIdsForLookup.length > 0
+        ? await baseDb.select({ id: roles.id, name: roles.name })
+          .from(roles)
+          .where(baseInArray(roles.id, roleIdsForLookup))
+        : [];
+      const scheduleRoleNameById = new Map(scheduleRoleRows.map((role) => [role.id, role.name]));
+      const roleIdsByStaffAndLocation = new Map<string, Set<string>>();
+      for (const assignment of roleAssignmentRows) {
+        if (!assignment.roleId) continue;
+        const key = `${assignment.locationId}:${assignment.staffId}`;
+        const roleIds = roleIdsByStaffAndLocation.get(key) ?? new Set<string>();
+        roleIds.add(assignment.roleId);
+        roleIdsByStaffAndLocation.set(key, roleIds);
+      }
+
       const enrolledCountMap = new Map<string, number>();
       if (sessionIds.length > 0) {
         const counts = await baseDb.select({
@@ -4841,35 +4907,27 @@ export function registerClassesRoutes(app: Express): void {
         });
       }
 
-      const enriched = sessions
-        .filter(s => {
-          if (!isScheduleEntryVisible({
-            visibleClassIds: scheduleVisibleClassIds,
-            staffId: req.staffId,
-            classId: s.classId,
-            teacherIds: s.teacherIds,
-            sessionTeacherIds: (teacherTimeAssignmentsBySession.get(s.id) ?? [])
-              .map((assignment) => assignment.teacherId),
-          })) {
-            return false;
-          }
-          if (teacherId) {
-            return (s.teacherIds?.includes(teacherId) ?? false) ||
-              (teacherTimeAssignmentsBySession.get(s.id) ?? []).some((assignment) => assignment.teacherId === teacherId);
-          }
-          return true;
-        })
+      const enriched = responseSessions
         .map(s => {
           const contents = contentsMap.get(s.id) || [];
           const teacherTimeAssignments = teacherTimeAssignmentsBySession.get(s.id) ?? [];
-          const teacherIds = [...new Set([
-            ...(s.teacherIds ?? []),
-            ...teacherTimeAssignments.map((assignment) => assignment.teacherId),
-          ])];
+          const teacherIds = teacherIdsBySession.get(s.id) ?? [];
+          const teacherDisplayNames = teacherIds.map((id) => {
+            const teacherName = staffMap.get(id) || "";
+            if (!teacherName) return "";
+            const configuredRoleId = configuredRoleByClassTeacher.get(`${s.classId}:${id}`);
+            const availableRoleIds = roleIdsByStaffAndLocation.get(`${s.locationId}:${id}`);
+            const roleId = configuredRoleId ||
+              (availableRoleIds?.size === 1 ? Array.from(availableRoleIds)[0] : "");
+            const roleName = roleId ? scheduleRoleNameById.get(roleId) : "";
+            return roleName ? `${teacherName} (${roleName})` : teacherName;
+          }).filter(Boolean);
           return {
             ...s,
+            teachersConfig: undefined,
             teacherIds,
             teachers: teacherIds.map(id => staffMap.get(id) || "").filter(Boolean),
+            teacherDisplayNames,
             teacherTimeAssignments,
             totalSessions: totalSessionsMap.get(s.classId) || 0,
             enrolledCount: enrolledCountMap.get(s.id) || 0,
