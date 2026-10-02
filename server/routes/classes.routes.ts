@@ -6437,7 +6437,6 @@ export function registerClassesRoutes(app: Express): void {
             ? "canEdit"
             : "canCreate";
         if (!(await assertScheduleMutationPermission(req, res, action, [], classId))) return;
-        req.body.onlineLink = newLink;
       } else if (isCriteriaOnlyUpdate) {
         const oldCriteriaIds = oldCls?.evaluationCriteriaIds ?? [];
         const newCriteriaIds = Array.isArray(req.body.evaluationCriteriaIds)
@@ -7166,17 +7165,12 @@ export function registerClassesRoutes(app: Express): void {
         ...Object.values(req.body?.studentClassIds ?? {}),
       ].filter((id): id is string => typeof id === "string" && !!id);
       const targetIds = [...new Set(requestedStudentClassIds)];
-      if (targetIds.length === 0) {
-        return res.status(400).json({ message: "Thiếu thông tin lớp của học viên" });
-      }
-      const targetRows = await db.select({
+      const targetRows = targetIds.length > 0 ? await db.select({
         id: studentClasses.id,
         classId: studentClasses.classId,
-      }).from(studentClasses).where(inArray(studentClasses.id, targetIds));
-      if (targetRows.length !== targetIds.length) {
-        return res.status(404).json({ message: "Không tìm thấy học viên trong lớp" });
-      }
+      }).from(studentClasses).where(inArray(studentClasses.id, targetIds)) : [];
       const classIds = [...new Set(targetRows.map((row) => row.classId))];
+      if (classIds.length === 0 && !(await assertScheduleMutationPermission(req, res, "canDelete"))) return;
       for (const classId of classIds) {
         if (!(await assertScheduleMutationPermission(req, res, "canDelete", [], classId))) return;
       }
@@ -7210,17 +7204,12 @@ export function registerClassesRoutes(app: Express): void {
         studentClassId,
         ...Object.values(resolvedStudentClassIds),
       ].filter((id): id is string => typeof id === "string" && !!id))];
-      if (!Array.isArray(studentIds) || studentIds.length === 0 || targetStudentClassIds.length === 0) {
-        return res.status(400).json({ message: "Thiếu thông tin học viên cần xoá" });
-      }
-      const targetRows = await db.select({
+      const targetRows = targetStudentClassIds.length > 0 ? await db.select({
         id: studentClasses.id,
         classId: studentClasses.classId,
-      }).from(studentClasses).where(inArray(studentClasses.id, targetStudentClassIds));
-      if (targetRows.length !== targetStudentClassIds.length) {
-        return res.status(404).json({ message: "Không tìm thấy học viên trong lớp" });
-      }
+      }).from(studentClasses).where(inArray(studentClasses.id, targetStudentClassIds)) : [];
       const targetClassIds = [...new Set(targetRows.map((row) => row.classId))];
+      if (targetClassIds.length === 0 && !(await assertScheduleMutationPermission(req, res, "canDelete"))) return;
       for (const classId of targetClassIds) {
         if (!(await assertScheduleMutationPermission(req, res, "canDelete", [], classId))) return;
       }
@@ -7621,9 +7610,6 @@ export function registerClassesRoutes(app: Express): void {
         existingBefore: { title: string; type: string }[];
       };
 
-      if (!Array.isArray(added) || !Array.isArray(deleted) || !Array.isArray(existingBefore)) {
-        return res.status(400).json({ message: "Dữ liệu nhật ký nội dung không hợp lệ." });
-      }
       if (added.length > 0 && !(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
       if (deleted.length > 0 && !(await assertScheduleMutationPermission(req, res, "canDelete"))) return;
       if (added.length === 0 && deleted.length === 0) return res.json({ ok: true });
