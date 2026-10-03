@@ -192,7 +192,7 @@ function queueBaseSessionReads(options: { assignments?: any[][]; classSessionRea
   queueRows(shiftTemplates, [shiftA], [shiftA, shiftB]);
   queueRows(classSessionTeacherAssignments,
     [firstAssignment],
-    options.assignments ?? [[firstAssignment, secondAssignment]],
+    options.assignments ?? [firstAssignment, secondAssignment],
   );
   queueRows(classes, []);
   queueRows(studentSessions, []);
