@@ -238,7 +238,13 @@ export interface IStorage {
     toSessionId: string;
     startDate: string;
     weekdays: number[];
-    weekdayConfigs: Record<number, { shiftTemplateId: string; teacherIds: string[] }>;
+    weekdayConfigs: Record<number, {
+      shiftTemplateId: string;
+      teacherIds: string[];
+      roomId?: string;
+      teacherRoleIds?: Record<string, string>;
+      teacherTimeAssignments?: Array<{ teacherId: string; startTime: string; endTime: string }>;
+    }>;
     reason: string;
     userId: string;
   }): Promise<void>;
@@ -704,7 +710,13 @@ export class DatabaseStorage implements IStorage {
     toSessionId: string;
     startDate: string;
     weekdays: number[];
-    weekdayConfigs: Record<number, { shiftTemplateId: string; teacherIds: string[] }>;
+    weekdayConfigs: Record<number, {
+      shiftTemplateId: string;
+      teacherIds: string[];
+      roomId?: string;
+      teacherRoleIds?: Record<string, string>;
+      teacherTimeAssignments?: Array<{ teacherId: string; startTime: string; endTime: string }>;
+    }>;
     reason: string;
     userId: string;
   }): Promise<void> {

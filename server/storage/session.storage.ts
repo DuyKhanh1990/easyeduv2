@@ -3500,7 +3500,13 @@ export async function updateClassCycle(classId: string, data: {
   toSessionId: string;
   startDate: string;
   weekdays: number[];
-  weekdayConfigs: Record<number, { shiftTemplateId: string; teacherIds: string[]; roomId?: string }>;
+  weekdayConfigs: Record<number, {
+    shiftTemplateId: string;
+    teacherIds: string[];
+    roomId?: string;
+    teacherRoleIds?: Record<string, string>;
+    teacherTimeAssignments?: Array<{ teacherId: string; startTime: string; endTime: string }>;
+  }>;
   reason: string;
   userId: string;
 }): Promise<void> {
@@ -3569,6 +3575,17 @@ export async function updateClassCycle(classId: string, data: {
       }
       sessionByIndex.set(session.sessionIndex, session);
     }
+    const currentTeacherTimeRows = rangeSessionIds.length > 0
+      ? await tx.select()
+          .from(classSessionTeacherAssignments)
+          .where(inArray(classSessionTeacherAssignments.classSessionId, rangeSessionIds))
+      : [];
+    const currentTeacherTimeBySession = new Map<string, typeof currentTeacherTimeRows>();
+    for (const assignment of currentTeacherTimeRows) {
+      const rows = currentTeacherTimeBySession.get(assignment.classSessionId) ?? [];
+      rows.push(assignment);
+      currentTeacherTimeBySession.set(assignment.classSessionId, rows);
+    }
 
     // Capture affected students only for cycle-history and aggregate recalculation.
     // Their student_session rows remain untouched.
@@ -3614,6 +3631,13 @@ export async function updateClassCycle(classId: string, data: {
       shiftTemplateId: string;
       teacherIds: string[] | null;
       roomId: string;
+      teacherRoleIds?: Record<string, string>;
+      teacherTimeAssignments?: Array<{
+        teacherId: string;
+        startTime: string;
+        endTime: string;
+        scheduleKey: string;
+      }>;
     }> = [];
 
     for (let i = fromIndex; i <= toIndex; i++) {
@@ -3633,19 +3657,93 @@ export async function updateClassCycle(classId: string, data: {
       if (!existingSession) {
         throw new Error(`Không tìm thấy buổi ${i} để cập nhật`);
       }
+      const teacherIds = [...new Set(
+        (Array.isArray(config.teacherIds) ? config.teacherIds : [])
+          .filter((teacherId): teacherId is string => typeof teacherId === "string" && !!teacherId),
+      )];
 
       scheduleUpdates.push({
         sessionIndex: i,
         sessionDate: formatDateOnly(currentDate),
         weekday: wd,
         shiftTemplateId: config.shiftTemplateId,
-        teacherIds: config.teacherIds && config.teacherIds.length > 0 ? config.teacherIds : null,
+        teacherIds: teacherIds.length > 0 ? teacherIds : null,
         roomId: config.roomId || existingSession.roomId,
       });
     }
 
     if (scheduleUpdates.length !== expectedSessionCount) {
       throw new Error("Số lịch mới không khớp số buổi hiện có");
+    }
+
+    const cycleShiftIds = [...new Set(scheduleUpdates.map((schedule) => schedule.shiftTemplateId))];
+    const cycleShifts = cycleShiftIds.length > 0
+      ? await tx.select({
+          id: shiftTemplates.id,
+          startTime: shiftTemplates.startTime,
+          endTime: shiftTemplates.endTime,
+        }).from(shiftTemplates).where(inArray(shiftTemplates.id, cycleShiftIds))
+      : [];
+    const cycleShiftById = new Map(cycleShifts.map((shift) => [shift.id, shift]));
+
+    for (const schedule of scheduleUpdates) {
+      const config = weekdayConfigs[schedule.weekday];
+      const existingSession = sessionByIndex.get(schedule.sessionIndex)!;
+      const teacherIds = schedule.teacherIds ?? [];
+      const requestedRoleIds = config.teacherRoleIds && typeof config.teacherRoleIds === "object" &&
+        !Array.isArray(config.teacherRoleIds)
+        ? config.teacherRoleIds
+        : {};
+      const roleSource = Object.prototype.hasOwnProperty.call(config, "teacherRoleIds")
+        ? requestedRoleIds
+        : (existingSession.teacherRoleIds && typeof existingSession.teacherRoleIds === "object" &&
+            !Array.isArray(existingSession.teacherRoleIds)
+            ? existingSession.teacherRoleIds as Record<string, unknown>
+            : {});
+      schedule.teacherRoleIds = Object.fromEntries(
+        teacherIds.flatMap((teacherId) => {
+          const roleId = roleSource[teacherId];
+          return typeof roleId === "string" && roleId.trim()
+            ? [[teacherId, roleId.trim()] as const]
+            : [];
+        }),
+      );
+
+      const shift = cycleShiftById.get(schedule.shiftTemplateId);
+      const shiftStartTime = String(shift?.startTime ?? "").slice(0, 5);
+      const shiftEndTime = String(shift?.endTime ?? "").slice(0, 5);
+      const currentTimeByTeacher = new Map(
+        (currentTeacherTimeBySession.get(existingSession.id) ?? [])
+          .map((assignment) => [assignment.teacherId, assignment]),
+      );
+      const hasRequestedTimeAssignments = Object.prototype.hasOwnProperty.call(config, "teacherTimeAssignments");
+      const requestedTimeByTeacher = new Map<string, { startTime?: string; endTime?: string }>(
+        (Array.isArray(config.teacherTimeAssignments) ? config.teacherTimeAssignments : [])
+          .filter((assignment) => assignment && typeof assignment.teacherId === "string")
+          .map((assignment) => [assignment.teacherId, assignment]),
+      );
+      schedule.teacherTimeAssignments = teacherIds.map((teacherId) => {
+        if (!shiftStartTime || !shiftEndTime) {
+          throw new Error("Ca học cần có giờ bắt đầu và kết thúc trước khi phân công giờ cho giáo viên");
+        }
+        const previous = currentTimeByTeacher.get(teacherId);
+        const requested = hasRequestedTimeAssignments
+          ? requestedTimeByTeacher.get(teacherId)
+          : previous;
+        const startTime = String(requested?.startTime ?? shiftStartTime).slice(0, 5);
+        const endTime = String(requested?.endTime ?? shiftEndTime).slice(0, 5);
+        if (!isTeacherTimeRangeWithinShift(startTime, endTime, shiftStartTime, shiftEndTime)) {
+          throw new Error(
+            `Giờ phân công của giáo viên phải nằm trong ca chung ${shiftStartTime}–${shiftEndTime}`,
+          );
+        }
+        return {
+          teacherId,
+          startTime,
+          endTime,
+          scheduleKey: previous?.scheduleKey || "cycle-update",
+        };
+      });
     }
     if (fromIndex > 1) {
       const [previousSession] = await tx
@@ -3691,6 +3789,7 @@ export async function updateClassCycle(classId: string, data: {
           weekday: schedule.weekday,
           shiftTemplateId: schedule.shiftTemplateId,
           teacherIds: schedule.teacherIds,
+          teacherRoleIds: schedule.teacherRoleIds ?? {},
           roomId: schedule.roomId,
           changeReason: reason,
           changedAt,
@@ -3706,6 +3805,21 @@ export async function updateClassCycle(classId: string, data: {
       if (!updatedSession) {
         throw new Error(`Không thể cập nhật chính xác buổi ${schedule.sessionIndex}`);
       }
+    }
+    await tx.delete(classSessionTeacherAssignments)
+      .where(inArray(classSessionTeacherAssignments.classSessionId, rangeSessionIds));
+    const timeAssignmentRows = scheduleUpdates.flatMap((schedule) => {
+      const session = sessionByIndex.get(schedule.sessionIndex)!;
+      return (schedule.teacherTimeAssignments ?? []).map((assignment) => ({
+        classSessionId: session.id,
+        teacherId: assignment.teacherId,
+        startTime: assignment.startTime,
+        endTime: assignment.endTime,
+        scheduleKey: assignment.scheduleKey,
+      }));
+    });
+    if (timeAssignmentRows.length > 0) {
+      await tx.insert(classSessionTeacherAssignments).values(timeAssignmentRows);
     }
 
     // === Update cycle_history for students with custom-cycle segments ===

@@ -28,6 +28,9 @@ const mockState = vi.hoisted(() => {
         table = value;
         return builder;
       },
+      innerJoin() {
+        return builder;
+      },
       where() {
         return builder;
       },
@@ -50,14 +53,24 @@ const mockState = vi.hoisted(() => {
 
   state.tx = {
     select: () => makeSelectBuilder(),
-    update: (table: object) => ({
-      set: (values: any) => ({
-        where: async (condition: any) => {
-          state.writes.push({ kind: "update", table, values, condition });
-          return [];
+    update: (table: object) => {
+      let values: any;
+      const builder: any = {
+        set(nextValues: any) {
+          values = nextValues;
+          return builder;
         },
-      }),
-    }),
+        where(condition: any) {
+          state.writes.push({ kind: "update", table, values, condition });
+          return builder;
+        },
+        returning: async () => [{ id: "updated" }],
+        then(resolve: (value: any) => any, reject: (reason: unknown) => any) {
+          return Promise.resolve([]).then(resolve, reject);
+        },
+      };
+      return builder;
+    },
     delete: (table: object) => ({
       where: async (condition: any) => {
         state.writes.push({ kind: "delete", table, condition });
@@ -118,7 +131,7 @@ vi.mock("../server/storage/class.storage", () => ({ getClass: vi.fn() }));
 vi.mock("../server/storage/finance.storage", () => ({ getNextLocationCode: vi.fn() }));
 vi.mock("../server/lib/invoice-notification", () => ({ sendInvoiceCreatedNotification: vi.fn() }));
 
-import { updateClassSession } from "../server/storage/session.storage";
+import { updateClassCycle, updateClassSession } from "../server/storage/session.storage";
 
 const {
   classSessions,
@@ -197,6 +210,42 @@ function queueBaseSessionReads(options: { assignments?: any[][]; classSessionRea
   queueRows(classes, []);
   queueRows(studentSessions, []);
   queueRows(studentClasses, []);
+}
+
+const cycleFirstSlot = {
+  id: "cycle-session-1",
+  classId: "class-cycle",
+  sessionIndex: 1,
+  sessionDate: "2026-01-05",
+  weekday: 1,
+  shiftTemplateId: shiftA.id,
+  roomId: "room-1",
+  teacherIds: ["teacher-a"],
+  teacherRoleIds: { "teacher-a": "role-a-old" },
+};
+const cycleSecondSlot = {
+  id: "cycle-session-2",
+  classId: "class-cycle",
+  sessionIndex: 2,
+  sessionDate: "2026-01-07",
+  weekday: 3,
+  shiftTemplateId: shiftB.id,
+  roomId: "room-2",
+  teacherIds: ["teacher-b"],
+  teacherRoleIds: { "teacher-b": "role-b-old" },
+};
+
+function queueCycleReads(assignments: any[] = [firstAssignment, secondAssignment]) {
+  queueRows(classSessions,
+    [cycleFirstSlot],
+    [cycleSecondSlot],
+    [{ id: cycleSecondSlot.id, sessionIndex: cycleSecondSlot.sessionIndex }],
+    [cycleFirstSlot, cycleSecondSlot],
+  );
+  queueRows(studentSessions, []);
+  queueRows(classSessionTeacherAssignments, assignments);
+  queueRows(shiftTemplates, [shiftA, shiftB]);
+  queueRows(classes, [{ cycleHistory: [] }]);
 }
 
 describe("updateClassSession teacher-time persistence", () => {
@@ -288,6 +337,141 @@ describe("updateClassSession teacher-time persistence", () => {
       }],
       changeReason: "Đổi lịch",
       changedBy: "staff-1",
+    })).rejects.toThrow("phải nằm trong ca chung");
+
+    expect(mockState.writes).toEqual([]);
+  });
+
+  it("applies each weekday's role overrides and teacher intervals without replacing session records", async () => {
+    queueCycleReads([
+      {
+        classSessionId: cycleFirstSlot.id,
+        teacherId: "teacher-a",
+        startTime: "08:00",
+        endTime: "10:00",
+        scheduleKey: "monday-shift",
+      },
+      {
+        classSessionId: cycleSecondSlot.id,
+        teacherId: "teacher-b",
+        startTime: "14:00",
+        endTime: "16:00",
+        scheduleKey: "wednesday-shift",
+      },
+    ]);
+
+    await updateClassCycle("class-cycle", {
+      fromSessionId: cycleFirstSlot.id,
+      toSessionId: cycleSecondSlot.id,
+      startDate: "2026-01-05",
+      weekdays: [1, 3],
+      weekdayConfigs: {
+        1: {
+          shiftTemplateId: shiftA.id,
+          roomId: "room-1",
+          teacherIds: ["teacher-a", "teacher-b"],
+          teacherRoleIds: { "teacher-a": "role-a-new" },
+          teacherTimeAssignments: [
+            { teacherId: "teacher-a", startTime: "08:30", endTime: "09:00" },
+            { teacherId: "teacher-b", startTime: "09:00", endTime: "10:00" },
+          ],
+        },
+        3: {
+          shiftTemplateId: shiftB.id,
+          roomId: "room-2",
+          teacherIds: ["teacher-b"],
+          teacherRoleIds: {},
+          teacherTimeAssignments: [
+            { teacherId: "teacher-b", startTime: "15:00", endTime: "15:30" },
+          ],
+        },
+      },
+      reason: "Thay đổi phân công",
+      userId: "staff-1",
+    });
+
+    const sessionWrites = mockState.writes.filter(
+      (write) => write.kind === "update" && write.table === classSessions,
+    );
+    expect(sessionWrites.map((write) => ({
+      teacherIds: write.values.teacherIds,
+      teacherRoleIds: write.values.teacherRoleIds,
+      sessionDate: write.values.sessionDate,
+    }))).toEqual([
+      {
+        teacherIds: ["teacher-a", "teacher-b"],
+        teacherRoleIds: { "teacher-a": "role-a-new" },
+        sessionDate: "2026-01-05",
+      },
+      {
+        teacherIds: ["teacher-b"],
+        teacherRoleIds: {},
+        sessionDate: "2026-01-07",
+      },
+    ]);
+    expect(sessionWrites.map((write) =>
+      write.condition?.conditions?.find((condition: any) => condition.column === classSessions.id)?.value,
+    )).toEqual([cycleFirstSlot.id, cycleSecondSlot.id]);
+    expect(mockState.writes.some(
+      (write) => write.table === studentSessions && write.kind !== "select",
+    )).toBe(false);
+
+    const assignmentInserts = mockState.writes
+      .filter((write) => write.kind === "insert" && write.table === classSessionTeacherAssignments)
+      .flatMap((write) => write.values);
+    expect(assignmentInserts).toEqual([
+      {
+        classSessionId: cycleFirstSlot.id,
+        teacherId: "teacher-a",
+        startTime: "08:30",
+        endTime: "09:00",
+        scheduleKey: "monday-shift",
+      },
+      {
+        classSessionId: cycleFirstSlot.id,
+        teacherId: "teacher-b",
+        startTime: "09:00",
+        endTime: "10:00",
+        scheduleKey: "cycle-update",
+      },
+      {
+        classSessionId: cycleSecondSlot.id,
+        teacherId: "teacher-b",
+        startTime: "15:00",
+        endTime: "15:30",
+        scheduleKey: "wednesday-shift",
+      },
+    ]);
+  });
+
+  it("rejects cycle teacher times outside their common shift before writing", async () => {
+    queueCycleReads();
+
+    await expect(updateClassCycle("class-cycle", {
+      fromSessionId: cycleFirstSlot.id,
+      toSessionId: cycleSecondSlot.id,
+      startDate: "2026-01-05",
+      weekdays: [1, 3],
+      weekdayConfigs: {
+        1: {
+          shiftTemplateId: shiftA.id,
+          teacherIds: ["teacher-a"],
+          teacherRoleIds: {},
+          teacherTimeAssignments: [
+            { teacherId: "teacher-a", startTime: "07:30", endTime: "09:00" },
+          ],
+        },
+        3: {
+          shiftTemplateId: shiftB.id,
+          teacherIds: ["teacher-b"],
+          teacherRoleIds: {},
+          teacherTimeAssignments: [
+            { teacherId: "teacher-b", startTime: "15:00", endTime: "15:30" },
+          ],
+        },
+      },
+      reason: "Thay đổi phân công",
+      userId: "staff-1",
     })).rejects.toThrow("phải nằm trong ca chung");
 
     expect(mockState.writes).toEqual([]);

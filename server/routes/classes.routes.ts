@@ -8,7 +8,7 @@ import { scoreSheetAssessmentSchema } from "@shared/score-sheet-assessment";
 import { scoreSheetTemplateSchema } from "@shared/score-sheet-template";
 import { createScoreSheetAssessmentForTemplate as createScoreSheetAssessmentFromTemplate } from "../lib/score-sheet-assignment";
 import { db, pool } from "../db";
-import { classSessions, studentSessions, freeClassRegistrations, freeClassDayAssignments, students, classes, studentClasses, staff, staffAssignments, departments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, roles, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, invoiceItems, courseFeePackages, financePromotions, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
+import { classSessions, classSessionTeacherAssignments, studentSessions, freeClassRegistrations, freeClassDayAssignments, students, classes, studentClasses, staff, staffAssignments, departments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, roles, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, invoiceItems, courseFeePackages, financePromotions, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
 import { eq, and, sql, inArray, avg, between, gte, lte, gt, desc, asc, or, ilike, isNotNull, isNull, ne } from "drizzle-orm";
 import { sendAttendanceNotificationWithLimit, sendReviewNotification, sendContentNotification } from "../lib/attendance-notification";
 import { enforceAttendanceTimeLimit, getStaffRoleIds } from "../lib/attendance-limit";
@@ -4481,6 +4481,7 @@ export function registerClassesRoutes(app: Express): void {
           const fi = fromSession.sessionIndex ?? 0;
           const ti = toSession.sessionIndex ?? 0;
           const sessForCheck = await db.select({
+            id: classSessions.id,
             sessionDate: classSessions.sessionDate,
             shiftTemplateId: classSessions.shiftTemplateId,
             roomId: classSessions.roomId,
@@ -4489,7 +4490,32 @@ export function registerClassesRoutes(app: Express): void {
             eq(classSessions.classId, classId),
             between(classSessions.sessionIndex, fi, ti),
           ));
-          updateCycleConflicts = await checkScheduleConflicts(sessForCheck, classId);
+          const persistedTimeAssignments = sessForCheck.length > 0
+            ? await db.select({
+                classSessionId: classSessionTeacherAssignments.classSessionId,
+                teacherId: classSessionTeacherAssignments.teacherId,
+                startTime: classSessionTeacherAssignments.startTime,
+                endTime: classSessionTeacherAssignments.endTime,
+              }).from(classSessionTeacherAssignments)
+                .where(inArray(classSessionTeacherAssignments.classSessionId, sessForCheck.map((session) => session.id)))
+            : [];
+          const timeAssignmentsBySession = new Map<string, Array<{ teacherId: string; startTime: string; endTime: string }>>();
+          for (const assignment of persistedTimeAssignments) {
+            const assignments = timeAssignmentsBySession.get(assignment.classSessionId) ?? [];
+            assignments.push({
+              teacherId: assignment.teacherId,
+              startTime: String(assignment.startTime),
+              endTime: String(assignment.endTime),
+            });
+            timeAssignmentsBySession.set(assignment.classSessionId, assignments);
+          }
+          updateCycleConflicts = await checkScheduleConflicts(
+            sessForCheck.map((session) => ({
+              ...session,
+              teacherTimeAssignments: timeAssignmentsBySession.get(session.id) ?? [],
+            })),
+            classId,
+          );
         }
       } catch (ce) {
         console.error("[ConflictCheck] update-cycle:", ce);
@@ -6569,7 +6595,13 @@ export function registerClassesRoutes(app: Express): void {
 
       // Simulate the EXACT same date-projection logic as the actual updateCycle
       // so we check conflicts against the future dates, not the current DB dates
-      const previewSessions: { sessionDate: string; shiftTemplateId: string; roomId: string | null; teacherIds: string[] }[] = [];
+      const previewSessions: {
+        sessionDate: string;
+        shiftTemplateId: string;
+        roomId: string | null;
+        teacherIds: string[];
+        teacherTimeAssignments?: Array<{ teacherId: string; startTime: string; endTime: string }>;
+      }[] = [];
       const previewStartDate =
         typeof startDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(startDate)
           ? startDate
@@ -6594,6 +6626,20 @@ export function registerClassesRoutes(app: Express): void {
             shiftTemplateId: cfg.shiftTemplateId,
             roomId: cfg.roomId || null,
             teacherIds: cfg.teacherIds || [],
+            teacherTimeAssignments: Array.isArray(cfg.teacherTimeAssignments)
+              ? cfg.teacherTimeAssignments
+                  .filter((assignment: any) =>
+                    assignment &&
+                    typeof assignment.teacherId === "string" &&
+                    typeof assignment.startTime === "string" &&
+                    typeof assignment.endTime === "string"
+                  )
+                  .map((assignment: any) => ({
+                    teacherId: assignment.teacherId,
+                    startTime: assignment.startTime,
+                    endTime: assignment.endTime,
+                  }))
+              : undefined,
           });
         }
         cur.setDate(cur.getDate() + 1);

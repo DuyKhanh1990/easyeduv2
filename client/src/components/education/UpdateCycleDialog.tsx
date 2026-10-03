@@ -133,8 +133,6 @@ export function UpdateCycleDialog({
       setReason("");
       setShowErrors(false);
       setLiveConflicts([]);
-      setWeekdayTeacherRoleSelections({});
-      setWeekdayTeacherTimeRanges({});
 
       const allSorted = (classSessions as any[])
         .filter((s: any) => s.status !== "cancelled")
@@ -181,15 +179,49 @@ export function UpdateCycleDialog({
       });
 
       const configs: Record<number, { shiftTemplateId: string; teacherIds: string[]; roomId: string }> = {};
+      const roleSelections: Record<number, Record<string, string>> = {};
+      const timeRanges: Record<number, Record<string, TeacherTimeRange>> = {};
       weekdaysToUse.forEach((wd: number) => {
         const s = cycleSessionMap[wd];
+        const teacherIds = Array.isArray(s?.teacherIds)
+          ? s.teacherIds
+          : classData?.teacherIds || [];
         configs[wd] = {
           shiftTemplateId: s?.shiftTemplateId || (classData?.shiftTemplateIds || [])[0] || "",
-          teacherIds: s?.teacherIds || classData?.teacherIds || [],
+          teacherIds,
           roomId: s?.roomId || classData?.roomId || "",
         };
+
+        const savedRoleIds = s?.teacherRoleIds && typeof s.teacherRoleIds === "object" && !Array.isArray(s.teacherRoleIds)
+          ? s.teacherRoleIds as Record<string, unknown>
+          : {};
+        roleSelections[wd] = Object.fromEntries(
+          Object.entries(savedRoleIds).filter(([teacherId, roleId]) =>
+            teacherIds.includes(teacherId) && typeof roleId === "string" && !!roleId.trim()
+          ).map(([teacherId, roleId]) => [teacherId, String(roleId).trim()]),
+        );
+
+        const shiftStartTime = String(s?.shiftTemplate?.startTime || "").slice(0, 5);
+        const shiftEndTime = String(s?.shiftTemplate?.endTime || "").slice(0, 5);
+        const savedRanges: Record<string, TeacherTimeRange> = {};
+        for (const assignment of Array.isArray(s?.teacherTimeAssignments) ? s.teacherTimeAssignments : []) {
+          const teacherId = String(assignment?.teacherId || "");
+          if (!teacherIds.includes(teacherId)) continue;
+          const startTime = String(assignment?.startTime || "").slice(0, 5);
+          const endTime = String(assignment?.endTime || "").slice(0, 5);
+          if (
+            startTime &&
+            endTime &&
+            (!shiftStartTime || !shiftEndTime || startTime !== shiftStartTime || endTime !== shiftEndTime)
+          ) {
+            savedRanges[teacherId] = { startTime, endTime };
+          }
+        }
+        timeRanges[wd] = savedRanges;
       });
       setWeekdayConfigs(configs);
+      setWeekdayTeacherRoleSelections(roleSelections);
+      setWeekdayTeacherTimeRanges(timeRanges);
     }
   }, [isOpen, classSessions, classData, defaultFromSessionId]);
 
@@ -214,7 +246,13 @@ export function UpdateCycleDialog({
           method: "POST",
           headers: { "Content-Type": "application/json", ...getAuthHeaders() },
           credentials: "include",
-          body: JSON.stringify({ fromSessionId, toSessionId, startDate, weekdays: selectedWeekdays, weekdayConfigs }),
+          body: JSON.stringify({
+            fromSessionId,
+            toSessionId,
+            startDate,
+            weekdays: selectedWeekdays,
+            weekdayConfigs: buildWeekdayConfigsWithAssignments(),
+          }),
         });
         if (res.ok) {
           const data = await res.json();
@@ -227,7 +265,18 @@ export function UpdateCycleDialog({
       }
     }, 800);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [isOpen, classId, classData?.id, fromSessionId, toSessionId, startDate, selectedWeekdays, weekdayConfigs]);
+  }, [
+    isOpen,
+    classId,
+    classData?.id,
+    fromSessionId,
+    toSessionId,
+    startDate,
+    selectedWeekdays,
+    weekdayConfigs,
+    weekdayTeacherRoleSelections,
+    weekdayTeacherTimeRanges,
+  ]);
 
   const allTeachers = (staffList || []).map((s: any) => ({ ...s, _isActive: s.status === "Hoạt động" }));
   const activeTeachers = allTeachers.filter(isDefaultTrainingDepartmentStaff);
@@ -258,12 +307,28 @@ export function UpdateCycleDialog({
 
   const getTeacherRoleDetails = (wd: number, teacherId: string) => {
     const member = allTeachers.find((teacher: any) => teacher.id === teacherId);
-    const roleOptions = getStaffRoleOptions(member, classData?.locationId);
+    let roleOptions = getStaffRoleOptions(member, classData?.locationId);
     const classTeacherConfig = (Array.isArray(classData?.teachersConfig) ? classData.teachersConfig : [])
       .find((teacher: any) => String(teacher?.teacher_id ?? teacher?.teacherId ?? "") === teacherId);
     const defaultRoleId = resolveTeacherRoleId(classTeacherConfig, roleOptions) ||
       resolveTeacherRoleId({}, roleOptions);
     const selectedRoleId = weekdayTeacherRoleSelections[wd]?.[teacherId] || defaultRoleId;
+    const savedTeacherRole = (classSessions || [])
+      .filter((session: any) => session.weekday === wd)
+      .flatMap((session: any) => Array.isArray(session.teachers) ? session.teachers : [])
+      .find((teacher: any) => teacher.id === teacherId && teacher.roleId === selectedRoleId);
+    if (selectedRoleId && !roleOptions.some((option) => option.id === selectedRoleId)) {
+      roleOptions = [
+        ...roleOptions,
+        {
+          id: selectedRoleId,
+          name: savedTeacherRole?.roleName || "Vai trò đã lưu",
+          isSystemRole: false,
+          departmentName: "",
+          isSystemDepartment: false,
+        },
+      ];
+    }
     return {
       roleOptions,
       defaultRoleId,
@@ -281,6 +346,33 @@ export function UpdateCycleDialog({
 
   const getTeacherTimeRange = (wd: number, teacherId: string): TeacherTimeRange =>
     weekdayTeacherTimeRanges[wd]?.[teacherId] || getWeekdayShiftRange(wd);
+
+  const buildWeekdayConfigsWithAssignments = (): Record<number, any> => {
+    const result: Record<number, any> = {};
+    for (const wd of selectedWeekdays) {
+      const config = weekdayConfigs[wd];
+      if (!config) continue;
+      const teacherIds = config.teacherIds || [];
+      const savedRoleIds = weekdayTeacherRoleSelections[wd] || {};
+      result[wd] = {
+        ...config,
+        teacherRoleIds: Object.fromEntries(
+          Object.entries(savedRoleIds).filter(([teacherId, roleId]) =>
+            teacherIds.includes(teacherId) && !!roleId
+          ),
+        ),
+        teacherTimeAssignments: teacherIds.map((teacherId) => {
+          const range = getTeacherTimeRange(wd, teacherId);
+          return {
+            teacherId,
+            startTime: range.startTime,
+            endTime: range.endTime,
+          };
+        }),
+      };
+    }
+    return result;
+  };
 
   const updateTeacherTimeRange = (
     wd: number,
@@ -351,25 +443,53 @@ export function UpdateCycleDialog({
     }));
   };
 
+  const invalidTeacherTimeWeekdays = selectedWeekdays.filter((wd) => {
+    const teacherIds = weekdayConfigs[wd]?.teacherIds || [];
+    if (teacherIds.length === 0) return false;
+    const shiftRange = getWeekdayShiftRange(wd);
+    return !shiftRange.startTime || !shiftRange.endTime || teacherIds.some((teacherId) => {
+      const range = getTeacherTimeRange(wd, teacherId);
+      return !isTeacherTimeRangeWithinShift(
+        range.startTime,
+        range.endTime,
+        shiftRange.startTime,
+        shiftRange.endTime,
+      );
+    });
+  });
+
   const isValid =
     !!fromSessionId &&
     !!startDate &&
     selectedWeekdays.length > 0 &&
     !!reason.trim() &&
-    !Object.values(weekdayConfigs).some((c) => !c.shiftTemplateId);
+    !Object.values(weekdayConfigs).some((c) => !c.shiftTemplateId) &&
+    invalidTeacherTimeWeekdays.length === 0;
 
   const validationErrors: string[] = [];
   if (!reason.trim()) validationErrors.push("Lý do thay đổi chưa nhập");
   if (selectedWeekdays.length === 0) validationErrors.push("Chưa chọn thứ trong tuần");
   if (Object.values(weekdayConfigs).some((c) => !c.shiftTemplateId))
     validationErrors.push("Chưa chọn ca học cho một số thứ");
+  if (invalidTeacherTimeWeekdays.length > 0) {
+    validationErrors.push(
+      `Khung giờ riêng phải nằm trong ca chung cho: ${invalidTeacherTimeWeekdays.map((wd) => WEEKDAY_LABELS[wd]).join(", ")}`,
+    );
+  }
 
   const handleConfirm = () => {
     if (!isValid) {
       setShowErrors(true);
       return;
     }
-    onConfirm({ fromSessionId, toSessionId, startDate, weekdays: selectedWeekdays, weekdayConfigs, reason });
+    onConfirm({
+      fromSessionId,
+      toSessionId,
+      startDate,
+      weekdays: selectedWeekdays,
+      weekdayConfigs: buildWeekdayConfigsWithAssignments(),
+      reason,
+    });
   };
 
   const roomConflicts = liveConflicts.filter(c => c.type === "room");
@@ -389,7 +509,7 @@ export function UpdateCycleDialog({
 
           <div className="flex-1 min-h-0 overflow-y-auto pr-4">
               <div className="space-y-6 py-4">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-6 items-start">
                   <div className="space-y-6">
                     <div className="space-y-2">
                       <div className="space-y-2">
@@ -499,7 +619,7 @@ export function UpdateCycleDialog({
                         <Label>Cấu hình ca và giáo viên theo thứ</Label>
                         <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
                           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                          <span>Vai trò và khung giờ riêng đang là giao diện thử nghiệm; khi cập nhật chu kỳ, các mục này chưa được lưu.</span>
+                          <span>Vai trò và khung giờ riêng sẽ được lưu theo từng buổi; khung giờ phải nằm trong ca chung.</span>
                         </div>
                       </div>
                       <div className="space-y-3">
@@ -582,7 +702,8 @@ export function UpdateCycleDialog({
                                     ? roleDetails.selectedRoleId || USE_DEFAULT_ROLE
                                     : "";
                                   const teacherTimeRange = getTeacherTimeRange(wd, teacherId);
-                                  const isInvalidTimeRange = !!shiftRange.startTime && !!shiftRange.endTime &&
+                                  const isMissingShiftRange = !shiftRange.startTime || !shiftRange.endTime;
+                                  const isInvalidTimeRange = isMissingShiftRange ||
                                     !isTeacherTimeRangeWithinShift(
                                       teacherTimeRange.startTime,
                                       teacherTimeRange.endTime,
@@ -666,7 +787,9 @@ export function UpdateCycleDialog({
                                         </div>
                                         {isInvalidTimeRange && (
                                           <p className="text-xs text-destructive">
-                                            Khung giờ phải nằm trong ca chung {shiftRange.startTime}–{shiftRange.endTime}.
+                                            {isMissingShiftRange
+                                              ? "Không xác định được giờ ca chung; vui lòng chọn lại ca học."
+                                              : `Khung giờ phải nằm trong ca chung ${shiftRange.startTime}–${shiftRange.endTime}.`}
                                           </p>
                                         )}
                                       </div>
