@@ -197,11 +197,10 @@ export function ShiftManagement() {
   );
 
   const { data: shiftTemplates = [] } = useQuery<any[]>({
-    queryKey: ["/api/shift-templates", "work", filters.locationId !== "all" ? filters.locationId : undefined],
+    queryKey: ["/api/shift-templates", "class"],
     queryFn: async () => {
-      const params = new URLSearchParams({ type: "work" });
-      if (filters.locationId !== "all") params.append("locationId", filters.locationId);
-      const res = await fetch(`/api/shift-templates?${params.toString()}`);
+      const res = await fetch("/api/shift-templates?type=class");
+      if (!res.ok) throw new Error("Failed to fetch class shifts");
       return res.json();
     },
   });
