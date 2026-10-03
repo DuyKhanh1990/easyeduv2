@@ -323,7 +323,7 @@ export function UpdateSessionDialog({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[680px]">
+        <DialogContent className="max-h-[90vh] w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-[1020px]">
           <DialogHeader>
             <DialogTitle>Cập nhật buổi học {session?.sessionIndex}</DialogTitle>
             <DialogDescription>
@@ -393,7 +393,7 @@ export function UpdateSessionDialog({
                   Ca chung giới hạn: <span className="font-medium text-foreground">{shiftRangeLabel}</span>.
                   {" "}Giáo viên không chia riêng sẽ dùng toàn bộ ca này.
                 </div>
-                <div className="hidden grid-cols-[minmax(0,1fr)_minmax(120px,0.95fr)_minmax(220px,1.45fr)] gap-3 bg-muted/50 px-3 py-2 text-xs font-medium text-muted-foreground sm:grid">
+                <div className="hidden gap-3 bg-muted/50 px-3 py-2 text-xs font-medium text-muted-foreground lg:grid lg:grid-cols-[minmax(140px,0.85fr)_minmax(160px,0.95fr)_minmax(360px,1.8fr)]">
                   <span>Tên giáo viên</span>
                   <span>Vai trò</span>
                   <span>Phân công ca dạy</span>
@@ -410,11 +410,11 @@ export function UpdateSessionDialog({
                     const invalidTime = invalidTimeTeacherIds.includes(teacherId);
                     const isFullShift = timeRange.startTime === shiftStartTime && timeRange.endTime === shiftEndTime;
                     return (
-                      <div key={teacherId} className="grid grid-cols-1 gap-2 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(120px,0.95fr)_minmax(220px,1.45fr)] sm:items-center sm:gap-3">
-                        <span className="min-w-0 truncate text-sm font-medium" title={teacher?.fullName || teacherId}>
+                      <div key={teacherId} className="grid grid-cols-1 gap-2 px-3 py-3 lg:grid-cols-[minmax(140px,0.85fr)_minmax(160px,0.95fr)_minmax(360px,1.8fr)] lg:items-start lg:gap-3">
+                        <span className="min-w-0 truncate text-sm font-medium lg:pt-2" title={teacher?.fullName || teacherId}>
                           {teacher?.fullName || teacherId}
                         </span>
-                        <div className="space-y-1">
+                        <div className="min-w-0 space-y-1">
                           <span className="text-xs text-muted-foreground sm:hidden">Vai trò</span>
                           <Select
                             value={details.selectedRoleId || ""}
@@ -474,7 +474,12 @@ export function UpdateSessionDialog({
                               />
                             </label>
                           </div>
-                          <p className={`text-xs ${invalidTime ? "text-destructive" : "text-muted-foreground"}`}>
+                          <p className={invalidTime
+                            ? "text-xs text-destructive"
+                            : isFullShift
+                              ? "text-xs text-muted-foreground"
+                              : "whitespace-nowrap text-[9px] leading-3 text-muted-foreground"
+                          }>
                             {invalidTime
                               ? `Giờ phải nằm trong ca chung ${shiftRangeLabel} và giờ bắt đầu phải trước giờ kết thúc.`
                               : isFullShift
