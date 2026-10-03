@@ -24,8 +24,17 @@ import { AlertCircle, AlertTriangle, Loader2 } from "lucide-react";
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { ConflictDetailSheet } from "@/components/education/ConflictDetailSheet";
 import type { ConflictItem } from "@/components/education/ConflictDetailSheet";
+import {
+  getStaffRoleOptions,
+  isDefaultTrainingDepartmentStaff,
+  resolveTeacherRoleId,
+} from "@/lib/staff-role-options";
+import { isTeacherTimeRangeWithinShift } from "@shared/teacher-time-assignments";
 
 const WEEKDAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+const USE_DEFAULT_ROLE = "__use_default_role__";
+
+type TeacherTimeRange = { startTime: string; endTime: string };
 
 function getNextCycleDate(dateValue: string, weekdays: number[]): string | null {
   if (!dateValue || weekdays.length === 0) return null;
@@ -74,6 +83,12 @@ export function UpdateCycleDialog({
   const [weekdayConfigs, setWeekdayConfigs] = useState<
     Record<number, { shiftTemplateId: string; teacherIds: string[]; roomId: string }>
   >({});
+  const [weekdayTeacherRoleSelections, setWeekdayTeacherRoleSelections] = useState<
+    Record<number, Record<string, string>>
+  >({});
+  const [weekdayTeacherTimeRanges, setWeekdayTeacherTimeRanges] = useState<
+    Record<number, Record<string, TeacherTimeRange>>
+  >({});
   const [reason, setReason] = useState<string>("");
   const [showErrors, setShowErrors] = useState(false);
 
@@ -118,6 +133,8 @@ export function UpdateCycleDialog({
       setReason("");
       setShowErrors(false);
       setLiveConflicts([]);
+      setWeekdayTeacherRoleSelections({});
+      setWeekdayTeacherTimeRanges({});
 
       const allSorted = (classSessions as any[])
         .filter((s: any) => s.status !== "cancelled")
@@ -213,7 +230,90 @@ export function UpdateCycleDialog({
   }, [isOpen, classId, classData?.id, fromSessionId, toSessionId, startDate, selectedWeekdays, weekdayConfigs]);
 
   const allTeachers = (staffList || []).map((s: any) => ({ ...s, _isActive: s.status === "Hoạt động" }));
-  const activeTeachers = allTeachers;
+  const activeTeachers = allTeachers.filter(isDefaultTrainingDepartmentStaff);
+
+  const getTeacherOptionsForWeekday = (wd: number) => {
+    const selectedIds = weekdayConfigs[wd]?.teacherIds || [];
+    const eligibleIds = new Set(activeTeachers.map((teacher: any) => teacher.id));
+    const eligibleOptions = activeTeachers.map((teacher: any) => ({
+      value: teacher.id,
+      label: teacher.fullName,
+      isActive: teacher._isActive,
+    }));
+    // Keep existing out-of-department assignments visible and removable, but do not
+    // make them available to add again after they have been removed.
+    const retainedOptions = selectedIds
+      .filter((teacherId) => !eligibleIds.has(teacherId))
+      .map((teacherId) => {
+        const teacher = allTeachers.find((member: any) => member.id === teacherId);
+        return {
+          value: teacherId,
+          label: teacher?.fullName || teacherId,
+          sublabel: "Đang phân công",
+          isActive: teacher ? teacher._isActive : true,
+        };
+      });
+    return [...eligibleOptions, ...retainedOptions];
+  };
+
+  const getTeacherRoleDetails = (wd: number, teacherId: string) => {
+    const member = allTeachers.find((teacher: any) => teacher.id === teacherId);
+    const roleOptions = getStaffRoleOptions(member, classData?.locationId);
+    const classTeacherConfig = (Array.isArray(classData?.teachersConfig) ? classData.teachersConfig : [])
+      .find((teacher: any) => String(teacher?.teacher_id ?? teacher?.teacherId ?? "") === teacherId);
+    const defaultRoleId = resolveTeacherRoleId(classTeacherConfig, roleOptions) ||
+      resolveTeacherRoleId({}, roleOptions);
+    const selectedRoleId = weekdayTeacherRoleSelections[wd]?.[teacherId] || defaultRoleId;
+    return {
+      roleOptions,
+      defaultRoleId,
+      selectedRoleId,
+    };
+  };
+
+  const getWeekdayShiftRange = (wd: number): TeacherTimeRange => {
+    const shift = shifts?.find((item: any) => item.id === weekdayConfigs[wd]?.shiftTemplateId);
+    return {
+      startTime: String(shift?.startTime || "").slice(0, 5),
+      endTime: String(shift?.endTime || "").slice(0, 5),
+    };
+  };
+
+  const getTeacherTimeRange = (wd: number, teacherId: string): TeacherTimeRange =>
+    weekdayTeacherTimeRanges[wd]?.[teacherId] || getWeekdayShiftRange(wd);
+
+  const updateTeacherTimeRange = (
+    wd: number,
+    teacherId: string,
+    field: keyof TeacherTimeRange,
+    value: string,
+  ) => {
+    const current = getTeacherTimeRange(wd, teacherId);
+    setWeekdayTeacherTimeRanges((ranges) => ({
+      ...ranges,
+      [wd]: {
+        ...(ranges[wd] || {}),
+        [teacherId]: { ...current, [field]: value },
+      },
+    }));
+  };
+
+  const handleTeacherIdsChange = (wd: number, nextIds: string[]) => {
+    const normalizedIds = [...new Set(nextIds)];
+    updateWeekdayConfig(wd, { teacherIds: normalizedIds });
+    setWeekdayTeacherRoleSelections((current) => ({
+      ...current,
+      [wd]: Object.fromEntries(
+        Object.entries(current[wd] || {}).filter(([teacherId]) => normalizedIds.includes(teacherId)),
+      ),
+    }));
+    setWeekdayTeacherTimeRanges((current) => ({
+      ...current,
+      [wd]: Object.fromEntries(
+        Object.entries(current[wd] || {}).filter(([teacherId]) => normalizedIds.includes(teacherId)),
+      ),
+    }));
+  };
 
   const handleWeekdayToggle = (wd: number) => {
     setSelectedWeekdays((prev) => {
@@ -222,6 +322,12 @@ export function UpdateCycleDialog({
         const newConfigs = { ...weekdayConfigs };
         delete newConfigs[wd];
         setWeekdayConfigs(newConfigs);
+        setWeekdayTeacherRoleSelections((current) =>
+          Object.fromEntries(Object.entries(current).filter(([weekday]) => Number(weekday) !== wd)),
+        );
+        setWeekdayTeacherTimeRanges((current) =>
+          Object.fromEntries(Object.entries(current).filter(([weekday]) => Number(weekday) !== wd)),
+        );
       } else {
         setWeekdayConfigs((prevConfigs) => ({
           ...prevConfigs,
@@ -231,6 +337,8 @@ export function UpdateCycleDialog({
             roomId: classData.roomId || "",
           },
         }));
+        setWeekdayTeacherRoleSelections((current) => ({ ...current, [wd]: {} }));
+        setWeekdayTeacherTimeRanges((current) => ({ ...current, [wd]: {} }));
       }
       return next;
     });
@@ -281,7 +389,7 @@ export function UpdateCycleDialog({
 
           <div className="flex-1 min-h-0 overflow-y-auto pr-4">
               <div className="space-y-6 py-4">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
                   <div className="space-y-6">
                     <div className="space-y-2">
                       <div className="space-y-2">
@@ -386,66 +494,185 @@ export function UpdateCycleDialog({
                   </div>
 
                   {selectedWeekdays.length > 0 && (
-                    <div className="space-y-4">
-                      <Label>Cấu hình ca và giáo viên theo thứ</Label>
-                      <div className="space-y-3 border rounded-md p-4 bg-muted/20">
+                    <div className="space-y-3">
+                      <div className="space-y-2">
+                        <Label>Cấu hình ca và giáo viên theo thứ</Label>
+                        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                          <span>Vai trò và khung giờ riêng đang là giao diện thử nghiệm; khi cập nhật chu kỳ, các mục này chưa được lưu.</span>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
                         {selectedWeekdays.map((wd) => {
-                          const wdRoomConflicts = roomConflicts.filter(c => {
-                            // match by weekday from sessionDate
+                          const wdRoomConflicts = roomConflicts.filter((c) => {
                             const d = new Date(c.sessionDate + "T00:00:00");
                             return d.getDay() === wd;
                           });
+                          const selectedTeacherIds = weekdayConfigs[wd]?.teacherIds || [];
+                          const shiftRange = getWeekdayShiftRange(wd);
                           return (
-                            <div key={wd} className="space-y-2 border-b pb-3 last:border-0 last:pb-0">
-                              <div className="grid grid-cols-10 gap-3 items-center">
-                                <div className="col-span-1 font-bold text-primary">{WEEKDAY_LABELS[wd]}</div>
-                                <div className="col-span-3">
+                            <div key={wd} className="overflow-hidden rounded-md border bg-background">
+                              <div className="grid grid-cols-2 gap-2 border-b bg-muted/20 p-3 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)]">
+                                <div className="flex items-center justify-center rounded-md bg-primary px-2 py-1 text-sm font-bold text-primary-foreground sm:min-w-10">
+                                  {WEEKDAY_LABELS[wd]}
+                                </div>
+                                <div className="min-w-0 space-y-1">
+                                  <span className="text-xs text-muted-foreground sm:hidden">Ca học chung</span>
                                   <Select
                                     value={weekdayConfigs[wd]?.shiftTemplateId}
-                                    onValueChange={(v) => updateWeekdayConfig(wd, { shiftTemplateId: v })}
+                                    onValueChange={(value) => updateWeekdayConfig(wd, { shiftTemplateId: value })}
                                   >
-                                    <SelectTrigger className="h-9 text-xs">
+                                    <SelectTrigger className="h-9 min-w-0 text-xs">
                                       <SelectValue placeholder="Chọn ca" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      {shifts?.map((s) => (
-                                        <SelectItem key={s.id} value={s.id}>
-                                          {s.name} ({s.startTime}-{s.endTime})
+                                      {shifts?.map((shift: any) => (
+                                        <SelectItem key={shift.id} value={shift.id}>
+                                          {shift.name} ({shift.startTime}-{shift.endTime})
                                         </SelectItem>
                                       ))}
                                     </SelectContent>
                                   </Select>
                                 </div>
-                                <div className="col-span-3">
+                                <div className="col-span-2 min-w-0 space-y-1 sm:col-span-1">
+                                  <span className="text-xs text-muted-foreground sm:hidden">Phòng học</span>
                                   <Select
                                     value={weekdayConfigs[wd]?.roomId || "none"}
-                                    onValueChange={(v) => updateWeekdayConfig(wd, { roomId: v === "none" ? "" : v })}
+                                    onValueChange={(value) => updateWeekdayConfig(wd, { roomId: value === "none" ? "" : value })}
                                   >
-                                    <SelectTrigger className={`h-9 text-xs ${wdRoomConflicts.length > 0 ? "border-orange-400 text-orange-700" : ""}`}>
+                                    <SelectTrigger className={`h-9 min-w-0 text-xs ${wdRoomConflicts.length > 0 ? "border-orange-400 text-orange-700" : ""}`}>
                                       <SelectValue placeholder="Chọn phòng" />
                                     </SelectTrigger>
                                     <SelectContent>
                                       <SelectItem value="none">Chưa chọn phòng</SelectItem>
-                                      {classrooms?.map((r) => (
-                                        <SelectItem key={r.id} value={r.id}>
-                                          {r.name}
+                                      {classrooms?.map((room: any) => (
+                                        <SelectItem key={room.id} value={room.id}>
+                                          {room.name}
                                         </SelectItem>
                                       ))}
                                     </SelectContent>
                                   </Select>
                                 </div>
-                                <div className="col-span-3">
+                                <div className="col-span-2 min-w-0 space-y-1 sm:col-span-3">
+                                  <span className="text-xs text-muted-foreground">Tìm giáo viên Phòng Đào tạo</span>
                                   <SearchableMultiSelect
-                                    options={activeTeachers.map((t: any) => ({
-                                      value: t.id,
-                                      label: t.fullName,
-                                      isActive: t._isActive,
-                                    }))}
-                                    value={weekdayConfigs[wd]?.teacherIds || []}
-                                    onChange={(v) => updateWeekdayConfig(wd, { teacherIds: v })}
-                                    placeholder="Chọn GV..."
+                                    options={getTeacherOptionsForWeekday(wd)}
+                                    value={selectedTeacherIds}
+                                    onChange={(ids) => handleTeacherIdsChange(wd, ids)}
+                                    placeholder="Chọn giáo viên..."
+                                    searchPlaceholder="Tìm giáo viên..."
                                   />
                                 </div>
+                              </div>
+
+                              <div className="hidden gap-3 bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground xl:grid xl:grid-cols-[minmax(130px,0.8fr)_minmax(150px,0.95fr)_minmax(250px,1.5fr)]">
+                                <span>Tên giáo viên</span>
+                                <span>Vai trò</span>
+                                <span>Phân công ca dạy</span>
+                              </div>
+                              <div className="divide-y">
+                                {selectedTeacherIds.length === 0 ? (
+                                  <p className="px-3 py-3 text-sm text-muted-foreground">
+                                    Chưa chọn giáo viên cho {WEEKDAY_LABELS[wd]}.
+                                  </p>
+                                ) : selectedTeacherIds.map((teacherId) => {
+                                  const teacher = allTeachers.find((member: any) => member.id === teacherId);
+                                  const roleDetails = getTeacherRoleDetails(wd, teacherId);
+                                  const roleValue = roleDetails.roleOptions.length > 0
+                                    ? roleDetails.selectedRoleId || USE_DEFAULT_ROLE
+                                    : "";
+                                  const teacherTimeRange = getTeacherTimeRange(wd, teacherId);
+                                  const isInvalidTimeRange = !!shiftRange.startTime && !!shiftRange.endTime &&
+                                    !isTeacherTimeRangeWithinShift(
+                                      teacherTimeRange.startTime,
+                                      teacherTimeRange.endTime,
+                                      shiftRange.startTime,
+                                      shiftRange.endTime,
+                                    );
+                                  const teacherName = teacher?.fullName || teacherId;
+                                  return (
+                                    <div
+                                      key={teacherId}
+                                      className="grid grid-cols-1 gap-2 px-3 py-3 xl:grid-cols-[minmax(130px,0.8fr)_minmax(150px,0.95fr)_minmax(250px,1.5fr)] xl:items-start xl:gap-3"
+                                    >
+                                      <div className="min-w-0 xl:pt-2">
+                                        <span className="mb-1 block text-xs text-muted-foreground xl:hidden">Tên giáo viên</span>
+                                        <span className="block truncate text-sm font-medium" title={teacherName}>
+                                          {teacherName}
+                                        </span>
+                                      </div>
+                                      <div className="min-w-0 space-y-1">
+                                        <span className="text-xs text-muted-foreground xl:hidden">Vai trò</span>
+                                        <Select
+                                          value={roleValue}
+                                          onValueChange={(value) => {
+                                            if (value === USE_DEFAULT_ROLE) {
+                                              setWeekdayTeacherRoleSelections((current) => {
+                                                const nextForWeekday = { ...(current[wd] || {}) };
+                                                delete nextForWeekday[teacherId];
+                                                return { ...current, [wd]: nextForWeekday };
+                                              });
+                                            } else {
+                                              setWeekdayTeacherRoleSelections((current) => ({
+                                                ...current,
+                                                [wd]: { ...(current[wd] || {}), [teacherId]: value },
+                                              }));
+                                            }
+                                          }}
+                                          disabled={roleDetails.roleOptions.length === 0}
+                                        >
+                                          <SelectTrigger className="h-9">
+                                            <SelectValue placeholder="Chưa có vai trò" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value={USE_DEFAULT_ROLE}>Theo mặc định</SelectItem>
+                                            {roleDetails.roleOptions.map((option) => (
+                                              <SelectItem key={option.id} value={option.id}>
+                                                {option.name}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <div className="min-w-0 space-y-1">
+                                        <span className="text-xs text-muted-foreground xl:hidden">Phân công ca dạy</span>
+                                        <div className="flex min-w-0 items-center gap-1.5">
+                                          <label className="flex min-w-0 flex-1 items-center gap-1">
+                                            <span className="text-xs text-muted-foreground">Từ</span>
+                                            <input
+                                              type="time"
+                                              aria-label={`Giờ bắt đầu của ${teacherName} (${WEEKDAY_LABELS[wd]})`}
+                                              min={shiftRange.startTime || undefined}
+                                              max={shiftRange.endTime || undefined}
+                                              value={teacherTimeRange.startTime}
+                                              onChange={(event) => updateTeacherTimeRange(wd, teacherId, "startTime", event.target.value)}
+                                              disabled={!shiftRange.startTime || !shiftRange.endTime}
+                                              className={`h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm ${isInvalidTimeRange ? "border-destructive" : ""}`}
+                                            />
+                                          </label>
+                                          <label className="flex min-w-0 flex-1 items-center gap-1">
+                                            <span className="text-xs text-muted-foreground">Đến</span>
+                                            <input
+                                              type="time"
+                                              aria-label={`Giờ kết thúc của ${teacherName} (${WEEKDAY_LABELS[wd]})`}
+                                              min={shiftRange.startTime || undefined}
+                                              max={shiftRange.endTime || undefined}
+                                              value={teacherTimeRange.endTime}
+                                              onChange={(event) => updateTeacherTimeRange(wd, teacherId, "endTime", event.target.value)}
+                                              disabled={!shiftRange.startTime || !shiftRange.endTime}
+                                              className={`h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm ${isInvalidTimeRange ? "border-destructive" : ""}`}
+                                            />
+                                          </label>
+                                        </div>
+                                        {isInvalidTimeRange && (
+                                          <p className="text-xs text-destructive">
+                                            Khung giờ phải nằm trong ca chung {shiftRange.startTime}–{shiftRange.endTime}.
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
                           );
