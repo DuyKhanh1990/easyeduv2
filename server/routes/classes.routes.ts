@@ -22,6 +22,7 @@ import { getNextLocationCode } from "../storage/finance.storage";
 import { recordFreeClassWalletTransition } from "../storage/free-class-wallet.storage";
 import { buildTeacherTimeAssignments, getShiftScheduleKey } from "@shared/teacher-time-assignments";
 import { canScheduleWrite, isScheduleEntryVisible } from "@shared/schedule-access";
+import { getPreferredSystemTrainingTeacherRoleId } from "@shared/teacher-role-priority";
 
 async function resolveStaffFullName(userId: string | undefined | null): Promise<string | null> {
   if (!userId) return null;
@@ -4739,7 +4740,7 @@ export function registerClassesRoutes(app: Express): void {
       }
 
       const { db: baseDb, eq: baseEq, and: baseAnd, sql: baseSql, classSessions: baseSessions, classes: baseClasses, shiftTemplates: baseShifts, locations, staff, studentSessions: baseSs, inArray: baseInArray, sessionContents: baseContents } = await import("../storage/base");
-      const { classrooms, classSessionTeacherAssignments, roles, staffAssignments } = await import("@shared/schema");
+      const { classrooms, classSessionTeacherAssignments, departments, roles, staffAssignments } = await import("@shared/schema");
 
       const locationConditions = [];
       if (effectiveLocationId) {
@@ -4866,11 +4867,18 @@ export function registerClassesRoutes(app: Express): void {
         ...configuredRoleByClassTeacher.values(),
       ] as string[]));
       const scheduleRoleRows = roleIdsForLookup.length > 0
-        ? await baseDb.select({ id: roles.id, name: roles.name })
+        ? await baseDb.select({
+            id: roles.id,
+            name: roles.name,
+            isSystemRole: roles.isSystem,
+            departmentName: departments.name,
+            isSystemDepartment: departments.isSystem,
+          })
           .from(roles)
+          .leftJoin(departments, baseEq(roles.departmentId, departments.id))
           .where(baseInArray(roles.id, roleIdsForLookup))
         : [];
-      const scheduleRoleNameById = new Map(scheduleRoleRows.map((role) => [role.id, role.name]));
+      const scheduleRoleById = new Map(scheduleRoleRows.map((role) => [role.id, role]));
       const roleIdsByStaffAndLocation = new Map<string, Set<string>>();
       for (const assignment of roleAssignmentRows) {
         if (!assignment.roleId) continue;
@@ -4917,9 +4925,22 @@ export function registerClassesRoutes(app: Express): void {
             if (!teacherName) return "";
             const configuredRoleId = configuredRoleByClassTeacher.get(`${s.classId}:${id}`);
             const availableRoleIds = roleIdsByStaffAndLocation.get(`${s.locationId}:${id}`);
+            const preferredSystemTeacherRoleId = getPreferredSystemTrainingTeacherRoleId(
+              Array.from(availableRoleIds ?? [])
+                .map((roleId) => scheduleRoleById.get(roleId))
+                .filter((role): role is NonNullable<typeof role> => !!role)
+                .map((role) => ({
+                  id: role.id,
+                  name: role.name,
+                  isSystemRole: role.isSystemRole,
+                  departmentName: role.departmentName ?? "",
+                  isSystemDepartment: role.isSystemDepartment === true,
+                })),
+            );
             const roleId = configuredRoleId ||
+              preferredSystemTeacherRoleId ||
               (availableRoleIds?.size === 1 ? Array.from(availableRoleIds)[0] : "");
-            const roleName = roleId ? scheduleRoleNameById.get(roleId) : "";
+            const roleName = roleId ? scheduleRoleById.get(roleId)?.name : "";
             return roleName ? `${teacherName} (${roleName})` : teacherName;
           }).filter(Boolean);
           return {

@@ -285,9 +285,15 @@ export async function getStaff(
 
     const allRoleIds = Array.from(new Set(minimalAssignments.map(a => a.roleId).filter(Boolean) as string[]));
     const roleNameMap = new Map<string, string>();
+    const roleSystemMap = new Map<string, boolean>();
     if (allRoleIds.length > 0) {
-      const roleRows = await db.select({ id: roles.id, name: roles.name }).from(roles).where(inArray(roles.id, allRoleIds));
+      const roleRows = await db.select({
+        id: roles.id,
+        name: roles.name,
+        isSystem: roles.isSystem,
+      }).from(roles).where(inArray(roles.id, allRoleIds));
       roleRows.forEach(r => roleNameMap.set(r.id, r.name));
+      roleRows.forEach(r => roleSystemMap.set(r.id, r.isSystem));
     }
 
     const allDeptIds = Array.from(new Set(minimalAssignments.map(a => a.departmentId).filter(Boolean) as string[]));
@@ -318,7 +324,11 @@ export async function getStaff(
         roleNames: rIds.map(rid => roleNameMap.get(rid)).filter(Boolean) as string[],
         assignments: rawAssignments.map(a => ({
           ...a,
-          role: a.roleId ? { id: a.roleId, name: roleNameMap.get(a.roleId) || "" } : null,
+          role: a.roleId ? {
+            id: a.roleId,
+            name: roleNameMap.get(a.roleId) || "",
+            isSystem: roleSystemMap.get(a.roleId) === true,
+          } : null,
           department: a.departmentId ? {
             id: a.departmentId,
             name: deptNameMap.get(a.departmentId) || "",

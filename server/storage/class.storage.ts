@@ -6,8 +6,9 @@ import {
   staff, students, studentLocations, shiftTemplates,
   courseFeePackages, financePromotions, invoices, invoiceItems,
 } from "./base";
-import { attendanceFeeRules, sessionContents, activityLogs, publicHolidays, classSessionTeacherAssignments, roles, staffAssignments } from "@shared/schema";
+import { attendanceFeeRules, sessionContents, activityLogs, publicHolidays, classSessionTeacherAssignments, departments, roles, staffAssignments } from "@shared/schema";
 import { studentWalletTransactions } from "@shared/schema";
+import { getPreferredSystemTrainingTeacherRoleId } from "@shared/teacher-role-priority";
 import {
   buildTeacherTimeAssignments,
   resolveShiftScheduleKey,
@@ -1813,15 +1814,37 @@ export async function getClassSessions(classId: string): Promise<any[]> {
     ...configuredRoleIds.values(),
   ] as string[]));
   const roleRows = roleIdsForLookup.length > 0
-    ? await db.select({ id: roles.id, name: roles.name }).from(roles).where(inArray(roles.id, roleIdsForLookup))
+    ? await db.select({
+        id: roles.id,
+        name: roles.name,
+        isSystemRole: roles.isSystem,
+        departmentName: departments.name,
+        isSystemDepartment: departments.isSystem,
+      })
+      .from(roles)
+      .leftJoin(departments, eq(roles.departmentId, departments.id))
+      .where(inArray(roles.id, roleIdsForLookup))
     : [];
-  const roleNameMap = new Map(roleRows.map((role) => [role.id, role.name]));
-  const roleOptionsByStaffId = new Map<string, { roleId: string; roleName: string }[]>();
+  const roleById = new Map(roleRows.map((role) => [role.id, role]));
+  const roleOptionsByStaffId = new Map<string, {
+    roleId: string;
+    roleName: string;
+    isSystemRole: boolean;
+    departmentName: string;
+    isSystemDepartment: boolean;
+  }[]>();
   for (const assignment of roleAssignments) {
     if (!assignment.roleId) continue;
+    const role = roleById.get(assignment.roleId);
     const options = roleOptionsByStaffId.get(assignment.staffId) || [];
     if (!options.some((option) => option.roleId === assignment.roleId)) {
-      options.push({ roleId: assignment.roleId, roleName: roleNameMap.get(assignment.roleId) || "" });
+      options.push({
+        roleId: assignment.roleId,
+        roleName: role?.name || "",
+        isSystemRole: role?.isSystemRole === true,
+        departmentName: role?.departmentName || "",
+        isSystemDepartment: role?.isSystemDepartment === true,
+      });
       roleOptionsByStaffId.set(assignment.staffId, options);
     }
   }
@@ -1855,12 +1878,23 @@ export async function getClassSessions(classId: string): Promise<any[]> {
     teachers: (s.teacherIds || []).map((id: string) => {
       const teacher = staffMap[id];
       if (!teacher) return null;
+      const roleOptions = roleOptionsByStaffId.get(id) || [];
+      const preferredSystemTeacherRoleId = getPreferredSystemTrainingTeacherRoleId(
+        roleOptions.map((option) => ({
+          id: option.roleId,
+          name: option.roleName,
+          isSystemRole: option.isSystemRole,
+          departmentName: option.departmentName,
+          isSystemDepartment: option.isSystemDepartment,
+        })),
+      );
       const selectedRoleId = configuredRoleIds.get(id) ||
-        ((roleOptionsByStaffId.get(id) || []).length === 1 ? roleOptionsByStaffId.get(id)![0].roleId : "");
+        preferredSystemTeacherRoleId ||
+        (roleOptions.length === 1 ? roleOptions[0].roleId : "");
       return {
         ...teacher,
         roleId: selectedRoleId || null,
-        roleName: selectedRoleId ? roleNameMap.get(selectedRoleId) || null : null,
+        roleName: selectedRoleId ? roleById.get(selectedRoleId)?.name || null : null,
       };
     }).filter(Boolean),
     program: (s as any).programId ? (programMap[(s as any).programId] || null) : null,

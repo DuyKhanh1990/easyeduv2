@@ -13,13 +13,13 @@ describe("staff role options", () => {
       {
         locationId: "location-1",
         roleId: "teacher",
-        role: { id: "teacher", name: "Giáo viên" },
+        role: { id: "teacher", name: "Giáo viên", isSystem: true },
         department: { id: "training", name: "Phòng Đào tạo", isSystem: true },
       },
       {
         locationId: "location-1",
         roleId: "assistant",
-        role: { id: "assistant", name: "Trợ giảng" },
+        role: { id: "assistant", name: "Trợ giảng", isSystem: true },
         department: { id: "training", name: "Phòng Đào tạo", isSystem: true },
       },
       {
@@ -47,16 +47,38 @@ describe("staff role options", () => {
     expect(options.map((option) => option.id)).toEqual(expect.arrayContaining(["assistant", "teacher"]));
   });
 
-  it("auto-selects a single role but requires a choice when multiple roles are available", () => {
+  it("auto-selects a single role or the default teacher role, while respecting a saved choice", () => {
     const options = getStaffRoleOptions(staffMember, "location-1");
     expect(resolveTeacherRoleId({}, [{ id: "teacher", name: "Giáo viên" }])).toBe("teacher");
-    expect(resolveTeacherRoleId({}, options)).toBe("");
+    expect(resolveTeacherRoleId({}, options)).toBe("teacher");
     expect(resolveTeacherRoleId({ role_id: "assistant" }, options)).toBe("assistant");
+    expect(resolveTeacherRoleId({ role_id: "stale-role" }, options)).toBe("");
   });
 
-  it("finds a teacher with multiple roles when none has been selected", () => {
+  it("does not prefer a custom teacher/assistant role pair over user choice", () => {
+    const customRoles = getStaffRoleOptions({
+      assignments: [
+        {
+          locationId: "location-1",
+          roleId: "custom-teacher",
+          role: { id: "custom-teacher", name: "Giáo viên", isSystem: false },
+          department: { name: "Phòng Đào tạo", isSystem: true },
+        },
+        {
+          locationId: "location-1",
+          roleId: "custom-assistant",
+          role: { id: "custom-assistant", name: "Trợ giảng", isSystem: false },
+          department: { name: "Phòng Đào tạo", isSystem: true },
+        },
+      ],
+    }, "location-1");
+    expect(resolveTeacherRoleId({}, customRoles)).toBe("");
+  });
+
+  it("does not require a choice when the default teacher role is available", () => {
     const unselected = { teacher_id: "staff-1" };
-    expect(findTeacherMissingRole([unselected], [staffMember], "location-1")).toBe(unselected);
+    expect(findTeacherMissingRole([unselected], [staffMember], "location-1")).toBeNull();
     expect(findTeacherMissingRole([{ ...unselected, role_id: "teacher" }], [staffMember], "location-1")).toBeNull();
+    expect(findTeacherMissingRole([{ ...unselected, role_id: "assistant" }], [staffMember], "location-1")).toBeNull();
   });
 });

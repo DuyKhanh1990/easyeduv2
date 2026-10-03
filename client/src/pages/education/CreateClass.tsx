@@ -1202,7 +1202,7 @@ export function CreateClass() {
                                 const roleOptions = getStaffRoleOptions(member, form.getValues("locationId"));
                                 appendTeacher({
                                   teacher_id: val,
-                                  role_id: roleOptions.length === 1 ? roleOptions[0].id : "",
+                                  role_id: resolveTeacherRoleId({}, roleOptions),
                                   mode: "all",
                                   shift_keys: [],
                                 });

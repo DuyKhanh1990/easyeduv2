@@ -1,7 +1,9 @@
-export interface StaffRoleOption {
-  id: string;
-  name: string;
-}
+import {
+  getPreferredSystemTrainingTeacherRoleId,
+  type SystemTrainingRoleCandidate,
+} from "@shared/teacher-role-priority";
+
+export interface StaffRoleOption extends SystemTrainingRoleCandidate {}
 
 export function isDefaultTrainingDepartmentStaff(staffMember: any): boolean {
   const assignments = Array.isArray(staffMember?.assignments) ? staffMember.assignments : [];
@@ -20,7 +22,13 @@ export function getStaffRoleOptions(staffMember: any, locationId?: string): Staf
     const roleName = String(assignment?.role?.name ?? assignment?.roleName ?? "");
     if (!roleId || !roleName) continue;
     if (locationId && String(assignment?.locationId ?? "") !== locationId) continue;
-    if (!options.has(roleId)) options.set(roleId, { id: roleId, name: roleName });
+    if (!options.has(roleId)) options.set(roleId, {
+      id: roleId,
+      name: roleName,
+      isSystemRole: assignment?.role?.isSystem === true,
+      departmentName: String(assignment?.department?.name ?? ""),
+      isSystemDepartment: assignment?.department?.isSystem === true,
+    });
   }
 
   return [...options.values()].sort((a, b) => a.name.localeCompare(b.name, "vi"));
@@ -28,7 +36,11 @@ export function getStaffRoleOptions(staffMember: any, locationId?: string): Staf
 
 export function resolveTeacherRoleId(teacherConfig: any, options: StaffRoleOption[]): string {
   const savedRoleId = String(teacherConfig?.role_id ?? teacherConfig?.roleId ?? "");
-  if (savedRoleId && options.some((option) => option.id === savedRoleId)) return savedRoleId;
+  if (savedRoleId) {
+    return options.some((option) => option.id === savedRoleId) ? savedRoleId : "";
+  }
+  const preferredSystemTeacherRoleId = getPreferredSystemTrainingTeacherRoleId(options);
+  if (preferredSystemTeacherRoleId) return preferredSystemTeacherRoleId;
   return options.length === 1 ? options[0].id : "";
 }
 

@@ -1289,7 +1289,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                                 const roleOptions = getStaffRoleOptions(member, effectiveLocationId);
                                 form.setValue("teachers_config", [...current, {
                                   teacher_id: val,
-                                  role_id: roleOptions.length === 1 ? roleOptions[0].id : "",
+                                  role_id: resolveTeacherRoleId({}, roleOptions),
                                   mode: "all",
                                   shift_keys: [],
                                 }]);
