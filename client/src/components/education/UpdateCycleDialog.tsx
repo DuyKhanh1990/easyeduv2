@@ -389,7 +389,7 @@ export function UpdateCycleDialog({
 
           <div className="flex-1 min-h-0 overflow-y-auto pr-4">
               <div className="space-y-6 py-4">
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                   <div className="space-y-6">
                     <div className="space-y-2">
                       <div className="space-y-2">
@@ -565,7 +565,7 @@ export function UpdateCycleDialog({
                                 </div>
                               </div>
 
-                              <div className="hidden gap-3 bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground xl:grid xl:grid-cols-[minmax(130px,0.8fr)_minmax(150px,0.95fr)_minmax(250px,1.5fr)]">
+                              <div className="hidden gap-3 bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground lg:grid lg:grid-cols-[minmax(100px,0.75fr)_minmax(120px,0.9fr)_minmax(185px,1.5fr)]">
                                 <span>Tên giáo viên</span>
                                 <span>Vai trò</span>
                                 <span>Phân công ca dạy</span>
@@ -593,16 +593,16 @@ export function UpdateCycleDialog({
                                   return (
                                     <div
                                       key={teacherId}
-                                      className="grid grid-cols-1 gap-2 px-3 py-3 xl:grid-cols-[minmax(130px,0.8fr)_minmax(150px,0.95fr)_minmax(250px,1.5fr)] xl:items-start xl:gap-3"
+                                      className="grid grid-cols-1 gap-2 px-3 py-3 lg:grid-cols-[minmax(100px,0.75fr)_minmax(120px,0.9fr)_minmax(185px,1.5fr)] lg:items-start lg:gap-3"
                                     >
-                                      <div className="min-w-0 xl:pt-2">
-                                        <span className="mb-1 block text-xs text-muted-foreground xl:hidden">Tên giáo viên</span>
+                                      <div className="min-w-0 lg:pt-2">
+                                        <span className="mb-1 block text-xs text-muted-foreground lg:hidden">Tên giáo viên</span>
                                         <span className="block truncate text-sm font-medium" title={teacherName}>
                                           {teacherName}
                                         </span>
                                       </div>
                                       <div className="min-w-0 space-y-1">
-                                        <span className="text-xs text-muted-foreground xl:hidden">Vai trò</span>
+                                        <span className="text-xs text-muted-foreground lg:hidden">Vai trò</span>
                                         <Select
                                           value={roleValue}
                                           onValueChange={(value) => {
@@ -635,7 +635,7 @@ export function UpdateCycleDialog({
                                         </Select>
                                       </div>
                                       <div className="min-w-0 space-y-1">
-                                        <span className="text-xs text-muted-foreground xl:hidden">Phân công ca dạy</span>
+                                        <span className="text-xs text-muted-foreground lg:hidden">Phân công ca dạy</span>
                                         <div className="flex min-w-0 items-center gap-1.5">
                                           <label className="flex min-w-0 flex-1 items-center gap-1">
                                             <span className="text-xs text-muted-foreground">Từ</span>
