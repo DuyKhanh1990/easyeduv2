@@ -27,6 +27,7 @@ import {
   calculateClassTransferTargetSessionPrice,
   getPackageSessionValue,
 } from "./class-transfer-accounting";
+import { mergeSelectedTeacherRoleIds, type TeacherRoleChanges } from "./teacher-role-updates";
 
 const RENEWAL_WEEKDAY_LABELS = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
 
@@ -3859,9 +3860,25 @@ export async function changeTeacher(params: {
   newTeacherIds?: string[];
   fromSessionId: string;
   toSessionId: string;
+  teacherRoleChanges?: TeacherRoleChanges;
 }): Promise<void> {
   const { classId, fromSessionId, toSessionId } = params;
-  const newTeacherIds = params.newTeacherIds ?? (params.newTeacherId ? [params.newTeacherId] : []);
+  const newTeacherIds = [...new Set(
+    params.newTeacherIds ?? (params.newTeacherId ? [params.newTeacherId] : []),
+  )];
+  const selectedTeacherIdSet = new Set(newTeacherIds);
+  const teacherRoleChanges = params.teacherRoleChanges ?? {};
+  if (newTeacherIds.some((teacherId) => typeof teacherId !== "string" || !teacherId.trim())) {
+    throw new Error("Danh sách giáo viên không hợp lệ");
+  }
+  for (const [teacherId, roleId] of Object.entries(teacherRoleChanges)) {
+    if (!selectedTeacherIdSet.has(teacherId)) {
+      throw new Error("Vai trò chỉ được cập nhật cho giáo viên đã chọn");
+    }
+    if (roleId !== null && (typeof roleId !== "string" || !roleId.trim())) {
+      throw new Error("Vai trò giáo viên không hợp lệ");
+    }
+  }
 
   const [fromSession] = await db.select().from(classSessions).where(eq(classSessions.id, fromSessionId));
   const [toSession] = await db.select().from(classSessions).where(eq(classSessions.id, toSessionId));
@@ -3879,15 +3896,29 @@ export async function changeTeacher(params: {
   }
 
   await db.transaction(async (tx) => {
-    await tx.update(classSessions)
-      .set({
-        teacherIds: newTeacherIds,
-        updatedAt: new Date(),
-      })
+    const sessionsToUpdate = await tx.select({
+      id: classSessions.id,
+      teacherRoleIds: classSessions.teacherRoleIds,
+    })
+      .from(classSessions)
       .where(and(
         eq(classSessions.classId, classId),
         sql`${classSessions.sessionDate} BETWEEN ${fromDate} AND ${toDate}`,
       ));
+
+    for (const session of sessionsToUpdate) {
+      await tx.update(classSessions)
+        .set({
+          teacherIds: newTeacherIds,
+          teacherRoleIds: mergeSelectedTeacherRoleIds(
+            session.teacherRoleIds,
+            newTeacherIds,
+            teacherRoleChanges,
+          ),
+          updatedAt: new Date(),
+        })
+        .where(eq(classSessions.id, session.id));
+    }
 
     await tx.update(classes)
       .set({ updatedAt: new Date() })

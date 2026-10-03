@@ -713,9 +713,11 @@ export class DatabaseStorage implements IStorage {
 
   async changeTeacher(params: {
     classId: string;
-    newTeacherId: string;
+    newTeacherId?: string;
+    newTeacherIds?: string[];
     fromSessionId: string;
     toSessionId: string;
+    teacherRoleChanges?: Record<string, string | null>;
   }): Promise<void> {
     return sessionStorage.changeTeacher(params);
   }

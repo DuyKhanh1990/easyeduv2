@@ -3753,12 +3753,32 @@ export function registerClassesRoutes(app: Express): void {
   app.post(api.classes.changeTeacher.path, async (req, res) => {
     try {
       if (!(await assertScheduleMutationPermission(req, res, "canEdit"))) return;
-      const { newTeacherIds, fromSessionId, toSessionId } = req.body;
+      const {
+        newTeacherIds: requestedTeacherIds,
+        fromSessionId,
+        toSessionId,
+        teacherRoleChanges: requestedRoleChanges,
+      } = req.body;
       const classId = req.params.id;
       const userId = (req.user as any)?.id ?? null;
 
-      if (!newTeacherIds || !Array.isArray(newTeacherIds) || newTeacherIds.length === 0) {
+      if (!Array.isArray(requestedTeacherIds) || requestedTeacherIds.length === 0 ||
+          requestedTeacherIds.some((teacherId: unknown) => typeof teacherId !== "string" || !teacherId.trim())) {
         return res.status(400).json({ message: "Vui lòng chọn ít nhất một giáo viên" });
+      }
+      const newTeacherIds = [...new Set(requestedTeacherIds.map((teacherId: string) => teacherId.trim()))];
+      const teacherRoleChanges: Record<string, string | null> = {};
+      if (requestedRoleChanges !== undefined) {
+        if (!requestedRoleChanges || typeof requestedRoleChanges !== "object" || Array.isArray(requestedRoleChanges)) {
+          return res.status(400).json({ message: "Thông tin vai trò giáo viên không hợp lệ" });
+        }
+        for (const [teacherId, roleId] of Object.entries(requestedRoleChanges)) {
+          if (!newTeacherIds.includes(teacherId) ||
+              (roleId !== null && (typeof roleId !== "string" || !roleId.trim()))) {
+            return res.status(400).json({ message: "Thông tin vai trò giáo viên không hợp lệ" });
+          }
+          teacherRoleChanges[teacherId] = typeof roleId === "string" ? roleId.trim() : null;
+        }
       }
 
       // Pre-fetch class info for log
@@ -3829,6 +3849,7 @@ export function registerClassesRoutes(app: Express): void {
         newTeacherIds,
         fromSessionId,
         toSessionId,
+        teacherRoleChanges,
       });
 
       // Check schedule conflicts for new teacher assignments
