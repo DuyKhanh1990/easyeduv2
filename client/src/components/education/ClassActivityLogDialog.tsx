@@ -172,7 +172,7 @@ type ScheduleChangeSession = {
   endTime?: string | null;
   attendanceStatus?: string | null;
 };
-type TeacherEntry = { id: string; name: string; code: string };
+type TeacherEntry = { id: string; name: string; code: string; roleId?: string | null; roleName?: string | null };
 type ChangeTeacherSessionEntry = { sessionIndex: number | null; weekday: number; sessionDate: string; startTime: string | null; teachers: TeacherEntry[] };
 
 type MakeupSessionInfo = {
@@ -1966,19 +1966,19 @@ function ChangeTeacherCell({ log, field }: { log: ActivityLog; field: "oldConten
     return <span className="text-muted-foreground italic">—</span>;
   }
 
-  // Build old teacher ID sets per sessionIndex for comparison
+  // Keep the old assignment by teacher ID so added teachers and changed roles can be highlighted.
   const oldSessions = isNew ? tryParseChangeTeacherSessions(log.oldContent) : null;
-  const oldTeacherIdsBySession = new Map<number | null, Set<string>>();
+  const oldTeachersBySession = new Map<number | null, Map<string, TeacherEntry>>();
   if (oldSessions) {
     for (const s of oldSessions) {
-      oldTeacherIdsBySession.set(s.sessionIndex, new Set(s.teachers.map(t => t.id)));
+      oldTeachersBySession.set(s.sessionIndex, new Map(s.teachers.map((teacher) => [teacher.id, teacher])));
     }
   }
 
   return (
     <div className="flex flex-col gap-1">
       {sessions.map((s, idx) => {
-        const oldIds = oldTeacherIdsBySession.get(s.sessionIndex) ?? null;
+        const oldTeachers = oldTeachersBySession.get(s.sessionIndex);
         return (
           <div key={idx} className="text-xs whitespace-nowrap">
             <span className="text-muted-foreground">{formatSessionPrefix(s)} — </span>
@@ -1986,12 +1986,17 @@ function ChangeTeacherCell({ log, field }: { log: ActivityLog; field: "oldConten
               <span className="text-muted-foreground italic">Chưa phân công</span>
             ) : (
               s.teachers.map((t, ti) => {
-                const isChanged = isNew && oldIds !== null && !oldIds.has(t.id);
+                const oldTeacher = oldTeachers?.get(t.id);
+                const roleChanged = oldTeacher?.roleId !== undefined &&
+                  t.roleId !== undefined &&
+                  oldTeacher.roleId !== t.roleId;
+                const isChanged = isNew && oldTeachers !== undefined && (!oldTeacher || roleChanged);
                 return (
                   <span key={ti}>
                     {ti > 0 && <span className="text-muted-foreground">, </span>}
                     <span className={isChanged ? "text-blue-700 font-semibold" : ""}>
                       {t.name}{t.code ? ` (${t.code})` : ""}
+                      {t.roleName ? <span className="text-muted-foreground"> — {t.roleName}</span> : null}
                     </span>
                   </span>
                 );

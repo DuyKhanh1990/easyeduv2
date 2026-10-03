@@ -3906,7 +3906,7 @@ export function registerClassesRoutes(app: Express): void {
           name: t?.fullName ?? tid,
           code: t?.code ?? "",
           roleId,
-          roleName: roleId ? roleNameById.get(roleId) ?? "Vai trò không xác định" : "Theo mặc định",
+          roleName: roleId ? roleNameById.get(roleId) ?? "Vai trò không xác định" : "Chưa gán vai trò",
         };
       };
 
@@ -3918,20 +3918,20 @@ export function registerClassesRoutes(app: Express): void {
         teachers: (s.teacherIds ?? []).map((teacherId) => toTeacherEntry(teacherId, s.teacherRoleIds)),
       }));
 
-      const newContent = sessionsInRange.map(s => ({
-        sessionIndex: s.sessionIndex,
-        weekday: s.weekday,
-        sessionDate: s.sessionDate,
-        startTime: s.startTime ?? null,
-        teachers: newTeacherIds.map((teacherId) => {
-          const nextRoleIds = mergeSelectedTeacherRoleIds(
-            s.teacherRoleIds,
-            newTeacherIds,
-            teacherRoleChanges,
-          );
-          return toTeacherEntry(teacherId, nextRoleIds);
-        }),
-      }));
+      const newContent = sessionsInRange.map(s => {
+        const nextRoleIds = mergeSelectedTeacherRoleIds(
+          s.teacherRoleIds,
+          newTeacherIds,
+          teacherRoleChanges,
+        );
+        return {
+          sessionIndex: s.sessionIndex,
+          weekday: s.weekday,
+          sessionDate: s.sessionDate,
+          startTime: s.startTime ?? null,
+          teachers: newTeacherIds.map((teacherId) => toTeacherEntry(teacherId, nextRoleIds)),
+        };
+      });
 
       await storage.changeTeacher({
         classId,
