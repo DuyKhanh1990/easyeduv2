@@ -45,6 +45,7 @@ function StatusBadge({ status }: { status: ComputedStatus }) {
 
 export function ClassCard({ cls, isSelected, onToggle, onEdit, onDelete, onCopy, onExportStudents, onViewDetail, computedStatus, canEdit = true, canDelete = true }: ClassCardProps) {
   const hasMenu = canEdit || canDelete || !!onCopy || !!onExportStudents;
+  const teachersForCard = cls.scheduleTeachers?.length ? cls.scheduleTeachers : cls.teachers || [];
   return (
     <Card
       className="hover:shadow-md transition-all cursor-pointer group border-border relative overflow-hidden h-full"
@@ -141,8 +142,8 @@ export function ClassCard({ cls, isSelected, onToggle, onEdit, onDelete, onCopy,
               </div>
               <div className="flex flex-col">
                 <span className="text-xs font-semibold">
-                  {cls.teachers?.length > 0
-                    ? cls.teachers.map((t: any) => t.fullName).join(", ")
+                  {teachersForCard.length > 0
+                    ? teachersForCard.map((t: any) => t.fullName).join(", ")
                     : "Chưa gán"}
                 </span>
                 <span className="text-[10px] text-muted-foreground">Giáo viên</span>

@@ -333,7 +333,33 @@ export async function getClassesListPaginated(params: {
     offset,
   });
 
-  const allStaffIds = Array.from(new Set(result.flatMap(c => [...(c.managerIds || []), ...(c.teacherIds || [])])));
+  const classIds = result.map(c => c.id);
+  const scheduledTeacherIdsByClass = new Map<string, Set<string>>();
+  if (classIds.length > 0) {
+    const sessionTeacherRows = await db
+      .select({ classId: classSessions.classId, teacherIds: classSessions.teacherIds })
+      .from(classSessions)
+      .where(and(
+        inArray(classSessions.classId, classIds),
+        sql`${classSessions.status} != 'cancelled'`,
+      ));
+    for (const row of sessionTeacherRows) {
+      const teacherIds = row.teacherIds || [];
+      if (teacherIds.length === 0) continue;
+      let ids = scheduledTeacherIdsByClass.get(row.classId);
+      if (!ids) {
+        ids = new Set<string>();
+        scheduledTeacherIdsByClass.set(row.classId, ids);
+      }
+      teacherIds.forEach((teacherId) => ids!.add(teacherId));
+    }
+  }
+
+  const scheduledTeacherIds = Array.from(scheduledTeacherIdsByClass.values()).flatMap((ids) => [...ids]);
+  const allStaffIds = Array.from(new Set([
+    ...result.flatMap(c => [...(c.managerIds || []), ...(c.teacherIds || [])]),
+    ...scheduledTeacherIds,
+  ]));
   const staffMap = allStaffIds.length > 0
     ? Object.fromEntries((await db.select({ id: staff.id, fullName: staff.fullName }).from(staff).where(inArray(staff.id, allStaffIds))).map(s => [s.id, s]))
     : {};
@@ -343,16 +369,17 @@ export async function getClassesListPaginated(params: {
     ? Object.fromEntries((await db.select({ id: shiftTemplates.id, name: shiftTemplates.name }).from(shiftTemplates).where(inArray(shiftTemplates.id, allShiftIds))).map(s => [s.id, s]))
     : {};
 
-  const classIds = result.map(c => c.id);
   const countsMap = await batchGetClassCounts(classIds);
 
   const data = result.map((cls) => {
     const counts = countsMap.get(cls.id) ?? { waitingStudentsCount: 0, activeStudentsCount: 0, totalSessions: 0, completedSessions: 0 };
     const clsShiftTemplates = (cls.shiftTemplateIds || []).map((id: string) => shiftMap[id]).filter(Boolean);
+    const scheduledTeacherIds = [...(scheduledTeacherIdsByClass.get(cls.id) || [])];
     return {
       ...cls,
       managers: (cls.managerIds || []).map((id: string) => staffMap[id]).filter(Boolean),
       teachers: (cls.teacherIds || []).map((id: string) => staffMap[id]).filter(Boolean),
+      scheduleTeachers: scheduledTeacherIds.map((id) => staffMap[id]).filter(Boolean),
       manager: staffMap[(cls.managerIds || [])[0]] || null,
       teacher: staffMap[(cls.teacherIds || [])[0]] || null,
       shiftTemplates: clsShiftTemplates,
