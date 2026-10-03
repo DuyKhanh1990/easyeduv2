@@ -37,6 +37,29 @@ async function checkAttendanceLimitForSession(classSessionId: string, req: any):
   await enforceAttendanceTimeLimit(classSessionId, userRoleIds, req.isSuperAdmin ?? false);
 }
 
+async function getStaffAssignedClassSessionIds(req: any, classSessionIds: string[]): Promise<Set<string>> {
+  const staffId = req.staffId as string | null | undefined;
+  const sessionIds = [...new Set(classSessionIds.filter(Boolean))];
+  if (!staffId || sessionIds.length === 0) return new Set();
+
+  const rows = await db
+    .select({ id: classSessions.id })
+    .from(classSessions)
+    .leftJoin(
+      classSessionTeacherAssignments,
+      eq(classSessionTeacherAssignments.classSessionId, classSessions.id),
+    )
+    .where(and(
+      inArray(classSessions.id, sessionIds),
+      or(
+        sql`${staffId} = ANY(COALESCE(${classSessions.teacherIds}, ARRAY[]::uuid[]))`,
+        eq(classSessionTeacherAssignments.teacherId, staffId),
+      ),
+    ));
+
+  return new Set(rows.map((row) => row.id));
+}
+
 const CLASSES_RESOURCE = "/classes";
 const SCORE_SHEET_TEMPLATE_SETTINGS_KEY = "scoreSheetTemplates";
 const SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY = "scoreSheetAssessments";
@@ -136,6 +159,71 @@ async function isAssignedToFreeClass(
   return !!row;
 }
 
+async function isAssignedToEffectiveFreeClassContext(
+  req: any,
+  classId: string,
+  context: FreeClassAccessContext = {},
+): Promise<boolean> {
+  const staffId = req.staffId as string | null | undefined;
+  if (!staffId) return false;
+
+  let registration:
+    | { studentClassId: string; registrationDate: string; teacherId: string | null }
+    | undefined;
+  if (context.registrationId) {
+    [registration] = await db
+      .select({
+        studentClassId: freeClassRegistrations.studentClassId,
+        registrationDate: freeClassRegistrations.registrationDate,
+        teacherId: freeClassRegistrations.teacherId,
+      })
+      .from(freeClassRegistrations)
+      .where(and(
+        eq(freeClassRegistrations.id, context.registrationId),
+        eq(freeClassRegistrations.classId, classId),
+      ))
+      .limit(1);
+    if (!registration) return false;
+  } else if (context.studentClassId && context.date) {
+    [registration] = await db
+      .select({
+        studentClassId: freeClassRegistrations.studentClassId,
+        registrationDate: freeClassRegistrations.registrationDate,
+        teacherId: freeClassRegistrations.teacherId,
+      })
+      .from(freeClassRegistrations)
+      .where(and(
+        eq(freeClassRegistrations.classId, classId),
+        eq(freeClassRegistrations.studentClassId, context.studentClassId),
+        eq(freeClassRegistrations.registrationDate, context.date),
+      ))
+      .limit(1);
+    if (!registration) return false;
+  }
+
+  if (registration?.teacherId) return registration.teacherId === staffId;
+
+  const date = registration?.registrationDate ?? context.date;
+  if (date) {
+    const [dayAssignment] = await db
+      .select({ teacherId: freeClassDayAssignments.teacherId })
+      .from(freeClassDayAssignments)
+      .where(and(
+        eq(freeClassDayAssignments.classId, classId),
+        eq(freeClassDayAssignments.assignmentDate, date),
+      ))
+      .limit(1);
+    if (dayAssignment?.teacherId) return dayAssignment.teacherId === staffId;
+  }
+
+  const [classRow] = await db
+    .select({ teacherIds: classes.teacherIds })
+    .from(classes)
+    .where(and(eq(classes.id, classId), eq(classes.classType, "free")))
+    .limit(1);
+  return (classRow?.teacherIds ?? []).includes(staffId);
+}
+
 async function assertFreeClassReadable(
   req: any,
   res: any,
@@ -183,6 +271,7 @@ async function assertFreeClassEditable(
   classId: string,
   context: FreeClassAccessContext = {},
   action: "canCreate" | "canEdit" | "canDelete" = "canEdit",
+  allowAssignedDayTeacher = false,
 ): Promise<boolean> {
   if (!(await assertFreeClassReadable(req, res, classId, context, true))) return false;
 
@@ -190,10 +279,13 @@ async function assertFreeClassEditable(
     storage.getEffectivePermissions(req.roleIds ?? [], "/schedule"),
     getClassPermissions(req),
   ]);
+  const assignedTeacherCanWrite = allowAssignedDayTeacher
+    ? await isAssignedToEffectiveFreeClassContext(req, classId, context)
+    : await isAssignedToFreeClass(req, classId, context);
   if (
     canScheduleWrite(schedulePermissions, action)
     || canScheduleWrite(classPermissions, action)
-    || await isAssignedToFreeClass(req, classId, context)
+    || assignedTeacherCanWrite
   ) {
     return true;
   }
@@ -2214,7 +2306,7 @@ export function registerClassesRoutes(app: Express): void {
       if (!(await assertFreeClassEditable(req, res, classId, {
         studentClassId: String(studentClassId),
         date: String(date),
-      }, permissionAction))) return;
+      }, permissionAction, action === "attend"))) return;
       const [classRow] = await db
         .select({
           classType: classes.classType,
@@ -2419,7 +2511,7 @@ export function registerClassesRoutes(app: Express): void {
       }).parse(req.body);
       if (!(await assertFreeClassEditable(req, res, classId, {
         registrationId: body.registrationId,
-      }))) return;
+      }, "canEdit", true))) return;
 
       const [registration] = await db
         .select({
@@ -2441,6 +2533,7 @@ export function registerClassesRoutes(app: Express): void {
         classId,
         { registrationId: body.registrationId },
         hasExistingReview ? "canEdit" : "canCreate",
+        true,
       ))) return;
 
       const [updated] = await db
@@ -3226,29 +3319,45 @@ export function registerClassesRoutes(app: Express): void {
       const studentSessionId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const rawStatus = status ?? attendance_status;
       const rawNote = note ?? attendance_note;
+      const statusWasProvided = rawStatus !== undefined && rawStatus !== null;
+      const hasStatus = typeof rawStatus === "string" && rawStatus.trim().length > 0;
+      const hasNote = rawNote !== undefined;
       if (
         !studentSessionId ||
-        typeof rawStatus !== "string" ||
-        !rawStatus.trim() ||
+        (statusWasProvided && !hasStatus) ||
+        (!hasStatus && !hasNote) ||
         (rawNote !== undefined && rawNote !== null && typeof rawNote !== "string")
       ) {
         return res.status(400).json({ message: "Thông tin điểm danh không hợp lệ." });
       }
-      const effectiveStatus = rawStatus;
+      const effectiveStatus = hasStatus ? rawStatus : undefined;
       const effectiveNote = typeof rawNote === "string" ? rawNote : undefined;
-      if (!(await assertScheduleMutationPermission(req, res, "canEdit", [
-        { resource: "/attendance", action: "canCreate" },
-      ]))) return;
+      const [sessionForUpdate] = await db
+        .select({ classSessionId: studentSessions.classSessionId })
+        .from(studentSessions)
+        .where(eq(studentSessions.id, studentSessionId))
+        .limit(1);
+      const assignedSessionIds = sessionForUpdate?.classSessionId
+        ? await getStaffAssignedClassSessionIds(req, [sessionForUpdate.classSessionId])
+        : new Set<string>();
+      if (
+        !assignedSessionIds.has(sessionForUpdate?.classSessionId ?? "")
+        && !(await assertScheduleMutationPermission(req, res, "canEdit", [
+          { resource: "/attendance", action: "canCreate" },
+        ]))
+      ) return;
       const userId = (req as any).user?.id ?? null;
       const userFullName = await resolveStaffFullName(userId);
 
-      // Enforce attendance time limit
-      const [ssForLimit] = await db.select({ classSessionId: studentSessions.classSessionId })
-        .from(studentSessions).where(eq(studentSessions.id, studentSessionId)).limit(1);
-      if (ssForLimit) await checkAttendanceLimitForSession(ssForLimit.classSessionId, req);
+      // Notes are editable independently; the time limit applies only to attendance status updates.
+      if (hasStatus && sessionForUpdate?.classSessionId) {
+        await checkAttendanceLimitForSession(sessionForUpdate.classSessionId, req);
+      }
 
       const { statusChanged } = await storage.updateStudentAttendance(studentSessionId, effectiveStatus, effectiveNote, userId, userFullName);
-      if (statusChanged) sendAttendanceNotificationWithLimit(studentSessionId, effectiveStatus, userId).catch(console.error);
+      if (statusChanged && effectiveStatus) {
+        sendAttendanceNotificationWithLimit(studentSessionId, effectiveStatus, userId).catch(console.error);
+      }
       res.json({ success: true });
     } catch (err: any) {
       res.status(err.status ?? 400).json({ message: err.message });
@@ -3270,9 +3379,23 @@ export function registerClassesRoutes(app: Express): void {
       ) {
         return res.status(400).json({ message: "Thông tin điểm danh không hợp lệ." });
       }
-      if (!(await assertScheduleMutationPermission(req, res, "canEdit", [
-        { resource: "/attendance", action: "canCreate" },
-      ]))) return;
+      const [sessionForUpdate] = await db
+        .select({
+          classSessionId: studentSessions.classSessionId,
+          attendanceStatus: studentSessions.attendanceStatus,
+        })
+        .from(studentSessions)
+        .where(eq(studentSessions.id, student_session_id))
+        .limit(1);
+      const assignedSessionIds = sessionForUpdate?.classSessionId
+        ? await getStaffAssignedClassSessionIds(req, [sessionForUpdate.classSessionId])
+        : new Set<string>();
+      if (
+        !assignedSessionIds.has(sessionForUpdate?.classSessionId ?? "")
+        && !(await assertScheduleMutationPermission(req, res, "canEdit", [
+          { resource: "/attendance", action: "canCreate" },
+        ]))
+      ) return;
 
       const userId = (req as any).user?.id ?? null;
       const userFullName = hasStatus ? await resolveStaffFullName(userId) : null;
@@ -3281,9 +3404,9 @@ export function registerClassesRoutes(app: Express): void {
       let attendanceLogData: any = null;
       if (hasStatus) {
         // Attendance status changes are subject to the attendance time limit.
-        const [ssForLimit] = await db.select({ classSessionId: studentSessions.classSessionId })
-          .from(studentSessions).where(eq(studentSessions.id, student_session_id)).limit(1);
-        if (ssForLimit) await checkAttendanceLimitForSession(ssForLimit.classSessionId, req);
+        if (sessionForUpdate?.classSessionId) {
+          await checkAttendanceLimitForSession(sessionForUpdate.classSessionId, req);
+        }
 
         try {
           const [ss] = await db.select({
@@ -3372,9 +3495,26 @@ export function registerClassesRoutes(app: Express): void {
       )) {
         return res.status(400).json({ message: "Thông tin điểm danh không hợp lệ." });
       }
-      if (!(await assertScheduleMutationPermission(req, res, "canEdit", [
-        { resource: "/attendance", action: "canCreate" },
-      ]))) return;
+      const requestedStudentSessionIds = studentList.map((student: any) => student.studentSessionId);
+      const targetSessions = await db
+        .select({
+          id: studentSessions.id,
+          classSessionId: studentSessions.classSessionId,
+        })
+        .from(studentSessions)
+        .where(inArray(studentSessions.id, requestedStudentSessionIds));
+      const allTargetsBelongToRequestedSession =
+        targetSessions.length === studentList.length
+        && targetSessions.every((row) => row.classSessionId === session_id);
+      const assignedSessionIds = allTargetsBelongToRequestedSession
+        ? await getStaffAssignedClassSessionIds(req, [session_id])
+        : new Set<string>();
+      if (
+        !assignedSessionIds.has(session_id)
+        && !(await assertScheduleMutationPermission(req, res, "canEdit", [
+          { resource: "/attendance", action: "canCreate" },
+        ]))
+      ) return;
 
       const userId = (req as any).user?.id ?? null;
       const userFullName = await resolveStaffFullName(userId);
@@ -3465,6 +3605,7 @@ export function registerClassesRoutes(app: Express): void {
           id: studentSessions.id,
           reviewData: studentSessions.reviewData,
           classId: classSessions.classId,
+          classSessionId: classSessions.id,
         })
         .from(studentSessions)
         .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
@@ -3478,10 +3619,19 @@ export function registerClassesRoutes(app: Express): void {
       const hasExistingReviews = existingReviewRows.some((row) =>
         !!row.reviewData && Object.keys(row.reviewData as Record<string, unknown>).length > 0
       );
-      const classIds = [...new Set(existingReviewRows.map((row) => row.classId))];
-      for (const classId of classIds) {
-        if (hasNewReviews && !(await assertScheduleMutationPermission(req, res, "canCreate", [], classId))) return;
-        if (hasExistingReviews && !(await assertScheduleMutationPermission(req, res, "canEdit", [], classId))) return;
+      const assignedSessionIds = await getStaffAssignedClassSessionIds(
+        req,
+        existingReviewRows.map((row) => row.classSessionId),
+      );
+      const allSessionsAssignedToStaff = existingReviewRows.every((row) =>
+        assignedSessionIds.has(row.classSessionId)
+      );
+      if (!allSessionsAssignedToStaff) {
+        const classIds = [...new Set(existingReviewRows.map((row) => row.classId))];
+        for (const classId of classIds) {
+          if (hasNewReviews && !(await assertScheduleMutationPermission(req, res, "canCreate", [], classId))) return;
+          if (hasExistingReviews && !(await assertScheduleMutationPermission(req, res, "canEdit", [], classId))) return;
+        }
       }
       await db.update(studentSessions)
         .set({ reviewData, reviewPublished: !!published, updatedAt: new Date() })

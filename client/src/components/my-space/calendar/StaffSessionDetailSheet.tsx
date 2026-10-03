@@ -216,7 +216,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
   });
 
   const updateAttendanceMutation = useMutation({
-    mutationFn: async ({ id, status, note }: { id: string; status: string; note: string }) => {
+    mutationFn: async ({ id, status, note }: { id: string; status?: string; note?: string }) => {
       return apiRequest("PATCH", `/api/student-sessions/${id}/attendance`, { status, note });
     },
     onSuccess: () => {
@@ -854,7 +854,6 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                                 onBlur={() => {
                                   updateAttendanceMutation.mutate({
                                     id: ss.id,
-                                    status: ss.attendanceStatus || "pending",
                                     note: localNote,
                                   });
                                 }}

@@ -3,8 +3,8 @@ name: Free-class staff permissions
 description: Staff calendar operations for flexible classes must honor teacher assignment separately from the /classes resource permission.
 ---
 
-Lớp tự do trong lịch staff cho phép giáo viên được gán ở `classes.teacherIds` hoặc `freeClassRegistrations.teacherId` đọc và thao tác đúng đăng ký/ngày; không được yêu cầu cứng quyền resource `/classes` trước.
+Lớp tự do trong lịch staff cho phép giáo viên hiệu lực của đúng đăng ký/ngày điểm danh, ghi chú và nhận xét mà không cần quyền resource `/classes`. Xác định giáo viên theo thứ tự: override của học viên, giáo viên được phân công cho ngày, rồi giáo viên mặc định của lớp. Override cụ thể cho giáo viên khác phải chặn giáo viên mặc định.
 
-**Why:** Giáo viên có thể mở lịch staff theo phân công nhưng không có quyền quản trị danh sách lớp. Kiểm tra `assertClassReadable`/`canEdit` thuần túy khiến điểm danh và nhận xét trả 403 dù giáo viên được phân công.
+**Why:** Giáo viên có thể mở lịch staff theo phân công nhưng không có quyền quản trị danh sách lớp; đồng thời quyền theo lớp chung không được mở thao tác cho ngày/học viên đã được override sang giáo viên khác.
 
-**How to apply:** Với endpoint lớp tự do, giữ quyền quản trị hiện có nhưng bổ sung kiểm tra staff assignment. Thao tác theo học viên/ngày phải khóa theo `studentClassId + registrationDate`; nhận xét phải khóa theo `registrationId`. Giáo viên không được phân công vẫn phải nhận 403.
+**How to apply:** Với điểm danh/ghi chú theo ngày, kiểm tra `studentClassId + registrationDate`; với nhận xét, kiểm tra `registrationId` và ngày đăng ký. Giữ các quyền quản trị hiện có, không mở rộng bypass phân công ngày sang các thao tác lịch khác. Giáo viên không phải người hiệu lực của bản ghi vẫn phải bị từ chối.
