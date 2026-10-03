@@ -8,7 +8,7 @@ import { scoreSheetAssessmentSchema } from "@shared/score-sheet-assessment";
 import { scoreSheetTemplateSchema } from "@shared/score-sheet-template";
 import { createScoreSheetAssessmentForTemplate as createScoreSheetAssessmentFromTemplate } from "../lib/score-sheet-assignment";
 import { db, pool } from "../db";
-import { classSessions, studentSessions, freeClassRegistrations, freeClassDayAssignments, students, classes, studentClasses, staff, staffAssignments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, roles, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, invoiceItems, courseFeePackages, financePromotions, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
+import { classSessions, studentSessions, freeClassRegistrations, freeClassDayAssignments, students, classes, studentClasses, staff, staffAssignments, departments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, roles, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, invoiceItems, courseFeePackages, financePromotions, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
 import { eq, and, sql, inArray, avg, between, gte, lte, gt, desc, asc, or, ilike, isNotNull, isNull, ne } from "drizzle-orm";
 import { sendAttendanceNotificationWithLimit, sendReviewNotification, sendContentNotification } from "../lib/attendance-notification";
 import { enforceAttendanceTimeLimit, getStaffRoleIds } from "../lib/attendance-limit";
@@ -23,6 +23,7 @@ import { recordFreeClassWalletTransition } from "../storage/free-class-wallet.st
 import { buildTeacherTimeAssignments, getShiftScheduleKey } from "@shared/teacher-time-assignments";
 import { canScheduleWrite, isScheduleEntryVisible } from "@shared/schedule-access";
 import { getPreferredSystemTrainingTeacherRoleId } from "@shared/teacher-role-priority";
+import { mergeSelectedTeacherRoleIds } from "../storage/teacher-role-updates";
 
 async function resolveStaffFullName(userId: string | undefined | null): Promise<string | null> {
   if (!userId) return null;
@@ -3782,7 +3783,10 @@ export function registerClassesRoutes(app: Express): void {
       }
 
       // Pre-fetch class info for log
-      const [classInfo] = await db.select({ locationId: classes.locationId })
+      const [classInfo] = await db.select({
+        locationId: classes.locationId,
+        teachersConfig: classes.teachersConfig,
+      })
         .from(classes).where(eq(classes.id, classId)).limit(1);
 
       // Get date range from the two session IDs
@@ -3792,7 +3796,15 @@ export function registerClassesRoutes(app: Express): void {
       ]);
 
       // Fetch sessions in range with start time
-      let sessionsInRange: { id: string; sessionIndex: number | null; weekday: number; sessionDate: string; teacherIds: string[] | null; startTime: string | null }[] = [];
+      let sessionsInRange: {
+        id: string;
+        sessionIndex: number | null;
+        weekday: number;
+        sessionDate: string;
+        teacherIds: string[] | null;
+        teacherRoleIds: unknown;
+        startTime: string | null;
+      }[] = [];
       if (fromSess?.sessionDate && toSess?.sessionDate) {
         sessionsInRange = await db.select({
           id: classSessions.id,
@@ -3800,6 +3812,7 @@ export function registerClassesRoutes(app: Express): void {
           weekday: classSessions.weekday,
           sessionDate: classSessions.sessionDate,
           teacherIds: classSessions.teacherIds,
+          teacherRoleIds: classSessions.teacherRoleIds,
           startTime: shiftTemplates.startTime,
         })
           .from(classSessions)
@@ -3822,9 +3835,79 @@ export function registerClassesRoutes(app: Express): void {
         : [];
       const teacherMap = new Map(teacherRows.map(t => [t.id, t]));
 
-      const toTeacherEntry = (tid: string) => {
+      const classLocationId = classInfo?.locationId;
+      const roleAssignmentRows = allStaffIds.length > 0 && classLocationId
+        ? await db.select({
+            staffId: staffAssignments.staffId,
+            roleId: staffAssignments.roleId,
+            roleName: roles.name,
+            isSystemRole: roles.isSystem,
+            departmentName: departments.name,
+            isSystemDepartment: departments.isSystem,
+          })
+            .from(staffAssignments)
+            .innerJoin(roles, eq(staffAssignments.roleId, roles.id))
+            .leftJoin(departments, eq(roles.departmentId, departments.id))
+            .where(and(
+              eq(staffAssignments.locationId, classLocationId),
+              inArray(staffAssignments.staffId, allStaffIds),
+            ))
+        : [];
+      const roleCandidatesByStaff = new Map<string, Array<{
+        id: string;
+        name: string;
+        isSystemRole: boolean;
+        departmentName: string;
+        isSystemDepartment: boolean;
+      }>>();
+      const roleNameById = new Map<string, string>();
+      for (const assignment of roleAssignmentRows) {
+        if (!assignment.roleId) continue;
+        roleNameById.set(assignment.roleId, assignment.roleName);
+        const candidates = roleCandidatesByStaff.get(assignment.staffId) ?? [];
+        if (!candidates.some((candidate) => candidate.id === assignment.roleId)) {
+          candidates.push({
+            id: assignment.roleId,
+            name: assignment.roleName,
+            isSystemRole: assignment.isSystemRole,
+            departmentName: assignment.departmentName ?? "",
+            isSystemDepartment: assignment.isSystemDepartment === true,
+          });
+        }
+        roleCandidatesByStaff.set(assignment.staffId, candidates);
+      }
+      const classTeacherConfigs = Array.isArray(classInfo?.teachersConfig) ? classInfo.teachersConfig : [];
+      const getDefaultTeacherRoleId = (teacherId: string): string => {
+        const candidates = roleCandidatesByStaff.get(teacherId) ?? [];
+        const teacherConfig = classTeacherConfigs.find((config: any) =>
+          String(config?.teacher_id ?? config?.teacherId ?? "") === teacherId
+        );
+        const configuredRoleId = String(teacherConfig?.role_id ?? teacherConfig?.roleId ?? "");
+        if (configuredRoleId && candidates.some((candidate) => candidate.id === configuredRoleId)) {
+          return configuredRoleId;
+        }
+        return getPreferredSystemTrainingTeacherRoleId(candidates) ??
+          (candidates.length === 1 ? candidates[0].id : "");
+      };
+      const getEffectiveTeacherRoleId = (roleIds: unknown, teacherId: string): string | null => {
+        const overrides = roleIds && typeof roleIds === "object" && !Array.isArray(roleIds)
+          ? roleIds as Record<string, unknown>
+          : {};
+        const overrideRoleId = overrides[teacherId];
+        if (typeof overrideRoleId === "string" && overrideRoleId) return overrideRoleId;
+        return getDefaultTeacherRoleId(teacherId) || null;
+      };
+
+      const toTeacherEntry = (tid: string, roleIds: unknown) => {
         const t = teacherMap.get(tid);
-        return { id: tid, name: t?.fullName ?? tid, code: t?.code ?? "" };
+        const roleId = getEffectiveTeacherRoleId(roleIds, tid);
+        return {
+          id: tid,
+          name: t?.fullName ?? tid,
+          code: t?.code ?? "",
+          roleId,
+          roleName: roleId ? roleNameById.get(roleId) ?? "Vai trò không xác định" : "Theo mặc định",
+        };
       };
 
       const oldContent = sessionsInRange.map(s => ({
@@ -3832,16 +3915,22 @@ export function registerClassesRoutes(app: Express): void {
         weekday: s.weekday,
         sessionDate: s.sessionDate,
         startTime: s.startTime ?? null,
-        teachers: (s.teacherIds ?? []).map(toTeacherEntry),
+        teachers: (s.teacherIds ?? []).map((teacherId) => toTeacherEntry(teacherId, s.teacherRoleIds)),
       }));
 
-      const newTeacherList = newTeacherIds.map(toTeacherEntry);
       const newContent = sessionsInRange.map(s => ({
         sessionIndex: s.sessionIndex,
         weekday: s.weekday,
         sessionDate: s.sessionDate,
         startTime: s.startTime ?? null,
-        teachers: newTeacherList,
+        teachers: newTeacherIds.map((teacherId) => {
+          const nextRoleIds = mergeSelectedTeacherRoleIds(
+            s.teacherRoleIds,
+            newTeacherIds,
+            teacherRoleChanges,
+          );
+          return toTeacherEntry(teacherId, nextRoleIds);
+        }),
       }));
 
       await storage.changeTeacher({
