@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getAssignedTeacherTimeRange,
   getTeacherIdsForTimeRange,
+  isTeacherTimeRangeWithinShift,
 } from "../shared/teacher-time-assignments";
 
 describe("getTeacherIdsForTimeRange", () => {
@@ -42,5 +43,23 @@ describe("getTeacherIdsForTimeRange", () => {
       startTime: "08:00",
       endTime: "10:00",
     });
+  });
+});
+
+describe("isTeacherTimeRangeWithinShift", () => {
+  it("allows a teacher to use the complete class shift", () => {
+    expect(isTeacherTimeRangeWithinShift("08:00", "10:00", "08:00", "10:00")).toBe(true);
+  });
+
+  it("allows a custom interval inside the class shift", () => {
+    expect(isTeacherTimeRangeWithinShift("08:00", "09:00", "08:00", "10:00")).toBe(true);
+    expect(isTeacherTimeRangeWithinShift("09:15", "10:00", "08:00", "10:00")).toBe(true);
+  });
+
+  it("rejects intervals outside the class shift or with an invalid order", () => {
+    expect(isTeacherTimeRangeWithinShift("07:59", "09:00", "08:00", "10:00")).toBe(false);
+    expect(isTeacherTimeRangeWithinShift("09:00", "10:01", "08:00", "10:00")).toBe(false);
+    expect(isTeacherTimeRangeWithinShift("09:00", "09:00", "08:00", "10:00")).toBe(false);
+    expect(isTeacherTimeRangeWithinShift("not-time", "10:00", "08:00", "10:00")).toBe(false);
   });
 });

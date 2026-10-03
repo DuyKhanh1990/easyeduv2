@@ -28,6 +28,7 @@ import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { ConflictDetailSheet } from "@/components/education/ConflictDetailSheet";
 import type { ConflictItem } from "@/components/education/ConflictDetailSheet";
 import { getStaffRoleOptions, resolveTeacherRoleId } from "@/lib/staff-role-options";
+import { isTeacherTimeRangeWithinShift } from "@shared/teacher-time-assignments";
 
 const USE_DEFAULT_ROLE = "__use_default_role__";
 
@@ -52,6 +53,8 @@ export function UpdateSessionDialog({
   const [shiftTemplateId, setShiftTemplateId] = useState<string>("");
   const [roomId, setRoomId] = useState<string>("");
   const [teacherIds, setTeacherIds] = useState<string[]>([]);
+  const [teacherTimeRanges, setTeacherTimeRanges] = useState<Record<string, { startTime: string; endTime: string }>>({});
+  const [customTeacherTimeRanges, setCustomTeacherTimeRanges] = useState<Record<string, boolean>>({});
   const [teacherRoleOverrides, setTeacherRoleOverrides] = useState<Record<string, string>>({});
   const [changeReason, setChangeReason] = useState<string>("");
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
@@ -63,60 +66,7 @@ export function UpdateSessionDialog({
   const [isLiveChecking, setIsLiveChecking] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (isOpen && session) {
-      setSessionDate(session.sessionDate);
-      setShiftTemplateId(session.shiftTemplateId || "");
-      setRoomId(session.roomId || "");
-      setTeacherIds(Array.isArray(session.teacherIds) ? session.teacherIds : []);
-      const roleOverrides = session.teacherRoleIds;
-      const validRoleOverrides: Record<string, string> = {};
-      if (roleOverrides && typeof roleOverrides === "object" && !Array.isArray(roleOverrides)) {
-        for (const [teacherId, roleId] of Object.entries(roleOverrides)) {
-          if (teacherId && typeof roleId === "string" && roleId) {
-            validRoleOverrides[teacherId] = roleId;
-          }
-        }
-      }
-      setTeacherRoleOverrides(validRoleOverrides);
-      setChangeReason(session.changeReason || "");
-      setLiveConflicts([]);
-      setPreviewIndex(session.sessionIndex ?? null);
-      setConfirmIndexChange(false);
-      setPendingUpdate(null);
-    }
-  }, [isOpen, session]);
-
-  // Debounced live conflict check
-  useEffect(() => {
-    if (!isOpen || !sessionId || !sessionDate || !shiftTemplateId) {
-      setLiveConflicts([]);
-      return;
-    }
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      setIsLiveChecking(true);
-      try {
-        const res = await fetch(`/api/class-sessions/${sessionId}/preview-conflicts`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-          credentials: "include",
-          body: JSON.stringify({ sessionDate, shiftTemplateId, roomId: roomId || null, teacherIds }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setLiveConflicts(data.conflicts || []);
-           setPreviewIndex(data.newSessionIndex ?? session?.sessionIndex ?? null);
-        }
-      } catch {
-        setLiveConflicts([]);
-      } finally {
-        setIsLiveChecking(false);
-      }
-    }, 800);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [isOpen, sessionId, sessionDate, shiftTemplateId, roomId, teacherIds]);
+  const initializedSessionRef = useRef<string | null>(null);
 
   const { data: staffList } = useQuery<any[]>({
     queryKey: ["/api/staff?minimal=true"],
@@ -133,7 +83,7 @@ export function UpdateSessionDialog({
     enabled: !!classData?.locationId && isOpen,
   });
 
-  const { data: shiftTemplates = [] } = useQuery<any[]>({
+  const { data: shiftTemplates = [], isFetched: shiftsFetched } = useQuery<any[]>({
     queryKey: ["/api/shift-templates", { locationId: classData?.locationId }],
     queryFn: async () => {
       const params = new URLSearchParams({ type: "class" });
@@ -144,10 +94,178 @@ export function UpdateSessionDialog({
     },
     enabled: !!classData?.locationId && isOpen,
   });
+  const sessionInitializationKey = session
+    ? String(session.id || session.sessionIndex || session.sessionDate)
+    : null;
+  const sessionInitialized = !!sessionInitializationKey &&
+    initializedSessionRef.current === sessionInitializationKey;
+
+  useEffect(() => {
+    if (!isOpen) {
+      initializedSessionRef.current = null;
+      return;
+    }
+    if (!session) return;
+    const initializationKey = String(session.id || session.sessionIndex || session.sessionDate);
+    if (initializedSessionRef.current === initializationKey) return;
+    if (
+      session.shiftTemplateId &&
+      (!session.shiftTemplate?.startTime || !session.shiftTemplate?.endTime) &&
+      !shiftsFetched &&
+      classData?.locationId
+    ) return;
+
+    setSessionDate(session.sessionDate);
+    setShiftTemplateId(session.shiftTemplateId || "");
+    setRoomId(session.roomId || "");
+    const selectedTeacherIds = Array.isArray(session.teacherIds) ? session.teacherIds : [];
+    setTeacherIds(selectedTeacherIds);
+    const sessionShift = shiftTemplates.find((shift: any) => shift.id === session.shiftTemplateId);
+    const defaultStartTime = String(session.shiftTemplate?.startTime || sessionShift?.startTime || "").slice(0, 5);
+    const defaultEndTime = String(session.shiftTemplate?.endTime || sessionShift?.endTime || "").slice(0, 5);
+    const initialTimeRanges: Record<string, { startTime: string; endTime: string }> = {};
+    const initialCustomRanges: Record<string, boolean> = {};
+    for (const teacherId of selectedTeacherIds) {
+      const assignment = session.teacherTimeAssignments?.find((row: any) => row.teacherId === teacherId);
+      const startTime = String(assignment?.startTime ?? defaultStartTime).slice(0, 5);
+      const endTime = String(assignment?.endTime ?? defaultEndTime).slice(0, 5);
+      initialTimeRanges[teacherId] = { startTime, endTime };
+      initialCustomRanges[teacherId] = !!assignment &&
+        (!defaultStartTime || !defaultEndTime ||
+          startTime !== defaultStartTime || endTime !== defaultEndTime);
+    }
+    setTeacherTimeRanges(initialTimeRanges);
+    setCustomTeacherTimeRanges(initialCustomRanges);
+    const roleOverrides = session.teacherRoleIds;
+    const validRoleOverrides: Record<string, string> = {};
+    if (roleOverrides && typeof roleOverrides === "object" && !Array.isArray(roleOverrides)) {
+      for (const [teacherId, roleId] of Object.entries(roleOverrides)) {
+        if (teacherId && typeof roleId === "string" && roleId) {
+          validRoleOverrides[teacherId] = roleId;
+        }
+      }
+    }
+    setTeacherRoleOverrides(validRoleOverrides);
+    setChangeReason(session.changeReason || "");
+    setLiveConflicts([]);
+    setPreviewIndex(session.sessionIndex ?? null);
+    setConfirmIndexChange(false);
+    setPendingUpdate(null);
+    initializedSessionRef.current = initializationKey;
+  }, [isOpen, session, shiftTemplates, shiftsFetched, classData?.locationId]);
+
+  const selectedShift = shiftTemplates.find((shift: any) => shift.id === shiftTemplateId);
+  const normalizeTime = (value?: string | null) => value ? String(value).slice(0, 5) : "";
+  const shiftStartTime = normalizeTime(
+    selectedShift?.startTime ||
+    (shiftTemplateId === session?.shiftTemplateId ? session?.shiftTemplate?.startTime : ""),
+  );
+  const shiftEndTime = normalizeTime(
+    selectedShift?.endTime ||
+    (shiftTemplateId === session?.shiftTemplateId ? session?.shiftTemplate?.endTime : ""),
+  );
+  const shiftRangeLabel = shiftStartTime && shiftEndTime
+    ? `${shiftStartTime}–${shiftEndTime}`
+    : "chưa có giờ";
+  const teacherTimeAssignments = teacherIds.map((teacherId) => ({
+    teacherId,
+    startTime: customTeacherTimeRanges[teacherId] ? teacherTimeRanges[teacherId]?.startTime ?? shiftStartTime : shiftStartTime,
+    endTime: customTeacherTimeRanges[teacherId] ? teacherTimeRanges[teacherId]?.endTime ?? shiftEndTime : shiftEndTime,
+  }));
+
+  // Debounced live conflict check
+  useEffect(() => {
+    if (!isOpen || !sessionInitialized || !sessionId || !sessionDate || !shiftTemplateId) {
+      setLiveConflicts([]);
+      return;
+    }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setIsLiveChecking(true);
+      try {
+        const res = await fetch(`/api/class-sessions/${sessionId}/preview-conflicts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+          credentials: "include",
+          body: JSON.stringify({
+            sessionDate,
+            shiftTemplateId,
+            roomId: roomId || null,
+            teacherIds,
+            teacherTimeAssignments,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setLiveConflicts(data.conflicts || []);
+          setPreviewIndex(data.newSessionIndex ?? session?.sessionIndex ?? null);
+        }
+      } catch {
+        setLiveConflicts([]);
+      } finally {
+        setIsLiveChecking(false);
+      }
+    }, 800);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [
+    isOpen,
+    sessionInitialized,
+    sessionId,
+    sessionDate,
+    shiftTemplateId,
+    roomId,
+    teacherIds,
+    teacherTimeRanges,
+    shiftStartTime,
+    shiftEndTime,
+  ]);
 
   const activeTeachers = (staffList || []).map((s: any) => ({ ...s, _isActive: s.status === "Hoạt động" }));
   const roomConflicts = liveConflicts.filter(c => c.type === "room");
   const teacherConflicts = liveConflicts.filter(c => c.type === "teacher");
+  const invalidTimeTeacherIds = teacherTimeAssignments
+    .filter((assignment) => !isTeacherTimeRangeWithinShift(
+      assignment.startTime,
+      assignment.endTime,
+      shiftStartTime,
+      shiftEndTime,
+    ))
+    .map((assignment) => assignment.teacherId);
+  const hasInvalidTeacherTimeRanges = invalidTimeTeacherIds.length > 0;
+
+  const handleTeacherIdsChange = (nextIds: string[]) => {
+    const normalizedIds = [...new Set(nextIds)];
+    setTeacherIds(normalizedIds);
+    setTeacherRoleOverrides((current) => Object.fromEntries(
+      Object.entries(current).filter(([teacherId]) => normalizedIds.includes(teacherId)),
+    ));
+    setTeacherTimeRanges((current) => Object.fromEntries(normalizedIds.map((teacherId) => [
+      teacherId,
+      current[teacherId] || { startTime: shiftStartTime, endTime: shiftEndTime },
+    ])));
+    setCustomTeacherTimeRanges((current) => Object.fromEntries(
+      normalizedIds
+        .filter((teacherId) => current[teacherId] === true)
+        .map((teacherId) => [teacherId, true]),
+    ));
+  };
+
+  const updateTeacherTimeRange = (
+    teacherId: string,
+    field: "startTime" | "endTime",
+    value: string,
+  ) => {
+    const current = customTeacherTimeRanges[teacherId] && teacherTimeRanges[teacherId]
+      ? teacherTimeRanges[teacherId]
+      : { startTime: shiftStartTime, endTime: shiftEndTime };
+    const next = { ...current, [field]: value };
+    setTeacherTimeRanges((ranges) => ({ ...ranges, [teacherId]: next }));
+    setCustomTeacherTimeRanges((ranges) => ({
+      ...ranges,
+      [teacherId]: next.startTime !== shiftStartTime || next.endTime !== shiftEndTime,
+    }));
+  };
+
   const getTeacherRoleDetails = (teacherId: string) => {
     const member = activeTeachers.find((teacher: any) => teacher.id === teacherId);
     const sessionTeacher = session?.teachers?.find((teacher: any) => teacher.id === teacherId);
@@ -175,25 +293,6 @@ export function UpdateSessionDialog({
       hasOverride,
     };
   };
-  const getTeacherShiftLabel = (teacherId: string) => {
-    const selectedShift = shiftTemplates.find((shift: any) => shift.id === shiftTemplateId);
-    const originalShift = shiftTemplates.find((shift: any) => shift.id === session?.shiftTemplateId);
-    const assignment = session?.teacherTimeAssignments?.find((row: any) => row.teacherId === teacherId);
-    const originalStart = originalShift?.startTime || session?.shiftTemplate?.startTime;
-    const originalEnd = originalShift?.endTime || session?.shiftTemplate?.endTime;
-    const assignmentStart = assignment?.startTime;
-    const assignmentEnd = assignment?.endTime;
-    const hasCustomTime = !!assignment && (
-      (assignmentStart && originalStart && String(assignmentStart).slice(0, 5) !== String(originalStart).slice(0, 5)) ||
-      (assignmentEnd && originalEnd && String(assignmentEnd).slice(0, 5) !== String(originalEnd).slice(0, 5))
-    );
-    const startTime = hasCustomTime ? assignmentStart : selectedShift?.startTime || assignmentStart;
-    const endTime = hasCustomTime ? assignmentEnd : selectedShift?.endTime || assignmentEnd;
-    const formatTime = (value?: string | null) => value ? String(value).slice(0, 5) : "";
-    const range = startTime && endTime ? `${formatTime(startTime)}–${formatTime(endTime)}` : "";
-    const shiftName = selectedShift?.name || session?.shiftTemplate?.name || "";
-    return [shiftName, range].filter(Boolean).join(" · ") || "—";
-  };
   const hasMissingTeacherRole = teacherIds.some((teacherId) => {
     const details = getTeacherRoleDetails(teacherId);
     return details.roleOptions.length > 1 && !details.selectedRoleId;
@@ -210,6 +309,7 @@ export function UpdateSessionDialog({
       roomId: roomId || null,
       teacherIds,
       teacherRoleIds: sessionTeacherRoleIds,
+      teacherTimeAssignments,
       changeReason,
     };
     if (previewIndex != null && session?.sessionIndex != null && previewIndex !== session.sessionIndex) {
@@ -223,7 +323,7 @@ export function UpdateSessionDialog({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[680px]">
           <DialogHeader>
             <DialogTitle>Cập nhật buổi học {session?.sessionIndex}</DialogTitle>
             <DialogDescription>
@@ -283,16 +383,20 @@ export function UpdateSessionDialog({
               <SearchableMultiSelect
                 options={activeTeachers.map((t: any) => ({ value: t.id, label: t.fullName, isActive: t._isActive }))}
                 value={teacherIds}
-                onChange={setTeacherIds}
+                onChange={handleTeacherIdsChange}
                 placeholder="Chọn giáo viên..."
               />
             </div>
             {teacherIds.length > 0 && (
               <div className="overflow-hidden rounded-md border">
-                <div className="grid grid-cols-3 gap-3 bg-muted/50 px-3 py-2 text-xs font-medium text-muted-foreground">
+                <div className="border-b bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                  Ca chung giới hạn: <span className="font-medium text-foreground">{shiftRangeLabel}</span>.
+                  {" "}Giáo viên không chia riêng sẽ dùng toàn bộ ca này.
+                </div>
+                <div className="hidden grid-cols-[minmax(0,1fr)_minmax(120px,0.95fr)_minmax(220px,1.45fr)] gap-3 bg-muted/50 px-3 py-2 text-xs font-medium text-muted-foreground sm:grid">
                   <span>Tên giáo viên</span>
                   <span>Vai trò</span>
-                  <span>Ca dạy</span>
+                  <span>Phân công ca dạy</span>
                 </div>
                 <div className="divide-y">
                   {teacherIds.map((teacherId) => {
@@ -300,43 +404,84 @@ export function UpdateSessionDialog({
                       session?.teachers?.find((item: any) => item.id === teacherId);
                     const details = getTeacherRoleDetails(teacherId);
                     const missingRole = details.roleOptions.length > 1 && !details.selectedRoleId;
+                    const timeRange = customTeacherTimeRanges[teacherId] && teacherTimeRanges[teacherId]
+                      ? teacherTimeRanges[teacherId]
+                      : { startTime: shiftStartTime, endTime: shiftEndTime };
+                    const invalidTime = invalidTimeTeacherIds.includes(teacherId);
+                    const isFullShift = timeRange.startTime === shiftStartTime && timeRange.endTime === shiftEndTime;
                     return (
-                      <div key={teacherId} className="grid grid-cols-3 items-center gap-3 px-3 py-2">
-                        <span className="min-w-0 truncate text-sm" title={teacher?.fullName || teacherId}>
+                      <div key={teacherId} className="grid grid-cols-1 gap-2 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(120px,0.95fr)_minmax(220px,1.45fr)] sm:items-center sm:gap-3">
+                        <span className="min-w-0 truncate text-sm font-medium" title={teacher?.fullName || teacherId}>
                           {teacher?.fullName || teacherId}
                         </span>
-                        <Select
-                          value={details.selectedRoleId || ""}
-                          onValueChange={(value) => {
-                            if (value === USE_DEFAULT_ROLE) {
-                              setTeacherRoleOverrides((current) => {
-                                const next = { ...current };
-                                delete next[teacherId];
-                                return next;
-                              });
-                            } else {
-                              setTeacherRoleOverrides((current) => ({ ...current, [teacherId]: value }));
-                            }
-                          }}
-                          disabled={details.roleOptions.length === 0}
-                        >
-                          <SelectTrigger className={`h-9 ${missingRole ? "border-destructive" : ""}`}>
-                            <SelectValue placeholder="Chọn vai trò" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={USE_DEFAULT_ROLE}>
-                              Theo mặc định
-                            </SelectItem>
-                            {details.roleOptions.map((option) => (
-                              <SelectItem key={option.id} value={option.id}>
-                                {option.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <span className="min-w-0 truncate text-sm text-muted-foreground" title={getTeacherShiftLabel(teacherId)}>
-                          {getTeacherShiftLabel(teacherId)}
-                        </span>
+                        <div className="space-y-1">
+                          <span className="text-xs text-muted-foreground sm:hidden">Vai trò</span>
+                          <Select
+                            value={details.selectedRoleId || ""}
+                            onValueChange={(value) => {
+                              if (value === USE_DEFAULT_ROLE) {
+                                setTeacherRoleOverrides((current) => {
+                                  const next = { ...current };
+                                  delete next[teacherId];
+                                  return next;
+                                });
+                              } else {
+                                setTeacherRoleOverrides((current) => ({ ...current, [teacherId]: value }));
+                              }
+                            }}
+                            disabled={details.roleOptions.length === 0}
+                          >
+                            <SelectTrigger className={`h-9 ${missingRole ? "border-destructive" : ""}`}>
+                              <SelectValue placeholder="Chọn vai trò" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={USE_DEFAULT_ROLE}>Theo mặc định</SelectItem>
+                              {details.roleOptions.map((option) => (
+                                <SelectItem key={option.id} value={option.id}>
+                                  {option.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="min-w-0 space-y-1">
+                          <span className="text-xs text-muted-foreground sm:hidden">Phân công ca dạy</span>
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            <label className="flex min-w-0 flex-1 items-center gap-1">
+                              <span className="text-xs text-muted-foreground">Từ</span>
+                              <input
+                                type="time"
+                                aria-label={`Giờ bắt đầu của ${teacher?.fullName || teacherId}`}
+                                min={shiftStartTime || undefined}
+                                max={shiftEndTime || undefined}
+                                value={timeRange.startTime}
+                                onChange={(event) => updateTeacherTimeRange(teacherId, "startTime", event.target.value)}
+                                disabled={!shiftStartTime || !shiftEndTime}
+                                className={`h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm ${invalidTime ? "border-destructive" : ""}`}
+                              />
+                            </label>
+                            <label className="flex min-w-0 flex-1 items-center gap-1">
+                              <span className="text-xs text-muted-foreground">Đến</span>
+                              <input
+                                type="time"
+                                aria-label={`Giờ kết thúc của ${teacher?.fullName || teacherId}`}
+                                min={shiftStartTime || undefined}
+                                max={shiftEndTime || undefined}
+                                value={timeRange.endTime}
+                                onChange={(event) => updateTeacherTimeRange(teacherId, "endTime", event.target.value)}
+                                disabled={!shiftStartTime || !shiftEndTime}
+                                className={`h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm ${invalidTime ? "border-destructive" : ""}`}
+                              />
+                            </label>
+                          </div>
+                          <p className={`text-xs ${invalidTime ? "text-destructive" : "text-muted-foreground"}`}>
+                            {invalidTime
+                              ? `Giờ phải nằm trong ca chung ${shiftRangeLabel} và giờ bắt đầu phải trước giờ kết thúc.`
+                              : isFullShift
+                                ? "Dùng toàn bộ ca chung"
+                                : `Ca riêng trong ${shiftRangeLabel}`}
+                          </p>
+                        </div>
                       </div>
                     );
                   })}
@@ -344,6 +489,11 @@ export function UpdateSessionDialog({
                 {hasMissingTeacherRole && (
                   <p className="border-t px-3 py-2 text-xs text-destructive">
                     Chọn vai trò cho giáo viên có nhiều vai trò tại cơ sở.
+                  </p>
+                )}
+                {teacherIds.length > 0 && (!shiftStartTime || !shiftEndTime) && (
+                  <p className="border-t px-3 py-2 text-xs text-destructive">
+                    Ca học chung chưa có giờ bắt đầu hoặc kết thúc; cần bổ sung giờ cho ca trước khi lưu phân công giáo viên.
                   </p>
                 )}
               </div>
@@ -390,7 +540,7 @@ export function UpdateSessionDialog({
               Hủy
             </Button>
             <Button
-              disabled={!sessionDate || !shiftTemplateId || !changeReason.trim() || isPending || hasMissingTeacherRole}
+              disabled={!sessionInitialized || !sessionDate || !shiftTemplateId || !changeReason.trim() || isPending || hasMissingTeacherRole || hasInvalidTeacherTimeRanges}
               onClick={submitUpdate}
             >
               {isPending ? "Đang lưu..." : "Cập nhật"}

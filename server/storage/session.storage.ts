@@ -6,13 +6,14 @@ import {
   eq, sql, and, or, inArray, asc, desc, gte,
   classSessions, studentClasses, studentSessions,
   classes, classSessionExclusions, sessionContents, students,
-  invoices, invoiceItems, invoiceSessionAllocations, tuitionPackageSessionAdjustments, shiftTemplates, courseFeePackages,
+  invoices, invoiceItems, invoiceSessionAllocations, tuitionPackageSessionAdjustments, shiftTemplates, classSessionTeacherAssignments, courseFeePackages,
   financePromotions,
   format, parseISO,
   getDayName,
 } from "./base";
 
 import { attendanceFeeRules, studentWalletTransactions } from "@shared/schema";
+import { isTeacherTimeRangeWithinShift } from "@shared/teacher-time-assignments";
 
 import type {
   ClassSession,
@@ -3100,9 +3101,11 @@ export async function updateClassSession(id: string, updates: any): Promise<Clas
   const {
     sessionDate, shiftTemplateId, roomId, teacherIds, changeReason, changedBy,
     teacherRoleIds,
+    teacherTimeAssignments,
     indexChangeMode = "move_all",
   } = updates;
   const hasTeacherRoleIds = Object.prototype.hasOwnProperty.call(updates, "teacherRoleIds");
+  const hasTeacherTimeAssignments = Object.prototype.hasOwnProperty.call(updates, "teacherTimeAssignments");
   const requestedTeacherRoleIds =
     teacherRoleIds && typeof teacherRoleIds === "object" && !Array.isArray(teacherRoleIds)
       ? teacherRoleIds as Record<string, unknown>
@@ -3125,6 +3128,72 @@ export async function updateClassSession(id: string, updates: any): Promise<Clas
   const updated = await db.transaction(async (tx) => {
     const [existing] = await tx.select().from(classSessions).where(eq(classSessions.id, id));
     if (!existing) throw new Error("Không tìm thấy buổi học");
+
+    const selectedTeacherIds = [...new Set(
+      (Array.isArray(teacherIds) ? teacherIds : existing.teacherIds ?? [])
+        .filter((teacherId): teacherId is string => typeof teacherId === "string" && !!teacherId),
+    )];
+    const nextShiftTemplateId = shiftTemplateId ?? existing.shiftTemplateId;
+    const [selectedShift] = nextShiftTemplateId
+      ? await tx.select({
+          startTime: shiftTemplates.startTime,
+          endTime: shiftTemplates.endTime,
+        }).from(shiftTemplates).where(eq(shiftTemplates.id, nextShiftTemplateId)).limit(1)
+      : [];
+    const shiftStartTime = String(selectedShift?.startTime ?? "").slice(0, 5);
+    const shiftEndTime = String(selectedShift?.endTime ?? "").slice(0, 5);
+    const currentTimeAssignments = await tx.select()
+      .from(classSessionTeacherAssignments)
+      .where(eq(classSessionTeacherAssignments.classSessionId, id));
+    const currentTimeAssignmentsByTeacher = new Map(
+      currentTimeAssignments.map((assignment) => [assignment.teacherId, assignment]),
+    );
+    const requestedTimeAssignmentsByTeacher = new Map<string, any>(
+      (Array.isArray(teacherTimeAssignments) ? teacherTimeAssignments : [])
+        .filter((assignment: any) => assignment && typeof assignment.teacherId === "string")
+        .map((assignment: any) => [assignment.teacherId, assignment]),
+    );
+    const resolveTeacherTimeAssignments = (ids: string[]) => {
+      if (ids.length > 0 && (!shiftStartTime || !shiftEndTime)) {
+        throw new Error("Ca học cần có giờ bắt đầu và kết thúc trước khi phân công giờ cho giáo viên");
+      }
+      return ids.map((teacherId) => {
+        const previous = currentTimeAssignmentsByTeacher.get(teacherId);
+        const requested = hasTeacherTimeAssignments
+          ? requestedTimeAssignmentsByTeacher.get(teacherId)
+          : previous;
+        const startTime = String(requested?.startTime ?? shiftStartTime).slice(0, 5);
+        const endTime = String(requested?.endTime ?? shiftEndTime).slice(0, 5);
+        if (!isTeacherTimeRangeWithinShift(startTime, endTime, shiftStartTime, shiftEndTime)) {
+          throw new Error(`Giờ phân công của giáo viên phải nằm trong ca chung ${shiftStartTime}–${shiftEndTime}`);
+        }
+        return {
+          teacherId,
+          startTime,
+          endTime,
+          scheduleKey: previous?.scheduleKey || "session-update",
+        };
+      });
+    };
+    const updatedTeacherTimeAssignments = resolveTeacherTimeAssignments(selectedTeacherIds);
+    const replaceTeacherTimeAssignments = async (
+      sessionId: string,
+      assignments: Array<{ teacherId: string; startTime: string; endTime: string; scheduleKey: string }>,
+    ) => {
+      await tx.delete(classSessionTeacherAssignments)
+        .where(eq(classSessionTeacherAssignments.classSessionId, sessionId));
+      if (assignments.length > 0) {
+        await tx.insert(classSessionTeacherAssignments).values(
+          assignments.map((assignment) => ({
+            classSessionId: sessionId,
+            teacherId: assignment.teacherId,
+            startTime: assignment.startTime,
+            endTime: assignment.endTime,
+            scheduleKey: assignment.scheduleKey,
+          })),
+        );
+      }
+    };
 
     const conflict = await tx.select().from(classSessions).where(and(
       eq(classSessions.classId, existing.classId),
@@ -3176,9 +3245,18 @@ export async function updateClassSession(id: string, updates: any): Promise<Clas
         .select({ id: shiftTemplates.id, startTime: shiftTemplates.startTime })
         .from(shiftTemplates);
       const shiftTime = new Map(shifts.map(shift => [shift.id, shift.startTime ?? "99:99"]));
-      const proposedTeachers = Array.isArray(teacherIds)
-        ? (teacherIds.length > 0 ? teacherIds : null)
-        : existing.teacherIds;
+      const proposedTeachers = selectedTeacherIds.length > 0 ? selectedTeacherIds : null;
+      const timeAssignmentRows = fixedSlots.length > 0
+        ? await tx.select()
+            .from(classSessionTeacherAssignments)
+            .where(inArray(classSessionTeacherAssignments.classSessionId, fixedSlots.map((slot) => slot.id)))
+        : [];
+      const timeAssignmentsBySession = new Map<string, typeof timeAssignmentRows>();
+      for (const assignment of timeAssignmentRows) {
+        const rows = timeAssignmentsBySession.get(assignment.classSessionId) ?? [];
+        rows.push(assignment);
+        timeAssignmentsBySession.set(assignment.classSessionId, rows);
+      }
       const schedules = fixedSlots.map(slot => ({
         sourceId: slot.id,
         sessionDate: slot.id === id ? sessionDate : slot.sessionDate,
@@ -3192,6 +3270,14 @@ export async function updateClassSession(id: string, updates: any): Promise<Clas
             ? (hasTeacherRoleIds ? requestedTeacherRoleIds : slot.teacherRoleIds)
             : slot.teacherRoleIds,
         ),
+        teacherTimeAssignments: slot.id === id
+          ? updatedTeacherTimeAssignments
+          : (timeAssignmentsBySession.get(slot.id) ?? []).map((assignment) => ({
+              teacherId: assignment.teacherId,
+              startTime: String(assignment.startTime).slice(0, 5),
+              endTime: String(assignment.endTime).slice(0, 5),
+              scheduleKey: assignment.scheduleKey,
+            })),
         learningFormat: slot.learningFormat,
       })).sort((a, b) =>
         a.sessionDate.localeCompare(b.sessionDate) ||
@@ -3224,6 +3310,10 @@ export async function updateClassSession(id: string, updates: any): Promise<Clas
               updatedAt: new Date(),
             })
             .where(eq(classSessions.id, fixedSlots[position].id));
+          await replaceTeacherTimeAssignments(
+            fixedSlots[position].id,
+            schedule.teacherTimeAssignments,
+          );
         }
 
         const effectiveId = fixedSlots[effectivePosition].id;
@@ -3253,6 +3343,7 @@ export async function updateClassSession(id: string, updates: any): Promise<Clas
         updatedAt: new Date(),
       })
       .where(eq(classSessions.id, id));
+    await replaceTeacherTimeAssignments(id, updatedTeacherTimeAssignments);
 
     if (shouldResequence) {
       const orderedSessions = await tx

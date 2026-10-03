@@ -19,9 +19,25 @@ export type ShiftTimeLookup = Map<string, {
 
 function toMinutes(value: string | null | undefined): number {
   if (!value) return -1;
-  const [hours, minutes] = value.slice(0, 5).split(":").map(Number);
-  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return -1;
+  const match = /^(\d{1,2}):(\d{2})/.exec(value.trim());
+  if (!match) return -1;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return -1;
   return hours * 60 + minutes;
+}
+
+export function isTeacherTimeRangeWithinShift(
+  startTime: string | null | undefined,
+  endTime: string | null | undefined,
+  shiftStartTime: string | null | undefined,
+  shiftEndTime: string | null | undefined,
+): boolean {
+  const start = toMinutes(startTime);
+  const end = toMinutes(endTime);
+  const shiftStart = toMinutes(shiftStartTime);
+  const shiftEnd = toMinutes(shiftEndTime);
+  return start >= shiftStart && start >= 0 && end > start && end <= shiftEnd && shiftEnd >= 0;
 }
 
 export function getTeacherIdsForTimeRange(

@@ -612,7 +612,13 @@ export function ScheduleTabContent({
         onConfirm={(data) =>
           runWithConflictCheck(
             `/api/class-sessions/${selectedClassSessionId}/preview-conflicts`,
-            { sessionDate: data.sessionDate, shiftTemplateId: data.shiftTemplateId, roomId: data.roomId, teacherIds: data.teacherIds },
+            {
+              sessionDate: data.sessionDate,
+              shiftTemplateId: data.shiftTemplateId,
+              roomId: data.roomId,
+              teacherIds: data.teacherIds,
+              teacherTimeAssignments: data.teacherTimeAssignments,
+            },
             () => updateSessionMutation.mutate(data),
           )
         }

@@ -5641,7 +5641,7 @@ export function registerClassesRoutes(app: Express): void {
   app.patch(api.classSessions.update.path, async (req, res) => {
     try {
       if (!(await assertScheduleMutationPermission(req, res, "canEdit"))) return;
-      const sessionId = req.params.id;
+      const sessionId = String(req.params.id);
 
       // Fetch existing session before update for notification comparison + activity log
       const [existingSession] = await db.select({
@@ -5653,6 +5653,14 @@ export function registerClassesRoutes(app: Express): void {
         teacherRoleIds: classSessions.teacherRoleIds,
         shiftTemplateId: classSessions.shiftTemplateId,
       }).from(classSessions).where(eq(classSessions.id, sessionId)).limit(1);
+
+      const { classSessionTeacherAssignments } = await import("@shared/schema");
+      const oldTeacherTimeAssignments = await db.select({
+        teacherId: classSessionTeacherAssignments.teacherId,
+        startTime: classSessionTeacherAssignments.startTime,
+        endTime: classSessionTeacherAssignments.endTime,
+      }).from(classSessionTeacherAssignments)
+        .where(eq(classSessionTeacherAssignments.classSessionId, sessionId));
 
       const result = await storage.updateClassSession(sessionId, {
         ...req.body,
@@ -5814,7 +5822,20 @@ export function registerClassesRoutes(app: Express): void {
           .where(eq(classSessions.id, effectiveSessionId))
           .limit(1);
         if (updatedSess) {
-          updateSessionConflicts = await checkScheduleConflicts([updatedSess], existingSession?.classId);
+          const updatedTeacherTimeAssignments = await db.select({
+            teacherId: classSessionTeacherAssignments.teacherId,
+            startTime: classSessionTeacherAssignments.startTime,
+            endTime: classSessionTeacherAssignments.endTime,
+          }).from(classSessionTeacherAssignments)
+            .where(eq(classSessionTeacherAssignments.classSessionId, effectiveSessionId));
+          updateSessionConflicts = await checkScheduleConflicts([{
+            ...updatedSess,
+            teacherTimeAssignments: updatedTeacherTimeAssignments.map((assignment) => ({
+              teacherId: assignment.teacherId,
+              startTime: String(assignment.startTime),
+              endTime: String(assignment.endTime),
+            })),
+          }], existingSession?.classId);
         }
       } catch (ce) {
         console.error("[ConflictCheck] update-session:", ce);
@@ -5839,6 +5860,12 @@ export function registerClassesRoutes(app: Express): void {
             const resultTeacherRoleIds = result?.teacherRoleIds && typeof result.teacherRoleIds === "object"
               ? result.teacherRoleIds as Record<string, string>
               : oldTeacherRoleIds;
+            const newTeacherTimeAssignments = await db.select({
+              teacherId: classSessionTeacherAssignments.teacherId,
+              startTime: classSessionTeacherAssignments.startTime,
+              endTime: classSessionTeacherAssignments.endTime,
+            }).from(classSessionTeacherAssignments)
+              .where(eq(classSessionTeacherAssignments.classSessionId, effectiveSessionId));
             const oldShiftId = existingSession.shiftTemplateId;
             const newShiftId = req.body.shiftTemplateId ?? oldShiftId;
             const oldDateRaw = existingSession.sessionDate ?? "";
@@ -5891,6 +5918,22 @@ export function registerClassesRoutes(app: Express): void {
                 const roleId = roleIdsByTeacher[id];
                 return `${teacherName}: ${roleId ? roleMap.get(roleId) || roleId : "Theo mặc định"}`;
               }).join(", ") || "—";
+            const fmtTeacherTimes = (
+              ids: string[],
+              assignments: Array<{ teacherId: string; startTime: string; endTime: string }>,
+              shiftId: string,
+            ) => {
+              const assignmentMap = new Map(assignments.map((assignment) => [assignment.teacherId, assignment]));
+              const shift = shiftMap.get(shiftId);
+              return ids.map((id) => {
+                const teacher = teacherMap.get(id);
+                const teacherName = teacher ? `${teacher.fullName}${teacher.code ? ` (${teacher.code})` : ""}` : id;
+                const assignment = assignmentMap.get(id);
+                const startTime = String(assignment?.startTime ?? shift?.startTime ?? "").slice(0, 5);
+                const endTime = String(assignment?.endTime ?? shift?.endTime ?? "").slice(0, 5);
+                return `${teacherName}: ${startTime && endTime ? `${startTime}–${endTime}` : "Toàn ca"}`;
+              }).join(", ") || "—";
+            };
 
             const oldDateFmt = fmtDate(oldDateRaw);
             const newDateFmt = fmtDate(newDateRaw);
@@ -5900,6 +5943,8 @@ export function registerClassesRoutes(app: Express): void {
             const newTeacherFmt = fmtTeachers(newTeacherIds);
             const oldTeacherRoleFmt = fmtTeacherRoles(oldTeacherIds, oldTeacherRoleIds);
             const newTeacherRoleFmt = fmtTeacherRoles(newTeacherIds, resultTeacherRoleIds);
+            const oldTeacherTimeFmt = fmtTeacherTimes(oldTeacherIds, oldTeacherTimeAssignments, oldShiftId);
+            const newTeacherTimeFmt = fmtTeacherTimes(newTeacherIds, newTeacherTimeAssignments, newShiftId);
 
             type LogField = { label: string; oldValue: string; newValue: string; changed: boolean };
             const fields: LogField[] = [
@@ -5907,6 +5952,7 @@ export function registerClassesRoutes(app: Express): void {
               { label: "Ca học", oldValue: oldShiftFmt, newValue: newShiftFmt, changed: oldShiftFmt !== newShiftFmt },
               { label: "Giáo viên", oldValue: oldTeacherFmt, newValue: newTeacherFmt, changed: oldTeacherFmt !== newTeacherFmt },
               { label: "Vai trò giáo viên", oldValue: oldTeacherRoleFmt, newValue: newTeacherRoleFmt, changed: oldTeacherRoleFmt !== newTeacherRoleFmt },
+              { label: "Phân công giờ giáo viên", oldValue: oldTeacherTimeFmt, newValue: newTeacherTimeFmt, changed: oldTeacherTimeFmt !== newTeacherTimeFmt },
             ];
 
             const oldSessionIdx = existingSession.sessionIndex ?? null;
@@ -6182,7 +6228,9 @@ export function registerClassesRoutes(app: Express): void {
 
   app.post("/api/class-sessions/:id/preview-conflicts", async (req, res) => {
     try {
+      const sessionId = String(req.params.id);
       const { checkScheduleConflicts } = await import("../services/conflict-check.service");
+      const { classSessionTeacherAssignments } = await import("@shared/schema");
       const [existing] = await db.select({
         classId: classSessions.classId,
         sessionIndex: classSessions.sessionIndex,
@@ -6190,13 +6238,26 @@ export function registerClassesRoutes(app: Express): void {
         shiftTemplateId: classSessions.shiftTemplateId,
         roomId: classSessions.roomId,
         teacherIds: classSessions.teacherIds,
-      }).from(classSessions).where(eq(classSessions.id, req.params.id)).limit(1);
+      }).from(classSessions).where(eq(classSessions.id, sessionId)).limit(1);
       if (!existing) return res.json({ conflicts: [] });
+      const existingTimeAssignments = await db.select({
+        teacherId: classSessionTeacherAssignments.teacherId,
+        startTime: classSessionTeacherAssignments.startTime,
+        endTime: classSessionTeacherAssignments.endTime,
+      }).from(classSessionTeacherAssignments)
+        .where(eq(classSessionTeacherAssignments.classSessionId, sessionId));
       const preview = {
         sessionDate: req.body.sessionDate ?? existing.sessionDate,
         shiftTemplateId: req.body.shiftTemplateId ?? existing.shiftTemplateId,
         roomId: req.body.roomId ?? existing.roomId,
         teacherIds: req.body.teacherIds ?? existing.teacherIds,
+        teacherTimeAssignments: Array.isArray(req.body.teacherTimeAssignments)
+          ? req.body.teacherTimeAssignments
+          : existingTimeAssignments.map((assignment) => ({
+              teacherId: assignment.teacherId,
+              startTime: String(assignment.startTime),
+              endTime: String(assignment.endTime),
+            })),
       };
       const conflicts = await checkScheduleConflicts([preview], existing.classId);
       const rows = await db
@@ -6217,8 +6278,8 @@ export function registerClassesRoutes(app: Express): void {
         .limit(1);
       const ordered = rows.map(row => ({
         ...row,
-        sessionDate: row.id === req.params.id ? preview.sessionDate : row.sessionDate,
-        startTime: row.id === req.params.id ? previewShift?.startTime : row.startTime,
+        sessionDate: row.id === sessionId ? preview.sessionDate : row.sessionDate,
+        startTime: row.id === sessionId ? previewShift?.startTime : row.startTime,
       })).sort((a, b) =>
         a.sessionDate.localeCompare(b.sessionDate) ||
         (a.startTime ?? "99:99").localeCompare(b.startTime ?? "99:99") ||
