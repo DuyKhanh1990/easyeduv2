@@ -47,6 +47,20 @@ function getSessionDateTime(sessionDate: string, time: string): Date {
   return new Date(Date.UTC(year, month - 1, day, hour - 7, minute, 0));
 }
 
+export function formatAttendanceLimitDateTime(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.day}/${values.month}/${values.year} ${values.hour}:${values.minute}`;
+}
+
 /**
  * Computes the QR display and attendance windows using the same role-scoped
  * attendance-limit setting enforced by attendance mutations.
@@ -197,10 +211,8 @@ export async function enforceAttendanceTimeLimit(
   const now = new Date();
 
   if (now < earliest || now > latest) {
-    const fmt = (d: Date) =>
-      d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
     const err: any = new Error(
-      `Vượt quá thời gian điểm danh. Chỉ được phép điểm danh từ ${fmt(earliest)} đến ${fmt(latest)}.`
+      `Vượt quá thời gian điểm danh. Chỉ được phép điểm danh từ ${formatAttendanceLimitDateTime(earliest)} đến ${formatAttendanceLimitDateTime(latest)}.`
     );
     err.status = 403;
     throw err;

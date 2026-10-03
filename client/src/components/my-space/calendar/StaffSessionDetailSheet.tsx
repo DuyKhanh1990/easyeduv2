@@ -148,6 +148,11 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
   const studentSessionsKey = `/api/class-sessions/${classSessionId}/student-sessions`;
 
   const embeddedStudentSessions = session?.studentSessions;
+  const [regularStudentRows, setRegularStudentRows] = useState<any[]>(embeddedStudentSessions ?? []);
+  useEffect(() => {
+    setRegularStudentRows(embeddedStudentSessions ?? []);
+  }, [classSessionId, embeddedStudentSessions]);
+
   const { data: fetchedStudentSessions = [], isLoading: loadingFetchedStudents } = useQuery<any[]>({
     queryKey: [studentSessionsKey],
     enabled: isOpen && !isFreeSession && !!classSessionId && embeddedStudentSessions === undefined,
@@ -167,8 +172,22 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
   }));
   const studentSessions = isFreeSession
     ? freeStudentSessions
-    : (embeddedStudentSessions ?? fetchedStudentSessions);
+    : (embeddedStudentSessions === undefined ? fetchedStudentSessions : regularStudentRows);
   const loadingStudents = !isFreeSession && embeddedStudentSessions === undefined && loadingFetchedStudents;
+
+  const applyRegularStudentSessionUpdates = (updates: Record<string, Partial<any>>) => {
+    const applyUpdates = (rows: any[] | undefined) =>
+      rows?.map((row) => updates[row.id] ? { ...row, ...updates[row.id] } : row);
+
+    setRegularStudentRows((current) => applyUpdates(current) ?? current);
+    queryClient.setQueryData<any[]>([studentSessionsKey], applyUpdates);
+    queryClient.setQueryData<MyCalendarSession>(
+      ["/api/my-space/calendar/staff/session", classSessionId],
+      (cached) => cached
+        ? { ...cached, studentSessions: applyUpdates(cached.studentSessions) }
+        : cached,
+    );
+  };
 
   const { data: availableStudents = [], isLoading: loadingAvailable } = useQuery<any[]>({
     queryKey: [`/api/classes/${classId}/available-students`],
@@ -219,7 +238,11 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
     mutationFn: async ({ id, status, note }: { id: string; status?: string; note?: string }) => {
       return apiRequest("PATCH", `/api/student-sessions/${id}/attendance`, { status, note });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      const update: Partial<any> = {};
+      if (variables.status !== undefined) update.attendanceStatus = variables.status;
+      if (variables.note !== undefined) update.attendanceNote = variables.note;
+      applyRegularStudentSessionUpdates({ [variables.id]: update });
       queryClient.invalidateQueries({
         predicate: (query) => {
           const key = query.queryKey[0] as string;
@@ -363,6 +386,29 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
         },
       );
 
+      const successfulUpdates = Object.fromEntries(result.updatedIds.map((id) => [
+        id,
+        {
+          attendanceStatus: status,
+          attendanceNote: noteBySessionId[id] ?? "",
+        },
+      ]));
+      if (result.updatedIds.length > 0) {
+        applyRegularStudentSessionUpdates(successfulUpdates);
+        void queryClient.invalidateQueries({
+          predicate: (query) => {
+            const key = query.queryKey[0] as string;
+            return typeof key === "string" && (
+              key.includes("/student-sessions") ||
+              key.includes("/all-student-sessions") ||
+              key === "/api/my-space/calendar/staff" ||
+              key === "/api/schedule" ||
+              (key === "/api/my-space/calendar/staff/session" && query.queryKey[1] === classSessionId)
+            );
+          },
+        });
+      }
+
       if (result.failures.length > 0) {
         const failedSessionIds = new Set(result.failures.map((failure) => failure.id));
         const failedStudentIds = new Set(
@@ -381,18 +427,6 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
         return;
       }
 
-      void queryClient.invalidateQueries({
-        predicate: (query) => {
-          const key = query.queryKey[0] as string;
-          return typeof key === "string" && (
-            key.includes("/student-sessions") ||
-            key.includes("/all-student-sessions") ||
-            key === "/api/my-space/calendar/staff" ||
-            key === "/api/schedule" ||
-            (key === "/api/my-space/calendar/staff/session" && query.queryKey[1] === classSessionId)
-          );
-        },
-      });
       setSelectedStudentIds([]);
       setIsBulkAttendanceOpen(false);
       setIsActionMenuOpen(false);
@@ -990,22 +1024,9 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                   : cached,
               );
             } else {
-              const updateStudentReview = (student: any) => student.id === reviewTarget.id
-                ? { ...student, reviewData, reviewPublished: published }
-                : student;
-              queryClient.setQueryData<any[]>(
-                [studentSessionsKey],
-                (cached) => cached?.map(updateStudentReview),
-              );
-              queryClient.setQueryData<MyCalendarSession>(
-                ["/api/my-space/calendar/staff/session", classSessionId],
-                (cached) => cached
-                  ? {
-                      ...cached,
-                      studentSessions: cached.studentSessions?.map(updateStudentReview),
-                    }
-                  : cached,
-              );
+              applyRegularStudentSessionUpdates({
+                [reviewTarget.id]: { reviewData, reviewPublished: published },
+              });
             }
             setReviewTarget((current: any) => current
               ? { ...current, reviewData, reviewPublished: published }
