@@ -8,7 +8,7 @@ import { scoreSheetAssessmentSchema } from "@shared/score-sheet-assessment";
 import { scoreSheetTemplateSchema } from "@shared/score-sheet-template";
 import { createScoreSheetAssessmentForTemplate as createScoreSheetAssessmentFromTemplate } from "../lib/score-sheet-assignment";
 import { db, pool } from "../db";
-import { classSessions, studentSessions, freeClassRegistrations, freeClassDayAssignments, students, classes, studentClasses, staff, staffAssignments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, invoiceItems, courseFeePackages, financePromotions, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
+import { classSessions, studentSessions, freeClassRegistrations, freeClassDayAssignments, students, classes, studentClasses, staff, staffAssignments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, roles, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, invoiceItems, courseFeePackages, financePromotions, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
 import { eq, and, sql, inArray, avg, between, gte, lte, gt, desc, asc, or, ilike, isNotNull, isNull, ne } from "drizzle-orm";
 import { sendAttendanceNotificationWithLimit, sendReviewNotification, sendContentNotification } from "../lib/attendance-notification";
 import { enforceAttendanceTimeLimit, getStaffRoleIds } from "../lib/attendance-limit";
@@ -4761,6 +4761,7 @@ export function registerClassesRoutes(app: Express): void {
         sessionIndex: baseSessions.sessionIndex,
         status: baseSessions.status,
         teacherIds: baseSessions.teacherIds,
+        teacherRoleIds: baseSessions.teacherRoleIds,
         teachersConfig: baseClasses.teachersConfig,
         roomId: baseSessions.roomId,
         roomName: classrooms.name,
@@ -4865,6 +4866,12 @@ export function registerClassesRoutes(app: Express): void {
       const roleIdsForLookup = Array.from(new Set([
         ...roleAssignmentRows.map((assignment) => assignment.roleId).filter(Boolean),
         ...configuredRoleByClassTeacher.values(),
+        ...responseSessions.flatMap((session) => {
+          const roleOverrides = (session as any).teacherRoleIds;
+          return roleOverrides && typeof roleOverrides === "object" && !Array.isArray(roleOverrides)
+            ? Object.values(roleOverrides).filter((roleId): roleId is string => typeof roleId === "string" && !!roleId)
+            : [];
+        }),
       ] as string[]));
       const scheduleRoleRows = roleIdsForLookup.length > 0
         ? await baseDb.select({
@@ -4923,7 +4930,11 @@ export function registerClassesRoutes(app: Express): void {
           const teacherDisplayNames = teacherIds.map((id) => {
             const teacherName = staffMap.get(id) || "";
             if (!teacherName) return "";
-            const configuredRoleId = configuredRoleByClassTeacher.get(`${s.classId}:${id}`);
+            const sessionRoleIds = (s as any).teacherRoleIds;
+            const sessionRoleId = sessionRoleIds && typeof sessionRoleIds === "object" && !Array.isArray(sessionRoleIds)
+              ? String(sessionRoleIds[id] ?? "")
+              : "";
+            const configuredRoleId = sessionRoleId || configuredRoleByClassTeacher.get(`${s.classId}:${id}`);
             const availableRoleIds = roleIdsByStaffAndLocation.get(`${s.locationId}:${id}`);
             const preferredSystemTeacherRoleId = getPreferredSystemTrainingTeacherRoleId(
               Array.from(availableRoleIds ?? [])
@@ -4945,6 +4956,7 @@ export function registerClassesRoutes(app: Express): void {
           }).filter(Boolean);
           return {
             ...s,
+            teacherRoleIds: undefined,
             teachersConfig: undefined,
             teacherIds,
             teachers: teacherIds.map(id => staffMap.get(id) || "").filter(Boolean),
@@ -5638,6 +5650,7 @@ export function registerClassesRoutes(app: Express): void {
         sessionDate: classSessions.sessionDate,
         weekday: classSessions.weekday,
         teacherIds: classSessions.teacherIds,
+        teacherRoleIds: classSessions.teacherRoleIds,
         shiftTemplateId: classSessions.shiftTemplateId,
       }).from(classSessions).where(eq(classSessions.id, sessionId)).limit(1);
 
@@ -5820,6 +5833,12 @@ export function registerClassesRoutes(app: Express): void {
 
             const oldTeacherIds: string[] = existingSession.teacherIds ?? [];
             const newTeacherIds: string[] = Array.isArray(req.body.teacherIds) ? req.body.teacherIds : oldTeacherIds;
+            const oldTeacherRoleIds = existingSession.teacherRoleIds && typeof existingSession.teacherRoleIds === "object"
+              ? existingSession.teacherRoleIds as Record<string, string>
+              : {};
+            const resultTeacherRoleIds = result?.teacherRoleIds && typeof result.teacherRoleIds === "object"
+              ? result.teacherRoleIds as Record<string, string>
+              : oldTeacherRoleIds;
             const oldShiftId = existingSession.shiftTemplateId;
             const newShiftId = req.body.shiftTemplateId ?? oldShiftId;
             const oldDateRaw = existingSession.sessionDate ?? "";
@@ -5839,6 +5858,14 @@ export function registerClassesRoutes(app: Express): void {
               ? await db.select({ id: staff.id, fullName: staff.fullName, code: staff.code }).from(staff).where(inArray(staff.id, allTeacherIds))
               : [];
             const teacherMap = new Map(teachers.map(t => [t.id, t]));
+            const roleIds = [...new Set([
+              ...Object.values(oldTeacherRoleIds),
+              ...Object.values(resultTeacherRoleIds),
+            ].filter((roleId): roleId is string => typeof roleId === "string" && !!roleId))];
+            const roleRows = roleIds.length > 0
+              ? await db.select({ id: roles.id, name: roles.name }).from(roles).where(inArray(roles.id, roleIds))
+              : [];
+            const roleMap = new Map(roleRows.map(role => [role.id, role.name]));
 
             const fmtDate = (raw: string) => {
               if (!raw) return "";
@@ -5857,6 +5884,13 @@ export function registerClassesRoutes(app: Express): void {
                 const t = teacherMap.get(id);
                 return t ? `${t.fullName}${t.code ? ` (${t.code})` : ""}` : id;
               }).join(", ") || "—";
+            const fmtTeacherRoles = (ids: string[], roleIdsByTeacher: Record<string, string>) =>
+              ids.map(id => {
+                const teacher = teacherMap.get(id);
+                const teacherName = teacher ? `${teacher.fullName}${teacher.code ? ` (${teacher.code})` : ""}` : id;
+                const roleId = roleIdsByTeacher[id];
+                return `${teacherName}: ${roleId ? roleMap.get(roleId) || roleId : "Theo mặc định"}`;
+              }).join(", ") || "—";
 
             const oldDateFmt = fmtDate(oldDateRaw);
             const newDateFmt = fmtDate(newDateRaw);
@@ -5864,12 +5898,15 @@ export function registerClassesRoutes(app: Express): void {
             const newShiftFmt = fmtShift(newShiftId);
             const oldTeacherFmt = fmtTeachers(oldTeacherIds);
             const newTeacherFmt = fmtTeachers(newTeacherIds);
+            const oldTeacherRoleFmt = fmtTeacherRoles(oldTeacherIds, oldTeacherRoleIds);
+            const newTeacherRoleFmt = fmtTeacherRoles(newTeacherIds, resultTeacherRoleIds);
 
             type LogField = { label: string; oldValue: string; newValue: string; changed: boolean };
             const fields: LogField[] = [
               { label: "Ngày học", oldValue: oldDateFmt, newValue: newDateFmt, changed: oldDateFmt !== newDateFmt },
               { label: "Ca học", oldValue: oldShiftFmt, newValue: newShiftFmt, changed: oldShiftFmt !== newShiftFmt },
               { label: "Giáo viên", oldValue: oldTeacherFmt, newValue: newTeacherFmt, changed: oldTeacherFmt !== newTeacherFmt },
+              { label: "Vai trò giáo viên", oldValue: oldTeacherRoleFmt, newValue: newTeacherRoleFmt, changed: oldTeacherRoleFmt !== newTeacherRoleFmt },
             ];
 
             const oldSessionIdx = existingSession.sessionIndex ?? null;

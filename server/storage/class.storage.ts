@@ -1812,6 +1812,12 @@ export async function getClassSessions(classId: string): Promise<any[]> {
   const roleIdsForLookup = Array.from(new Set([
     ...roleAssignments.map((assignment) => assignment.roleId).filter(Boolean),
     ...configuredRoleIds.values(),
+    ...results.flatMap((session) => {
+      const overrides = (session as any).teacherRoleIds;
+      return overrides && typeof overrides === "object" && !Array.isArray(overrides)
+        ? Object.values(overrides).filter((roleId): roleId is string => typeof roleId === "string" && !!roleId)
+        : [];
+    }),
   ] as string[]));
   const roleRows = roleIdsForLookup.length > 0
     ? await db.select({
@@ -1858,6 +1864,30 @@ export async function getClassSessions(classId: string): Promise<any[]> {
   }
 
   const sessionIds = results.map(s => s.id);
+  const teacherTimeAssignmentsBySession = new Map<string, Array<{
+    teacherId: string;
+    startTime: string;
+    endTime: string;
+  }>>();
+  if (sessionIds.length > 0) {
+    const assignments = await db.select({
+      classSessionId: classSessionTeacherAssignments.classSessionId,
+      teacherId: classSessionTeacherAssignments.teacherId,
+      startTime: classSessionTeacherAssignments.startTime,
+      endTime: classSessionTeacherAssignments.endTime,
+    })
+      .from(classSessionTeacherAssignments)
+      .where(inArray(classSessionTeacherAssignments.classSessionId, sessionIds));
+    for (const assignment of assignments) {
+      const sessionAssignments = teacherTimeAssignmentsBySession.get(assignment.classSessionId) ?? [];
+      sessionAssignments.push({
+        teacherId: assignment.teacherId,
+        startTime: String(assignment.startTime),
+        endTime: String(assignment.endTime),
+      });
+      teacherTimeAssignmentsBySession.set(assignment.classSessionId, sessionAssignments);
+    }
+  }
   let contentsMap: Record<string, any[]> = {};
   if (sessionIds.length > 0) {
     const contentsList = await db.select({
@@ -1888,15 +1918,29 @@ export async function getClassSessions(classId: string): Promise<any[]> {
           isSystemDepartment: option.isSystemDepartment,
         })),
       );
-      const selectedRoleId = configuredRoleIds.get(id) ||
+      const defaultRoleId = configuredRoleIds.get(id) ||
         preferredSystemTeacherRoleId ||
         (roleOptions.length === 1 ? roleOptions[0].roleId : "");
+      const overrides = (s as any).teacherRoleIds;
+      const sessionRoleId = overrides && typeof overrides === "object" && !Array.isArray(overrides)
+        ? String(overrides[id] ?? "")
+        : "";
+      const selectedRoleId = sessionRoleId || defaultRoleId;
       return {
         ...teacher,
         roleId: selectedRoleId || null,
         roleName: selectedRoleId ? roleById.get(selectedRoleId)?.name || null : null,
+        defaultRoleId: defaultRoleId || null,
       };
     }).filter(Boolean),
+    teacherTimeAssignments: (s.teacherIds || []).map((id: string) => {
+      const assignment = teacherTimeAssignmentsBySession.get(s.id)?.find((item) => item.teacherId === id);
+      return {
+        teacherId: id,
+        startTime: assignment?.startTime || s.shiftTemplate?.startTime || null,
+        endTime: assignment?.endTime || s.shiftTemplate?.endTime || null,
+      };
+    }),
     program: (s as any).programId ? (programMap[(s as any).programId] || null) : null,
     sessionContents: (contentsMap[s.id] || []).sort((a: any, b: any) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0)),
   }));

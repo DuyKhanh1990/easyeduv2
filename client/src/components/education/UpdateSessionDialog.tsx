@@ -27,6 +27,9 @@ import { ShiftSelectWithCreate } from "@/components/ui/shift-select-with-create"
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { ConflictDetailSheet } from "@/components/education/ConflictDetailSheet";
 import type { ConflictItem } from "@/components/education/ConflictDetailSheet";
+import { getStaffRoleOptions, resolveTeacherRoleId } from "@/lib/staff-role-options";
+
+const USE_DEFAULT_ROLE = "__use_default_role__";
 
 export function UpdateSessionDialog({
   isOpen,
@@ -49,6 +52,7 @@ export function UpdateSessionDialog({
   const [shiftTemplateId, setShiftTemplateId] = useState<string>("");
   const [roomId, setRoomId] = useState<string>("");
   const [teacherIds, setTeacherIds] = useState<string[]>([]);
+  const [teacherRoleOverrides, setTeacherRoleOverrides] = useState<Record<string, string>>({});
   const [changeReason, setChangeReason] = useState<string>("");
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [confirmIndexChange, setConfirmIndexChange] = useState(false);
@@ -66,6 +70,16 @@ export function UpdateSessionDialog({
       setShiftTemplateId(session.shiftTemplateId || "");
       setRoomId(session.roomId || "");
       setTeacherIds(Array.isArray(session.teacherIds) ? session.teacherIds : []);
+      const roleOverrides = session.teacherRoleIds;
+      const validRoleOverrides: Record<string, string> = {};
+      if (roleOverrides && typeof roleOverrides === "object" && !Array.isArray(roleOverrides)) {
+        for (const [teacherId, roleId] of Object.entries(roleOverrides)) {
+          if (teacherId && typeof roleId === "string" && roleId) {
+            validRoleOverrides[teacherId] = roleId;
+          }
+        }
+      }
+      setTeacherRoleOverrides(validRoleOverrides);
       setChangeReason(session.changeReason || "");
       setLiveConflicts([]);
       setPreviewIndex(session.sessionIndex ?? null);
@@ -119,11 +133,85 @@ export function UpdateSessionDialog({
     enabled: !!classData?.locationId && isOpen,
   });
 
+  const { data: shiftTemplates = [] } = useQuery<any[]>({
+    queryKey: ["/api/shift-templates", { locationId: classData?.locationId }],
+    queryFn: async () => {
+      const params = new URLSearchParams({ type: "class" });
+      if (classData?.locationId) params.set("locationId", classData.locationId);
+      const res = await fetch(`/api/shift-templates?${params}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch shifts");
+      return res.json();
+    },
+    enabled: !!classData?.locationId && isOpen,
+  });
+
   const activeTeachers = (staffList || []).map((s: any) => ({ ...s, _isActive: s.status === "Hoạt động" }));
   const roomConflicts = liveConflicts.filter(c => c.type === "room");
   const teacherConflicts = liveConflicts.filter(c => c.type === "teacher");
+  const getTeacherRoleDetails = (teacherId: string) => {
+    const member = activeTeachers.find((teacher: any) => teacher.id === teacherId);
+    const sessionTeacher = session?.teachers?.find((teacher: any) => teacher.id === teacherId);
+    const roleOptions = getStaffRoleOptions(member, classData?.locationId);
+    const classTeacherConfig = (Array.isArray(classData?.teachersConfig) ? classData.teachersConfig : [])
+      .find((teacher: any) => String(teacher?.teacher_id ?? teacher?.teacherId ?? "") === teacherId);
+    const defaultRoleId = sessionTeacher?.defaultRoleId ||
+      resolveTeacherRoleId(classTeacherConfig, roleOptions) ||
+      resolveTeacherRoleId({}, roleOptions);
+    const hasOverride = Object.prototype.hasOwnProperty.call(teacherRoleOverrides, teacherId);
+    const selectedRoleId = hasOverride
+      ? teacherRoleOverrides[teacherId]
+      : defaultRoleId || sessionTeacher?.roleId || "";
+    const selectedRoleName = sessionTeacher?.roleId === selectedRoleId
+      ? sessionTeacher?.roleName
+      : undefined;
+    const availableRoleOptions = selectedRoleId && !roleOptions.some((option) => option.id === selectedRoleId)
+      ? [...roleOptions, { id: selectedRoleId, name: selectedRoleName || "Vai trò hiện tại" }]
+      : roleOptions;
+    return {
+      member,
+      roleOptions: availableRoleOptions,
+      defaultRoleId,
+      selectedRoleId,
+      hasOverride,
+    };
+  };
+  const getTeacherShiftLabel = (teacherId: string) => {
+    const selectedShift = shiftTemplates.find((shift: any) => shift.id === shiftTemplateId);
+    const originalShift = shiftTemplates.find((shift: any) => shift.id === session?.shiftTemplateId);
+    const assignment = session?.teacherTimeAssignments?.find((row: any) => row.teacherId === teacherId);
+    const originalStart = originalShift?.startTime || session?.shiftTemplate?.startTime;
+    const originalEnd = originalShift?.endTime || session?.shiftTemplate?.endTime;
+    const assignmentStart = assignment?.startTime;
+    const assignmentEnd = assignment?.endTime;
+    const hasCustomTime = !!assignment && (
+      (assignmentStart && originalStart && String(assignmentStart).slice(0, 5) !== String(originalStart).slice(0, 5)) ||
+      (assignmentEnd && originalEnd && String(assignmentEnd).slice(0, 5) !== String(originalEnd).slice(0, 5))
+    );
+    const startTime = hasCustomTime ? assignmentStart : selectedShift?.startTime || assignmentStart;
+    const endTime = hasCustomTime ? assignmentEnd : selectedShift?.endTime || assignmentEnd;
+    const formatTime = (value?: string | null) => value ? String(value).slice(0, 5) : "";
+    const range = startTime && endTime ? `${formatTime(startTime)}–${formatTime(endTime)}` : "";
+    const shiftName = selectedShift?.name || session?.shiftTemplate?.name || "";
+    return [shiftName, range].filter(Boolean).join(" · ") || "—";
+  };
+  const hasMissingTeacherRole = teacherIds.some((teacherId) => {
+    const details = getTeacherRoleDetails(teacherId);
+    return details.roleOptions.length > 1 && !details.selectedRoleId;
+  });
   const submitUpdate = () => {
-    const data = { sessionDate, shiftTemplateId, roomId: roomId || null, teacherIds, changeReason };
+    const sessionTeacherRoleIds: Record<string, string> = {};
+    for (const teacherId of teacherIds) {
+      const roleId = teacherRoleOverrides[teacherId];
+      if (roleId) sessionTeacherRoleIds[teacherId] = roleId;
+    }
+    const data = {
+      sessionDate,
+      shiftTemplateId,
+      roomId: roomId || null,
+      teacherIds,
+      teacherRoleIds: sessionTeacherRoleIds,
+      changeReason,
+    };
     if (previewIndex != null && session?.sessionIndex != null && previewIndex !== session.sessionIndex) {
       setPendingUpdate(data);
       setConfirmIndexChange(true);
@@ -199,6 +287,67 @@ export function UpdateSessionDialog({
                 placeholder="Chọn giáo viên..."
               />
             </div>
+            {teacherIds.length > 0 && (
+              <div className="overflow-hidden rounded-md border">
+                <div className="grid grid-cols-3 gap-3 bg-muted/50 px-3 py-2 text-xs font-medium text-muted-foreground">
+                  <span>Tên giáo viên</span>
+                  <span>Vai trò</span>
+                  <span>Ca dạy</span>
+                </div>
+                <div className="divide-y">
+                  {teacherIds.map((teacherId) => {
+                    const teacher = activeTeachers.find((item: any) => item.id === teacherId) ||
+                      session?.teachers?.find((item: any) => item.id === teacherId);
+                    const details = getTeacherRoleDetails(teacherId);
+                    const missingRole = details.roleOptions.length > 1 && !details.selectedRoleId;
+                    return (
+                      <div key={teacherId} className="grid grid-cols-3 items-center gap-3 px-3 py-2">
+                        <span className="min-w-0 truncate text-sm" title={teacher?.fullName || teacherId}>
+                          {teacher?.fullName || teacherId}
+                        </span>
+                        <Select
+                          value={details.selectedRoleId || ""}
+                          onValueChange={(value) => {
+                            if (value === USE_DEFAULT_ROLE) {
+                              setTeacherRoleOverrides((current) => {
+                                const next = { ...current };
+                                delete next[teacherId];
+                                return next;
+                              });
+                            } else {
+                              setTeacherRoleOverrides((current) => ({ ...current, [teacherId]: value }));
+                            }
+                          }}
+                          disabled={details.roleOptions.length === 0}
+                        >
+                          <SelectTrigger className={`h-9 ${missingRole ? "border-destructive" : ""}`}>
+                            <SelectValue placeholder="Chọn vai trò" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={USE_DEFAULT_ROLE}>
+                              Theo mặc định
+                            </SelectItem>
+                            {details.roleOptions.map((option) => (
+                              <SelectItem key={option.id} value={option.id}>
+                                {option.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <span className="min-w-0 truncate text-sm text-muted-foreground" title={getTeacherShiftLabel(teacherId)}>
+                          {getTeacherShiftLabel(teacherId)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {hasMissingTeacherRole && (
+                  <p className="border-t px-3 py-2 text-xs text-destructive">
+                    Chọn vai trò cho giáo viên có nhiều vai trò tại cơ sở.
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Live conflict banner */}
             {isLiveChecking && (
@@ -241,7 +390,7 @@ export function UpdateSessionDialog({
               Hủy
             </Button>
             <Button
-              disabled={!sessionDate || !shiftTemplateId || !changeReason.trim() || isPending}
+              disabled={!sessionDate || !shiftTemplateId || !changeReason.trim() || isPending || hasMissingTeacherRole}
               onClick={submitUpdate}
             >
               {isPending ? "Đang lưu..." : "Cập nhật"}

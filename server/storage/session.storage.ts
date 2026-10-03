@@ -3099,8 +3099,27 @@ export async function excludeClassSessions(params: { classId: string; fromSessio
 export async function updateClassSession(id: string, updates: any): Promise<ClassSession> {
   const {
     sessionDate, shiftTemplateId, roomId, teacherIds, changeReason, changedBy,
+    teacherRoleIds,
     indexChangeMode = "move_all",
   } = updates;
+  const hasTeacherRoleIds = Object.prototype.hasOwnProperty.call(updates, "teacherRoleIds");
+  const requestedTeacherRoleIds =
+    teacherRoleIds && typeof teacherRoleIds === "object" && !Array.isArray(teacherRoleIds)
+      ? teacherRoleIds as Record<string, unknown>
+      : {};
+  const normalizeTeacherRoleIds = (ids: string[] | null | undefined, source: unknown) => {
+    const roleMap = source && typeof source === "object" && !Array.isArray(source)
+      ? source as Record<string, unknown>
+      : {};
+    return Object.fromEntries(
+      (ids ?? []).flatMap((teacherId) => {
+        const roleId = roleMap[teacherId];
+        return typeof roleId === "string" && roleId.trim()
+          ? [[teacherId, roleId.trim()] as const]
+          : [];
+      }),
+    );
+  };
   const affectedStudentClassIds: string[] = [];
 
   const updated = await db.transaction(async (tx) => {
@@ -3167,6 +3186,12 @@ export async function updateClassSession(id: string, updates: any): Promise<Clas
         shiftTemplateId: slot.id === id ? shiftTemplateId : slot.shiftTemplateId,
         roomId: slot.id === id ? (roomId ?? slot.roomId) : slot.roomId,
         teacherIds: slot.id === id ? proposedTeachers : slot.teacherIds,
+        teacherRoleIds: normalizeTeacherRoleIds(
+          slot.id === id ? proposedTeachers : slot.teacherIds,
+          slot.id === id
+            ? (hasTeacherRoleIds ? requestedTeacherRoleIds : slot.teacherRoleIds)
+            : slot.teacherRoleIds,
+        ),
         learningFormat: slot.learningFormat,
       })).sort((a, b) =>
         a.sessionDate.localeCompare(b.sessionDate) ||
@@ -3189,6 +3214,7 @@ export async function updateClassSession(id: string, updates: any): Promise<Clas
               shiftTemplateId: schedule.shiftTemplateId,
               roomId: schedule.roomId,
               teacherIds: schedule.teacherIds,
+              teacherRoleIds: schedule.teacherRoleIds,
               learningFormat: schedule.learningFormat,
               ...(isChangedSchedule ? {
                 changeReason,
@@ -3217,6 +3243,10 @@ export async function updateClassSession(id: string, updates: any): Promise<Clas
         shiftTemplateId,
         roomId: roomId ?? existing.roomId,
         teacherIds: Array.isArray(teacherIds) ? (teacherIds.length > 0 ? teacherIds : null) : null,
+        teacherRoleIds: normalizeTeacherRoleIds(
+          Array.isArray(teacherIds) ? teacherIds : existing.teacherIds,
+          hasTeacherRoleIds ? requestedTeacherRoleIds : existing.teacherRoleIds,
+        ),
         changeReason,
         changedBy,
         changedAt: new Date(),

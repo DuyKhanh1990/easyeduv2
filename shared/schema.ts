@@ -947,6 +947,7 @@ export const classSessions = pgTable("class_sessions", {
   shiftTemplateId: uuid("shift_template_id").notNull().references(() => shiftTemplates.id),
   roomId: uuid("room_id").notNull(), // Assuming room_id is handled as UUID, potentially references a rooms table if exists
   teacherIds: uuid("teacher_ids").array(),
+  teacherRoleIds: jsonb("teacher_role_ids").notNull().default(sql`'{}'::jsonb`),
   learningFormat: varchar("learning_format", { length: 50 }).notNull().default("offline"), // online, offline
   status: varchar("status", { length: 50 }).notNull().default("scheduled"), // scheduled, cancelled, completed
   cancelReason: text("cancel_reason"),
