@@ -27,7 +27,11 @@ import { ShiftSelectWithCreate } from "@/components/ui/shift-select-with-create"
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { ConflictDetailSheet } from "@/components/education/ConflictDetailSheet";
 import type { ConflictItem } from "@/components/education/ConflictDetailSheet";
-import { getStaffRoleOptions, resolveTeacherRoleId } from "@/lib/staff-role-options";
+import {
+  getStaffRoleOptions,
+  isDefaultTrainingDepartmentStaff,
+  resolveTeacherRoleId,
+} from "@/lib/staff-role-options";
 import { isTeacherTimeRangeWithinShift } from "@shared/teacher-time-assignments";
 
 const USE_DEFAULT_ROLE = "__use_default_role__";
@@ -220,7 +224,9 @@ export function UpdateSessionDialog({
     shiftEndTime,
   ]);
 
-  const activeTeachers = (staffList || []).map((s: any) => ({ ...s, _isActive: s.status === "Hoạt động" }));
+  const activeTeachers = (staffList || [])
+    .filter(isDefaultTrainingDepartmentStaff)
+    .map((s: any) => ({ ...s, _isActive: s.status === "Hoạt động" }));
   const roomConflicts = liveConflicts.filter(c => c.type === "room");
   const teacherConflicts = liveConflicts.filter(c => c.type === "teacher");
   const invalidTimeTeacherIds = teacherTimeAssignments
