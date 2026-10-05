@@ -62,6 +62,7 @@ import { InvoicePrintPreview } from "./InvoicePrintPreview";
 import { InvoiceQRDialog } from "./components/InvoiceQRDialog";
 import { ScheduleProgressPopover } from "./components/ScheduleProgressPopover";
 import { InvoiceHistoryTab } from "./components/InvoiceHistoryTab";
+import { InvoiceListErrorRow } from "./components/InvoiceListErrorRow";
 import { HistoryDialog } from "@/components/common/HistoryDialog";
 import { useLocations } from "@/hooks/use-locations";
 import type { SortKey } from "@/hooks/use-invoice-filters";
@@ -1865,7 +1866,7 @@ export default function Invoices() {
     queryParams,
   } = useInvoiceFilters(activeTab);
 
-  const { invoices, total, rowPage, tabCounts, isLoading, deleteMutation: deleteInvoiceMutation, updateStatusMutation } = useInvoices(queryParams);
+  const { invoices, total, rowPage, tabCounts, isLoading, isError: isInvoiceQueryError, deleteMutation: deleteInvoiceMutation, updateStatusMutation } = useInvoices(queryParams);
   const { summary: invoiceSummary, isLoading: isSummaryLoading } = useInvoiceSummary(queryParams);
   const previousQueryParams = getPreviousInvoicePeriodParams(queryParams);
   const { summary: previousSummary, isLoading: isPreviousSummaryLoading } = useInvoiceSummary(
@@ -2616,6 +2617,11 @@ export default function Invoices() {
                     <p className="text-sm text-slate-400 font-medium">{t("finance.loadingData")}</p>
                   </div>
                 </td></tr>
+              ) : isInvoiceQueryError ? (
+                <InvoiceListErrorRow
+                  colSpan={visibleColumns.length + 2}
+                  message={t("finance.invoiceListLoadError")}
+                />
               ) : invoices.length === 0 ? (
                 <tr><td colSpan={visibleColumns.length + 2} className="py-20 text-center">
                   <div className="flex flex-col items-center gap-3">

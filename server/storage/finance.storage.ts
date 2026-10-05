@@ -8,6 +8,7 @@ import {
   students, locations, staff, crmRelationships,
   users, classes,
 } from "./base";
+import { buildInvoiceScheduleRowArrayFilterConditions } from "./invoice-schedule-row-filters";
 import type {
   FinanceTransactionCategory, InsertFinanceTransactionCategory,
   FinancePromotion, InsertFinancePromotion,
@@ -811,28 +812,7 @@ export async function getInvoices(filters: {
   const scheduleRowFilterCondition = (tableAlias: string) => {
     const column = (name: string) => sql.raw(`${tableAlias}.${name}`);
     const rowConditions: any[] = [scheduleRowDateCondition(tableAlias)];
-    if (f.paymentMethods?.length) {
-      rowConditions.push(inArray(
-        sql`COALESCE(${column("payment_method")}, '')`,
-        f.paymentMethods,
-      ) as any);
-    }
-    if (f.payerNames?.length) {
-      rowConditions.push(sql`EXISTS (
-        SELECT 1
-        FROM staff AS schedule_row_payer
-        WHERE schedule_row_payer.user_id = ${column("paid_by")}
-          AND ${inArray(sql.raw("schedule_row_payer.full_name"), f.payerNames)}
-      )`);
-    }
-    if (f.creatorNames?.length) {
-      rowConditions.push(sql`EXISTS (
-        SELECT 1
-        FROM staff AS schedule_row_creator
-        WHERE schedule_row_creator.user_id = ${column("created_by")}
-          AND ${inArray(sql.raw("schedule_row_creator.full_name"), f.creatorNames)}
-      )`);
-    }
+    rowConditions.push(...buildInvoiceScheduleRowArrayFilterConditions(tableAlias, f));
     if (f.search) {
       const searchTerms = f.search.trim().split(/\s+/).filter(Boolean);
       for (const term of searchTerms) {

@@ -146,6 +146,24 @@ function buildSummaryQS(params: InvoiceQueryParams): string {
 const BASE_KEY = "/api/finance/invoices";
 const SUMMARY_KEY = "/api/finance/invoices/summary";
 
+export interface InvoiceListResponse {
+  data: any[];
+  total: number;
+  parentTotal: number;
+  tabCounts: Record<string, number>;
+  rowPage?: { invoiceId: string; scheduleId: string | null }[];
+}
+
+export async function fetchInvoices(queryParams: InvoiceQueryParams = {}): Promise<InvoiceListResponse> {
+  const qs = buildQS(queryParams);
+  const res = await fetch(`${BASE_KEY}?${qs}`, {
+    credentials: "include",
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error("Failed to fetch invoices");
+  return res.json();
+}
+
 export function useInvoiceSummary(
   queryParams: InvoiceQueryParams = {},
   options: { enabled?: boolean; staleTime?: number } = {},
@@ -172,19 +190,9 @@ export function useInvoices(queryParams: InvoiceQueryParams = {}) {
   const qs = buildQS(queryParams);
   const queryKey = [BASE_KEY, qs];
 
-  const { data, isLoading } = useQuery<{
-    data: any[];
-    total: number;
-    parentTotal: number;
-    tabCounts: Record<string, number>;
-    rowPage?: { invoiceId: string; scheduleId: string | null }[];
-  }>({
+  const { data, isLoading, isError } = useQuery<InvoiceListResponse>({
     queryKey,
-    queryFn: async () => {
-      const res = await fetch(`${BASE_KEY}?${qs}`, { credentials: "include", headers: getAuthHeaders() });
-      if (!res.ok) throw new Error("Failed to fetch invoices");
-      return res.json();
-    },
+    queryFn: () => fetchInvoices(queryParams),
     staleTime: 0,
   });
 
@@ -210,6 +218,7 @@ export function useInvoices(queryParams: InvoiceQueryParams = {}) {
     tabCounts:           data?.tabCounts  ?? { all: 0, unpaid: 0, partial: 0, paid: 0, confirmed: 0, debt: 0 },
     rowPage:             data?.rowPage,
     isLoading,
+    isError,
     deleteMutation,
     updateStatusMutation,
   };
