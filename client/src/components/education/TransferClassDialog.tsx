@@ -239,6 +239,7 @@ export function TransferClassDialog({
   const [actualSessionCount, setActualSessionCount] = useState(0);
   const [targetTransferCountManuallyEdited, setTargetTransferCountManuallyEdited] = useState(false);
   const [roundingMode, setRoundingMode] = useState<"none" | "down" | "up">("none");
+  const [excludeSourceSurcharge, setExcludeSourceSurcharge] = useState(false);
   const { data: myPerms } = useMyPermissions();
   const canCreatePromotion = Boolean(
     myPerms?.isSuperAdmin || myPerms?.permissions["/finance-config#promotions"]?.canCreate,
@@ -428,7 +429,10 @@ export function TransferClassDialog({
   }, [isOpen, currentClass?.id, student?.id, currentSessions]);
 
   useEffect(() => {
-    if (isOpen) setTransferFeeAdjustmentInput("");
+    if (isOpen) {
+      setTransferFeeAdjustmentInput("");
+      setExcludeSourceSurcharge(false);
+    }
   }, [isOpen, student?.id, currentClass?.id]);
 
   useEffect(() => {
@@ -691,10 +695,16 @@ export function TransferClassDialog({
     : hasCurrentPackagePrice
     ? Math.max(0, currentBaseSessionPrice - currentDiscountPerSession)
     : currentStoredSessionPrice;
-  const getEffectiveSourceSessionPrice = (session: any) => {
+  const getEffectiveSourceSessionPrice = (
+    session: any,
+    excludeSurcharge = excludeSourceSurcharge,
+  ) => {
     const allocatedFee = session?.pricing?.allocatedFee;
     if (allocatedFee != null && Number.isFinite(Number(allocatedFee))) {
-      return Math.max(0, Number(allocatedFee));
+      const allocatedSurchargeFee = excludeSurcharge
+        ? Math.max(0, Number(session?.pricing?.allocatedSurchargeFee ?? 0) || 0)
+        : 0;
+      return Math.max(0, Number(allocatedFee) - allocatedSurchargeFee);
     }
     if (session?.sessionPrice != null && Number.isFinite(Number(session.sessionPrice))) {
       return Math.max(0, Number(session.sessionPrice));
@@ -708,7 +718,7 @@ export function TransferClassDialog({
   const currentSessionPrice = currentSession
     ? usePackagePriceFallback
       ? calculateFirstSessionPriceAfterDiscount(currentNetTotal, currentSessionCount)
-      : getEffectiveSourceSessionPrice(currentSession)
+      : getEffectiveSourceSessionPrice(currentSession, excludeSourceSurcharge)
     : fallbackCurrentSessionPrice;
   const applyDiscountedPriceToTransfer =
     usePackagePriceFallback && currentDiscountAmount > 0;
@@ -719,10 +729,14 @@ export function TransferClassDialog({
       - Number(right.classSession?.sessionIndex ?? right.sessionIndex ?? 0),
     )
     .slice(0, transferCount);
+  const currentSurchargeTotal = selectedSourceSessions.reduce(
+    (total, session) => total + Math.max(0, Number(session?.pricing?.allocatedSurchargeFee ?? 0) || 0),
+    0,
+  );
   const exactCurrentTotal = applyDiscountedPriceToTransfer
     ? calculatePerSessionTransferTotal(currentSessionPrice, selectedSourceSessions.length)
     : selectedSourceSessions.reduce(
-      (total, session) => total + getEffectiveSourceSessionPrice(session),
+      (total, session) => total + getEffectiveSourceSessionPrice(session, excludeSourceSurcharge),
       0,
     );
   const currentTotal = roundingMode === "down"
@@ -856,6 +870,7 @@ export function TransferClassDialog({
         sourceSessionPriceOverride: applyDiscountedPriceToTransfer
           ? Number(currentSessionPrice.toFixed(2))
           : undefined,
+        excludeSourceSurcharge,
         roundingMode,
         refundToDepositAmount: shouldRefundToDeposit ? refundAmount : undefined,
         refundDescription: shouldRefundToDeposit ? buildInvoiceNote() : undefined,
@@ -1160,6 +1175,34 @@ export function TransferClassDialog({
                         {currentNetTotal > 0 ? formatCurrency(currentNetTotal) : "—"}
                       </span>
                     </div>
+                    {currentSurchargeTotal > 0 && (
+                      <div className="space-y-1.5 rounded-md border border-amber-300/70 bg-amber-50/60 p-2 dark:bg-amber-950/20">
+                        <div className="flex justify-between gap-3 text-xs">
+                          <span className="text-muted-foreground">
+                            Phụ thu trong các buổi chuyển:
+                          </span>
+                          <span className="font-medium">{formatCurrency(currentSurchargeTotal)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <label
+                            htmlFor="exclude-source-surcharge"
+                            className="cursor-pointer text-xs font-medium"
+                          >
+                            Không tính phụ thu vào giá trị chuyển lớp
+                          </label>
+                          <Switch
+                            id="exclude-source-surcharge"
+                            checked={excludeSourceSurcharge}
+                            onCheckedChange={setExcludeSourceSurcharge}
+                            aria-label="Không tính phụ thu vào giá trị chuyển lớp"
+                            data-testid="switch-exclude-source-surcharge"
+                          />
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">
+                          Chỉ áp dụng lần chuyển này; không sửa hóa đơn hoặc tổng số dư ví.
+                        </p>
+                      </div>
+                    )}
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Số buổi đăng ký thực tế:</span>
                       <div className="flex items-center gap-2">

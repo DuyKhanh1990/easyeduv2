@@ -32,6 +32,84 @@ describe("class transfer accounting", () => {
     })).toBe(350);
   });
 
+  it("excludes invoice-item surcharges from transferred tuition only when requested", () => {
+    const input = {
+      sessions: [
+        { id: "session-1", sessionPrice: 500 },
+        { id: "session-2", sessionPrice: 500 },
+      ],
+      allocations: [
+        {
+          allocationId: "allocation-1",
+          invoiceItemId: "item-1",
+          studentSessionId: "session-1",
+          allocatedAmount: 112.5,
+          invoiceStatus: "paid",
+          itemPackageType: "buổi",
+          itemQuantity: 2,
+          itemSurchargeAmount: 25,
+          sessionOrder: 1,
+        },
+        {
+          allocationId: "allocation-2",
+          invoiceItemId: "item-1",
+          studentSessionId: "session-2",
+          allocatedAmount: 212.5,
+          invoiceStatus: "paid",
+          itemPackageType: "buổi",
+          itemQuantity: 2,
+          itemSurchargeAmount: 25,
+          sessionOrder: 2,
+        },
+      ],
+    };
+
+    expect(calculateClassTransferSourceCredit(input)).toBe(325);
+    expect(calculateClassTransferSourceCredit({
+      ...input,
+      excludeSurcharge: true,
+    })).toBe(300);
+  });
+
+  it("splits course-item surcharge cents across the full invoice allocation set", () => {
+    const input = {
+      sessions: [
+        { id: "session-1", sessionPrice: 500 },
+        { id: "session-2", sessionPrice: 500 },
+      ],
+      allocations: [
+        {
+          allocationId: "allocation-1",
+          invoiceItemId: "course-item",
+          studentSessionId: "session-1",
+          allocatedAmount: 1.02,
+          invoiceStatus: "paid",
+          itemPackageType: "khoá",
+          itemQuantity: 99,
+          itemSurchargeAmount: 0.05,
+          sessionOrder: 1,
+        },
+        {
+          allocationId: "allocation-2",
+          invoiceItemId: "course-item",
+          studentSessionId: "session-2",
+          allocatedAmount: 1.03,
+          invoiceStatus: "paid",
+          itemPackageType: "khoá",
+          itemQuantity: 99,
+          itemSurchargeAmount: 0.05,
+          sessionOrder: 2,
+        },
+      ],
+    };
+
+    expect(calculateClassTransferSourceCredit(input)).toBe(2.05);
+    expect(calculateClassTransferSourceCredit({
+      ...input,
+      excludeSurcharge: true,
+    })).toBe(2);
+  });
+
   it("uses saved session prices before falling back to package prices", () => {
     expect(calculateClassTransferSourceCredit({
       sessions: [

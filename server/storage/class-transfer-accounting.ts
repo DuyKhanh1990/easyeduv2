@@ -19,9 +19,15 @@ export type ClassTransferSourceSession = {
 };
 
 export type ClassTransferInvoiceAllocation = {
+  allocationId?: string | null;
+  invoiceItemId?: string | null;
   studentSessionId: string;
   allocatedAmount: NumericValue;
   invoiceStatus?: string | null;
+  itemPackageType?: string | null;
+  itemQuantity?: NumericValue;
+  itemSurchargeAmount?: NumericValue;
+  sessionOrder?: NumericValue;
 };
 
 export type ClassTransferSessionAdjustment = {
@@ -35,6 +41,60 @@ export type ClassTransferRoundingMode = "none" | "down" | "up";
 function toFiniteNumber(value: NumericValue, fallback = 0): number {
   const parsed = Number(value ?? fallback);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+export function getClassTransferInvoiceSurchargeShares(
+  allocations: ClassTransferInvoiceAllocation[],
+): number[] {
+  const shares = allocations.map(() => 0);
+  const rowsByItem = new Map<string, number[]>();
+
+  allocations.forEach((allocation, index) => {
+    if (toFiniteNumber(allocation.itemSurchargeAmount) <= 0) return;
+    const itemKey = allocation.invoiceItemId ?? allocation.allocationId;
+    if (!itemKey) return;
+    const rows = rowsByItem.get(itemKey) ?? [];
+    rows.push(index);
+    rowsByItem.set(itemKey, rows);
+  });
+
+  for (const rowIndexes of rowsByItem.values()) {
+    const firstAllocation = allocations[rowIndexes[0]];
+    const packageType = String(firstAllocation.itemPackageType ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase("vi");
+    const isPerSessionPackage = packageType === "buoi";
+    const denominator = isPerSessionPackage
+      ? Math.max(1, Math.floor(toFiniteNumber(firstAllocation.itemQuantity, 1)))
+      : rowIndexes.length;
+    const surchargeCents = Math.round(
+      Math.max(0, toFiniteNumber(firstAllocation.itemSurchargeAmount)) * 100,
+    );
+    if (denominator <= 0 || surchargeCents <= 0) continue;
+
+    const orderedIndexes = [...rowIndexes].sort((leftIndex, rightIndex) => {
+      const leftOrder = Number(allocations[leftIndex].sessionOrder);
+      const rightOrder = Number(allocations[rightIndex].sessionOrder);
+      const normalizedLeftOrder = Number.isFinite(leftOrder) ? leftOrder : Number.POSITIVE_INFINITY;
+      const normalizedRightOrder = Number.isFinite(rightOrder) ? rightOrder : Number.POSITIVE_INFINITY;
+      if (normalizedLeftOrder !== normalizedRightOrder) {
+        return normalizedLeftOrder - normalizedRightOrder;
+      }
+      return String(allocations[leftIndex].allocationId ?? leftIndex)
+        .localeCompare(String(allocations[rightIndex].allocationId ?? rightIndex));
+    });
+
+    const baseCents = Math.floor(surchargeCents / denominator);
+    const remainderCents = surchargeCents - baseCents * denominator;
+    orderedIndexes.forEach((allocationIndex, position) => {
+      const receivesRemainder = position >= denominator - remainderCents;
+      shares[allocationIndex] =
+        (baseCents + (receivesRemainder ? 1 : 0)) / 100;
+    });
+  }
+
+  return shares;
 }
 
 export function getPackageSessionValue(
@@ -70,14 +130,21 @@ export function calculateClassTransferSourceCredit(input: {
   adjustments?: ClassTransferSessionAdjustment[];
   defaultPackage?: ClassTransferPackagePricing;
   roundingMode?: ClassTransferRoundingMode;
+  excludeSurcharge?: boolean;
 }): number {
   const allocationBySession = new Map<string, number>();
-  for (const allocation of input.allocations ?? []) {
+  const surchargeBySession = new Map<string, number>();
+  const surchargeShares = getClassTransferInvoiceSurchargeShares(input.allocations ?? []);
+  for (const [index, allocation] of (input.allocations ?? []).entries()) {
     if (String(allocation.invoiceStatus ?? "").toLowerCase() === "cancelled") continue;
     allocationBySession.set(
       allocation.studentSessionId,
       (allocationBySession.get(allocation.studentSessionId) ?? 0)
         + toFiniteNumber(allocation.allocatedAmount),
+    );
+    surchargeBySession.set(
+      allocation.studentSessionId,
+      (surchargeBySession.get(allocation.studentSessionId) ?? 0) + surchargeShares[index],
     );
   }
 
@@ -91,19 +158,25 @@ export function calculateClassTransferSourceCredit(input: {
   }
 
   const sourceCredit = input.sessions.reduce((total, session) => {
+    let effectiveAmount: number;
     if (adjustmentBySession.has(session.id)) {
-      return total + (adjustmentBySession.get(session.id) ?? 0);
+      effectiveAmount = adjustmentBySession.get(session.id) ?? 0;
+    } else if (allocationBySession.has(session.id)) {
+      effectiveAmount = allocationBySession.get(session.id) ?? 0;
+    } else if (session.transferPriceOverride != null) {
+      effectiveAmount = toFiniteNumber(session.transferPriceOverride);
+    } else if (session.sessionPrice != null) {
+      effectiveAmount = toFiniteNumber(session.sessionPrice);
+    } else {
+      effectiveAmount = getPackageSessionValue(session, input.defaultPackage);
     }
-    if (allocationBySession.has(session.id)) {
-      return total + (allocationBySession.get(session.id) ?? 0);
+    if (input.excludeSurcharge) {
+      effectiveAmount = Math.max(
+        0,
+        effectiveAmount - (surchargeBySession.get(session.id) ?? 0),
+      );
     }
-    if (session.transferPriceOverride != null) {
-      return total + toFiniteNumber(session.transferPriceOverride);
-    }
-    if (session.sessionPrice != null) {
-      return total + toFiniteNumber(session.sessionPrice);
-    }
-    return total + getPackageSessionValue(session, input.defaultPackage);
+    return total + effectiveAmount;
   }, 0);
 
   const rounded = input.roundingMode === "down"

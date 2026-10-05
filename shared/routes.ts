@@ -312,6 +312,7 @@ export const api = {
         targetPackageId: z.string().uuid().nullable().optional(),
         targetSessionPrice: z.number().min(0).optional(),
         sourceSessionPriceOverride: z.number().min(0).optional(),
+        excludeSourceSurcharge: z.boolean().optional(),
         roundingMode: z.enum(["none", "down", "up"]).optional(),
         refundToDepositAmount: z.number().positive().optional(),
         refundDescription: z.string().max(1000).optional(),

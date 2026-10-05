@@ -2787,6 +2787,7 @@ export function registerClassesRoutes(app: Express): void {
         targetPackageId: z.string().uuid().nullable().optional(),
         targetSessionPrice: z.number().min(0).optional(),
         sourceSessionPriceOverride: z.number().min(0).optional(),
+        excludeSourceSurcharge: z.boolean().optional(),
         roundingMode: z.enum(["none", "down", "up"]).optional(),
         refundToDepositAmount: z.number().positive().optional(),
         refundDescription: z.string().max(1000).optional(),
@@ -2838,6 +2839,7 @@ export function registerClassesRoutes(app: Express): void {
               fromSessionIndex, toSessionIndex, transferCount: actualTransferCount,
              targetTransferCount: transferResult.targetTransferCount,
              sourceCreditAmount: transferResult.sourceCreditAmount,
+              excludeSourceSurcharge: data.excludeSourceSurcharge ?? false,
              fromSessions: fromSessions.map((session) => ({
                sessionIndex: session.sessionIndex,
                sessionDate: session.sessionDate ?? "",
@@ -2908,6 +2910,7 @@ export function registerClassesRoutes(app: Express): void {
               fromSessionIndex, toSessionIndex, transferCount: actualTransferCount,
              targetTransferCount: transferResult.targetTransferCount,
              sourceCreditAmount: transferResult.sourceCreditAmount,
+              excludeSourceSurcharge: data.excludeSourceSurcharge ?? false,
              fromSessions: fromSessions.map((session) => ({
                sessionIndex: session.sessionIndex,
                sessionDate: session.sessionDate ?? "",

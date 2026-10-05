@@ -25,6 +25,7 @@ import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 import {
   calculateClassTransferSourceCredit,
   calculateClassTransferTargetSessionPrice,
+  getClassTransferInvoiceSurchargeShares,
   getPackageSessionValue,
 } from "./class-transfer-accounting";
 import { mergeSelectedTeacherRoleIds, type TeacherRoleChanges } from "./teacher-role-updates";
@@ -478,6 +479,7 @@ export async function transferStudentClass(data: {
   targetPackageId?: string | null;
   targetSessionPrice?: number;
   sourceSessionPriceOverride?: number;
+  excludeSourceSurcharge?: boolean;
   roundingMode?: "none" | "down" | "up";
   userId: string;
   refundToDepositAmount?: number;
@@ -651,14 +653,11 @@ export async function transferStudentClass(data: {
     });
 
     const movedSessionIds = oldSessions.map((session) => session.id);
-  const [sourceAllocations, sourceAdjustments, sourceDefaultPackages] = await Promise.all([
+    const [movedAllocationItems, sourceAdjustments, sourceDefaultPackages] = await Promise.all([
       tx.select({
-        studentSessionId: invoiceSessionAllocations.studentSessionId,
-        allocatedAmount: invoiceSessionAllocations.allocatedAmount,
-        invoiceStatus: invoices.status,
+        invoiceItemId: invoiceSessionAllocations.invoiceItemId,
       })
         .from(invoiceSessionAllocations)
-        .innerJoin(invoices, eq(invoiceSessionAllocations.invoiceId, invoices.id))
         .where(inArray(invoiceSessionAllocations.studentSessionId, movedSessionIds)),
       tx.select({
         studentSessionId: tuitionPackageSessionAdjustments.studentSessionId,
@@ -674,6 +673,35 @@ export async function transferStudentClass(data: {
             .limit(1)
         : Promise.resolve([]),
     ]);
+
+    const sourceInvoiceItemIds = Array.from(new Set(
+      movedAllocationItems
+        .map((row) => row.invoiceItemId)
+        .filter((id): id is string => Boolean(id)),
+    ));
+    const sourceAllocations = sourceInvoiceItemIds.length > 0
+      ? await tx.select({
+          allocationId: invoiceSessionAllocations.id,
+          invoiceItemId: invoiceSessionAllocations.invoiceItemId,
+          studentSessionId: invoiceSessionAllocations.studentSessionId,
+          allocatedAmount: invoiceSessionAllocations.allocatedAmount,
+          invoiceStatus: invoices.status,
+          itemPackageType: invoiceItems.packageType,
+          itemQuantity: invoiceItems.quantity,
+          itemSurchargeAmount: invoiceItems.surchargeAmount,
+          sessionOrder: studentSessions.sessionOrder,
+        })
+          .from(invoiceSessionAllocations)
+          .innerJoin(invoiceItems, eq(invoiceSessionAllocations.invoiceItemId, invoiceItems.id))
+          .innerJoin(invoices, eq(invoiceSessionAllocations.invoiceId, invoices.id))
+          .innerJoin(studentSessions, eq(invoiceSessionAllocations.studentSessionId, studentSessions.id))
+          .where(inArray(invoiceSessionAllocations.invoiceItemId, sourceInvoiceItemIds))
+          .orderBy(
+            asc(invoiceSessionAllocations.invoiceItemId),
+            asc(studentSessions.sessionOrder),
+            asc(invoiceSessionAllocations.id),
+          )
+      : [];
 
     const sourceDefaultPackage = sourceDefaultPackages[0];
     if (data.sourceSessionPriceOverride !== undefined) {
@@ -732,6 +760,7 @@ export async function transferStudentClass(data: {
       adjustments: sourceAdjustments,
       defaultPackage: sourceDefaultPackage,
       roundingMode: data.roundingMode,
+      excludeSurcharge: data.excludeSourceSurcharge,
     });
 
     const resolvedTargetPackageId = data.targetPackageId ?? toClass?.feePackageId ?? null;
@@ -2076,23 +2105,52 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
 
   // Use the amount allocated by the student's tuition invoice when available.
   // This is the post-promotion amount and preserves the existing session_price
-  // fallback for legacy records that do not have allocations yet.
-  const allocationRows = await db
+  // fallback for legacy records that do not have allocations yet. Fetch all
+  // allocations for each selected item so surcharge proration matches the
+  // invoice's original allocation across every session.
+  const sessionAllocationItems = await db
     .select({
-      studentSessionId: invoiceSessionAllocations.studentSessionId,
-      allocatedAmount: invoiceSessionAllocations.allocatedAmount,
-      promotionAmount: invoiceItems.promotionAmount,
-      quantity: invoiceItems.quantity,
-      promotionKeys: invoiceItems.promotionKeys,
-      invoiceStatus: invoices.status,
+      invoiceItemId: invoiceSessionAllocations.invoiceItemId,
     })
     .from(invoiceSessionAllocations)
-    .innerJoin(invoiceItems, eq(invoiceSessionAllocations.invoiceItemId, invoiceItems.id))
-    .innerJoin(invoices, eq(invoiceSessionAllocations.invoiceId, invoices.id))
-    .where(and(
-      inArray(invoiceSessionAllocations.studentSessionId, sessionIds),
-      sql`${invoices.status} <> 'cancelled'`,
-    ));
+    .where(inArray(invoiceSessionAllocations.studentSessionId, sessionIds));
+  const invoiceItemIds = Array.from(new Set(
+    sessionAllocationItems
+      .map((row) => row.invoiceItemId)
+      .filter((id): id is string => Boolean(id)),
+  ));
+  const allocationRows = invoiceItemIds.length > 0
+    ? await db
+      .select({
+        allocationId: invoiceSessionAllocations.id,
+        invoiceItemId: invoiceSessionAllocations.invoiceItemId,
+        studentSessionId: invoiceSessionAllocations.studentSessionId,
+        allocatedAmount: invoiceSessionAllocations.allocatedAmount,
+        itemPackageType: invoiceItems.packageType,
+        itemQuantity: invoiceItems.quantity,
+        itemSurchargeAmount: invoiceItems.surchargeAmount,
+        sessionOrder: studentSessions.sessionOrder,
+        promotionAmount: invoiceItems.promotionAmount,
+        quantity: invoiceItems.quantity,
+        promotionKeys: invoiceItems.promotionKeys,
+        invoiceStatus: invoices.status,
+      })
+      .from(invoiceSessionAllocations)
+      .innerJoin(invoiceItems, eq(invoiceSessionAllocations.invoiceItemId, invoiceItems.id))
+      .innerJoin(invoices, eq(invoiceSessionAllocations.invoiceId, invoices.id))
+      .innerJoin(studentSessions, eq(invoiceSessionAllocations.studentSessionId, studentSessions.id))
+      .where(and(
+        inArray(invoiceSessionAllocations.invoiceItemId, invoiceItemIds),
+        sql`${invoices.status} <> 'cancelled'`,
+      ))
+      .orderBy(
+        asc(invoiceSessionAllocations.invoiceItemId),
+        asc(studentSessions.sessionOrder),
+        asc(invoiceSessionAllocations.id),
+      )
+    : [];
+  const invoiceSurchargeShares = getClassTransferInvoiceSurchargeShares(allocationRows);
+  const requestedSessionIds = new Set(sessionIds);
 
   const promotionIds = Array.from(new Set(
     allocationRows.flatMap((row) => row.promotionKeys ?? []).filter(Boolean),
@@ -2111,16 +2169,19 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
 
   const pricingBySession = new Map<string, {
     allocatedFee: number;
+    allocatedSurchargeFee: number;
     discountAmount: number;
     discountPercent: number | null;
     hasInvoiceAllocation: boolean;
     hasPackageAdjustment: boolean;
   }>();
 
-  for (const row of allocationRows) {
+  for (const [allocationIndex, row] of allocationRows.entries()) {
+    if (!requestedSessionIds.has(row.studentSessionId)) continue;
     const quantity = Math.max(1, Number(row.quantity) || 1);
     const current = pricingBySession.get(row.studentSessionId) ?? {
       allocatedFee: 0,
+      allocatedSurchargeFee: 0,
       discountAmount: 0,
       discountPercent: null,
       hasInvoiceAllocation: false,
@@ -2128,6 +2189,7 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
     };
 
     current.allocatedFee += Number(row.allocatedAmount) || 0;
+    current.allocatedSurchargeFee += invoiceSurchargeShares[allocationIndex] ?? 0;
     current.discountAmount += (Number(row.promotionAmount) || 0) / quantity;
     current.hasInvoiceAllocation = true;
 
@@ -2154,6 +2216,7 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
   for (const row of packageAdjustmentRows) {
     const current = pricingBySession.get(row.studentSessionId) ?? {
       allocatedFee: Number(rows.find((session) => session.id === row.studentSessionId)?.sessionPrice ?? 0),
+      allocatedSurchargeFee: 0,
       discountAmount: 0,
       discountPercent: null,
       hasInvoiceAllocation: false,
