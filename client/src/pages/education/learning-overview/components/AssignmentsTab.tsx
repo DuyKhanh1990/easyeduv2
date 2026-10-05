@@ -17,6 +17,7 @@ export function AssignmentsTab({ enabled }: Props) {
         month={tab.month}
         isLoading={tab.isLoading}
         isStaff={true}
+        permissionContext="education"
         year={tab.year}
         monthIndex={tab.monthIndex}
         onPrevMonth={tab.onPrevMonth}

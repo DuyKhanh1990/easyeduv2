@@ -67,6 +67,7 @@ import { updateStudentAttendance } from "../storage/attendance.storage";
 import { getTeacherIdsForTimeRange } from "@shared/teacher-time-assignments";
 import { canViewClass } from "../lib/class-access";
 import { canScheduleWrite } from "@shared/schedule-access";
+import { hasMySpaceAssignmentsWritePermission } from "../lib/my-space-assignments-permissions";
 
 async function getStudentForUser(userId: string) {
   const [student] = await db
@@ -299,6 +300,72 @@ async function isStaffInDaotaoDept(staffId: string): Promise<boolean> {
     ))
     .limit(1);
   return !!row;
+}
+
+async function updateStaffAssignmentGrade(req: any, res: any, enforceMySpacePermission: boolean): Promise<void> {
+  try {
+    const user = req.user as any;
+    if (!user) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+
+    const staffRecord = await getStaffForUser(user.id);
+    if (!staffRecord) {
+      res.status(403).json({ message: "Tài khoản không phải nhân viên" });
+      return;
+    }
+
+    const inDaotao = await isStaffInDaotaoDept(staffRecord.id);
+    if (!inDaotao) {
+      res.status(403).json({ message: "Tài khoản không thuộc Phòng Đào tạo" });
+      return;
+    }
+
+    const { studentSessionContentId, score, gradingComment } = req.body as {
+      studentSessionContentId: string;
+      score: string;
+      gradingComment: string;
+    };
+    if (!studentSessionContentId) {
+      res.status(400).json({ message: "Thiếu studentSessionContentId" });
+      return;
+    }
+
+    if (enforceMySpacePermission) {
+      const [existingGrade] = await db
+        .select({
+          score: studentSessionContents.score,
+          gradingComment: studentSessionContents.gradingComment,
+        })
+        .from(studentSessionContents)
+        .where(eq(studentSessionContents.id, studentSessionContentId))
+        .limit(1);
+      if (!existingGrade) {
+        res.status(404).json({ message: "Không tìm thấy bài nộp" });
+        return;
+      }
+
+      const hasExistingGrade = existingGrade.score != null
+        || Boolean(existingGrade.gradingComment?.trim());
+      const action = hasExistingGrade ? "edit" : "create";
+      if (!await hasMySpaceAssignmentsWritePermission(req, action)) {
+        res.status(403).json({ message: "Bạn không có quyền chấm hoặc sửa nhận xét, điểm bài tập." });
+        return;
+      }
+    }
+
+    await db
+      .update(studentSessionContents)
+      .set({ score: score ?? null, gradingComment: gradingComment ?? null })
+      .where(eq(studentSessionContents.id, studentSessionContentId));
+
+    res.json({ success: true });
+    sendHomeworkScoreNotification(studentSessionContentId, score, gradingComment, user.id).catch(() => {});
+  } catch (err: any) {
+    console.error("Staff grade error:", err);
+    res.status(500).json({ message: err.message || "Lỗi khi chấm bài" });
+  }
 }
 
 async function getSessionAttendanceStats(classSessionId: string): Promise<{ enrolledCount: number; pendingCount: number; reviewedCount: number }> {
@@ -3077,39 +3144,12 @@ export function registerMySpaceRoutes(app: Express): void {
 
   // ── Staff grade homework ─────────────────────────────────────────────────
   app.post("/api/my-space/assignments/staff/grade", async (req, res) => {
-    try {
-      const user = req.user as any;
-      if (!user) return res.status(401).json({ message: "Unauthorized" });
+    await updateStaffAssignmentGrade(req, res, true);
+  });
 
-      const staffRecord = await getStaffForUser(user.id);
-      if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
-
-      const inDaotao = await isStaffInDaotaoDept(staffRecord.id);
-      if (!inDaotao) return res.status(403).json({ message: "Tài khoản không thuộc Phòng Đào tạo" });
-
-      const { studentSessionContentId, score, gradingComment } = req.body as {
-        studentSessionContentId: string;
-        score: string;
-        gradingComment: string;
-      };
-
-      if (!studentSessionContentId) {
-        return res.status(400).json({ message: "Thiếu studentSessionContentId" });
-      }
-
-      await db
-        .update(studentSessionContents)
-        .set({ score: score ?? null, gradingComment: gradingComment ?? null })
-        .where(eq(studentSessionContents.id, studentSessionContentId));
-
-      res.json({ success: true });
-
-      // Send homework score notification to student
-      sendHomeworkScoreNotification(studentSessionContentId, score, gradingComment, user.id).catch(() => {});
-    } catch (err: any) {
-      console.error("Staff grade error:", err);
-      res.status(500).json({ message: err.message || "Lỗi khi chấm bài" });
-    }
+  // Education's Learning Overview has its own route, so My Space permissions do not leak into it.
+  app.post("/api/learning-overview/assignments/grade", async (req, res) => {
+    await updateStaffAssignmentGrade(req, res, false);
   });
 
   // ── Learning Overview: All assignments (admin view) ─────────────────────

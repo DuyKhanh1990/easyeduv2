@@ -22,6 +22,9 @@ export interface ExamCommentDialogProps {
   examTitle: string;
   initialComment: string | null;
   startInEditMode?: boolean;
+  permissionContext?: "my-space" | "education";
+  canCreate?: boolean;
+  canEdit?: boolean;
   onSaved?: () => void;
 }
 
@@ -33,23 +36,33 @@ export function ExamCommentDialog({
   examTitle,
   initialComment,
   startInEditMode = false,
+  permissionContext = "education",
+  canCreate = true,
+  canEdit = true,
   onSaved,
 }: ExamCommentDialogProps) {
   const { toast } = useToast();
   const { t } = useLanguage();
-  const [isEditing, setIsEditing] = useState(startInEditMode || !initialComment);
+  const canModifyComment = initialComment?.trim() ? canEdit : canCreate;
+  const [isEditing, setIsEditing] = useState(canModifyComment && (startInEditMode || !initialComment));
   const [commentVal, setCommentVal] = useState(initialComment || "");
 
   useEffect(() => {
     if (open) {
-      setIsEditing(startInEditMode || !initialComment);
+      setIsEditing(canModifyComment && (startInEditMode || !initialComment));
       setCommentVal(initialComment || "");
     }
-  }, [open, initialComment, startInEditMode]);
+  }, [open, initialComment, startInEditMode, canModifyComment]);
 
   const mutation = useMutation({
     mutationFn: (comment: string) =>
-      apiRequest("PATCH", `/api/exam-submissions/${submissionId}`, { comment }),
+      apiRequest(
+        "PATCH",
+        permissionContext === "my-space"
+          ? `/api/my-space/assignments/staff/exam-comment/${submissionId}`
+          : `/api/exam-submissions/${submissionId}`,
+        { comment },
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/my-space/assignments/staff"] });
       toast({ title: t("mySpace.assignments.commentSaved") });
@@ -105,7 +118,7 @@ export function ExamCommentDialog({
               </Button>
               <Button
                 onClick={() => mutation.mutate(commentVal)}
-                disabled={mutation.isPending}
+                disabled={mutation.isPending || !canModifyComment}
               >
                 {mutation.isPending ? (
                   <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />{t("mySpace.assignments.saving")}</>
@@ -117,10 +130,12 @@ export function ExamCommentDialog({
               <Button variant="outline" onClick={onClose}>
                 {t("mySpace.assignments.close")}
               </Button>
-              <Button variant="secondary" onClick={() => setIsEditing(true)}>
-                <Pencil className="w-3.5 h-3.5 mr-1.5" />
-                {t("mySpace.assignments.edit")}
-              </Button>
+              {canEdit && initialComment && (
+                <Button variant="secondary" onClick={() => setIsEditing(true)}>
+                  <Pencil className="w-3.5 h-3.5 mr-1.5" />
+                  {t("mySpace.assignments.edit")}
+                </Button>
+              )}
             </>
           )}
         </DialogFooter>

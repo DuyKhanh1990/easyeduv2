@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useLocation, useSearch } from "wouter";
 import { AssignmentsTable } from "@/components/my-space/assignments/AssignmentsTable";
 import { useStaffAssignments } from "@/hooks/use-staff-assignments";
+import { useMyPermissions } from "@/hooks/use-my-permissions";
 
 function toMonthStr(year: number, month: number) {
   return `${year}-${String(month + 1).padStart(2, "0")}`;
@@ -16,6 +17,8 @@ export function StaffAssignments() {
   })();
   const today = new Date();
   const [, navigate] = useLocation();
+  const { data: myPermissions } = useMyPermissions();
+  const assignmentPermissions = myPermissions?.permissions["/my-space/assignments"];
   const [year, setYear] = useState(initDate.getFullYear());
   const [month, setMonth] = useState(initDate.getMonth());
   const [dateFrom, setDateFrom] = useState(() => {
@@ -76,6 +79,9 @@ export function StaffAssignments() {
       month={data?.month ?? monthStr}
       isLoading={isLoading}
       isStaff={true}
+      permissionContext="my-space"
+      canCreate={myPermissions?.isSuperAdmin ? true : assignmentPermissions?.canCreate ?? false}
+      canEdit={myPermissions?.isSuperAdmin ? true : assignmentPermissions?.canEdit ?? false}
       year={year}
       monthIndex={month}
       onPrevMonth={goToPrevMonth}

@@ -16,11 +16,12 @@ import {
 } from "../storage/exam-session.storage";
 import { insertExamSubmissionSchema } from "@shared/schema";
 import { db } from "../db";
-import { examSubmissions, exams, examSections } from "@shared/schema";
+import { examSubmissions, exams, examSections, staff, staffAssignments, departments } from "@shared/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { triggerAsyncEssayGrading } from "./ai.routes";
 import { sendExamScoreNotification } from "../lib/attendance-notification";
 import { recordAssessmentAudit } from "../lib/assessment-audit";
+import { hasMySpaceAssignmentsWritePermission } from "../lib/my-space-assignments-permissions";
 
 // ── P0: Rate limit + double-submit prevention ────────────────────────────────
 // These are intentionally in-memory: they guard against accidental duplicate
@@ -253,6 +254,76 @@ export function registerExamSubmissionRoutes(app: Express): void {
       res.status(500).json({ message: "Internal server error" });
     } finally {
       pendingSubmits.delete(pendingKey);
+    }
+  });
+
+  app.patch("/api/my-space/assignments/staff/exam-comment/:id", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+      const [staffRecord] = await db
+        .select({ id: staff.id })
+        .from(staff)
+        .where(eq(staff.userId, user.id))
+        .limit(1);
+      if (!staffRecord) return res.status(403).json({ message: "Tài khoản không phải nhân viên" });
+
+      const [departmentAssignment] = await db
+        .select({ id: departments.id })
+        .from(staffAssignments)
+        .innerJoin(departments, eq(staffAssignments.departmentId, departments.id))
+        .where(and(
+          eq(staffAssignments.staffId, staffRecord.id),
+          eq(departments.name, "Phòng Đào tạo"),
+          eq(departments.isSystem, true),
+        ))
+        .limit(1);
+      if (!departmentAssignment) {
+        return res.status(403).json({ message: "Tài khoản không thuộc Phòng Đào tạo" });
+      }
+
+      const input = z.object({ comment: z.string().nullable() }).parse(req.body);
+      const oldRow = await getExamSubmission(req.params.id);
+      if (!oldRow) return res.status(404).json({ message: "Not found" });
+
+      const action = oldRow.comment?.trim() ? "edit" : "create";
+      if (!await hasMySpaceAssignmentsWritePermission(req, action)) {
+        return res.status(403).json({ message: "Bạn không có quyền thêm hoặc sửa nhận xét bài kiểm tra." });
+      }
+
+      const row = await updateExamSubmission(req.params.id, { comment: input.comment });
+      if (!row) return res.status(404).json({ message: "Not found" });
+      const [examMeta] = await db
+        .select({ name: exams.name, code: exams.code, locationId: exams.locationId })
+        .from(exams)
+        .where(eq(exams.id, row.examId))
+        .limit(1);
+      await recordAssessmentAudit(req, {
+        scope: "results",
+        entityType: "submission",
+        entityId: row.id,
+        entityCode: examMeta?.code,
+        entityName: `${row.studentName || "Học viên"} — ${examMeta?.name || "Bài kiểm tra"}`,
+        action: "updated",
+        locationId: examMeta?.locationId,
+        oldContent: oldRow,
+        newContent: row,
+      });
+      res.json(row);
+
+      sendExamScoreNotification({
+        studentId: row.studentId,
+        examId: row.examId,
+        score: row.score,
+        adjustedScore: row.adjustedScore,
+        partScores: row.partScores as any,
+        comment: row.comment,
+      }).catch(() => {});
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json(err.errors);
+      console.error("PATCH /api/my-space/assignments/staff/exam-comment/:id error:", err);
+      res.status(500).json({ message: "Internal server error" });
     }
   });
 

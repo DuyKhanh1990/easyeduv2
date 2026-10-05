@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { StudentNameLink } from "@/components/ui/StudentNameLink";
 import { useLocation } from "wouter";
-import { BookOpen, ChevronLeft, ChevronRight, Eye, Filter, MessageSquare, X } from "lucide-react";
+import { BookOpen, ChevronLeft, ChevronRight, Eye, Filter, MessageSquare, Pencil, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AssignmentRow } from "@/types/my-assignments";
 import { AssignmentSubmitDialog } from "./AssignmentSubmitDialog";
@@ -67,6 +67,9 @@ interface Props {
   onDateRangeChange: (dateFrom: string, dateTo: string) => void;
   onExamClick?: (examId: string, classId?: string) => void;
   highlightDate?: string;
+  permissionContext?: "my-space" | "education";
+  canCreate?: boolean;
+  canEdit?: boolean;
 }
 
 function isImageUrl(url: string) {
@@ -182,6 +185,8 @@ interface AssignmentMobileCardProps {
   row: AssignmentRow;
   index: number;
   isStaff: boolean;
+  canCreate: boolean;
+  canEdit: boolean;
   onOpenAssignment: (row: AssignmentRow) => void;
   onViewSubmission: (row: AssignmentRow) => void;
   onViewExamSubmission: (row: AssignmentRow) => void;
@@ -193,6 +198,8 @@ function AssignmentMobileCard({
   row,
   index,
   isStaff,
+  canCreate,
+  canEdit,
   onOpenAssignment,
   onViewSubmission,
   onViewExamSubmission,
@@ -344,15 +351,27 @@ function AssignmentMobileCard({
           )}
           {isExam && isStaff && row.submissionId && (
             row.comment ? (
-              <button
-                onClick={() => onViewExamComment(row)}
-                className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-amber-600 transition-colors hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/20"
-                title={t("mySpace.assignments.viewComment")}
-              >
-                <Eye className="h-4 w-4" />
-                {t("mySpace.assignments.viewComment")}
-              </button>
-            ) : (
+              <>
+                <button
+                  onClick={() => onViewExamComment(row)}
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-amber-600 transition-colors hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/20"
+                  title={t("mySpace.assignments.viewComment")}
+                >
+                  <Eye className="h-4 w-4" />
+                  {t("mySpace.assignments.viewComment")}
+                </button>
+                {canEdit && (
+                  <button
+                    onClick={() => onEditExamComment(row)}
+                    className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary/70 hover:text-foreground"
+                    title={t("mySpace.assignments.edit")}
+                  >
+                    <Pencil className="h-4 w-4" />
+                    {t("mySpace.assignments.edit")}
+                  </button>
+                )}
+              </>
+            ) : canCreate ? (
               <button
                 onClick={() => onEditExamComment(row)}
                 className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary/70 hover:text-foreground"
@@ -361,7 +380,7 @@ function AssignmentMobileCard({
                 <MessageSquare className="h-4 w-4" />
                 {t("mySpace.assignments.addComment")}
               </button>
-            )
+            ) : null
           )}
           {!isExam && row.comment && <CommentPopover comment={row.comment} />}
         </div>
@@ -372,6 +391,7 @@ function AssignmentMobileCard({
 
 export function AssignmentsTable({
   rows, month, isLoading, isStaff = false, year, monthIndex, onPrevMonth, onNextMonth, onToday, onDateRangeChange, onExamClick, highlightDate,
+  permissionContext = "education", canCreate = true, canEdit = true,
 }: Props) {
   const { t } = useLanguage();
   const [, navigate] = useLocation();
@@ -829,6 +849,8 @@ export function AssignmentsTable({
                         row={row}
                         index={idx}
                         isStaff={isStaff}
+                        canCreate={canCreate}
+                        canEdit={canEdit}
                         onOpenAssignment={(assignment) => {
                           const isAssignmentExam = assignment.itemType === "Bài kiểm tra";
                           if (isAssignmentExam && assignment.examId) {
@@ -859,7 +881,7 @@ export function AssignmentsTable({
                           submissionId: assignment.submissionId!,
                           studentName: assignment.studentName,
                           examTitle: assignment.homeworkTitle,
-                          comment: null,
+                          comment: assignment.comment,
                           startInEditMode: true,
                         })}
                       />
@@ -1106,33 +1128,54 @@ export function AssignmentsTable({
                           <td className="px-4 py-3 text-center sticky right-0 bg-background z-10 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)]">
                             {isExam && isStaff && row.submissionId ? (
                               row.comment ? (
-                                <button
-                                  onClick={() => setCommentDialogData({
-                                    submissionId: row.submissionId!,
-                                    studentName: row.studentName,
-                                    examTitle: row.homeworkTitle,
-                                    comment: row.comment,
-                                    startInEditMode: false,
-                                  })}
-                                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/20 text-amber-600 dark:text-amber-400 transition-colors"
-                                   title={t("mySpace.assignments.viewComment")}
-                                >
-                                  <Eye className="w-4 h-4" />
-                                </button>
+                                <div className="flex justify-center gap-1">
+                                  <button
+                                    onClick={() => setCommentDialogData({
+                                      submissionId: row.submissionId!,
+                                      studentName: row.studentName,
+                                      examTitle: row.homeworkTitle,
+                                      comment: row.comment,
+                                      startInEditMode: false,
+                                    })}
+                                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/20 text-amber-600 dark:text-amber-400 transition-colors"
+                                    title={t("mySpace.assignments.viewComment")}
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </button>
+                                  {canEdit && (
+                                    <button
+                                      onClick={() => setCommentDialogData({
+                                        submissionId: row.submissionId!,
+                                        studentName: row.studentName,
+                                        examTitle: row.homeworkTitle,
+                                        comment: row.comment,
+                                        startInEditMode: true,
+                                      })}
+                                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-secondary/70 text-muted-foreground hover:text-foreground transition-colors"
+                                      title={t("mySpace.assignments.edit")}
+                                    >
+                                      <Pencil className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
                               ) : (
-                                <button
-                                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mx-auto"
-                                  onClick={() => setCommentDialogData({
-                                    submissionId: row.submissionId!,
-                                    studentName: row.studentName,
-                                    examTitle: row.homeworkTitle,
-                                    comment: null,
-                                    startInEditMode: true,
-                                  })}
-                                >
-                                  <MessageSquare className="w-3.5 h-3.5" />
-                                   {t("mySpace.assignments.addComment")}
-                                </button>
+                                canCreate ? (
+                                  <button
+                                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mx-auto"
+                                    onClick={() => setCommentDialogData({
+                                      submissionId: row.submissionId!,
+                                      studentName: row.studentName,
+                                      examTitle: row.homeworkTitle,
+                                      comment: null,
+                                      startInEditMode: true,
+                                    })}
+                                  >
+                                    <MessageSquare className="w-3.5 h-3.5" />
+                                    {t("mySpace.assignments.addComment")}
+                                  </button>
+                                ) : (
+                                  <span className="text-muted-foreground text-xs">—</span>
+                                )
                               )
                             ) : row.comment ? (
                               <CommentPopover comment={row.comment} />
@@ -1157,6 +1200,9 @@ export function AssignmentsTable({
           open={!!selectedRow}
           viewOnly={isStaff ? false : viewOnly}
           isStaff={isStaff}
+          permissionContext={permissionContext}
+          canCreateGrade={canCreate}
+          canEditGrade={canEdit}
           onClose={() => { setSelectedRow(null); setViewOnly(false); }}
         />
       )}
@@ -1179,6 +1225,9 @@ export function AssignmentsTable({
           examTitle={commentDialogData.examTitle}
           initialComment={commentDialogData.comment}
           startInEditMode={commentDialogData.startInEditMode}
+          permissionContext={permissionContext}
+          canCreate={canCreate}
+          canEdit={canEdit}
         />
       )}
     </div>

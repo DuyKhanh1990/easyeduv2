@@ -72,6 +72,7 @@ export function StudentAssignments() {
         rows={data?.rows ?? []}
         month={data?.month ?? monthStr}
         isLoading={isLoading}
+        permissionContext="my-space"
         year={year}
         monthIndex={month}
         onPrevMonth={goToPrevMonth}

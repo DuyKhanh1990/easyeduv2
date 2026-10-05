@@ -81,11 +81,24 @@ interface Props {
   open: boolean;
   viewOnly?: boolean;
   isStaff?: boolean;
+  permissionContext?: "my-space" | "education";
+  canCreateGrade?: boolean;
+  canEditGrade?: boolean;
   onClose: () => void;
   onGraded?: () => void;
 }
 
-export function AssignmentSubmitDialog({ row, open, viewOnly = false, isStaff = false, onClose, onGraded }: Props) {
+export function AssignmentSubmitDialog({
+  row,
+  open,
+  viewOnly = false,
+  isStaff = false,
+  permissionContext = "education",
+  canCreateGrade = true,
+  canEditGrade = true,
+  onClose,
+  onGraded,
+}: Props) {
   const { toast } = useToast();
   const { t } = useLanguage();
   const [viewerFile, setViewerFile] = useState<{ url: string; name: string } | null>(null);
@@ -117,6 +130,8 @@ export function AssignmentSubmitDialog({ row, open, viewOnly = false, isStaff = 
 
   const isAlreadySubmitted = row.submissionStatus === "submitted";
   const isPastDue = !!(row.dueDate && new Date() > new Date(row.dueDate) && row.itemType === "BTVN");
+  const hasExistingGrade = row.score != null || Boolean(row.comment?.trim());
+  const canModifyGrade = hasExistingGrade ? canEditGrade : canCreateGrade;
 
   const uploadFilesApi = async (files: File[]): Promise<{ name: string; url: string }[]> => {
     const formData = new FormData();
@@ -143,7 +158,10 @@ export function AssignmentSubmitDialog({ row, open, viewOnly = false, isStaff = 
 
   const gradeHomework = useMutation({
     mutationFn: async (payload: { studentSessionContentId: string; score: string; gradingComment: string }) => {
-      await apiRequest("POST", "/api/my-space/assignments/staff/grade", payload);
+      const endpoint = permissionContext === "my-space"
+        ? "/api/my-space/assignments/staff/grade"
+        : "/api/learning-overview/assignments/grade";
+      await apiRequest("POST", endpoint, payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/my-space/assignments/staff"] });
@@ -229,6 +247,7 @@ export function AssignmentSubmitDialog({ row, open, viewOnly = false, isStaff = 
 
 
   const handleGrade = () => {
+    if (!canModifyGrade) return;
     if (!row.studentSessionContentId) {
       toast({ title: t("mySpace.assignments.error"), description: t("mySpace.assignments.noSubmissionToGrade"), variant: "destructive" });
       return;
@@ -243,7 +262,7 @@ export function AssignmentSubmitDialog({ row, open, viewOnly = false, isStaff = 
   const isPending = isUploading || submitHomework.isPending;
   const submissionHasContent = submissionText.replace(/<[^>]*>/g, "").trim().length > 0;
   const canSubmit = !isPending && (submissionHasContent || attachments.length > 0);
-  const canGrade = !gradeHomework.isPending && (!!gradeScore.trim() || !!gradeComment);
+  const canGrade = canModifyGrade && !gradeHomework.isPending && (!!gradeScore.trim() || !!gradeComment);
 
   if (!open) return null;
 
@@ -428,24 +447,36 @@ export function AssignmentSubmitDialog({ row, open, viewOnly = false, isStaff = 
 
               <div>
                 <label className="text-sm font-medium text-foreground mb-1.5 block">Điểm</label>
-                <input
-                  type="text"
-                  value={gradeScore}
-                  onChange={(e) => setGradeScore(e.target.value)}
-                  placeholder={t("mySpace.assignments.enterScore")}
-                  className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  data-testid="input-grade-score"
-                />
+                {canModifyGrade ? (
+                  <input
+                    type="text"
+                    value={gradeScore}
+                    onChange={(e) => setGradeScore(e.target.value)}
+                    placeholder={t("mySpace.assignments.enterScore")}
+                    className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    data-testid="input-grade-score"
+                  />
+                ) : (
+                  <p className="rounded-xl border border-border bg-muted/30 px-4 py-2.5 text-sm text-foreground">
+                    {gradeScore || "—"}
+                  </p>
+                )}
               </div>
 
               <div>
-                  <label className="text-sm font-medium text-foreground mb-1.5 block">{t("mySpace.assignments.gradeComment")}</label>
-                <RichEditor
-                  value={gradeComment}
-                  onChange={setGradeComment}
-                  placeholder={t("mySpace.assignments.enterComment")}
-                  data-testid="textarea-grade-comment"
-                />
+                <label className="text-sm font-medium text-foreground mb-1.5 block">{t("mySpace.assignments.gradeComment")}</label>
+                {canModifyGrade ? (
+                  <RichEditor
+                    value={gradeComment}
+                    onChange={setGradeComment}
+                    placeholder={t("mySpace.assignments.enterComment")}
+                    data-testid="textarea-grade-comment"
+                  />
+                ) : (
+                  <p className="rounded-xl border border-border bg-muted/30 px-4 py-2.5 text-sm text-foreground whitespace-pre-wrap">
+                    {gradeComment || "—"}
+                  </p>
+                )}
               </div>
             </div>
           </div>

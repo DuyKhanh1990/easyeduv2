@@ -1807,6 +1807,9 @@ type RolePermissionRecord = {
 };
 
 function defaultPerm(resource?: string, deptName?: string) {
+  if (resource === "/my-space/assignments") {
+    return { canView: true, canViewAll: false, canCreate: false, canEdit: false, canDelete: false };
+  }
   if (resource === "/tasks#list" && deptName !== "Phòng Khách hàng") {
     return { canView: true, canViewAll: false, canCreate: false, canEdit: false, canDelete: false };
   }
@@ -1832,6 +1835,7 @@ const NO_DELETE_RESOURCES = new Set([`${SETTINGS_HREF}#permissions`]);
 const NO_CREATE_RESOURCES = new Set(["/assessments#results"]);
 const VIEW_ONLY_RESOURCES = new Set(["/my-space/invoices", "/my-space/payroll"]);
 const EDIT_ONLY_RESOURCES = new Set(["/customers/crm-config#required-info"]);
+const MY_SPACE_ASSIGNMENTS_RESOURCE = "/my-space/assignments";
 
 const PERM_DESCRIPTIONS: Record<string, string> = {
   // Standalone
@@ -1856,7 +1860,7 @@ const PERM_DESCRIPTIONS: Record<string, string> = {
   "/#bao-cao/lich-su-cuoc-goi": "Xem / Xem all: nhân sự có quyền xem báo cáo lịch sử cuộc gọi Omicall.",
   // MY SPACE
   "/my-space/calendar": "Lịch cá nhân luôn hiển thị mặc định cho tất cả nhân sự trong phòng ban hệ thống.",
-  "/my-space/assignments": "Bài tập luôn hiển thị mặc định cho tất cả nhân sự và học viên trong phòng ban hệ thống.",
+  "/my-space/assignments": "Xem luôn bật mặc định. Thêm: thêm nhận xét, điểm hoặc chấm bài lần đầu. Sửa: cập nhật nhận xét, điểm hoặc kết quả chấm bài.",
   "/my-space/score-sheet": "Bảng điểm luôn hiển thị mặc định cho tất cả nhân sự và học viên trong phòng ban hệ thống.",
   "/my-space/invoices": "Xem: học viên / nhân sự có quyền xem hoá đơn của bản thân. Bỏ tích quyền Xem để ẩn tab Hoá đơn của tôi.",
   "/my-space/payroll": "Xem: nhân sự có quyền xem bảng lương cá nhân của mình. Bỏ tích quyền Xem để ẩn tab Bảng lương của tôi.",
@@ -1954,7 +1958,7 @@ const PERM_DESCRIPTIONS_EN: Record<string, string> = {
   "/#bao-cao/chuyen-doi": "View / View All: view the Conversion report.",
   "/#bao-cao/lich-su-cuoc-goi": "View / View All: view the Omicall Call History report.",
   "/my-space/calendar": "Personal Calendar is enabled by default for all staff in system departments.",
-  "/my-space/assignments": "Assignments are enabled by default for all staff and students in system departments.",
+  "/my-space/assignments": "View is always enabled. Create: add feedback, a score, or an initial grade. Edit: update feedback, scores, or an existing grade.",
   "/my-space/score-sheet": "Score Sheets are enabled by default for all staff and students in system departments.",
   "/my-space/invoices": "View: students and staff can view their own invoices. Uncheck View to hide the My Invoices tab.",
   "/my-space/payroll": "View: staff can view their own payroll. Uncheck View to hide the My Payroll tab.",
@@ -2098,7 +2102,9 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
     mutationFn: async ({ roleId, sessionId, updates }: { roleId: string; sessionId: string; updates: Record<string, PermMap[string]> }) => {
       const permissions = Object.entries(updates).map(([resource, perms]) => {
         // VIEW_ONLY / EDIT_ONLY resources always persist only their supported flags.
-        const effectivePerms = VIEW_ONLY_RESOURCES.has(resource)
+        const effectivePerms = resource === MY_SPACE_ASSIGNMENTS_RESOURCE
+          ? { canView: true, canViewAll: false, canCreate: perms.canCreate, canEdit: perms.canEdit, canDelete: false }
+          : VIEW_ONLY_RESOURCES.has(resource)
           ? { canView: perms.canView, canViewAll: false, canCreate: false, canEdit: false, canDelete: false }
           : EDIT_ONLY_RESOURCES.has(resource)
           ? { canView: false, canViewAll: false, canCreate: false, canEdit: perms.canEdit, canDelete: false }
@@ -2206,6 +2212,19 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
       toast({ title: t("settings.permissions.unavailable"), description: t("settings.permissions.noCreateDesc"), variant: "destructive" });
       return;
     }
+    if (resource === MY_SPACE_ASSIGNMENTS_RESOURCE) {
+      if (permKey !== "canCreate" && permKey !== "canEdit") return;
+      const updated = {
+        ...current,
+        canView: true,
+        canViewAll: false,
+        canDelete: false,
+        [permKey]: toggling,
+      };
+      setLocalPerms(prev => ({ ...prev, [resource]: updated }));
+      queuePermissionUpdate(resource, updated);
+      return;
+    }
     let updated = { ...current, [permKey]: toggling };
 
     if (toggling) {
@@ -2251,9 +2270,19 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
   // localPerms = overlay optimistic; fetchedPerms = dữ liệu gốc từ server/cache.
   // Khi remount, localPerms rỗng nhưng fetchedPerms có cache → vẫn hiển thị đúng.
   const getResourcePerm = (resource: string): PermMap[string] => {
-    if (resource in localPerms) return localPerms[resource];
+    if (resource in localPerms) {
+      const local = localPerms[resource];
+      return resource === MY_SPACE_ASSIGNMENTS_RESOURCE
+        ? { ...local, canView: true, canViewAll: false, canDelete: false }
+        : local;
+    }
     const fromServer = fetchedPerms?.find(p => p.resource === resource);
-    if (fromServer) return { canView: fromServer.canView, canViewAll: fromServer.canViewAll, canCreate: fromServer.canCreate, canEdit: fromServer.canEdit, canDelete: fromServer.canDelete };
+    if (fromServer) {
+      const permission = { canView: fromServer.canView, canViewAll: fromServer.canViewAll, canCreate: fromServer.canCreate, canEdit: fromServer.canEdit, canDelete: fromServer.canDelete };
+      return resource === MY_SPACE_ASSIGNMENTS_RESOURCE
+        ? { ...permission, canView: true, canViewAll: false, canDelete: false }
+        : permission;
+    }
     return defaultPerm(resource, selectedDept?.name);
   };
 
@@ -2348,6 +2377,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
 
   const getAllowedKeysForResource = (resource: string, hasSubTabs: boolean): PermKey[] => {
     if (hasSubTabs) return [];
+    if (resource === MY_SPACE_ASSIGNMENTS_RESOURCE) return ["canCreate", "canEdit"];
     return PERM_COLS.map(c => c.key).filter(k => {
       if (VIEW_ONLY_RESOURCES.has(resource) && k !== "canView") return false;
       if (READ_ONLY_RESOURCES.has(resource) && (k === "canCreate" || k === "canEdit" || k === "canDelete")) return false;
@@ -2409,8 +2439,16 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
     for (const { resource, allowedKeys } of resources) {
       const current = getResourcePerm(resource);
       const updated = { ...current };
-      for (const col of PERM_COLS) {
-        updated[col.key] = value && allowedKeys.includes(col.key);
+      if (resource === MY_SPACE_ASSIGNMENTS_RESOURCE) {
+        updated.canView = true;
+        updated.canViewAll = false;
+        updated.canCreate = value;
+        updated.canEdit = value;
+        updated.canDelete = false;
+      } else {
+        for (const col of PERM_COLS) {
+          updated[col.key] = value && allowedKeys.includes(col.key);
+        }
       }
       updates[resource] = updated;
     }
@@ -2831,8 +2869,12 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                         const itemExpanded = !!normalizedPermissionSearch || expandedItems.includes(item.href);
                         const itemPerms = getResourcePerm(item.href);
 
-                        // Với role học viên/phụ huynh, 3 trang mặc định luôn được bật và không sửa được
-                        const isStudentDefaultLocked = isStudentSystemRole && STUDENT_DEFAULT_RESOURCES.has(item.href);
+                        // Quyền xem trang Bài tập luôn bật; quyền Thêm/Sửa vẫn cấu hình riêng theo vai trò.
+                        const isMySpaceAssignments = item.href === MY_SPACE_ASSIGNMENTS_RESOURCE;
+                        // Các trang mặc định khác của role học viên/phụ huynh luôn bật và không sửa được.
+                        const isStudentDefaultLocked = isStudentSystemRole
+                          && STUDENT_DEFAULT_RESOURCES.has(item.href)
+                          && !isMySpaceAssignments;
 
                         return (
                           <div key={item.href}>
@@ -2858,8 +2900,8 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                   <div className="flex items-center gap-2">
                                     <item.icon className="w-4 h-4 text-muted-foreground shrink-0" />
                                     <span className="text-sm text-foreground">{tNav(item.name)}</span>
-                                    {isStudentDefaultLocked && (
-                                    <span className="text-xs text-muted-foreground italic">{t("settings.permissions.default")}</span>
+                                    {(isStudentDefaultLocked || isMySpaceAssignments) && (
+                                      <span className="text-xs text-muted-foreground italic">{t("settings.permissions.default")}</span>
                                     )}
                                   </div>
                                 )}
@@ -2870,6 +2912,28 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                   PERM_COLS.map(col => (
                                     <div key={col.key} className="w-20 flex justify-center">
                                       <span className="text-xs text-muted-foreground/30 select-none">—</span>
+                                    </div>
+                                  ))
+                                ) : isMySpaceAssignments ? (
+                                  PERM_COLS.map(col => (
+                                    <div key={col.key} className="w-20 flex justify-center">
+                                      {col.key === "canView" ? (
+                                        <Checkbox
+                                          data-testid={`perm-${item.href.replace(/\//g, "-")}-canView`}
+                                          checked={true}
+                                          disabled={true}
+                                          className="w-4 h-4 opacity-40 cursor-not-allowed"
+                                        />
+                                      ) : col.key === "canCreate" || col.key === "canEdit" ? (
+                                        <Checkbox
+                                          data-testid={`perm-${item.href.replace(/\//g, "-")}-${col.key}`}
+                                          checked={itemPerms[col.key]}
+                                          onCheckedChange={() => handleToggle(item.href, col.key)}
+                                          className="w-4 h-4"
+                                        />
+                                      ) : (
+                                        <span className="text-xs text-muted-foreground/30 select-none">—</span>
+                                      )}
                                     </div>
                                   ))
                                 ) : isStudentDefaultLocked ? (

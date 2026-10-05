@@ -2283,6 +2283,14 @@ export function registerConfigRoutes(app: Express): void {
             studentPermMap[p.resource] = { canView: p.canView, canViewAll: p.canViewAll, canCreate: p.canCreate, canEdit: p.canEdit, canDelete: p.canDelete };
           }
         }
+        const studentAssignmentsPerm = studentPermMap["/my-space/assignments"];
+        studentPermMap["/my-space/assignments"] = {
+          canView: true,
+          canViewAll: false,
+          canCreate: studentAssignmentsPerm?.canCreate ?? false,
+          canEdit: studentAssignmentsPerm?.canEdit ?? false,
+          canDelete: false,
+        };
 
         return res.json({
           isSuperAdmin: false,
@@ -2315,6 +2323,14 @@ export function registerConfigRoutes(app: Express): void {
           };
         }
       }
+      const assignmentsPerm = permMap["/my-space/assignments"];
+      permMap["/my-space/assignments"] = {
+        canView: true,
+        canViewAll: false,
+        canCreate: assignmentsPerm?.canCreate ?? false,
+        canEdit: assignmentsPerm?.canEdit ?? false,
+        canDelete: false,
+      };
 
       let departmentNames: string[] = [];
       let systemDepartmentNames: string[] = [];
@@ -2352,7 +2368,9 @@ export function registerConfigRoutes(app: Express): void {
     try {
       const { roleId } = z.object({ roleId: z.string().uuid() }).parse(req.query);
       const perms = await storage.getRolePermissions(roleId);
-      res.json(perms);
+      res.json(perms.map(permission => permission.resource === "/my-space/assignments"
+        ? { ...permission, canView: true, canViewAll: false, canDelete: false }
+        : permission));
     } catch (err: any) {
       if (err instanceof z.ZodError) return res.status(400).json(err.errors);
       res.status(500).json({ message: err.message });
@@ -2371,7 +2389,10 @@ export function registerConfigRoutes(app: Express): void {
         canDelete: z.boolean(),
       }).parse(req.body);
       const { roleId, resource, ...permissions } = body;
-      const perm = await storage.upsertRolePermission(roleId, resource, permissions);
+      const effectivePermissions = resource === "/my-space/assignments"
+        ? { ...permissions, canView: true, canViewAll: false, canDelete: false }
+        : permissions;
+      const perm = await storage.upsertRolePermission(roleId, resource, effectivePermissions);
       cacheInvalidate("config:departments");
       res.json(perm);
       emitToAll({ type: "permissions_changed", roleId });
@@ -2395,11 +2416,14 @@ export function registerConfigRoutes(app: Express): void {
           canDelete: z.boolean(),
         })).min(1),
       }).parse(req.body);
+      const normalizedPermissions = body.permissions.map(permission => permission.resource === "/my-space/assignments"
+        ? { ...permission, canView: true, canViewAll: false, canDelete: false }
+        : permission);
       const { rolePermissions } = await import("@shared/schema");
       const oldRows = await db.select().from(rolePermissions)
-        .where(and(eq(rolePermissions.roleId, body.roleId), inArray(rolePermissions.resource, body.permissions.map(p => p.resource))));
+        .where(and(eq(rolePermissions.roleId, body.roleId), inArray(rolePermissions.resource, normalizedPermissions.map(p => p.resource))));
       const oldByResource = new Map(oldRows.map(row => [row.resource, row]));
-      const changed = body.permissions.filter(next => {
+      const changed = normalizedPermissions.filter(next => {
         const previous = oldByResource.get(next.resource);
         return !previous
           || previous.canView !== next.canView
@@ -2426,7 +2450,7 @@ export function registerConfigRoutes(app: Express): void {
           .leftJoin(departments, eq(roles.departmentId, departments.id))
           .where(eq(roles.id, body.roleId))
           .limit(1);
-        const permissionSnapshot = (items: typeof body.permissions) => ({
+        const permissionSnapshot = (items: typeof normalizedPermissions) => ({
           roleId: body.roleId,
           roleName: role?.name ?? null,
           departmentName: role?.departmentName ?? null,
@@ -2434,7 +2458,7 @@ export function registerConfigRoutes(app: Express): void {
             resource, canView, canViewAll, canCreate, canEdit, canDelete,
           })),
         });
-        const oldPermissions = body.permissions.map(permission => {
+        const oldPermissions = normalizedPermissions.map(permission => {
           const previous = oldByResource.get(permission.resource);
           return {
             ...permission,
