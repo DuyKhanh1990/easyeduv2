@@ -76,11 +76,6 @@ async function assertMySpaceCalendarSessionPermission(
   classSessionId: string,
   action: "canView" | "canCreate" | "canEdit" | "canDelete",
 ): Promise<boolean> {
-  if (action === "canDelete") {
-    res.status(403).json({ message: "Xóa nội dung không khả dụng trong Lịch cá nhân." });
-    return false;
-  }
-
   const user = req.user as { username?: string } | undefined;
   if (req.isSuperAdmin === true || user?.username === "admin") return true;
 
@@ -112,6 +107,8 @@ async function assertMySpaceCalendarSessionPermission(
       ? "Bạn không có quyền thêm học viên trong Lịch cá nhân."
       : action === "canEdit"
         ? "Bạn không có quyền sửa nội dung trong Lịch cá nhân."
+        : action === "canDelete"
+          ? "Bạn không có quyền xóa nội dung trong Lịch cá nhân."
         : "Bạn không có quyền xem Lịch cá nhân.",
   });
   return false;
@@ -8140,7 +8137,9 @@ export function registerClassesRoutes(app: Express): void {
     try {
       const classSessionId = req.params.classSessionId;
       if (isMySpaceCalendarClassSessionRoute(req)) {
-        if (!(await assertMySpaceCalendarSessionPermission(req, res, classSessionId, "canDelete"))) return;
+        return res.status(403).json({
+          message: "Không thể xóa toàn bộ nội dung buổi học từ Lịch cá nhân.",
+        });
       } else if (!(await assertScheduleMutationPermission(req, res, "canDelete"))) return;
       const contents = await storage.getSessionContents(classSessionId);
       for (const content of contents) {
@@ -8176,10 +8175,19 @@ export function registerClassesRoutes(app: Express): void {
     "/api/my-space/calendar/class-sessions/:classSessionId/contents/:contentId",
   ], async (req: any, res: any) => {
     try {
-      if (isMySpaceCalendarClassSessionRoute(req)) {
-        if (!(await assertMySpaceCalendarSessionPermission(req, res, req.params.classSessionId, "canDelete"))) return;
-      } else if (!(await assertScheduleMutationPermission(req, res, "canDelete"))) return;
       const { classSessionId, contentId } = req.params;
+      if (isMySpaceCalendarClassSessionRoute(req)) {
+        if (!(await assertMySpaceCalendarSessionPermission(req, res, classSessionId, "canDelete"))) return;
+        const [content] = await db
+          .select({ id: sessionContents.id })
+          .from(sessionContents)
+          .where(and(
+            eq(sessionContents.id, contentId),
+            eq(sessionContents.classSessionId, classSessionId),
+          ))
+          .limit(1);
+        if (!content) return res.status(404).json({ message: "Không tìm thấy nội dung trong buổi học này." });
+      } else if (!(await assertScheduleMutationPermission(req, res, "canDelete"))) return;
       const skipLog = req.query.skipLog === "true";
       const existingContents = skipLog ? [] : await storage.getSessionContents(classSessionId);
       const deletedItem = skipLog ? null : existingContents.find(c => c.id === contentId);
@@ -8226,14 +8234,17 @@ export function registerClassesRoutes(app: Express): void {
       };
 
       if (isMySpaceCalendarClassSessionRoute(req)) {
-        if (deleted.length > 0) {
-          return res.status(403).json({ message: "Xóa nội dung không khả dụng trong Lịch cá nhân." });
-        }
         if (added.length > 0 && !(await assertMySpaceCalendarSessionPermission(
           req,
           res,
           classSessionId,
           "canView",
+        ))) return;
+        if (deleted.length > 0 && !(await assertMySpaceCalendarSessionPermission(
+          req,
+          res,
+          classSessionId,
+          "canDelete",
         ))) return;
       } else {
         if (added.length > 0 && !(await assertScheduleMutationPermission(req, res, "canCreate"))) return;

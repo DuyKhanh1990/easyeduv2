@@ -994,7 +994,9 @@ export function SessionContentDialog({
   const isFreeSession = !!freeClassId && !!freeSessionDate;
   const canAdd = mySpaceCalendar || (classPerm?.canAdd ?? true);
   const canEdit = classPerm?.canEdit ?? true;
-  const canDelete = mySpaceCalendar ? false : (classPerm?.canDelete ?? true);
+  const canDelete = mySpaceCalendar
+    ? classPerm?.canDelete === true
+    : (classPerm?.canDelete ?? true);
   const freeContentPath = isFreeSession
     ? `/api/free-class-sessions/${freeClassId}/${freeSessionDate}`
     : "";

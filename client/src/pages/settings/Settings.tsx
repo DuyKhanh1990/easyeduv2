@@ -1870,7 +1870,7 @@ const PERM_DESCRIPTIONS: Record<string, string> = {
   "/#bao-cao/chuyen-doi": "Xem / Xem all: nhân sự có quyền xem báo cáo Chuyển đổi.",
   "/#bao-cao/lich-su-cuoc-goi": "Xem / Xem all: nhân sự có quyền xem báo cáo lịch sử cuộc gọi Omicall.",
   // MY SPACE
-  "/my-space/calendar": "Xem luôn bật. Nhân sự được điểm danh, ghi chú, nhận xét và giao/thêm nội dung trong buổi được phân công. Thêm chỉ cấp quyền thêm học viên; Sửa áp dụng cho cập nhật hạn nội dung đã giao. Xem all và Xóa không áp dụng.",
+  "/my-space/calendar": "Xem luôn bật. Nhân sự được điểm danh, ghi chú, nhận xét và giao/thêm nội dung trong buổi được phân công. Thêm chỉ cấp quyền thêm học viên; Sửa áp dụng cho cập nhật hạn nội dung đã giao; Xóa cho phép gỡ nội dung đã giao trong buổi được phân công. Xem all không áp dụng.",
   "/my-space/assignments": "Xem luôn bật mặc định. Thêm: thêm nhận xét, điểm hoặc chấm bài lần đầu. Sửa: cập nhật nhận xét, điểm hoặc kết quả chấm bài.",
   "/my-space/score-sheet": "Xem luôn bật mặc định. Thêm cho phép tạo bảng điểm; Sửa cho phép cập nhật bảng điểm. Xem all và Xóa không áp dụng.",
   "/my-space/invoices": "Xem: học viên / nhân sự có quyền xem hoá đơn của bản thân. Bỏ tích quyền Xem để ẩn tab Hoá đơn của tôi.",
@@ -1968,7 +1968,7 @@ const PERM_DESCRIPTIONS_EN: Record<string, string> = {
   "/#bao-cao/hoc-vien-moi": "View / View All: view the New Students report.",
   "/#bao-cao/chuyen-doi": "View / View All: view the Conversion report.",
   "/#bao-cao/lich-su-cuoc-goi": "View / View All: view the Omicall Call History report.",
-  "/my-space/calendar": "View is always enabled. Assigned staff can attend, add notes, review, and assign/add session content. Create only adds students; Edit controls changing assigned-content due dates. View All and Delete do not apply.",
+  "/my-space/calendar": "View is always enabled. Assigned staff can attend, add notes, review, and assign/add session content. Create only adds students; Edit controls changing assigned-content due dates; Delete allows removing assigned content from an assigned session. View All does not apply.",
   "/my-space/assignments": "View is always enabled. Create: add feedback, a score, or an initial grade. Edit: update feedback, scores, or an existing grade.",
   "/my-space/score-sheet": "View is always enabled by default. Create allows new score sheets; Edit allows updating them. View All and Delete do not apply.",
   "/my-space/invoices": "View: students and staff can view their own invoices. Uncheck View to hide the My Invoices tab.",
@@ -2114,7 +2114,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
       const permissions = Object.entries(updates).map(([resource, perms]) => {
         // VIEW_ONLY / EDIT_ONLY resources always persist only their supported flags.
         const effectivePerms = resource === MY_SPACE_CALENDAR_RESOURCE
-          ? { canView: true, canViewAll: false, canCreate: perms.canCreate, canEdit: perms.canEdit, canDelete: false }
+          ? normalizeMySpaceCalendarPermissions(perms, isStudentSystemRole)
           : resource === MY_SPACE_SCORE_SHEET_RESOURCE
           ? { canView: true, canViewAll: false, canCreate: perms.canCreate, canEdit: perms.canEdit, canDelete: false }
           : resource === MY_SPACE_ASSIGNMENTS_RESOURCE
@@ -2241,12 +2241,15 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
       return;
     }
     if (resource === MY_SPACE_CALENDAR_RESOURCE) {
-      if (isStudentSystemRole || (permKey !== "canCreate" && permKey !== "canEdit")) return;
+      if (isStudentSystemRole || (
+        permKey !== "canCreate"
+        && permKey !== "canEdit"
+        && permKey !== "canDelete"
+      )) return;
       const updated = {
         ...current,
         canView: true,
         canViewAll: false,
-        canDelete: false,
         [permKey]: toggling,
       };
       setLocalPerms(prev => ({ ...prev, [resource]: updated }));
@@ -2441,7 +2444,9 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
 
   const getAllowedKeysForResource = (resource: string, hasSubTabs: boolean): PermKey[] => {
     if (hasSubTabs) return [];
-    if (resource === MY_SPACE_CALENDAR_RESOURCE) return isStudentSystemRole ? [] : ["canCreate", "canEdit"];
+    if (resource === MY_SPACE_CALENDAR_RESOURCE) {
+      return isStudentSystemRole ? [] : ["canCreate", "canEdit", "canDelete"];
+    }
     if (resource === MY_SPACE_SCORE_SHEET_RESOURCE) return isStudentSystemRole ? [] : ["canCreate", "canEdit"];
     if (resource === MY_SPACE_ASSIGNMENTS_RESOURCE) return ["canCreate", "canEdit"];
     return PERM_COLS.map(c => c.key).filter(k => {
@@ -2510,7 +2515,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
         updated.canViewAll = false;
         updated.canCreate = !isStudentSystemRole && value;
         updated.canEdit = !isStudentSystemRole && value;
-        updated.canDelete = false;
+        updated.canDelete = !isStudentSystemRole && value;
       } else if (resource === MY_SPACE_SCORE_SHEET_RESOURCE) {
         updated.canView = true;
         updated.canViewAll = false;
@@ -2950,6 +2955,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                         // Quyền xem trang Bài tập luôn bật; quyền Thêm/Sửa vẫn cấu hình riêng theo vai trò.
                         const isMySpaceAssignments = item.href === MY_SPACE_ASSIGNMENTS_RESOURCE;
                         const isMySpaceScoreSheet = item.href === MY_SPACE_SCORE_SHEET_RESOURCE;
+                        const isMySpaceCalendar = item.href === MY_SPACE_CALENDAR_RESOURCE;
                         // Các trang mặc định khác của role học viên/phụ huynh luôn bật và không sửa được.
                         const isStudentDefaultLocked = isStudentSystemRole
                           && STUDENT_DEFAULT_RESOURCES.has(item.href)
@@ -3035,6 +3041,28 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                         />
                                       ) : (
                                         <span className="text-xs text-muted-foreground/30 select-none">—</span>
+                                      )}
+                                    </div>
+                                  ))
+                                ) : isMySpaceCalendar ? (
+                                  PERM_COLS.map(col => (
+                                    <div key={col.key} className="w-20 flex justify-center">
+                                      {col.key === "canView" ? (
+                                        <Checkbox
+                                          data-testid={`perm-${item.href.replace(/\//g, "-")}-canView`}
+                                          checked={true}
+                                          disabled={true}
+                                          className="w-4 h-4 opacity-40 cursor-not-allowed"
+                                        />
+                                      ) : col.key === "canViewAll" || isStudentSystemRole ? (
+                                        <span className="text-xs text-muted-foreground/30 select-none">—</span>
+                                      ) : (
+                                        <Checkbox
+                                          data-testid={`perm-${item.href.replace(/\//g, "-")}-${col.key}`}
+                                          checked={itemPerms[col.key]}
+                                          onCheckedChange={() => handleToggle(item.href, col.key)}
+                                          className="w-4 h-4"
+                                        />
                                       )}
                                     </div>
                                   ))

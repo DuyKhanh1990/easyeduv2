@@ -144,6 +144,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
   const calendarPermissions = myPermissions?.permissions?.["/my-space/calendar"];
   const canAddStudents = myPermissions?.isSuperAdmin === true || calendarPermissions?.canCreate === true;
   const canEditCalendarContent = myPermissions?.isSuperAdmin === true || calendarPermissions?.canEdit === true;
+  const canDeleteCalendarContent = myPermissions?.isSuperAdmin === true || calendarPermissions?.canDelete === true;
   const [freeStudentRows, setFreeStudentRows] = useState(session?.freeStudents ?? []);
 
   useEffect(() => {
@@ -1036,7 +1037,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
             }))
           : undefined}
         mySpaceCalendar
-        classPerm={{ canAdd: true, canEdit: canEditCalendarContent, canDelete: false }}
+        classPerm={{ canAdd: true, canEdit: canEditCalendarContent, canDelete: canDeleteCalendarContent }}
       />
 
       <LibraryContentDialog

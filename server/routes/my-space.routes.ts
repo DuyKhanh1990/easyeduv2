@@ -766,10 +766,6 @@ async function assertFreeClassContentWrite(
   const isMySpaceCalendarRoute = String(req.path ?? "").startsWith(
     "/api/my-space/calendar/free-class-sessions/",
   );
-  if (isMySpaceCalendarRoute && action === "canDelete") {
-    res.status(403).json({ message: "Xóa nội dung không khả dụng trong Lịch cá nhân." });
-    return false;
-  }
   if (isMySpaceCalendarRoute) {
     const user = req.user as { username?: string } | undefined;
     if (req.isSuperAdmin || user?.username === "admin") return true;
@@ -787,7 +783,11 @@ async function assertFreeClassContentWrite(
       req.roleIds ?? [],
       "/my-space/calendar",
     );
-    const allowed = action === "canEdit" ? permissions.canEdit : permissions.canView;
+    const allowed = action === "canEdit"
+      ? permissions.canEdit
+      : action === "canDelete"
+        ? permissions.canDelete
+        : permissions.canView;
     if (allowed) return true;
     res.status(403).json({ message: "Bạn không có quyền cập nhật nội dung trong Lịch cá nhân." });
     return false;
@@ -1141,6 +1141,33 @@ export function registerMySpaceRoutes(app: Express): void {
       const legacyAccess = rows.length > 0
         || await canManageFreeClass(classId, staffRecord.id, req.isSuperAdmin);
       if (!(await assertFreeClassContentWrite(req, res, classId, staffRecord.id, "canDelete", legacyAccess))) return;
+      if (
+        String(req.path ?? "").startsWith("/api/my-space/calendar/free-class-sessions/")
+        && !req.isSuperAdmin
+        && user.username !== "admin"
+      ) {
+        const [targetContent] = await db
+          .select({ studentId: freeClassSessionContents.studentId })
+          .from(freeClassSessionContents)
+          .where(and(
+            eq(freeClassSessionContents.id, contentId),
+            eq(freeClassSessionContents.classId, classId),
+            eq(freeClassSessionContents.sessionDate, sessionDate),
+            isNotNull(freeClassSessionContents.studentId),
+          ))
+          .limit(1);
+        if (!targetContent?.studentId) {
+          return res.status(404).json({ message: "Không tìm thấy nội dung cá nhân" });
+        }
+        if (!(await isStaffAssignedToEffectiveFreeClassSession(
+          classId,
+          sessionDate,
+          staffRecord.id,
+          targetContent.studentId,
+        ))) {
+          return res.status(403).json({ message: "Bạn không được phân công học viên này trong buổi học." });
+        }
+      }
       const deleted = await db.delete(freeClassSessionContents).where(and(
         eq(freeClassSessionContents.id, contentId),
         eq(freeClassSessionContents.classId, classId),

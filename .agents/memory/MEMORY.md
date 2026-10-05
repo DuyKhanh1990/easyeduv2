@@ -92,3 +92,4 @@
 - [Staff calendar attendance permissions](staff-calendar-attendance-permissions.md) — assigned staff may attend and review by default; only a configured attendance limit should time-restrict attendance.
 - [My Space grade-book permissions](my-space-grade-book-permissions.md) — My Space score-book mutations use `/my-space/score-sheet`; Education keeps its schedule/class checks and class scope.
 - [My Space assignment permissions](my-space-assignment-permissions.md) — assignment Add/Edit rights apply to My Space grading and comments only; keep Education assignment workflows independent.
+- [My Space calendar content deletion](my-space-calendar-content-delete.md) — Delete is independently configurable for assigned content; keep View All, student removal, and session-wide deletion disabled.

@@ -55,7 +55,7 @@ describe("My Space calendar permissions", () => {
     });
   });
 
-  it("keeps View fixed, retains staff Create/Edit, and removes View All/Delete", async () => {
+  it("keeps View fixed, retains staff Create/Edit/Delete, and removes View All", async () => {
     setPermissionRows([
       storedPermissions({
         canView: false,
@@ -71,7 +71,7 @@ describe("My Space calendar permissions", () => {
       canViewAll: false,
       canCreate: true,
       canEdit: true,
-      canDelete: false,
+      canDelete: true,
     });
   });
 
@@ -111,7 +111,7 @@ describe("My Space calendar permissions", () => {
     });
   });
 
-  it("allows Create only for student additions, Edit only when configured, and never allows Delete", () => {
+  it("keeps Create, Edit, and Delete independently configurable while View All remains unavailable", () => {
     const viewOnly = normalizeMySpaceCalendarPermissions();
     expect(canUseMySpaceCalendarAction(viewOnly, "canView")).toBe(true);
     expect(canUseMySpaceCalendarAction(viewOnly, "canCreate")).toBe(false);
@@ -122,6 +122,16 @@ describe("My Space calendar permissions", () => {
     expect(canUseMySpaceCalendarAction(createAndEdit, "canCreate")).toBe(true);
     expect(canUseMySpaceCalendarAction(createAndEdit, "canEdit")).toBe(true);
     expect(canUseMySpaceCalendarAction(createAndEdit, "canDelete")).toBe(false);
+
+    const deleteOnly = normalizeMySpaceCalendarPermissions({ canDelete: true, canViewAll: true });
+    expect(deleteOnly).toEqual({
+      canView: true,
+      canViewAll: false,
+      canCreate: false,
+      canEdit: false,
+      canDelete: true,
+    });
+    expect(canUseMySpaceCalendarAction(deleteOnly, "canDelete")).toBe(true);
   });
 
   it("resolves free-class access by student override, then day assignment, then class teacher", () => {

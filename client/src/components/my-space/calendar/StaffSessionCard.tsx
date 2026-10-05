@@ -348,6 +348,9 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
   const canEditCalendarContent =
     myPermissions?.isSuperAdmin === true
     || myPermissions?.permissions?.["/my-space/calendar"]?.canEdit === true;
+  const canDeleteCalendarContent =
+    myPermissions?.isSuperAdmin === true
+    || myPermissions?.permissions?.["/my-space/calendar"]?.canDelete === true;
   const isTestSession = session.classCode === "TEST";
   const testEnded = isTestSession && isTestSessionEnded(session);
   const { data: detail, isLoading, isError } = useStaffSessionDetail(isTestSession ? null : session.classSessionId);
@@ -582,7 +585,7 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
             code: student.code,
           }))}
         mySpaceCalendar
-        classPerm={{ canAdd: true, canEdit: canEditCalendarContent, canDelete: false }}
+        classPerm={{ canAdd: true, canEdit: canEditCalendarContent, canDelete: canDeleteCalendarContent }}
         />
         <ContentViewDialog
           isOpen={!!viewingContentId || !!viewingFallbackContent}
@@ -747,7 +750,7 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
         onOpenChange={setContentDialogOpen}
         classSessionId={session.classSessionId}
         mySpaceCalendar
-        classPerm={{ canAdd: true, canEdit: canEditCalendarContent, canDelete: false }}
+        classPerm={{ canAdd: true, canEdit: canEditCalendarContent, canDelete: canDeleteCalendarContent }}
       />
 
       <LibraryContentDialog

@@ -19,7 +19,7 @@ export function normalizeMySpaceCalendarPermissions(
     canViewAll: false,
     canCreate: isStudent ? false : permissions.canCreate === true,
     canEdit: isStudent ? false : permissions.canEdit === true,
-    canDelete: false,
+    canDelete: isStudent ? false : permissions.canDelete === true,
   };
 }
 
