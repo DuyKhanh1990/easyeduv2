@@ -142,7 +142,7 @@ export function GradeBookEditDialog({
     setScoreSheetCategoryOrderSnapshot(null);
     setLoadingEdit(true);
 
-    fetch(`/api/classes/${classId}/grade-books/${book.id}`, { credentials: "include" })
+    fetch(`/api/my-space/score-sheet/classes/${classId}/grade-books/${book.id}`, { credentials: "include" })
       .then((r) => r.json())
       .then((data) => {
         const existingScores: any[] = data.scores || [];
@@ -333,7 +333,7 @@ export function GradeBookEditDialog({
 
   const updateMutation = useMutation({
     mutationFn: async (data: any) =>
-      apiRequest("PUT", `/api/classes/${classId}/grade-books/${book.id}`, data),
+      apiRequest("PUT", `/api/my-space/score-sheet/classes/${classId}/grade-books/${book.id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/grade-books`] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff"] });

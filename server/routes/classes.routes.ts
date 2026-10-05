@@ -362,6 +362,41 @@ async function assertScheduleMutationPermission(
   return false;
 }
 
+function isMySpaceScoreSheetGradeBookRoute(req: any): boolean {
+  return String(req.path ?? "").startsWith("/api/my-space/score-sheet/classes/");
+}
+
+async function assertMySpaceScoreSheetPermission(
+  req: any,
+  res: any,
+  action: "canView" | "canCreate" | "canEdit" | "canDelete",
+  classId: string,
+): Promise<boolean> {
+  const user = req.user as { username?: string } | undefined;
+  if (req.isSuperAdmin === true || user?.username === "admin") return true;
+
+  if (!(await assertClassReadable(req, res, classId, true))) return false;
+
+  const permissions = await storage.getEffectivePermissions(
+    req.roleIds ?? [],
+    "/my-space/score-sheet",
+  );
+  const allowed = action === "canView"
+    ? permissions.canView || permissions.canViewAll
+    : canScheduleWrite(permissions, action);
+
+  if (allowed) return true;
+
+  const actionLabel = {
+    canView: "xem",
+    canCreate: "thêm",
+    canEdit: "sửa",
+    canDelete: "xóa",
+  }[action];
+  res.status(403).json({ message: `Bạn không có quyền ${actionLabel} bảng điểm trong My Space.` });
+  return false;
+}
+
 const SCHEDULE_WEEKDAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 
 function formatScheduleDate(dateStr: string | null | undefined): string {
@@ -8524,10 +8559,15 @@ export function registerClassesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/classes/:classId/grade-books", async (req, res) => {
+  app.post([
+    "/api/classes/:classId/grade-books",
+    "/api/my-space/score-sheet/classes/:classId/grade-books",
+  ], async (req, res) => {
     try {
       const { classId } = req.params;
-      if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
+      if (isMySpaceScoreSheetGradeBookRoute(req)) {
+        if (!(await assertMySpaceScoreSheetPermission(req, res, "canCreate", String(classId)))) return;
+      } else if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
       const userId = (req.user as any)?.id;
       const body = z.object({
         title: z.string().min(1),
@@ -8607,8 +8647,14 @@ export function registerClassesRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/classes/:classId/grade-books/:id", async (req, res) => {
-    if (!(await assertClassReadable(req, res, String(req.params.classId)))) return;
+  app.get([
+    "/api/classes/:classId/grade-books/:id",
+    "/api/my-space/score-sheet/classes/:classId/grade-books/:id",
+  ], async (req, res) => {
+    const classId = String(req.params.classId);
+    if (isMySpaceScoreSheetGradeBookRoute(req)) {
+      if (!(await assertMySpaceScoreSheetPermission(req, res, "canView", classId))) return;
+    } else if (!(await assertClassReadable(req, res, classId))) return;
     try {
       const { id } = req.params;
       const [book] = await db
@@ -8663,10 +8709,15 @@ export function registerClassesRoutes(app: Express): void {
     }
   });
 
-  app.put("/api/classes/:classId/grade-books/:id", async (req, res) => {
+  app.put([
+    "/api/classes/:classId/grade-books/:id",
+    "/api/my-space/score-sheet/classes/:classId/grade-books/:id",
+  ], async (req, res) => {
     try {
       const { classId, id } = req.params;
-      if (!(await assertScheduleMutationPermission(req, res, "canEdit"))) return;
+      if (isMySpaceScoreSheetGradeBookRoute(req)) {
+        if (!(await assertMySpaceScoreSheetPermission(req, res, "canEdit", String(classId)))) return;
+      } else if (!(await assertScheduleMutationPermission(req, res, "canEdit"))) return;
       const userId = (req.user as any)?.id;
       const body = z.object({
         title: z.string().min(1).optional(),
@@ -8855,10 +8906,15 @@ export function registerClassesRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/classes/:classId/grade-books/:id", async (req, res) => {
+  app.delete([
+    "/api/classes/:classId/grade-books/:id",
+    "/api/my-space/score-sheet/classes/:classId/grade-books/:id",
+  ], async (req, res) => {
     try {
-      if (!(await assertScheduleMutationPermission(req, res, "canDelete"))) return;
-      const { id } = req.params;
+      const { classId, id } = req.params;
+      if (isMySpaceScoreSheetGradeBookRoute(req)) {
+        if (!(await assertMySpaceScoreSheetPermission(req, res, "canDelete", String(classId)))) return;
+      } else if (!(await assertScheduleMutationPermission(req, res, "canDelete"))) return;
       await db.delete(classGradeBooks).where(eq(classGradeBooks.id, id));
       res.json({ success: true });
     } catch (err: any) {

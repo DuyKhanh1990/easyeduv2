@@ -239,7 +239,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
 
   const createMutation = useMutation({
     mutationFn: async (data: any) =>
-      apiRequest("POST", `/api/classes/${selectedClassId}/grade-books`, data),
+      apiRequest("POST", `/api/my-space/score-sheet/classes/${selectedClassId}/grade-books`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${selectedClassId}/grade-books`] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff"] });

@@ -90,3 +90,4 @@
 - [Invoice installment filter authority](invoice-date-filter-row-parity.md) — installment values drive scheduled-invoice filters; parent fields are only shared context or aggregation.
 - [Facility shift history](shift-facility-history.md) — shift rows are independent per facility; stopping one preserves its assignment and attendance history.
 - [Staff calendar attendance permissions](staff-calendar-attendance-permissions.md) — assigned staff may attend and review by default; only a configured attendance limit should time-restrict attendance.
+- [My Space grade-book permissions](my-space-grade-book-permissions.md) — My Space score-book mutations use `/my-space/score-sheet`; Education keeps its schedule/class checks and class scope.

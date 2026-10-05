@@ -15,6 +15,7 @@ import {
 } from "@/components/education/StaffScoreSheetAssessmentStudentsDialog";
 import { PageGuideButton } from "@/components/guides/PageGuideDialog";
 import { useLanguage } from "@/hooks/use-language";
+import { useMyPermissions } from "@/hooks/use-my-permissions";
 
 type StaffGradeBookRow = {
   id: string;
@@ -143,11 +144,21 @@ const formatDateLabel = (d: string, lang: "vi" | "en") => {
 
 export function StaffScoreSheet() {
   const { t, lang } = useLanguage();
+  const { data: myPermissions } = useMyPermissions();
   const [editingBook, setEditingBook] = useState<StaffGradeBookRow | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedAssessment, setSelectedAssessment] = useState<StaffAssignedScoreSheetAssessment | null>(null);
   const [exportingBookId, setExportingBookId] = useState<string | null>(null);
   const { toast } = useToast();
+  const scoreSheetPermissions = myPermissions?.permissions["/my-space/score-sheet"];
+  const canCreateGradeBook = myPermissions?.isSuperAdmin === true
+    || !!(
+      scoreSheetPermissions?.canCreate
+      || scoreSheetPermissions?.canEdit
+      || scoreSheetPermissions?.canDelete
+    );
+  const canEditGradeBook = myPermissions?.isSuperAdmin === true
+    || !!(scoreSheetPermissions?.canEdit || scoreSheetPermissions?.canDelete);
 
   const { data, isLoading, refetch } = useQuery<StaffGradeBookRow[]>({
     queryKey: ["/api/my-space/score-sheet/staff"],
@@ -256,14 +267,16 @@ export function StaffScoreSheet() {
           )}
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <Button
-            size="sm"
-            onClick={() => setCreateOpen(true)}
-            data-testid="button-add-grade-book-staff"
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            {t("mySpace.scoreSheet.add")}
-          </Button>
+          {canCreateGradeBook && (
+            <Button
+              size="sm"
+              onClick={() => setCreateOpen(true)}
+              data-testid="button-add-grade-book-staff"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              {t("mySpace.scoreSheet.add")}
+            </Button>
+          )}
           <PageGuideButton pageTitle={t("mySpace.scoreSheet.title")} className="shrink-0" />
         </div>
       </div>
@@ -487,16 +500,18 @@ export function StaffScoreSheet() {
                                 ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                                 : <Download className="h-3.5 w-3.5" />}
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground whitespace-nowrap"
-                              onClick={() => setEditingBook(book)}
-                              data-testid={`btn-edit-grade-book-${book.id}`}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                              {t("mySpace.scoreSheet.edit")}
-                            </Button>
+                            {canEditGradeBook && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground whitespace-nowrap"
+                                onClick={() => setEditingBook(book)}
+                                data-testid={`btn-edit-grade-book-${book.id}`}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                                {t("mySpace.scoreSheet.edit")}
+                              </Button>
+                            )}
                           </div>
                         </div>
                       );
