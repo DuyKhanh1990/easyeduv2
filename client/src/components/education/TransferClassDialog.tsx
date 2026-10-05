@@ -239,7 +239,7 @@ export function TransferClassDialog({
   const [actualSessionCount, setActualSessionCount] = useState(0);
   const [targetTransferCountManuallyEdited, setTargetTransferCountManuallyEdited] = useState(false);
   const [roundingMode, setRoundingMode] = useState<"none" | "down" | "up">("none");
-  const [excludeSourceSurcharge, setExcludeSourceSurcharge] = useState(false);
+  const [excludeSourceSurcharge, setExcludeSourceSurcharge] = useState(true);
   const { data: myPerms } = useMyPermissions();
   const canCreatePromotion = Boolean(
     myPerms?.isSuperAdmin || myPerms?.permissions["/finance-config#promotions"]?.canCreate,
@@ -436,7 +436,7 @@ export function TransferClassDialog({
   useEffect(() => {
     if (isOpen) {
       setTransferFeeAdjustmentInput("");
-      setExcludeSourceSurcharge(false);
+      setExcludeSourceSurcharge(true);
     }
   }, [isOpen, student?.id, currentClass?.id]);
 
@@ -1251,24 +1251,13 @@ export function TransferClassDialog({
                       </span>
                     </div>
                     {currentSurchargeTotal > 0 && (
-                      <div className="space-y-1.5 rounded-md border border-amber-300/70 bg-amber-50/60 p-2 dark:bg-amber-950/20">
-                        <div className="flex justify-between gap-3 text-xs">
-                          <span className="text-muted-foreground">
-                            Phụ thu trong các buổi chuyển:
-                          </span>
-                          <span className="font-medium">{formatCurrency(currentSurchargeTotal)}</span>
-                        </div>
-                        {hasCurrentInvoicePricing && (
-                          <p className="text-[10px] text-muted-foreground">
-                            Khoản này đã nằm trong tiền theo hóa đơn ở trên.
-                          </p>
-                        )}
-                        <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center justify-between gap-2 rounded-md border border-amber-300/70 bg-amber-50/60 px-2 py-1.5 dark:bg-amber-950/20">
+                        <div className="flex min-w-0 items-center gap-2">
                           <label
                             htmlFor="exclude-source-surcharge"
-                            className="cursor-pointer text-xs font-medium"
+                            className="cursor-pointer whitespace-nowrap text-xs font-medium"
                           >
-                            Không tính phụ thu vào giá trị chuyển lớp
+                            Không tính phụ phí:
                           </label>
                           <Switch
                             id="exclude-source-surcharge"
@@ -1278,9 +1267,9 @@ export function TransferClassDialog({
                             data-testid="switch-exclude-source-surcharge"
                           />
                         </div>
-                        <p className="text-[10px] text-muted-foreground">
-                          Chỉ áp dụng lần chuyển này; không sửa hóa đơn hoặc tổng số dư ví.
-                        </p>
+                        <span className="shrink-0 whitespace-nowrap text-xs font-semibold">
+                          {formatCurrency(currentSurchargeTotal)}
+                        </span>
                       </div>
                     )}
                     <div className="flex justify-between">
