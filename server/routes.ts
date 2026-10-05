@@ -467,11 +467,21 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerFacebookGatewayRoutes(app);
   registerFacebookChatRoutes(app);
   registerFacebookSSERoutes(app);
-  startZaloTokenRefreshCron();
-  startClassReminderCron();
+  if (process.env.DISABLE_ZALO_TOKEN_REFRESH_CRON === "true") {
+    console.log("[ZaloTokenRefresh] Cron disabled by DISABLE_ZALO_TOKEN_REFRESH_CRON");
+  } else {
+    startZaloTokenRefreshCron();
+  }
+
+  if (process.env.DISABLE_ZALO_REMINDER_CRONS === "true") {
+    console.log("[ZaloReminder] OA-capable reminder crons disabled by DISABLE_ZALO_REMINDER_CRONS");
+  } else {
+    startClassReminderCron();
+    startTuitionReminderCron();
+    startDebtReminderCron();
+  }
+
   startClassBellReminderCron();
-  startTuitionReminderCron();
-  startDebtReminderCron();
   startDatabaseBackupScheduler();
   startAdminHubSyncScheduler();
   healNullOaIds();
