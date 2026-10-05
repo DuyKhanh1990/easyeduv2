@@ -3,7 +3,8 @@ import crypto from "crypto";
 import { db } from "../db";
 import { zaloOaConfigs, centerConfig } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
-import { encrypt, decrypt } from "../lib/encryption";
+import { encrypt } from "../lib/encryption";
+import { refreshZaloOaToken } from "../services/zalo-token-refresh.service";
 
 // ─── HMAC-signed state (compatible với Gateway) ───────────────────────────────
 // Gateway dùng ZALO_GATEWAY_SHARED_SECRET để verify — main server phải dùng
@@ -200,6 +201,7 @@ async function handleZaloOAuthCallback(req: Request, res: Response): Promise<voi
         tokenExpiredAt,
         connectedAt: new Date(),
         isConnected: true,
+        refreshState: "ready",
         oaId,
         oaName,
         updatedAt: new Date(),
@@ -212,6 +214,7 @@ async function handleZaloOAuthCallback(req: Request, res: Response): Promise<voi
         tokenExpiredAt,
         connectedAt: new Date(),
         isConnected: true,
+        refreshState: "ready",
         oaId,
         oaName,
       });
@@ -330,6 +333,7 @@ export function registerZaloOARoutes(app: Express) {
           oaName: oaName || existing[0].oaName,
           connectedAt: new Date(),
           isConnected: true,
+          refreshState: "ready",
           updatedAt: new Date(),
         }).where(eq(zaloOaConfigs.locationId, locationId));
       } else {
@@ -342,6 +346,7 @@ export function registerZaloOARoutes(app: Express) {
           oaName: oaName || null,
           connectedAt: new Date(),
           isConnected: true,
+          refreshState: "ready",
         });
       }
 
@@ -374,44 +379,18 @@ export function registerZaloOARoutes(app: Express) {
       const rows = await db.select().from(zaloOaConfigs).where(eq(zaloOaConfigs.locationId, locationId)).limit(1);
       if (rows.length === 0) return res.status(404).json({ message: "Không tìm thấy cấu hình" });
 
-      const config = rows[0];
-      if (!config.refreshTokenEncrypted) return res.status(400).json({ message: "Không có refresh token" });
-
-      const appId = process.env.ZALO_APP_ID;
-      const appSecret = process.env.ZALO_APP_SECRET;
-      if (!appId || !appSecret) {
-        return res.status(500).json({ message: "Hệ thống chưa cấu hình ZALO_APP_ID/ZALO_APP_SECRET" });
+      const result = await refreshZaloOaToken({ configId: rows[0].id, reason: "manual" });
+      if (result.status === "invalid_refresh_token") {
+        return res.status(400).json({ message: result.message });
       }
-
-      const refreshToken = decrypt(config.refreshTokenEncrypted);
-
-      const tokenRes = await fetch("https://oauth.zaloapp.com/v4/oa/access_token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", "secret_key": appSecret },
-        body: new URLSearchParams({ refresh_token: refreshToken, app_id: appId, grant_type: "refresh_token" }),
-      });
-
-      const tokenData = await tokenRes.json() as any;
-      if (tokenData.error || !tokenData.access_token) {
-        return res.status(400).json({ message: tokenData.error_description || "Làm mới token thất bại" });
+      if (result.status === "temporary_failure") {
+        return res.status(503).json({ message: result.message, retrySafe: result.retrySafe });
       }
-
-      const accessTokenEncrypted = encrypt(tokenData.access_token);
-      const newRefreshTokenEncrypted = tokenData.refresh_token ? encrypt(tokenData.refresh_token) : config.refreshTokenEncrypted;
-      const expiresIn = tokenData.expires_in ? parseInt(tokenData.expires_in) : 7200;
-      const tokenExpiredAt = new Date(Date.now() + expiresIn * 1000);
-
-      await db.update(zaloOaConfigs).set({
-        accessTokenEncrypted,
-        refreshTokenEncrypted: newRefreshTokenEncrypted,
-        tokenExpiredAt,
-        updatedAt: new Date(),
-      }).where(eq(zaloOaConfigs.locationId, locationId));
 
       const webhookUrl = getWebhookUrl();
-      await registerWebhookWithZalo(tokenData.access_token, webhookUrl);
+      await registerWebhookWithZalo(result.accessToken, webhookUrl);
 
-      return res.json({ ok: true, tokenExpiredAt });
+      return res.json({ ok: true, tokenExpiredAt: result.tokenExpiredAt, refreshStatus: result.status });
     } catch (err: any) {
       console.error("[ZaloOA] refresh-token error:", err);
       return res.status(500).json({ message: err.message || "Lỗi làm mới token" });

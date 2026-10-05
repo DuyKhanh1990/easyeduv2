@@ -1,7 +1,8 @@
 import { db } from "../../../storage/base";
 import { zaloOaConfigs, centerConfig } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
-import { decrypt, encrypt } from "../../../lib/encryption";
+import { decrypt } from "../../../lib/encryption";
+import { refreshZaloOaToken } from "../../../services/zalo-token-refresh.service";
 import type { INotificationChannel, ChannelPayload } from "./INotificationChannel";
 import { notificationRepository } from "../repositories/NotificationRepository";
 import { createShortLink } from "../../../lib/shortlink";
@@ -219,7 +220,7 @@ export class OAChannel implements INotificationChannel {
       console.log(`[OAChannel] Gửi lần 1: error=${result.error}, msg="${result.message ?? ""}", studentId=${studentId}`);
 
       if ((result.error === -155 || result.error === -216 || result.error === 216) && locationId) {
-        const newToken = await this.refreshToken(locationId);
+        const newToken = await this.refreshToken(locationId, accessToken);
         if (newToken) {
           res = await callAPI(newToken);
           result = await res.json() as any;
@@ -272,54 +273,15 @@ export class OAChannel implements INotificationChannel {
     }
   }
 
-  private async refreshToken(locationId: string): Promise<string | null> {
-    const appId = process.env.ZALO_APP_ID;
-    const appSecret = process.env.ZALO_APP_SECRET;
-    if (!appId || !appSecret) return null;
-
-    const [row] = await db
-      .select({ refreshTokenEncrypted: zaloOaConfigs.refreshTokenEncrypted })
-      .from(zaloOaConfigs)
-      .where(eq(zaloOaConfigs.locationId, locationId))
-      .limit(1);
-
-    if (!row?.refreshTokenEncrypted) return null;
-
-    try {
-      const refreshToken = decrypt(row.refreshTokenEncrypted);
-      const res = await fetch("https://oauth.zaloapp.com/v4/oa/access_token", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "secret_key": appSecret,
-        },
-        body: new URLSearchParams({
-          refresh_token: refreshToken,
-          app_id: appId,
-          grant_type: "refresh_token",
-        }),
-      });
-      const data = await res.json() as any;
-      if (data.error || !data.access_token) return null;
-
-      const accessTokenEncrypted = encrypt(data.access_token);
-      const newRefreshTokenEncrypted = data.refresh_token
-        ? encrypt(data.refresh_token)
-        : row.refreshTokenEncrypted;
-      const expiresIn = data.expires_in ? parseInt(data.expires_in) : 7200;
-
-      await db.update(zaloOaConfigs).set({
-        accessTokenEncrypted,
-        refreshTokenEncrypted: newRefreshTokenEncrypted,
-        tokenExpiredAt: new Date(Date.now() + expiresIn * 1000),
-        isConnected: true,
-        updatedAt: new Date(),
-      }).where(eq(zaloOaConfigs.locationId, locationId));
-
-      return data.access_token;
-    } catch {
-      return null;
-    }
+  private async refreshToken(locationId: string, accessTokenUsed?: string): Promise<string | null> {
+    const result = await refreshZaloOaToken({
+      locationId,
+      reason: "token_expired",
+      accessTokenUsed,
+    });
+    return result.status === "refreshed" || result.status === "already_refreshed"
+      ? result.accessToken
+      : null;
   }
 }
 

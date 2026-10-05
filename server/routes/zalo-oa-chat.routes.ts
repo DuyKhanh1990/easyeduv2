@@ -3,6 +3,7 @@ import { db } from "../db";
 import { zaloOaConfigs, zaloOaConversations, zaloOaMessages, studentNotificationChannels, students, centerConfig } from "@shared/schema";
 import { eq, desc, and, sql, asc, isNull, or } from "drizzle-orm";
 import { decrypt, encrypt } from "../lib/encryption";
+import { refreshZaloOaToken } from "../services/zalo-token-refresh.service";
 import { z } from "zod";
 import { getWebhookUrl } from "./zalo-oa.routes";
 import multer from "multer";
@@ -28,7 +29,6 @@ async function getAccessToken(locationId: string): Promise<string | null> {
   }
   try {
     const token = decrypt(rows[0].accessTokenEncrypted);
-    console.log(`[ZaloOA] getAccessToken: giải mã OK, token dài ${token.length} ký tự (locationId=${locationId})`);
     return token;
   } catch (err: any) {
     console.error(`[ZaloOA] getAccessToken: giải mã THẤT BẠI (locationId=${locationId}): ${err.message}`);
@@ -37,59 +37,15 @@ async function getAccessToken(locationId: string): Promise<string | null> {
   }
 }
 
-async function refreshAccessToken(locationId: string): Promise<string | null> {
-  const rows = await db.select().from(zaloOaConfigs).where(eq(zaloOaConfigs.locationId, locationId)).limit(1);
-  if (!rows.length) {
-    console.error(`[ZaloOA] refreshAccessToken: không tìm thấy config cho locationId=${locationId}`);
-    return null;
-  }
-  if (!rows[0].refreshTokenEncrypted) {
-    console.error(`[ZaloOA] refreshAccessToken: không có refresh_token trong DB (locationId=${locationId})`);
-    return null;
-  }
-
-  const appId = process.env.ZALO_APP_ID;
-  const appSecret = process.env.ZALO_APP_SECRET;
-  if (!appId || !appSecret) {
-    console.error(`[ZaloOA] refreshAccessToken: thiếu ZALO_APP_ID hoặc ZALO_APP_SECRET (appId=${appId ? 'có' : 'thiếu'}, appSecret=${appSecret ? 'có' : 'thiếu'})`);
-    return null;
-  }
-
-  console.log(`[ZaloOA] refreshAccessToken: bắt đầu refresh (locationId=${locationId}, appId=${appId.slice(0, 6)}...)`);
-
-  try {
-    const refreshToken = decrypt(rows[0].refreshTokenEncrypted);
-    console.log(`[ZaloOA] refreshAccessToken: gọi Zalo API với refresh_token dài ${refreshToken.length} ký tự`);
-
-    const res = await fetch("https://oauth.zaloapp.com/v4/oa/access_token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", "secret_key": appSecret },
-      body: new URLSearchParams({ refresh_token: refreshToken, app_id: appId, grant_type: "refresh_token" }),
-    });
-    const data = await res.json() as any;
-    console.log(`[ZaloOA] refreshAccessToken: Zalo trả về error=${data.error}, có access_token=${!!data.access_token}, message="${data.message || ''}"`);
-
-    if (data.error || !data.access_token) {
-      console.error("[ZaloOA] refreshAccessToken thất bại:", JSON.stringify(data));
-      return null;
-    }
-    const accessTokenEncrypted = encrypt(data.access_token);
-    const newRefreshTokenEncrypted = data.refresh_token ? encrypt(data.refresh_token) : rows[0].refreshTokenEncrypted;
-    const expiresIn = data.expires_in ? parseInt(data.expires_in) : 7200;
-    const tokenExpiredAt = new Date(Date.now() + expiresIn * 1000);
-    await db.update(zaloOaConfigs).set({
-      accessTokenEncrypted,
-      refreshTokenEncrypted: newRefreshTokenEncrypted,
-      tokenExpiredAt,
-      isConnected: true,
-      updatedAt: new Date(),
-    }).where(eq(zaloOaConfigs.locationId, locationId));
-    console.log(`[ZaloOA] Token auto-refreshed thành công (locationId=${locationId}), hết hạn lúc ${tokenExpiredAt.toISOString()}`);
-    return data.access_token;
-  } catch (err) {
-    console.error("[ZaloOA] refreshAccessToken lỗi ngoại lệ:", err);
-    return null;
-  }
+async function refreshAccessToken(locationId: string, accessTokenUsed?: string): Promise<string | null> {
+  const result = await refreshZaloOaToken({
+    locationId,
+    reason: "token_expired",
+    accessTokenUsed,
+  });
+  return result.status === "refreshed" || result.status === "already_refreshed"
+    ? result.accessToken
+    : null;
 }
 
 async function uploadAttachmentToZalo(
@@ -869,7 +825,7 @@ export function registerZaloOAChatRoutes(app: Express) {
       // Nếu token hết hạn (-155, -216, 216), tự động refresh và thử lại
       if (zaloData.error === -155 || zaloData.error === -216 || zaloData.error === 216) {
         console.log(`[ZaloOA] Token expired (error=${zaloData.error}), attempting auto-refresh for locationId=${conv.locationId}`);
-        const newToken = await refreshAccessToken(conv.locationId!);
+        const newToken = await refreshAccessToken(conv.locationId!, accessToken);
         if (newToken) {
           zaloRes = await sendMessage(newToken);
           zaloData = await zaloRes.json() as any;
@@ -926,7 +882,7 @@ export function registerZaloOAChatRoutes(app: Express) {
 
       // Nếu upload thất bại → thử refresh token rồi upload lại
       if (!attachmentId) {
-        const newToken = await refreshAccessToken(conv.locationId!);
+        const newToken = await refreshAccessToken(conv.locationId!, accessToken);
         if (newToken) {
           accessToken = newToken;
           attachmentId = await uploadAttachmentToZalo(type, file.buffer, file.originalname, file.mimetype, newToken);

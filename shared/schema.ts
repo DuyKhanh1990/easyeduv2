@@ -2149,6 +2149,7 @@ export const zaloOaConfigs = pgTable("zalo_oa_configs", {
   oaName: varchar("oa_name", { length: 255 }),
   accessTokenEncrypted: text("access_token_encrypted"),
   refreshTokenEncrypted: text("refresh_token_encrypted"),
+  refreshState: varchar("refresh_state", { length: 16 }).notNull().default("ready"),
   tokenExpiredAt: timestamp("token_expired_at"),
   connectedAt: timestamp("connected_at"),
   isConnected: boolean("is_connected").notNull().default(true),
@@ -2156,7 +2157,7 @@ export const zaloOaConfigs = pgTable("zalo_oa_configs", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const insertZaloOaConfigSchema = createInsertSchema(zaloOaConfigs).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertZaloOaConfigSchema = createInsertSchema(zaloOaConfigs).omit({ id: true, createdAt: true, updatedAt: true, refreshState: true });
 export type ZaloOaConfig = typeof zaloOaConfigs.$inferSelect;
 export type InsertZaloOaConfig = z.infer<typeof insertZaloOaConfigSchema>;
 

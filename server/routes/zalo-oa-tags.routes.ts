@@ -2,7 +2,8 @@ import type { Express } from "express";
 import { db } from "../db";
 import { zaloOaConfigs } from "@shared/schema";
 import { eq } from "drizzle-orm";
-import { decrypt, encrypt } from "../lib/encryption";
+import { decrypt } from "../lib/encryption";
+import { refreshZaloOaToken } from "../services/zalo-token-refresh.service";
 import { z } from "zod";
 
 const ZALO_BASE = "https://openapi.zalo.me/v2.0/oa";
@@ -17,36 +18,15 @@ async function getAccessToken(locationId: string): Promise<string | null> {
   }
 }
 
-async function refreshAccessToken(locationId: string): Promise<string | null> {
-  const rows = await db.select().from(zaloOaConfigs).where(eq(zaloOaConfigs.locationId, locationId)).limit(1);
-  if (!rows.length || !rows[0].refreshTokenEncrypted) return null;
-  const appId = process.env.ZALO_APP_ID;
-  const appSecret = process.env.ZALO_APP_SECRET;
-  if (!appId || !appSecret) return null;
-  try {
-    const refreshToken = decrypt(rows[0].refreshTokenEncrypted);
-    const res = await fetch("https://oauth.zaloapp.com/v4/oa/access_token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", "secret_key": appSecret },
-      body: new URLSearchParams({ refresh_token: refreshToken, app_id: appId, grant_type: "refresh_token" }),
-    });
-    const data = await res.json() as any;
-    if (data.error || !data.access_token) return null;
-    const accessTokenEncrypted = encrypt(data.access_token);
-    const newRefreshTokenEncrypted = data.refresh_token ? encrypt(data.refresh_token) : rows[0].refreshTokenEncrypted;
-    const expiresIn = data.expires_in ? parseInt(data.expires_in) : 7200;
-    const tokenExpiredAt = new Date(Date.now() + expiresIn * 1000);
-    await db.update(zaloOaConfigs).set({
-      accessTokenEncrypted,
-      refreshTokenEncrypted: newRefreshTokenEncrypted,
-      tokenExpiredAt,
-      isConnected: true,
-      updatedAt: new Date(),
-    }).where(eq(zaloOaConfigs.locationId, locationId));
-    return data.access_token;
-  } catch {
-    return null;
-  }
+async function refreshAccessToken(locationId: string, accessTokenUsed?: string): Promise<string | null> {
+  const result = await refreshZaloOaToken({
+    locationId,
+    reason: "token_expired",
+    accessTokenUsed,
+  });
+  return result.status === "refreshed" || result.status === "already_refreshed"
+    ? result.accessToken
+    : null;
 }
 
 const TOKEN_EXPIRED_ERRORS = new Set([-155, -216, 216]);
@@ -62,7 +42,7 @@ async function callZaloWithRetry(
   let data = await res.json() as any;
 
   if (TOKEN_EXPIRED_ERRORS.has(data.error)) {
-    const newToken = await refreshAccessToken(locationId);
+    const newToken = await refreshAccessToken(locationId, token);
     if (!newToken) return { data: null, error: "Token hết hạn, không thể làm mới tự động" };
     res = await caller(newToken);
     data = await res.json() as any;
