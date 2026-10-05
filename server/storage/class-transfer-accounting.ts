@@ -24,6 +24,7 @@ export type ClassTransferInvoiceAllocation = {
   studentSessionId: string;
   allocatedAmount: NumericValue;
   invoiceStatus?: string | null;
+  itemPackageName?: string | null;
   itemPackageType?: string | null;
   itemQuantity?: NumericValue;
   itemSurchargeAmount?: NumericValue;
@@ -36,6 +37,7 @@ export type ClassTransferInvoiceAllocation = {
 export type ClassTransferUnallocatedInvoiceItem = {
   invoiceItemId: string;
   invoiceStatus?: string | null;
+  itemPackageName?: string | null;
   itemPackageType?: string | null;
   itemQuantity?: NumericValue;
   itemSubtotal?: NumericValue;
@@ -157,6 +159,7 @@ export function buildClassTransferFallbackInvoiceAllocations(
         baseCents + (index >= denominator - remainderCents ? 1 : 0)
       ) / 100,
       invoiceStatus: item.invoiceStatus,
+      itemPackageName: item.itemPackageName,
       itemPackageType: item.itemPackageType,
       itemQuantity: item.itemQuantity,
       itemSurchargeAmount: item.itemSurchargeAmount,

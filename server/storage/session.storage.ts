@@ -2165,6 +2165,7 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
       .select({
         invoiceItemId: invoiceItems.id,
         invoiceStatus: invoices.status,
+        itemPackageName: courseFeePackages.name,
         itemPackageType: invoiceItems.packageType,
         itemQuantity: invoiceItems.quantity,
         itemSubtotal: invoiceItems.subtotal,
@@ -2217,6 +2218,7 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
         invoiceItemId: invoiceSessionAllocations.invoiceItemId,
         studentSessionId: invoiceSessionAllocations.studentSessionId,
         allocatedAmount: invoiceSessionAllocations.allocatedAmount,
+        itemPackageName: courseFeePackages.name,
         itemPackageType: invoiceItems.packageType,
         itemQuantity: invoiceItems.quantity,
         itemSurchargeAmount: invoiceItems.surchargeAmount,
@@ -2230,6 +2232,7 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
       .innerJoin(invoiceItems, eq(invoiceSessionAllocations.invoiceItemId, invoiceItems.id))
       .innerJoin(invoices, eq(invoiceSessionAllocations.invoiceId, invoices.id))
       .innerJoin(studentSessions, eq(invoiceSessionAllocations.studentSessionId, studentSessions.id))
+      .leftJoin(courseFeePackages, eq(invoiceItems.packageId, courseFeePackages.id))
       .where(and(
         inArray(invoiceSessionAllocations.invoiceItemId, invoiceItemIds),
         sql`${invoices.status} <> 'cancelled'`,
@@ -2266,6 +2269,8 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
     discountPercent: number | null;
     hasInvoiceAllocation: boolean;
     hasPackageAdjustment: boolean;
+    invoicePackageNames: string[];
+    invoicePackageTypes: string[];
   }>();
 
   for (const [allocationIndex, row] of transferInvoiceAllocations.entries()) {
@@ -2278,12 +2283,20 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
       discountPercent: null,
       hasInvoiceAllocation: false,
       hasPackageAdjustment: false,
+      invoicePackageNames: [],
+      invoicePackageTypes: [],
     };
 
     current.allocatedFee += Number(row.allocatedAmount) || 0;
     current.allocatedSurchargeFee += invoiceSurchargeShares[allocationIndex] ?? 0;
     current.discountAmount += (Number(row.promotionAmount) || 0) / quantity;
     current.hasInvoiceAllocation = true;
+    if (row.itemPackageName && !current.invoicePackageNames.includes(row.itemPackageName)) {
+      current.invoicePackageNames.push(row.itemPackageName);
+    }
+    if (row.itemPackageType && !current.invoicePackageTypes.includes(row.itemPackageType)) {
+      current.invoicePackageTypes.push(row.itemPackageType);
+    }
 
     const percent = (row.promotionKeys ?? []).reduce((sum, promotionId) => {
       const promotion = promotionMap.get(promotionId);
@@ -2313,6 +2326,8 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
       discountPercent: null,
       hasInvoiceAllocation: false,
       hasPackageAdjustment: false,
+      invoicePackageNames: [],
+      invoicePackageTypes: [],
     };
     current.allocatedFee = Number(row.amount) || 0;
     current.hasPackageAdjustment = true;
