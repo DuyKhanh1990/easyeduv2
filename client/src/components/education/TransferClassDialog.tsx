@@ -422,7 +422,12 @@ export function TransferClassDialog({
     const sourceSessions = (currentSessions ?? []).filter(isTransferableSourceSession);
     const registeredCount = sourceSessions.length;
     const sourcePackage = sourceSessions.find((session) => session.feePackage)?.feePackage;
-    const packageSessionCount = getPackageSessionCount(sourcePackage, registeredCount);
+    const invoiceSessionCount = sourceSessions.filter(
+      (session) => session.pricing?.hasInvoiceAllocation,
+    ).length;
+    const packageSessionCount = invoiceSessionCount > 0
+      ? invoiceSessionCount
+      : getPackageSessionCount(sourcePackage, registeredCount);
     if (packageSessionCount > 0) {
       setActualSessionCount(packageSessionCount);
     }
@@ -638,30 +643,74 @@ export function TransferClassDialog({
 
   // Current class fee info from student's sessions
   const activeCurrentSessions = (currentSessions ?? []).filter(isTransferableSourceSession);
+  const invoicePricedSessions = activeCurrentSessions.filter(
+    (session) => session.pricing?.hasInvoiceAllocation,
+  );
+  const hasCurrentInvoicePricing = invoicePricedSessions.length > 0;
+  const currentInvoicePricing = activeCurrentSessions.reduce(
+    (total, session) => {
+      const pricing = session.pricing;
+      if (!pricing?.hasInvoiceAllocation) return total;
+      total.invoiceSubtotal += Number(pricing.allocatedFee) || 0;
+      total.surcharge += Number(pricing.allocatedSurchargeFee) || 0;
+      total.discount += Number(pricing.discountAmount) || 0;
+      for (const name of pricing.invoicePackageNames ?? []) {
+        if (name && !total.packageNames.includes(name)) total.packageNames.push(name);
+      }
+      for (const type of pricing.invoicePackageTypes ?? []) {
+        if (type && !total.packageTypes.includes(type)) total.packageTypes.push(type);
+      }
+      return total;
+    },
+    {
+      invoiceSubtotal: 0,
+      surcharge: 0,
+      discount: 0,
+      packageNames: [] as string[],
+      packageTypes: [] as string[],
+    },
+  );
   const currentSession = activeCurrentSessions.find((s) => {
     const idx = s.classSession?.sessionIndex ?? s.sessionIndex;
     return Number(idx) === Number(fromSessionIndex);
   }) ?? activeCurrentSessions[0];
   const currentFeePackage = currentSession?.feePackage;
+  const currentDisplayFeePackage = hasCurrentInvoicePricing
+    ? {
+        name: currentInvoicePricing.packageNames.join(", ") || currentFeePackage?.name,
+        type: currentInvoicePricing.packageTypes.length === 1
+          ? currentInvoicePricing.packageTypes[0]
+          : currentFeePackage?.type,
+      }
+    : currentFeePackage;
   const currentStoredSessionPrice = currentSession ? Number(currentSession.sessionPrice ?? 0) : 0;
   const currentRegisteredSessionCount = activeCurrentSessions.length;
   const configuredPackageSessionCount = getPackageSessionCount(
     currentFeePackage,
     currentRegisteredSessionCount,
   );
-  const currentSessionCount = actualSessionCount > 0
-    ? actualSessionCount
-    : configuredPackageSessionCount;
+  const currentSessionCount = hasCurrentInvoicePricing
+    ? invoicePricedSessions.length
+    : actualSessionCount > 0
+      ? actualSessionCount
+      : configuredPackageSessionCount;
   const configuredPackageSessionPrice = getPackageBaseSessionPrice(
     currentFeePackage,
     currentStoredSessionPrice,
     configuredPackageSessionCount,
   );
-  const currentBaseTotal = getPackageBaseTotal(
+  const packageBaseTotal = getPackageBaseTotal(
     currentFeePackage,
     configuredPackageSessionPrice * currentSessionCount,
     currentSessionCount,
   );
+  const invoiceBaseTotal = Math.max(
+    0,
+    currentInvoicePricing.invoiceSubtotal
+      + currentInvoicePricing.discount
+      - currentInvoicePricing.surcharge,
+  );
+  const currentBaseTotal = hasCurrentInvoicePricing ? invoiceBaseTotal : packageBaseTotal;
   const currentBaseSessionPrice = currentSessionCount > 0
     ? currentBaseTotal / currentSessionCount
     : configuredPackageSessionPrice;
@@ -672,8 +721,10 @@ export function TransferClassDialog({
   // Keep the invoice's total discount stable when the operator changes the
   // editable session count; the source allocation was created for the
   // student's original registered session count.
-  const currentAutomaticDiscountAmount = currentDiscountPerSession
-    * (currentRegisteredSessionCount > 0 ? currentRegisteredSessionCount : currentSessionCount);
+  const currentAutomaticDiscountAmount = hasCurrentInvoicePricing
+    ? currentInvoicePricing.discount
+    : currentDiscountPerSession
+      * (currentRegisteredSessionCount > 0 ? currentRegisteredSessionCount : currentSessionCount);
   const currentPromotionResult = applyTransferPromotions(
     currentBaseTotal,
     currentPromotionKeys,
@@ -1139,16 +1190,28 @@ export function TransferClassDialog({
                     <div className="flex justify-between items-center gap-3">
                       <span className="text-muted-foreground">Gói học phí:</span>
                       <span className="font-medium text-right">
-                        {currentFeePackage?.name || "—"}
-                        {packageTypeLabel(currentFeePackage) && (
+                        {currentDisplayFeePackage?.name || "—"}
+                        {packageTypeLabel(currentDisplayFeePackage) && (
                           <Badge variant="outline" className="ml-2 text-[10px] px-1.5 py-0">
-                            {packageTypeLabel(currentFeePackage)}
+                            {packageTypeLabel(currentDisplayFeePackage)}
                           </Badge>
                         )}
                       </span>
                     </div>
+                    {hasCurrentInvoicePricing && (
+                      <div className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">
+                          Tiền theo hóa đơn (đã gồm phụ thu):
+                        </span>
+                        <span className="font-medium">
+                          {formatCurrency(currentInvoicePricing.invoiceSubtotal)}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Tổng học phí:</span>
+                      <span className="text-muted-foreground">
+                        {hasCurrentInvoicePricing ? "Học phí chưa gồm phụ thu:" : "Tổng học phí:"}
+                      </span>
                       <span className="font-medium">
                         {currentBaseTotal > 0 ? formatCurrency(currentBaseTotal) : "—"}
                       </span>
@@ -1180,7 +1243,9 @@ export function TransferClassDialog({
                       )}
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Sau giảm trừ:</span>
+                      <span className="text-muted-foreground">
+                        {hasCurrentInvoicePricing ? "Sau giảm trừ (chưa gồm phụ thu):" : "Sau giảm trừ:"}
+                      </span>
                       <span className="font-medium">
                         {currentNetTotal > 0 ? formatCurrency(currentNetTotal) : "—"}
                       </span>
@@ -1193,6 +1258,11 @@ export function TransferClassDialog({
                           </span>
                           <span className="font-medium">{formatCurrency(currentSurchargeTotal)}</span>
                         </div>
+                        {hasCurrentInvoicePricing && (
+                          <p className="text-[10px] text-muted-foreground">
+                            Khoản này đã nằm trong tiền theo hóa đơn ở trên.
+                          </p>
+                        )}
                         <div className="flex items-center justify-between gap-3">
                           <label
                             htmlFor="exclude-source-surcharge"
@@ -1220,13 +1290,15 @@ export function TransferClassDialog({
                           type="number"
                           min={1}
                           step={1}
-                          value={actualSessionCount > 0 ? actualSessionCount : ""}
+                          value={hasCurrentInvoicePricing
+                            ? invoicePricedSessions.length
+                            : actualSessionCount > 0 ? actualSessionCount : ""}
                           onChange={(event) => {
                             const value = Number(event.target.value);
                             setActualSessionCount(Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0);
                           }}
                           className="h-7 w-24 text-right"
-                          disabled={loadingCurrent}
+                          disabled={loadingCurrent || hasCurrentInvoicePricing}
                           data-testid="input-actual-session-count"
                         />
                         <span className="font-medium">buổi</span>
