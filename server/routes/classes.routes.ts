@@ -23,6 +23,7 @@ import { recordFreeClassWalletTransition } from "../storage/free-class-wallet.st
 import { buildTeacherTimeAssignments, getShiftScheduleKey } from "@shared/teacher-time-assignments";
 import { canScheduleWrite, isScheduleEntryVisible } from "@shared/schedule-access";
 import { getPreferredSystemTrainingTeacherRoleId } from "@shared/teacher-role-priority";
+import { canUseMySpaceCalendarAction } from "@shared/my-space-calendar-permissions";
 import { mergeSelectedTeacherRoleIds } from "../storage/teacher-role-updates";
 
 async function resolveStaffFullName(userId: string | undefined | null): Promise<string | null> {
@@ -103,11 +104,7 @@ async function assertMySpaceCalendarSessionPermission(
     req.roleIds ?? [],
     MY_SPACE_CALENDAR_RESOURCE,
   );
-  const allowed = action === "canView"
-    ? permissions.canView
-    : action === "canCreate"
-      ? permissions.canCreate
-      : permissions.canEdit;
+  const allowed = canUseMySpaceCalendarAction(permissions, action);
   if (allowed) return true;
 
   res.status(403).json({

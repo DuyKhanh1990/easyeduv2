@@ -37,6 +37,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertLocationSchema, insertDepartmentSchema, insertRoleSchema } from "@shared/schema";
+import {
+  MY_SPACE_CALENDAR_RESOURCE,
+  normalizeMySpaceCalendarPermissions,
+} from "@shared/my-space-calendar-permissions";
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -1807,8 +1811,6 @@ type RolePermissionRecord = {
 };
 
 const MY_SPACE_SCORE_SHEET_RESOURCE = "/my-space/score-sheet";
-const MY_SPACE_CALENDAR_RESOURCE = "/my-space/calendar";
-
 function defaultPerm(resource?: string, deptName?: string) {
   if (resource === MY_SPACE_CALENDAR_RESOURCE) {
     return { canView: true, canViewAll: false, canCreate: false, canEdit: false, canDelete: false };
@@ -2317,11 +2319,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
 
   const normalizeMySpaceCalendarPerm = (permission: PermMap[string]): PermMap[string] => ({
     ...permission,
-    canView: true,
-    canViewAll: false,
-    canCreate: isStudentSystemRole ? false : permission.canCreate,
-    canEdit: isStudentSystemRole ? false : permission.canEdit,
-    canDelete: false,
+    ...normalizeMySpaceCalendarPermissions(permission, isStudentSystemRole),
   });
 
   // localPerms = overlay optimistic; fetchedPerms = dữ liệu gốc từ server/cache.

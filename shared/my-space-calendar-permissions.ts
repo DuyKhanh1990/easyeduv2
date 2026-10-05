@@ -6,6 +6,8 @@ export type MySpaceCalendarPermissionFlags = {
   canDelete: boolean;
 };
 
+export const MY_SPACE_CALENDAR_RESOURCE = "/my-space/calendar";
+
 export type MySpaceCalendarAction = keyof MySpaceCalendarPermissionFlags;
 
 export function normalizeMySpaceCalendarPermissions(

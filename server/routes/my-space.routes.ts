@@ -67,6 +67,7 @@ import { updateStudentAttendance } from "../storage/attendance.storage";
 import { getTeacherIdsForTimeRange } from "@shared/teacher-time-assignments";
 import { canViewClass } from "../lib/class-access";
 import { canScheduleWrite } from "@shared/schedule-access";
+import { isStaffAssignedToEffectiveFreeClassStudent } from "@shared/my-space-calendar-permissions";
 import { hasMySpaceAssignmentsWritePermission } from "../lib/my-space-assignments-permissions";
 
 async function getStudentForUser(userId: string) {
@@ -691,10 +692,12 @@ async function isStaffAssignedToEffectiveFreeClassSession(
     .where(and(...registrationConditions));
 
   return registrations.some(({ teacherId }) => {
-    const effectiveTeacherId = teacherId || dayAssignment?.teacherId || null;
-    return effectiveTeacherId
-      ? effectiveTeacherId === staffId
-      : (classRow.teacherIds ?? []).includes(staffId);
+    return isStaffAssignedToEffectiveFreeClassStudent({
+      staffId,
+      registrationTeacherId: teacherId,
+      dayTeacherId: dayAssignment?.teacherId,
+      classTeacherIds: classRow.teacherIds ?? [],
+    });
   });
 }
 

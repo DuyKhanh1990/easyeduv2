@@ -19,6 +19,10 @@ import {
   users,
   roles as rolesTable,
 } from "@shared/schema";
+import {
+  MY_SPACE_CALENDAR_RESOURCE,
+  normalizeMySpaceCalendarPermissions,
+} from "@shared/my-space-calendar-permissions";
 import { eq, and, inArray } from "drizzle-orm";
 import { getEffectivePermissions, getAllPermissionsForRoles } from "../storage/permissions.storage";
 
@@ -133,7 +137,9 @@ function pickLearningOverview(allPerms: AllPerms): PermissionFlags {
  * Nếu có row explicit false → DENY.
  */
 function mySpacePick(allPerms: AllPerms, resource: string): boolean {
-  if (resource === "/my-space/calendar") return true;
+  if (resource === MY_SPACE_CALENDAR_RESOURCE) {
+    return normalizeMySpaceCalendarPermissions().canView;
+  }
   const rows = allPerms.filter(p => p.resource === resource);
   if (rows.length === 0) return true;
   return rows.some(p => p.canView || p.canViewAll);

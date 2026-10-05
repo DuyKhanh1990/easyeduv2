@@ -1,6 +1,10 @@
 import { db, eq, and, inArray } from "./base";
 import { rolePermissions } from "@shared/schema";
 import type { RolePermission } from "@shared/schema";
+import {
+  MY_SPACE_CALENDAR_RESOURCE,
+  normalizeMySpaceCalendarPermissions,
+} from "@shared/my-space-calendar-permissions";
 
 export type EffectivePermission = {
   canView: boolean;
@@ -10,12 +14,10 @@ export type EffectivePermission = {
   canDelete: boolean;
 };
 
-const MY_SPACE_CALENDAR_RESOURCE = "/my-space/calendar";
-
 export async function getEffectivePermissions(roleIds: string[], resource: string): Promise<EffectivePermission> {
   if (!roleIds || roleIds.length === 0) {
     if (resource === MY_SPACE_CALENDAR_RESOURCE) {
-      return { canView: true, canViewAll: false, canCreate: false, canEdit: false, canDelete: false };
+      return normalizeMySpaceCalendarPermissions();
     }
     return { canView: false, canViewAll: false, canCreate: false, canEdit: false, canDelete: false };
   }
@@ -36,7 +38,7 @@ export async function getEffectivePermissions(roleIds: string[], resource: strin
   );
 
   return resource === MY_SPACE_CALENDAR_RESOURCE
-    ? { ...effective, canView: true, canViewAll: false, canDelete: false }
+    ? normalizeMySpaceCalendarPermissions(effective)
     : effective;
 }
 
