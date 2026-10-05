@@ -23,6 +23,7 @@ import { getClass } from "./class.storage";
 import { getNextLocationCode } from "./finance.storage";
 import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 import {
+  buildClassTransferSurchargeOnlyAllocations,
   calculateClassTransferSourceCredit,
   calculateClassTransferTargetSessionPrice,
   getClassTransferInvoiceSurchargeShares,
@@ -653,7 +654,13 @@ export async function transferStudentClass(data: {
     });
 
     const movedSessionIds = oldSessions.map((session) => session.id);
-    const [movedAllocationItems, sourceAdjustments, sourceDefaultPackages] = await Promise.all([
+    const [
+      movedAllocationItems,
+      sourceAdjustments,
+      sourceDefaultPackages,
+      sourceFallbackSurchargeItems,
+      sourceSurchargeSessions,
+    ] = await Promise.all([
       tx.select({
         invoiceItemId: invoiceSessionAllocations.invoiceItemId,
       })
@@ -672,6 +679,41 @@ export async function transferStudentClass(data: {
             .where(eq(courseFeePackages.id, fromClass.feePackageId))
             .limit(1)
         : Promise.resolve([]),
+      fromClass?.courseId
+        ? tx.select({
+            invoiceItemId: invoiceItems.id,
+            invoiceStatus: invoices.status,
+            itemPackageType: invoiceItems.packageType,
+            itemQuantity: invoiceItems.quantity,
+            itemSurchargeAmount: invoiceItems.surchargeAmount,
+          })
+            .from(invoiceItems)
+            .innerJoin(invoices, eq(invoiceItems.invoiceId, invoices.id))
+            .innerJoin(courseFeePackages, eq(invoiceItems.packageId, courseFeePackages.id))
+            .where(and(
+              eq(invoices.studentId, data.studentId),
+              eq(invoices.classId, data.fromClassId),
+              eq(invoices.category, "Học phí"),
+              sql`${invoices.status} <> 'cancelled'`,
+              eq(courseFeePackages.courseId, fromClass.courseId),
+              inArray(invoiceItems.packageType, ["buổi", "khoá"]),
+              sql`${invoiceItems.surchargeAmount} > 0`,
+              sql`NOT EXISTS (
+                SELECT 1 FROM ${invoiceSessionAllocations}
+                WHERE ${invoiceSessionAllocations.invoiceItemId} = ${invoiceItems.id}
+              )`,
+            ))
+        : Promise.resolve([]),
+      tx.select({
+        id: studentSessions.id,
+        sessionOrder: studentSessions.sessionOrder,
+      })
+        .from(studentSessions)
+        .where(and(
+          eq(studentSessions.studentId, data.studentId),
+          eq(studentSessions.classId, data.fromClassId),
+        ))
+        .orderBy(asc(studentSessions.sessionOrder), asc(studentSessions.id)),
     ]);
 
     const sourceInvoiceItemIds = Array.from(new Set(
@@ -702,6 +744,10 @@ export async function transferStudentClass(data: {
             asc(invoiceSessionAllocations.id),
           )
       : [];
+    const sourceFallbackSurchargeAllocations = buildClassTransferSurchargeOnlyAllocations(
+      sourceFallbackSurchargeItems,
+      sourceSurchargeSessions,
+    );
 
     const sourceDefaultPackage = sourceDefaultPackages[0];
     if (data.sourceSessionPriceOverride !== undefined) {
@@ -709,6 +755,8 @@ export async function transferStudentClass(data: {
         throw new Error("Đơn giá học phí sau khuyến mãi không hợp lệ");
       }
       const hasActiveInvoiceAllocation = sourceAllocations.some(
+        (allocation) => String(allocation.invoiceStatus ?? "").toLowerCase() !== "cancelled",
+      ) || sourceFallbackSurchargeAllocations.some(
         (allocation) => String(allocation.invoiceStatus ?? "").toLowerCase() !== "cancelled",
       );
       const hasExistingAdjustment = sourceAdjustments.length > 0;
@@ -756,7 +804,7 @@ export async function transferStudentClass(data: {
       }));
     const sourceCreditAmount = calculateClassTransferSourceCredit({
       sessions: sourceCreditSessions,
-      allocations: sourceAllocations,
+      allocations: [...sourceAllocations, ...sourceFallbackSurchargeAllocations],
       adjustments: sourceAdjustments,
       defaultPackage: sourceDefaultPackage,
       roundingMode: data.roundingMode,
@@ -2062,6 +2110,7 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
     columns: {
       id: true,
       classSessionId: true,
+      sessionOrder: true,
       status: true,
       attendanceStatus: true,
       packageId: true,
@@ -2091,6 +2140,7 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
           type: true,
           sessions: true,
           totalAmount: true,
+          courseId: true,
         },
       },
     },
@@ -2102,6 +2152,54 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
 
   const sessionIds = rows.map((row) => row.id);
   if (sessionIds.length === 0) return rows;
+
+  const [classCourse] = await db
+    .select({ courseId: classes.courseId })
+    .from(classes)
+    .where(eq(classes.id, classId))
+    .limit(1);
+  const fallbackSurchargeItems = classCourse?.courseId
+    ? await db
+      .select({
+        invoiceItemId: invoiceItems.id,
+        invoiceStatus: invoices.status,
+        itemPackageType: invoiceItems.packageType,
+        itemQuantity: invoiceItems.quantity,
+        itemSurchargeAmount: invoiceItems.surchargeAmount,
+      })
+      .from(invoiceItems)
+      .innerJoin(invoices, eq(invoiceItems.invoiceId, invoices.id))
+      .innerJoin(courseFeePackages, eq(invoiceItems.packageId, courseFeePackages.id))
+      .where(and(
+        eq(invoices.studentId, studentId),
+        eq(invoices.classId, classId),
+        eq(invoices.category, "Học phí"),
+        sql`${invoices.status} <> 'cancelled'`,
+        eq(courseFeePackages.courseId, classCourse.courseId),
+        inArray(invoiceItems.packageType, ["buổi", "khoá"]),
+        sql`${invoiceItems.surchargeAmount} > 0`,
+        sql`NOT EXISTS (
+          SELECT 1 FROM ${invoiceSessionAllocations}
+          WHERE ${invoiceSessionAllocations.invoiceItemId} = ${invoiceItems.id}
+        )`,
+      ))
+      .orderBy(asc(invoiceItems.createdAt), asc(invoiceItems.sortOrder))
+    : [];
+  const fallbackSurchargeAllocations = buildClassTransferSurchargeOnlyAllocations(
+    fallbackSurchargeItems,
+    rows.map((row) => ({ id: row.id, sessionOrder: row.sessionOrder })),
+  );
+  const fallbackSurchargeShares = getClassTransferInvoiceSurchargeShares(
+    fallbackSurchargeAllocations,
+  );
+  const fallbackSurchargeBySession = new Map<string, number>();
+  for (const [index, allocation] of fallbackSurchargeAllocations.entries()) {
+    fallbackSurchargeBySession.set(
+      allocation.studentSessionId,
+      (fallbackSurchargeBySession.get(allocation.studentSessionId) ?? 0)
+        + (fallbackSurchargeShares[index] ?? 0),
+    );
+  }
 
   // Use the amount allocated by the student's tuition invoice when available.
   // This is the post-promotion amount and preserves the existing session_price
@@ -2230,6 +2328,9 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
   return rows.map((row) => ({
     ...row,
     pricing: pricingBySession.get(row.id) ?? null,
+    classTransferSurchargeFee:
+      (pricingBySession.get(row.id)?.allocatedSurchargeFee ?? 0)
+      + (fallbackSurchargeBySession.get(row.id) ?? 0),
   }));
 }
 

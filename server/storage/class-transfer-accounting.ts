@@ -28,6 +28,20 @@ export type ClassTransferInvoiceAllocation = {
   itemQuantity?: NumericValue;
   itemSurchargeAmount?: NumericValue;
   sessionOrder?: NumericValue;
+  surchargeOnly?: boolean;
+};
+
+export type ClassTransferUnallocatedSurchargeItem = {
+  invoiceItemId: string;
+  invoiceStatus?: string | null;
+  itemPackageType?: string | null;
+  itemQuantity?: NumericValue;
+  itemSurchargeAmount?: NumericValue;
+};
+
+export type ClassTransferSurchargeCandidateSession = {
+  id: string;
+  sessionOrder?: NumericValue;
 };
 
 export type ClassTransferSessionAdjustment = {
@@ -97,6 +111,39 @@ export function getClassTransferInvoiceSurchargeShares(
   return shares;
 }
 
+export function buildClassTransferSurchargeOnlyAllocations(
+  items: ClassTransferUnallocatedSurchargeItem[],
+  sessions: ClassTransferSurchargeCandidateSession[],
+): ClassTransferInvoiceAllocation[] {
+  const orderedSessions = [...sessions].sort((left, right) => {
+    const leftOrder = Number(left.sessionOrder);
+    const rightOrder = Number(right.sessionOrder);
+    const normalizedLeftOrder = Number.isFinite(leftOrder) ? leftOrder : Number.POSITIVE_INFINITY;
+    const normalizedRightOrder = Number.isFinite(rightOrder) ? rightOrder : Number.POSITIVE_INFINITY;
+    if (normalizedLeftOrder !== normalizedRightOrder) {
+      return normalizedLeftOrder - normalizedRightOrder;
+    }
+    return left.id.localeCompare(right.id);
+  });
+
+  return items.flatMap((item) => {
+    if (toFiniteNumber(item.itemSurchargeAmount) <= 0) return [];
+    const requestedCount = Math.max(1, Math.floor(toFiniteNumber(item.itemQuantity, 1)));
+    return orderedSessions.slice(0, requestedCount).map((session) => ({
+      allocationId: `${item.invoiceItemId}:${session.id}`,
+      invoiceItemId: item.invoiceItemId,
+      studentSessionId: session.id,
+      allocatedAmount: 0,
+      invoiceStatus: item.invoiceStatus,
+      itemPackageType: item.itemPackageType,
+      itemQuantity: item.itemQuantity,
+      itemSurchargeAmount: item.itemSurchargeAmount,
+      sessionOrder: session.sessionOrder,
+      surchargeOnly: true,
+    }));
+  });
+}
+
 export function getPackageSessionValue(
   session: ClassTransferSourceSession,
   defaultPackage?: ClassTransferPackagePricing,
@@ -137,11 +184,13 @@ export function calculateClassTransferSourceCredit(input: {
   const surchargeShares = getClassTransferInvoiceSurchargeShares(input.allocations ?? []);
   for (const [index, allocation] of (input.allocations ?? []).entries()) {
     if (String(allocation.invoiceStatus ?? "").toLowerCase() === "cancelled") continue;
-    allocationBySession.set(
-      allocation.studentSessionId,
-      (allocationBySession.get(allocation.studentSessionId) ?? 0)
-        + toFiniteNumber(allocation.allocatedAmount),
-    );
+    if (!allocation.surchargeOnly) {
+      allocationBySession.set(
+        allocation.studentSessionId,
+        (allocationBySession.get(allocation.studentSessionId) ?? 0)
+          + toFiniteNumber(allocation.allocatedAmount),
+      );
+    }
     surchargeBySession.set(
       allocation.studentSessionId,
       (surchargeBySession.get(allocation.studentSessionId) ?? 0) + surchargeShares[index],

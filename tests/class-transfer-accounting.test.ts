@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildClassTransferSurchargeOnlyAllocations,
   calculateClassFundedAmounts,
   calculateClassTransferSourceCredit,
   calculateClassTransferTargetSessionPrice,
@@ -108,6 +109,37 @@ describe("class transfer accounting", () => {
       ...input,
       excludeSurcharge: true,
     })).toBe(2);
+  });
+
+  it("excludes a course-item surcharge from source credit when the invoice item has no fee allocations", () => {
+    const sessions = Array.from({ length: 20 }, (_, index) => ({
+      id: `session-${String(index + 1).padStart(2, "0")}`,
+      sessionPrice: 100_000,
+      sessionOrder: index + 1,
+    }));
+    const surchargeOnlyAllocations = buildClassTransferSurchargeOnlyAllocations(
+      [{
+        invoiceItemId: "unallocated-course-item",
+        invoiceStatus: "unpaid",
+        itemPackageType: "khoá",
+        itemQuantity: 20,
+        itemSurchargeAmount: 50_000,
+      }],
+      [...sessions].reverse(),
+    );
+    const input = {
+      sessions,
+      allocations: surchargeOnlyAllocations,
+    };
+
+    expect(surchargeOnlyAllocations.map((row) => row.studentSessionId)).toEqual(
+      sessions.map((session) => session.id),
+    );
+    expect(calculateClassTransferSourceCredit(input)).toBe(2_000_000);
+    expect(calculateClassTransferSourceCredit({
+      ...input,
+      excludeSurcharge: true,
+    })).toBe(1_950_000);
   });
 
   it("uses saved session prices before falling back to package prices", () => {

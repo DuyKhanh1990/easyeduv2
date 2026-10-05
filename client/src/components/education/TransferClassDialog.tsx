@@ -695,25 +695,31 @@ export function TransferClassDialog({
     : hasCurrentPackagePrice
     ? Math.max(0, currentBaseSessionPrice - currentDiscountPerSession)
     : currentStoredSessionPrice;
+  const getSourceSurchargeFee = (session: any) => Math.max(
+    0,
+    Number(
+      session?.classTransferSurchargeFee
+        ?? session?.pricing?.allocatedSurchargeFee
+        ?? 0,
+    ) || 0,
+  );
   const getEffectiveSourceSessionPrice = (
     session: any,
     excludeSurcharge = excludeSourceSurcharge,
   ) => {
+    const surchargeToExclude = excludeSurcharge ? getSourceSurchargeFee(session) : 0;
     const allocatedFee = session?.pricing?.allocatedFee;
     if (allocatedFee != null && Number.isFinite(Number(allocatedFee))) {
-      const allocatedSurchargeFee = excludeSurcharge
-        ? Math.max(0, Number(session?.pricing?.allocatedSurchargeFee ?? 0) || 0)
-        : 0;
-      return Math.max(0, Number(allocatedFee) - allocatedSurchargeFee);
+      return Math.max(0, Number(allocatedFee) - surchargeToExclude);
     }
     if (session?.sessionPrice != null && Number.isFinite(Number(session.sessionPrice))) {
-      return Math.max(0, Number(session.sessionPrice));
+      return Math.max(0, Number(session.sessionPrice) - surchargeToExclude);
     }
     const sessionDiscount = Number(session?.pricing?.discountAmount ?? currentDiscountPerSession);
     const fallback = currentBaseSessionPrice > 0
       ? currentBaseSessionPrice - sessionDiscount
       : fallbackCurrentSessionPrice;
-    return Math.max(0, Number.isFinite(fallback) ? fallback : 0);
+    return Math.max(0, (Number.isFinite(fallback) ? fallback : 0) - surchargeToExclude);
   };
   const currentSessionPrice = currentSession
     ? usePackagePriceFallback
@@ -730,11 +736,15 @@ export function TransferClassDialog({
     )
     .slice(0, transferCount);
   const currentSurchargeTotal = selectedSourceSessions.reduce(
-    (total, session) => total + Math.max(0, Number(session?.pricing?.allocatedSurchargeFee ?? 0) || 0),
+    (total, session) => total + getSourceSurchargeFee(session),
     0,
   );
   const exactCurrentTotal = applyDiscountedPriceToTransfer
-    ? calculatePerSessionTransferTotal(currentSessionPrice, selectedSourceSessions.length)
+    ? Math.max(
+      0,
+      calculatePerSessionTransferTotal(currentSessionPrice, selectedSourceSessions.length)
+        - (excludeSourceSurcharge ? currentSurchargeTotal : 0),
+    )
     : selectedSourceSessions.reduce(
       (total, session) => total + getEffectiveSourceSessionPrice(session, excludeSourceSurcharge),
       0,
