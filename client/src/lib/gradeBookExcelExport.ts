@@ -76,8 +76,9 @@ export function buildGradeBookExcelRows(input: GradeBookExcelInput): {
       ["Cơ sở", "Lớp", "Tiêu đề", "Bảng điểm"],
       [input.locationName, input.className, input.title, input.scoreSheetName],
       [],
-      ["Tên", ...categoryHeaders, "Nhận xét"],
-      ...input.students.map((student) => [
+      ["STT", "Tên", ...categoryHeaders, "Nhận xét"],
+      ...input.students.map((student, index) => [
+        index + 1,
         student.name,
         ...input.categories.map((category) => student.scores[category.id] ?? null),
         student.comment,
@@ -223,11 +224,12 @@ export async function downloadGradeBookExcel(input: GradeBookExcelInput): Promis
   const { rows, headerRowNumber } = buildGradeBookExcelRows(input);
   rows.forEach((row) => worksheet.addRow(row));
 
-  worksheet.getColumn(1).width = 30;
+  worksheet.getColumn(1).width = 16;
+  worksheet.getColumn(2).width = 30;
   input.categories.forEach((_, index) => {
-    worksheet.getColumn(index + 2).width = 18;
+    worksheet.getColumn(index + 3).width = 18;
   });
-  worksheet.getColumn(input.categories.length + 2).width = COMMENT_COLUMN_WIDTH;
+  worksheet.getColumn(input.categories.length + 3).width = COMMENT_COLUMN_WIDTH;
 
   for (const rowNumber of [1, 2]) {
     const row = worksheet.getRow(rowNumber);
@@ -257,7 +259,7 @@ export async function downloadGradeBookExcel(input: GradeBookExcelInput): Promis
     const row = worksheet.getRow(headerRowNumber + index + 1);
     // Leave the height unset so Excel can auto-fit wrapped text instead of saving a fixed tall row.
     row.alignment = { vertical: "top" };
-    row.getCell(input.categories.length + 2).alignment = {
+    row.getCell(input.categories.length + 3).alignment = {
       vertical: "top",
       wrapText: true,
     };
@@ -268,7 +270,7 @@ export async function downloadGradeBookExcel(input: GradeBookExcelInput): Promis
     from: { row: headerRowNumber, column: 1 },
     to: {
       row: Math.max(headerRowNumber, worksheet.rowCount),
-      column: input.categories.length + 2,
+      column: input.categories.length + 3,
     },
   };
   worksheet.pageSetup = {

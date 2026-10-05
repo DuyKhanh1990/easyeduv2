@@ -24,7 +24,7 @@ describe("learning overview grade book export", () => {
       ["Cơ sở", "Lớp", "Tiêu đề", "Bảng điểm"],
       ["Cơ sở chính", "IELTS 6.0", "Giữa khóa", "Bảng điểm IELTS"],
     ]);
-    expect(result.rows[3]).toEqual(["Tên", "Nghe (L)", "Viết", "Nhận xét"]);
-    expect(result.rows[4]).toEqual(["Nguyễn An", 8.5, null, "Tiến bộ tốt"]);
+    expect(result.rows[3]).toEqual(["STT", "Tên", "Nghe (L)", "Viết", "Nhận xét"]);
+    expect(result.rows[4]).toEqual([1, "Nguyễn An", 8.5, null, "Tiến bộ tốt"]);
   });
 });
