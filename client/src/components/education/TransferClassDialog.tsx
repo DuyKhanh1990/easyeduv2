@@ -61,6 +61,7 @@ import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { FinancePromotionDialog } from "@/pages/finance/components/FinancePromotionDialog";
 import {
   calculateFirstSessionPriceAfterDiscount,
+  calculateInvoiceSessionPrice,
   calculatePerSessionTransferTotal,
   hasExistingSessionTuition,
 } from "./transferClassPricing";
@@ -725,6 +726,10 @@ export function TransferClassDialog({
     ? currentInvoicePricing.discount
     : currentDiscountPerSession
       * (currentRegisteredSessionCount > 0 ? currentRegisteredSessionCount : currentSessionCount);
+  const hasManuallyAdjustedInvoiceSessionCount =
+    hasCurrentInvoicePricing
+    && actualSessionCount > 0
+    && actualSessionCount !== invoicePricedSessions.length;
   const currentPromotionResult = applyTransferPromotions(
     currentBaseTotal,
     currentPromotionKeys,
@@ -773,9 +778,16 @@ export function TransferClassDialog({
     return Math.max(0, (Number.isFinite(fallback) ? fallback : 0) - surchargeToExclude);
   };
   const currentSessionPrice = currentSession
-    ? usePackagePriceFallback
-      ? calculateFirstSessionPriceAfterDiscount(currentNetTotal, currentSessionCount)
-      : getEffectiveSourceSessionPrice(currentSession, excludeSourceSurcharge)
+    ? hasManuallyAdjustedInvoiceSessionCount
+      ? calculateInvoiceSessionPrice(
+        currentInvoicePricing.invoiceSubtotal,
+        currentInvoicePricing.surcharge,
+        currentSessionCount,
+        excludeSourceSurcharge,
+      )
+      : usePackagePriceFallback
+        ? calculateFirstSessionPriceAfterDiscount(currentNetTotal, currentSessionCount)
+        : getEffectiveSourceSessionPrice(currentSession, excludeSourceSurcharge)
     : fallbackCurrentSessionPrice;
   const applyDiscountedPriceToTransfer =
     usePackagePriceFallback && currentDiscountAmount > 0;
@@ -796,16 +808,18 @@ export function TransferClassDialog({
       (total, session) => total + getSourceSurchargeFee(session),
       0,
     );
-  const exactCurrentTotal = applyDiscountedPriceToTransfer
-    ? Math.max(
-      0,
-      calculatePerSessionTransferTotal(currentSessionPrice, selectedSourceSessions.length)
-        - (excludeSourceSurcharge ? selectedSourceSurchargeTotal : 0),
-    )
-    : selectedSourceSessions.reduce(
-      (total, session) => total + getEffectiveSourceSessionPrice(session, excludeSourceSurcharge),
-      0,
-    );
+  const exactCurrentTotal = hasManuallyAdjustedInvoiceSessionCount
+    ? calculatePerSessionTransferTotal(currentSessionPrice, selectedSourceSessions.length)
+    : applyDiscountedPriceToTransfer
+      ? Math.max(
+        0,
+        calculatePerSessionTransferTotal(currentSessionPrice, selectedSourceSessions.length)
+          - (excludeSourceSurcharge ? selectedSourceSurchargeTotal : 0),
+      )
+      : selectedSourceSessions.reduce(
+        (total, session) => total + getEffectiveSourceSessionPrice(session, excludeSourceSurcharge),
+        0,
+      );
   const currentTotal = roundingMode === "down"
     ? Math.floor(exactCurrentTotal)
     : roundingMode === "up"

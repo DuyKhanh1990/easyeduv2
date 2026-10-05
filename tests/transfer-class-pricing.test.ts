@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateFirstSessionPriceAfterDiscount,
+  calculateInvoiceSessionPrice,
   calculatePerSessionTransferTotal,
   hasExistingSessionTuition,
 } from "../client/src/components/education/transferClassPricing";
@@ -28,6 +29,11 @@ describe("class transfer per-session tuition fallback", () => {
     const firstSessionPrice = calculateFirstSessionPriceAfterDiscount(4_800_000, 10);
     expect(firstSessionPrice).toBe(480_000);
     expect(calculatePerSessionTransferTotal(firstSessionPrice, 7)).toBe(3_360_000);
+  });
+
+  it("redivides the invoice amount by the manually edited session count", () => {
+    expect(calculateInvoiceSessionPrice(5_050_000, 50_000, 25, false)).toBe(202_000);
+    expect(calculateInvoiceSessionPrice(5_050_000, 50_000, 25, true)).toBe(200_000);
   });
 
   it("keeps saved invoice allocations, applied tuition adjustments, and custom session prices on the existing path", () => {

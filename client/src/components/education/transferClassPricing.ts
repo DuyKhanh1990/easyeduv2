@@ -44,3 +44,17 @@ export function calculateFirstSessionPriceAfterDiscount(
   if (registeredSessionCount <= 0) return 0;
   return Number((Math.max(0, Number(netTotal) || 0) / registeredSessionCount).toFixed(2));
 }
+
+export function calculateInvoiceSessionPrice(
+  invoiceTotal: number,
+  surchargeAmount: number,
+  registeredSessionCount: number,
+  excludeSurcharge: boolean,
+): number {
+  const sessionCount = Math.floor(Number(registeredSessionCount) || 0);
+  if (sessionCount <= 0) return 0;
+  const surcharge = Math.max(0, Number(surchargeAmount) || 0);
+  const total = Math.max(0, Number(invoiceTotal) || 0)
+    - (excludeSurcharge ? surcharge : 0);
+  return Number((Math.max(0, total) / sessionCount).toFixed(2));
+}
