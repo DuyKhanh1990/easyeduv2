@@ -151,6 +151,8 @@ export function LearningOverview() {
                 isLoading={gradeBook.isLoading}
                 filters={gradeBook.filters}
                 locations={gradeBook.locations}
+                classes={gradeBook.classes}
+                teachers={gradeBook.teachers}
                 onFiltersChange={(patch) => gradeBook.setFilters((prev) => ({ ...prev, ...patch }))}
                 onPageChange={gradeBook.setPage}
                 onPageSizeChange={gradeBook.setPageSize}

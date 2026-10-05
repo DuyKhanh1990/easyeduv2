@@ -75,10 +75,14 @@ export interface GradeBookListResponse {
   page: number;
   pageSize: number;
   locations: { id: string; name: string }[];
+  classes: { id: string; name: string }[];
+  teachers: { id: string; name: string }[];
 }
 
 export interface GradeBookFilters {
   search: string;
+  classId: string;
+  teacherId: string;
   locationId: string;
   published: "" | "true" | "false";
 }

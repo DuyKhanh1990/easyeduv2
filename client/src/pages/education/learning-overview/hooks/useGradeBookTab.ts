@@ -8,6 +8,8 @@ function buildUrl(filters: GradeBookFilters, page: number, pageSize: number): st
     page: String(page),
     pageSize: String(pageSize),
     search: filters.search,
+    classId: filters.classId,
+    teacherId: filters.teacherId,
     locationId: filters.locationId,
     published: filters.published,
   });
@@ -21,6 +23,8 @@ export function useGradeBookTab(enabled: boolean) {
   const [pageSize, setPageSizeState] = useState(20);
   const [filters, setFiltersState] = useState<GradeBookFilters>({
     search: "",
+    classId: "",
+    teacherId: "",
     locationId: "",
     published: "",
   });
@@ -72,6 +76,8 @@ export function useGradeBookTab(enabled: boolean) {
     filters,
     setFilters,
     locations: response?.locations ?? [],
+    classes: response?.classes ?? [],
+    teachers: response?.teachers ?? [],
     deleteMutation,
     updateMutation,
   };

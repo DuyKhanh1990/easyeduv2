@@ -9090,11 +9090,17 @@ export function registerClassesRoutes(app: Express): void {
       const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize || "20"))));
       const offset = (page - 1) * pageSize;
       const search = String(req.query.search || "").trim();
+      const classId = String(req.query.classId || "").trim();
+      const teacherId = String(req.query.teacherId || "").trim();
       const locationId = String(req.query.locationId || "").trim();
       const publishedFilter = req.query.published;
 
       let whereClauses = sql`1=1`;
       if (search) whereClauses = sql`${whereClauses} AND (gb.title ILIKE ${'%' + search + '%'} OR c.name ILIKE ${'%' + search + '%'})`;
+      if (classId) whereClauses = sql`${whereClauses} AND gb.class_id = ${classId}::uuid`;
+      if (teacherId) {
+        whereClauses = sql`${whereClauses} AND (gb.created_by = ${teacherId}::uuid OR gb.updated_by = ${teacherId}::uuid)`;
+      }
       if (locationId) whereClauses = sql`${whereClauses} AND c.location_id = ${locationId}::uuid`;
       if (publishedFilter === "true") whereClauses = sql`${whereClauses} AND gb.published = TRUE`;
       else if (publishedFilter === "false") whereClauses = sql`${whereClauses} AND gb.published = FALSE`;
@@ -9141,6 +9147,32 @@ export function registerClassesRoutes(app: Express): void {
         ORDER BY l.name
       `)).rows as any[];
 
+      const classRows = (await db.execute(sql`
+        SELECT DISTINCT c.id, c.name
+        FROM class_grade_books gb
+        JOIN classes c ON c.id = gb.class_id
+        ORDER BY c.name
+      `)).rows as any[];
+
+      const teacherRows = (await db.execute(sql`
+        SELECT
+          actors.user_id AS id,
+          COALESCE(MAX(s.full_name), u.username, actors.user_id::text) AS name
+        FROM (
+          SELECT created_by AS user_id
+          FROM class_grade_books
+          WHERE created_by IS NOT NULL
+          UNION
+          SELECT updated_by AS user_id
+          FROM class_grade_books
+          WHERE updated_by IS NOT NULL
+        ) actors
+        LEFT JOIN users u ON u.id = actors.user_id
+        LEFT JOIN staff s ON s.user_id = actors.user_id
+        GROUP BY actors.user_id, u.username
+        ORDER BY name
+      `)).rows as any[];
+
       res.json({
         data: rows.map((r) => ({
           id: r.id,
@@ -9161,6 +9193,8 @@ export function registerClassesRoutes(app: Express): void {
         page,
         pageSize,
         locations: locationRows.map((l) => ({ id: l.id, name: l.name })),
+        classes: classRows.map((c) => ({ id: c.id, name: c.name })),
+        teachers: teacherRows.map((teacher) => ({ id: teacher.id, name: teacher.name })),
       });
     } catch (err: any) {
       console.error("Grade books overview error:", err);

@@ -41,13 +41,17 @@ function PublishedBadge({ published }: { published: boolean }) {
 function GradeBookFilterBar({
   filters,
   locations,
+  classes,
+  teachers,
   onChange,
 }: {
   filters: GradeBookFilters;
   locations: { id: string; name: string }[];
+  classes: { id: string; name: string }[];
+  teachers: { id: string; name: string }[];
   onChange: (patch: Partial<GradeBookFilters>) => void;
 }) {
-  const hasActive = filters.search || filters.locationId || filters.published;
+  const hasActive = filters.search || filters.classId || filters.teacherId || filters.locationId || filters.published;
 
   return (
     <div className="flex flex-wrap gap-2 items-center">
@@ -61,6 +65,30 @@ function GradeBookFilterBar({
           data-testid="input-gb-search"
         />
       </div>
+
+      <select
+        className="h-9 w-[150px] rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        value={filters.classId}
+        onChange={(e) => onChange({ classId: e.target.value })}
+        data-testid="select-gb-class"
+      >
+        <option value="">Tất cả lớp</option>
+        {classes.map((c) => (
+          <option key={c.id} value={c.id}>{c.name}</option>
+        ))}
+      </select>
+
+      <select
+        className="h-9 w-[220px] max-w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        value={filters.teacherId}
+        onChange={(e) => onChange({ teacherId: e.target.value })}
+        data-testid="select-gb-teacher"
+      >
+        <option value="">Tất cả giáo viên (tạo/cập nhật)</option>
+        {teachers.map((teacher) => (
+          <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
+        ))}
+      </select>
 
       <select
         className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
@@ -90,7 +118,7 @@ function GradeBookFilterBar({
           variant="ghost"
           size="sm"
           className="h-9 text-sm gap-1.5 text-muted-foreground"
-          onClick={() => onChange({ search: "", locationId: "", published: "" })}
+          onClick={() => onChange({ search: "", classId: "", teacherId: "", locationId: "", published: "" })}
           data-testid="button-gb-clear-filters"
         >
           <X className="h-3.5 w-3.5" />
@@ -111,6 +139,8 @@ interface GradeBookTabProps {
   isLoading: boolean;
   filters: GradeBookFilters;
   locations: { id: string; name: string }[];
+  classes: { id: string; name: string }[];
+  teachers: { id: string; name: string }[];
   onFiltersChange: (patch: Partial<GradeBookFilters>) => void;
   onPageChange: (p: number) => void;
   onPageSizeChange: (s: number) => void;
@@ -128,6 +158,8 @@ export function GradeBookTab({
   isLoading,
   filters,
   locations,
+  classes,
+  teachers,
   onFiltersChange,
   onPageChange,
   onPageSizeChange,
@@ -194,6 +226,8 @@ export function GradeBookTab({
           <GradeBookFilterBar
             filters={filters}
             locations={locations}
+            classes={classes}
+            teachers={teachers}
             onChange={onFiltersChange}
           />
         </div>
