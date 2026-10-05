@@ -415,8 +415,8 @@ export function TransferClassDialog({
     form,
   ]);
 
-  // Default the editable denominator from the source tuition package, falling
-  // back to enrolled sessions only when the package has no configured count.
+  // Default the editable denominator from invoice allocations when available,
+  // then the source package, and finally the enrolled session count.
   useEffect(() => {
     if (!isOpen || !currentClass?.id || !student?.id) return;
     const sourceSessions = (currentSessions ?? []).filter(isTransferableSourceSession);
@@ -689,10 +689,10 @@ export function TransferClassDialog({
     currentFeePackage,
     currentRegisteredSessionCount,
   );
-  const currentSessionCount = hasCurrentInvoicePricing
-    ? invoicePricedSessions.length
-    : actualSessionCount > 0
-      ? actualSessionCount
+  const currentSessionCount = actualSessionCount > 0
+    ? actualSessionCount
+    : hasCurrentInvoicePricing
+      ? invoicePricedSessions.length
       : configuredPackageSessionCount;
   const configuredPackageSessionPrice = getPackageBaseSessionPrice(
     currentFeePackage,
@@ -786,15 +786,21 @@ export function TransferClassDialog({
       - Number(right.classSession?.sessionIndex ?? right.sessionIndex ?? 0),
     )
     .slice(0, transferCount);
-  const currentSurchargeTotal = selectedSourceSessions.reduce(
+  const selectedSourceSurchargeTotal = selectedSourceSessions.reduce(
     (total, session) => total + getSourceSurchargeFee(session),
     0,
   );
+  const currentSurchargeTotal = hasCurrentInvoicePricing && currentInvoicePricing.surcharge > 0
+    ? currentInvoicePricing.surcharge
+    : activeCurrentSessions.reduce(
+      (total, session) => total + getSourceSurchargeFee(session),
+      0,
+    );
   const exactCurrentTotal = applyDiscountedPriceToTransfer
     ? Math.max(
       0,
       calculatePerSessionTransferTotal(currentSessionPrice, selectedSourceSessions.length)
-        - (excludeSourceSurcharge ? currentSurchargeTotal : 0),
+        - (excludeSourceSurcharge ? selectedSourceSurchargeTotal : 0),
     )
     : selectedSourceSessions.reduce(
       (total, session) => total + getEffectiveSourceSessionPrice(session, excludeSourceSurcharge),
@@ -1279,15 +1285,13 @@ export function TransferClassDialog({
                           type="number"
                           min={1}
                           step={1}
-                          value={hasCurrentInvoicePricing
-                            ? invoicePricedSessions.length
-                            : actualSessionCount > 0 ? actualSessionCount : ""}
+                          value={actualSessionCount > 0 ? actualSessionCount : ""}
                           onChange={(event) => {
                             const value = Number(event.target.value);
                             setActualSessionCount(Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0);
                           }}
                           className="h-7 w-24 text-right"
-                          disabled={loadingCurrent || hasCurrentInvoicePricing}
+                          disabled={loadingCurrent}
                           data-testid="input-actual-session-count"
                         />
                         <span className="font-medium">buổi</span>
