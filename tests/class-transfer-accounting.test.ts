@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildClassTransferSurchargeOnlyAllocations,
+  buildClassTransferFallbackInvoiceAllocations,
   calculateClassFundedAmounts,
   calculateClassTransferSourceCredit,
   calculateClassTransferTargetSessionPrice,
@@ -111,35 +111,37 @@ describe("class transfer accounting", () => {
     })).toBe(2);
   });
 
-  it("excludes a course-item surcharge from source credit when the invoice item has no fee allocations", () => {
+  it("uses the class-linked invoice subtotal when package IDs prevent allocations and excludes only its surcharge", () => {
     const sessions = Array.from({ length: 20 }, (_, index) => ({
       id: `session-${String(index + 1).padStart(2, "0")}`,
       sessionPrice: 100_000,
       sessionOrder: index + 1,
     }));
-    const surchargeOnlyAllocations = buildClassTransferSurchargeOnlyAllocations(
+    const fallbackInvoiceAllocations = buildClassTransferFallbackInvoiceAllocations(
       [{
         invoiceItemId: "unallocated-course-item",
         invoiceStatus: "unpaid",
         itemPackageType: "khoá",
         itemQuantity: 20,
+        itemSubtotal: 5_050_000,
         itemSurchargeAmount: 50_000,
       }],
       [...sessions].reverse(),
     );
     const input = {
       sessions,
-      allocations: surchargeOnlyAllocations,
+      allocations: fallbackInvoiceAllocations,
     };
 
-    expect(surchargeOnlyAllocations.map((row) => row.studentSessionId)).toEqual(
+    expect(fallbackInvoiceAllocations.map((row) => row.studentSessionId)).toEqual(
       sessions.map((session) => session.id),
     );
-    expect(calculateClassTransferSourceCredit(input)).toBe(2_000_000);
+    expect(fallbackInvoiceAllocations[0]?.allocatedAmount).toBe(252_500);
+    expect(calculateClassTransferSourceCredit(input)).toBe(5_050_000);
     expect(calculateClassTransferSourceCredit({
       ...input,
       excludeSurcharge: true,
-    })).toBe(1_950_000);
+    })).toBe(5_000_000);
   });
 
   it("uses saved session prices before falling back to package prices", () => {

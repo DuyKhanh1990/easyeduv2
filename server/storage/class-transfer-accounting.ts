@@ -27,19 +27,24 @@ export type ClassTransferInvoiceAllocation = {
   itemPackageType?: string | null;
   itemQuantity?: NumericValue;
   itemSurchargeAmount?: NumericValue;
+  quantity?: NumericValue;
+  promotionAmount?: NumericValue;
+  promotionKeys?: string[] | null;
   sessionOrder?: NumericValue;
-  surchargeOnly?: boolean;
 };
 
-export type ClassTransferUnallocatedSurchargeItem = {
+export type ClassTransferUnallocatedInvoiceItem = {
   invoiceItemId: string;
   invoiceStatus?: string | null;
   itemPackageType?: string | null;
   itemQuantity?: NumericValue;
+  itemSubtotal?: NumericValue;
   itemSurchargeAmount?: NumericValue;
+  promotionAmount?: NumericValue;
+  promotionKeys?: string[] | null;
 };
 
-export type ClassTransferSurchargeCandidateSession = {
+export type ClassTransferInvoiceCandidateSession = {
   id: string;
   sessionOrder?: NumericValue;
 };
@@ -111,10 +116,13 @@ export function getClassTransferInvoiceSurchargeShares(
   return shares;
 }
 
-export function buildClassTransferSurchargeOnlyAllocations(
-  items: ClassTransferUnallocatedSurchargeItem[],
-  sessions: ClassTransferSurchargeCandidateSession[],
+export function buildClassTransferFallbackInvoiceAllocations(
+  items: ClassTransferUnallocatedInvoiceItem[],
+  sessions: ClassTransferInvoiceCandidateSession[],
 ): ClassTransferInvoiceAllocation[] {
+  // Reconstruct the invoice's per-session tuition in memory when exact
+  // package-ID matching left a same-course, class-linked invoice item unallocated.
+  // These rows are used for transfer pricing and are never persisted.
   const orderedSessions = [...sessions].sort((left, right) => {
     const leftOrder = Number(left.sessionOrder);
     const rightOrder = Number(right.sessionOrder);
@@ -127,19 +135,35 @@ export function buildClassTransferSurchargeOnlyAllocations(
   });
 
   return items.flatMap((item) => {
-    if (toFiniteNumber(item.itemSurchargeAmount) <= 0) return [];
     const requestedCount = Math.max(1, Math.floor(toFiniteNumber(item.itemQuantity, 1)));
-    return orderedSessions.slice(0, requestedCount).map((session) => ({
+    const targetSessions = orderedSessions.slice(0, requestedCount);
+    if (targetSessions.length === 0) return [];
+
+    const normalizedPackageType = String(item.itemPackageType ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase("vi");
+    const isPerSessionPackage = normalizedPackageType === "buoi";
+    const denominator = isPerSessionPackage ? requestedCount : targetSessions.length;
+    const totalCents = Math.round(Math.max(0, toFiniteNumber(item.itemSubtotal)) * 100);
+    const baseCents = Math.floor(totalCents / denominator);
+    const remainderCents = totalCents - baseCents * denominator;
+
+    return targetSessions.map((session, index) => ({
       allocationId: `${item.invoiceItemId}:${session.id}`,
       invoiceItemId: item.invoiceItemId,
       studentSessionId: session.id,
-      allocatedAmount: 0,
+      allocatedAmount: (
+        baseCents + (index >= denominator - remainderCents ? 1 : 0)
+      ) / 100,
       invoiceStatus: item.invoiceStatus,
       itemPackageType: item.itemPackageType,
       itemQuantity: item.itemQuantity,
       itemSurchargeAmount: item.itemSurchargeAmount,
+      quantity: item.itemQuantity,
+      promotionAmount: item.promotionAmount,
+      promotionKeys: item.promotionKeys ?? [],
       sessionOrder: session.sessionOrder,
-      surchargeOnly: true,
     }));
   });
 }
@@ -184,13 +208,11 @@ export function calculateClassTransferSourceCredit(input: {
   const surchargeShares = getClassTransferInvoiceSurchargeShares(input.allocations ?? []);
   for (const [index, allocation] of (input.allocations ?? []).entries()) {
     if (String(allocation.invoiceStatus ?? "").toLowerCase() === "cancelled") continue;
-    if (!allocation.surchargeOnly) {
-      allocationBySession.set(
-        allocation.studentSessionId,
-        (allocationBySession.get(allocation.studentSessionId) ?? 0)
-          + toFiniteNumber(allocation.allocatedAmount),
-      );
-    }
+    allocationBySession.set(
+      allocation.studentSessionId,
+      (allocationBySession.get(allocation.studentSessionId) ?? 0)
+        + toFiniteNumber(allocation.allocatedAmount),
+    );
     surchargeBySession.set(
       allocation.studentSessionId,
       (surchargeBySession.get(allocation.studentSessionId) ?? 0) + surchargeShares[index],

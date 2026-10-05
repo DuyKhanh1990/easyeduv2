@@ -23,7 +23,7 @@ import { getClass } from "./class.storage";
 import { getNextLocationCode } from "./finance.storage";
 import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 import {
-  buildClassTransferSurchargeOnlyAllocations,
+  buildClassTransferFallbackInvoiceAllocations,
   calculateClassTransferSourceCredit,
   calculateClassTransferTargetSessionPrice,
   getClassTransferInvoiceSurchargeShares,
@@ -658,8 +658,8 @@ export async function transferStudentClass(data: {
       movedAllocationItems,
       sourceAdjustments,
       sourceDefaultPackages,
-      sourceFallbackSurchargeItems,
-      sourceSurchargeSessions,
+      sourceFallbackInvoiceItems,
+      sourceInvoiceSessions,
     ] = await Promise.all([
       tx.select({
         invoiceItemId: invoiceSessionAllocations.invoiceItemId,
@@ -685,7 +685,10 @@ export async function transferStudentClass(data: {
             invoiceStatus: invoices.status,
             itemPackageType: invoiceItems.packageType,
             itemQuantity: invoiceItems.quantity,
+            itemSubtotal: invoiceItems.subtotal,
             itemSurchargeAmount: invoiceItems.surchargeAmount,
+            promotionAmount: invoiceItems.promotionAmount,
+            promotionKeys: invoiceItems.promotionKeys,
           })
             .from(invoiceItems)
             .innerJoin(invoices, eq(invoiceItems.invoiceId, invoices.id))
@@ -697,7 +700,6 @@ export async function transferStudentClass(data: {
               sql`${invoices.status} <> 'cancelled'`,
               eq(courseFeePackages.courseId, fromClass.courseId),
               inArray(invoiceItems.packageType, ["buổi", "khoá"]),
-              sql`${invoiceItems.surchargeAmount} > 0`,
               sql`NOT EXISTS (
                 SELECT 1 FROM ${invoiceSessionAllocations}
                 WHERE ${invoiceSessionAllocations.invoiceItemId} = ${invoiceItems.id}
@@ -744,9 +746,9 @@ export async function transferStudentClass(data: {
             asc(invoiceSessionAllocations.id),
           )
       : [];
-    const sourceFallbackSurchargeAllocations = buildClassTransferSurchargeOnlyAllocations(
-      sourceFallbackSurchargeItems,
-      sourceSurchargeSessions,
+    const sourceFallbackInvoiceAllocations = buildClassTransferFallbackInvoiceAllocations(
+      sourceFallbackInvoiceItems,
+      sourceInvoiceSessions,
     );
 
     const sourceDefaultPackage = sourceDefaultPackages[0];
@@ -756,7 +758,7 @@ export async function transferStudentClass(data: {
       }
       const hasActiveInvoiceAllocation = sourceAllocations.some(
         (allocation) => String(allocation.invoiceStatus ?? "").toLowerCase() !== "cancelled",
-      ) || sourceFallbackSurchargeAllocations.some(
+      ) || sourceFallbackInvoiceAllocations.some(
         (allocation) => String(allocation.invoiceStatus ?? "").toLowerCase() !== "cancelled",
       );
       const hasExistingAdjustment = sourceAdjustments.length > 0;
@@ -804,7 +806,7 @@ export async function transferStudentClass(data: {
       }));
     const sourceCreditAmount = calculateClassTransferSourceCredit({
       sessions: sourceCreditSessions,
-      allocations: [...sourceAllocations, ...sourceFallbackSurchargeAllocations],
+      allocations: [...sourceAllocations, ...sourceFallbackInvoiceAllocations],
       adjustments: sourceAdjustments,
       defaultPackage: sourceDefaultPackage,
       roundingMode: data.roundingMode,
@@ -2158,14 +2160,17 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
     .from(classes)
     .where(eq(classes.id, classId))
     .limit(1);
-  const fallbackSurchargeItems = classCourse?.courseId
+  const fallbackInvoiceItems = classCourse?.courseId
     ? await db
       .select({
         invoiceItemId: invoiceItems.id,
         invoiceStatus: invoices.status,
         itemPackageType: invoiceItems.packageType,
         itemQuantity: invoiceItems.quantity,
+        itemSubtotal: invoiceItems.subtotal,
         itemSurchargeAmount: invoiceItems.surchargeAmount,
+        promotionAmount: invoiceItems.promotionAmount,
+        promotionKeys: invoiceItems.promotionKeys,
       })
       .from(invoiceItems)
       .innerJoin(invoices, eq(invoiceItems.invoiceId, invoices.id))
@@ -2177,7 +2182,6 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
         sql`${invoices.status} <> 'cancelled'`,
         eq(courseFeePackages.courseId, classCourse.courseId),
         inArray(invoiceItems.packageType, ["buổi", "khoá"]),
-        sql`${invoiceItems.surchargeAmount} > 0`,
         sql`NOT EXISTS (
           SELECT 1 FROM ${invoiceSessionAllocations}
           WHERE ${invoiceSessionAllocations.invoiceItemId} = ${invoiceItems.id}
@@ -2185,21 +2189,10 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
       ))
       .orderBy(asc(invoiceItems.createdAt), asc(invoiceItems.sortOrder))
     : [];
-  const fallbackSurchargeAllocations = buildClassTransferSurchargeOnlyAllocations(
-    fallbackSurchargeItems,
+  const fallbackInvoiceAllocations = buildClassTransferFallbackInvoiceAllocations(
+    fallbackInvoiceItems,
     rows.map((row) => ({ id: row.id, sessionOrder: row.sessionOrder })),
   );
-  const fallbackSurchargeShares = getClassTransferInvoiceSurchargeShares(
-    fallbackSurchargeAllocations,
-  );
-  const fallbackSurchargeBySession = new Map<string, number>();
-  for (const [index, allocation] of fallbackSurchargeAllocations.entries()) {
-    fallbackSurchargeBySession.set(
-      allocation.studentSessionId,
-      (fallbackSurchargeBySession.get(allocation.studentSessionId) ?? 0)
-        + (fallbackSurchargeShares[index] ?? 0),
-    );
-  }
 
   // Use the amount allocated by the student's tuition invoice when available.
   // This is the post-promotion amount and preserves the existing session_price
@@ -2247,11 +2240,12 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
         asc(invoiceSessionAllocations.id),
       )
     : [];
-  const invoiceSurchargeShares = getClassTransferInvoiceSurchargeShares(allocationRows);
+  const transferInvoiceAllocations = [...allocationRows, ...fallbackInvoiceAllocations];
+  const invoiceSurchargeShares = getClassTransferInvoiceSurchargeShares(transferInvoiceAllocations);
   const requestedSessionIds = new Set(sessionIds);
 
   const promotionIds = Array.from(new Set(
-    allocationRows.flatMap((row) => row.promotionKeys ?? []).filter(Boolean),
+    transferInvoiceAllocations.flatMap((row) => row.promotionKeys ?? []).filter(Boolean),
   ));
   const promotionRows = promotionIds.length > 0
     ? await db
@@ -2274,7 +2268,7 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
     hasPackageAdjustment: boolean;
   }>();
 
-  for (const [allocationIndex, row] of allocationRows.entries()) {
+  for (const [allocationIndex, row] of transferInvoiceAllocations.entries()) {
     if (!requestedSessionIds.has(row.studentSessionId)) continue;
     const quantity = Math.max(1, Number(row.quantity) || 1);
     const current = pricingBySession.get(row.studentSessionId) ?? {
@@ -2329,8 +2323,7 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
     ...row,
     pricing: pricingBySession.get(row.id) ?? null,
     classTransferSurchargeFee:
-      (pricingBySession.get(row.id)?.allocatedSurchargeFee ?? 0)
-      + (fallbackSurchargeBySession.get(row.id) ?? 0),
+      pricingBySession.get(row.id)?.allocatedSurchargeFee ?? 0,
   }));
 }
 
