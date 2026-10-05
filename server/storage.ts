@@ -264,7 +264,9 @@ export interface IStorage {
     targetTransferCount?: number;
     targetPackageId?: string | null;
     targetSessionPrice?: number;
+    sourcePricingMode?: "invoice" | "class";
     sourceSessionPriceOverride?: number;
+    excludeSourceSurcharge?: boolean;
     roundingMode?: "none" | "down" | "up";
     userId: string;
     createdByName?: string | null;
@@ -272,6 +274,8 @@ export interface IStorage {
     transferCount: number;
     targetTransferCount: number;
     sourceCreditAmount: number;
+    sourcePricingMode: "invoice" | "class";
+    sourceInvoiceCodes: string[];
     fromSessionIds: string[];
     toSessionIds: string[];
   }>;
@@ -464,7 +468,9 @@ export class DatabaseStorage implements IStorage {
     targetTransferCount?: number;
     targetPackageId?: string | null;
     targetSessionPrice?: number;
+    sourcePricingMode?: "invoice" | "class";
     sourceSessionPriceOverride?: number;
+    excludeSourceSurcharge?: boolean;
     roundingMode?: "none" | "down" | "up";
     userId: string;
     createdByName?: string | null;
@@ -472,6 +478,8 @@ export class DatabaseStorage implements IStorage {
     transferCount: number;
     targetTransferCount: number;
     sourceCreditAmount: number;
+    sourcePricingMode: "invoice" | "class";
+    sourceInvoiceCodes: string[];
     fromSessionIds: string[];
     toSessionIds: string[];
   }> {

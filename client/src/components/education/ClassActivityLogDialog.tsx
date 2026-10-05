@@ -216,6 +216,10 @@ type TransferClassLogPayload = {
   toSessionIndex: number;
   transferCount: number;
   targetTransferCount?: number;
+  sourcePricingMode?: "invoice" | "class";
+  sourceInvoiceCodes?: string[];
+  sourceCreditAmount?: number;
+  excludeSourceSurcharge?: boolean;
   fromSessions?: TransferClassLogSessionEntry[];
   toSessions?: TransferClassLogSessionEntry[];
   sessions: TransferClassLogSession[];
@@ -1352,6 +1356,14 @@ function tryParseTransferClassLog(raw: string | null): TransferClassLogPayload |
   return null;
 }
 
+function getTransferPricingSourceLabel(payload: TransferClassLogPayload): string | null {
+  if (payload.sourcePricingMode === "invoice") {
+    const invoiceCodes = payload.sourceInvoiceCodes?.filter(Boolean).join(", ");
+    return `Hóa đơn${invoiceCodes ? ` ${invoiceCodes}` : ""}`;
+  }
+  return payload.sourcePricingMode === "class" ? "Gói lớp/lịch" : null;
+}
+
 function tryParseTuitionPackageLog(raw: string | null): TuitionPackageLogPayload | null {
   if (!raw) return null;
   try {
@@ -1367,6 +1379,7 @@ function TransferClassLogCell({ raw }: { raw: string | null }) {
   const payload = tryParseTransferClassLog(raw);
   if (!payload) return <span className="text-muted-foreground italic">—</span>;
   const { student, fromClass, toClass, sessions } = payload;
+  const sourcePricingLabel = getTransferPricingSourceLabel(payload);
   const firstPair = sessions[0];
   const fromSession = payload.fromSessions?.[0];
   const toSession = payload.toSessions?.[0];
@@ -1379,6 +1392,9 @@ function TransferClassLogCell({ raw }: { raw: string | null }) {
       <span className="text-xs text-muted-foreground">
         {fromClass.name} → {toClass.name}
       </span>
+      {sourcePricingLabel && (
+        <span className="text-xs text-muted-foreground">Nguồn giá: {sourcePricingLabel}</span>
+      )}
       {hasSeparateSessionLists ? (
         <span className="text-xs text-muted-foreground whitespace-nowrap">
           Lớp cũ: {payload.transferCount} buổi{fromSession ? ` từ buổi ${fromSession.sessionIndex ?? "?"}` : ""}
@@ -1401,6 +1417,7 @@ function TransferClassLogCell({ raw }: { raw: string | null }) {
 function TransferClassLogDetailView({ log }: { log: ActivityLog }) {
   const payload = tryParseTransferClassLog(log.newContent);
   if (!payload) return <div className="text-xs text-muted-foreground italic">Không có dữ liệu chi tiết.</div>;
+  const sourcePricingLabel = getTransferPricingSourceLabel(payload);
   const {
     student,
     fromClass,
@@ -1422,6 +1439,26 @@ function TransferClassLogDetailView({ log }: { log: ActivityLog }) {
           <div className="text-xs"><span className="text-muted-foreground">Học viên: </span><span className="font-semibold">{student.name}{student.code ? ` (${student.code})` : ""}</span></div>
           <div className="text-xs"><span className="text-muted-foreground">Buổi chuyển khỏi lớp cũ: </span><span className="font-medium">{transferCount}</span></div>
           <div className="text-xs"><span className="text-muted-foreground">Buổi nhận ở lớp mới: </span><span className="font-medium">{targetTransferCount}</span></div>
+          {sourcePricingLabel && (
+            <div className="text-xs">
+              <span className="text-muted-foreground">Nguồn tính giá lớp cũ: </span>
+              <span className="font-medium">{sourcePricingLabel}</span>
+            </div>
+          )}
+          {payload.sourceCreditAmount != null && (
+            <div className="text-xs">
+              <span className="text-muted-foreground">Giá trị chuyển từ lớp cũ: </span>
+              <span className="font-medium">{formatVND(payload.sourceCreditAmount)}</span>
+            </div>
+          )}
+          {payload.sourcePricingMode === "invoice" && payload.excludeSourceSurcharge != null && (
+            <div className="text-xs">
+              <span className="text-muted-foreground">Phụ thu hóa đơn: </span>
+              <span className="font-medium">
+                {payload.excludeSourceSurcharge ? "Không tính vào giá chuyển" : "Đã tính vào giá chuyển"}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 

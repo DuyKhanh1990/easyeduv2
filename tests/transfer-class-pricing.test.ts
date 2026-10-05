@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  areInvoiceAndClassPackagesEquivalent,
   calculateFirstSessionPriceAfterDiscount,
   calculateInvoiceSessionPrice,
   calculatePerSessionTransferTotal,
@@ -7,6 +8,33 @@ import {
 } from "../client/src/components/education/transferClassPricing";
 
 describe("class transfer per-session tuition fallback", () => {
+  it("treats matching invoice and class packages as one source, including equivalent course labels", () => {
+    expect(areInvoiceAndClassPackagesEquivalent({
+      invoicePackageNames: [" IELTS 4.0 "],
+      invoicePackageTypes: ["Khóa"],
+      classPackageName: "ielts 4.0",
+      classPackageType: "course",
+      invoiceBaseTotal: 5_000_000,
+      classBaseTotal: 5_000_000,
+    })).toBe(true);
+  });
+
+  it("treats a different package name, type, amount, or multiple invoice packages as a source mismatch", () => {
+    const base = {
+      invoicePackageNames: ["IELTS 4.0"],
+      invoicePackageTypes: ["khoá"],
+      classPackageName: "IELTS 4.0",
+      classPackageType: "course",
+      invoiceBaseTotal: 5_000_000,
+      classBaseTotal: 5_000_000,
+    };
+
+    expect(areInvoiceAndClassPackagesEquivalent({ ...base, classBaseTotal: 2_000_000 })).toBe(false);
+    expect(areInvoiceAndClassPackagesEquivalent({ ...base, classPackageType: "buổi" })).toBe(false);
+    expect(areInvoiceAndClassPackagesEquivalent({ ...base, classPackageName: "IELTS 5.0" })).toBe(false);
+    expect(areInvoiceAndClassPackagesEquivalent({ ...base, invoicePackageNames: ["IELTS 4.0", "IELTS Speaking"] })).toBe(false);
+  });
+
   it("uses the configured package total and session count to price the transferred sessions", () => {
     const packageSessionPrice = calculateFirstSessionPriceAfterDiscount(4_800_000, 12);
     expect(packageSessionPrice).toBe(400_000);

@@ -24,6 +24,7 @@ export type ClassTransferInvoiceAllocation = {
   studentSessionId: string;
   allocatedAmount: NumericValue;
   invoiceStatus?: string | null;
+  invoiceCode?: string | null;
   itemPackageName?: string | null;
   itemPackageType?: string | null;
   itemQuantity?: NumericValue;
@@ -37,6 +38,7 @@ export type ClassTransferInvoiceAllocation = {
 export type ClassTransferUnallocatedInvoiceItem = {
   invoiceItemId: string;
   invoiceStatus?: string | null;
+  invoiceCode?: string | null;
   itemPackageName?: string | null;
   itemPackageType?: string | null;
   itemQuantity?: NumericValue;
@@ -159,6 +161,7 @@ export function buildClassTransferFallbackInvoiceAllocations(
         baseCents + (index >= denominator - remainderCents ? 1 : 0)
       ) / 100,
       invoiceStatus: item.invoiceStatus,
+      invoiceCode: item.invoiceCode,
       itemPackageName: item.itemPackageName,
       itemPackageType: item.itemPackageType,
       itemQuantity: item.itemQuantity,
@@ -260,6 +263,25 @@ export function calculateClassTransferSourceCredit(input: {
       : sourceCredit;
 
   return Number(Math.max(0, rounded).toFixed(2));
+}
+
+export function calculateClassTransferSourceCreditAtUnitPrice(
+  sessions: ClassTransferSourceSession[],
+  sourceUnitPrice: number,
+  roundingMode?: ClassTransferRoundingMode,
+): number {
+  const unitPrice = toFiniteNumber(sourceUnitPrice);
+  return calculateClassTransferSourceCredit({
+    sessions: sessions.map((session) => ({
+      ...session,
+      sessionPrice: null,
+      transferPriceOverride: unitPrice,
+    })),
+    allocations: [],
+    adjustments: [],
+    roundingMode,
+    excludeSurcharge: false,
+  });
 }
 
 export function calculateClassTransferTargetSessionPrice(

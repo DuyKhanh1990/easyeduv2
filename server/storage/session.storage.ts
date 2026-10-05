@@ -25,6 +25,7 @@ import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 import {
   buildClassTransferFallbackInvoiceAllocations,
   calculateClassTransferSourceCredit,
+  calculateClassTransferSourceCreditAtUnitPrice,
   calculateClassTransferTargetSessionPrice,
   getClassTransferInvoiceSurchargeShares,
   getPackageSessionValue,
@@ -479,6 +480,7 @@ export async function transferStudentClass(data: {
   targetTransferCount?: number;
   targetPackageId?: string | null;
   targetSessionPrice?: number;
+  sourcePricingMode?: "invoice" | "class";
   sourceSessionPriceOverride?: number;
   excludeSourceSurcharge?: boolean;
   roundingMode?: "none" | "down" | "up";
@@ -490,6 +492,8 @@ export async function transferStudentClass(data: {
   transferCount: number;
   targetTransferCount: number;
   sourceCreditAmount: number;
+  sourcePricingMode: "invoice" | "class";
+  sourceInvoiceCodes: string[];
   fromSessionIds: string[];
   toSessionIds: string[];
 }> {
@@ -683,6 +687,7 @@ export async function transferStudentClass(data: {
         ? tx.select({
             invoiceItemId: invoiceItems.id,
             invoiceStatus: invoices.status,
+          invoiceCode: invoices.code,
             itemPackageType: invoiceItems.packageType,
             itemQuantity: invoiceItems.quantity,
             itemSubtotal: invoiceItems.subtotal,
@@ -734,6 +739,7 @@ export async function transferStudentClass(data: {
           itemQuantity: invoiceItems.quantity,
           itemSurchargeAmount: invoiceItems.surchargeAmount,
           sessionOrder: studentSessions.sessionOrder,
+          invoiceCode: invoices.code,
         })
           .from(invoiceSessionAllocations)
           .innerJoin(invoiceItems, eq(invoiceSessionAllocations.invoiceItemId, invoiceItems.id))
@@ -750,12 +756,30 @@ export async function transferStudentClass(data: {
       sourceFallbackInvoiceItems,
       sourceInvoiceSessions,
     );
+    const sourceInvoiceCodes = Array.from(new Set(
+      [...sourceAllocations, ...sourceFallbackInvoiceAllocations]
+        .filter((allocation) => String(allocation.invoiceStatus ?? "").toLowerCase() !== "cancelled")
+        .map((allocation) => allocation.invoiceCode)
+        .filter((code): code is string => Boolean(code)),
+    ));
+    const hasActiveSourceInvoiceData = [...sourceAllocations, ...sourceFallbackInvoiceAllocations]
+      .some((allocation) => String(allocation.invoiceStatus ?? "").toLowerCase() !== "cancelled");
+    const sourcePricingMode = data.sourcePricingMode
+      ?? (hasActiveSourceInvoiceData ? "invoice" : "class");
+    const sourcePricingLabel = sourcePricingMode === "invoice"
+      ? `Hóa đơn${sourceInvoiceCodes.length > 0 ? ` ${sourceInvoiceCodes.join(", ")}` : ""}`
+      : "Gói lớp/lịch";
 
     const sourceDefaultPackage = sourceDefaultPackages[0];
     if (data.sourceSessionPriceOverride !== undefined) {
       if (!Number.isFinite(data.sourceSessionPriceOverride) || data.sourceSessionPriceOverride < 0) {
         throw new Error("Đơn giá học phí sau khuyến mãi không hợp lệ");
       }
+    }
+    if (
+      data.sourceSessionPriceOverride !== undefined
+      && data.sourcePricingMode === undefined
+    ) {
       const hasActiveInvoiceAllocation = sourceAllocations.some(
         (allocation) => String(allocation.invoiceStatus ?? "").toLowerCase() !== "cancelled",
       ) || sourceFallbackInvoiceAllocations.some(
@@ -776,7 +800,7 @@ export async function transferStudentClass(data: {
         const storedPrice = session.sessionPrice == null
           ? packageUnitPrice
           : Number(session.sessionPrice);
-        const sourceOverride = data.sourceSessionPriceOverride;
+        const sourceOverride = data.sourceSessionPriceOverride!;
         const isSupportedPackageType =
           packageType === "buoi"
           || packageType === "course"
@@ -798,20 +822,51 @@ export async function transferStudentClass(data: {
       }
     }
 
-    const sourceCreditSessions = data.sourceSessionPriceOverride === undefined
-      ? oldSessions
-      : oldSessions.map((session) => ({
+    const usesSelectedSourcePrice = data.sourcePricingMode === "class";
+    const selectedSourcePriceSessions = oldSessions.map((session) => {
+      if (data.sourcePricingMode === "class") {
+        return {
+          ...session,
+          packageType: sourceDefaultPackage?.type ?? session.packageType,
+          packageFee: sourceDefaultPackage?.fee ?? session.packageFee,
+          packageFeeType: sourceDefaultPackage?.type ?? session.packageFeeType,
+          packageSessions: sourceDefaultPackage?.sessions ?? session.packageSessions,
+          packageTotalAmount: sourceDefaultPackage?.totalAmount ?? session.packageTotalAmount,
+          sessionPrice: null,
+          transferPriceOverride: data.sourceSessionPriceOverride,
+        };
+      }
+      return {
         ...session,
         transferPriceOverride: data.sourceSessionPriceOverride,
-      }));
-    const sourceCreditAmount = calculateClassTransferSourceCredit({
-      sessions: sourceCreditSessions,
-      allocations: [...sourceAllocations, ...sourceFallbackInvoiceAllocations],
-      adjustments: sourceAdjustments,
-      defaultPackage: sourceDefaultPackage,
-      roundingMode: data.roundingMode,
-      excludeSurcharge: data.excludeSourceSurcharge,
+      };
     });
+    const hasSelectedUnitPrice =
+      data.sourcePricingMode !== undefined
+      && data.sourceSessionPriceOverride !== undefined;
+    const sourceCreditAmount = hasSelectedUnitPrice
+      ? calculateClassTransferSourceCreditAtUnitPrice(
+        oldSessions,
+        data.sourceSessionPriceOverride!,
+        data.roundingMode,
+      )
+      : calculateClassTransferSourceCredit({
+        sessions: usesSelectedSourcePrice
+          ? selectedSourcePriceSessions
+          : data.sourceSessionPriceOverride === undefined
+            ? oldSessions
+            : oldSessions.map((session) => ({
+              ...session,
+              transferPriceOverride: data.sourceSessionPriceOverride,
+            })),
+        allocations: usesSelectedSourcePrice
+          ? []
+          : [...sourceAllocations, ...sourceFallbackInvoiceAllocations],
+        adjustments: usesSelectedSourcePrice ? [] : sourceAdjustments,
+        defaultPackage: sourceDefaultPackage,
+        roundingMode: data.roundingMode,
+        excludeSurcharge: usesSelectedSourcePrice ? false : data.excludeSourceSurcharge,
+      });
 
     const resolvedTargetPackageId = data.targetPackageId ?? toClass?.feePackageId ?? null;
     let targetFeePackage: typeof courseFeePackages.$inferSelect | undefined;
@@ -898,11 +953,11 @@ export async function transferStudentClass(data: {
     // UUIDs là safe. Class names được escape single-quote theo chuẩn PostgreSQL ('').
     const sourceDiscountNote = data.sourceSessionPriceOverride === undefined
       ? ""
-      : `\nĐơn giá sau khuyến mãi: ${data.sourceSessionPriceOverride.toLocaleString("vi-VN")} đ/buổi`;
+      : `\nĐơn giá theo nguồn đã chọn: ${data.sourceSessionPriceOverride.toLocaleString("vi-VN")} đ/buổi`;
     const oldSessionUpdates = oldSessions.map((oldSession) => {
       return {
         id: oldSession.id,
-        note: `Chuyển sang lớp ${toClass?.name || data.toClassId}\nĐã nhận ${targetRangeLabel}${sourceDiscountNote}`,
+        note: `Chuyển sang lớp ${toClass?.name || data.toClassId}\nĐã nhận ${targetRangeLabel}${sourceDiscountNote}\nNguồn tính: ${sourcePricingLabel}`,
       };
     });
 
@@ -928,7 +983,7 @@ export async function transferStudentClass(data: {
       const fromClassName = fromClass?.name || data.fromClassId;
       const toClassName = toClass?.name || data.toClassId;
       const description =
-        `Điều chuyển ${amountLabel} giá trị học phí từ lớp ${fromClassName} sang lớp ${toClassName}`;
+        `Điều chuyển ${amountLabel} giá trị học phí từ lớp ${fromClassName} sang lớp ${toClassName}. Nguồn tính: ${sourcePricingLabel}`;
 
       // Paired entries preserve the overall tuition-wallet balance while
       // moving the paid allocation from the source class to the destination.
@@ -1006,6 +1061,8 @@ export async function transferStudentClass(data: {
       transferCount: oldSessions.length,
       targetTransferCount: targetClassSessions.length,
       sourceCreditAmount,
+      sourcePricingMode,
+      sourceInvoiceCodes,
       fromSessionIds: oldSessions.map((session) => session.classSessionId),
       toSessionIds: targetClassSessions.map((session) => session.id),
     };
@@ -2165,6 +2222,7 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
       .select({
         invoiceItemId: invoiceItems.id,
         invoiceStatus: invoices.status,
+        invoiceCode: invoices.code,
         itemPackageName: courseFeePackages.name,
         itemPackageType: invoiceItems.packageType,
         itemQuantity: invoiceItems.quantity,
@@ -2227,6 +2285,7 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
         quantity: invoiceItems.quantity,
         promotionKeys: invoiceItems.promotionKeys,
         invoiceStatus: invoices.status,
+        invoiceCode: invoices.code,
       })
       .from(invoiceSessionAllocations)
       .innerJoin(invoiceItems, eq(invoiceSessionAllocations.invoiceItemId, invoiceItems.id))
@@ -2271,6 +2330,7 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
     hasPackageAdjustment: boolean;
     invoicePackageNames: string[];
     invoicePackageTypes: string[];
+    invoiceCodes: string[];
   }>();
 
   for (const [allocationIndex, row] of transferInvoiceAllocations.entries()) {
@@ -2285,6 +2345,7 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
       hasPackageAdjustment: false,
       invoicePackageNames: [],
       invoicePackageTypes: [],
+      invoiceCodes: [],
     };
 
     current.allocatedFee += Number(row.allocatedAmount) || 0;
@@ -2296,6 +2357,9 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
     }
     if (row.itemPackageType && !current.invoicePackageTypes.includes(row.itemPackageType)) {
       current.invoicePackageTypes.push(row.itemPackageType);
+    }
+    if (row.invoiceCode && !current.invoiceCodes.includes(row.invoiceCode)) {
+      current.invoiceCodes.push(row.invoiceCode);
     }
 
     const percent = (row.promotionKeys ?? []).reduce((sum, promotionId) => {
@@ -2328,6 +2392,7 @@ export async function getStudentSessionsForClass(classId: string, studentId: str
       hasPackageAdjustment: false,
       invoicePackageNames: [],
       invoicePackageTypes: [],
+      invoiceCodes: [],
     };
     current.allocatedFee = Number(row.amount) || 0;
     current.hasPackageAdjustment = true;

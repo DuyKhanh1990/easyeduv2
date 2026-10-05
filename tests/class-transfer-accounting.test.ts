@@ -3,11 +3,22 @@ import {
   buildClassTransferFallbackInvoiceAllocations,
   calculateClassFundedAmounts,
   calculateClassTransferSourceCredit,
+  calculateClassTransferSourceCreditAtUnitPrice,
   calculateClassTransferTargetSessionPrice,
   getPackageSessionValue,
 } from "../server/storage/class-transfer-accounting";
 
 describe("class transfer accounting", () => {
+  it("applies the selected invoice or class unit price uniformly instead of mixing invoice allocations", () => {
+    const sessions = [
+      { id: "session-1", sessionPrice: 252_500 },
+      { id: "session-2", sessionPrice: 252_500 },
+    ];
+
+    expect(calculateClassTransferSourceCreditAtUnitPrice(sessions, 100_000)).toBe(200_000);
+    expect(calculateClassTransferSourceCreditAtUnitPrice(sessions, 202_000)).toBe(404_000);
+  });
+
   it("uses the latest effective package adjustment before every other source", () => {
     expect(calculateClassTransferSourceCredit({
       sessions: [{ id: "session-1", sessionPrice: 900 }],

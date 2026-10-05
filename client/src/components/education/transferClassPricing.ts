@@ -8,6 +8,52 @@ export type TransferSourceSessionPricing = {
   } | null;
 };
 
+type InvoiceAndClassPackageComparison = {
+  invoicePackageNames: string[];
+  invoicePackageTypes: string[];
+  classPackageName?: string | null;
+  classPackageType?: string | null;
+  invoiceBaseTotal: number;
+  classBaseTotal: number;
+};
+
+const normalizePackageIdentity = (value: unknown) =>
+  String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("vi");
+
+const normalizePackageType = (value: unknown) => {
+  const type = normalizePackageIdentity(value);
+  if (type === "course" || type.includes("khoa")) return "course";
+  if (type === "session" || type === "buoi") return "session";
+  return type;
+};
+
+export function areInvoiceAndClassPackagesEquivalent(
+  comparison: InvoiceAndClassPackageComparison,
+): boolean {
+  if (
+    comparison.invoicePackageNames.length !== 1
+    || comparison.invoicePackageTypes.length !== 1
+    || !normalizePackageIdentity(comparison.classPackageName)
+  ) {
+    return false;
+  }
+
+  const invoiceBaseTotal = Number(comparison.invoiceBaseTotal);
+  const classBaseTotal = Number(comparison.classBaseTotal);
+  return normalizePackageIdentity(comparison.invoicePackageNames[0])
+      === normalizePackageIdentity(comparison.classPackageName)
+    && normalizePackageType(comparison.invoicePackageTypes[0])
+      === normalizePackageType(comparison.classPackageType)
+    && Number.isFinite(invoiceBaseTotal)
+    && Number.isFinite(classBaseTotal)
+    && Math.abs(invoiceBaseTotal - classBaseTotal) <= 0.01;
+}
+
 export function hasExistingSessionTuition(
   sessions: TransferSourceSessionPricing[],
   fallbackPackageFee: string | number | null | undefined,
