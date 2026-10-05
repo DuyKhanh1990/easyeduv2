@@ -490,7 +490,10 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
                   <Table>
                   <TableHeader className="sticky top-0 bg-background z-10">
                     <TableRow>
-                      <TableHead className="min-w-[180px] sticky left-0 bg-background z-20 border-r">
+                      <TableHead className="w-12 min-w-[3rem] sticky left-0 bg-background z-30 border-r text-center">
+                        STT
+                      </TableHead>
+                      <TableHead className="min-w-[180px] sticky left-12 bg-background z-20 border-r">
                         {t("mySpace.scoreSheet.studentLabel")}
                       </TableHead>
                       {categories.map((cat: any) => {
@@ -515,7 +518,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
                     {displayedStudents.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={categories.length + 2}
+                          colSpan={categories.length + 3}
                           className="text-center text-sm text-muted-foreground py-8"
                         >
                           {t("mySpace.scoreSheet.noStudents")}
@@ -530,7 +533,10 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
                           student.fullName || student.full_name || student.student?.fullName || `${t("mySpace.scoreSheet.studentLabel")} ${idx + 1}`;
                         return (
                           <TableRow key={studentId}>
-                            <TableCell className="sticky left-0 bg-background border-r font-medium text-[13px]">
+                            <TableCell className="w-12 min-w-[3rem] sticky left-0 bg-background border-r text-center text-xs text-muted-foreground tabular-nums">
+                              {idx + 1}
+                            </TableCell>
+                            <TableCell className="sticky left-12 bg-background border-r font-medium text-[13px]">
                               {name}
                             </TableCell>
                             {categories.map((cat: any) => {

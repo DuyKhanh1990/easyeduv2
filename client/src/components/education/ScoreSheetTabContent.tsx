@@ -877,7 +877,10 @@ export function ScoreSheetTabContent({
                   <Table>
                     <TableHeader className="sticky top-0 bg-background z-10">
                       <TableRow>
-                        <TableHead className="min-w-[180px] sticky left-0 bg-background z-20 border-r border-border/50">
+                        <TableHead className="w-12 min-w-[3rem] sticky left-0 bg-background z-30 border-r border-border/50 text-center">
+                          STT
+                        </TableHead>
+                        <TableHead className="min-w-[180px] sticky left-12 bg-background z-20 border-r border-border/50">
                           Học viên
                         </TableHead>
                         {categories.map((cat: any) => {
@@ -902,7 +905,7 @@ export function ScoreSheetTabContent({
                       {displayedStudents.length === 0 ? (
                         <TableRow>
                           <TableCell
-                            colSpan={categories.length + 2}
+                            colSpan={categories.length + 3}
                             className="text-center text-sm text-muted-foreground py-8"
                           >
                             Không có học viên
@@ -917,7 +920,10 @@ export function ScoreSheetTabContent({
                           const studentCode = student.code || student.student?.code;
                           return (
                             <TableRow key={studentId} data-testid={`row-grade-student-${studentId}`}>
-                              <TableCell className="sticky left-0 bg-background border-r font-medium text-[13px]">
+                              <TableCell className="w-12 min-w-[3rem] sticky left-0 bg-background border-r text-center text-xs text-muted-foreground tabular-nums">
+                                {gradePage * gradePageSize + idx + 1}
+                              </TableCell>
+                              <TableCell className="sticky left-12 bg-background border-r font-medium text-[13px]">
                                 <StudentNameLink studentId={actualStudentId} name={name} code={studentCode} />
                               </TableCell>
                               {categories.map((cat: any) => {
