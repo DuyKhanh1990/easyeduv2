@@ -812,16 +812,17 @@ export async function getInvoices(filters: {
     const column = (name: string) => sql.raw(`${tableAlias}.${name}`);
     const rowConditions: any[] = [scheduleRowDateCondition(tableAlias)];
     if (f.paymentMethods?.length) {
-      rowConditions.push(sql`
-        COALESCE(${column("payment_method")}, '') = ANY(${f.paymentMethods}::text[])
-      `);
+      rowConditions.push(inArray(
+        sql`COALESCE(${column("payment_method")}, '')`,
+        f.paymentMethods,
+      ) as any);
     }
     if (f.payerNames?.length) {
       rowConditions.push(sql`EXISTS (
         SELECT 1
         FROM staff AS schedule_row_payer
         WHERE schedule_row_payer.user_id = ${column("paid_by")}
-          AND schedule_row_payer.full_name = ANY(${f.payerNames}::text[])
+          AND ${inArray(sql.raw("schedule_row_payer.full_name"), f.payerNames)}
       )`);
     }
     if (f.creatorNames?.length) {
@@ -829,7 +830,7 @@ export async function getInvoices(filters: {
         SELECT 1
         FROM staff AS schedule_row_creator
         WHERE schedule_row_creator.user_id = ${column("created_by")}
-          AND schedule_row_creator.full_name = ANY(${f.creatorNames}::text[])
+          AND ${inArray(sql.raw("schedule_row_creator.full_name"), f.creatorNames)}
       )`);
     }
     if (f.search) {

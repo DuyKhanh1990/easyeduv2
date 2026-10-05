@@ -88,6 +88,7 @@
 - [Score conversion pass threshold](score-conversion-pass-threshold.md) — “Đạt” means the selected total is at least the “Từ” score; the “Đến” value does not cap higher scores.
 - [Score conversion range boundaries](score-conversion-mapping-boundaries.md) — displayed “Từ–Đến” ranges include the upper bound unless the next range starts at that same boundary.
 - [Invoice installment filter authority](invoice-date-filter-row-parity.md) — installment values drive scheduled-invoice filters; parent fields are only shared context or aggregation.
+- [Drizzle array filters](drizzle-array-filter-parameters.md) — use `inArray` for dynamic string arrays; raw `ANY` interpolation can break filtered list endpoints.
 - [Facility shift history](shift-facility-history.md) — shift rows are independent per facility; stopping one preserves its assignment and attendance history.
 - [Staff calendar attendance permissions](staff-calendar-attendance-permissions.md) — assigned staff may attend and review by default; only a configured attendance limit should time-restrict attendance.
 - [My Space grade-book permissions](my-space-grade-book-permissions.md) — My Space score-book mutations use `/my-space/score-sheet`; Education keeps its schedule/class checks and class scope.
