@@ -61,8 +61,64 @@ async function getStaffAssignedClassSessionIds(req: any, classSessionIds: string
 }
 
 const CLASSES_RESOURCE = "/classes";
+const MY_SPACE_CALENDAR_RESOURCE = "/my-space/calendar";
 const SCORE_SHEET_TEMPLATE_SETTINGS_KEY = "scoreSheetTemplates";
 const SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY = "scoreSheetAssessments";
+
+function isMySpaceCalendarClassSessionRoute(req: any): boolean {
+  return String(req.path ?? "").startsWith("/api/my-space/calendar/class-sessions/");
+}
+
+async function assertMySpaceCalendarSessionPermission(
+  req: any,
+  res: any,
+  classSessionId: string,
+  action: "canView" | "canCreate" | "canEdit" | "canDelete",
+): Promise<boolean> {
+  if (action === "canDelete") {
+    res.status(403).json({ message: "Xóa nội dung không khả dụng trong Lịch cá nhân." });
+    return false;
+  }
+
+  const user = req.user as { username?: string } | undefined;
+  if (req.isSuperAdmin === true || user?.username === "admin") return true;
+
+  const [session] = await db
+    .select({ id: classSessions.id })
+    .from(classSessions)
+    .where(eq(classSessions.id, classSessionId))
+    .limit(1);
+  if (!session) {
+    res.status(404).json({ message: "Không tìm thấy buổi học." });
+    return false;
+  }
+
+  const assignedSessionIds = await getStaffAssignedClassSessionIds(req, [classSessionId]);
+  if (!assignedSessionIds.has(classSessionId)) {
+    res.status(403).json({ message: "Bạn không được phân công buổi học này." });
+    return false;
+  }
+
+  const permissions = await storage.getEffectivePermissions(
+    req.roleIds ?? [],
+    MY_SPACE_CALENDAR_RESOURCE,
+  );
+  const allowed = action === "canView"
+    ? permissions.canView
+    : action === "canCreate"
+      ? permissions.canCreate
+      : permissions.canEdit;
+  if (allowed) return true;
+
+  res.status(403).json({
+    message: action === "canCreate"
+      ? "Bạn không có quyền thêm học viên trong Lịch cá nhân."
+      : action === "canEdit"
+        ? "Bạn không có quyền sửa nội dung trong Lịch cá nhân."
+        : "Bạn không có quyền xem Lịch cá nhân.",
+  });
+  return false;
+}
 
 async function createScoreSheetAssessmentForTemplate(options: {
   templateId: string;
@@ -1587,9 +1643,25 @@ export function registerClassesRoutes(app: Express): void {
     res.json(studentList);
   });
 
-  app.get(api.classes.availableStudents.path, async (req, res) => {
-    const classId = String(req.params.id);
-    if (!(await assertClassReadable(req, res, classId))) return;
+  app.get([
+    api.classes.availableStudents.path,
+    "/api/my-space/calendar/class-sessions/:classSessionId/available-students",
+  ], async (req: any, res: any) => {
+    let classId: string;
+    if (isMySpaceCalendarClassSessionRoute(req)) {
+      const classSessionId = String(req.params.classSessionId);
+      if (!(await assertMySpaceCalendarSessionPermission(req, res, classSessionId, "canCreate"))) return;
+      const [session] = await db
+        .select({ classId: classSessions.classId })
+        .from(classSessions)
+        .where(eq(classSessions.id, classSessionId))
+        .limit(1);
+      if (!session) return res.status(404).json({ message: "Không tìm thấy buổi học." });
+      classId = session.classId;
+    } else {
+      classId = String(req.params.id);
+      if (!(await assertClassReadable(req, res, classId))) return;
+    }
     const searchTerm = req.query.searchTerm as string;
     const includeEnrolled = req.query.includeEnrolled === "true";
     const studentList = await storage.getAvailableStudentsForClass(classId, searchTerm, includeEnrolled);
@@ -3034,7 +3106,10 @@ export function registerClassesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/class-sessions/:sessionId/add-students", async (req, res) => {
+  app.post([
+    "/api/class-sessions/:sessionId/add-students",
+    "/api/my-space/calendar/class-sessions/:sessionId/add-students",
+  ], async (req: any, res: any) => {
     try {
       const { sessionId } = req.params;
       const { studentIds } = req.body;
@@ -3044,7 +3119,9 @@ export function registerClassesRoutes(app: Express): void {
       const { db: baseDb, eq: baseEq, and: baseAnd, classSessions: baseSessions, studentClasses: baseSc, studentSessions: baseSs } = await import("../storage/base");
       const [session] = await baseDb.select().from(baseSessions).where(baseEq(baseSessions.id, sessionId));
       if (!session) return res.status(404).json({ message: "Không tìm thấy buổi học" });
-      if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
+      if (isMySpaceCalendarClassSessionRoute(req)) {
+        if (!(await assertMySpaceCalendarSessionPermission(req, res, sessionId, "canCreate"))) return;
+      } else if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
 
       for (const studentId of studentIds) {
         const [existing] = await baseDb.select({ id: baseSs.id }).from(baseSs)
@@ -8007,11 +8084,16 @@ export function registerClassesRoutes(app: Express): void {
     }
   });
 
-  app.post(api.classSessions.createContent.path, async (req, res) => {
+  app.post([
+    api.classSessions.createContent.path,
+    "/api/my-space/calendar/class-sessions/:classSessionId/contents",
+  ], async (req: any, res: any) => {
     try {
       const { insertSessionContentSchema } = await import("@shared/schema");
       const classSessionId = req.params.classSessionId;
-      if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
+      if (isMySpaceCalendarClassSessionRoute(req)) {
+        if (!(await assertMySpaceCalendarSessionPermission(req, res, classSessionId, "canView"))) return;
+      } else if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
       const skipLog = req.query.skipLog === "true";
       const existingContents = skipLog ? [] : await storage.getSessionContents(classSessionId);
       const input = insertSessionContentSchema.parse({
@@ -8054,10 +8136,15 @@ export function registerClassesRoutes(app: Express): void {
     }
   });
 
-  app.delete(api.classSessions.deleteContent.path, async (req, res) => {
+  app.delete([
+    api.classSessions.deleteContent.path,
+    "/api/my-space/calendar/class-sessions/:classSessionId/contents",
+  ], async (req: any, res: any) => {
     try {
       const classSessionId = req.params.classSessionId;
-      if (!(await assertScheduleMutationPermission(req, res, "canDelete"))) return;
+      if (isMySpaceCalendarClassSessionRoute(req)) {
+        if (!(await assertMySpaceCalendarSessionPermission(req, res, classSessionId, "canDelete"))) return;
+      } else if (!(await assertScheduleMutationPermission(req, res, "canDelete"))) return;
       const contents = await storage.getSessionContents(classSessionId);
       for (const content of contents) {
         await storage.deleteSessionContent(content.id);
@@ -8068,9 +8155,14 @@ export function registerClassesRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/class-sessions/:classSessionId/contents/:contentId", async (req, res) => {
+  app.patch([
+    "/api/class-sessions/:classSessionId/contents/:contentId",
+    "/api/my-space/calendar/class-sessions/:classSessionId/contents/:contentId",
+  ], async (req: any, res: any) => {
     try {
-      if (!(await assertScheduleMutationPermission(req, res, "canEdit"))) return;
+      if (isMySpaceCalendarClassSessionRoute(req)) {
+        if (!(await assertMySpaceCalendarSessionPermission(req, res, req.params.classSessionId, "canEdit"))) return;
+      } else if (!(await assertScheduleMutationPermission(req, res, "canEdit"))) return;
       const { contentId } = req.params;
       const { dueDate } = req.body;
       const updated = await storage.updateSessionContent(contentId, {
@@ -8082,9 +8174,14 @@ export function registerClassesRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/class-sessions/:classSessionId/contents/:contentId", async (req, res) => {
+  app.delete([
+    "/api/class-sessions/:classSessionId/contents/:contentId",
+    "/api/my-space/calendar/class-sessions/:classSessionId/contents/:contentId",
+  ], async (req: any, res: any) => {
     try {
-      if (!(await assertScheduleMutationPermission(req, res, "canDelete"))) return;
+      if (isMySpaceCalendarClassSessionRoute(req)) {
+        if (!(await assertMySpaceCalendarSessionPermission(req, res, req.params.classSessionId, "canDelete"))) return;
+      } else if (!(await assertScheduleMutationPermission(req, res, "canDelete"))) return;
       const { classSessionId, contentId } = req.params;
       const skipLog = req.query.skipLog === "true";
       const existingContents = skipLog ? [] : await storage.getSessionContents(classSessionId);
@@ -8119,7 +8216,10 @@ export function registerClassesRoutes(app: Express): void {
   });
 
   // Batch content change log endpoint — called once after all adds/deletes to create one unified log entry
-  app.post("/api/class-sessions/:classSessionId/log-content-changes", async (req, res) => {
+  app.post([
+    "/api/class-sessions/:classSessionId/log-content-changes",
+    "/api/my-space/calendar/class-sessions/:classSessionId/log-content-changes",
+  ], async (req: any, res: any) => {
     try {
       const { classSessionId } = req.params;
       const { added = [], deleted = [], existingBefore = [] } = req.body as {
@@ -8128,8 +8228,20 @@ export function registerClassesRoutes(app: Express): void {
         existingBefore: { title: string; type: string }[];
       };
 
-      if (added.length > 0 && !(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
-      if (deleted.length > 0 && !(await assertScheduleMutationPermission(req, res, "canDelete"))) return;
+      if (isMySpaceCalendarClassSessionRoute(req)) {
+        if (deleted.length > 0) {
+          return res.status(403).json({ message: "Xóa nội dung không khả dụng trong Lịch cá nhân." });
+        }
+        if (added.length > 0 && !(await assertMySpaceCalendarSessionPermission(
+          req,
+          res,
+          classSessionId,
+          "canView",
+        ))) return;
+      } else {
+        if (added.length > 0 && !(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
+        if (deleted.length > 0 && !(await assertScheduleMutationPermission(req, res, "canDelete"))) return;
+      }
       if (added.length === 0 && deleted.length === 0) return res.json({ ok: true });
 
       const session = await storage.getClassSession(classSessionId);
@@ -8202,15 +8314,33 @@ export function registerClassesRoutes(app: Express): void {
   });
 
   // Personal student content: create session content then link to student
-  app.post("/api/class-sessions/:classSessionId/student-contents", async (req, res) => {
+  app.post([
+    "/api/class-sessions/:classSessionId/student-contents",
+    "/api/my-space/calendar/class-sessions/:classSessionId/student-contents",
+  ], async (req: any, res: any) => {
     try {
       const { classSessionId } = req.params;
-      if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
+      if (isMySpaceCalendarClassSessionRoute(req)) {
+        if (!(await assertMySpaceCalendarSessionPermission(req, res, classSessionId, "canView"))) return;
+      } else if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
       const { studentId, contentType, title, description, resourceUrl } = req.body;
       if (!studentId || !contentType || !title) {
         return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
       }
       const { db, eq, and, studentSessionContents } = await import("../storage/base");
+      if (isMySpaceCalendarClassSessionRoute(req)) {
+        const [enrollment] = await db
+          .select({ id: studentSessions.id })
+          .from(studentSessions)
+          .where(and(
+            eq(studentSessions.classSessionId, classSessionId),
+            eq(studentSessions.studentId, studentId),
+          ))
+          .limit(1);
+        if (!enrollment) {
+          return res.status(403).json({ message: "Học viên không thuộc buổi học này." });
+        }
+      }
       const { dueDate } = req.body;
       // Create a session content record first
       const sessionContent = await storage.createSessionContent({
@@ -8235,10 +8365,15 @@ export function registerClassesRoutes(app: Express): void {
   });
 
   // Notify students about content assignment
-  app.post("/api/class-sessions/:classSessionId/notify-content", async (req, res) => {
+  app.post([
+    "/api/class-sessions/:classSessionId/notify-content",
+    "/api/my-space/calendar/class-sessions/:classSessionId/notify-content",
+  ], async (req: any, res: any) => {
     try {
       const { classSessionId } = req.params;
-      if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
+      if (isMySpaceCalendarClassSessionRoute(req)) {
+        if (!(await assertMySpaceCalendarSessionPermission(req, res, classSessionId, "canView"))) return;
+      } else if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
       const { contents } = req.body as { contents: { contentType: string; title: string }[] };
       if (!Array.isArray(contents) || contents.length === 0) {
         return res.status(400).json({ message: "Không có nội dung để thông báo" });

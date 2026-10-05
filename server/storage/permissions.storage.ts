@@ -10,8 +10,13 @@ export type EffectivePermission = {
   canDelete: boolean;
 };
 
+const MY_SPACE_CALENDAR_RESOURCE = "/my-space/calendar";
+
 export async function getEffectivePermissions(roleIds: string[], resource: string): Promise<EffectivePermission> {
   if (!roleIds || roleIds.length === 0) {
+    if (resource === MY_SPACE_CALENDAR_RESOURCE) {
+      return { canView: true, canViewAll: false, canCreate: false, canEdit: false, canDelete: false };
+    }
     return { canView: false, canViewAll: false, canCreate: false, canEdit: false, canDelete: false };
   }
   const perms = await db
@@ -19,7 +24,7 @@ export async function getEffectivePermissions(roleIds: string[], resource: strin
     .from(rolePermissions)
     .where(and(inArray(rolePermissions.roleId, roleIds), eq(rolePermissions.resource, resource)));
 
-  return perms.reduce(
+  const effective = perms.reduce(
     (acc, p) => ({
       canView: acc.canView || p.canView,
       canViewAll: acc.canViewAll || p.canViewAll,
@@ -29,6 +34,10 @@ export async function getEffectivePermissions(roleIds: string[], resource: strin
     }),
     { canView: false, canViewAll: false, canCreate: false, canEdit: false, canDelete: false }
   );
+
+  return resource === MY_SPACE_CALENDAR_RESOURCE
+    ? { ...effective, canView: true, canViewAll: false, canDelete: false }
+    : effective;
 }
 
 export async function getRolePermissions(roleId: string): Promise<RolePermission[]> {

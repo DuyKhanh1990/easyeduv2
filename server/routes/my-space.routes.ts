@@ -657,6 +657,47 @@ async function getStaffFreeSessionRows(classId: string, sessionDate: string, sta
     ));
 }
 
+async function isStaffAssignedToEffectiveFreeClassSession(
+  classId: string,
+  sessionDate: string,
+  staffId: string,
+  studentId?: string,
+): Promise<boolean> {
+  const [classRow] = await db
+    .select({ teacherIds: classes.teacherIds })
+    .from(classes)
+    .where(and(eq(classes.id, classId), eq(classes.classType, "free")))
+    .limit(1);
+  if (!classRow) return false;
+
+  const [dayAssignment] = await db
+    .select({ teacherId: freeClassDayAssignments.teacherId })
+    .from(freeClassDayAssignments)
+    .where(and(
+      eq(freeClassDayAssignments.classId, classId),
+      eq(freeClassDayAssignments.assignmentDate, sessionDate),
+    ))
+    .limit(1);
+  const registrationConditions = [
+    eq(freeClassRegistrations.classId, classId),
+    eq(freeClassRegistrations.registrationDate, sessionDate),
+    inArray(studentClasses.status, ["active", "waiting"]),
+  ];
+  if (studentId) registrationConditions.push(eq(freeClassRegistrations.studentId, studentId));
+  const registrations = await db
+    .select({ teacherId: freeClassRegistrations.teacherId })
+    .from(freeClassRegistrations)
+    .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
+    .where(and(...registrationConditions));
+
+  return registrations.some(({ teacherId }) => {
+    const effectiveTeacherId = teacherId || dayAssignment?.teacherId || null;
+    return effectiveTeacherId
+      ? effectiveTeacherId === staffId
+      : (classRow.teacherIds ?? []).includes(staffId);
+  });
+}
+
 async function getFreeDayAssignmentMap(classIds: string[], dateFrom?: string, dateTo?: string) {
   if (classIds.length === 0) return new Map<string, any>();
   const conditions = [inArray(freeClassDayAssignments.classId, classIds)];
@@ -719,6 +760,35 @@ async function assertFreeClassContentWrite(
   action: "canCreate" | "canEdit" | "canDelete",
   legacyAccess: boolean,
 ): Promise<boolean> {
+  const isMySpaceCalendarRoute = String(req.path ?? "").startsWith(
+    "/api/my-space/calendar/free-class-sessions/",
+  );
+  if (isMySpaceCalendarRoute && action === "canDelete") {
+    res.status(403).json({ message: "Xóa nội dung không khả dụng trong Lịch cá nhân." });
+    return false;
+  }
+  if (isMySpaceCalendarRoute) {
+    const user = req.user as { username?: string } | undefined;
+    if (req.isSuperAdmin || user?.username === "admin") return true;
+
+    const sessionDate = String(req.params?.sessionDate ?? "");
+    const isAssigned = sessionDate
+      ? await isStaffAssignedToEffectiveFreeClassSession(classId, sessionDate, staffId)
+      : false;
+    if (!isAssigned) {
+      res.status(403).json({ message: "Bạn không được phân công buổi lớp tự do này." });
+      return false;
+    }
+
+    const permissions = await storage.getEffectivePermissions(
+      req.roleIds ?? [],
+      "/my-space/calendar",
+    );
+    const allowed = action === "canEdit" ? permissions.canEdit : permissions.canView;
+    if (allowed) return true;
+    res.status(403).json({ message: "Bạn không có quyền cập nhật nội dung trong Lịch cá nhân." });
+    return false;
+  }
   if (req.isSuperAdmin || (req.user as any)?.username === "admin") return true;
   const [schedulePermissions, classPermissions] = await Promise.all([
     storage.getEffectivePermissions(req.roleIds ?? [], "/schedule"),
@@ -911,7 +981,10 @@ export function registerMySpaceRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/free-class-sessions/:classId/:sessionDate/contents", async (req, res) => {
+  app.post([
+    "/api/free-class-sessions/:classId/:sessionDate/contents",
+    "/api/my-space/calendar/free-class-sessions/:classId/:sessionDate/contents",
+  ], async (req: any, res: any) => {
     try {
       const user = req.user as any;
       if (!user) return res.status(401).json({ message: "Unauthorized" });
@@ -944,7 +1017,10 @@ export function registerMySpaceRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/free-class-sessions/:classId/:sessionDate/contents/:contentId", async (req, res) => {
+  app.patch([
+    "/api/free-class-sessions/:classId/:sessionDate/contents/:contentId",
+    "/api/my-space/calendar/free-class-sessions/:classId/:sessionDate/contents/:contentId",
+  ], async (req: any, res: any) => {
     try {
       const user = req.user as any;
       if (!user) return res.status(401).json({ message: "Unauthorized" });
@@ -972,7 +1048,10 @@ export function registerMySpaceRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/free-class-sessions/:classId/:sessionDate/contents/:contentId", async (req, res) => {
+  app.delete([
+    "/api/free-class-sessions/:classId/:sessionDate/contents/:contentId",
+    "/api/my-space/calendar/free-class-sessions/:classId/:sessionDate/contents/:contentId",
+  ], async (req: any, res: any) => {
     try {
       const user = req.user as any;
       if (!user) return res.status(401).json({ message: "Unauthorized" });
@@ -996,7 +1075,10 @@ export function registerMySpaceRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/free-class-sessions/:classId/:sessionDate/student-contents", async (req, res) => {
+  app.post([
+    "/api/free-class-sessions/:classId/:sessionDate/student-contents",
+    "/api/my-space/calendar/free-class-sessions/:classId/:sessionDate/student-contents",
+  ], async (req: any, res: any) => {
     try {
       const user = req.user as any;
       if (!user) return res.status(401).json({ message: "Unauthorized" });
@@ -1012,6 +1094,17 @@ export function registerMySpaceRoutes(app: Express): void {
       if (!studentId || !contentType || !title) return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
       if (!rows.some((row) => row.studentId === studentId)) {
         return res.status(400).json({ message: "Học viên không đăng ký buổi học này" });
+      }
+      if (
+        String(req.path ?? "").startsWith("/api/my-space/calendar/free-class-sessions/")
+        && !(await isStaffAssignedToEffectiveFreeClassSession(
+          classId,
+          sessionDate,
+          staffRecord.id,
+          studentId,
+        ))
+      ) {
+        return res.status(403).json({ message: "Bạn không được phân công học viên này trong buổi học." });
       }
       const [created] = await db.insert(freeClassSessionContents).values({
         classId,
@@ -1031,7 +1124,10 @@ export function registerMySpaceRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/free-class-sessions/:classId/:sessionDate/student-contents/:contentId", async (req, res) => {
+  app.delete([
+    "/api/free-class-sessions/:classId/:sessionDate/student-contents/:contentId",
+    "/api/my-space/calendar/free-class-sessions/:classId/:sessionDate/student-contents/:contentId",
+  ], async (req: any, res: any) => {
     try {
       const user = req.user as any;
       if (!user) return res.status(401).json({ message: "Unauthorized" });

@@ -40,6 +40,7 @@ interface SessionContentDialogProps {
   freeSessionDate?: string;
   freeStudents?: Array<{ id: string; name: string; code?: string | null }>;
   classPerm?: SessionContentPermissions;
+  mySpaceCalendar?: boolean;
 }
 
 interface SelectedContent {
@@ -986,16 +987,23 @@ export function SessionContentDialog({
   freeSessionDate,
   freeStudents,
   classPerm,
+  mySpaceCalendar = false,
 }: SessionContentDialogProps) {
   const { t } = useLanguage();
   const { toast } = useToast();
   const isFreeSession = !!freeClassId && !!freeSessionDate;
-  const canAdd = classPerm?.canAdd ?? true;
+  const canAdd = mySpaceCalendar || (classPerm?.canAdd ?? true);
   const canEdit = classPerm?.canEdit ?? true;
-  const canDelete = classPerm?.canDelete ?? true;
+  const canDelete = mySpaceCalendar ? false : (classPerm?.canDelete ?? true);
   const freeContentPath = isFreeSession
     ? `/api/free-class-sessions/${freeClassId}/${freeSessionDate}`
     : "";
+  const freeContentWritePath = isFreeSession && mySpaceCalendar
+    ? `/api/my-space/calendar/free-class-sessions/${freeClassId}/${freeSessionDate}`
+    : freeContentPath;
+  const classSessionWritePath = mySpaceCalendar
+    ? `/api/my-space/calendar/class-sessions/${classSessionId}`
+    : `/api/class-sessions/${classSessionId}`;
 
   const [selectedCommon, setSelectedCommon] = useState<SelectedContent[]>([]);
   const [selectedPersonal, setSelectedPersonal] = useState<SelectedContent[]>([]);
@@ -1230,10 +1238,10 @@ export function SessionContentDialog({
         const currentDbIds = new Set(selectedCommon.map((c) => c.dbId).filter(Boolean) as string[]);
         const commonToDelete = Array.from(originalCommonDbIds).filter((id) => !currentDbIds.has(id));
         for (const contentId of commonToDelete) {
-          await apiRequest("DELETE", `${freeContentPath}/contents/${contentId}`);
+          await apiRequest("DELETE", `${freeContentWritePath}/contents/${contentId}`);
         }
         for (const content of selectedCommon.filter((c) => !c.dbId)) {
-          await apiRequest("POST", `${freeContentPath}/contents`, {
+          await apiRequest("POST", `${freeContentWritePath}/contents`, {
             contentType: content.type,
             title: content.title,
             description: content.description,
@@ -1244,7 +1252,7 @@ export function SessionContentDialog({
         for (const content of selectedCommon.filter(
           (c) => c.dbId && c.type === "Bài tập về nhà" && c.dueDate !== c.originalDueDate
         )) {
-          await apiRequest("PATCH", `${freeContentPath}/contents/${content.dbId}`, {
+          await apiRequest("PATCH", `${freeContentWritePath}/contents/${content.dbId}`, {
             dueDate: content.dueDate ?? null,
           });
         }
@@ -1255,10 +1263,10 @@ export function SessionContentDialog({
         for (const contentId of Array.from(originalPersonalSessionContentIds).filter(
           (id) => !currentPersonalIds.has(id)
         )) {
-          await apiRequest("DELETE", `${freeContentPath}/student-contents/${contentId}`);
+          await apiRequest("DELETE", `${freeContentWritePath}/student-contents/${contentId}`);
         }
         for (const content of selectedPersonal.filter((c) => !(c as any).dbId)) {
-          await apiRequest("POST", `${freeContentPath}/student-contents`, {
+          await apiRequest("POST", `${freeContentWritePath}/student-contents`, {
             studentId: (content as any).studentId,
             contentType: content.type,
             title: content.title,
@@ -1293,12 +1301,12 @@ export function SessionContentDialog({
         .map(c => ({ title: c.title, type: c.contentType }));
 
       for (const dbId of toDelete) {
-        await apiRequest("DELETE", `/api/class-sessions/${classSessionId}/contents/${dbId}?skipLog=true`);
+        await apiRequest("DELETE", `${classSessionWritePath}/contents/${dbId}?skipLog=true`);
       }
 
       const toAdd = selectedCommon.filter((c) => !c.dbId);
       for (const content of toAdd) {
-        await apiRequest("POST", `/api/class-sessions/${classSessionId}/contents?skipLog=true`, {
+        await apiRequest("POST", `${classSessionWritePath}/contents?skipLog=true`, {
           contentType: content.type,
           title: content.title,
           description: content.description,
@@ -1312,14 +1320,14 @@ export function SessionContentDialog({
         (c) => c.dbId && c.type === "Bài tập về nhà" && c.dueDate !== c.originalDueDate
       );
       for (const content of dueDateUpdates) {
-        await apiRequest("PATCH", `/api/class-sessions/${classSessionId}/contents/${content.dbId}`, {
+        await apiRequest("PATCH", `${classSessionWritePath}/contents/${content.dbId}`, {
           dueDate: content.dueDate ?? null,
         });
       }
 
       // Fire a single batch log entry for all adds/deletes
       if (toAdd.length > 0 || toDelete.length > 0) {
-        apiRequest("POST", `/api/class-sessions/${classSessionId}/log-content-changes`, {
+        apiRequest("POST", `${classSessionWritePath}/log-content-changes`, {
           added: toAdd.map(c => ({ title: c.title, type: c.type })),
           deleted: deletedItems,
           existingBefore,
@@ -1334,13 +1342,13 @@ export function SessionContentDialog({
         (id) => !currentPersonalSessionContentIds.has(id)
       );
       for (const dbId of personalToDelete) {
-        await apiRequest("DELETE", `/api/class-sessions/${classSessionId}/contents/${dbId}`);
+        await apiRequest("DELETE", `${classSessionWritePath}/contents/${dbId}`);
       }
 
       // Personal content: add new items (those without a dbId)
       const personalToAdd = selectedPersonal.filter((c) => !(c as any).dbId);
       for (const content of personalToAdd) {
-        await apiRequest("POST", `/api/class-sessions/${classSessionId}/student-contents`, {
+        await apiRequest("POST", `${classSessionWritePath}/student-contents`, {
           studentId: (content as any).studentId,
           contentType: content.type,
           title: content.title,
@@ -1359,7 +1367,7 @@ export function SessionContentDialog({
         title: c.title,
       }));
       if (notifyContents.length > 0) {
-        apiRequest("POST", `/api/class-sessions/${classSessionId}/notify-content`, {
+        apiRequest("POST", `${classSessionWritePath}/notify-content`, {
           contents: notifyContents,
         }).catch(() => {});
       }

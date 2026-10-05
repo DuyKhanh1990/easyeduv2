@@ -32,7 +32,6 @@ import { ContentViewDialog, SessionContentDialog } from "@/components/education/
 import { LibraryContentDialog } from "@/components/courses/LibraryContentDialog";
 import { AddStudentToSessionDialog } from "@/components/education/AddStudentToSessionDialog";
 import { ReviewDialog } from "@/components/education/ReviewDialog";
-import { RemoveStudentFromSessionDialog } from "@/components/education/RemoveStudentFromSessionDialog";
 import { useLanguage } from "@/hooks/use-language";
 
 const WEEKDAY_LABELS: Record<number, string> = {
@@ -119,7 +118,6 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const [isBulkAttendanceOpen, setIsBulkAttendanceOpen] = useState(false);
   const [isBulkAttendanceSaving, setIsBulkAttendanceSaving] = useState(false);
-  const [isRemoveOpen, setIsRemoveOpen] = useState(false);
   const [isBulkReviewOpen, setIsBulkReviewOpen] = useState(false);
 
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -139,6 +137,13 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
   const classSessionId = session?.classSessionId ?? "";
   const classId = session?.classId ?? "";
   const isFreeSession = session?.isFreeSession === true;
+  const { data: myPermissions } = useQuery<any>({
+    queryKey: ["/api/my-permissions"],
+    enabled: isOpen,
+  });
+  const calendarPermissions = myPermissions?.permissions?.["/my-space/calendar"];
+  const canAddStudents = myPermissions?.isSuperAdmin === true || calendarPermissions?.canCreate === true;
+  const canEditCalendarContent = myPermissions?.isSuperAdmin === true || calendarPermissions?.canEdit === true;
   const [freeStudentRows, setFreeStudentRows] = useState(session?.freeStudents ?? []);
 
   useEffect(() => {
@@ -190,8 +195,8 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
   };
 
   const { data: availableStudents = [], isLoading: loadingAvailable } = useQuery<any[]>({
-    queryKey: [`/api/classes/${classId}/available-students`],
-    enabled: isAddOpen && !isFreeSession && !!classId,
+    queryKey: [`/api/my-space/calendar/class-sessions/${classSessionId}/available-students`],
+    enabled: isAddOpen && !isFreeSession && !!classSessionId,
   });
 
   const { data: allCriteria = [] } = useQuery<any[]>({
@@ -214,7 +219,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
 
   const addStudentsMutation = useMutation({
     mutationFn: async (studentIds: string[]) => {
-      return apiRequest("POST", `/api/class-sessions/${classSessionId}/add-students`, { studentIds });
+      return apiRequest("POST", `/api/my-space/calendar/class-sessions/${classSessionId}/add-students`, { studentIds });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -222,6 +227,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
           const key = query.queryKey[0] as string;
           return typeof key === "string" && (
             key.includes("/student-sessions") ||
+            key.includes("/available-students") ||
             key === "/api/my-space/calendar/staff" ||
             key === "/api/schedule"
           );
@@ -445,13 +451,6 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
     }
   }
 
-  const removeStudentClassId = selectedStudentSessions[0]?.studentClassId ?? "";
-  const removeStudentClassIds = Object.fromEntries(
-    selectedStudentSessions
-      .filter((ss: any) => ss.studentId && ss.studentClassId)
-      .map((ss: any) => [ss.studentId, ss.studentClassId]),
-  );
-
   return (
     <>
       <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
@@ -562,7 +561,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                 <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
                   {!isFreeSession && (
                     <>
-                      <AddStudentToSessionDialog
+                      {canAddStudents && <AddStudentToSessionDialog
                         open={isAddOpen}
                         onOpenChange={(open) => {
                           setIsAddOpen(open);
@@ -584,7 +583,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                           setAddSelectedIds([]);
                           setAddSearchTerm("");
                         }}
-                      />
+                      />}
 
                       <Popover open={isActionMenuOpen} onOpenChange={setIsActionMenuOpen}>
                         <PopoverTrigger asChild>
@@ -624,17 +623,6 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                               }}
                             >
                                {t("mySpace.calendar.bulkReview")}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="justify-start text-xs h-8 text-destructive hover:text-destructive"
-                              onClick={() => {
-                                setIsActionMenuOpen(false);
-                                setIsRemoveOpen(true);
-                              }}
-                            >
-                               {t("mySpace.calendar.removeStudent")}
                             </Button>
                           </div>
                         </PopoverContent>
@@ -963,23 +951,6 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
         </DialogContent>
       </Dialog>
 
-      {/* Remove student dialog */}
-      {isRemoveOpen && selectedStudentSessions.length > 0 && (
-        <RemoveStudentFromSessionDialog
-          isOpen={isRemoveOpen}
-          onOpenChange={(open) => {
-            setIsRemoveOpen(open);
-            if (!open) setSelectedStudentIds([]);
-          }}
-          studentIds={selectedStudentSessions.map((ss: any) => ss.studentId)}
-          studentClassId={removeStudentClassId}
-          studentClassIds={removeStudentClassIds}
-          fromSessionOrder={session.sessionIndex ?? 1}
-          toSessionOrder={session.sessionIndex ?? 1}
-          classId={classId}
-        />
-      )}
-
       {/* Review dialog */}
       {reviewTarget && (
         <ReviewDialog
@@ -1064,6 +1035,8 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
               code: student.code,
             }))
           : undefined}
+        mySpaceCalendar
+        classPerm={{ canAdd: true, canEdit: canEditCalendarContent, canDelete: false }}
       />
 
       <LibraryContentDialog

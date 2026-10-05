@@ -1807,8 +1807,12 @@ type RolePermissionRecord = {
 };
 
 const MY_SPACE_SCORE_SHEET_RESOURCE = "/my-space/score-sheet";
+const MY_SPACE_CALENDAR_RESOURCE = "/my-space/calendar";
 
 function defaultPerm(resource?: string, deptName?: string) {
+  if (resource === MY_SPACE_CALENDAR_RESOURCE) {
+    return { canView: true, canViewAll: false, canCreate: false, canEdit: false, canDelete: false };
+  }
   if (resource === MY_SPACE_SCORE_SHEET_RESOURCE) {
     return { canView: true, canViewAll: false, canCreate: false, canEdit: false, canDelete: false };
   }
@@ -1864,7 +1868,7 @@ const PERM_DESCRIPTIONS: Record<string, string> = {
   "/#bao-cao/chuyen-doi": "Xem / Xem all: nhân sự có quyền xem báo cáo Chuyển đổi.",
   "/#bao-cao/lich-su-cuoc-goi": "Xem / Xem all: nhân sự có quyền xem báo cáo lịch sử cuộc gọi Omicall.",
   // MY SPACE
-  "/my-space/calendar": "Lịch cá nhân luôn hiển thị mặc định cho tất cả nhân sự trong phòng ban hệ thống.",
+  "/my-space/calendar": "Xem luôn bật. Nhân sự được điểm danh, ghi chú, nhận xét và giao/thêm nội dung trong buổi được phân công. Thêm chỉ cấp quyền thêm học viên; Sửa áp dụng cho cập nhật hạn nội dung đã giao. Xem all và Xóa không áp dụng.",
   "/my-space/assignments": "Xem luôn bật mặc định. Thêm: thêm nhận xét, điểm hoặc chấm bài lần đầu. Sửa: cập nhật nhận xét, điểm hoặc kết quả chấm bài.",
   "/my-space/score-sheet": "Xem luôn bật mặc định. Thêm cho phép tạo bảng điểm; Sửa cho phép cập nhật bảng điểm. Xem all và Xóa không áp dụng.",
   "/my-space/invoices": "Xem: học viên / nhân sự có quyền xem hoá đơn của bản thân. Bỏ tích quyền Xem để ẩn tab Hoá đơn của tôi.",
@@ -1962,7 +1966,7 @@ const PERM_DESCRIPTIONS_EN: Record<string, string> = {
   "/#bao-cao/hoc-vien-moi": "View / View All: view the New Students report.",
   "/#bao-cao/chuyen-doi": "View / View All: view the Conversion report.",
   "/#bao-cao/lich-su-cuoc-goi": "View / View All: view the Omicall Call History report.",
-  "/my-space/calendar": "Personal Calendar is enabled by default for all staff in system departments.",
+  "/my-space/calendar": "View is always enabled. Assigned staff can attend, add notes, review, and assign/add session content. Create only adds students; Edit controls changing assigned-content due dates. View All and Delete do not apply.",
   "/my-space/assignments": "View is always enabled. Create: add feedback, a score, or an initial grade. Edit: update feedback, scores, or an existing grade.",
   "/my-space/score-sheet": "View is always enabled by default. Create allows new score sheets; Edit allows updating them. View All and Delete do not apply.",
   "/my-space/invoices": "View: students and staff can view their own invoices. Uncheck View to hide the My Invoices tab.",
@@ -2107,7 +2111,9 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
     mutationFn: async ({ roleId, sessionId, updates }: { roleId: string; sessionId: string; updates: Record<string, PermMap[string]> }) => {
       const permissions = Object.entries(updates).map(([resource, perms]) => {
         // VIEW_ONLY / EDIT_ONLY resources always persist only their supported flags.
-        const effectivePerms = resource === MY_SPACE_SCORE_SHEET_RESOURCE
+        const effectivePerms = resource === MY_SPACE_CALENDAR_RESOURCE
+          ? { canView: true, canViewAll: false, canCreate: perms.canCreate, canEdit: perms.canEdit, canDelete: false }
+          : resource === MY_SPACE_SCORE_SHEET_RESOURCE
           ? { canView: true, canViewAll: false, canCreate: perms.canCreate, canEdit: perms.canEdit, canDelete: false }
           : resource === MY_SPACE_ASSIGNMENTS_RESOURCE
           ? { canView: true, canViewAll: false, canCreate: perms.canCreate, canEdit: perms.canEdit, canDelete: false }
@@ -2232,6 +2238,19 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
       queuePermissionUpdate(resource, updated);
       return;
     }
+    if (resource === MY_SPACE_CALENDAR_RESOURCE) {
+      if (isStudentSystemRole || (permKey !== "canCreate" && permKey !== "canEdit")) return;
+      const updated = {
+        ...current,
+        canView: true,
+        canViewAll: false,
+        canDelete: false,
+        [permKey]: toggling,
+      };
+      setLocalPerms(prev => ({ ...prev, [resource]: updated }));
+      queuePermissionUpdate(resource, updated);
+      return;
+    }
     if (resource === MY_SPACE_ASSIGNMENTS_RESOURCE) {
       if (permKey !== "canCreate" && permKey !== "canEdit") return;
       const updated = {
@@ -2296,11 +2315,21 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
     canDelete: false,
   });
 
+  const normalizeMySpaceCalendarPerm = (permission: PermMap[string]): PermMap[string] => ({
+    ...permission,
+    canView: true,
+    canViewAll: false,
+    canCreate: isStudentSystemRole ? false : permission.canCreate,
+    canEdit: isStudentSystemRole ? false : permission.canEdit,
+    canDelete: false,
+  });
+
   // localPerms = overlay optimistic; fetchedPerms = dữ liệu gốc từ server/cache.
   // Khi remount, localPerms rỗng nhưng fetchedPerms có cache → vẫn hiển thị đúng.
   const getResourcePerm = (resource: string): PermMap[string] => {
     if (resource in localPerms) {
       const local = localPerms[resource];
+      if (resource === MY_SPACE_CALENDAR_RESOURCE) return normalizeMySpaceCalendarPerm(local);
       if (resource === MY_SPACE_SCORE_SHEET_RESOURCE) return normalizeMySpaceScoreSheetPerm(local);
       return resource === MY_SPACE_ASSIGNMENTS_RESOURCE
         ? { ...local, canView: true, canViewAll: false, canDelete: false }
@@ -2309,13 +2338,16 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
     const fromServer = fetchedPerms?.find(p => p.resource === resource);
     if (fromServer) {
       const permission = { canView: fromServer.canView, canViewAll: fromServer.canViewAll, canCreate: fromServer.canCreate, canEdit: fromServer.canEdit, canDelete: fromServer.canDelete };
+      if (resource === MY_SPACE_CALENDAR_RESOURCE) return normalizeMySpaceCalendarPerm(permission);
       if (resource === MY_SPACE_SCORE_SHEET_RESOURCE) return normalizeMySpaceScoreSheetPerm(permission);
       return resource === MY_SPACE_ASSIGNMENTS_RESOURCE
         ? { ...permission, canView: true, canViewAll: false, canDelete: false }
         : permission;
     }
     const permission = defaultPerm(resource, selectedDept?.name);
-    return resource === MY_SPACE_SCORE_SHEET_RESOURCE
+    return resource === MY_SPACE_CALENDAR_RESOURCE
+      ? normalizeMySpaceCalendarPerm(permission)
+      : resource === MY_SPACE_SCORE_SHEET_RESOURCE
       ? normalizeMySpaceScoreSheetPerm(permission)
       : permission;
   };
@@ -2411,6 +2443,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
 
   const getAllowedKeysForResource = (resource: string, hasSubTabs: boolean): PermKey[] => {
     if (hasSubTabs) return [];
+    if (resource === MY_SPACE_CALENDAR_RESOURCE) return isStudentSystemRole ? [] : ["canCreate", "canEdit"];
     if (resource === MY_SPACE_SCORE_SHEET_RESOURCE) return isStudentSystemRole ? [] : ["canCreate", "canEdit"];
     if (resource === MY_SPACE_ASSIGNMENTS_RESOURCE) return ["canCreate", "canEdit"];
     return PERM_COLS.map(c => c.key).filter(k => {
@@ -2474,7 +2507,13 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
     for (const { resource, allowedKeys } of resources) {
       const current = getResourcePerm(resource);
       const updated = { ...current };
-      if (resource === MY_SPACE_SCORE_SHEET_RESOURCE) {
+      if (resource === MY_SPACE_CALENDAR_RESOURCE) {
+        updated.canView = true;
+        updated.canViewAll = false;
+        updated.canCreate = !isStudentSystemRole && value;
+        updated.canEdit = !isStudentSystemRole && value;
+        updated.canDelete = false;
+      } else if (resource === MY_SPACE_SCORE_SHEET_RESOURCE) {
         updated.canView = true;
         updated.canViewAll = false;
         updated.canCreate = !isStudentSystemRole && value;

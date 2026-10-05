@@ -133,6 +133,7 @@ function pickLearningOverview(allPerms: AllPerms): PermissionFlags {
  * Nếu có row explicit false → DENY.
  */
 function mySpacePick(allPerms: AllPerms, resource: string): boolean {
+  if (resource === "/my-space/calendar") return true;
   const rows = allPerms.filter(p => p.resource === resource);
   if (rows.length === 0) return true;
   return rows.some(p => p.canView || p.canViewAll);

@@ -344,6 +344,10 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
   const [viewingContentId, setViewingContentId] = useState<string | null>(null);
   const [viewingFallbackContent, setViewingFallbackContent] = useState<{ title: string; type: string; content?: string | null } | null>(null);
 
+  const { data: myPermissions } = useQuery<any>({ queryKey: ["/api/my-permissions"] });
+  const canEditCalendarContent =
+    myPermissions?.isSuperAdmin === true
+    || myPermissions?.permissions?.["/my-space/calendar"]?.canEdit === true;
   const isTestSession = session.classCode === "TEST";
   const testEnded = isTestSession && isTestSessionEnded(session);
   const { data: detail, isLoading, isError } = useStaffSessionDetail(isTestSession ? null : session.classSessionId);
@@ -577,6 +581,8 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
             name: student.fullName,
             code: student.code,
           }))}
+        mySpaceCalendar
+        classPerm={{ canAdd: true, canEdit: canEditCalendarContent, canDelete: false }}
         />
         <ContentViewDialog
           isOpen={!!viewingContentId || !!viewingFallbackContent}
@@ -740,6 +746,8 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
         isOpen={contentDialogOpen}
         onOpenChange={setContentDialogOpen}
         classSessionId={session.classSessionId}
+        mySpaceCalendar
+        classPerm={{ canAdd: true, canEdit: canEditCalendarContent, canDelete: false }}
       />
 
       <LibraryContentDialog

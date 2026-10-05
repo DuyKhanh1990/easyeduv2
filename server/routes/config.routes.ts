@@ -2291,6 +2291,13 @@ export function registerConfigRoutes(app: Express): void {
           canEdit: studentAssignmentsPerm?.canEdit ?? false,
           canDelete: false,
         };
+        studentPermMap["/my-space/calendar"] = {
+          canView: true,
+          canViewAll: false,
+          canCreate: false,
+          canEdit: false,
+          canDelete: false,
+        };
 
         return res.json({
           isSuperAdmin: false,
@@ -2331,6 +2338,14 @@ export function registerConfigRoutes(app: Express): void {
         canEdit: assignmentsPerm?.canEdit ?? false,
         canDelete: false,
       };
+      const calendarPerm = permMap["/my-space/calendar"];
+      permMap["/my-space/calendar"] = {
+        canView: true,
+        canViewAll: false,
+        canCreate: calendarPerm?.canCreate ?? false,
+        canEdit: calendarPerm?.canEdit ?? false,
+        canDelete: false,
+      };
 
       let departmentNames: string[] = [];
       let systemDepartmentNames: string[] = [];
@@ -2368,7 +2383,9 @@ export function registerConfigRoutes(app: Express): void {
     try {
       const { roleId } = z.object({ roleId: z.string().uuid() }).parse(req.query);
       const perms = await storage.getRolePermissions(roleId);
-      res.json(perms.map(permission => permission.resource === "/my-space/score-sheet"
+      res.json(perms.map(permission => permission.resource === "/my-space/calendar"
+        ? { ...permission, canView: true, canViewAll: false, canDelete: false }
+        : permission.resource === "/my-space/score-sheet"
         ? { ...permission, canView: true, canViewAll: false, canDelete: false }
         : permission.resource === "/my-space/assignments"
           ? { ...permission, canView: true, canViewAll: false, canDelete: false }
@@ -2391,7 +2408,9 @@ export function registerConfigRoutes(app: Express): void {
         canDelete: z.boolean(),
       }).parse(req.body);
       const { roleId, resource, ...permissions } = body;
-      const effectivePermissions = resource === "/my-space/score-sheet"
+      const effectivePermissions = resource === "/my-space/calendar"
+        ? { ...permissions, canView: true, canViewAll: false, canDelete: false }
+        : resource === "/my-space/score-sheet"
         ? { ...permissions, canView: true, canViewAll: false, canDelete: false }
         : resource === "/my-space/assignments"
           ? { ...permissions, canView: true, canViewAll: false, canDelete: false }
@@ -2420,7 +2439,9 @@ export function registerConfigRoutes(app: Express): void {
           canDelete: z.boolean(),
         })).min(1),
       }).parse(req.body);
-      const normalizedPermissions = body.permissions.map(permission => permission.resource === "/my-space/score-sheet"
+      const normalizedPermissions = body.permissions.map(permission => permission.resource === "/my-space/calendar"
+        ? { ...permission, canView: true, canViewAll: false, canDelete: false }
+        : permission.resource === "/my-space/score-sheet"
         ? { ...permission, canView: true, canViewAll: false, canDelete: false }
         : permission.resource === "/my-space/assignments"
           ? { ...permission, canView: true, canViewAll: false, canDelete: false }
