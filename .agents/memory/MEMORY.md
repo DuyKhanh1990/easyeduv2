@@ -95,3 +95,4 @@
 - [My Space assignment permissions](my-space-assignment-permissions.md) — assignment Add/Edit rights apply to My Space grading and comments only; keep Education assignment workflows independent.
 - [My Space calendar content deletion](my-space-calendar-content-delete.md) — Delete is independently configurable for assigned content; keep View All, student removal, and session-wide deletion disabled.
 - [Vitest JSX runtime](vitest-jsx-runtime.md) — Node-based Vitest tests may require explicit React imports even when the app build succeeds.
+- [Tuition surcharge treatment](tuition-surcharge-treatment.md) — Some centers distinguish invoice surcharge from tuition and tuition-wallet value; apply policy by center.
