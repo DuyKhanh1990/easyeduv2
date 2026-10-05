@@ -382,8 +382,12 @@ async function assertMySpaceScoreSheetPermission(
     "/my-space/score-sheet",
   );
   const allowed = action === "canView"
-    ? permissions.canView || permissions.canViewAll
-    : canScheduleWrite(permissions, action);
+    ? true
+    : action === "canCreate"
+      ? permissions.canCreate
+      : action === "canEdit"
+        ? permissions.canEdit
+        : false;
 
   if (allowed) return true;
 

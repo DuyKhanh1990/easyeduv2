@@ -2368,9 +2368,11 @@ export function registerConfigRoutes(app: Express): void {
     try {
       const { roleId } = z.object({ roleId: z.string().uuid() }).parse(req.query);
       const perms = await storage.getRolePermissions(roleId);
-      res.json(perms.map(permission => permission.resource === "/my-space/assignments"
+      res.json(perms.map(permission => permission.resource === "/my-space/score-sheet"
         ? { ...permission, canView: true, canViewAll: false, canDelete: false }
-        : permission));
+        : permission.resource === "/my-space/assignments"
+          ? { ...permission, canView: true, canViewAll: false, canDelete: false }
+          : permission));
     } catch (err: any) {
       if (err instanceof z.ZodError) return res.status(400).json(err.errors);
       res.status(500).json({ message: err.message });
@@ -2389,9 +2391,11 @@ export function registerConfigRoutes(app: Express): void {
         canDelete: z.boolean(),
       }).parse(req.body);
       const { roleId, resource, ...permissions } = body;
-      const effectivePermissions = resource === "/my-space/assignments"
+      const effectivePermissions = resource === "/my-space/score-sheet"
         ? { ...permissions, canView: true, canViewAll: false, canDelete: false }
-        : permissions;
+        : resource === "/my-space/assignments"
+          ? { ...permissions, canView: true, canViewAll: false, canDelete: false }
+          : permissions;
       const perm = await storage.upsertRolePermission(roleId, resource, effectivePermissions);
       cacheInvalidate("config:departments");
       res.json(perm);
@@ -2416,9 +2420,11 @@ export function registerConfigRoutes(app: Express): void {
           canDelete: z.boolean(),
         })).min(1),
       }).parse(req.body);
-      const normalizedPermissions = body.permissions.map(permission => permission.resource === "/my-space/assignments"
+      const normalizedPermissions = body.permissions.map(permission => permission.resource === "/my-space/score-sheet"
         ? { ...permission, canView: true, canViewAll: false, canDelete: false }
-        : permission);
+        : permission.resource === "/my-space/assignments"
+          ? { ...permission, canView: true, canViewAll: false, canDelete: false }
+          : permission);
       const { rolePermissions } = await import("@shared/schema");
       const oldRows = await db.select().from(rolePermissions)
         .where(and(eq(rolePermissions.roleId, body.roleId), inArray(rolePermissions.resource, normalizedPermissions.map(p => p.resource))));

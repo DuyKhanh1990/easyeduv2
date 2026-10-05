@@ -152,13 +152,9 @@ export function StaffScoreSheet() {
   const { toast } = useToast();
   const scoreSheetPermissions = myPermissions?.permissions["/my-space/score-sheet"];
   const canCreateGradeBook = myPermissions?.isSuperAdmin === true
-    || !!(
-      scoreSheetPermissions?.canCreate
-      || scoreSheetPermissions?.canEdit
-      || scoreSheetPermissions?.canDelete
-    );
+    || scoreSheetPermissions?.canCreate === true;
   const canEditGradeBook = myPermissions?.isSuperAdmin === true
-    || !!(scoreSheetPermissions?.canEdit || scoreSheetPermissions?.canDelete);
+    || scoreSheetPermissions?.canEdit === true;
 
   const { data, isLoading, refetch } = useQuery<StaffGradeBookRow[]>({
     queryKey: ["/api/my-space/score-sheet/staff"],
