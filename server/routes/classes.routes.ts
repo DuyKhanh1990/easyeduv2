@@ -9091,16 +9091,16 @@ export function registerClassesRoutes(app: Express): void {
       const offset = (page - 1) * pageSize;
       const search = String(req.query.search || "").trim();
       const classId = String(req.query.classId || "").trim();
-      const teacherId = String(req.query.teacherId || "").trim();
+      const createdById = String(req.query.createdById || "").trim();
+      const updatedById = String(req.query.updatedById || "").trim();
       const locationId = String(req.query.locationId || "").trim();
       const publishedFilter = req.query.published;
 
       let whereClauses = sql`1=1`;
       if (search) whereClauses = sql`${whereClauses} AND (gb.title ILIKE ${'%' + search + '%'} OR c.name ILIKE ${'%' + search + '%'})`;
       if (classId) whereClauses = sql`${whereClauses} AND gb.class_id = ${classId}::uuid`;
-      if (teacherId) {
-        whereClauses = sql`${whereClauses} AND (gb.created_by = ${teacherId}::uuid OR gb.updated_by = ${teacherId}::uuid)`;
-      }
+      if (createdById) whereClauses = sql`${whereClauses} AND gb.created_by = ${createdById}::uuid`;
+      if (updatedById) whereClauses = sql`${whereClauses} AND gb.updated_by = ${updatedById}::uuid`;
       if (locationId) whereClauses = sql`${whereClauses} AND c.location_id = ${locationId}::uuid`;
       if (publishedFilter === "true") whereClauses = sql`${whereClauses} AND gb.published = TRUE`;
       else if (publishedFilter === "false") whereClauses = sql`${whereClauses} AND gb.published = FALSE`;
@@ -9154,7 +9154,7 @@ export function registerClassesRoutes(app: Express): void {
         ORDER BY c.name
       `)).rows as any[];
 
-      const teacherRows = (await db.execute(sql`
+      const actorRows = (await db.execute(sql`
         SELECT
           actors.user_id AS id,
           COALESCE(MAX(s.full_name), u.username, actors.user_id::text) AS name
@@ -9194,7 +9194,7 @@ export function registerClassesRoutes(app: Express): void {
         pageSize,
         locations: locationRows.map((l) => ({ id: l.id, name: l.name })),
         classes: classRows.map((c) => ({ id: c.id, name: c.name })),
-        teachers: teacherRows.map((teacher) => ({ id: teacher.id, name: teacher.name })),
+        actors: actorRows.map((actor) => ({ id: actor.id, name: actor.name })),
       });
     } catch (err: any) {
       console.error("Grade books overview error:", err);
