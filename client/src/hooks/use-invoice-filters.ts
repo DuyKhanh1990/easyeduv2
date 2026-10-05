@@ -95,6 +95,7 @@ export function useInvoiceFilters(activeTab: string) {
     queryFn: async () => {
       const p = new URLSearchParams();
       if (isDebtTab) {
+        p.set("tabFilter", "debt");
         if (dateFrom) p.set("dueDateFrom", dateFrom);
         if (dateTo)   p.set("dueDateTo", dateTo);
       } else {

@@ -694,7 +694,7 @@ export async function getInvoices(filters: {
       .from(invoicePaymentSchedule)
       .where(inArray(invoicePaymentSchedule.paymentMethod, f.paymentMethods));
     conditions.push(or(
-      inArray(invoices.paymentMethod, f.paymentMethods),
+      and(noPaymentSchedule, inArray(invoices.paymentMethod, f.paymentMethods)),
       inArray(invoices.id, scheduleMethodInvoiceIds),
     ) as any);
   }
@@ -707,7 +707,7 @@ export async function getInvoices(filters: {
       .innerJoin(scheduleCreatorStaff, eq(invoicePaymentSchedule.createdBy, scheduleCreatorStaff.userId))
       .where(inArray(scheduleCreatorStaff.fullName, f.creatorNames));
     conditions.push(or(
-      inArray(creatorStaff.fullName, f.creatorNames),
+      and(noPaymentSchedule, inArray(creatorStaff.fullName, f.creatorNames)),
       inArray(invoices.id, scheduleCreatorInvoiceIds),
     ) as any);
   }
@@ -719,7 +719,7 @@ export async function getInvoices(filters: {
       .innerJoin(schedulePayerStaff, eq(invoicePaymentSchedule.paidBy, schedulePayerStaff.userId))
       .where(inArray(schedulePayerStaff.fullName, f.payerNames));
     conditions.push(or(
-      inArray(paidByStaff.fullName, f.payerNames),
+      and(noPaymentSchedule, inArray(paidByStaff.fullName, f.payerNames)),
       inArray(invoices.id, schedulePayerInvoiceIds),
     ) as any);
   }
@@ -777,7 +777,14 @@ export async function getInvoices(filters: {
   )`;
   const scheduleRowDateCondition = (tableAlias: string) => {
     const rowConditions: any[] = [];
-    if (f.paidAtFrom || f.paidAtTo) {
+    if (f.dueDateFrom || f.dueDateTo) {
+      const dateField = sql.raw(`${tableAlias}.due_date`);
+      if (f.dueDateFrom) rowConditions.push(sql`${dateField} >= ${f.dueDateFrom}::date`);
+      if (f.dueDateTo) rowConditions.push(sql`${dateField} <= ${f.dueDateTo}::date`);
+      if (f.tabFilter === "debt") {
+        rowConditions.push(sql`${tableAlias}.status NOT IN ('paid', 'confirmed')`);
+      }
+    } else if (f.paidAtFrom || f.paidAtTo) {
       const dateField = sql.raw(`${tableAlias}.paid_at`);
       rowConditions.push(sql`${dateField} IS NOT NULL`);
       if (f.paidAtFrom) {
@@ -806,7 +813,7 @@ export async function getInvoices(filters: {
     const rowConditions: any[] = [scheduleRowDateCondition(tableAlias)];
     if (f.paymentMethods?.length) {
       rowConditions.push(sql`
-        COALESCE(${column("payment_method")}, ${invoices.paymentMethod}, '') = ANY(${f.paymentMethods}::text[])
+        COALESCE(${column("payment_method")}, '') = ANY(${f.paymentMethods}::text[])
       `);
     }
     if (f.payerNames?.length) {
@@ -818,22 +825,11 @@ export async function getInvoices(filters: {
       )`);
     }
     if (f.creatorNames?.length) {
-      rowConditions.push(sql`(
-        EXISTS (
-          SELECT 1
-          FROM staff AS schedule_row_creator
-          WHERE schedule_row_creator.user_id = ${column("created_by")}
-            AND schedule_row_creator.full_name = ANY(${f.creatorNames}::text[])
-        )
-        OR (
-          NOT EXISTS (
-            SELECT 1
-            FROM staff AS schedule_row_creator_fallback
-            WHERE schedule_row_creator_fallback.user_id = ${column("created_by")}
-              AND schedule_row_creator_fallback.full_name IS NOT NULL
-          )
-          AND ${creatorStaff.fullName} = ANY(${f.creatorNames}::text[])
-        )
+      rowConditions.push(sql`EXISTS (
+        SELECT 1
+        FROM staff AS schedule_row_creator
+        WHERE schedule_row_creator.user_id = ${column("created_by")}
+          AND schedule_row_creator.full_name = ANY(${f.creatorNames}::text[])
       )`);
     }
     if (f.search) {
@@ -1253,39 +1249,84 @@ export async function getInvoiceFilterOptions(filters: {
   dateTo?: string;
   dueDateFrom?: string;
   dueDateTo?: string;
+  tabFilter?: string;
   allowedLocationIds?: string[] | null;
   isSuperAdmin?: boolean;
 } = {}): Promise<Record<string, string[]>> {
-  const conditions: any[] = [];
+  const accessConditions: any[] = [];
+  const invoiceRowConditions: any[] = [];
+  const scheduleRowConditions: any[] = [];
   if (!filters.isSuperAdmin && filters.allowedLocationIds !== null && filters.allowedLocationIds !== undefined) {
     if (filters.allowedLocationIds.length === 0) {
       return { locationNames: [], categories: [], classNames: [], creatorNames: [], payerNames: [], commissionStaffNames: [], paymentMethods: [] };
     }
-    conditions.push(inArray(invoices.locationId, filters.allowedLocationIds));
+    accessConditions.push(inArray(invoices.locationId, filters.allowedLocationIds));
   }
-  if (filters.dueDateFrom) conditions.push(gte(invoices.dueDate, filters.dueDateFrom));
+  if (filters.dueDateFrom) {
+    invoiceRowConditions.push(gte(invoices.dueDate, filters.dueDateFrom));
+    scheduleRowConditions.push(gte(invoicePaymentSchedule.dueDate, filters.dueDateFrom));
+  }
   if (filters.dueDateTo) {
-    conditions.push(lte(invoices.dueDate, filters.dueDateTo));
+    invoiceRowConditions.push(lte(invoices.dueDate, filters.dueDateTo));
+    scheduleRowConditions.push(lte(invoicePaymentSchedule.dueDate, filters.dueDateTo));
   } else if (filters.dateFrom) {
     const from = getVietnamDateBoundary(filters.dateFrom);
-    if (from) conditions.push(sql`${invoices.createdAt} >= ${from.sqlTimestamp}::timestamp`);
+    if (from) {
+      invoiceRowConditions.push(sql`${invoices.createdAt} >= ${from.sqlTimestamp}::timestamp`);
+      scheduleRowConditions.push(sql`${invoicePaymentSchedule.createdAt} >= ${from.sqlTimestamp}::timestamp`);
+    }
   }
   if (filters.dateTo && !filters.dueDateTo) {
     const toExclusive = getVietnamDateBoundary(filters.dateTo, 1);
-    if (toExclusive) conditions.push(sql`${invoices.createdAt} < ${toExclusive.sqlTimestamp}::timestamp`);
+    if (toExclusive) {
+      invoiceRowConditions.push(sql`${invoices.createdAt} < ${toExclusive.sqlTimestamp}::timestamp`);
+      scheduleRowConditions.push(sql`${invoicePaymentSchedule.createdAt} < ${toExclusive.sqlTimestamp}::timestamp`);
+    }
   }
-  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  if (filters.tabFilter === "debt") {
+    invoiceRowConditions.push(sql`
+      ${invoices.status} NOT IN ('paid', 'confirmed', 'cancelled')
+      AND ${invoices.remainingAmount}::numeric > 0
+    `);
+    scheduleRowConditions.push(sql`${invoicePaymentSchedule.status} NOT IN ('paid', 'confirmed')`);
+  }
+
+  const hasRowScope = invoiceRowConditions.length > 0 || scheduleRowConditions.length > 0;
+  const invoiceConditions = [...accessConditions];
+  const scheduleExists = sql`EXISTS (
+    SELECT 1
+    FROM invoice_payment_schedule AS filter_option_parent_schedule
+    WHERE filter_option_parent_schedule.invoice_id = ${invoices.id}
+  )`;
+  if (hasRowScope) {
+    const noSchedule = sql`NOT ${scheduleExists}`;
+    const matchingScheduleInvoiceIds = db
+      .select({ invoiceId: invoicePaymentSchedule.invoiceId })
+      .from(invoicePaymentSchedule)
+      .where(and(...scheduleRowConditions));
+    invoiceConditions.push(or(
+      and(noSchedule, ...invoiceRowConditions),
+      inArray(invoices.id, matchingScheduleInvoiceIds),
+    ) as any);
+  }
+  const where = invoiceConditions.length > 0 ? and(...invoiceConditions) : undefined;
+  const scheduleConditions = [...scheduleRowConditions];
+  if (!filters.isSuperAdmin && filters.allowedLocationIds !== null && filters.allowedLocationIds !== undefined) {
+    scheduleConditions.push(inArray(invoices.locationId, filters.allowedLocationIds));
+  }
+  const scheduleWhere = scheduleConditions.length > 0 ? and(...scheduleConditions) : undefined;
 
   const commOptStaff = alias(staff, "comm_opts");
   const schedulePayerOptStaff = alias(staff, "schedule_payer_opts");
-  const [rows, commRows, schedulePayerRows] = await Promise.all([
+  const scheduleCreatorOptStaff = alias(staff, "schedule_creator_opts");
+  const [rows, commRows, scheduleRows] = await Promise.all([
     db.select({
       locationName: locations.name,
       category: invoices.category,
       className: classes.name,
-      creatorName: creatorStaff.fullName,
-      payerName: paidByStaff.fullName,
-      paymentMethod: invoices.paymentMethod,
+      creatorName: sql<string | null>`CASE WHEN ${scheduleExists} THEN NULL ELSE ${creatorStaff.fullName} END`,
+      payerName: sql<string | null>`CASE WHEN ${scheduleExists} THEN NULL ELSE ${paidByStaff.fullName} END`,
+      paymentMethod: sql<string | null>`CASE WHEN ${scheduleExists} THEN NULL ELSE ${invoices.paymentMethod} END`,
     })
     .from(invoices)
     .leftJoin(locations, eq(invoices.locationId, locations.id))
@@ -1303,12 +1344,17 @@ export async function getInvoiceFilterOptions(filters: {
         : undefined
     ),
 
-    db.select({ payerName: schedulePayerOptStaff.fullName })
+    db.select({
+      payerName: schedulePayerOptStaff.fullName,
+      creatorName: scheduleCreatorOptStaff.fullName,
+      paymentMethod: invoicePaymentSchedule.paymentMethod,
+    })
       .from(invoicePaymentSchedule)
       .innerJoin(invoices, eq(invoicePaymentSchedule.invoiceId, invoices.id))
       .leftJoin(locations, eq(invoices.locationId, locations.id))
-      .innerJoin(schedulePayerOptStaff, eq(invoicePaymentSchedule.paidBy, schedulePayerOptStaff.userId))
-      .where(where),
+      .leftJoin(schedulePayerOptStaff, eq(invoicePaymentSchedule.paidBy, schedulePayerOptStaff.userId))
+      .leftJoin(scheduleCreatorOptStaff, eq(invoicePaymentSchedule.createdBy, scheduleCreatorOptStaff.userId))
+      .where(scheduleWhere),
   ]);
 
   const uniq = (arr: (string | null | undefined)[]) =>
@@ -1318,12 +1364,18 @@ export async function getInvoiceFilterOptions(filters: {
     locationNames: uniq(rows.map(r => r.locationName)),
     categories: uniq(rows.map(r => r.category)),
     classNames: uniq(rows.map(r => r.className)),
-    creatorNames: uniq(rows.map(r => r.creatorName)),
+    creatorNames: uniq([
+      ...rows.map(r => r.creatorName),
+      ...scheduleRows.map(r => r.creatorName),
+    ]),
     payerNames: uniq([
       ...rows.map(r => r.payerName),
-      ...schedulePayerRows.map(r => r.payerName),
+      ...scheduleRows.map(r => r.payerName),
     ]),
-    paymentMethods: uniq(rows.map(r => r.paymentMethod)),
+    paymentMethods: uniq([
+      ...rows.map(r => r.paymentMethod),
+      ...scheduleRows.map(r => r.paymentMethod),
+    ]),
     commissionStaffNames: uniq(commRows.map(r => r.staffName)),
   };
 }

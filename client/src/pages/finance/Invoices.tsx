@@ -504,7 +504,7 @@ function flattenInvoiceRows(invoices: InvoiceRow[]): InvoiceRow[] {
       return {
         ...invoice,
         code: schedule.code ?? `${invoice.code ?? ""}-${installmentNumber}`,
-        settleCode: schedule.settleCode ?? invoice.settleCode,
+        settleCode: schedule.settleCode ?? null,
         totalAmount: schedule.baseAmount ?? amount,
         totalPromotion: schedule.promotionAmount ?? "0",
         totalSurcharge: schedule.surchargeAmount ?? "0",
@@ -513,12 +513,12 @@ function flattenInvoiceRows(invoices: InvoiceRow[]): InvoiceRow[] {
         paidAmount: isPaid ? amount : "0",
         remainingAmount: isPaid ? "0" : amount,
         status: schedule.status,
-        dueDate: schedule.dueDate ?? invoice.dueDate,
+        dueDate: schedule.dueDate ?? null,
         paidByName: schedule.paidByName ?? null,
         paidAt: schedule.paidAt ?? null,
-        paymentMethod: schedule.paymentMethod ?? invoice.paymentMethod,
-        creatorName: schedule.createdByName ?? invoice.creatorName,
-        createdAt: schedule.createdAt ?? invoice.createdAt,
+        paymentMethod: schedule.paymentMethod ?? null,
+        creatorName: schedule.createdByName ?? null,
+        createdAt: schedule.createdAt ?? "",
         updaterName: schedule.updatedByName ?? invoice.updaterName,
         updatedAt: schedule.updatedAt ?? invoice.updatedAt,
         einvoiceStatus: schedule.einvoiceStatus ?? null,
@@ -1882,6 +1882,9 @@ export default function Invoices() {
     if (activeTab === "confirmed") {
       if (invoice.status !== "confirmed") return false;
     }
+    if (activeTab === "debt" && invoice.isScheduleRow && isInvoicePaidLike(invoice.status)) {
+      return false;
+    }
 
     if (filters.payers.length > 0 && !filters.payers.includes(invoice.paidByName ?? "")) {
       return false;
@@ -1909,7 +1912,7 @@ export default function Invoices() {
     if (queryParams.paidAtFrom || queryParams.paidAtTo) {
       if (!rowDateMatches(invoice.paidAt, queryParams.paidAtFrom, queryParams.paidAtTo)) return false;
     } else if (queryParams.dueDateFrom || queryParams.dueDateTo) {
-      const effectiveDueDate = activeTab === "debt"
+      const effectiveDueDate = activeTab === "debt" && !invoice.isScheduleRow
         ? (invoice.scheduleNextDueDate || invoice.dueDate)
         : invoice.dueDate;
       if (!rowDateMatches(effectiveDueDate, queryParams.dueDateFrom, queryParams.dueDateTo)) return false;

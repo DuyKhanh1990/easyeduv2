@@ -481,8 +481,8 @@ export function registerFinanceRoutes(app: Express): void {
 
   app.get("/api/finance/invoices/filter-options", async (req, res) => {
     try {
-       const { dateFrom, dateTo, dueDateFrom, dueDateTo } = req.query as Record<string, string>;
-       const data = await getInvoiceFilterOptions({ dateFrom, dateTo, dueDateFrom, dueDateTo, allowedLocationIds: req.allowedLocationIds, isSuperAdmin: req.isSuperAdmin });
+       const { dateFrom, dateTo, dueDateFrom, dueDateTo, tabFilter } = req.query as Record<string, string>;
+       const data = await getInvoiceFilterOptions({ dateFrom, dateTo, dueDateFrom, dueDateTo, tabFilter, allowedLocationIds: req.allowedLocationIds, isSuperAdmin: req.isSuperAdmin });
       res.json(data);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
