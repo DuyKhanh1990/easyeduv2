@@ -538,8 +538,17 @@ export function StaffList() {
           });
           return;
         }
-        const limitInfo = await limitResponse.json() as { limit: number; activeStaffCount: number };
-        if (!Number.isFinite(limitInfo.limit) || !Number.isFinite(limitInfo.activeStaffCount)) {
+        const limitInfo = await limitResponse.json().catch(() => null) as {
+          limit?: number;
+          activeStaffCount?: number;
+        } | null;
+        if (
+          !limitInfo
+          || typeof limitInfo.limit !== "number"
+          || !Number.isFinite(limitInfo.limit)
+          || typeof limitInfo.activeStaffCount !== "number"
+          || !Number.isFinite(limitInfo.activeStaffCount)
+        ) {
           toast({
             title: "Không thể kiểm tra giới hạn nhân sự",
             description: "Dữ liệu giới hạn tài khoản không hợp lệ; file chưa được nhập.",
@@ -639,19 +648,35 @@ export function StaffList() {
               </Button>
             )}
             {canUpload && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setImportOpen(true)}
-                disabled={isAtLimit}
-                title={isAtLimit && staffLimitData
-                  ? `Đã đạt giới hạn ${staffLimitData.limit} tài khoản nhân sự hoạt động.`
-                  : undefined}
-                className="h-9 px-3 rounded-xl flex items-center gap-1.5 bg-white border-border shadow-sm text-xs hover:bg-slate-50"
-                data-testid="button-import-staff"
-              >
-                <Upload className="w-3.5 h-3.5 text-slate-500" /><span>Tải lên</span>
-              </Button>
+              <div className="relative inline-flex">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setImportOpen(true)}
+                  disabled={isAtLimit}
+                  title={isAtLimit && staffLimitData
+                    ? `Đã đạt giới hạn ${staffLimitData.limit} tài khoản nhân sự hoạt động.`
+                    : undefined}
+                  className="h-9 px-3 rounded-xl flex items-center gap-1.5 bg-white border-border shadow-sm text-xs hover:bg-slate-50"
+                  data-testid="button-import-staff"
+                >
+                  <Upload className="w-3.5 h-3.5 text-slate-500" /><span>Tải lên</span>
+                </Button>
+                {isAtLimit && staffLimitData && (
+                  <TooltipProvider delayDuration={100}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="absolute -top-1.5 -right-1.5 flex items-center justify-center w-4 h-4 rounded-full bg-yellow-100 border border-yellow-300 cursor-help z-10">
+                          <AlertCircle className="w-2.5 h-2.5 text-yellow-600" />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[280px] text-xs">
+                        Đã đạt giới hạn <strong>{staffLimitData.limit} nhân sự</strong>; không thể nhập thêm.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+              </div>
             )}
             {canDownload && (
               <Button
@@ -1074,6 +1099,13 @@ export function StaffList() {
             <DialogTitle>Tải lên danh sách nhân sự</DialogTitle>
             <DialogDescription>Nhập danh sách nhân sự từ file Excel (.xlsx)</DialogDescription>
           </DialogHeader>
+          {staffLimitData && (
+            <p className={`px-1 text-xs ${isAtLimit ? "font-medium text-destructive" : "text-muted-foreground"}`}>
+              {isAtLimit
+                ? `Đã đạt giới hạn ${staffLimitData.limit} tài khoản nhân sự hoạt động.`
+                : `Còn ${Math.max(0, staffLimitData.limit - staffLimitData.activeStaffCount)} vị trí nhân sự hoạt động.`}
+            </p>
+          )}
 
           <div className="space-y-4 py-2 overflow-y-auto flex-1 pr-1">
             <Button variant="outline" size="sm" className="text-xs gap-2" onClick={handleDownloadTemplate}>
