@@ -11,6 +11,10 @@ interface Option {
   fullName?: string;
   reason?: string;
   isActive?: boolean;
+  isGroup?: boolean;
+  isSelectable?: boolean;
+  indentLevel?: number;
+  searchText?: string;
 }
 
 interface SearchableMultiSelectProps {
@@ -61,29 +65,41 @@ export function SearchableMultiSelect({
               <CommandGroup>
                 {sortedOptions.map((option) => {
                   const isInactive = option.isActive === false;
+                  const isGroup = option.isGroup === true;
+                  const isSelectable = !isGroup && option.isSelectable !== false && !isInactive;
                   const label = option.name || option.fullName || option.reason || "";
                   return (
                     <CommandItem
                       key={option.id}
-                      value={label}
-                      disabled={isInactive}
+                      value={option.searchText || label}
+                      disabled={!isSelectable}
                       onSelect={() => {
-                        if (isInactive) return;
+                        if (!isSelectable) return;
                         if (selected.includes(option.id)) {
                           onRemove(option.id);
                         } else {
                           onSelect(option.id);
                         }
                       }}
-                      className={cn(isInactive && "opacity-40 cursor-not-allowed")}
+                      className={cn(
+                        isGroup && "bg-emerald-50 text-emerald-800 font-semibold hover:bg-emerald-50 data-[selected=true]:bg-emerald-50 data-[selected=true]:text-emerald-800 data-[disabled=true]:opacity-100",
+                        (option.indentLevel ?? 0) > 0 && "pl-8",
+                        isInactive && "opacity-40 cursor-not-allowed",
+                      )}
                     >
-                      <Check
-                        className={cn(
-                          "mr-2 h-4 w-4",
-                          selected.includes(option.id) ? "opacity-100" : "opacity-0"
-                        )}
-                      />
-                      <span className="flex-1">{label}</span>
+                      {isGroup ? (
+                        <span className="flex-1">{label}</span>
+                      ) : (
+                        <>
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              selected.includes(option.id) ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          <span className="flex-1">{label}</span>
+                        </>
+                      )}
                       {isInactive && (
                         <TooltipProvider>
                           <Tooltip>

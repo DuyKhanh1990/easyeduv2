@@ -456,6 +456,46 @@ export function CustomersList() {
   );
   const isParentRelationship = (relationship: CrmRelationship) =>
     !relationship.isSystemDefault && Boolean(relationship.isParentGroup || inferredParentIds.has(relationship.id));
+  const relationshipFilterOptions = useMemo(() => {
+    const parentIds = new Set(sortedRelationships.filter(isParentRelationship).map((relationship) => relationship.id));
+    const options: {
+      id: string;
+      name: string;
+      isGroup?: boolean;
+      isSelectable?: boolean;
+      indentLevel?: number;
+      searchText?: string;
+    }[] = [];
+
+    for (const relationship of sortedRelationships) {
+      if (isParentRelationship(relationship)) {
+        options.push({
+          id: relationship.id,
+          name: relationship.name,
+          isGroup: true,
+          isSelectable: false,
+        });
+        for (const child of sortedRelationships) {
+          if (child.parentId !== relationship.id || child.isSystemDefault || isParentRelationship(child)) continue;
+          options.push({
+            id: child.id,
+            name: child.name,
+            indentLevel: 1,
+            searchText: `${relationship.name} ${child.name}`,
+          });
+        }
+        continue;
+      }
+
+      if (relationship.parentId && parentIds.has(relationship.parentId)) continue;
+      options.push({
+        id: relationship.id,
+        name: relationship.name,
+      });
+    }
+
+    return options;
+  }, [sortedRelationships, inferredParentIds]);
   const parentRelationships = useMemo(
     () => sortedRelationships.filter((r: CrmRelationship) => isParentRelationship(r)),
     [sortedRelationships, inferredParentIds]
@@ -1179,7 +1219,7 @@ export function CustomersList() {
                       <Label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">{t("customers.filterRelationship")}</Label>
                       <SearchableMultiSelect
                         placeholder={t("customers.selectRelationship")}
-                        options={sortedRelationships.map((relationship) => ({ id: relationship.id, name: relationship.name }))}
+                        options={relationshipFilterOptions}
                         selected={filters.relationshipIds}
                         onSelect={(val) => setFilters((f) => ({ ...f, relationshipIds: [...f.relationshipIds, val] }))}
                         onRemove={(val) => setFilters((f) => ({ ...f, relationshipIds: f.relationshipIds.filter((id) => id !== val) }))}
