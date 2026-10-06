@@ -11,6 +11,7 @@ import {
   Circle,
   CircleDot,
   Clock3,
+  Copy,
   Eye,
   Filter,
   MapPin,
@@ -282,6 +283,46 @@ function getScoreSheetTemplateLabel(assessment: StaffAssignedScoreSheetAssessmen
   return assessment.templateName || "Bảng điểm chưa đặt tên";
 }
 
+function createScoreSheetTemplateCopy(
+  template: ScoreSheetTemplate,
+  existingTemplates: ScoreSheetTemplate[],
+): ScoreSheetTemplate {
+  const usedCodes = new Set(existingTemplates.map((item) => item.code.trim().toLocaleUpperCase()));
+  const usedNames = new Set(existingTemplates.map((item) => item.name.trim().toLocaleLowerCase("vi")));
+
+  let copyNumber = 1;
+  let code = "";
+  let name = "";
+  while (true) {
+    const codeSuffix = copyNumber === 1 ? "-COPY" : `-COPY-${copyNumber}`;
+    const nameSuffix = copyNumber === 1 ? " (Bản sao)" : ` (Bản sao ${copyNumber})`;
+    code = `${template.code.trim().slice(0, 40 - codeSuffix.length)}${codeSuffix}`;
+    name = `${template.name.trim().slice(0, 120 - nameSuffix.length)}${nameSuffix}`;
+    if (!usedCodes.has(code.toLocaleUpperCase()) && !usedNames.has(name.toLocaleLowerCase("vi"))) break;
+    copyNumber += 1;
+  }
+
+  const now = new Date().toISOString();
+  return {
+    ...template,
+    id: crypto.randomUUID(),
+    code,
+    name,
+    skills: template.skills.map((skill) => ({
+      ...skill,
+      id: crypto.randomUUID(),
+      parts: skill.parts.map((part) => ({ ...part, id: crypto.randomUUID() })),
+      partFormula: skill.partFormula ? { ...skill.partFormula } : skill.partFormula,
+    })),
+    overallRule: template.overallRule ? { ...template.overallRule } : undefined,
+    gradeBands: template.gradeBands?.map((band) => ({ ...band, id: crypto.randomUUID() })),
+    passThreshold: template.passThreshold ? { ...template.passThreshold } : undefined,
+    evaluationCriteriaIds: [...(template.evaluationCriteriaIds ?? [])],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 function getTeacherNameList(assessment: StaffAssignedScoreSheetAssessment): string[] {
   return (assessment.teacherNames ?? "")
     .split(",")
@@ -297,6 +338,7 @@ export default function ScoreConversion() {
   const [editingTemplate, setEditingTemplate] = useState<ScoreConversionTemplate | null>(null);
   const [scoreSheetDialogOpen, setScoreSheetDialogOpen] = useState(false);
   const [editingScoreSheetTemplate, setEditingScoreSheetTemplate] = useState<ScoreSheetTemplate | null>(null);
+  const [initialScoreSheetTemplate, setInitialScoreSheetTemplate] = useState<ScoreSheetTemplate | null>(null);
   const [pendingTemplateDelete, setPendingTemplateDelete] = useState<PendingTemplateDelete | null>(null);
   const [selectedAssessment, setSelectedAssessment] = useState<StaffAssignedScoreSheetAssessment | null>(null);
   const [studentDialogTarget, setStudentDialogTarget] = useState<{
@@ -577,6 +619,7 @@ export default function ScoreConversion() {
         queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned"] }),
       ]);
       setScoreSheetDialogOpen(false);
+      setInitialScoreSheetTemplate(null);
       toast({
         title: variables.id ? "Đã cập nhật bảng điểm mẫu" : "Đã lưu bảng điểm mẫu",
       });
@@ -650,11 +693,22 @@ export default function ScoreConversion() {
 
   const openCreateScoreSheetTemplateDialog = () => {
     setEditingScoreSheetTemplate(null);
+    setInitialScoreSheetTemplate(null);
     setScoreSheetDialogOpen(true);
   };
 
   const openEditScoreSheetTemplateDialog = (template: ScoreSheetTemplate) => {
     setEditingScoreSheetTemplate(template);
+    setInitialScoreSheetTemplate(null);
+    setScoreSheetDialogOpen(true);
+  };
+
+  const openCopyScoreSheetTemplateDialog = (template: ScoreSheetTemplate) => {
+    setEditingScoreSheetTemplate(null);
+    setInitialScoreSheetTemplate(createScoreSheetTemplateCopy(
+      template,
+      scoreSheetTemplatesQuery.data ?? [],
+    ));
     setScoreSheetDialogOpen(true);
   };
 
@@ -752,7 +806,7 @@ export default function ScoreConversion() {
                           <th className="px-4 py-3 font-medium">Phần thi</th>
                           <th className="px-4 py-3 font-medium">Khoảng quy đổi</th>
                           <th className="px-4 py-3 font-medium">Cách tính điểm tổng</th>
-                          {(canEdit || canDelete) && <th className="w-24 px-4 py-3" />}
+                          {(canCreate || canEdit || canDelete) && <th className="w-32 px-4 py-3" />}
                         </tr>
                       </thead>
                       <tbody>
@@ -897,9 +951,20 @@ export default function ScoreConversion() {
                                 {conversion?.typeName ?? (template.scoreConversionTemplateId ? "Không tìm thấy bảng quy đổi" : "Không áp dụng")}
                               </td>
                               <td className="px-4 py-3">{conversion?.sections.length ?? template.skills.length}</td>
-                              {(canEdit || canDelete) && (
+                              {(canCreate || canEdit || canDelete) && (
                                 <td className="px-4 py-3">
                                   <div className="flex items-center justify-end gap-1">
+                                    {canCreate && (
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        aria-label={`Sao chép bảng điểm mẫu ${template.name}`}
+                                        title="Sao chép bảng điểm mẫu"
+                                        onClick={() => openCopyScoreSheetTemplateDialog(template)}
+                                      >
+                                        <Copy className="h-4 w-4" />
+                                      </Button>
+                                    )}
                                     {canEdit && (
                                       <Button
                                         variant="ghost"
@@ -1716,10 +1781,14 @@ export default function ScoreConversion() {
       <ScoreSheetTemplateDialog
         open={scoreSheetDialogOpen}
         template={editingScoreSheetTemplate}
+        initialTemplate={initialScoreSheetTemplate}
         conversionTemplates={savedTemplates}
         conversionTemplatesLoading={templatesQuery.isLoading}
         saving={saveScoreSheetTemplateMutation.isPending}
-        onOpenChange={setScoreSheetDialogOpen}
+        onOpenChange={(open) => {
+          setScoreSheetDialogOpen(open);
+          if (!open) setInitialScoreSheetTemplate(null);
+        }}
         onSave={handleSaveScoreSheetTemplate}
       />
       <AlertDialog

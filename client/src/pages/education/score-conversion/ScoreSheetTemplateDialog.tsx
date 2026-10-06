@@ -98,6 +98,7 @@ function appendFormulaVariable(formula: string, name: string): string {
 type ScoreSheetTemplateDialogProps = {
   open: boolean;
   template: ScoreSheetTemplate | null;
+  initialTemplate?: ScoreSheetTemplate | null;
   conversionTemplates: ScoreConversionTemplate[];
   conversionTemplatesLoading: boolean;
   saving: boolean;
@@ -126,6 +127,7 @@ const numericValue = (value: string) => (value === "" ? 0 : Number(value));
 export function ScoreSheetTemplateDialog({
   open,
   template,
+  initialTemplate = null,
   conversionTemplates,
   conversionTemplatesLoading,
   saving,
@@ -146,20 +148,21 @@ export function ScoreSheetTemplateDialog({
 
   useEffect(() => {
     if (!open || conversionTemplatesLoading) return;
+    const sourceTemplate = template ?? initialTemplate;
     const linkedConversion = conversionTemplates.find(
-      (item) => item.id === template?.scoreConversionTemplateId,
+      (item) => item.id === sourceTemplate?.scoreConversionTemplateId,
     );
-    setDraft(template
+    setDraft(sourceTemplate
       ? {
-          code: template.code,
-          name: template.name,
-          scoreConversionTemplateId: template.scoreConversionTemplateId,
-          overallRule: template.overallRule
-            ? { ...template.overallRule }
+          code: sourceTemplate.code,
+          name: sourceTemplate.name,
+          scoreConversionTemplateId: sourceTemplate.scoreConversionTemplateId,
+          overallRule: sourceTemplate.overallRule
+            ? { ...sourceTemplate.overallRule }
             : linkedConversion
               ? { method: linkedConversion.overallRule.method, formula: linkedConversion.overallRule.formula }
               : DEFAULT_OVERALL_RULE,
-          skills: template.skills.map((skill, skillIndex) => {
+          skills: sourceTemplate.skills.map((skill, skillIndex) => {
             const conversionSection = linkedConversion?.sections.find(
               (section) => section.id === skill.sectionId,
             );
@@ -175,23 +178,23 @@ export function ScoreSheetTemplateDialog({
               color: skill.color ?? skillColorAt(skillIndex),
             };
           }),
-          gradeBands: template.gradeBands?.map((band) => ({ ...band }))
+          gradeBands: sourceTemplate.gradeBands?.map((band) => ({ ...band }))
             ?? linkedConversion?.overallRule.gradeBands.map((band) => ({ ...band }))
             ?? [],
-          passThreshold: template.passThreshold
-            ? { ...template.passThreshold }
+          passThreshold: sourceTemplate.passThreshold
+            ? { ...sourceTemplate.passThreshold }
             : linkedConversion
               ? { ...linkedConversion.overallRule.passThreshold }
               : { ...DEFAULT_PASS_THRESHOLD },
-          scoreDeadlineOffsetMinutes: template.scoreDeadlineOffsetMinutes ?? 1440,
-          attemptCount: template.attemptCount ?? 1,
-          scoringPolicy: template.scoringPolicy ?? "highest",
-          evaluationCriteriaIds: template.evaluationCriteriaIds ?? [],
+          scoreDeadlineOffsetMinutes: sourceTemplate.scoreDeadlineOffsetMinutes ?? 1440,
+          attemptCount: sourceTemplate.attemptCount ?? 1,
+          scoringPolicy: sourceTemplate.scoringPolicy ?? "highest",
+          evaluationCriteriaIds: sourceTemplate.evaluationCriteriaIds ?? [],
         }
       : emptyDraft());
     setFormError("");
     setPendingConversionTemplateId(undefined);
-  }, [open, template, conversionTemplatesLoading]);
+  }, [open, template, initialTemplate, conversionTemplatesLoading]);
 
   const selectedConversion = conversionTemplates.find(
     (item) => item.id === draft.scoreConversionTemplateId,
@@ -464,7 +467,9 @@ export function ScoreSheetTemplateDialog({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="flex h-[98vh] max-h-[98vh] w-[98vw] max-w-[98vw] flex-col gap-0 overflow-hidden bg-slate-100 p-0">
           <DialogHeader className="shrink-0 border-b bg-white px-5 py-4 pr-14 sm:px-6">
-            <DialogTitle>{template ? "Sửa bảng điểm mẫu" : "Thêm bảng điểm mẫu"}</DialogTitle>
+            <DialogTitle>
+              {template ? "Sửa bảng điểm mẫu" : initialTemplate ? "Sao chép bảng điểm mẫu" : "Thêm bảng điểm mẫu"}
+            </DialogTitle>
             <DialogDescription>
               Tạo cấu trúc bảng điểm và tùy chọn liên kết với một bảng quy đổi quốc tế.
             </DialogDescription>
