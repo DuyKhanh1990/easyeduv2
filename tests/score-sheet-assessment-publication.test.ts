@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  hasScoreSheetAssessmentFeedback,
   isScoreSheetAssessmentStudentPublished,
   withScoreSheetAssessmentStudentPublication,
 } from "../shared/score-sheet-assessment-publication";
@@ -42,6 +43,15 @@ describe("score-sheet assessment individual publication", () => {
 
     expect(result.overallConvertedScore).toBe(92);
     expect(isScoreSheetAssessmentStudentPublished(result)).toBe(false);
+  });
+
+  it("counts any written comment or checked evaluation item as feedback", () => {
+    expect(hasScoreSheetAssessmentFeedback({}, {})).toBe(false);
+    expect(hasScoreSheetAssessmentFeedback({ skill: { reading: "  " } }, {})).toBe(false);
+    expect(hasScoreSheetAssessmentFeedback({ skill: { reading: "Nhận xét" } }, {})).toBe(true);
+    expect(hasScoreSheetAssessmentFeedback({}, { comment: "Đạt yêu cầu" })).toBe(true);
+    expect(hasScoreSheetAssessmentFeedback({}, { criterion: true })).toBe(true);
+    expect(hasScoreSheetAssessmentFeedback({}, { criterion: false })).toBe(false);
   });
 
   it("keeps the configured attempt-selection policy when results contain publication metadata", () => {

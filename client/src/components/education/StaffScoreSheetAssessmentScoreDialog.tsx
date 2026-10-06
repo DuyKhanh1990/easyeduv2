@@ -16,6 +16,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { hasScoreSheetAssessmentFeedback } from "@shared/score-sheet-assessment-publication";
+import {
   calculateScoreSheetAssessmentAttemptResult,
   selectScoreSheetAssessmentAttemptSummary,
   scoreSheetAssessmentAttemptValuesSchema,
@@ -528,6 +539,9 @@ export function StaffScoreSheetAssessmentScoreDialog({
   const [selectedAttemptNumber, setSelectedAttemptNumber] = useState<number | null>(null);
   const [draftsByAttempt, setDraftsByAttempt] = useState<Record<number, ScoreSheetAssessmentAttemptValues>>({});
   const [publishForStudent, setPublishForStudent] = useState(false);
+  const [publicationManuallyChanged, setPublicationManuallyChanged] = useState(false);
+  const [autoPublicationEnabled, setAutoPublicationEnabled] = useState(false);
+  const [publishConfirmationOpen, setPublishConfirmationOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -562,6 +576,9 @@ export function StaffScoreSheetAssessmentScoreDialog({
     setSaveError(null);
     setSaveMessage(null);
     setPublishForStudent(Boolean(student?.individuallyPublished));
+    setPublicationManuallyChanged(false);
+    setAutoPublicationEnabled(false);
+    setPublishConfirmationOpen(false);
   }, [open, assessment?.sessionId, student?.studentId, student?.individuallyPublished, mode]);
 
   useEffect(() => {
@@ -619,6 +636,46 @@ export function StaffScoreSheetAssessmentScoreDialog({
     preview.overallConvertedScore !== null
     || preview.skills.some((skill) => skill.convertedScore !== null)
   ));
+  const assessmentReadyToPublish = Boolean(
+    preview?.inputComplete && preview.conversionComplete && hasPublishableScore,
+  );
+  const hasAnyFeedback = hasScoreSheetAssessmentFeedback(
+    currentValues.notes,
+    currentValues.evaluationResponses,
+  );
+
+  useEffect(() => {
+    if (
+      !open
+      || mode !== "edit"
+      || assessment?.published
+      || student?.individuallyPublished
+      || publicationManuallyChanged
+    ) {
+      return;
+    }
+
+    if (autoPublicationEnabled && !assessmentReadyToPublish) {
+      setPublishForStudent(false);
+      setAutoPublicationEnabled(false);
+      return;
+    }
+
+    if (draftIsDirty && assessmentReadyToPublish && !publishForStudent) {
+      setPublishForStudent(true);
+      setAutoPublicationEnabled(true);
+    }
+  }, [
+    open,
+    mode,
+    assessment?.published,
+    student?.individuallyPublished,
+    publicationManuallyChanged,
+    autoPublicationEnabled,
+    assessmentReadyToPublish,
+    draftIsDirty,
+    publishForStudent,
+  ]);
 
   const maxSavedAttempt = attempts.reduce(
     (highest, attempt) => Math.max(highest, attempt.attemptNumber),
@@ -691,7 +748,7 @@ export function StaffScoreSheetAssessmentScoreDialog({
     );
   };
 
-  const saveAttempt = async () => {
+  const saveAttempt = async (confirmedPublish = false) => {
     if (
       !assessment
       || !student
@@ -708,6 +765,10 @@ export function StaffScoreSheetAssessmentScoreDialog({
       && !hasPublishableScore
     ) {
       setSaveError("Cần nhập ít nhất một điểm quy đổi trước khi công bố cho học viên.");
+      return;
+    }
+    if (publishForStudent && !assessment.published && !confirmedPublish) {
+      setPublishConfirmationOpen(true);
       return;
     }
     setIsSaving(true);
@@ -1176,6 +1237,8 @@ export function StaffScoreSheetAssessmentScoreDialog({
                           id="publish-score-for-student"
                           checked={publishForStudent}
                           onCheckedChange={(checked) => {
+                            setPublicationManuallyChanged(true);
+                            setAutoPublicationEnabled(false);
                             setPublishForStudent(checked);
                             setSaveError(null);
                             setSaveMessage(null);
@@ -1204,7 +1267,7 @@ export function StaffScoreSheetAssessmentScoreDialog({
                   Đóng
                 </Button>
                 <Button
-                  onClick={saveAttempt}
+                  onClick={() => void saveAttempt()}
                   disabled={
                     (!draftIsDirty && !publicationChanged)
                     || isSaving
@@ -1224,6 +1287,42 @@ export function StaffScoreSheetAssessmentScoreDialog({
           </>
         ) : null}
       </DialogContent>
+      <AlertDialog
+        open={publishConfirmationOpen}
+        onOpenChange={setPublishConfirmationOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xác nhận công bố điểm?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Nút công bố đang bật. Kết quả bảng điểm sẽ được gửi đến cho học viên
+              {student?.fullName ? ` ${student.fullName}` : ""}.
+              {!hasAnyFeedback && (
+                <span className="mt-3 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-left text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    Chưa có nhận xét nào được nhập hoặc tiêu chí đánh giá nào được chọn.
+                    Bạn vẫn có thể tiếp tục công bố.
+                  </span>
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSaving}>Kiểm tra lại</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSaving}
+              onClick={(event) => {
+                event.preventDefault();
+                setPublishConfirmationOpen(false);
+                void saveAttempt(true);
+              }}
+            >
+              Lưu và công bố
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }

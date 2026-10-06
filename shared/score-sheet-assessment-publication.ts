@@ -31,4 +31,15 @@ export function withScoreSheetAssessmentStudentPublication(
   };
 }
 
+export function hasScoreSheetAssessmentFeedback(
+  notes: Record<string, Record<string, string>>,
+  evaluationResponses: Record<string, string | boolean | null>,
+): boolean {
+  return Object.values(notes).some((sectionNotes) =>
+    Object.values(sectionNotes).some((note) => note.trim().length > 0),
+  ) || Object.values(evaluationResponses).some((response) =>
+    response === true || (typeof response === "string" && response.trim().length > 0),
+  );
+}
+
 export { SCORE_SHEET_ASSESSMENT_PUBLICATION_META_KEY };
