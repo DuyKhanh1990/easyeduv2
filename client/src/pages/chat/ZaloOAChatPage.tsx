@@ -261,15 +261,22 @@ export function ZaloOAChatPage() {
     }
   };
 
-  useEffect(() => {
-    if (locations && locations.length > 0 && !selectedLocationId) {
-      setSelectedLocationId((locations[0] as any).id);
-    }
-  }, [locations, selectedLocationId]);
-
   const { data: configs } = useQuery<ZaloConfig[]>({
     queryKey: ["/api/zalo-oa/configs"],
   });
+
+  useEffect(() => {
+    if (!locations?.length || !configs || selectedLocationId) return;
+
+    const firstConnectedLocation = (locations as any[]).find((location) => {
+      const config = configs.find((item) => item.locationId === location.id);
+      return config?.hasToken && !config.isTokenExpired && config.isConnected !== false;
+    });
+
+    setSelectedLocationId(
+      firstConnectedLocation?.id || (locations[0] as any).id,
+    );
+  }, [locations, configs, selectedLocationId]);
 
   const currentConfig = configs?.find(c => c.locationId === selectedLocationId);
   const isConfigured = !!currentConfig?.hasToken && !currentConfig?.isTokenExpired && currentConfig?.isConnected !== false;
@@ -737,6 +744,27 @@ export function ZaloOAChatPage() {
         {ConnectDialog}
         <div className="flex flex-col h-full bg-slate-50">
           <div className="flex-1 flex flex-col items-center justify-center gap-6 text-muted-foreground p-8">
+            {locations && locations.length > 1 && selectedLocationId && (
+              <div className="w-full max-w-xs space-y-1.5">
+                <Label htmlFor="zalo-empty-location" className="text-xs text-slate-500">Cơ sở</Label>
+                <Select
+                  value={selectedLocationId}
+                  onValueChange={value => {
+                    setSelectedLocationId(value);
+                    setSelectedConvId(null);
+                  }}
+                >
+                  <SelectTrigger id="zalo-empty-location" className="bg-white">
+                    <SelectValue placeholder="Chọn cơ sở" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(locations as any[]).map((location: any) => (
+                      <SelectItem key={location.id} value={location.id}>{location.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="w-20 h-20 rounded-2xl bg-white shadow-md flex items-center justify-center border border-slate-100">
               <span className="text-4xl">💬</span>
             </div>
