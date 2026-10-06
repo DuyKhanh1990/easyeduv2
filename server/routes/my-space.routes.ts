@@ -116,7 +116,7 @@ async function setScoreSheetAssessmentStudentPublication(
         COALESCE(
           ${resultColumn} -> ${sql.raw(`'${SCORE_SHEET_ASSESSMENT_PUBLICATION_META_KEY}'`)},
           '{}'::jsonb
-        ) || jsonb_build_object('publishedToStudent', ${publishedToStudent}),
+        ) || jsonb_build_object('publishedToStudent', ${publishedToStudent}::boolean),
         true
       )`,
     })
