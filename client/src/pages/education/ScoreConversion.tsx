@@ -123,6 +123,7 @@ type ScoreConversionStudentResult = {
   attemptCount: number;
   scoringPolicy: "highest" | "latest";
   hasConversion: boolean;
+  published: boolean;
   studentId: string;
   studentCode: string;
   studentName: string;
@@ -134,6 +135,8 @@ type ScoreConversionStudentResult = {
   gradeBandColor: string | null;
   passStatus: "passed" | "failed" | null;
   inputComplete: boolean;
+  individuallyPublished: boolean;
+  hasPublishableScore: boolean;
   status: "not_entered" | "in_progress" | "complete";
 };
 
@@ -1840,8 +1843,11 @@ export default function ScoreConversion() {
           studentId: studentDialogTarget.student.studentId,
           code: studentDialogTarget.student.studentCode,
           fullName: studentDialogTarget.student.studentName,
+          individuallyPublished: studentDialogTarget.student.individuallyPublished,
+          hasPublishableScore: studentDialogTarget.student.hasPublishableScore,
         } : null}
         mode={studentDialogTarget?.mode ?? "edit"}
+        canManagePublication={canEdit}
         open={!!studentDialogTarget}
         onOpenChange={(open) => {
           if (!open) setStudentDialogTarget(null);

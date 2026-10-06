@@ -9,6 +9,7 @@ import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, studen
 import { eq, and, isNotNull, sql, inArray, desc, gte, lte, ne } from "drizzle-orm";
 import { scoreSheetAssessmentSchema } from "@shared/score-sheet-assessment";
 import { selectScoreSheetAssessmentAttemptSummary } from "@shared/score-sheet-assessment-scoring";
+import { SCORE_SHEET_ASSESSMENT_PUBLICATION_META_KEY } from "@shared/score-sheet-assessment-publication";
 import { getStudentLearningStatusSummary, getCustomerLearningStatusSummary, getCustomerSummary, getNewCustomersSummary, getStudentsBySource, getStudentsByRelationship, getStudentsByLocation, getStudentsByStaff, getStudentsLearningStatuses, getMonthlyStudentCounts } from "../storage/student.storage";
 import { createCrmConfigAuditLog, getCrmConfigAuditLogs } from "../storage/crm-config-audit.storage";
 import { codeStem, nextCodeForStem } from "../lib/role-code";
@@ -2458,7 +2459,12 @@ export function registerStudentsRoutes(app: Express): void {
           and(
             eq(classSessions.id, scoreSheetAssessmentStudentAttempts.classSessionId),
             eq(classSessions.scoreSheetAssessmentId, scoreSheetAssessmentStudentAttempts.assessmentId),
-            eq(classSessions.scoreSheetAssessmentPublished, true),
+            sql`(
+              ${classSessions.scoreSheetAssessmentPublished} = true
+              OR ${scoreSheetAssessmentStudentAttempts.result}
+                -> ${sql.raw(`'${SCORE_SHEET_ASSESSMENT_PUBLICATION_META_KEY}'`)}
+                ->> 'publishedToStudent' = 'true'
+            )`,
           ),
         )
         .innerJoin(
@@ -2469,7 +2475,10 @@ export function registerStudentsRoutes(app: Express): void {
           ),
         )
         .innerJoin(classes, eq(classes.id, classSessions.classId))
-        .where(eq(scoreSheetAssessmentStudentAttempts.studentId, studentId))
+        .where(and(
+          eq(scoreSheetAssessmentStudentAttempts.studentId, studentId),
+          sql`NOT (${scoreSheetAssessmentStudentAttempts.studentId} = ANY(COALESCE(${classSessions.scoreSheetAssessmentExcludedStudentIds}, ARRAY[]::uuid[])))`,
+        ))
         .orderBy(desc(classSessions.sessionDate), desc(scoreSheetAssessmentStudentAttempts.attemptNumber));
 
       const publishedAssessmentGroups = new Map<string, { assessment: any; attempts: any[] }>();

@@ -73,6 +73,8 @@ type AssessmentRosterStudent = {
   gradeBandColor: string | null;
   passStatus: "passed" | "failed" | null;
   inputComplete: boolean;
+  individuallyPublished: boolean;
+  hasPublishableScore: boolean;
   status: "not_entered" | "in_progress" | "complete";
 };
 
@@ -134,6 +136,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
   const students = rosterQuery.data?.students ?? [];
   const removedStudents = rosterQuery.data?.removedStudents ?? [];
   const scoreSheetTemplateName = assessment?.templateName ?? "Bảng điểm chưa đặt tên";
+  const showIndividualPublication = Boolean(canManagePublication && assessment?.hasConversion);
   const [editingStudent, setEditingStudent] = useState<AssessmentRosterStudent | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<AssessmentRosterStudent | null>(null);
   const [restoreMenuOpen, setRestoreMenuOpen] = useState(false);
@@ -159,6 +162,25 @@ export function StaffScoreSheetAssessmentStudentsDialog({
     return response.json();
   }
 
+  async function updateStudentPublication(studentId: string, published: boolean) {
+    if (!assessment) throw new Error("Chưa chọn buổi thi");
+    const response = await fetch(
+      `/api/my-space/score-sheet/staff-assessments/${encodeURIComponent(assessment.sessionId)}` +
+      `/students/${encodeURIComponent(studentId)}/publication`,
+      {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ published }),
+      },
+    );
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { message?: string } | null;
+      throw new Error(payload?.message ?? "Không thể cập nhật trạng thái công bố");
+    }
+    return response.json() as Promise<{ published: boolean }>;
+  }
+
   const removeStudentMutation = useMutation({
     mutationFn: (studentId: string) => updateRosterStudent(studentId, "remove"),
     onSuccess: () => {
@@ -168,6 +190,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
       });
       queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff"] });
       queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned/students"] });
       toast({
         title: "Đã xóa học viên khỏi bảng điểm",
         description: "Điểm đã nhập được giữ lại. Bạn có thể thêm học viên lại sau.",
@@ -191,11 +214,33 @@ export function StaffScoreSheetAssessmentStudentsDialog({
       });
       queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff"] });
       queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned/students"] });
       toast({ title: "Đã thêm học viên lại vào bảng điểm" });
     },
     onError: (error) => {
       toast({
         title: "Không thể thêm học viên",
+        description: error instanceof Error ? error.message : "Đã xảy ra lỗi.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const individualPublicationMutation = useMutation({
+    mutationFn: ({ studentId, published }: { studentId: string; published: boolean }) =>
+      updateStudentPublication(studentId, published),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/my-space/score-sheet/staff-assessments", assessment?.sessionId, "students"],
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned/students"] });
+      toast({
+        title: result.published ? "Đã công bố điểm cho học viên" : "Đã gỡ công bố điểm",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Không thể cập nhật trạng thái công bố",
         description: error instanceof Error ? error.message : "Đã xảy ra lỗi.",
         variant: "destructive",
       });
@@ -230,8 +275,9 @@ export function StaffScoreSheetAssessmentStudentsDialog({
       setPublished(result.published);
       setSavedPublished(result.published);
       queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned/students"] });
       toast({
-        title: result.published ? "Đã công bố bảng điểm" : "Đã gỡ công bố bảng điểm",
+        title: result.published ? "Đã công bố bảng điểm toàn bộ" : "Đã gỡ công bố toàn bảng",
       });
     },
     onError: (error) => {
@@ -284,16 +330,18 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                     checked={published}
                     onCheckedChange={setPublished}
                     disabled={publicationMutation.isPending}
-                    aria-label="Công bố bảng điểm cho học viên"
+                    aria-label="Công bố bảng điểm cho toàn bộ học viên"
                   />
                 ) : (
                   <Badge variant={savedPublished ? "default" : "secondary"}>
-                    {savedPublished ? "Đã công bố" : "Chưa công bố"}
+                    {savedPublished ? "Đã công bố toàn bảng" : "Chưa công bố toàn bảng"}
                   </Badge>
                 )}
                 {canManageScores && (
                   <span className="text-xs text-muted-foreground">
-                    {published ? "Học viên sẽ xem được bảng điểm" : "Học viên chưa xem được bảng điểm"}
+                    {published
+                      ? "Toàn bộ học viên có thể xem kết quả."
+                      : "Chỉ học viên được công bố riêng mới xem được kết quả."}
                   </span>
                 )}
               </div>
@@ -368,7 +416,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                 </div>
               )}
               <div className="overflow-x-auto rounded-md border">
-                <Table className="min-w-[1100px]">
+                <Table className="min-w-[1200px]">
                 <TableHeader>
                   <TableRow className="bg-muted/50">
                     <TableHead className="min-w-[210px]">Học viên</TableHead>
@@ -382,6 +430,9 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                     <TableHead className="min-w-[100px]">Phân loại</TableHead>
                     <TableHead className="min-w-[100px]">Kết quả</TableHead>
                     <TableHead className="min-w-[110px]">Tình trạng</TableHead>
+                    {showIndividualPublication && (
+                      <TableHead className="min-w-[135px] text-center">Công bố riêng</TableHead>
+                    )}
                     {canManageScores && (
                       <TableHead className="min-w-[110px] text-center">Quản lý</TableHead>
                     )}
@@ -390,7 +441,10 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                 <TableBody>
                   {students.length === 0 ? (
                     <TableRow>
-                        <TableCell colSpan={canManageScores ? 10 : 9} className="h-24 text-center text-muted-foreground">
+                        <TableCell
+                          colSpan={(canManageScores ? 10 : 9) + (showIndividualPublication ? 1 : 0)}
+                          className="h-24 text-center text-muted-foreground"
+                        >
                           Chưa có học viên trong bảng điểm.
                       </TableCell>
                     </TableRow>
@@ -441,6 +495,42 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                                 : "Chưa nhập"}
                           </Badge>
                         </TableCell>
+                        {showIndividualPublication && (
+                          <TableCell className="text-center">
+                            {assessment?.published ? (
+                              student.hasPublishableScore ? (
+                                <Badge variant="default">Toàn bảng</Badge>
+                              ) : (
+                                <Badge variant="secondary">Chưa có điểm</Badge>
+                              )
+                            ) : canManageScores ? (
+                              <div className="flex items-center justify-center gap-2">
+                                <Switch
+                                  checked={student.individuallyPublished}
+                                  onCheckedChange={(published) => individualPublicationMutation.mutate({
+                                    studentId: student.studentId,
+                                    published,
+                                  })}
+                                  disabled={
+                                    (!student.hasPublishableScore && !student.individuallyPublished)
+                                    || individualPublicationMutation.isPending
+                                  }
+                                  aria-label={`Công bố điểm cho ${student.fullName}`}
+                                  data-testid={`switch-assessment-student-publication-${student.studentId}`}
+                                />
+                                <span className="text-xs text-muted-foreground">
+                                  {student.individuallyPublished
+                                    ? "Đã công bố"
+                                    : student.hasPublishableScore ? "Chưa công bố" : "Chưa có điểm"}
+                                </span>
+                              </div>
+                            ) : (
+                              <Badge variant={student.individuallyPublished ? "default" : "secondary"}>
+                                {student.individuallyPublished ? "Đã công bố" : "Chưa công bố"}
+                              </Badge>
+                            )}
+                          </TableCell>
+                        )}
                         {canManageScores && (
                           <TableCell className="text-center">
                             <div className="inline-flex items-center gap-1">
@@ -513,10 +603,14 @@ export function StaffScoreSheetAssessmentStudentsDialog({
         assessment={assessment}
         student={editingStudent}
         open={!!editingStudent}
+        canManagePublication={Boolean(canManagePublication && canManageScores)}
         onOpenChange={(nextOpen) => {
           if (!nextOpen) setEditingStudent(null);
         }}
-        onSaved={() => rosterQuery.refetch()}
+        onSaved={() => {
+          void rosterQuery.refetch();
+          queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned/students"] });
+        }}
       />
     </Dialog>
   );

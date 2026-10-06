@@ -24,6 +24,7 @@ import {
   type ScoreSheetAssessment,
 } from "@shared/score-sheet-assessment";
 import { selectScoreSheetAssessmentAttemptSummary } from "@shared/score-sheet-assessment-scoring";
+import { isScoreSheetAssessmentStudentPublished } from "@shared/score-sheet-assessment-publication";
 import {
   MY_SPACE_CALENDAR_RESOURCE,
   normalizeMySpaceCalendarPermissions,
@@ -3065,6 +3066,7 @@ export function registerConfigRoutes(app: Express): void {
           cs.score_sheet_assessment_id AS assessment_id,
           cs.session_index,
           cs.session_date,
+          cs.score_sheet_assessment_published AS published,
           cs.score_sheet_assessment_excluded_student_ids AS excluded_student_ids,
           st.start_time AS session_start_time,
           c.class_code,
@@ -3204,6 +3206,7 @@ export function registerConfigRoutes(app: Express): void {
               attemptCount: assessment.attemptCount,
               scoringPolicy: assessment.scoringPolicy,
               hasConversion: true,
+              published: row.published === true,
               studentId: student.studentId,
               studentCode: student.code,
               studentName: student.fullName,
@@ -3215,6 +3218,13 @@ export function registerConfigRoutes(app: Express): void {
               gradeBandColor: summary?.result.gradeBand?.color ?? null,
               passStatus: summary?.result.passStatus ?? null,
               inputComplete: summary?.result.inputComplete ?? false,
+              individuallyPublished: attempts.some((attempt) =>
+                isScoreSheetAssessmentStudentPublished(attempt.result),
+              ),
+              hasPublishableScore: Boolean(summary && (
+                summary.result.overallConvertedScore !== null
+                || summary.result.skills.some((skill) => skill.convertedScore !== null)
+              )),
               status: !summary
                 ? "not_entered"
                 : summary.result.inputComplete

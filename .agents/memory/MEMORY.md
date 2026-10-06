@@ -85,6 +85,7 @@
 - [Score-sheet template configuration](score-sheet-template-configuration.md) — scoring keeps its saved snapshot; linked templates supply current deadlines and evaluation criteria.
 - [Score-sheet category order snapshots](score-sheet-category-order.md) — existing gradebooks keep their category order when a shared score sheet is reordered; new books use the new order.
 - [Score conversion publication](score-assessment-publication.md) — publish state belongs to each class session; students only see their enrolled session's policy-selected result.
+- [Individual score publication](score-assessment-individual-publication.md) — store per-student release with attempt results; keep enrollment, exclusion, and attempt-policy checks in sync.
 - [Score-sheet classification ownership](score-sheet-classification-ownership.md) — templates own thresholds; old snapshots fall back to linked conversion settings, and manual sheets classify the raw total.
 - [Finance translation parity](finance-translation-parity.md) — invoice English audits must compare vi/en key sets and scan child dialogs, not only the main Invoices page.
 - [Score conversion pass threshold](score-conversion-pass-threshold.md) — “Đạt” means the selected total is at least the “Từ” score; the “Đến” value does not cap higher scores.

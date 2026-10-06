@@ -20,6 +20,11 @@ import {
   type ScoreSheetAssessmentAttemptResult,
 } from "@shared/score-sheet-assessment-scoring";
 import {
+  isScoreSheetAssessmentStudentPublished,
+  SCORE_SHEET_ASSESSMENT_PUBLICATION_META_KEY,
+  withScoreSheetAssessmentStudentPublication,
+} from "@shared/score-sheet-assessment-publication";
+import {
   scoreSheetTemplateSchema,
   type ScoreSheetTemplate,
 } from "@shared/score-sheet-template";
@@ -69,6 +74,58 @@ import { canViewClass } from "../lib/class-access";
 import { canScheduleWrite } from "@shared/schedule-access";
 import { isStaffAssignedToEffectiveFreeClassStudent } from "@shared/my-space-calendar-permissions";
 import { hasMySpaceAssignmentsWritePermission } from "../lib/my-space-assignments-permissions";
+
+type ScoreSheetAssessmentPublicationNotification = {
+  classId: string;
+  classLabel: string;
+  assessmentName: string;
+  recipientUserIds: string[];
+};
+
+function notifyScoreSheetAssessmentPublished(
+  notification: ScoreSheetAssessmentPublicationNotification | null,
+) {
+  if (!notification?.recipientUserIds.length) return;
+  sendNotificationToMany(notification.recipientUserIds, {
+    title: "Thông báo bảng điểm",
+    content: `Bảng điểm ${notification.assessmentName} vừa được công bố cho lớp ${notification.classLabel}`,
+    category: "schedule",
+    referenceId: notification.classId,
+    referenceType: "score_sheet",
+    deeplink: {
+      screen: "ScoreSheet",
+      params: { classId: notification.classId },
+    },
+  }).catch((err) => console.error("[ScoreSheetAssessmentNotify] Publish error:", err));
+}
+
+async function setScoreSheetAssessmentStudentPublication(
+  queryable: any,
+  assessmentId: string,
+  sessionId: string,
+  studentId: string,
+  publishedToStudent: boolean,
+) {
+  const resultColumn = scoreSheetAssessmentStudentAttempts.result;
+  await queryable
+    .update(scoreSheetAssessmentStudentAttempts)
+    .set({
+      result: sql`jsonb_set(
+        COALESCE(${resultColumn}, '{}'::jsonb),
+        ${sql.raw(`'{${SCORE_SHEET_ASSESSMENT_PUBLICATION_META_KEY}}'`)},
+        COALESCE(
+          ${resultColumn} -> ${sql.raw(`'${SCORE_SHEET_ASSESSMENT_PUBLICATION_META_KEY}'`)},
+          '{}'::jsonb
+        ) || jsonb_build_object('publishedToStudent', ${publishedToStudent}),
+        true
+      )`,
+    })
+    .where(and(
+      eq(scoreSheetAssessmentStudentAttempts.assessmentId, assessmentId),
+      eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId),
+      eq(scoreSheetAssessmentStudentAttempts.studentId, studentId),
+    ));
+}
 
 async function getStudentForUser(userId: string) {
   const [student] = await db
@@ -4260,7 +4317,12 @@ export function registerMySpaceRoutes(app: Express): void {
             and(
               eq(classSessions.id, scoreSheetAssessmentStudentAttempts.classSessionId),
               eq(classSessions.scoreSheetAssessmentId, scoreSheetAssessmentStudentAttempts.assessmentId),
-              eq(classSessions.scoreSheetAssessmentPublished, true),
+              sql`(
+                ${classSessions.scoreSheetAssessmentPublished} = true
+                OR ${scoreSheetAssessmentStudentAttempts.result}
+                  -> ${sql.raw(`'${SCORE_SHEET_ASSESSMENT_PUBLICATION_META_KEY}'`)}
+                  ->> 'publishedToStudent' = 'true'
+              )`,
             ),
           )
           .innerJoin(
@@ -4273,7 +4335,7 @@ export function registerMySpaceRoutes(app: Express): void {
           .innerJoin(classes, eq(classes.id, classSessions.classId))
           .where(and(
             eq(scoreSheetAssessmentStudentAttempts.studentId, studentId),
-            sql`NOT (${scoreSheetAssessmentStudentAttempts.studentId} = ANY(${classSessions.scoreSheetAssessmentExcludedStudentIds}))`,
+            sql`NOT (${scoreSheetAssessmentStudentAttempts.studentId} = ANY(COALESCE(${classSessions.scoreSheetAssessmentExcludedStudentIds}, ARRAY[]::uuid[])))`,
           ))
           .orderBy(desc(classSessions.sessionDate), desc(scoreSheetAssessmentStudentAttempts.attemptNumber));
 
@@ -4688,6 +4750,13 @@ export function registerMySpaceRoutes(app: Express): void {
           gradeBandColor: summary?.result.gradeBand?.color ?? null,
           passStatus: summary?.result.passStatus ?? null,
           inputComplete: summary?.result.inputComplete ?? false,
+            individuallyPublished: attempts.some((attempt) =>
+              isScoreSheetAssessmentStudentPublished(attempt.result),
+            ),
+            hasPublishableScore: Boolean(summary && (
+              summary.result.overallConvertedScore !== null
+              || summary.result.skills.some((skill) => skill.convertedScore !== null)
+            )),
           status: !summary ? "not_entered" : summary.result.inputComplete ? "complete" : "in_progress",
         };
       });
@@ -4900,12 +4969,40 @@ export function registerMySpaceRoutes(app: Express): void {
         const sessionId = z.string().uuid().safeParse(req.params.sessionId);
         const studentId = z.string().uuid().safeParse(req.params.studentId);
         const attemptNumber = z.coerce.number().int().min(1).max(100).safeParse(req.params.attemptNumber);
-        const values = scoreSheetAssessmentAttemptValuesSchema.safeParse(req.body);
+        const hasValuesEnvelope = !!req.body
+          && typeof req.body === "object"
+          && Object.prototype.hasOwnProperty.call(req.body, "values");
+        const envelope = hasValuesEnvelope
+          ? z.object({
+            values: z.unknown(),
+            published: z.boolean().optional(),
+          }).strict().safeParse(req.body)
+          : null;
+        let values: z.infer<typeof scoreSheetAssessmentAttemptValuesSchema> | null = null;
+        let valuesError: z.ZodError | null = null;
+        let requestedPublication: boolean | undefined;
+        if (hasValuesEnvelope) {
+          if (!envelope?.success) {
+            valuesError = envelope?.error ?? new z.ZodError([]);
+          } else {
+            const parsedValues = scoreSheetAssessmentAttemptValuesSchema.safeParse(envelope.data.values);
+            if (parsedValues.success) {
+              values = parsedValues.data;
+              requestedPublication = envelope.data.published;
+            } else {
+              valuesError = parsedValues.error;
+            }
+          }
+        } else {
+          const parsedValues = scoreSheetAssessmentAttemptValuesSchema.safeParse(req.body);
+          if (parsedValues.success) values = parsedValues.data;
+          else valuesError = parsedValues.error;
+        }
         if (!sessionId.success || !studentId.success || !attemptNumber.success) {
           return res.status(400).json({ message: "Buổi thi, học viên hoặc lần thi không hợp lệ." });
         }
-        if (!values.success) {
-          return res.status(400).json({ message: values.error.errors[0]?.message ?? "Thông tin điểm chưa hợp lệ." });
+        if (!values) {
+          return res.status(400).json({ message: valuesError?.errors[0]?.message ?? "Thông tin điểm chưa hợp lệ." });
         }
 
         const saved = await db.transaction(async (tx) => {
@@ -4939,7 +5036,7 @@ export function registerMySpaceRoutes(app: Express): void {
                 .map((item): [string, ScoreSheetEvaluationSubCriterion] => [item.id, item]),
             ),
           );
-          for (const [itemId, responseValue] of Object.entries(values.data.evaluationResponses)) {
+          for (const [itemId, responseValue] of Object.entries(values.evaluationResponses)) {
             const item = evaluationItemsById.get(itemId);
             if (!item || responseValue === null) continue;
             if (
@@ -4985,7 +5082,10 @@ export function registerMySpaceRoutes(app: Express): void {
           }
 
           const existingAttempts = await tx
-            .select({ attemptNumber: scoreSheetAssessmentStudentAttempts.attemptNumber })
+            .select({
+              attemptNumber: scoreSheetAssessmentStudentAttempts.attemptNumber,
+              result: scoreSheetAssessmentStudentAttempts.result,
+            })
             .from(scoreSheetAssessmentStudentAttempts)
             .where(and(
               eq(scoreSheetAssessmentStudentAttempts.assessmentId, assessmentId),
@@ -5010,7 +5110,7 @@ export function registerMySpaceRoutes(app: Express): void {
             result = calculateScoreSheetAssessmentAttemptResult({
               template: assessment.templateSnapshot,
               conversionTemplate: assessment.conversionTemplateSnapshot ?? null,
-              values: values.data,
+              values,
             });
           } catch (scoreError: any) {
             const error: any = new Error(scoreError?.message || "Điểm nhập không hợp lệ.");
@@ -5018,10 +5118,32 @@ export function registerMySpaceRoutes(app: Express): void {
             throw error;
           }
 
-          const storedResult = {
+          const wasIndividuallyPublished = existingAttempts.some((attempt) =>
+            isScoreSheetAssessmentStudentPublished(attempt.result),
+          );
+          const publishToStudent = requestedPublication ?? wasIndividuallyPublished;
+          const publicationSummary = selectScoreSheetAssessmentAttemptSummary(
+            [
+              ...existingAttempts.filter((attempt) => attempt.attemptNumber !== attemptNumber.data),
+              { attemptNumber: attemptNumber.data, result },
+            ],
+            assessment.scoringPolicy,
+            true,
+          );
+          const hasPublishableScore = Boolean(publicationSummary && (
+            publicationSummary.result.overallConvertedScore !== null
+            || publicationSummary.result.skills.some((skill) => skill.convertedScore !== null)
+          ));
+          if (publishToStudent && !hasPublishableScore) {
+            const error: any = new Error("Cần nhập ít nhất một điểm quy đổi trước khi công bố cho học viên.");
+            error.status = 400;
+            throw error;
+          }
+
+          const storedResult = withScoreSheetAssessmentStudentPublication({
             ...result,
-            evaluationResponses: values.data.evaluationResponses,
-          };
+            evaluationResponses: values.evaluationResponses,
+          }, publishToStudent);
           const now = new Date();
           const [attempt] = await tx
             .insert(scoreSheetAssessmentStudentAttempts)
@@ -5030,9 +5152,9 @@ export function registerMySpaceRoutes(app: Express): void {
               classSessionId: sessionId.data,
               studentId: studentId.data,
               attemptNumber: attemptNumber.data,
-              partScores: values.data.partScores,
-              skillScores: values.data.skillScores,
-              notes: values.data.notes,
+              partScores: values.partScores,
+              skillScores: values.skillScores,
+              notes: values.notes,
               result: storedResult,
               createdBy: user.id,
               updatedBy: user.id,
@@ -5047,9 +5169,9 @@ export function registerMySpaceRoutes(app: Express): void {
                 scoreSheetAssessmentStudentAttempts.attemptNumber,
               ],
               set: {
-                partScores: values.data.partScores,
-                skillScores: values.data.skillScores,
-                notes: values.data.notes,
+                partScores: values.partScores,
+                skillScores: values.skillScores,
+                notes: values.notes,
                 result: storedResult,
                 updatedBy: user.id,
                 updatedAt: now,
@@ -5057,21 +5179,201 @@ export function registerMySpaceRoutes(app: Express): void {
             })
             .returning();
 
+          await setScoreSheetAssessmentStudentPublication(
+            tx,
+            assessmentId,
+            sessionId.data,
+            studentId.data,
+            publishToStudent,
+          );
+
+          let notification: ScoreSheetAssessmentPublicationNotification | null = null;
+          if (publishToStudent && !wasIndividuallyPublished) {
+            const [session] = await tx
+              .select({
+                classId: classes.id,
+                classCode: classes.classCode,
+                className: classes.name,
+                published: classSessions.scoreSheetAssessmentPublished,
+              })
+              .from(classSessions)
+              .innerJoin(classes, eq(classes.id, classSessions.classId))
+              .where(eq(classSessions.id, sessionId.data))
+              .limit(1);
+            if (session && !session.published) {
+              const [recipient] = await tx
+                .select({ userId: students.userId })
+                .from(students)
+                .where(eq(students.id, studentId.data))
+                .limit(1);
+              notification = {
+                classId: session.classId,
+                classLabel: session.classCode || session.className,
+                assessmentName: assessment.name,
+                recipientUserIds: recipient?.userId ? [recipient.userId] : [],
+              };
+            }
+          }
+
           return {
-            attemptNumber: attempt.attemptNumber,
-            partScores: attempt.partScores,
-            skillScores: attempt.skillScores,
-            notes: attempt.notes,
-            result: scoreSheetAssessmentAttemptResultSchema.parse(attempt.result),
-            updatedAt: attempt.updatedAt,
+            attempt: {
+              attemptNumber: attempt.attemptNumber,
+              partScores: attempt.partScores,
+              skillScores: attempt.skillScores,
+              notes: attempt.notes,
+              result: scoreSheetAssessmentAttemptResultSchema.parse(attempt.result),
+              updatedAt: attempt.updatedAt,
+            },
+            notification,
           };
         });
 
-        res.json(saved);
+        res.json(saved.attempt);
+        notifyScoreSheetAssessmentPublished(saved.notification);
       } catch (err: any) {
         const status = err instanceof z.ZodError ? 400 : err?.status ?? 500;
         if (status >= 500) console.error("Staff score assessment save error:", err);
         res.status(status).json({ message: err.message || "Lỗi khi lưu điểm." });
+      }
+    },
+  );
+
+  app.put(
+    "/api/my-space/score-sheet/staff-assessments/:sessionId/students/:studentId/publication",
+    async (req, res) => {
+      try {
+        if (!(req.user as any)) return res.status(401).json({ message: "Unauthorized" });
+
+        const sessionId = z.string().uuid().safeParse(req.params.sessionId);
+        const studentId = z.string().uuid().safeParse(req.params.studentId);
+        const request = z.object({ published: z.boolean() }).strict().safeParse(req.body);
+        if (!sessionId.success || !studentId.success) {
+          return res.status(400).json({ message: "Buổi thi hoặc học viên không hợp lệ." });
+        }
+        if (!request.success) {
+          return res.status(400).json({ message: request.error.errors[0]?.message ?? "Trạng thái công bố không hợp lệ." });
+        }
+
+        const result = await db.transaction(async (tx) => {
+          const access = await getAuthorizedScoreSheetSession(req, sessionId.data, {
+            queryable: tx,
+            lock: true,
+            permission: "edit",
+          });
+          if (!access?.assessment?.templateSnapshot.scoreConversionTemplateId) {
+            const error: any = new Error("Không tìm thấy buổi thi hoặc bạn không có quyền công bố bảng điểm.");
+            error.status = 404;
+            throw error;
+          }
+
+          const [membership] = await tx
+            .select({ id: studentSessions.id })
+            .from(studentSessions)
+            .where(and(
+              eq(studentSessions.classSessionId, sessionId.data),
+              eq(studentSessions.studentId, studentId.data),
+            ))
+            .limit(1);
+          if (!membership) {
+            const error: any = new Error("Học viên không thuộc buổi thi này.");
+            error.status = 404;
+            throw error;
+          }
+
+          const [rosterSettings] = await tx
+            .select({
+              excludedStudentIds: classSessions.scoreSheetAssessmentExcludedStudentIds,
+            })
+            .from(classSessions)
+            .where(eq(classSessions.id, sessionId.data))
+            .limit(1);
+          if (rosterSettings?.excludedStudentIds?.includes(studentId.data)) {
+            const error: any = new Error("Học viên đã được xóa khỏi bảng điểm này.");
+            error.status = 409;
+            throw error;
+          }
+
+          const attempts = await tx
+            .select({
+              attemptNumber: scoreSheetAssessmentStudentAttempts.attemptNumber,
+              result: scoreSheetAssessmentStudentAttempts.result,
+            })
+            .from(scoreSheetAssessmentStudentAttempts)
+            .where(and(
+              eq(scoreSheetAssessmentStudentAttempts.assessmentId, access.assessmentId),
+              eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId.data),
+              eq(scoreSheetAssessmentStudentAttempts.studentId, studentId.data),
+            ));
+          const wasPublished = attempts.some((attempt) =>
+            isScoreSheetAssessmentStudentPublished(attempt.result),
+          );
+          const published = request.data.published;
+          if (published) {
+            const summary = selectScoreSheetAssessmentAttemptSummary(
+              attempts,
+              access.assessment!.scoringPolicy,
+              true,
+            );
+            const hasPublishableScore = Boolean(summary && (
+              summary.result.overallConvertedScore !== null
+              || summary.result.skills.some((skill) => skill.convertedScore !== null)
+            ));
+            if (!hasPublishableScore) {
+              const error: any = new Error("Cần nhập ít nhất một điểm quy đổi trước khi công bố cho học viên.");
+              error.status = 400;
+              throw error;
+            }
+          }
+
+          if (wasPublished === published) {
+            return { published, notification: null as ScoreSheetAssessmentPublicationNotification | null };
+          }
+
+          await setScoreSheetAssessmentStudentPublication(
+            tx,
+            access.assessmentId,
+            sessionId.data,
+            studentId.data,
+            published,
+          );
+
+          let notification: ScoreSheetAssessmentPublicationNotification | null = null;
+          if (published) {
+            const [session] = await tx
+              .select({
+                classId: classes.id,
+                classCode: classes.classCode,
+                className: classes.name,
+                published: classSessions.scoreSheetAssessmentPublished,
+              })
+              .from(classSessions)
+              .innerJoin(classes, eq(classes.id, classSessions.classId))
+              .where(eq(classSessions.id, sessionId.data))
+              .limit(1);
+            if (session && !session.published) {
+              const [recipient] = await tx
+                .select({ userId: students.userId })
+                .from(students)
+                .where(eq(students.id, studentId.data))
+                .limit(1);
+              notification = {
+                classId: session.classId,
+                classLabel: session.classCode || session.className,
+                assessmentName: access.assessment.name,
+                recipientUserIds: recipient?.userId ? [recipient.userId] : [],
+              };
+            }
+          }
+
+          return { published, notification };
+        });
+
+        res.json({ published: result.published });
+        notifyScoreSheetAssessmentPublished(result.notification);
+      } catch (err: any) {
+        const status = err instanceof z.ZodError ? 400 : err?.status ?? 500;
+        if (status >= 500) console.error("Staff score assessment student publication error:", err);
+        res.status(status).json({ message: err.message || "Lỗi khi cập nhật trạng thái công bố." });
       }
     },
   );
@@ -5106,6 +5408,7 @@ export function registerMySpaceRoutes(app: Express): void {
             classCode: classes.classCode,
             className: classes.name,
             published: classSessions.scoreSheetAssessmentPublished,
+            excludedStudentIds: classSessions.scoreSheetAssessmentExcludedStudentIds,
           })
           .from(classSessions)
           .innerJoin(classes, eq(classes.id, classSessions.classId))
@@ -5141,8 +5444,17 @@ export function registerMySpaceRoutes(app: Express): void {
             attempts.push({ attemptNumber: attempt.attemptNumber, result: attempt.result });
             attemptsByStudent.set(attempt.studentId, attempts);
           }
+          const excludedStudentIds = new Set((session.excludedStudentIds ?? []).map(String));
+          const individuallyPublishedStudentIds = new Set(
+            Array.from(attemptsByStudent.entries())
+              .filter(([, attempts]) => attempts.some((attempt) =>
+                isScoreSheetAssessmentStudentPublished(attempt.result),
+              ))
+              .map(([studentId]) => studentId),
+          );
           const scoredStudentIds = Array.from(attemptsByStudent.entries())
-            .filter(([, attempts]) => {
+            .filter(([studentId, attempts]) => {
+              if (excludedStudentIds.has(studentId)) return false;
               const summary = selectScoreSheetAssessmentAttemptSummary(
                 attempts,
                 access.assessment!.scoringPolicy,
@@ -5161,18 +5473,23 @@ export function registerMySpaceRoutes(app: Express): void {
             };
           }
 
-          const recipients = await tx
-            .select({ userId: students.userId })
-            .from(students)
-            .where(inArray(students.id, scoredStudentIds));
-          notification = {
-            classId: session.classId,
-            classLabel: session.classCode || session.className,
-            assessmentName: access.assessment.name,
-            recipientUserIds: recipients
-              .map((recipient) => recipient.userId)
-              .filter((userId): userId is string => Boolean(userId)),
-          };
+          const notificationStudentIds = scoredStudentIds.filter((studentId) =>
+            !individuallyPublishedStudentIds.has(studentId),
+          );
+          if (notificationStudentIds.length > 0) {
+            const recipients = await tx
+              .select({ userId: students.userId })
+              .from(students)
+              .where(inArray(students.id, notificationStudentIds));
+            notification = {
+              classId: session.classId,
+              classLabel: session.classCode || session.className,
+              assessmentName: access.assessment.name,
+              recipientUserIds: recipients
+                .map((recipient) => recipient.userId)
+                .filter((userId): userId is string => Boolean(userId)),
+            };
+          }
         }
 
         const [updated] = await tx
@@ -5187,20 +5504,7 @@ export function registerMySpaceRoutes(app: Express): void {
         return res.status(result.status ?? 500).json({ message: result.error });
       }
       res.json({ published: result.published });
-
-      if (result.notification?.recipientUserIds.length) {
-        sendNotificationToMany(result.notification.recipientUserIds, {
-          title: "Thông báo bảng điểm",
-          content: `Bảng điểm ${result.notification.assessmentName} vừa được công bố cho lớp ${result.notification.classLabel}`,
-          category: "schedule",
-          referenceId: result.notification.classId,
-          referenceType: "score_sheet",
-          deeplink: {
-            screen: "ScoreSheet",
-            params: { classId: result.notification.classId },
-          },
-        }).catch((err) => console.error("[ScoreSheetAssessmentNotify] Publish error:", err));
-      }
+      notifyScoreSheetAssessmentPublished(result.notification);
     } catch (err: any) {
       const status = err instanceof z.ZodError ? 400 : err?.status ?? 500;
       if (status >= 500) console.error("Staff score assessment publication error:", err);

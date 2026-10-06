@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -30,6 +31,8 @@ type AssessmentScoreEntryStudent = {
   studentId: string;
   code: string;
   fullName: string;
+  individuallyPublished?: boolean;
+  hasPublishableScore?: boolean;
 };
 
 type AssessmentEvaluationItem = {
@@ -91,6 +94,7 @@ type StaffScoreSheetAssessmentScoreDialogProps = {
   student: AssessmentScoreEntryStudent | null;
   open: boolean;
   mode?: "edit" | "view";
+  canManagePublication?: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
 };
@@ -517,11 +521,13 @@ export function StaffScoreSheetAssessmentScoreDialog({
   student,
   open,
   mode = "edit",
+  canManagePublication = false,
   onOpenChange,
   onSaved,
 }: StaffScoreSheetAssessmentScoreDialogProps) {
   const [selectedAttemptNumber, setSelectedAttemptNumber] = useState<number | null>(null);
   const [draftsByAttempt, setDraftsByAttempt] = useState<Record<number, ScoreSheetAssessmentAttemptValues>>({});
+  const [publishForStudent, setPublishForStudent] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -555,7 +561,8 @@ export function StaffScoreSheetAssessmentScoreDialog({
     setDraftsByAttempt({});
     setSaveError(null);
     setSaveMessage(null);
-  }, [open, assessment?.sessionId, student?.studentId, mode]);
+    setPublishForStudent(Boolean(student?.individuallyPublished));
+  }, [open, assessment?.sessionId, student?.studentId, student?.individuallyPublished, mode]);
 
   useEffect(() => {
     if (!open || !entryQuery.data || selectedAttemptNumber !== null) return;
@@ -595,6 +602,7 @@ export function StaffScoreSheetAssessmentScoreDialog({
     ? createEmptyValues()
     : draftsByAttempt[selectedAttemptNumber] ?? savedValues;
   const draftIsDirty = JSON.stringify(currentValues) !== JSON.stringify(savedValues);
+  const publicationChanged = publishForStudent !== Boolean(student?.individuallyPublished);
   const preview = useMemo(() => {
     if (!template) return null;
     try {
@@ -607,6 +615,10 @@ export function StaffScoreSheetAssessmentScoreDialog({
       return null;
     }
   }, [template, conversionTemplate, currentValues]);
+  const hasPublishableScore = Boolean(preview && (
+    preview.overallConvertedScore !== null
+    || preview.skills.some((skill) => skill.convertedScore !== null)
+  ));
 
   const maxSavedAttempt = attempts.reduce(
     (highest, attempt) => Math.max(highest, attempt.attemptNumber),
@@ -680,34 +692,65 @@ export function StaffScoreSheetAssessmentScoreDialog({
   };
 
   const saveAttempt = async () => {
-    if (!assessment || !student || selectedAttemptNumber == null || !draftIsDirty) return;
-    if (!selectedAttempt && !hasEnteredValue(currentValues)) {
+    if (
+      !assessment
+      || !student
+      || selectedAttemptNumber == null
+      || (!draftIsDirty && !publicationChanged)
+    ) return;
+    if (draftIsDirty && !selectedAttempt && !hasEnteredValue(currentValues)) {
       setSaveError("Nhập ít nhất một điểm hoặc ghi chú trước khi lưu.");
+      return;
+    }
+    if (
+      publishForStudent
+      && !assessment.published
+      && !hasPublishableScore
+    ) {
+      setSaveError("Cần nhập ít nhất một điểm quy đổi trước khi công bố cho học viên.");
       return;
     }
     setIsSaving(true);
     setSaveError(null);
     setSaveMessage(null);
     try {
+      const studentPath =
+        `/api/my-space/score-sheet/staff-assessments/${encodeURIComponent(assessment.sessionId)}` +
+        `/students/${encodeURIComponent(student.studentId)}`;
+      const url = draftIsDirty
+        ? `${studentPath}/score-entry/${selectedAttemptNumber}`
+        : `${studentPath}/publication`;
       const response = await fetch(
-        `/api/my-space/score-sheet/staff-assessments/${encodeURIComponent(assessment.sessionId)}/students/${encodeURIComponent(student.studentId)}/score-entry/${selectedAttemptNumber}`,
+        url,
         {
           method: "PUT",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(currentValues),
+          body: JSON.stringify(draftIsDirty
+            ? { values: currentValues, published: publishForStudent }
+            : { published: publishForStudent }),
         },
       );
       const payload = await response.json().catch(() => null);
       if (!response.ok) throw new Error(payload?.message ?? "Không thể lưu điểm.");
 
-      setDraftsByAttempt((current) => {
-        const next = { ...current };
-        delete next[selectedAttemptNumber];
-        return next;
-      });
-      setSaveMessage(`Đã lưu lần thi ${selectedAttemptNumber}.`);
-      await entryQuery.refetch();
+      if (draftIsDirty) {
+        setDraftsByAttempt((current) => {
+          const next = { ...current };
+          delete next[selectedAttemptNumber];
+          return next;
+        });
+        await entryQuery.refetch();
+        setSaveMessage(
+          publishForStudent && !assessment.published
+            ? `Đã lưu lần thi ${selectedAttemptNumber} và công bố cho học viên.`
+            : `Đã lưu lần thi ${selectedAttemptNumber}.`,
+        );
+      } else {
+        setSaveMessage(
+          publishForStudent ? "Đã công bố điểm cho học viên." : "Đã gỡ công bố điểm.",
+        );
+      }
       onSaved();
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "Không thể lưu điểm.");
@@ -1106,15 +1149,54 @@ export function StaffScoreSheetAssessmentScoreDialog({
             </div>
 
             <DialogFooter className="shrink-0 flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-              <div className="min-h-5 text-sm" aria-live="polite">
-                {saveError ? (
-                  <span className="text-destructive">{saveError}</span>
-                ) : saveMessage ? (
-                  <span className="text-emerald-700 dark:text-emerald-300">{saveMessage}</span>
-                ) : (
-                  <span className="text-muted-foreground">
-                    Điểm quy đổi được tính tự động theo cấu hình bảng điểm.
-                  </span>
+              <div className="space-y-2">
+                <div className="min-h-5 text-sm" aria-live="polite">
+                  {saveError ? (
+                    <span className="text-destructive">{saveError}</span>
+                  ) : saveMessage ? (
+                    <span className="text-emerald-700 dark:text-emerald-300">{saveMessage}</span>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      Điểm quy đổi được tính tự động theo cấu hình bảng điểm.
+                    </span>
+                  )}
+                </div>
+                {mode === "edit" && assessment?.hasConversion && canManagePublication && (
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2">
+                    {assessment.published ? (
+                      <>
+                        <Badge variant="default">Đã công bố toàn bảng</Badge>
+                        <span className="text-xs text-muted-foreground">
+                          Học viên đang xem được kết quả của buổi thi này.
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <Switch
+                          id="publish-score-for-student"
+                          checked={publishForStudent}
+                          onCheckedChange={(checked) => {
+                            setPublishForStudent(checked);
+                            setSaveError(null);
+                            setSaveMessage(null);
+                          }}
+                          disabled={isSaving || (!hasPublishableScore && !publishForStudent)}
+                          aria-label={`Công bố điểm cho ${student?.fullName ?? "học viên này"}`}
+                        />
+                        <label
+                          htmlFor="publish-score-for-student"
+                          className="cursor-pointer text-sm font-medium"
+                        >
+                          Công bố riêng cho học viên này
+                        </label>
+                        <span className="text-xs text-muted-foreground">
+                          {hasPublishableScore
+                            ? "Lưu cùng điểm để học viên xem được kết quả."
+                            : "Cần có ít nhất một điểm quy đổi trước khi công bố."}
+                        </span>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
               <div className="flex w-full gap-2 sm:w-auto">
@@ -1123,11 +1205,19 @@ export function StaffScoreSheetAssessmentScoreDialog({
                 </Button>
                 <Button
                   onClick={saveAttempt}
-                  disabled={!draftIsDirty || isSaving || selectedAttemptNumber == null}
+                  disabled={
+                    (!draftIsDirty && !publicationChanged)
+                    || isSaving
+                    || selectedAttemptNumber == null
+                  }
                   className="flex-1 sm:flex-none"
                 >
                   {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                  Lưu điểm
+                  {publicationChanged && !draftIsDirty
+                    ? publishForStudent ? "Công bố điểm" : "Gỡ công bố"
+                    : publishForStudent && !assessment?.published
+                      ? "Lưu và công bố"
+                      : "Lưu điểm"}
                 </Button>
               </div>
             </DialogFooter>
