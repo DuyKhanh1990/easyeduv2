@@ -817,6 +817,7 @@ export function registerFinanceRoutes(app: Express): void {
         LEFT JOIN staff    st  ON st.user_id       = al.user_id
         WHERE 1=1
           ${locSnippet.replace(/\bl\.id\b/g, "al.location_id")}
+          ${isSuperAdmin ? "" : "AND u.username IS DISTINCT FROM 'admin'"}
       `;
 
       const [countResult, dataResult] = await Promise.all([
