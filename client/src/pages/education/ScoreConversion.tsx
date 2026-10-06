@@ -1470,7 +1470,19 @@ export default function ScoreConversion() {
                                           {group.students.map((student) => (
                                             <tr key={student.studentId} className="border-t border-border">
                                               <td className="px-3 py-2.5 font-medium">
-                                                {student.studentCode} - {student.studentName}
+                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                  <span>{student.studentCode} - {student.studentName}</span>
+                                                  {student.hasPublishableScore
+                                                    && (student.published || student.individuallyPublished) && (
+                                                      <span
+                                                        className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300"
+                                                        data-testid={`badge-student-result-published-${student.studentId}`}
+                                                      >
+                                                        <CheckCircle2 className="h-3 w-3" />
+                                                        Đã công bố
+                                                      </span>
+                                                    )}
+                                                </div>
                                               </td>
                                               <td className="px-3 py-2.5 text-center">
                                                 {student.sessionIndex != null ? `Buổi ${student.sessionIndex}` : "—"}
