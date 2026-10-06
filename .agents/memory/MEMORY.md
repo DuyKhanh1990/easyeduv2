@@ -40,7 +40,7 @@
 - [Inventory availability expiry](inventory-availability-expiry.md) — mọi màn hình và bước lưu phải bỏ reservation/phiếu xuất nháp đã hết hạn theo cùng cấu hình thời gian.
 - [Student discussion edit audit](student-discussion-edit-audit.md) — giữ tác giả gốc và lưu riêng người sửa/thời điểm sửa để hiển thị lịch sử minh bạch.
 - [Admin Hub connection testing](admin-hub-connection-testing.md) — cross-domain claim cần endpoint public và mã được sinh trong cùng môi trường/database.
-- [Class session ordering](class-session-ordering.md) — thứ tự buổi phải theo ngày/giờ; lưu buổi sẽ đánh lại sessionIndex nhưng giữ nguyên ID và dữ liệu gắn với ID.
+- [Class session ordering](class-session-ordering.md) — thao tác từ lịch dùng ID/vị trí buổi lớp, không dùng sessionOrder riêng của học viên.
 - [Session teacher role overrides](session-teacher-role-overrides.md) — vai trò sửa riêng cho buổi không đổi phân công lớp; chỉ lưu lựa chọn ghi đè và mang theo lịch khi đổi vị trí buổi.
 - [Teacher session time assignments](teacher-session-time-assignments.md) — ca chung là giới hạn A–B; giáo viên mặc định dùng cả ca, giờ phân công riêng phải nằm trong giới hạn.
 - [Transferred session accounting](transferred-session-counts.md) — chuyển tín dụng theo tổng giá trị từng buổi nguồn; buổi đích giữ đơn giá riêng, khoản thu chênh lệch thuộc lớp mới.

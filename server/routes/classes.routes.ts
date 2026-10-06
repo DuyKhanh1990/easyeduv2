@@ -2,6 +2,10 @@ import type { Express } from "express";
 import { storage } from "../storage";
 import { createActivityLog, getActivityLogs } from "../storage/activity-log.storage";
 import { applyCourseProgramContentsToSessions, getClassFormatSummary, getClassStatusSummary, getNewClassesSummary, getClassesByLocationSummary, getMonthlyAttendanceRate, getClassesByTeacherSummary, getSessionsByTeacherSummary, getMakeupClassEligibility, getMakeupStartOptions } from "../storage/class.storage";
+import {
+  studentSessionClassJoinCondition,
+  studentSessionClassRangeJoinCondition,
+} from "../lib/student-session-schedule-range";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { scoreSheetAssessmentSchema } from "@shared/score-sheet-assessment";
@@ -7944,12 +7948,13 @@ export function registerClassesRoutes(app: Express): void {
            const studentSessionStudentScope = studentSessionPairs.length === 1
              ? studentSessionPairs[0]
              : or(...studentSessionPairs);
-           const sessionScope = req.body.deleteAllSessions
-             ? and(studentSessionStudentScope)
-             : and(
-                 studentSessionStudentScope,
-                 between(studentSessions.sessionOrder, fromSessionOrder, toSessionOrder),
-               );
+            const sessionScope = and(
+              studentSessionStudentScope,
+              eq(studentSessions.classId, sc2.classId),
+            );
+            const sessionJoinCondition = req.body.deleteAllSessions
+              ? studentSessionClassJoinCondition()
+              : studentSessionClassRangeJoinCondition(fromSessionOrder, toSessionOrder);
           const removedSessionRows = await db.select({
             studentId: studentSessions.studentId,
             sessionIndex: classSessions.sessionIndex,
@@ -7960,7 +7965,7 @@ export function registerClassesRoutes(app: Express): void {
             attendanceStatus: studentSessions.attendanceStatus,
           })
             .from(studentSessions)
-            .innerJoin(classSessions, eq(classSessions.id, studentSessions.classSessionId))
+             .innerJoin(classSessions, sessionJoinCondition)
             .leftJoin(shiftTemplates, eq(shiftTemplates.id, classSessions.shiftTemplateId))
             .where(
               deleteOnlyUnattended

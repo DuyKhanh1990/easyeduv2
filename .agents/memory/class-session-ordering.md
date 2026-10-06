@@ -22,3 +22,9 @@ Cycle updates do not reposition lessons. From the selected lesson through the fi
 **Why:** Recreating lessons can silently break attendance, finance, gradebook, and personalized-content links. A bounded middle range needs separate restoration rules that the current product does not expose.
 
 **How to apply:** Require a continuous suffix ending at the final lesson. Never reindex, reorder, or rotate linked data; only replace timetable fields at each existing position. Reject a result that overlaps or precedes the unchanged prefix.
+
+For actions initiated from the class calendar, identify lessons by their linked `class_sessions` record and its timetable position. Do not compare a class `sessionIndex` with `student_sessions.session_order`; the latter is local to an enrollment and may restart at 1 when the student joins mid-course.
+
+**Why:** A student can be enrolled for class lessons 10–14 while their own session order is 1–5. Comparing those fields can make a schedule action silently select no rows or the wrong rows.
+
+**How to apply:** Use the class-session link/index consistently for preview, mutation, and activity logs. After schedule mutations, invalidate the affected per-session student lists. Keep the student-local order only for logic whose meaning is explicitly enrollment-relative.

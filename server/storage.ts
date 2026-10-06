@@ -301,7 +301,12 @@ export interface IStorage {
     studentClassIds?: Record<string, string>;
     fromSessionOrder: number;
     toSessionOrder: number;
-  }): Promise<{ hasAttendedSessions: boolean }>;
+    deleteOnlyUnattended?: boolean;
+    deleteAllSessions?: boolean;
+  }): Promise<{
+    hasAttendedSessions: boolean;
+    orphanedStudents: Array<{ studentClassId: string; studentId: string; studentName: string }>;
+  }>;
   removeStudentFromSessionsConfirm(data: {
     studentIds: string[];
     studentClassId: string;
@@ -309,6 +314,8 @@ export interface IStorage {
     fromSessionOrder: number;
     toSessionOrder: number;
     deleteOnlyUnattended: boolean;
+    deleteAllSessions?: boolean;
+    orphanAction?: "keep" | "remove" | "waiting";
   }): Promise<void>;
   changeStudentCycle(data: {
     studentClassId: string;
@@ -1076,7 +1083,12 @@ export class DatabaseStorage implements IStorage {
     studentClassIds?: Record<string, string>;
     fromSessionOrder: number;
     toSessionOrder: number;
-  }): Promise<{ hasAttendedSessions: boolean }> {
+    deleteOnlyUnattended?: boolean;
+    deleteAllSessions?: boolean;
+  }): Promise<{
+    hasAttendedSessions: boolean;
+    orphanedStudents: Array<{ studentClassId: string; studentId: string; studentName: string }>;
+  }> {
     return sessionStorage.removeStudentFromSessions(data);
   }
 
@@ -1087,6 +1099,8 @@ export class DatabaseStorage implements IStorage {
     fromSessionOrder: number;
     toSessionOrder: number;
     deleteOnlyUnattended: boolean;
+    deleteAllSessions?: boolean;
+    orphanAction?: "keep" | "remove" | "waiting";
   }): Promise<void> {
     return sessionStorage.removeStudentFromSessionsConfirm(data);
   }

@@ -21,6 +21,10 @@ import type {
 
 import { getClass } from "./class.storage";
 import { getNextLocationCode } from "./finance.storage";
+import {
+  studentSessionClassJoinCondition,
+  studentSessionClassRangeJoinCondition,
+} from "../lib/student-session-schedule-range";
 import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 import {
   buildClassTransferFallbackInvoiceAllocations,
@@ -4326,17 +4330,32 @@ export async function removeStudentFromSessions(data: {
   hasAttendedSessions: boolean;
   orphanedStudents: Array<{ studentClassId: string; studentId: string; studentName: string }>;
 }> {
-  const sessionScope = data.deleteAllSessions
-    ? and(
-        studentSessionScope(data.studentIds, data.studentClassIds, data.studentClassId),
-      )
-    : and(
-        studentSessionScope(data.studentIds, data.studentClassIds, data.studentClassId),
-        between(studentSessions.sessionOrder, data.fromSessionOrder, data.toSessionOrder),
-      );
-  const sessionsToDelete = await db.select()
-    .from(studentSessions)
-    .where(sessionScope);
+  const enrollmentScope = studentSessionScope(
+    data.studentIds,
+    data.studentClassIds,
+    data.studentClassId,
+  );
+  // Schedule actions use the class timetable position. student_sessions.session_order
+  // is an enrollment-local counter and can start at 1 even when the class is at lesson 10.
+  const sessionsToDelete = data.deleteAllSessions
+    ? await db.select({
+        id: studentSessions.id,
+        studentId: studentSessions.studentId,
+        attendanceStatus: studentSessions.attendanceStatus,
+      })
+        .from(studentSessions)
+        .where(enrollmentScope)
+    : await db.select({
+        id: studentSessions.id,
+        studentId: studentSessions.studentId,
+        attendanceStatus: studentSessions.attendanceStatus,
+      })
+        .from(studentSessions)
+        .innerJoin(
+          classSessions,
+          studentSessionClassRangeJoinCondition(data.fromSessionOrder, data.toSessionOrder),
+        )
+        .where(enrollmentScope);
 
   const attendedCount = sessionsToDelete.filter(s => s.attendanceStatus && s.attendanceStatus !== "pending").length;
   const effectiveSessionsToDelete = data.deleteOnlyUnattended
@@ -4383,23 +4402,33 @@ export async function removeStudentFromSessionsConfirm(data: {
   orphanAction?: "keep" | "remove" | "waiting";
 }): Promise<void> {
   await db.transaction(async (tx) => {
-    let deleteConditions = data.deleteAllSessions
-      ? and(
-          studentSessionScope(data.studentIds, data.studentClassIds, data.studentClassId),
-        )
-      : and(
-          studentSessionScope(data.studentIds, data.studentClassIds, data.studentClassId),
-          between(studentSessions.sessionOrder, data.fromSessionOrder, data.toSessionOrder),
-        );
+    const enrollmentScope = studentSessionScope(
+      data.studentIds,
+      data.studentClassIds,
+      data.studentClassId,
+    );
+    const sessionsInScope = data.deleteAllSessions
+      ? await tx.select({ id: studentSessions.id })
+          .from(studentSessions)
+          .where(enrollmentScope)
+      : await tx.select({ id: studentSessions.id })
+          .from(studentSessions)
+          .innerJoin(
+            classSessions,
+            studentSessionClassRangeJoinCondition(data.fromSessionOrder, data.toSessionOrder),
+          )
+          .where(enrollmentScope);
+    const sessionIdsToDelete = sessionsInScope.map((session) => session.id);
 
-    if (data.deleteOnlyUnattended) {
-      deleteConditions = and(
-        deleteConditions,
-        sql`${studentSessions.attendanceStatus} IS NULL OR ${studentSessions.attendanceStatus} = 'pending'`,
+    if (sessionIdsToDelete.length > 0) {
+      const deleteConditions = and(
+        inArray(studentSessions.id, sessionIdsToDelete),
+        data.deleteOnlyUnattended
+          ? sql`(${studentSessions.attendanceStatus} IS NULL OR ${studentSessions.attendanceStatus} = 'pending')`
+          : undefined,
       );
+      await tx.delete(studentSessions).where(deleteConditions);
     }
-
-    await tx.delete(studentSessions).where(deleteConditions);
 
     if (data.orphanAction && data.orphanAction !== "keep") {
       const remaining = await tx.selectDistinct({ studentId: studentSessions.studentId })

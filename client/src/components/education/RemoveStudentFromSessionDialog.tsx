@@ -147,6 +147,21 @@ export function RemoveStudentFromSessionDialog({
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}`] });
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/active-students`] });
       queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/waiting-students`] });
+      const affectedSessionIds = classSessions
+        .filter((session) => {
+          if (!session.id) return false;
+          if (quickDeleteAll) return true;
+          const sessionIndex = Number(session.sessionIndex);
+          return Number.isFinite(sessionIndex)
+            && sessionIndex >= fromSessionOrder
+            && sessionIndex <= toSessionOrder;
+        })
+        .map((session) => session.id as string);
+      for (const sessionId of affectedSessionIds) {
+        queryClient.invalidateQueries({
+          queryKey: [`/api/class-sessions/${sessionId}/student-sessions`],
+        });
+      }
       toast({
         title: t("mySpace.calendar.success"),
         description: quickDeleteAll
