@@ -3003,9 +3003,11 @@ export function registerConfigRoutes(app: Express): void {
           )?.result.inputComplete)
           .length;
         const individuallyPublishedStudentCount = Array.from(studentAttempts?.values() ?? [])
-          .filter((attempts) => attempts.some((attempt) =>
-            isScoreSheetAssessmentStudentPublished(attempt.result),
-          ))
+          .filter((attempts) =>
+            Array.from(attempts.values()).some((attempt) =>
+              isScoreSheetAssessmentStudentPublished(attempt.result),
+            ),
+          )
           .length;
         const studentCount = Number(row.student_count ?? 0);
         return [{
