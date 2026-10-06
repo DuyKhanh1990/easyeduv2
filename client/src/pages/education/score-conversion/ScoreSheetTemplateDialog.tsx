@@ -975,6 +975,7 @@ export function ScoreSheetTemplateDialog({
                 </div>
               )}
             </section>
+            <div className="min-w-0 space-y-4">
             <ScoreSheetTemplateGradingThresholds
               gradeBands={draft.gradeBands ?? []}
               passThreshold={draft.passThreshold ?? DEFAULT_PASS_THRESHOLD}
@@ -988,9 +989,7 @@ export function ScoreSheetTemplateDialog({
                 passThreshold,
               }))}
             />
-            </div>
 
-            {draft.evaluationCriteriaIds.length > 0 && (
               <section className="space-y-3 rounded-lg border bg-white p-4">
                 <div>
                   <h3 className="font-semibold">Chi tiết tiêu chí đánh giá</h3>
@@ -999,7 +998,11 @@ export function ScoreSheetTemplateDialog({
                   </p>
                 </div>
 
-                {evaluationCriteriaQuery.isLoading ? (
+                {draft.evaluationCriteriaIds.length === 0 ? (
+                  <p className="rounded-md bg-muted/30 p-3 text-sm text-muted-foreground">
+                    Chưa chọn tiêu chí đánh giá. Chọn tiêu chí ở phía trên để xem chi tiết tại đây.
+                  </p>
+                ) : evaluationCriteriaQuery.isLoading ? (
                   <p className="text-sm text-muted-foreground">Đang tải nội dung tiêu chí...</p>
                 ) : evaluationCriteriaQuery.isError ? (
                   <p className="text-sm text-destructive" role="alert">
@@ -1082,7 +1085,8 @@ export function ScoreSheetTemplateDialog({
                   </div>
                 )}
               </section>
-            )}
+            </div>
+            </div>
 
               {formError && <p className="text-sm text-destructive" role="alert">{formError}</p>}
             </div>
