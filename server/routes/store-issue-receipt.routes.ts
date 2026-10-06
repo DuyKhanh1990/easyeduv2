@@ -392,6 +392,7 @@ async function createIssueInvoice(params: {
     paymentMethod: remaining > 0 ? null : params.paymentMethod,
     status: invStatus,
     paidAt: paid > 0 && remaining <= 0 ? paymentAt : null,
+    paidBy: paid > 0 && remaining <= 0 ? params.createdBy ?? null : null,
     createdBy: params.createdBy ?? null,
     updatedBy: params.createdBy ?? null,
   } as any).returning();
@@ -430,6 +431,8 @@ async function createIssueInvoice(params: {
         dueDate: today,
         status: "paid",
         paidAt: paymentAt,
+        createdBy: params.createdBy ?? null,
+        paidBy: params.createdBy ?? null,
         sortOrder: 0,
         paymentMethod: params.paymentMethod,
       });
@@ -441,6 +444,7 @@ async function createIssueInvoice(params: {
       amount: String(remaining),
       dueDate,
       status: "unpaid",
+      createdBy: params.createdBy ?? null,
       sortOrder: paid > 0 ? 1 : 0,
       paymentMethod: params.paymentMethod,
     });
