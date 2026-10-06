@@ -10,3 +10,9 @@ In score entry, automatically turn on individual publication only after all skil
 **Why:** The workspace and production share PostgreSQL, so individual publication should not introduce a schema migration when existing attempt records can hold the release state. The user also requested a confirmation before sending results and a warning when no feedback has been entered. PostgreSQL may not infer prepared parameter types inside variadic `any` functions such as `jsonb_build_object`.
 
 **How to apply:** Synchronize the individual marker across a student's attempts so `latest` or `highest` selection cannot hide a release. Keep student-facing queries limited to enrolled, non-excluded students. Count any non-blank note or text response, or any checked checkbox, as feedback; blank/whitespace text and unchecked boxes do not count. Cast values passed to `jsonb_build_object` explicitly (for example `::boolean`) to prevent PostgreSQL's “could not determine data type of parameter” error.
+
+For score-conversion sessions, when the non-excluded roster is non-empty and every student has an individual release, hide the session-wide publish control and show a green “Đã công bố” label on the session row. Keep the controls available if the session is already globally published so staff can still withdraw that release.
+
+**Why:** The user chose hiding bulk publication after individual releases to prevent an accidental duplicate send.
+
+**How to apply:** Derive the label from the current roster and saved attempt metadata; an empty roster must not count as fully published. Refresh the assessment summary when an individual release changes.

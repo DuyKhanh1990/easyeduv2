@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { AlertCircle, Loader2, Save, Settings2, Trash2, UserPlus } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, Save, Settings2, Trash2, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -56,6 +56,8 @@ export type StaffAssignedScoreSheetAssessment = {
   studentCount: number;
   enteredStudentCount: number;
   completedStudentCount: number;
+  individuallyPublishedStudentCount?: number;
+  allStudentsIndividuallyPublished?: boolean;
   attemptCount: number;
   scoringPolicy: "highest" | "latest";
   hasConversion: boolean;
@@ -233,6 +235,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
       queryClient.invalidateQueries({
         queryKey: ["/api/my-space/score-sheet/staff-assessments", assessment?.sessionId, "students"],
       });
+      queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned"] });
       queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned/students"] });
       toast({
         title: result.published ? "Đã công bố điểm cho học viên" : "Đã gỡ công bố điểm",
@@ -289,6 +292,19 @@ export function StaffScoreSheetAssessmentStudentsDialog({
     },
   });
 
+  const allStudentsIndividuallyPublished =
+    !rosterQuery.isLoading
+    && !rosterQuery.isError
+    && students.length > 0
+    && students.every((student) => student.individuallyPublished);
+  const hideBulkPublicationControl = allStudentsIndividuallyPublished && !savedPublished;
+  const bulkPublicationActionDisabled =
+    publicationMutation.isPending
+    || individualPublicationMutation.isPending
+    || rosterQuery.isLoading
+    || rosterQuery.isFetching
+    || rosterQuery.isError;
+
   function formatScore(value: number | null | undefined) {
     if (value == null || !Number.isFinite(value)) return "—";
     return new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(value);
@@ -322,42 +338,53 @@ export function StaffScoreSheetAssessmentStudentsDialog({
             )}
           </DialogDescription>
           {canManagePublication && (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium">Công bố</span>
-                {canManageScores ? (
-                  <Switch
-                    checked={published}
-                    onCheckedChange={setPublished}
-                    disabled={publicationMutation.isPending}
-                    aria-label="Công bố bảng điểm cho toàn bộ học viên"
-                  />
-                ) : (
-                  <Badge variant={savedPublished ? "default" : "secondary"}>
-                    {savedPublished ? "Đã công bố toàn bảng" : "Chưa công bố toàn bảng"}
-                  </Badge>
-                )}
+            hideBulkPublicationControl ? (
+              <div className="flex items-center gap-2 border-t pt-3 text-sm font-medium text-emerald-700 dark:text-emerald-400">
+                <CheckCircle2 className="h-4 w-4" />
+                Tất cả học viên đã được công bố riêng.
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium">Công bố</span>
+                  {canManageScores ? (
+                    <Switch
+                      checked={published}
+                      onCheckedChange={setPublished}
+                      disabled={bulkPublicationActionDisabled}
+                      aria-label="Công bố bảng điểm cho toàn bộ học viên"
+                    />
+                  ) : (
+                    <Badge variant={savedPublished ? "default" : "secondary"}>
+                      {savedPublished ? "Đã công bố toàn bảng" : "Chưa công bố toàn bảng"}
+                    </Badge>
+                  )}
+                  {canManageScores && (
+                    <span className="text-xs text-muted-foreground">
+                      {published
+                        ? "Toàn bộ học viên có thể xem kết quả."
+                        : "Chỉ học viên được công bố riêng mới xem được kết quả."}
+                    </span>
+                  )}
+                </div>
                 {canManageScores && (
-                  <span className="text-xs text-muted-foreground">
-                    {published
-                      ? "Toàn bộ học viên có thể xem kết quả."
-                      : "Chỉ học viên được công bố riêng mới xem được kết quả."}
-                  </span>
+                  <Button
+                    size="sm"
+                    onClick={() => publicationMutation.mutate(published)}
+                    disabled={
+                      !assessment
+                      || published === savedPublished
+                      || bulkPublicationActionDisabled
+                    }
+                  >
+                    {publicationMutation.isPending
+                      ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      : <Save className="mr-2 h-4 w-4" />}
+                    Lưu
+                  </Button>
                 )}
               </div>
-              {canManageScores && (
-                <Button
-                  size="sm"
-                  onClick={() => publicationMutation.mutate(published)}
-                  disabled={!assessment || published === savedPublished || publicationMutation.isPending}
-                >
-                  {publicationMutation.isPending
-                    ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    : <Save className="mr-2 h-4 w-4" />}
-                  Lưu
-                </Button>
-              )}
-            </div>
+            )
           )}
         </DialogHeader>
 

@@ -3002,6 +3002,12 @@ export function registerConfigRoutes(app: Express): void {
             true,
           )?.result.inputComplete)
           .length;
+        const individuallyPublishedStudentCount = Array.from(studentAttempts?.values() ?? [])
+          .filter((attempts) => attempts.some((attempt) =>
+            isScoreSheetAssessmentStudentPublished(attempt.result),
+          ))
+          .length;
+        const studentCount = Number(row.student_count ?? 0);
         return [{
           sessionId: row.session_id,
           classId: row.class_id,
@@ -3010,9 +3016,12 @@ export function registerConfigRoutes(app: Express): void {
           locationName: row.location_name ?? null,
           teacherNames: row.teacher_names ?? null,
           sessionIndex: row.session_index,
-          studentCount: row.student_count ?? 0,
+          studentCount,
           enteredStudentCount: row.entered_student_count ?? 0,
           completedStudentCount,
+          individuallyPublishedStudentCount,
+          allStudentsIndividuallyPublished: studentCount > 0
+            && individuallyPublishedStudentCount === studentCount,
           examDate: row.session_date,
           assessmentId: row.assessment_id,
           assessmentCode: assessment.code,

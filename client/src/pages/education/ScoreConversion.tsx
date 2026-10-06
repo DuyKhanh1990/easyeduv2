@@ -1665,11 +1665,25 @@ export default function ScoreConversion() {
                                   data-testid={`row-score-conversion-assessment-${assessment.sessionId}`}
                                 >
                                   <td className="sticky left-0 z-10 min-w-[260px] border-b border-r border-border bg-card px-3 py-2.5 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)] group-hover:bg-accent/50">
-                                    <p className="truncate font-semibold text-foreground" title={`${classLabel}${assessment.sessionIndex != null ? ` (Buổi ${assessment.sessionIndex})` : ""}`}>
-                                      {classLabel}
-                                      {assessment.sessionIndex != null && (
-                                        <span className="ml-1 font-normal text-muted-foreground">
-                                          (Buổi {assessment.sessionIndex})
+                                    <p className="flex min-w-0 items-center gap-1.5 font-semibold text-foreground">
+                                      <span
+                                        className="min-w-0 truncate"
+                                        title={`${classLabel}${assessment.sessionIndex != null ? ` (Buổi ${assessment.sessionIndex})` : ""}`}
+                                      >
+                                        {classLabel}
+                                        {assessment.sessionIndex != null && (
+                                          <span className="ml-1 font-normal text-muted-foreground">
+                                            (Buổi {assessment.sessionIndex})
+                                          </span>
+                                        )}
+                                      </span>
+                                      {assessment.allStudentsIndividuallyPublished && (
+                                        <span
+                                          className="inline-flex shrink-0 items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300"
+                                          data-testid={`badge-assessment-published-${assessment.sessionId}`}
+                                        >
+                                          <CheckCircle2 className="h-3 w-3" />
+                                          Đã công bố
                                         </span>
                                       )}
                                     </p>
