@@ -359,6 +359,7 @@ async function createIssueInvoice(params: {
   const paid = Math.min(params.paidAmount, grandTotal);
   const remaining = Math.max(0, grandTotal - paid);
   const invStatus = remaining <= 0 ? "paid" : paid > 0 ? "partial" : "unpaid";
+  const paymentAt = paid > 0 ? new Date() : null;
   const today = new Date().toISOString().split("T")[0];
   const dueDate = remaining > 0 ? (params.paymentDueDate?.trim() || today) : null;
 
@@ -390,6 +391,7 @@ async function createIssueInvoice(params: {
     dueDate,
     paymentMethod: remaining > 0 ? null : params.paymentMethod,
     status: invStatus,
+    paidAt: paid > 0 && remaining <= 0 ? paymentAt : null,
     createdBy: params.createdBy ?? null,
     updatedBy: params.createdBy ?? null,
   } as any).returning();
@@ -427,6 +429,7 @@ async function createIssueInvoice(params: {
         amount: String(paid),
         dueDate: today,
         status: "paid",
+        paidAt: paymentAt,
         sortOrder: 0,
         paymentMethod: params.paymentMethod,
       });
