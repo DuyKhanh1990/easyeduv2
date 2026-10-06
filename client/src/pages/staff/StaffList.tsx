@@ -465,6 +465,7 @@ export function StaffList() {
       await wb.xlsx.load(buf);
       const ws = wb.worksheets[0];
       const rows: any[] = [];
+      let activeImportCount = 0;
       const usedCodes = new Set((staff || []).map((s: any) => s.code).filter(Boolean));
 
       const autoGenerateCode = (roleName: string): string => {
@@ -489,6 +490,8 @@ export function StaffList() {
         if (!fullName) return;
         const deptName = getCellText(vals[3]);
         const roleName = getCellText(vals[4]);
+        const status = getCellText(vals[7]) || "Hoạt động";
+        if (status === "Hoạt động") activeImportCount++;
 
         const rawCode = getCellText(vals[1]);
         const code = rawCode || (roleName ? autoGenerateCode(roleName) : `NS-${Date.now()}`);
@@ -510,7 +513,7 @@ export function StaffList() {
           fullName,
           phone: getCellText(vals[5]) || "",
           dateOfBirth,
-          status: getCellText(vals[7]) || "Hoạt động",
+          status,
           email: getCellText(vals[8]) || "",
           address: getCellText(vals[9]) || "",
           username,
@@ -525,6 +528,36 @@ export function StaffList() {
         setImporting(false);
         return;
       }
+      if (activeImportCount > 0) {
+        const limitResponse = await fetch("/api/system-settings/staff-limit", { credentials: "include" });
+        if (!limitResponse.ok) {
+          toast({
+            title: "Không thể kiểm tra giới hạn nhân sự",
+            description: "Không nhập file vì chưa xác nhận được số tài khoản còn lại.",
+            variant: "destructive",
+          });
+          return;
+        }
+        const limitInfo = await limitResponse.json() as { limit: number; activeStaffCount: number };
+        if (!Number.isFinite(limitInfo.limit) || !Number.isFinite(limitInfo.activeStaffCount)) {
+          toast({
+            title: "Không thể kiểm tra giới hạn nhân sự",
+            description: "Dữ liệu giới hạn tài khoản không hợp lệ; file chưa được nhập.",
+            variant: "destructive",
+          });
+          return;
+        }
+        queryClient.setQueryData(["/api/system-settings/staff-limit"], limitInfo);
+        const remainingSlots = Math.max(0, limitInfo.limit - limitInfo.activeStaffCount);
+        if (activeImportCount > remainingSlots) {
+          toast({
+            title: "File vượt quá giới hạn nhân sự",
+            description: `File có ${activeImportCount} nhân sự hoạt động nhưng hệ thống chỉ còn ${remainingSlots}/${limitInfo.limit} chỗ trống. Không có nhân sự nào được nhập.`,
+            variant: "destructive",
+          });
+          return;
+        }
+      }
       let success = 0;
       const failedRows: string[] = [];
       for (const row of rows) {
@@ -536,6 +569,7 @@ export function StaffList() {
         }
       }
       queryClient.invalidateQueries({ queryKey: ["/api/staff"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/system-settings/staff-limit"] });
       if (failedRows.length > 0) {
         toast({
           title: `Nhập xong: ${success} thành công, ${failedRows.length} thất bại`,
@@ -609,6 +643,10 @@ export function StaffList() {
                 variant="outline"
                 size="sm"
                 onClick={() => setImportOpen(true)}
+                disabled={isAtLimit}
+                title={isAtLimit && staffLimitData
+                  ? `Đã đạt giới hạn ${staffLimitData.limit} tài khoản nhân sự hoạt động.`
+                  : undefined}
                 className="h-9 px-3 rounded-xl flex items-center gap-1.5 bg-white border-border shadow-sm text-xs hover:bg-slate-50"
                 data-testid="button-import-staff"
               >
@@ -1133,7 +1171,10 @@ export function StaffList() {
               setImportWarnings([]);
               setImportPreview([]);
             }}>Huỷ</Button>
-            <Button onClick={handleImport} disabled={!importFile || importing || importLocationIds.length === 0}>
+            <Button
+              onClick={handleImport}
+              disabled={!importFile || importing || importLocationIds.length === 0 || isAtLimit}
+            >
               {importing ? "Đang nhập..." : `Nhập dữ liệu${importPreview.length > 0 ? ` (${importPreview.filter(r => r.valid).length} dòng hợp lệ)` : ""}`}
             </Button>
           </DialogFooter>
