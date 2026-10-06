@@ -16,3 +16,9 @@ For score-conversion sessions, when the non-excluded roster is non-empty and eve
 **Why:** The user chose hiding bulk publication after individual releases to prevent an accidental duplicate send.
 
 **How to apply:** Derive the label from the current roster and saved attempt metadata; an empty roster must not count as fully published. Refresh the assessment summary when an individual release changes.
+
+In the “Theo học viên” score-conversion view, show a green “Đã công bố” badge beside a student's name when that student has a publishable result released individually or through the whole session.
+
+**Why:** The user expects publication status to remain visible when switching between assessment-group and student views.
+
+**How to apply:** Use each student's own release state and require a publishable result; do not infer the row badge only from the session's aggregate publication summary.
