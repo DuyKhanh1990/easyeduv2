@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { AlertCircle, CheckCircle2, Loader2, Save, Settings2, Trash2, UserPlus } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, Settings2, Trash2, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -142,8 +142,6 @@ export function StaffScoreSheetAssessmentStudentsDialog({
   const [editingStudent, setEditingStudent] = useState<AssessmentRosterStudent | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<AssessmentRosterStudent | null>(null);
   const [restoreMenuOpen, setRestoreMenuOpen] = useState(false);
-  const [published, setPublished] = useState(false);
-  const [savedPublished, setSavedPublished] = useState(false);
 
   async function updateRosterStudent(studentId: string, action: "remove" | "restore") {
     if (!assessment) throw new Error("Chưa chọn buổi thi");
@@ -250,60 +248,11 @@ export function StaffScoreSheetAssessmentStudentsDialog({
     },
   });
 
-  useEffect(() => {
-    const initialPublished = assessment?.published ?? false;
-    setPublished(initialPublished);
-    setSavedPublished(initialPublished);
-  }, [assessment?.sessionId, assessment?.published]);
-
-  const publicationMutation = useMutation({
-    mutationFn: async (nextPublished: boolean) => {
-      if (!assessment) throw new Error("Chưa chọn buổi thi");
-      const response = await fetch(
-        `/api/my-space/score-sheet/staff-assessments/${encodeURIComponent(assessment.sessionId)}/publication`,
-        {
-          method: "PUT",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ published: nextPublished }),
-        },
-      );
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null) as { message?: string } | null;
-        throw new Error(payload?.message ?? "Không thể lưu trạng thái công bố");
-      }
-      return response.json() as Promise<{ published: boolean }>;
-    },
-    onSuccess: (result) => {
-      setPublished(result.published);
-      setSavedPublished(result.published);
-      queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned/students"] });
-      toast({
-        title: result.published ? "Đã công bố bảng điểm toàn bộ" : "Đã gỡ công bố toàn bảng",
-      });
-    },
-    onError: (error) => {
-      toast({
-        title: "Không thể lưu trạng thái công bố",
-        description: error instanceof Error ? error.message : "Đã xảy ra lỗi.",
-        variant: "destructive",
-      });
-    },
-  });
-
   const allStudentsIndividuallyPublished =
     !rosterQuery.isLoading
     && !rosterQuery.isError
     && students.length > 0
     && students.every((student) => student.individuallyPublished);
-  const hideBulkPublicationControl = allStudentsIndividuallyPublished && !savedPublished;
-  const bulkPublicationActionDisabled =
-    publicationMutation.isPending
-    || individualPublicationMutation.isPending
-    || rosterQuery.isLoading
-    || rosterQuery.isFetching
-    || rosterQuery.isError;
 
   function formatScore(value: number | null | undefined) {
     if (value == null || !Number.isFinite(value)) return "—";
@@ -337,54 +286,11 @@ export function StaffScoreSheetAssessmentStudentsDialog({
               </>
             )}
           </DialogDescription>
-          {canManagePublication && (
-            hideBulkPublicationControl ? (
-              <div className="flex items-center gap-2 border-t pt-3 text-sm font-medium text-emerald-700 dark:text-emerald-400">
-                <CheckCircle2 className="h-4 w-4" />
-                Tất cả học viên đã được công bố riêng.
-              </div>
-            ) : (
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium">Công bố</span>
-                  {canManageScores ? (
-                    <Switch
-                      checked={published}
-                      onCheckedChange={setPublished}
-                      disabled={bulkPublicationActionDisabled}
-                      aria-label="Công bố bảng điểm cho toàn bộ học viên"
-                    />
-                  ) : (
-                    <Badge variant={savedPublished ? "default" : "secondary"}>
-                      {savedPublished ? "Đã công bố toàn bảng" : "Chưa công bố toàn bảng"}
-                    </Badge>
-                  )}
-                  {canManageScores && (
-                    <span className="text-xs text-muted-foreground">
-                      {published
-                        ? "Toàn bộ học viên có thể xem kết quả."
-                        : "Chỉ học viên được công bố riêng mới xem được kết quả."}
-                    </span>
-                  )}
-                </div>
-                {canManageScores && (
-                  <Button
-                    size="sm"
-                    onClick={() => publicationMutation.mutate(published)}
-                    disabled={
-                      !assessment
-                      || published === savedPublished
-                      || bulkPublicationActionDisabled
-                    }
-                  >
-                    {publicationMutation.isPending
-                      ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      : <Save className="mr-2 h-4 w-4" />}
-                    Lưu
-                  </Button>
-                )}
-              </div>
-            )
+          {canManagePublication && allStudentsIndividuallyPublished && (
+            <div className="flex items-center gap-2 border-t pt-3 text-sm font-medium text-emerald-700 dark:text-emerald-400">
+              <CheckCircle2 className="h-4 w-4" />
+              Tất cả học viên đã được công bố riêng.
+            </div>
           )}
         </DialogHeader>
 

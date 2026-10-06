@@ -22,3 +22,9 @@ In the “Theo học viên” score-conversion view, show a green “Đã công 
 **Why:** The user expects publication status to remain visible when switching between assessment-group and student views.
 
 **How to apply:** Use each student's own release state and require a publishable result; do not infer the row badge only from the session's aggregate publication summary.
+
+Until the publication policy is reviewed, hide the session-wide publication switch and Save action at the top of the staff assessment roster dialog. Keep per-student publication controls and existing whole-session status indicators.
+
+**Why:** The user asked to defer business-rule decisions about session-wide publication.
+
+**How to apply:** Do not restore the dialog's bulk controls until the release policy has been clarified.
