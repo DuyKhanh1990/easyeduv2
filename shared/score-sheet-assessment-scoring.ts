@@ -307,12 +307,14 @@ export function calculateScoreSheetAssessmentAttemptResult(args: {
     )
     : null;
 
-  const gradeBand = conversionTemplate && overallConvertedScore !== null
-    ? conversionTemplate.overallRule.gradeBands.find((band) =>
-      overallConvertedScore >= band.minScore && overallConvertedScore <= band.maxScore,
+  const gradeBands = template.gradeBands ?? conversionTemplate?.overallRule.gradeBands ?? [];
+  const classificationScore = conversionTemplate ? overallConvertedScore : overallRawScore;
+  const gradeBand = classificationScore !== null
+    ? gradeBands.find((band) =>
+      classificationScore >= band.minScore && classificationScore <= band.maxScore,
     ) ?? null
     : null;
-  const passThreshold = conversionTemplate?.overallRule.passThreshold;
+  const passThreshold = template.passThreshold ?? conversionTemplate?.overallRule.passThreshold;
   const passScore = passThreshold?.scoreSource === "overallRawScore"
     ? overallRawScore
     : overallConvertedScore;

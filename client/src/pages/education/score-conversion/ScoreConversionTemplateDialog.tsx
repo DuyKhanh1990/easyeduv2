@@ -14,7 +14,6 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   createDefaultDraft,
-  createEmptyGradeBand,
   createEmptyMapping,
   draftFromTemplate,
   SCORE_CONVERSION_TYPES,
@@ -109,34 +108,6 @@ export function ScoreConversionTemplateDialog({
       ...current,
       overallRule: { ...current.overallRule, ...update },
     }));
-  };
-
-  const updatePassThreshold = (
-    update: Partial<ScoreConversionTemplateInput["overallRule"]["passThreshold"]>,
-  ) => {
-    setDraft((current) => ({
-      ...current,
-      overallRule: {
-        ...current.overallRule,
-        passThreshold: { ...current.overallRule.passThreshold, ...update },
-      },
-    }));
-  };
-
-  const updateGradeBand = (
-    bandId: string,
-    update: Partial<ScoreConversionTemplateInput["overallRule"]["gradeBands"][number]>,
-  ) => {
-    updateRule({
-      gradeBands: draft.overallRule.gradeBands.map((band) =>
-        band.id === bandId ? { ...band, ...update } : band),
-    });
-  };
-
-  const removeGradeBand = (bandId: string) => {
-    updateRule({
-      gradeBands: draft.overallRule.gradeBands.filter((band) => band.id !== bandId),
-    });
   };
 
   const insertFormulaVariable = (sectionName: string) => {
@@ -299,21 +270,6 @@ export function ScoreConversionTemplateDialog({
           return `Các khoảng điểm thô của phần ${section.name} không được chồng lấn.`;
         }
       }
-    }
-    for (const band of draft.overallRule.gradeBands) {
-      if (!band.label.trim()) return "Vui lòng nhập tên cho từng ngưỡng xếp loại.";
-      if (band.maxScore < band.minScore) {
-        return `Điểm đến của ngưỡng ${band.label} phải lớn hơn hoặc bằng điểm từ.`;
-      }
-    }
-    const passThreshold = draft.overallRule.passThreshold;
-    if (
-      passThreshold.enabled &&
-      (!Number.isFinite(passThreshold.minScore)
-        || !Number.isFinite(passThreshold.maxScore)
-        || passThreshold.maxScore < passThreshold.minScore)
-    ) {
-      return "Điểm đến ngưỡng Đạt phải lớn hơn hoặc bằng điểm từ.";
     }
     if (draft.overallRule.method === "custom") {
       const formulaError = validateScoreConversionFormula(
@@ -508,168 +464,6 @@ export function ScoreConversionTemplateDialog({
             )}
           </section>
 
-          <section className="space-y-3 rounded-lg border bg-white p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className="font-semibold">Ngưỡng xếp loại (không bắt buộc)</h3>
-                <p className="text-sm text-muted-foreground">
-                  Ví dụ: A2 từ 120 đến 139 điểm.
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={draft.overallRule.gradeBands.length >= 20}
-                onClick={() => updateRule({
-                  gradeBands: [...draft.overallRule.gradeBands, createEmptyGradeBand()],
-                })}
-              >
-                <Plus className="mr-1 h-4 w-4" />
-                Thêm ngưỡng
-              </Button>
-            </div>
-            <div className="rounded-md border border-emerald-200 bg-emerald-50/50 p-3 dark:border-emerald-900 dark:bg-emerald-950/20">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h4 className="text-sm font-semibold">Ngưỡng Đạt</h4>
-                  <p className="text-xs text-muted-foreground">
-                    Điểm từ mốc “Từ” trở lên được xếp Đạt; điểm cao hơn “Đến” vẫn là Đạt.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="score-conversion-pass-threshold-enabled"
-                    checked={draft.overallRule.passThreshold.enabled}
-                    onCheckedChange={(checked) => updatePassThreshold({ enabled: checked === true })}
-                  />
-                  <Label htmlFor="score-conversion-pass-threshold-enabled" className="cursor-pointer text-sm">
-                    Phân loại Đạt/Không đạt
-                  </Label>
-                </div>
-              </div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                <div className="min-w-0 space-y-1.5">
-                  <Label htmlFor="score-conversion-pass-threshold-min">Đạt: Từ</Label>
-                  <Input
-                    id="score-conversion-pass-threshold-min"
-                    type="number"
-                    step="any"
-                    value={draft.overallRule.passThreshold.minScore}
-                    disabled={!draft.overallRule.passThreshold.enabled}
-                    onChange={(event) => updatePassThreshold({ minScore: numericValue(event.target.value) })}
-                  />
-                </div>
-                <div className="min-w-0 space-y-1.5">
-                  <Label htmlFor="score-conversion-pass-threshold-max">Đến</Label>
-                  <Input
-                    id="score-conversion-pass-threshold-max"
-                    type="number"
-                    step="any"
-                    value={draft.overallRule.passThreshold.maxScore}
-                    disabled={!draft.overallRule.passThreshold.enabled}
-                    onChange={(event) => updatePassThreshold({ maxScore: numericValue(event.target.value) })}
-                  />
-                </div>
-                <div className="min-w-0 space-y-1.5">
-                  <Label htmlFor="score-conversion-pass-threshold-source">Mốc so sánh</Label>
-                  <Select
-                    value={draft.overallRule.passThreshold.scoreSource}
-                    onValueChange={(value) => updatePassThreshold({
-                      scoreSource: value === "overallRawScore" ? "overallRawScore" : "overallConvertedScore",
-                    })}
-                    disabled={!draft.overallRule.passThreshold.enabled}
-                  >
-                    <SelectTrigger id="score-conversion-pass-threshold-source">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="overallRawScore">Điểm Tổng</SelectItem>
-                      <SelectItem value="overallConvertedScore">Điểm đã quy đổi</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              {!draft.overallRule.passThreshold.enabled && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Bật phân loại để áp dụng ngưỡng này cho kết quả học viên.
-                </p>
-              )}
-            </div>
-            {draft.overallRule.gradeBands.length > 0 ? (
-              <div className="space-y-3">
-                {draft.overallRule.gradeBands.map((band, index) => (
-                  <div
-                    key={band.id}
-                    className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2 rounded-md border p-2"
-                  >
-                    <div className="min-w-0 space-y-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <Label htmlFor={`grade-band-label-${band.id}`}>Tên xếp loại</Label>
-                        <Label
-                          htmlFor={`grade-band-color-${band.id}`}
-                          className="cursor-pointer text-xs text-muted-foreground"
-                        >
-                          Màu chữ
-                        </Label>
-                      </div>
-                      <div className="flex min-w-0 items-center gap-2">
-                        <Input
-                          id={`grade-band-label-${band.id}`}
-                          value={band.label}
-                          onChange={(event) => updateGradeBand(band.id, { label: event.target.value })}
-                          placeholder="Ví dụ: A2"
-                          maxLength={80}
-                          className="min-w-0 flex-1"
-                          style={{ color: band.color }}
-                        />
-                        <Input
-                          id={`grade-band-color-${band.id}`}
-                          type="color"
-                          value={band.color}
-                          onChange={(event) => updateGradeBand(band.id, { color: event.target.value })}
-                          aria-label={`Màu chữ xếp loại ${band.label || index + 1}`}
-                          title="Chọn màu hiển thị cho tên xếp loại"
-                          className="h-9 w-10 shrink-0 cursor-pointer p-1"
-                        />
-                      </div>
-                    </div>
-                    <div className="min-w-0 space-y-1.5">
-                      <Label htmlFor={`grade-band-min-${band.id}`}>Điểm từ</Label>
-                      <Input
-                        id={`grade-band-min-${band.id}`}
-                        type="number"
-                        step="any"
-                        value={band.minScore}
-                        onChange={(event) => updateGradeBand(band.id, { minScore: numericValue(event.target.value) })}
-                      />
-                    </div>
-                    <div className="min-w-0 space-y-1.5">
-                      <Label htmlFor={`grade-band-max-${band.id}`}>Đến</Label>
-                      <Input
-                        id={`grade-band-max-${band.id}`}
-                        type="number"
-                        step="any"
-                        value={band.maxScore}
-                        onChange={(event) => updateGradeBand(band.id, { maxScore: numericValue(event.target.value) })}
-                      />
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Xóa ngưỡng xếp loại ${band.label || index + 1}`}
-                      onClick={() => removeGradeBand(band.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">Chưa có ngưỡng xếp loại.</p>
-            )}
-          </section>
             </aside>
           </div>
 

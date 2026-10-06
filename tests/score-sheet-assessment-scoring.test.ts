@@ -110,6 +110,68 @@ describe("score-sheet assessment scoring", () => {
     expect(result.conversionComplete).toBe(true);
   });
 
+  it("uses classification thresholds owned by the score sheet template", () => {
+    const scoreSheetTemplate: ScoreSheetTemplate = {
+      ...template,
+      gradeBands: [{
+        id: gradeBandId,
+        label: "A2",
+        color: "#DC2626",
+        minScore: 90,
+        maxScore: 110,
+      }],
+      passThreshold: {
+        enabled: true,
+        minScore: 100,
+        maxScore: 110,
+        scoreSource: "overallConvertedScore",
+      },
+    };
+
+    const result = calculateScoreSheetAssessmentAttemptResult({
+      template: scoreSheetTemplate,
+      conversionTemplate,
+      values: values(4),
+    });
+
+    expect(result.gradeBand).toMatchObject({ label: "A2", color: "#DC2626" });
+    expect(result.passStatus).toBe("passed");
+  });
+
+  it("classifies manual score sheets against the raw total", () => {
+    const manualTemplate: ScoreSheetTemplate = {
+      ...template,
+      scoreConversionTemplateId: null,
+      skills: [{
+        ...template.skills[0],
+        sectionId: null,
+      }],
+      gradeBands: [{
+        id: gradeBandId,
+        label: "Đạt",
+        color: "#16A34A",
+        minScore: 4,
+        maxScore: 10,
+      }],
+      passThreshold: {
+        enabled: true,
+        minScore: 4,
+        maxScore: 10,
+        scoreSource: "overallRawScore",
+      },
+    };
+
+    const result = calculateScoreSheetAssessmentAttemptResult({
+      template: manualTemplate,
+      conversionTemplate: null,
+      values: values(4),
+    });
+
+    expect(result.overallRawScore).toBe(4);
+    expect(result.gradeBand?.label).toBe("Đạt");
+    expect(result.passStatus).toBe("passed");
+  });
+
   it("defaults the color for existing grade bands that were saved before colors were added", () => {
     const existingTemplate = scoreConversionTemplateSchema.parse({
       ...conversionTemplate,

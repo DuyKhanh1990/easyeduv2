@@ -42,11 +42,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ScoreSheetTemplateGradingThresholds } from "./ScoreSheetTemplateGradingThresholds";
 
 type Part = ScoreSheetTemplateInput["skills"][number]["parts"][number];
 type Skill = ScoreSheetTemplateInput["skills"][number];
 type PartFormula = ScoreSheetTemplateInput["skills"][number]["partFormula"];
 type OverallRule = NonNullable<ScoreSheetTemplateInput["overallRule"]>;
+type PassThreshold = NonNullable<ScoreSheetTemplateInput["passThreshold"]>;
 type EvaluationSubCriterion = {
   id: string;
   name: string;
@@ -62,6 +64,12 @@ type EvaluationCriterion = {
 
 const DEFAULT_OVERALL_RULE: OverallRule = { method: "average", formula: "" };
 const DEFAULT_PART_FORMULA: PartFormula = { method: "sum", formula: "" };
+const DEFAULT_PASS_THRESHOLD: PassThreshold = {
+  enabled: false,
+  minScore: 0,
+  maxScore: 0,
+  scoreSource: "overallConvertedScore",
+};
 
 function skillColorAt(index: number): Skill["color"] {
   return SCORE_SHEET_SKILL_COLORS[index % SCORE_SHEET_SKILL_COLORS.length]
@@ -104,6 +112,8 @@ function emptyDraft(): ScoreSheetTemplateInput {
     scoreConversionTemplateId: null,
     skills: [],
     overallRule: DEFAULT_OVERALL_RULE,
+    gradeBands: [],
+    passThreshold: { ...DEFAULT_PASS_THRESHOLD },
     scoreDeadlineOffsetMinutes: 1440,
     attemptCount: 1,
     scoringPolicy: "highest",
@@ -165,6 +175,14 @@ export function ScoreSheetTemplateDialog({
               color: skill.color ?? skillColorAt(skillIndex),
             };
           }),
+          gradeBands: template.gradeBands?.map((band) => ({ ...band }))
+            ?? linkedConversion?.overallRule.gradeBands.map((band) => ({ ...band }))
+            ?? [],
+          passThreshold: template.passThreshold
+            ? { ...template.passThreshold }
+            : linkedConversion
+              ? { ...linkedConversion.overallRule.passThreshold }
+              : { ...DEFAULT_PASS_THRESHOLD },
           scoreDeadlineOffsetMinutes: template.scoreDeadlineOffsetMinutes ?? 1440,
           attemptCount: template.attemptCount ?? 1,
           scoringPolicy: template.scoringPolicy ?? "highest",
@@ -386,6 +404,27 @@ export function ScoreSheetTemplateDialog({
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFormError("");
+    const gradeBands = draft.gradeBands ?? [];
+    if (gradeBands.some((band) => !band.label.trim())) {
+      setFormError("Vui lòng nhập tên cho từng ngưỡng xếp loại.");
+      return;
+    }
+    if (gradeBands.some((band) => band.maxScore < band.minScore)) {
+      setFormError("Điểm đến ngưỡng xếp loại phải lớn hơn hoặc bằng điểm từ.");
+      return;
+    }
+    const passThreshold = draft.passThreshold ?? DEFAULT_PASS_THRESHOLD;
+    if (
+      passThreshold.enabled
+      && (
+        !Number.isFinite(passThreshold.minScore)
+        || !Number.isFinite(passThreshold.maxScore)
+        || passThreshold.maxScore < passThreshold.minScore
+      )
+    ) {
+      setFormError("Điểm đến ngưỡng Đạt phải lớn hơn hoặc bằng điểm từ.");
+      return;
+    }
     try {
       const skills = selectedConversion
         ? selectedConversion.sections.map((section, index) => {
@@ -412,6 +451,8 @@ export function ScoreSheetTemplateDialog({
         name: draft.name.trim(),
         skills,
         overallRule,
+        gradeBands,
+        passThreshold,
       });
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Không thể lưu bảng điểm mẫu.");
@@ -629,7 +670,8 @@ export function ScoreSheetTemplateDialog({
             </section>
               </div>
 
-            <section className="space-y-3 rounded-lg border bg-white p-4">
+            <div className="grid items-start gap-4 md:grid-cols-2">
+            <section className="min-w-0 space-y-3 rounded-lg border bg-white p-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <h3 className="font-semibold">
@@ -933,6 +975,20 @@ export function ScoreSheetTemplateDialog({
                 </div>
               )}
             </section>
+            <ScoreSheetTemplateGradingThresholds
+              gradeBands={draft.gradeBands ?? []}
+              passThreshold={draft.passThreshold ?? DEFAULT_PASS_THRESHOLD}
+              usesConvertedScore={Boolean(selectedConversion)}
+              onGradeBandsChange={(gradeBands) => setDraft((current) => ({
+                ...current,
+                gradeBands,
+              }))}
+              onPassThresholdChange={(passThreshold) => setDraft((current) => ({
+                ...current,
+                passThreshold,
+              }))}
+            />
+            </div>
 
             {draft.evaluationCriteriaIds.length > 0 && (
               <section className="space-y-3 rounded-lg border bg-white p-4">

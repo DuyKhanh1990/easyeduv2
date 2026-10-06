@@ -82,7 +82,7 @@ export const scoreConversionSectionSchema = z.object({
 
 export const SCORE_CONVERSION_DEFAULT_GRADE_BAND_COLOR = "#475569";
 
-const scoreConversionGradeBandSchema = z.object({
+export const scoreConversionGradeBandSchema = z.object({
   id: z.string().uuid(),
   label: z.string().trim().min(1).max(80),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default(SCORE_CONVERSION_DEFAULT_GRADE_BAND_COLOR),
@@ -93,7 +93,7 @@ const scoreConversionGradeBandSchema = z.object({
   path: ["maxScore"],
 });
 
-const scoreConversionPassThresholdSchema = z.object({
+export const scoreConversionPassThresholdSchema = z.object({
   enabled: z.boolean().default(false),
   minScore: z.number().finite().default(0),
   maxScore: z.number().finite().default(0),

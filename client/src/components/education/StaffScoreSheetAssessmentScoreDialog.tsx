@@ -237,7 +237,7 @@ function StaffScoreSheetStudentSummaryView({
   const template = details.assessment.templateSnapshot;
   const conversionTemplate = details.assessment.conversionTemplateSnapshot;
   const result = attempt?.result;
-  const passThreshold = conversionTemplate?.overallRule.passThreshold;
+  const passThreshold = template.passThreshold ?? conversionTemplate?.overallRule.passThreshold;
   const templateName = template.name
     || assessment.templateName
     || details.assessment.name
@@ -578,6 +578,7 @@ export function StaffScoreSheetAssessmentScoreDialog({
   const details = entryQuery.data;
   const template = details?.assessment.templateSnapshot;
   const conversionTemplate = details?.assessment.conversionTemplateSnapshot ?? null;
+  const passThreshold = template?.passThreshold ?? conversionTemplate?.overallRule.passThreshold;
   const attempts = details?.attempts ?? [];
   const selectedAttempt = selectedAttemptNumber == null
     ? undefined
@@ -813,7 +814,15 @@ export function StaffScoreSheetAssessmentScoreDialog({
                   <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Tổng điểm thô</p>
                   <p className="mt-0.5 text-lg font-semibold tabular-nums">
                     {formatScore(preview?.overallRawScore)}
-                    {conversionTemplate?.overallRule.passThreshold.scoreSource === "overallRawScore"
+                    {!conversionTemplate && preview?.gradeBand && (
+                      <span
+                        className="ml-2 text-sm font-medium"
+                        style={{ color: preview.gradeBand.color }}
+                      >
+                        {preview.gradeBand.label}
+                      </span>
+                    )}
+                    {passThreshold?.scoreSource === "overallRawScore"
                       && preview?.passStatus && (
                         <span className={`ml-2 inline-flex rounded px-2 py-0.5 align-middle text-xs font-semibold ${
                           preview.passStatus === "passed"
@@ -840,7 +849,7 @@ export function StaffScoreSheetAssessmentScoreDialog({
                           {preview.gradeBand.label}
                         </span>
                       )}
-                      {conversionTemplate?.overallRule.passThreshold.scoreSource === "overallConvertedScore"
+                      {passThreshold?.scoreSource === "overallConvertedScore"
                         && preview?.passStatus && (
                           <span className={`ml-2 inline-flex rounded px-2 py-0.5 align-middle text-xs font-semibold ${
                             preview.passStatus === "passed"

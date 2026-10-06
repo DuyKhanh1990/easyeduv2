@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { validateScoreConversionFormula } from "./score-conversion-formula";
+import {
+  scoreConversionGradeBandSchema,
+  scoreConversionPassThresholdSchema,
+} from "./score-conversion";
 
 export const scoreSheetTemplatePartSchema = z.object({
   id: z.string().uuid(),
@@ -74,6 +78,8 @@ const scoreSheetTemplateBaseSchema = z.object({
   scoreConversionTemplateId: z.string().uuid().nullable(),
   skills: z.array(scoreSheetTemplateSkillSchema).max(20),
   overallRule: scoreSheetTemplateOverallRuleSchema.optional(),
+  gradeBands: z.array(scoreConversionGradeBandSchema).max(20).optional(),
+  passThreshold: scoreConversionPassThresholdSchema.optional(),
   scoreDeadlineOffsetMinutes: z.number().int().min(0).max((10 * 365 * 24 + 23) * 60).default(1440),
   attemptCount: z.number().int().min(1).max(100).default(1),
   scoringPolicy: scoreSheetScoringPolicySchema.default("highest"),
@@ -137,6 +143,17 @@ function validateScoreSheetTemplate(
         path: ["overallRule", "formula"],
       });
     }
+  }
+
+  if (
+    template.passThreshold?.enabled
+    && template.passThreshold.maxScore < template.passThreshold.minScore
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Điểm đến ngưỡng Đạt phải lớn hơn hoặc bằng điểm từ.",
+      path: ["passThreshold", "maxScore"],
+    });
   }
 }
 
