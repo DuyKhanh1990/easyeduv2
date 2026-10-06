@@ -1,10 +1,13 @@
+import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import type { ScoreSheetTemplateInput } from "@shared/score-sheet-template";
 import { SCORE_CONVERSION_DEFAULT_GRADE_BAND_COLOR } from "@shared/score-conversion";
+import { SCORE_SHEET_SKILL_COLORS } from "@shared/score-sheet-template";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -33,6 +36,8 @@ export function ScoreSheetTemplateGradingThresholds({
   onGradeBandsChange,
   onPassThresholdChange,
 }: ScoreSheetTemplateGradingThresholdsProps) {
+  const [openColorPicker, setOpenColorPicker] = useState<string | null>(null);
+
   const updateGradeBand = (bandId: string, update: Partial<GradeBand>) => {
     onGradeBandsChange(gradeBands.map((band) =>
       band.id === bandId ? { ...band, ...update } : band));
@@ -172,15 +177,55 @@ export function ScoreSheetTemplateGradingThresholds({
                     className="min-w-0 flex-1"
                     style={{ color: band.color }}
                   />
-                  <Input
-                    id={`score-sheet-grade-band-color-${band.id}`}
-                    type="color"
-                    value={band.color}
-                    onChange={(event) => updateGradeBand(band.id, { color: event.target.value })}
-                    aria-label={`Màu chữ xếp loại ${band.label || index + 1}`}
-                    title="Chọn màu hiển thị cho tên xếp loại"
-                    className="h-9 w-10 shrink-0 cursor-pointer p-1"
-                  />
+                  <Popover
+                    open={openColorPicker === band.id}
+                    onOpenChange={(open) => setOpenColorPicker(open ? band.id : null)}
+                  >
+                    <PopoverTrigger asChild>
+                      <button
+                        id={`score-sheet-grade-band-color-${band.id}`}
+                        type="button"
+                        aria-label={`Màu chữ xếp loại ${band.label || index + 1}`}
+                        title="Chọn màu chữ"
+                        className="flex h-9 w-10 shrink-0 items-center justify-center rounded-md border hover:bg-muted"
+                      >
+                        <span
+                          className="h-5 w-5 rounded-full border border-black/10"
+                          style={{ backgroundColor: band.color }}
+                        />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-auto p-2">
+                      <div
+                        role="group"
+                        aria-label={`Màu chữ xếp loại ${band.label || index + 1}`}
+                        className="flex items-center gap-1.5 rounded-lg border bg-muted/20 px-2 py-1.5"
+                      >
+                        {SCORE_SHEET_SKILL_COLORS.map((color, colorIndex) => (
+                          <button
+                            key={color}
+                            type="button"
+                            title={`Màu ${colorIndex + 1}`}
+                            aria-label={`Chọn màu ${colorIndex + 1} cho xếp loại ${band.label || index + 1}`}
+                            aria-pressed={band.color === color}
+                            onClick={() => {
+                              updateGradeBand(band.id, { color });
+                              setOpenColorPicker(null);
+                            }}
+                            className={`h-5 w-5 rounded-full border border-black/10 transition ${
+                              band.color === color
+                                ? "ring-2 ring-offset-2"
+                                : "hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                            }`}
+                            style={{
+                              backgroundColor: color,
+                              ...(band.color === color ? { outlineColor: color } : {}),
+                            }}
+                          />
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
               <div className="min-w-0 space-y-1.5">
