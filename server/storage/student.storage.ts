@@ -39,6 +39,7 @@ export async function getStudents(params: {
   searchTerm?: string;
   type?: string;
   pipelineStage?: string;
+  relationshipIds?: string[];
   pipelineGroupId?: string;
   parentRelationshipId?: string;
   sources?: string[];
@@ -65,7 +66,7 @@ export async function getStudents(params: {
 }): Promise<{ students: StudentResponse[]; total: number }> {
   const {
     allowedLocationIds, isSuperAdmin,
-    locationId, offset, limit, searchTerm, type, pipelineStage, pipelineGroupId, parentRelationshipId,
+    locationId, offset, limit, searchTerm, type, pipelineStage, relationshipIds, pipelineGroupId, parentRelationshipId,
     sources, rejectReasons, salesIds, managerIds, teacherIds, classIds, schoolIds, birthYear,
     startDate, endDate, updatedFrom, updatedTo,
     accountStatuses, learningStatuses, customerLearningStatus, birthdayFrom, birthdayTo, classTabId, classTab,
@@ -92,6 +93,13 @@ export async function getStudents(params: {
   }
   if (type && type !== "all") {
     whereClause = sql`${whereClause} AND ${students.type} = ${type}`;
+  }
+  if (relationshipIds && relationshipIds.length > 0) {
+    const relationshipIdArray = sql.join(
+      relationshipIds.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    );
+    whereClause = sql`${whereClause} AND ${students.relationshipIds} && ARRAY[${relationshipIdArray}]::uuid[]`;
   }
   if (pipelineStage && pipelineStage !== "all") {
     whereClause = sql`${whereClause} AND EXISTS (

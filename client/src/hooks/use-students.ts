@@ -11,6 +11,7 @@ export function useStudents(params?: {
   searchTerm?: string; 
   type?: string; 
   pipelineStage?: string;
+  relationshipIds?: string[];
   pipelineGroupId?: string;
   parentRelationshipId?: string;
   sources?: string[];

@@ -318,6 +318,7 @@ export function registerStudentsRoutes(app: Express): void {
         searchTerm: req.query.searchTerm as string | undefined,
         type: req.query.type as string | undefined,
         pipelineStage: req.query.pipelineStage as string | undefined,
+        relationshipIds: parseArray(req.query.relationshipIds),
         pipelineGroupId: req.query.pipelineGroupId as string | undefined,
         parentRelationshipId: req.query.parentRelationshipId as string | undefined,
         sources: parseArray(req.query.sources),

@@ -122,6 +122,7 @@ export function CustomersList() {
     locationId: "all",
     type: "all",
     pipelineStage: "all",
+    relationshipIds: [] as string[],
     sources: [] as string[],
     rejectReasons: [] as string[],
     saleIds: [] as string[],
@@ -161,6 +162,7 @@ export function CustomersList() {
     locationId: filters.locationId,
     type: filters.type,
     pipelineStage: viewMode === "relationship" ? filters.pipelineStage : undefined,
+    relationshipIds: filters.relationshipIds.length > 0 ? filters.relationshipIds : undefined,
     parentRelationshipId: viewMode === "relationship" && activeGroupId && filters.pipelineStage === "all" ? activeGroupId : undefined,
     sources: filters.sources.length > 0 ? filters.sources : undefined,
     rejectReasons: filters.rejectReasons.length > 0 ? filters.rejectReasons : undefined,
@@ -642,6 +644,7 @@ export function CustomersList() {
     filters.locationId !== "all" ||
     filters.type !== "all" ||
     filters.pipelineStage !== "all" ||
+    filters.relationshipIds.length > 0 ||
     filters.sources.length > 0 ||
     filters.rejectReasons.length > 0 ||
     filters.saleIds.length > 0 ||
@@ -1173,6 +1176,16 @@ export function CustomersList() {
                       </Select>
                     </div>
                     <div className="space-y-1.5">
+                      <Label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">{t("customers.filterRelationship")}</Label>
+                      <SearchableMultiSelect
+                        placeholder={t("customers.selectRelationship")}
+                        options={sortedRelationships.map((relationship) => ({ id: relationship.id, name: relationship.name }))}
+                        selected={filters.relationshipIds}
+                        onSelect={(val) => setFilters((f) => ({ ...f, relationshipIds: [...f.relationshipIds, val] }))}
+                        onRemove={(val) => setFilters((f) => ({ ...f, relationshipIds: f.relationshipIds.filter((id) => id !== val) }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
                       <Label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">{t("customers.filterSource")}</Label>
                       <SearchableMultiSelect
                         placeholder={t("customers.selectSource")}
@@ -1395,7 +1408,7 @@ export function CustomersList() {
                       className="h-8 text-xs text-slate-500 hover:text-slate-700 rounded-lg"
                       onClick={() => {
                         setCustomerLearningStatusFilter(null);
-                        setFilters({ locationId: "all", type: "all", pipelineStage: filters.pipelineStage, sources: [], rejectReasons: [], saleIds: [], managerIds: [], teacherIds: [], classIds: [], schoolIds: [], birthYear: "", dateRange: {} as DateRange, updatedRange: {} as DateRange, accountStatuses: [], learningStatuses: [], birthdayFrom: "", birthdayTo: "" });
+                        setFilters({ locationId: "all", type: "all", pipelineStage: filters.pipelineStage, relationshipIds: [], sources: [], rejectReasons: [], saleIds: [], managerIds: [], teacherIds: [], classIds: [], schoolIds: [], birthYear: "", dateRange: {} as DateRange, updatedRange: {} as DateRange, accountStatuses: [], learningStatuses: [], birthdayFrom: "", birthdayTo: "" });
                       }}
                       data-testid="button-filter-clear-all"
                     >
