@@ -1133,6 +1133,10 @@ export function registerStudentsRoutes(app: Express): void {
       const whereClauses = [sql`1 = 1`];
 
       if (!req.isSuperAdmin) {
+        const allowedLocationIdsArray = sql`ARRAY[${sql.join(
+          req.allowedLocationIds.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )}]::uuid[]`;
         if (locationId && !req.allowedLocationIds.includes(locationId)) {
           return res.json({ logs: [], total: 0 });
         }
@@ -1141,7 +1145,7 @@ export function registerStudentsRoutes(app: Express): void {
           FROM staff actor_staff
           JOIN staff_assignments actor_assignment ON actor_assignment.staff_id = actor_staff.id
           WHERE actor_staff.user_id = l.user_id
-            AND actor_assignment.location_id = ANY(${req.allowedLocationIds}::uuid[])
+            AND actor_assignment.location_id = ANY(${allowedLocationIdsArray})
         )`);
       }
 
