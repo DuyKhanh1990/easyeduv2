@@ -98,4 +98,4 @@
 - [Tuition surcharge treatment](tuition-surcharge-treatment.md) — Some centers distinguish invoice surcharge from tuition and tuition-wallet value; apply policy by center.
 - [Store-receipt invoice dates](store-invoice-payment-date.md) — For paid warehouse receipts, payment is same-day; invoice creation date is an approved temporary backfill source.
 - [Shared production database](shared-production-database.md) — production and the Replit workspace share data, but not necessarily the same running code version.
-- [Zalo OA profile tier limits](zalo-oa-profile-tier-limit.md) — error `-224` blocks User Info API profile lookup at the current OA tier; names must come from another allowed source.
+- [Zalo OA profile tier limits](zalo-oa-profile-tier-limit.md) — error `-224` blocks current profile lookup; legacy v2 `getprofile` is retired for business OAs.
