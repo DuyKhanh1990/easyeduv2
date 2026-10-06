@@ -539,6 +539,7 @@ export function StaffScoreSheetAssessmentScoreDialog({
   const [selectedAttemptNumber, setSelectedAttemptNumber] = useState<number | null>(null);
   const [draftsByAttempt, setDraftsByAttempt] = useState<Record<number, ScoreSheetAssessmentAttemptValues>>({});
   const [publishForStudent, setPublishForStudent] = useState(false);
+  const [savedPublishForStudent, setSavedPublishForStudent] = useState(false);
   const [publicationManuallyChanged, setPublicationManuallyChanged] = useState(false);
   const [autoPublicationEnabled, setAutoPublicationEnabled] = useState(false);
   const [publishConfirmationOpen, setPublishConfirmationOpen] = useState(false);
@@ -576,6 +577,7 @@ export function StaffScoreSheetAssessmentScoreDialog({
     setSaveError(null);
     setSaveMessage(null);
     setPublishForStudent(Boolean(student?.individuallyPublished));
+    setSavedPublishForStudent(Boolean(student?.individuallyPublished));
     setPublicationManuallyChanged(false);
     setAutoPublicationEnabled(false);
     setPublishConfirmationOpen(false);
@@ -619,7 +621,7 @@ export function StaffScoreSheetAssessmentScoreDialog({
     ? createEmptyValues()
     : draftsByAttempt[selectedAttemptNumber] ?? savedValues;
   const draftIsDirty = JSON.stringify(currentValues) !== JSON.stringify(savedValues);
-  const publicationChanged = publishForStudent !== Boolean(student?.individuallyPublished);
+  const publicationChanged = publishForStudent !== savedPublishForStudent;
   const preview = useMemo(() => {
     if (!template) return null;
     try {
@@ -812,6 +814,8 @@ export function StaffScoreSheetAssessmentScoreDialog({
           publishForStudent ? "Đã công bố điểm cho học viên." : "Đã gỡ công bố điểm.",
         );
       }
+      setSavedPublishForStudent(publishForStudent);
+      setAutoPublicationEnabled(false);
       onSaved();
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "Không thể lưu điểm.");
