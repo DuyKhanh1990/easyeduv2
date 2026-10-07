@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { enUS, vi } from "date-fns/locale";
-import { BarChart3, BookOpen, CalendarDays, Clock3, Eye, Pencil, Plus, Users, CheckCircle2, Clock, CircleDot, Download, Loader2 } from "lucide-react";
+import { BarChart3, BookOpen, CalendarDays, Clock3, Eye, Pencil, Plus, Users, CheckCircle2, Clock, Circle, CircleDot, Download, Loader2, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -60,44 +60,46 @@ type ScoreSheetTimelineEntry =
 
 type StatusPresentation = {
   label: string;
-  indicator: string;
+  Icon: LucideIcon;
   className: string;
 };
 
 const ASSESSMENT_STATUS_PRESENTATION: Record<ScoreSheetAssessmentStatus, StatusPresentation> = {
   not_started: {
     label: "Chưa thi",
-    indicator: "🟣",
-    className: "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900 dark:bg-violet-950/30 dark:text-violet-300",
+    Icon: Circle,
+    className: "text-violet-700 dark:text-violet-300",
   },
   in_progress: {
     label: "Đang thi",
-    indicator: "🟢",
-    className: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300",
+    Icon: CircleDot,
+    className: "text-emerald-700 dark:text-emerald-300",
   },
   processing: {
     label: "Đang xử lý",
-    indicator: "🟠",
-    className: "border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-900 dark:bg-orange-950/30 dark:text-orange-300",
+    Icon: Clock3,
+    className: "text-orange-700 dark:text-orange-300",
   },
   completed: {
     label: "Hoàn thành",
-    indicator: "✅",
-    className: "border-green-800 bg-green-800 text-white dark:border-green-700 dark:bg-green-700 dark:text-white",
+    Icon: CheckCircle2,
+    className: "text-green-700 dark:text-green-400",
   },
 };
 
 const ASSESSMENT_DEADLINE_STATUS_PRESENTATION: Record<
   ScoreSheetAssessmentDeadlineStatus,
-  Pick<StatusPresentation, "label" | "className">
+  Pick<StatusPresentation, "label" | "Icon" | "className">
 > = {
   within_deadline: {
     label: "Trong hạn",
-    className: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300",
+    Icon: Clock3,
+    className: "text-emerald-700 dark:text-emerald-300",
   },
   overdue: {
     label: "Quá hạn",
-    className: "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300",
+    Icon: Clock3,
+    className: "text-red-700 dark:text-red-300",
   },
 };
 
@@ -328,6 +330,8 @@ export function StaffScoreSheet() {
                         const deadlineStatus = deadlineStatusKey
                           ? ASSESSMENT_DEADLINE_STATUS_PRESENTATION[deadlineStatusKey]
                           : null;
+                        const AssessmentStatusIcon = status?.Icon;
+                        const DeadlineStatusIcon = deadlineStatus?.Icon;
                         const scoreProgressLabel = assessment.studentCount > 0
                           && assessment.completedStudentCount >= assessment.studentCount
                           ? t("mySpace.scoreSheet.enteredAll")
@@ -396,16 +400,18 @@ export function StaffScoreSheet() {
                               </span>
                             </div>
 
-                            <div className="min-w-0">
-                              {status ? (
-                                <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-0.5 text-[11px] font-medium ${status.className}`}>
-                                  {status.indicator} {status.label}
+                            <div className="flex min-w-0 flex-col items-start gap-1">
+                              {status && AssessmentStatusIcon ? (
+                                <span className={`inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-medium ${status.className}`}>
+                                  <AssessmentStatusIcon className="h-3.5 w-3.5 shrink-0" />
+                                  {status.label}
                                 </span>
                               ) : (
                                 <span className="text-muted-foreground" aria-label="Chưa có trạng thái">—</span>
                               )}
-                              {deadlineStatus ? (
-                                <span className={`inline-flex items-center whitespace-nowrap rounded border px-1.5 py-0.5 text-[11px] font-medium ${deadlineStatus.className}`}>
+                              {deadlineStatus && DeadlineStatusIcon ? (
+                                <span className={`inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-medium ${deadlineStatus.className}`}>
+                                  <DeadlineStatusIcon className="h-3.5 w-3.5 shrink-0" />
                                   {deadlineStatus.label}
                                 </span>
                               ) : (
@@ -413,7 +419,7 @@ export function StaffScoreSheet() {
                               )}
                               {(assessment.published || assessment.allStudentsIndividuallyPublished) && (
                                 <span
-                                  className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300"
+                                  className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-emerald-700 dark:text-emerald-300"
                                   data-testid={`badge-my-space-score-sheet-published-${assessment.sessionId}`}
                                 >
                                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
