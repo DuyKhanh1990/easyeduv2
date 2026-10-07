@@ -348,10 +348,10 @@ export function StaffScoreSheet() {
                                 setSelectedAssessment(assessment);
                               }
                             }}
-                            className="grid min-w-0 cursor-pointer grid-cols-2 items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(160px,1fr)_160px_96px_120px_minmax(180px,1fr)_56px] xl:items-center xl:gap-x-4 xl:gap-y-0"
+                            className="grid min-w-0 cursor-pointer grid-cols-1 items-center gap-x-4 gap-y-3 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-2 sm:px-4 xl:grid-cols-[minmax(220px,1.35fr)_minmax(145px,.8fr)_minmax(155px,.9fr)_minmax(260px,1fr)] xl:gap-y-0"
                             data-testid={`row-staff-conversion-assessment-${assessment.sessionId}`}
                           >
-                            <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
+                            <div className="min-w-0">
                               <p className="text-sm font-semibold text-foreground truncate leading-tight">
                                 {assessment.assessmentName ?? t("mySpace.scoreSheet.unavailableSheet")}
                               </p>
@@ -370,17 +370,16 @@ export function StaffScoreSheet() {
                                   </span>
                                 )}
                               </div>
-                            </div>
-
-                            <div className="flex min-w-0 flex-col items-start gap-1">
-                              <Badge variant="outline" className="text-[11px] whitespace-nowrap">
-                                {t("mySpace.scoreSheet.conversionSheet")}
-                              </Badge>
-                              {assessment.assessmentCode && (
-                                <span className="max-w-full truncate text-[10px] text-muted-foreground">
-                                  {assessment.assessmentCode}
-                                </span>
-                              )}
+                              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                                <Badge variant="outline" className="text-[11px] whitespace-nowrap">
+                                  {t("mySpace.scoreSheet.conversionSheet")}
+                                </Badge>
+                                {assessment.assessmentCode && (
+                                  <span className="max-w-full truncate text-[10px] text-muted-foreground">
+                                    {assessment.assessmentCode}
+                                  </span>
+                                )}
+                              </div>
                             </div>
 
                             <div className="flex min-w-0 flex-col items-start gap-1 text-xs text-muted-foreground">
@@ -420,18 +419,17 @@ export function StaffScoreSheet() {
                               )}
                             </div>
 
-                            <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
-                              <p className="flex items-center gap-1 text-[11px] text-muted-foreground whitespace-nowrap">
-                                <CalendarDays className="h-3 w-3 shrink-0" />
-                                {t("mySpace.scoreSheet.examDate")}: {formatAssessmentDate(assessment.examDate)}
-                              </p>
-                              <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground/70 whitespace-nowrap">
-                                <Clock3 className="h-3 w-3 shrink-0" />
-                                {t("mySpace.scoreSheet.scoreDeadline")}: {formatAssessmentDeadline(assessment.scoreDeadlineAt)}
-                              </p>
-                            </div>
-
-                            <div className="col-span-2 flex justify-end border-t border-border/60 pt-2 sm:col-span-3 md:col-span-4 xl:col-span-1 xl:border-0 xl:pt-0">
+                            <div className="flex min-w-0 items-center justify-between gap-4">
+                              <div className="min-w-0 space-y-1">
+                                <p className="flex items-center gap-1 text-[11px] text-muted-foreground whitespace-nowrap">
+                                  <CalendarDays className="h-3 w-3 shrink-0" />
+                                  {t("mySpace.scoreSheet.examDate")}: {formatAssessmentDate(assessment.examDate)}
+                                </p>
+                                <p className="flex items-center gap-1 text-[11px] text-muted-foreground/70 whitespace-nowrap">
+                                  <Clock3 className="h-3 w-3 shrink-0" />
+                                  {t("mySpace.scoreSheet.scoreDeadline")}: {formatAssessmentDeadline(assessment.scoreDeadlineAt)}
+                                </p>
+                              </div>
                               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">
                                 <Eye className="h-3.5 w-3.5" />
                                 {t("mySpace.scoreSheet.view")}
