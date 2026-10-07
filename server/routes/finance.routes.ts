@@ -688,6 +688,11 @@ export function registerFinanceRoutes(app: Express): void {
       const dateFrom   = q.dateFrom   || null;
       const dateTo     = q.dateTo     || null;
       const locationId = q.locationId || null;
+      const readSearch = (key: string) =>
+        typeof q[key] === "string" ? q[key].trim().slice(0, 100) : "";
+      const studentSearch = readSearch("student");
+      const performerSearch = readSearch("performedBy");
+      const actionSearch = readSearch("action");
       const limit      = Math.min(parseInt(q.limit  || "200"), 500);
       const offset     = parseInt(q.offset || "0");
       const allowedIds  = req.allowedLocationIds;
@@ -711,18 +716,39 @@ export function registerFinanceRoutes(app: Express): void {
       // stored as UTC (see server/db.ts). Convert them to Vietnam time before
       // applying calendar-date filters, otherwise "Hôm nay" changes with the
       // database/server timezone and events around midnight land on the wrong day.
-      const dateFilter = (() => {
-        const parts: string[] = [];
-        const isDateOnly = (value: string | null): value is string =>
-          Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
-        if (dateFrom && isDateOnly(dateFrom)) {
-          parts.push(`(ev_time AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Ho_Chi_Minh') >= '${dateFrom}'::date`);
-        }
-        if (dateTo && isDateOnly(dateTo)) {
-          parts.push(`(ev_time AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Ho_Chi_Minh') < ('${dateTo}'::date + INTERVAL '1 day')`);
-        }
-        return parts.length ? "WHERE " + parts.join(" AND ") : "";
-      })();
+      const whereParts: string[] = [];
+      const filterValues: string[] = [];
+      const addSearchFilter = (expression: string, value: string) => {
+        if (!value) return;
+        filterValues.push(`%${value}%`);
+        whereParts.push(`${expression} ILIKE $${filterValues.length}`);
+      };
+      addSearchFilter("base.subject_name", studentSearch);
+      addSearchFilter("base.created_by_name", performerSearch);
+      addSearchFilter(
+        `CASE base.ev_type
+          WHEN 'created' THEN 'created Tạo mới Created'
+          WHEN 'paid' THEN 'paid Đã thanh toán Paid'
+          WHEN 'schedule_paid' THEN 'schedule_paid Thu đợt Installment paid'
+          WHEN 'Sửa hoá đơn' THEN 'Sửa hoá đơn Invoice edited'
+          WHEN 'Đổi trạng thái hoá đơn' THEN 'Đổi trạng thái hoá đơn Invoice status changed'
+          WHEN 'Xoá hoá đơn' THEN 'Xoá hoá đơn Invoice deleted'
+          WHEN 'Huỷ thanh toán hoá đơn' THEN 'Huỷ thanh toán hoá đơn Invoice payment cancelled'
+          WHEN 'Sửa đợt thanh toán' THEN 'Sửa đợt thanh toán Installment edited'
+          ELSE base.ev_type
+        END`,
+        actionSearch,
+      );
+
+      const isDateOnly = (value: string | null): value is string =>
+        Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+      if (dateFrom && isDateOnly(dateFrom)) {
+        whereParts.push(`(base.ev_time AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Ho_Chi_Minh') >= '${dateFrom}'::date`);
+      }
+      if (dateTo && isDateOnly(dateTo)) {
+        whereParts.push(`(base.ev_time AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Ho_Chi_Minh') < ('${dateTo}'::date + INTERVAL '1 day')`);
+      }
+      const historyFilter = whereParts.length ? `WHERE ${whereParts.join(" AND ")}` : "";
 
       const baseUnion = `
         SELECT
@@ -820,11 +846,13 @@ export function registerFinanceRoutes(app: Express): void {
           ${isSuperAdmin ? "" : "AND u.username IS DISTINCT FROM 'admin'"}
       `;
 
+      const limitParam = filterValues.length + 1;
+      const offsetParam = filterValues.length + 2;
       const [countResult, dataResult] = await Promise.all([
-        pool.query(`SELECT COUNT(*) AS cnt FROM (${baseUnion}) base ${dateFilter}`),
+        pool.query(`SELECT COUNT(*) AS cnt FROM (${baseUnion}) base ${historyFilter}`, filterValues),
         pool.query(
-          `SELECT * FROM (${baseUnion}) base ${dateFilter} ORDER BY ev_time DESC LIMIT $1 OFFSET $2`,
-          [limit, offset]
+          `SELECT * FROM (${baseUnion}) base ${historyFilter} ORDER BY ev_time DESC LIMIT $${limitParam} OFFSET $${offsetParam}`,
+          [...filterValues, limit, offset]
         ),
       ]);
 

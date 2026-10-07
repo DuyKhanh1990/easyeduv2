@@ -838,6 +838,9 @@ export const financeTranslations = {
     "finance.history.last30Days": "30 ngày",
     "finance.history.thisMonth": "Tháng này",
     "finance.history.allLocations": "Tất cả cơ sở",
+    "finance.history.filterStudent": "Tìm học viên",
+    "finance.history.filterPerformer": "Tìm người thực hiện",
+    "finance.history.filterAction": "Tìm hành động",
   },
   en: {
     "finance.newlyGenerated": "Newly generated",
@@ -1678,5 +1681,8 @@ export const financeTranslations = {
     "finance.history.last30Days": "30 days",
     "finance.history.thisMonth": "This month",
     "finance.history.allLocations": "All branches",
+    "finance.history.filterStudent": "Search student",
+    "finance.history.filterPerformer": "Search performer",
+    "finance.history.filterAction": "Search action",
   },
 } satisfies Record<"vi" | "en", Record<string, string>>;

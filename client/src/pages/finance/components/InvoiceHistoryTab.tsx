@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { CalendarIcon, History, Plus, CreditCard, CheckCircle2, Eye } from "lucide-react";
+import { CalendarIcon, History, Plus, CreditCard, CheckCircle2, Eye, Search } from "lucide-react";
 import { fmtMoney, getInvoiceBusinessDateKey } from "@/types/invoice-types";
 import { Pencil, Trash2, XCircle } from "lucide-react";
 import { HistoryPaginationFooter } from "@/components/common/HistoryPaginationFooter";
@@ -401,6 +402,9 @@ export function InvoiceHistoryTab({
   const { t } = useLanguage();
   const [quickRange, setQuickRange] = useState<QuickRange>("7d");
   const [locationId, setLocationId] = useState<string>("__all__");
+  const [studentSearch, setStudentSearch] = useState("");
+  const [performerSearch, setPerformerSearch] = useState("");
+  const [actionSearch, setActionSearch] = useState("");
   const [page, setPage] = useState(1);
   const [detailEvent, setDetailEvent] = useState<HistoryEvent | null>(null);
   const [pageSize, setPageSize] = useState(50);
@@ -411,11 +415,19 @@ export function InvoiceHistoryTab({
   if (from) params.set("dateFrom", from);
   if (to)   params.set("dateTo",   to);
   if (locationId !== "__all__") params.set("locationId", locationId);
+  if (studentSearch.trim()) params.set("student", studentSearch.trim());
+  if (performerSearch.trim()) params.set("performedBy", performerSearch.trim());
+  if (actionSearch.trim()) params.set("action", actionSearch.trim());
   params.set("limit",  String(pageSize));
   params.set("offset", String((page - 1) * pageSize));
 
   const { data, isLoading } = useQuery<HistoryResponse>({
-    queryKey: ["/api/finance/invoices/history", from, to, locationId, page, pageSize],
+    queryKey: [
+      "/api/finance/invoices/history",
+      from, to, locationId,
+      studentSearch.trim(), performerSearch.trim(), actionSearch.trim(),
+      page, pageSize,
+    ],
     queryFn: async () => {
       const res = await fetch(`/api/finance/invoices/history?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed");
@@ -480,6 +492,39 @@ export function InvoiceHistoryTab({
             </SelectContent>
           </Select>
         )}
+        <div className="relative w-[150px]">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <Input
+            value={studentSearch}
+            onChange={e => { setStudentSearch(e.target.value); setPage(1); }}
+            placeholder={t("finance.history.filterStudent")}
+            aria-label={t("finance.history.filterStudent")}
+            maxLength={100}
+            className="h-8 pl-8 text-xs border-slate-200 bg-white"
+          />
+        </div>
+        <div className="relative w-[165px]">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <Input
+            value={performerSearch}
+            onChange={e => { setPerformerSearch(e.target.value); setPage(1); }}
+            placeholder={t("finance.history.filterPerformer")}
+            aria-label={t("finance.history.filterPerformer")}
+            maxLength={100}
+            className="h-8 pl-8 text-xs border-slate-200 bg-white"
+          />
+        </div>
+        <div className="relative w-[155px]">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <Input
+            value={actionSearch}
+            onChange={e => { setActionSearch(e.target.value); setPage(1); }}
+            placeholder={t("finance.history.filterAction")}
+            aria-label={t("finance.history.filterAction")}
+            maxLength={100}
+            className="h-8 pl-8 text-xs border-slate-200 bg-white"
+          />
+        </div>
         <Select value={String(pageSize)} onValueChange={v => { setPageSize(Number(v)); setPage(1); }}>
           <SelectTrigger className="h-8 w-[100px] text-xs border-slate-200 bg-white">
             <SelectValue />
