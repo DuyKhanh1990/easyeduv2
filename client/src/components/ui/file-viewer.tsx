@@ -53,10 +53,10 @@ function getCategoryLabel(category: FileCategory): string {
 
 function getViewerUrl(category: FileCategory, url: string): string {
   const absoluteUrl = url.startsWith("http") ? url : `${window.location.origin}${url}`;
-  if (category === "excel") {
+  if (category === "excel" || category === "ppt") {
     return `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(absoluteUrl)}`;
   }
-  if (category === "word" || category === "ppt") {
+  if (category === "word") {
     return `https://docs.google.com/viewer?url=${encodeURIComponent(absoluteUrl)}&embedded=true`;
   }
   if (category === "pdf") {
