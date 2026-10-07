@@ -4588,6 +4588,7 @@ export function registerMySpaceRoutes(app: Express): void {
           cs.id AS session_id,
           cs.class_id,
           cs.score_sheet_assessment_id AS assessment_id,
+          cs.score_sheet_assessment_published AS published,
           cs.session_index,
           cs.session_date,
           st.start_time AS session_start_time,
@@ -4598,22 +4599,7 @@ export function registerMySpaceRoutes(app: Express): void {
             FROM student_sessions ss
             WHERE ss.class_session_id = cs.id
               AND NOT (ss.student_id = ANY(COALESCE(cs.score_sheet_assessment_excluded_student_ids, '{}'::uuid[])))
-          ) AS student_count,
-          (
-            SELECT COUNT(DISTINCT attempt.student_id)::int
-            FROM score_sheet_assessment_student_attempts attempt
-            WHERE attempt.assessment_id = cs.score_sheet_assessment_id
-              AND attempt.class_session_id = cs.id
-              AND NOT (attempt.student_id = ANY(COALESCE(cs.score_sheet_assessment_excluded_student_ids, '{}'::uuid[])))
-          ) AS entered_student_count,
-          (
-            SELECT COUNT(DISTINCT attempt.student_id)::int
-            FROM score_sheet_assessment_student_attempts attempt
-            WHERE attempt.assessment_id = cs.score_sheet_assessment_id
-              AND attempt.class_session_id = cs.id
-              AND NOT (attempt.student_id = ANY(COALESCE(cs.score_sheet_assessment_excluded_student_ids, '{}'::uuid[])))
-              AND attempt.result @> '{"inputComplete":true}'::jsonb
-          ) AS completed_student_count
+          ) AS student_count
         FROM class_sessions cs
         JOIN classes c ON c.id = cs.class_id
         LEFT JOIN shift_templates st ON st.id = cs.shift_template_id
@@ -4632,20 +4618,87 @@ export function registerMySpaceRoutes(app: Express): void {
         ORDER BY cs.session_date DESC, cs.session_index DESC, c.class_code
       `);
 
+      const sessionIds = result.rows.map((row: any) => String(row.session_id));
+      const attemptRows = sessionIds.length > 0
+        ? await db
+          .select({
+            sessionId: classSessions.id,
+            studentId: scoreSheetAssessmentStudentAttempts.studentId,
+            attemptNumber: scoreSheetAssessmentStudentAttempts.attemptNumber,
+            result: scoreSheetAssessmentStudentAttempts.result,
+          })
+          .from(scoreSheetAssessmentStudentAttempts)
+          .innerJoin(
+            classSessions,
+            and(
+              eq(classSessions.id, scoreSheetAssessmentStudentAttempts.classSessionId),
+              eq(classSessions.scoreSheetAssessmentId, scoreSheetAssessmentStudentAttempts.assessmentId),
+            ),
+          )
+          .innerJoin(
+            studentSessions,
+            and(
+              eq(studentSessions.classSessionId, classSessions.id),
+              eq(studentSessions.studentId, scoreSheetAssessmentStudentAttempts.studentId),
+            ),
+          )
+          .where(and(
+            inArray(classSessions.id, sessionIds),
+            sql`NOT (${scoreSheetAssessmentStudentAttempts.studentId} = ANY(COALESCE(${classSessions.scoreSheetAssessmentExcludedStudentIds}, ARRAY[]::uuid[])))`,
+          ))
+        : [];
+      const attemptsBySession = new Map<
+        string,
+        Map<string, Array<{ attemptNumber: number; result: unknown }>>
+      >();
+      for (const attempt of attemptRows) {
+        const sessionId = String(attempt.sessionId);
+        const studentId = String(attempt.studentId);
+        const sessionStudents = attemptsBySession.get(sessionId) ?? new Map();
+        const studentAttempts = sessionStudents.get(studentId) ?? [];
+        studentAttempts.push({
+          attemptNumber: attempt.attemptNumber,
+          result: attempt.result,
+        });
+        sessionStudents.set(studentId, studentAttempts);
+        attemptsBySession.set(sessionId, sessionStudents);
+      }
+
       const mapped = result.rows.map((row: any) => {
         const assessment = assessmentsById.get(row.assessment_id);
         const currentTemplate = assessment
           ? currentTemplatesById.get(assessment.scoreSheetTemplateId)
           : undefined;
+        const sessionStudents: Map<
+          string,
+          Array<{ attemptNumber: number; result: unknown }>
+        > = attemptsBySession.get(String(row.session_id)) ?? new Map();
+        const studentAttempts = Array.from(sessionStudents.values());
+        const studentCount = Number(row.student_count ?? 0);
+        const enteredStudentCount = sessionStudents.size;
+        const completedStudentCount = studentAttempts.filter((attempts) =>
+          selectScoreSheetAssessmentAttemptSummary(
+            attempts,
+            assessment?.scoringPolicy ?? "latest",
+            true,
+          )?.result.inputComplete,
+        ).length;
+        const individuallyPublishedStudentCount = studentAttempts.filter((attempts) =>
+          attempts.some((attempt) => isScoreSheetAssessmentStudentPublished(attempt.result)),
+        ).length;
         return {
           sessionId: row.session_id,
           classId: row.class_id,
           classCode: row.class_code,
           className: row.class_name,
           sessionIndex: row.session_index,
-          studentCount: row.student_count,
-          enteredStudentCount: row.entered_student_count ?? 0,
-          completedStudentCount: row.completed_student_count ?? 0,
+          studentCount,
+          enteredStudentCount,
+          completedStudentCount,
+          individuallyPublishedStudentCount,
+          allStudentsIndividuallyPublished: studentCount > 0
+            && individuallyPublishedStudentCount === studentCount,
+          published: Boolean(row.published),
           examDate: row.session_date,
           assessmentId: row.assessment_id,
           assessmentCode: assessment?.code ?? null,

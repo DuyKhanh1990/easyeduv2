@@ -16,6 +16,12 @@ import {
 import { PageGuideButton } from "@/components/guides/PageGuideDialog";
 import { useLanguage } from "@/hooks/use-language";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
+import {
+  resolveScoreSheetAssessmentDeadlineStatus,
+  resolveScoreSheetAssessmentStatus,
+  type ScoreSheetAssessmentDeadlineStatus,
+  type ScoreSheetAssessmentStatus,
+} from "@shared/score-sheet-assessment-status";
 
 type StaffGradeBookRow = {
   id: string;
@@ -52,10 +58,47 @@ type ScoreSheetTimelineEntry =
       assessment: StaffAssignedScoreSheetAssessment;
     };
 
-type DeadlineStatus = {
-  labelKey: "notDue" | "overdue" | "dueSoon" | "onTime";
+type StatusPresentation = {
+  label: string;
   indicator: string;
   className: string;
+};
+
+const ASSESSMENT_STATUS_PRESENTATION: Record<ScoreSheetAssessmentStatus, StatusPresentation> = {
+  not_started: {
+    label: "Chưa thi",
+    indicator: "🟣",
+    className: "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900 dark:bg-violet-950/30 dark:text-violet-300",
+  },
+  in_progress: {
+    label: "Đang thi",
+    indicator: "🟢",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300",
+  },
+  processing: {
+    label: "Đang xử lý",
+    indicator: "🟠",
+    className: "border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-900 dark:bg-orange-950/30 dark:text-orange-300",
+  },
+  completed: {
+    label: "Hoàn thành",
+    indicator: "✅",
+    className: "border-green-800 bg-green-800 text-white dark:border-green-700 dark:bg-green-700 dark:text-white",
+  },
+};
+
+const ASSESSMENT_DEADLINE_STATUS_PRESENTATION: Record<
+  ScoreSheetAssessmentDeadlineStatus,
+  Pick<StatusPresentation, "label" | "className">
+> = {
+  within_deadline: {
+    label: "Trong hạn",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300",
+  },
+  overdue: {
+    label: "Quá hạn",
+    className: "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300",
+  },
 };
 
 const formatDate = (d: string | null | undefined) => {
@@ -93,47 +136,6 @@ const getBangkokWallClockMs = (date: Date) => {
     Number(values.hour),
     Number(values.minute),
   );
-};
-
-const getDeadlineStatus = (deadline: string | null, nowWallClockMs: number): DeadlineStatus => {
-  const match = deadline && /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(deadline);
-  if (!match) {
-    return {
-      labelKey: "notDue",
-      indicator: "⚪",
-      className: "border-slate-200 bg-slate-50 text-slate-600",
-    };
-  }
-
-  const [, year, month, day, hour, minute] = match;
-  const deadlineWallClockMs = Date.UTC(
-    Number(year),
-    Number(month) - 1,
-    Number(day),
-    Number(hour),
-    Number(minute),
-  );
-  const remainingMs = deadlineWallClockMs - nowWallClockMs;
-
-  if (remainingMs < 0) {
-    return {
-      labelKey: "overdue",
-      indicator: "🔴",
-      className: "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300",
-    };
-  }
-  if (remainingMs <= 3 * 24 * 60 * 60 * 1000) {
-    return {
-      labelKey: "dueSoon",
-      indicator: "🟡",
-      className: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300",
-    };
-  }
-  return {
-    labelKey: "onTime",
-    indicator: "🟢",
-    className: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300",
-  };
 };
 
 const formatDateLabel = (d: string, lang: "vi" | "en") => {
@@ -317,7 +319,15 @@ export function StaffScoreSheet() {
                     {entries.map((entry) => {
                       if (entry.kind === "conversion") {
                         const assessment = entry.assessment;
-                        const deadlineStatus = getDeadlineStatus(assessment.scoreDeadlineAt, nowWallClockMs);
+                        const statusKey = resolveScoreSheetAssessmentStatus(assessment, nowWallClockMs);
+                        const status = statusKey ? ASSESSMENT_STATUS_PRESENTATION[statusKey] : null;
+                        const deadlineStatusKey = resolveScoreSheetAssessmentDeadlineStatus(
+                          assessment.scoreDeadlineAt,
+                          nowWallClockMs,
+                        );
+                        const deadlineStatus = deadlineStatusKey
+                          ? ASSESSMENT_DEADLINE_STATUS_PRESENTATION[deadlineStatusKey]
+                          : null;
                         const scoreProgressLabel = assessment.studentCount > 0
                           && assessment.completedStudentCount >= assessment.studentCount
                           ? t("mySpace.scoreSheet.enteredAll")
@@ -373,19 +383,41 @@ export function StaffScoreSheet() {
                               )}
                             </div>
 
-                            <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-                              <Users className="h-3.5 w-3.5 shrink-0" />
-                              <span className="whitespace-nowrap">{assessment.studentCount ?? 0} {t("mySpace.scoreSheet.studentCount")}</span>
-                            </div>
-
-                            <div className="flex min-w-0 flex-col items-start gap-1">
-                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground whitespace-nowrap">
+                            <div className="flex min-w-0 flex-col items-start gap-1 text-xs text-muted-foreground">
+                              <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                                <Users className="h-3.5 w-3.5 shrink-0" />
+                                {assessment.studentCount ?? 0} {t("mySpace.scoreSheet.studentCount")}
+                              </span>
+                              <span className="inline-flex items-center gap-1 whitespace-nowrap">
                                 <CircleDot className="h-3.5 w-3.5 shrink-0" />
                                 {scoreProgressLabel}
                               </span>
-                              <span className={`inline-flex items-center gap-1 rounded border px-1 text-[10px] font-medium whitespace-nowrap ${deadlineStatus.className}`}>
-                                {deadlineStatus.indicator} {t(`mySpace.scoreSheet.${deadlineStatus.labelKey}`)}
-                              </span>
+                            </div>
+
+                            <div className="flex min-w-0 flex-col items-start gap-1">
+                              {status ? (
+                                <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-0.5 text-[11px] font-medium ${status.className}`}>
+                                  {status.indicator} {status.label}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground" aria-label="Chưa có trạng thái">—</span>
+                              )}
+                              {deadlineStatus ? (
+                                <span className={`inline-flex items-center whitespace-nowrap rounded border px-1.5 py-0.5 text-[11px] font-medium ${deadlineStatus.className}`}>
+                                  {deadlineStatus.label}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground" aria-label="Chưa có hạn trả">—</span>
+                              )}
+                              {(assessment.published || assessment.allStudentsIndividuallyPublished) && (
+                                <span
+                                  className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300"
+                                  data-testid={`badge-my-space-score-sheet-published-${assessment.sessionId}`}
+                                >
+                                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                  Đã công bố
+                                </span>
+                              )}
                             </div>
 
                             <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
@@ -523,6 +555,7 @@ export function StaffScoreSheet() {
       <StaffScoreSheetAssessmentStudentsDialog
         assessment={selectedAssessment}
         open={!!selectedAssessment}
+        canManagePublication
         onOpenChange={(open) => {
           if (!open) setSelectedAssessment(null);
         }}

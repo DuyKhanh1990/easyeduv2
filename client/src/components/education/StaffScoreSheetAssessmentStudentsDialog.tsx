@@ -188,6 +188,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
       queryClient.invalidateQueries({
         queryKey: ["/api/my-space/score-sheet/staff-assessments", assessment?.sessionId, "students"],
       });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff-assessments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff"] });
       queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned"] });
       queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned/students"] });
@@ -212,6 +213,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
       queryClient.invalidateQueries({
         queryKey: ["/api/my-space/score-sheet/staff-assessments", assessment?.sessionId, "students"],
       });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff-assessments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff"] });
       queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned"] });
       queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned/students"] });
@@ -233,6 +235,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
       queryClient.invalidateQueries({
         queryKey: ["/api/my-space/score-sheet/staff-assessments", assessment?.sessionId, "students"],
       });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff-assessments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned"] });
       queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned/students"] });
       toast({
@@ -542,6 +545,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
         }}
         onSaved={() => {
           void rosterQuery.refetch();
+          queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff-assessments"] });
           queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned/students"] });
         }}
       />
