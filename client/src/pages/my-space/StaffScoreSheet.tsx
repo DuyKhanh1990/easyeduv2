@@ -352,7 +352,7 @@ export function StaffScoreSheet() {
                                 setSelectedAssessment(assessment);
                               }
                             }}
-                            className="grid min-w-0 cursor-pointer grid-cols-2 items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(140px,180px)_110px_120px_110px_185px_84px] xl:items-center xl:justify-between xl:gap-x-0 xl:gap-y-0"
+                            className="grid min-w-0 cursor-pointer grid-cols-2 items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[160px_150px_120px_110px_185px_84px] xl:items-center xl:justify-between xl:gap-x-0 xl:gap-y-0"
                             data-testid={`row-staff-conversion-assessment-${assessment.sessionId}`}
                           >
                             <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
@@ -374,15 +374,22 @@ export function StaffScoreSheet() {
                                   </span>
                                 )}
                               </div>
+                              <p className="mt-1 text-[10px] font-semibold text-orange-700 dark:text-orange-300">
+                                {t("mySpace.scoreSheet.conversionSheet")}
+                              </p>
                             </div>
 
                             <div className="min-w-0">
-                              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                                <Badge variant="outline" className="text-[11px] whitespace-nowrap">
-                                  {t("mySpace.scoreSheet.conversionSheet")}
+                              <div className="flex min-w-0 flex-col items-start gap-1">
+                                <Badge
+                                  variant="outline"
+                                  className="max-w-full truncate text-[11px]"
+                                  title={assessment.templateName ?? assessment.assessmentName ?? undefined}
+                                >
+                                  {assessment.templateName ?? assessment.assessmentName ?? t("mySpace.scoreSheet.unavailableSheet")}
                                 </Badge>
                                 {assessment.assessmentCode && (
-                                  <span className="max-w-full truncate text-[10px] text-muted-foreground">
+                                  <span className="max-w-full truncate text-[10px] text-muted-foreground" title={assessment.assessmentCode}>
                                     {assessment.assessmentCode}
                                   </span>
                                 )}
@@ -455,7 +462,7 @@ export function StaffScoreSheet() {
                       return (
                         <div
                           key={`grade-book:${book.id}`}
-                           className="grid min-w-0 grid-cols-2 items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(140px,180px)_110px_120px_110px_185px_84px] xl:items-center xl:justify-between xl:gap-x-0 xl:gap-y-0"
+                           className="grid min-w-0 grid-cols-2 items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[160px_150px_120px_110px_185px_84px] xl:items-center xl:justify-between xl:gap-x-0 xl:gap-y-0"
                           data-testid={`row-staff-grade-book-${book.id}`}
                         >
                           {/* Col 1: Title + class */}
@@ -478,12 +485,19 @@ export function StaffScoreSheet() {
                                 </span>
                               )}
                             </div>
+                            <p className="mt-1 text-[10px] font-semibold text-blue-900 dark:text-blue-300">
+                              {t("mySpace.scoreSheet.regularSheet")}
+                            </p>
                           </div>
 
                           {/* Col 2: Score sheet badge */}
                           <div className="min-w-0">
                             {book.scoreSheetName ? (
-                              <Badge variant="outline" className="text-[11px] whitespace-nowrap">
+                              <Badge
+                                variant="outline"
+                                className="max-w-full truncate text-[11px]"
+                                title={book.scoreSheetName}
+                              >
                                 {book.scoreSheetName}
                               </Badge>
                             ) : (
