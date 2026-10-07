@@ -57,6 +57,8 @@ type RowData = {
   _error?: string;
 };
 
+type ClassImportStudentStatus = "waiting" | "active";
+
 const todayStr = () => {
   const d = new Date();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -152,6 +154,7 @@ export function BulkInvoiceEntryDialog({
   const [submitTotal, setSubmitTotal] = useState(0);
   const [classPickerOpen, setClassPickerOpen] = useState(false);
   const [pickedClassIds, setPickedClassIds] = useState<string[]>([]);
+  const [importStudentStatuses, setImportStudentStatuses] = useState<ClassImportStudentStatus[]>(["active"]);
   const [classSearch, setClassSearch] = useState("");
   const [importingClasses, setImportingClasses] = useState(false);
   const [autoSavedAt, setAutoSavedAt] = useState<number | null>(null);
@@ -617,9 +620,17 @@ export function BulkInvoiceEntryDialog({
       setClassPickerOpen(false);
       return;
     }
-     const hasOnlyEmptyDefault = rows.length === 1 && isRowEmpty(rows[0]);
-     const availableSlots = MAX_ROWS - (hasOnlyEmptyDefault ? 0 : rows.length);
-     if (availableSlots <= 0) {
+    if (importStudentStatuses.length === 0) {
+      toast({
+        title: "Chưa chọn nhóm học viên",
+        description: "Hãy chọn Học viên chờ, Học viên chính thức hoặc cả hai.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const hasOnlyEmptyDefault = rows.length === 1 && isRowEmpty(rows[0]);
+    const availableSlots = MAX_ROWS - (hasOnlyEmptyDefault ? 0 : rows.length);
+    if (availableSlots <= 0) {
       toast({
         title: "Đã đạt giới hạn",
         description: `Bảng đã có ${rows.length} dòng (tối đa ${MAX_ROWS}). Hãy lưu hoặc xoá bớt trước khi tải thêm.`,
@@ -642,10 +653,18 @@ export function BulkInvoiceEntryDialog({
         const cls = classes.find((c: any) => c.id === classId);
         if (!cls) continue;
 
-        // Fetch enrolled students + (optionally) the class fee package details in parallel.
-        const studentsPromise = apiRequest("GET", `/api/classes/${classId}/active-students`)
-          .then(r => (r.ok ? r.json() : []))
-          .catch(() => []);
+        // Fetch the selected enrollment groups + fee package details in parallel.
+        const studentsPromise = Promise.all(
+          importStudentStatuses.map(async (status) => {
+            const endpoint = status === "waiting" ? "waiting-students" : "active-students";
+            const response = await apiRequest("GET", `/api/classes/${classId}/${endpoint}`);
+            if (!response.ok) {
+              throw new Error(`Không thể tải danh sách học viên của lớp "${cls.name ?? ""}".`);
+            }
+            const students = await response.json();
+            return Array.isArray(students) ? students : [];
+          }),
+        ).then((groups) => groups.flat());
         const pkgPromise = cls.feePackageId
           ? apiRequest("GET", `/api/fee-packages?locationId=${cls.locationId ?? ""}`)
               .then(r => (r.ok ? r.json() : []))
@@ -688,7 +707,7 @@ export function BulkInvoiceEntryDialog({
       if (rowsToAdd.length === 0) {
         toast({
           title: "Không có học viên mới",
-          description: "Các lớp đã chọn không có học viên đang học, hoặc tất cả đã có dòng trong bảng.",
+          description: "Các lớp đã chọn không có học viên thuộc nhóm đã chọn, hoặc tất cả đã có dòng trong bảng.",
         });
       } else {
         // Replace the leading empty row if we still have only the default empty placeholder.
@@ -705,6 +724,12 @@ export function BulkInvoiceEntryDialog({
       }
       setPickedClassIds([]);
       setClassPickerOpen(false);
+    } catch (err: any) {
+      toast({
+        title: "Không thể tải học viên",
+        description: err?.message ?? "Đã xảy ra lỗi khi tải danh sách học viên từ lớp.",
+        variant: "destructive",
+      });
     } finally {
       setImportingClasses(false);
     }
@@ -919,31 +944,70 @@ export function BulkInvoiceEntryDialog({
                           })}
                       </CommandGroup>
                     </CommandList>
-                    <div className="flex items-center justify-between gap-2 p-2 border-t bg-muted/40">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={() => setPickedClassIds([])}
-                        disabled={pickedClassIds.length === 0 || importingClasses}
-                        data-testid="button-clear-class-picker"
-                      >
-                        Bỏ chọn
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
-                        onClick={handleImportFromClasses}
-                        disabled={pickedClassIds.length === 0 || importingClasses || rows.length >= MAX_ROWS}
-                        data-testid="button-import-from-classes"
-                        title={rows.length >= MAX_ROWS ? `Đã đạt tối đa ${MAX_ROWS} dòng` : undefined}
-                      >
-                        {importingClasses ? (
-                          <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Đang tải...</>
-                        ) : (
-                          <>Tải {pickedClassIds.length > 0 ? `${pickedClassIds.length} lớp` : ""}</>
-                        )}
-                      </Button>
+                    <div className="space-y-2 border-t bg-muted/40 p-2">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                        <span className="text-[11px] text-muted-foreground">Lọc học viên:</span>
+                        <label htmlFor="bulk-invoice-import-waiting" className="flex cursor-pointer select-none items-center gap-1.5 whitespace-nowrap text-xs">
+                          <Checkbox
+                            id="bulk-invoice-import-waiting"
+                            checked={importStudentStatuses.includes("waiting")}
+                            onCheckedChange={(checked) => setImportStudentStatuses((prev) => (
+                              checked === true
+                                ? prev.includes("waiting") ? prev : [...prev, "waiting"]
+                                : prev.filter((status) => status !== "waiting")
+                            ))}
+                            disabled={importingClasses}
+                            data-testid="checkbox-import-waiting-students"
+                          />
+                          Học viên chờ
+                        </label>
+                        <label htmlFor="bulk-invoice-import-active" className="flex cursor-pointer select-none items-center gap-1.5 whitespace-nowrap text-xs">
+                          <Checkbox
+                            id="bulk-invoice-import-active"
+                            checked={importStudentStatuses.includes("active")}
+                            onCheckedChange={(checked) => setImportStudentStatuses((prev) => (
+                              checked === true
+                                ? prev.includes("active") ? prev : [...prev, "active"]
+                                : prev.filter((status) => status !== "active")
+                            ))}
+                            disabled={importingClasses}
+                            data-testid="checkbox-import-active-students"
+                          />
+                          Học viên chính thức
+                        </label>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => setPickedClassIds([])}
+                          disabled={pickedClassIds.length === 0 || importingClasses}
+                          data-testid="button-clear-class-picker"
+                        >
+                          Bỏ chọn
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
+                          onClick={handleImportFromClasses}
+                          disabled={pickedClassIds.length === 0 || importStudentStatuses.length === 0 || importingClasses || rows.length >= MAX_ROWS}
+                          title={
+                            rows.length >= MAX_ROWS
+                              ? `Đã đạt tối đa ${MAX_ROWS} dòng`
+                              : importStudentStatuses.length === 0
+                                ? "Chọn ít nhất một nhóm học viên"
+                                : undefined
+                          }
+                          data-testid="button-import-from-classes"
+                        >
+                          {importingClasses ? (
+                            <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Đang tải...</>
+                          ) : (
+                            <>Tải {pickedClassIds.length > 0 ? `${pickedClassIds.length} lớp` : ""}</>
+                          )}
+                        </Button>
+                      </div>
                     </div>
                   </Command>
                 </PopoverContent>

@@ -57,6 +57,7 @@
 - [Bulk teacher changes](bulk-teacher-changes.md) — preserve the from/to session range; offer teacher names and roles only, with no teacher-specific hours.
 - [Invoice schedule descriptions](invoice-schedule-description.md) — tuition invoice notes must derive weekday/shift times from each student's selected sessions, not the whole class schedule.
 - [Bulk student session scope](bulk-student-session-scope.md) — bulk session removal must carry each student's studentClassId; one shared class-row ID silently omits other students.
+- [Invoice class import student groups](invoice-class-import-student-groups.md) — direct invoice entry can import waiting, active, or both; keep active selected by default to preserve existing behavior.
 - [Makeup attendance state](makeup-scheduled-status.md) — xếp bù thành công dùng trạng thái system-only makeup_scheduled trước khi có mặt chuyển thành makeup_done.
 - [Attendance default range](attendance-default-range.md) — màn hình điểm danh mặc định xem ngày hiện tại; bộ chọn thời gian đặt cạnh nút Bộ lọc.
 - [Attendance facility source](attendance-facility-source.md) — attendance and payroll follow monthly `/shifts?tab=board`; same employee salary rows stay adjacent.
