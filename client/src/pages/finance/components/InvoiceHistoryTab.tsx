@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { CalendarIcon, History, Plus, CreditCard, CheckCircle2, Eye, Search } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { CalendarIcon, History, Plus, CreditCard, CheckCircle2, Eye, Search, Check, ChevronDown } from "lucide-react";
 import { fmtMoney, getInvoiceBusinessDateKey } from "@/types/invoice-types";
 import { Pencil, Trash2, XCircle } from "lucide-react";
 import { HistoryPaginationFooter } from "@/components/common/HistoryPaginationFooter";
@@ -393,6 +393,126 @@ function quickRangeDates(r: QuickRange): { from?: string; to?: string } {
   return {};
 }
 
+type HistoryFilterField = "student" | "performer" | "action";
+
+function HistoryFilterSelect({
+  field,
+  value,
+  onChange,
+  title,
+  allLabel,
+  searchPlaceholder,
+  from,
+  to,
+  locationId,
+}: {
+  field: HistoryFilterField;
+  value: string;
+  onChange: (value: string) => void;
+  title: string;
+  allLabel: string;
+  searchPlaceholder: string;
+  from?: string;
+  to?: string;
+  locationId: string;
+}) {
+  const { t } = useLanguage();
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const searchTerm = search.trim();
+  const { data: options = [], isLoading } = useQuery<string[]>({
+    queryKey: ["/api/finance/invoices/history/filter-options", field, searchTerm, from, to, locationId],
+    enabled: open,
+    queryFn: async () => {
+      const params = new URLSearchParams({ field });
+      if (searchTerm) params.set("search", searchTerm);
+      if (from) params.set("dateFrom", from);
+      if (to) params.set("dateTo", to);
+      if (locationId !== "__all__") params.set("locationId", locationId);
+      const response = await fetch(`/api/finance/invoices/history/filter-options?${params}`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to load filter options");
+      return response.json();
+    },
+    staleTime: 30_000,
+  });
+
+  const selectedLabel = value
+    ? field === "action" ? getEventConfig(value, t).label : value
+    : title;
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={nextOpen => {
+        setOpen(nextOpen);
+        if (!nextOpen) setSearch("");
+      }}
+    >
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={title}
+          className={`flex h-8 w-[155px] items-center justify-between gap-2 rounded-md border px-2.5 text-xs transition-colors hover:bg-slate-50 ${
+            value ? "border-violet-300 bg-violet-50 text-violet-700" : "border-slate-200 bg-white text-slate-600"
+          }`}
+        >
+          <span className="truncate">{selectedLabel}</span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[230px] p-0" align="start">
+        <div className="relative border-b p-2">
+          <Search className="absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <Input
+            autoFocus
+            value={search}
+            onChange={event => setSearch(event.target.value)}
+            placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder}
+            maxLength={100}
+            className="h-8 pl-7 text-xs"
+          />
+        </div>
+        <div className="max-h-60 overflow-y-auto py-1">
+          <button
+            type="button"
+            onClick={() => { onChange(""); setOpen(false); setSearch(""); }}
+            className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-slate-100 ${
+              !value ? "font-medium text-violet-700" : "text-slate-600"
+            }`}
+          >
+            <Check className={`h-3.5 w-3.5 ${!value ? "opacity-100" : "opacity-0"}`} />
+            {allLabel}
+          </button>
+          {isLoading ? (
+            <p className="px-3 py-4 text-center text-xs text-muted-foreground">{t("finance.history.loading")}</p>
+          ) : options.length === 0 ? (
+            <p className="px-3 py-4 text-center text-xs text-muted-foreground">{t("finance.history.noFilterOptions")}</p>
+          ) : (
+            options.map(option => {
+              const optionLabel = field === "action" ? getEventConfig(option, t).label : option;
+              const selected = value === option;
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => { onChange(option); setOpen(false); setSearch(""); }}
+                  className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-slate-100 ${
+                    selected ? "bg-violet-50 font-medium text-violet-700" : "text-slate-700"
+                  }`}
+                >
+                  <Check className={`h-3.5 w-3.5 shrink-0 ${selected ? "opacity-100" : "opacity-0"}`} />
+                  <span className="truncate">{optionLabel}</span>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /* ── Main component ─────────────────────────────────────── */
 export function InvoiceHistoryTab({
   locationOptions,
@@ -402,9 +522,9 @@ export function InvoiceHistoryTab({
   const { t } = useLanguage();
   const [quickRange, setQuickRange] = useState<QuickRange>("7d");
   const [locationId, setLocationId] = useState<string>("__all__");
-  const [studentSearch, setStudentSearch] = useState("");
-  const [performerSearch, setPerformerSearch] = useState("");
-  const [actionSearch, setActionSearch] = useState("");
+  const [studentFilter, setStudentFilter] = useState("");
+  const [performerFilter, setPerformerFilter] = useState("");
+  const [actionFilter, setActionFilter] = useState("");
   const [page, setPage] = useState(1);
   const [detailEvent, setDetailEvent] = useState<HistoryEvent | null>(null);
   const [pageSize, setPageSize] = useState(50);
@@ -415,9 +535,9 @@ export function InvoiceHistoryTab({
   if (from) params.set("dateFrom", from);
   if (to)   params.set("dateTo",   to);
   if (locationId !== "__all__") params.set("locationId", locationId);
-  if (studentSearch.trim()) params.set("student", studentSearch.trim());
-  if (performerSearch.trim()) params.set("performedBy", performerSearch.trim());
-  if (actionSearch.trim()) params.set("action", actionSearch.trim());
+  if (studentFilter) params.set("student", studentFilter);
+  if (performerFilter) params.set("performedBy", performerFilter);
+  if (actionFilter) params.set("action", actionFilter);
   params.set("limit",  String(pageSize));
   params.set("offset", String((page - 1) * pageSize));
 
@@ -425,7 +545,7 @@ export function InvoiceHistoryTab({
     queryKey: [
       "/api/finance/invoices/history",
       from, to, locationId,
-      studentSearch.trim(), performerSearch.trim(), actionSearch.trim(),
+      studentFilter, performerFilter, actionFilter,
       page, pageSize,
     ],
     queryFn: async () => {
@@ -492,39 +612,39 @@ export function InvoiceHistoryTab({
             </SelectContent>
           </Select>
         )}
-        <div className="relative w-[150px]">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <Input
-            value={studentSearch}
-            onChange={e => { setStudentSearch(e.target.value); setPage(1); }}
-            placeholder={t("finance.history.filterStudent")}
-            aria-label={t("finance.history.filterStudent")}
-            maxLength={100}
-            className="h-8 pl-8 text-xs border-slate-200 bg-white"
-          />
-        </div>
-        <div className="relative w-[165px]">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <Input
-            value={performerSearch}
-            onChange={e => { setPerformerSearch(e.target.value); setPage(1); }}
-            placeholder={t("finance.history.filterPerformer")}
-            aria-label={t("finance.history.filterPerformer")}
-            maxLength={100}
-            className="h-8 pl-8 text-xs border-slate-200 bg-white"
-          />
-        </div>
-        <div className="relative w-[155px]">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <Input
-            value={actionSearch}
-            onChange={e => { setActionSearch(e.target.value); setPage(1); }}
-            placeholder={t("finance.history.filterAction")}
-            aria-label={t("finance.history.filterAction")}
-            maxLength={100}
-            className="h-8 pl-8 text-xs border-slate-200 bg-white"
-          />
-        </div>
+        <HistoryFilterSelect
+          field="student"
+          value={studentFilter}
+          onChange={value => { setStudentFilter(value); setPage(1); }}
+          title={t("finance.history.selectStudent")}
+          allLabel={t("finance.history.allStudents")}
+          searchPlaceholder={t("finance.history.filterStudent")}
+          from={from}
+          to={to}
+          locationId={locationId}
+        />
+        <HistoryFilterSelect
+          field="performer"
+          value={performerFilter}
+          onChange={value => { setPerformerFilter(value); setPage(1); }}
+          title={t("finance.history.selectPerformer")}
+          allLabel={t("finance.history.allPerformers")}
+          searchPlaceholder={t("finance.history.filterPerformer")}
+          from={from}
+          to={to}
+          locationId={locationId}
+        />
+        <HistoryFilterSelect
+          field="action"
+          value={actionFilter}
+          onChange={value => { setActionFilter(value); setPage(1); }}
+          title={t("finance.history.selectAction")}
+          allLabel={t("finance.history.allActions")}
+          searchPlaceholder={t("finance.history.filterAction")}
+          from={from}
+          to={to}
+          locationId={locationId}
+        />
         <Select value={String(pageSize)} onValueChange={v => { setPageSize(Number(v)); setPage(1); }}>
           <SelectTrigger className="h-8 w-[100px] text-xs border-slate-200 bg-white">
             <SelectValue />

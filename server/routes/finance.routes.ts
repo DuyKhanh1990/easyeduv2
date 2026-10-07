@@ -791,6 +791,19 @@ export function registerFinanceRoutes(app: Express): void {
       };
       const column = columnByField[field];
       if (!column) return res.status(400).json({ message: "Invalid filter field" });
+      const searchExpression = field === "action"
+        ? `CASE base.ev_type
+            WHEN 'created' THEN 'created Tạo mới Created'
+            WHEN 'paid' THEN 'paid Đã thanh toán Paid'
+            WHEN 'schedule_paid' THEN 'schedule_paid Thu đợt Installment paid'
+            WHEN 'Sửa hoá đơn' THEN 'Sửa hoá đơn Invoice edited'
+            WHEN 'Đổi trạng thái hoá đơn' THEN 'Đổi trạng thái hoá đơn Invoice status changed'
+            WHEN 'Xoá hoá đơn' THEN 'Xoá hoá đơn Invoice deleted'
+            WHEN 'Huỷ thanh toán hoá đơn' THEN 'Huỷ thanh toán hoá đơn Invoice payment cancelled'
+            WHEN 'Sửa đợt thanh toán' THEN 'Sửa đợt thanh toán Installment edited'
+            ELSE base.ev_type
+          END`
+        : column;
 
       const allowedIds = req.allowedLocationIds;
       const isSuperAdmin = req.isSuperAdmin;
@@ -813,7 +826,7 @@ export function registerFinanceRoutes(app: Express): void {
       const search = typeof q.search === "string" ? q.search.trim().slice(0, 100) : "";
       if (search) {
         values.push(`%${search}%`);
-        whereParts.push(`${column} ILIKE $${values.length}`);
+        whereParts.push(`${searchExpression} ILIKE $${values.length}`);
       }
       const dateFrom = q.dateFrom && /^\d{4}-\d{2}-\d{2}$/.test(q.dateFrom) ? q.dateFrom : null;
       const dateTo = q.dateTo && /^\d{4}-\d{2}-\d{2}$/.test(q.dateTo) ? q.dateTo : null;
@@ -897,101 +910,7 @@ export function registerFinanceRoutes(app: Express): void {
       }
       const historyFilter = whereParts.length ? `WHERE ${whereParts.join(" AND ")}` : "";
 
-      const baseUnion = `
-        SELECT
-          'created'::text   AS ev_type,
-          i.created_at      AS ev_time,
-          i.id::text        AS invoice_id,
-          i.code            AS invoice_code,
-          i.type            AS invoice_type,
-          COALESCE(s.full_name, i.subject_name) AS subject_name,
-          i.grand_total::text,
-          i.grand_total::text AS amount,
-          i.payment_method,
-          l.name            AS location_name,
-          COALESCE(st.full_name, u.username) AS created_by_name,
-          NULL::text        AS schedule_label,
-          NULL::text        AS schedule_code,
-          i.settle_code,
-          NULL::text        AS old_content_json,
-          NULL::text        AS new_content_json
-        FROM invoices i
-        LEFT JOIN locations l ON i.location_id = l.id
-        LEFT JOIN users     u ON i.created_by  = u.id
-        LEFT JOIN staff    st ON st.user_id     = i.created_by
-        LEFT JOIN students  s ON i.student_id   = s.id
-        WHERE 1=1 ${locSnippet}
-
-        UNION ALL
-
-        SELECT
-          'paid'::text      AS ev_type,
-          i.paid_at         AS ev_time,
-          i.id::text, i.code, i.type,
-          COALESCE(s.full_name, i.subject_name),
-          i.grand_total::text,
-          i.paid_amount::text AS amount,
-          i.payment_method,
-          l.name,
-          COALESCE(st.full_name, u.username),
-          NULL::text, NULL::text, i.settle_code,
-          NULL::text, NULL::text
-        FROM invoices i
-        LEFT JOIN locations l ON i.location_id = l.id
-        LEFT JOIN users     u ON i.created_by  = u.id
-        LEFT JOIN staff    st ON st.user_id     = i.created_by
-        LEFT JOIN students  s ON i.student_id   = s.id
-        WHERE i.paid_at IS NOT NULL AND i.paid_at <> i.created_at ${locSnippet}
-
-        UNION ALL
-
-        SELECT
-          'schedule_paid'::text AS ev_type,
-          ps.paid_at         AS ev_time,
-          i.id::text, i.code, i.type,
-          COALESCE(s.full_name, i.subject_name),
-          i.grand_total::text,
-          ps.amount::text    AS amount,
-          ps.payment_method,
-          l.name,
-          COALESCE(st.full_name, u.username),
-          ps.label, ps.code, ps.settle_code,
-          NULL::text, NULL::text
-        FROM invoice_payment_schedule ps
-        JOIN invoices i    ON ps.invoice_id = i.id
-        LEFT JOIN locations l ON i.location_id = l.id
-        LEFT JOIN users     u ON i.created_by  = u.id
-        LEFT JOIN staff    st ON st.user_id     = i.created_by
-        LEFT JOIN students  s ON i.student_id   = s.id
-        WHERE ps.paid_at IS NOT NULL ${locSnippet}
-
-        UNION ALL
-
-        SELECT
-          al.action                    AS ev_type,
-          al.created_at                AS ev_time,
-          al.invoice_id::text          AS invoice_id,
-          al.invoice_code              AS invoice_code,
-          al.invoice_type              AS invoice_type,
-          al.subject_name              AS subject_name,
-          al.grand_total::text         AS grand_total,
-          al.grand_total::text         AS amount,
-          NULL::text                   AS payment_method,
-          l.name                       AS location_name,
-          COALESCE(st.full_name, u.username) AS created_by_name,
-          NULL::text                   AS schedule_label,
-          NULL::text                   AS schedule_code,
-          NULL::text                   AS settle_code,
-          al.old_content::text         AS old_content_json,
-          al.new_content::text         AS new_content_json
-        FROM invoice_audit_logs al
-        LEFT JOIN locations l  ON al.location_id = l.id
-        LEFT JOIN users     u  ON al.user_id      = u.id
-        LEFT JOIN staff    st  ON st.user_id       = al.user_id
-        WHERE 1=1
-          ${locSnippet.replace(/\bl\.id\b/g, "al.location_id")}
-          ${isSuperAdmin ? "" : "AND u.username IS DISTINCT FROM 'admin'"}
-      `;
+      const baseUnion = buildInvoiceHistoryBaseUnion(locSnippet, isSuperAdmin);
 
       const limitParam = filterValues.length + 1;
       const offsetParam = filterValues.length + 2;
