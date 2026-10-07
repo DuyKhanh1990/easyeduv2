@@ -348,7 +348,7 @@ export function StaffScoreSheet() {
                                 setSelectedAssessment(assessment);
                               }
                             }}
-                            className="grid min-w-0 cursor-pointer grid-cols-2 items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(160px,1fr)_160px_96px_120px_minmax(180px,1fr)_56px] xl:items-center xl:gap-x-4 xl:gap-y-0"
+                            className="grid min-w-0 cursor-pointer grid-cols-2 items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(140px,180px)_110px_120px_110px_185px_84px] xl:items-center xl:justify-between xl:gap-x-0 xl:gap-y-0"
                             data-testid={`row-staff-conversion-assessment-${assessment.sessionId}`}
                           >
                             <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-2 xl:col-span-1">
@@ -449,7 +449,7 @@ export function StaffScoreSheet() {
                       return (
                         <div
                           key={`grade-book:${book.id}`}
-                          className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(160px,1fr)_160px_96px_120px_minmax(180px,1fr)_56px] xl:items-center xl:gap-x-4 xl:gap-y-0"
+                           className="grid min-w-0 grid-cols-2 items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 sm:grid-cols-3 sm:px-4 md:grid-cols-4 xl:grid-cols-[minmax(140px,180px)_110px_120px_110px_185px_84px] xl:items-center xl:justify-between xl:gap-x-0 xl:gap-y-0"
                           data-testid={`row-staff-grade-book-${book.id}`}
                         >
                           {/* Col 1: Title + class */}
