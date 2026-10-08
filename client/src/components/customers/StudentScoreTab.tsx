@@ -230,7 +230,7 @@ export function StudentScoreTab({
   const [detailEntry, setDetailEntry] = useState<ScoreEntry | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [filter, setFilter] = useState<ScoreFilter>("all");
+  const [filters, setFilters] = useState<Set<ScoreFilter>>(new Set(["all"]));
 
   const { data: entries = [], isLoading } = useQuery<ScoreEntry[]>({
     queryKey: ["/api/students", studentId, "score-entries"],
@@ -250,21 +250,20 @@ export function StudentScoreTab({
     );
   }
 
+  const selectedTypes = [...filters].filter((item) =>
+    item === "gradebook" || item === "homework" || item === "conversion",
+  );
+  const selectedStatuses = [...filters].filter((item) => item === "passed" || item === "failed");
   const filteredEntries = entries.filter((entry) => {
-    switch (filter) {
-      case "gradebook":
-        return entry.type === "Bảng điểm";
-      case "homework":
-        return entry.type === "BTVN";
-      case "conversion":
-        return entry.type === "Bảng điểm quy đổi";
-      case "passed":
-        return entry.conversionResult?.passStatus === "passed";
-      case "failed":
-        return entry.conversionResult?.passStatus === "failed";
-      default:
-        return true;
-    }
+    const matchesType = selectedTypes.length === 0 || selectedTypes.some((type) => {
+      if (type === "gradebook") return entry.type === "Bảng điểm";
+      if (type === "homework") return entry.type === "BTVN";
+      return entry.type === "Bảng điểm quy đổi";
+    });
+    const matchesStatus = selectedStatuses.length === 0 || selectedStatuses.some((status) =>
+      entry.conversionResult?.passStatus === (status === "passed" ? "passed" : "failed"),
+    );
+    return matchesType && matchesStatus;
   });
   const timelineGroups = filteredEntries.reduce<Record<string, ScoreEntry[]>>((groups, entry) => {
     const dateKey = getTimelineDateKey(entry);
@@ -302,17 +301,23 @@ export function StudentScoreTab({
   return (
     <>
       <div className="shrink-0 border-b bg-white px-3 py-2">
-        <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Lọc bảng điểm">
+        <div className="flex gap-1 overflow-x-auto" role="group" aria-label="Lọc bảng điểm">
           {SCORE_FILTER_TABS.map((tab) => {
-            const selected = filter === tab.id;
+            const selected = filters.has(tab.id);
             return (
               <button
                 key={tab.id}
                 type="button"
-                role="tab"
-                aria-selected={selected}
+                aria-pressed={selected}
                 onClick={() => {
-                  setFilter(tab.id);
+                  setFilters((current) => {
+                    if (tab.id === "all") return new Set(["all"]);
+                    const next = new Set(current);
+                    next.delete("all");
+                    if (next.has(tab.id)) next.delete(tab.id);
+                    else next.add(tab.id);
+                    return next.size > 0 ? next : new Set(["all"]);
+                  });
                   setPage(1);
                 }}
                 className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
@@ -328,7 +333,7 @@ export function StudentScoreTab({
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto bg-gray-50/50 px-3 sm:px-4">
+      <div className="flex-1 overflow-auto bg-gray-100 px-3 sm:px-4">
         {filteredEntries.length === 0 ? (
           <div className="flex h-full min-h-32 items-center justify-center text-center text-sm text-muted-foreground">
             {entries.length === 0
@@ -359,7 +364,7 @@ export function StudentScoreTab({
                         <article
                           key={entry.id}
                           data-testid={`score-entry-row-${entry.id}`}
-                          className="rounded-lg border border-gray-200 bg-white px-3 py-3 transition-colors hover:bg-indigo-50/40 sm:px-4"
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-3 shadow-sm transition-colors hover:bg-indigo-50/40 sm:px-4"
                         >
                           <div className="flex min-w-0 items-start justify-between gap-3">
                             <div className="min-w-0 flex-1">
@@ -389,17 +394,17 @@ export function StudentScoreTab({
                             </div>
                           </div>
 
-                          <div className="mt-2 border-t border-dashed border-gray-200 pt-2">
+                          <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 border-t border-dashed border-gray-200 pt-2">
                             {entry.type === "Bảng điểm quy đổi" ? (
-                              <div className="grid w-full max-w-[420px] grid-cols-[minmax(4.5rem,1fr)_minmax(3.5rem,0.8fr)_minmax(4rem,0.9fr)] items-center gap-x-2">
-                                <div className="min-w-0">
-                                  <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">Điểm</p>
-                                  <p className="break-words text-sm font-semibold tabular-nums text-gray-700">
+                              <>
+                                <div className="flex min-w-0 items-center gap-1.5">
+                                  <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Điểm</span>
+                                  <span className="break-words text-sm font-semibold tabular-nums text-gray-700">
                                     {entry.finalScore ?? <span className="text-gray-300">—</span>}
-                                  </p>
+                                  </span>
                                 </div>
-                                <div className="min-w-0">
-                                  <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">Phân loại</p>
+                                <div className="flex min-w-0 items-center gap-1.5">
+                                  <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Phân loại</span>
                                   {entry.conversionResult?.gradeBand ? (
                                     <span
                                       className="inline-flex w-fit items-center whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold"
@@ -412,8 +417,8 @@ export function StudentScoreTab({
                                     </span>
                                   ) : <span className="text-sm text-gray-300">—</span>}
                                 </div>
-                                <div className="min-w-0">
-                                  <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">Trạng thái</p>
+                                <div className="flex min-w-0 items-center gap-1.5">
+                                  <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Trạng thái</span>
                                   {entry.conversionResult?.passStatus ? (
                                     <span
                                       className="inline-flex w-fit items-center whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold"
@@ -426,13 +431,13 @@ export function StudentScoreTab({
                                     </span>
                                   ) : <span className="text-sm text-gray-300">—</span>}
                                 </div>
-                              </div>
+                              </>
                             ) : (
-                              <div className="min-w-0">
-                                <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">Điểm tổng kết</p>
-                                <p className="break-words text-sm font-semibold text-gray-700">
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Điểm tổng kết</span>
+                                <span className="break-words text-sm font-semibold text-gray-700">
                                   {entry.finalScore ?? <span className="text-gray-300">—</span>}
-                                </p>
+                                </span>
                               </div>
                             )}
                           </div>
