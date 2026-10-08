@@ -4284,6 +4284,7 @@ export function registerMySpaceRoutes(app: Express): void {
 
         for (const row of result.rows as any[]) {
           allMapped.push({
+            kind: "regular",
             id: row.id,
             title: row.title,
             classId: row.class_id,
@@ -4405,6 +4406,7 @@ export function registerMySpaceRoutes(app: Express): void {
           if (scores.length === 0) continue;
 
           allMapped.push({
+            kind: "conversion",
             id: `score-sheet-assessment:${selectedAttempt.classSessionId}:${selectedAttempt.assessmentId}:${studentId}`,
             title: group.assessment.name,
             classId: selectedAttempt.classId,

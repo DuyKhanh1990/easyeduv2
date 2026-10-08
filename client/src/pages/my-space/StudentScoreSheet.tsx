@@ -31,6 +31,7 @@ type ScoreEntry = {
 
 type GradeBookRow = {
   id: string;
+  kind?: "regular" | "conversion";
   title: string;
   classCode: string;
   className: string;
@@ -148,6 +149,9 @@ export function StudentScoreSheet() {
                     {books.map((book) => {
                       const scores = book.scores ?? [];
                       const lastScore = scores.length > 0 ? scores[scores.length - 1] : null;
+                      const headlineScore = book.kind === "conversion"
+                        ? scores.find((entry) => entry.categoryId.endsWith(":overall")) ?? lastScore
+                        : lastScore;
                       const hasComment = !!book.teacherComment;
 
                       return (
@@ -175,11 +179,21 @@ export function StudentScoreSheet() {
                                   · {t("mySpace.scoreSheet.session")} {book.sessionIndex}
                                 </span>
                               )}
+                              {book.studentName && (
+                                <span className="text-[11px] text-muted-foreground truncate">
+                                  · {t("mySpace.scoreSheet.studentLabel")}: {book.studentName}
+                                </span>
+                              )}
                             </div>
                           </div>
 
                           {/* Col 2: Score sheet type */}
                           <div className="min-w-0">
+                            {book.kind === "conversion" && (
+                              <Badge variant="secondary" className="mb-1 text-[10px] whitespace-nowrap">
+                                {t("mySpace.scoreSheet.conversionSheet")}
+                              </Badge>
+                            )}
                             {book.scoreSheetName ? (
                               <Badge variant="outline" className="text-[11px] whitespace-nowrap">
                                 {book.scoreSheetName}
@@ -191,9 +205,14 @@ export function StudentScoreSheet() {
 
                           {/* Col 3: Score */}
                           <div className="flex min-w-0 items-center gap-1.5">
-                            {lastScore && lastScore.score != null && lastScore.score !== "" ? (
+                            {book.kind === "conversion" && headlineScore && (
+                              <span className="text-[10px] text-muted-foreground">
+                                {t("mySpace.scoreSheet.convertedScore")}
+                              </span>
+                            )}
+                            {headlineScore && headlineScore.score != null && headlineScore.score !== "" ? (
                               <span className="text-sm font-bold text-violet-600 dark:text-violet-400 whitespace-nowrap">
-                                {lastScore.score}
+                                {headlineScore.score}
                               </span>
                             ) : (
                               <span className="text-xs text-muted-foreground">{t("mySpace.scoreSheet.noScore")}</span>
@@ -252,9 +271,14 @@ export function StudentScoreSheet() {
                   {selected.scoreSheetName}
                 </Badge>
               )}
+              {selected?.kind === "conversion" && (
+                <Badge variant="secondary" className="text-xs font-normal">
+                  {t("mySpace.scoreSheet.conversionSheet")}
+                </Badge>
+              )}
               {selected?.studentName && (
                 <Badge variant="outline" className="text-xs font-normal bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700">
-                  {t("mySpace.scoreSheet.student")}: {selected.studentName}
+                  {t("mySpace.scoreSheet.studentLabel")}: {selected.studentName}
                 </Badge>
               )}
             </div>
