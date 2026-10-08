@@ -2,9 +2,9 @@ export interface EvaluationCheckboxGroupRow {
   id: string;
   name: string;
   criteriaId: string;
-  parentId: string | null;
-  itemType: string;
-  inputType: string;
+  parentId?: string | null;
+  itemType?: string;
+  inputType?: string;
   minChecked?: number | null;
   maxChecked?: number | null;
 }

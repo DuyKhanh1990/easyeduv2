@@ -48,6 +48,10 @@ import {
   evaluationSubCriteria,
   studentLocations,
 } from "@shared/schema";
+import {
+  formatEvaluationCheckboxGroupViolation,
+  getEvaluationCheckboxGroupStates,
+} from "@shared/evaluation-checkbox-limits";
 import { eq, and, gte, lte, sql, inArray, desc, or, isNull } from "drizzle-orm";
 import { enforceAttendanceTimeLimit, getStaffRoleIds } from "../lib/attendance-limit";
 import { ensureStudentQrToken } from "../lib/attendance-qr";
@@ -3548,6 +3552,8 @@ export function registerMobileRoutes(app: Express) {
            parentId: string | null;
            itemType: "heading" | "criterion";
            inputType: "text" | "checkbox";
+            minChecked: number | null;
+            maxChecked: number | null;
          }[];
        }[] = [];
       if (criteriaIds.length > 0) {
@@ -3564,6 +3570,8 @@ export function registerMobileRoutes(app: Express) {
             parentId: evaluationSubCriteria.parentId,
             itemType: evaluationSubCriteria.itemType,
             inputType: evaluationSubCriteria.inputType,
+            minChecked: evaluationSubCriteria.minChecked,
+            maxChecked: evaluationSubCriteria.maxChecked,
           })
           .from(evaluationSubCriteria)
           .where(inArray(evaluationSubCriteria.criteriaId, criteriaIds));
@@ -3574,6 +3582,8 @@ export function registerMobileRoutes(app: Express) {
            parentId: string | null;
            itemType: "heading" | "criterion";
            inputType: "text" | "checkbox";
+            minChecked: number | null;
+            maxChecked: number | null;
          }[]>();
         for (const s of subRows) {
           if (!subMap.has(s.criteriaId)) subMap.set(s.criteriaId, []);
@@ -3583,6 +3593,8 @@ export function registerMobileRoutes(app: Express) {
              parentId: s.parentId,
              itemType: s.itemType === "heading" ? "heading" : "criterion",
              inputType: s.inputType === "checkbox" ? "checkbox" : "text",
+              minChecked: s.minChecked,
+              maxChecked: s.maxChecked,
            });
         }
 
@@ -3732,6 +3744,24 @@ export function registerMobileRoutes(app: Express) {
           }
         }
         normalizedReviewData[teacherId] = { ...e, criteriaRatings };
+      }
+
+      const [sessionConfig] = await db
+        .select({ evaluationCriteriaIds: classSessions.evaluationCriteriaIds })
+        .from(classSessions)
+        .where(eq(classSessions.id, req.params.classSessionId))
+        .limit(1);
+      if (!sessionConfig) return res.status(404).json({ message: "Không tìm thấy buổi học" });
+      const criteriaIds = (sessionConfig.evaluationCriteriaIds ?? []) as string[];
+      if (criteriaIds.length > 0) {
+        const configuredSubCriteria = await db.select()
+          .from(evaluationSubCriteria)
+          .where(inArray(evaluationSubCriteria.criteriaId, criteriaIds));
+        const checkboxViolation = getEvaluationCheckboxGroupStates(normalizedReviewData, configuredSubCriteria)
+          .find((state) => !state.isValid);
+        if (checkboxViolation) {
+          return res.status(400).json({ message: formatEvaluationCheckboxGroupViolation(checkboxViolation) });
+        }
       }
 
       // Save — same DB update as the shared web endpoint

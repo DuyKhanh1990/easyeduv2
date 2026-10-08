@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Star } from "lucide-react";
 import { RichEditor } from "@/components/ui/rich-editor";
 import { useLanguage } from "@/hooks/use-language";
+import { getEvaluationCheckboxGroupStates } from "@shared/evaluation-checkbox-limits";
 
 interface SubCriteriaItem {
   id: string;
@@ -26,6 +27,8 @@ interface SubCriteriaItem {
   parentId?: string | null;
   itemType?: "heading" | "criterion";
   inputType?: "text" | "checkbox";
+  minChecked?: number | null;
+  maxChecked?: number | null;
 }
 
 interface CriteriaItem {
@@ -195,42 +198,47 @@ export function ReviewDialog({
     if (teachers.length > 0) setActiveTeacher(teachers[0].id);
   }, [open, existingReviewData, existingPublished, criteria, teachers, isBulk]);
 
-  const reviewMutation = useMutation({
-    mutationFn: async () => {
-      const reviewData: Record<string, { teacherName: string; items: any[]; criteriaRatings: Record<string, number> }> = {};
-      teachers.forEach((t) => {
-        const items: any[] = [];
-        criteria.forEach((c) => {
-          const subCriteria = getEvaluableSubCriteria(c);
-          if (subCriteria.length > 0) {
-            subCriteria.forEach((sc) => {
-              const group = c.subCriteria.find((candidate) => candidate.id === sc.parentId && candidate.itemType === "heading");
-              items.push({
-                criteriaId: c.id,
-                criteriaName: c.name,
-                subCriteriaId: sc.id,
-                subCriteriaName: sc.name,
-                ...(group ? { groupName: group.name } : {}),
-                inputType: sc.inputType === "checkbox" ? "checkbox" : "text",
-                comment: comments[t.id]?.[sc.id] || "",
-                ...(sc.inputType === "checkbox" ? { checked: checked[t.id]?.[sc.id] === true } : {}),
-              });
-            });
-          } else {
+  const buildReviewData = () => {
+    const reviewData: Record<string, { teacherName: string; items: any[]; criteriaRatings: Record<string, number> }> = {};
+    teachers.forEach((t) => {
+      const items: any[] = [];
+      criteria.forEach((c) => {
+        const subCriteria = getEvaluableSubCriteria(c);
+        if (subCriteria.length > 0) {
+          subCriteria.forEach((sc) => {
+            const group = c.subCriteria.find((candidate) => candidate.id === sc.parentId && candidate.itemType === "heading");
             items.push({
               criteriaId: c.id,
               criteriaName: c.name,
-              comment: comments[t.id]?.[c.id] || "",
+              subCriteriaId: sc.id,
+              subCriteriaName: sc.name,
+              ...(group ? { groupName: group.name } : {}),
+              inputType: sc.inputType === "checkbox" ? "checkbox" : "text",
+              comment: comments[t.id]?.[sc.id] || "",
+              ...(sc.inputType === "checkbox" ? { checked: checked[t.id]?.[sc.id] === true } : {}),
             });
-          }
-        });
-        const criteriaRatings: Record<string, number> = {};
-        criteria.forEach((c) => {
-          const r = ratings[t.id]?.[c.id] ?? 0;
-          if (r > 0) criteriaRatings[c.id] = r;
-        });
-        reviewData[t.id] = { teacherName: t.fullName, items, criteriaRatings };
+          });
+        } else {
+          items.push({
+            criteriaId: c.id,
+            criteriaName: c.name,
+            comment: comments[t.id]?.[c.id] || "",
+          });
+        }
       });
+      const criteriaRatings: Record<string, number> = {};
+      criteria.forEach((c) => {
+        const r = ratings[t.id]?.[c.id] ?? 0;
+        if (r > 0) criteriaRatings[c.id] = r;
+      });
+      reviewData[t.id] = { teacherName: t.fullName, items, criteriaRatings };
+    });
+    return reviewData;
+  };
+
+  const reviewMutation = useMutation({
+    mutationFn: async () => {
+      const reviewData = buildReviewData();
       if (freeReview) {
         await apiRequest("POST", `/api/classes/${freeReview.classId}/free-schedule/review`, {
           registrationId: freeReview.registrationId,
@@ -269,10 +277,37 @@ export function ReviewDialog({
       });
       onOpenChange(false);
     },
-    onError: () => {
-      toast({ title: t("mySpace.calendar.error"), description: t("mySpace.calendar.saveReviewFailed"), variant: "destructive" });
+    onError: (error) => {
+      toast({
+        title: t("mySpace.calendar.error"),
+        description: error instanceof Error ? error.message : t("mySpace.calendar.saveReviewFailed"),
+        variant: "destructive",
+      });
     },
   });
+
+  const handleSaveReview = () => {
+    const reviewData = buildReviewData();
+    const issue = getEvaluationCheckboxGroupStates(
+      reviewData,
+      criteria.flatMap((criterion) => criterion.subCriteria ?? []),
+    ).find((state) => !state.isValid);
+    if (issue) {
+      setActiveTeacher(issue.teacherId);
+      const requirement = issue.minChecked != null && issue.maxChecked != null
+        ? `${t("mySpace.calendar.checkboxGroupRangeError")} ${issue.minChecked}–${issue.maxChecked}`
+        : issue.minChecked != null
+          ? `${t("mySpace.calendar.checkboxGroupMinimumError")} ${issue.minChecked}`
+          : `${t("mySpace.calendar.checkboxGroupMaximumError")} ${issue.maxChecked}`;
+      toast({
+        title: t("mySpace.calendar.error"),
+        description: `${issue.groupName}: ${requirement}. ${t("mySpace.calendar.checkboxSelected")}: ${issue.selectedCount}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    reviewMutation.mutate();
+  };
 
   const title = isBulk
     ? `${t("mySpace.calendar.bulkReviewTitle")} (${studentSessionIds.length} ${t("mySpace.calendar.student").toLowerCase()})`
@@ -374,7 +409,7 @@ export function ReviewDialog({
           </Button>
           {hasContent && (
             <Button
-              onClick={() => reviewMutation.mutate()}
+              onClick={handleSaveReview}
               disabled={reviewMutation.isPending}
               data-testid="button-save-review"
             >
@@ -407,12 +442,19 @@ function CriteriaForm({
   setChecked: (fn: (prev: CheckedMap) => CheckedMap) => void;
 }) {
   const { t } = useLanguage();
-  const renderSubCriterion = (sc: SubCriteriaItem) => (
+  const renderSubCriterion = (sc: SubCriteriaItem, disableNewCheckbox = false) => {
+    const isChecked = checked[teacherId]?.[sc.id] === true;
+    const isDisabled = sc.inputType === "checkbox" && !isChecked && disableNewCheckbox;
+    return (
     <div key={sc.id} className="space-y-1">
       {sc.inputType === "checkbox" ? (
-        <label className="flex items-center gap-2 rounded-md border px-3 py-2 cursor-pointer hover:bg-muted/40">
+        <label className={cn(
+          "flex items-center gap-2 rounded-md border px-3 py-2",
+          isDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-muted/40",
+        )}>
           <Checkbox
-            checked={checked[teacherId]?.[sc.id] === true}
+            checked={isChecked}
+            disabled={isDisabled}
             onCheckedChange={(value) =>
               setChecked((prev) => ({
                 ...prev,
@@ -439,7 +481,8 @@ function CriteriaForm({
         </>
       )}
     </div>
-  );
+    );
+  };
 
   return (
     <div className="space-y-4 py-1">
@@ -464,18 +507,51 @@ function CriteriaForm({
                 .map((heading) => {
                   const children = c.subCriteria.filter((sc) => sc.parentId === heading.id && sc.itemType !== "heading");
                   if (children.length === 0) return null;
+                  const checkboxChildren = children.filter((sc) => sc.inputType === "checkbox");
+                  const selectedCount = checkboxChildren
+                    .filter((sc) => checked[teacherId]?.[sc.id] === true).length;
+                  const minChecked = heading.minChecked ?? null;
+                  const maxChecked = heading.maxChecked ?? null;
+                  const hasLimits = minChecked != null || maxChecked != null;
+                  const belowMinimum = minChecked != null && selectedCount < minChecked;
+                  const aboveMaximum = maxChecked != null && selectedCount > maxChecked;
+                  const atMaximum = maxChecked != null && selectedCount >= maxChecked;
                   return (
                     <div key={heading.id} className="space-y-2">
-                      <p className="text-sm font-semibold text-foreground">{heading.name}</p>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{heading.name}</p>
+                        {hasLimits && checkboxChildren.length > 0 && (
+                          <div className="mt-1 text-[11px] text-muted-foreground">
+                            <span>
+                              {t("mySpace.calendar.checkboxSelected")}: {selectedCount}
+                              {minChecked != null && <> · {t("mySpace.calendar.checkboxMinimum")}: {minChecked}</>}
+                              {maxChecked != null && <> · {t("mySpace.calendar.checkboxMaximum")}: {maxChecked}</>}
+                            </span>
+                            {belowMinimum && (
+                              <p role="alert" className="font-medium text-destructive">
+                                {t("mySpace.calendar.checkboxGroupMinimumError")} {minChecked}.
+                              </p>
+                            )}
+                            {aboveMaximum && (
+                              <p role="alert" className="font-medium text-destructive">
+                                {t("mySpace.calendar.checkboxGroupMaximumError")} {maxChecked}.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
                       <div className="space-y-2 pl-3 border-l border-muted">
-                        {children.map(renderSubCriterion)}
+                        {children.map((sc) => renderSubCriterion(
+                          sc,
+                          sc.inputType === "checkbox" && atMaximum,
+                        ))}
                       </div>
                     </div>
                   );
                 })}
               {c.subCriteria
                 .filter((sc) => sc.itemType !== "heading" && !sc.parentId)
-                .map(renderSubCriterion)}
+                .map((sc) => renderSubCriterion(sc))}
             </div>
           ) : (
             <RichEditor

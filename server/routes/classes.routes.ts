@@ -12,8 +12,12 @@ import { scoreSheetAssessmentSchema } from "@shared/score-sheet-assessment";
 import { scoreSheetTemplateSchema } from "@shared/score-sheet-template";
 import { createScoreSheetAssessmentForTemplate as createScoreSheetAssessmentFromTemplate } from "../lib/score-sheet-assignment";
 import { db, pool } from "../db";
-import { classSessions, classSessionTeacherAssignments, studentSessions, freeClassRegistrations, freeClassDayAssignments, students, classes, studentClasses, staff, staffAssignments, departments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, roles, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, invoiceItems, courseFeePackages, financePromotions, evaluationCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
+import { classSessions, classSessionTeacherAssignments, studentSessions, freeClassRegistrations, freeClassDayAssignments, students, classes, studentClasses, staff, staffAssignments, departments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, roles, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, invoiceItems, courseFeePackages, financePromotions, evaluationCriteria, evaluationSubCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
 import { eq, and, sql, inArray, avg, between, gte, lte, gt, desc, asc, or, ilike, isNotNull, isNull, ne } from "drizzle-orm";
+import {
+  formatEvaluationCheckboxGroupViolation,
+  getEvaluationCheckboxGroupStates,
+} from "@shared/evaluation-checkbox-limits";
 import { sendAttendanceNotificationWithLimit, sendReviewNotification, sendContentNotification } from "../lib/attendance-notification";
 import { enforceAttendanceTimeLimit, getStaffRoleIds } from "../lib/attendance-limit";
 import { sendNotificationToMany } from "../lib/notification";
@@ -2645,6 +2649,21 @@ export function registerClassesRoutes(app: Express): void {
         true,
       ))) return;
 
+      const [classConfig] = await db
+        .select({ evaluationCriteriaIds: classes.evaluationCriteriaIds })
+        .from(classes)
+        .where(eq(classes.id, classId))
+        .limit(1);
+      const criteriaIds = (classConfig?.evaluationCriteriaIds ?? []) as string[];
+      const configuredSubCriteria = criteriaIds.length > 0
+        ? await db.select().from(evaluationSubCriteria).where(inArray(evaluationSubCriteria.criteriaId, criteriaIds))
+        : [];
+      const checkboxViolation = getEvaluationCheckboxGroupStates(body.reviewData, configuredSubCriteria)
+        .find((state) => !state.isValid);
+      if (checkboxViolation) {
+        return res.status(400).json({ message: formatEvaluationCheckboxGroupViolation(checkboxViolation) });
+      }
+
       const [updated] = await db
         .update(freeClassRegistrations)
         .set({
@@ -3728,6 +3747,7 @@ export function registerClassesRoutes(app: Express): void {
           reviewData: studentSessions.reviewData,
           classId: classSessions.classId,
           classSessionId: classSessions.id,
+          evaluationCriteriaIds: classSessions.evaluationCriteriaIds,
         })
         .from(studentSessions)
         .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
@@ -3755,6 +3775,23 @@ export function registerClassesRoutes(app: Express): void {
           if (hasExistingReviews && !(await assertScheduleMutationPermission(req, res, "canEdit", [], classId))) return;
         }
       }
+
+      const checkedSessionConfigs = new Map(
+        existingReviewRows.map((row) => [row.classSessionId, row.evaluationCriteriaIds ?? [] as string[]]),
+      );
+      for (const criteriaIdsValue of checkedSessionConfigs.values()) {
+        const criteriaIds = criteriaIdsValue as string[];
+        if (criteriaIds.length === 0) continue;
+        const configuredSubCriteria = await db.select()
+          .from(evaluationSubCriteria)
+          .where(inArray(evaluationSubCriteria.criteriaId, criteriaIds));
+        const checkboxViolation = getEvaluationCheckboxGroupStates(reviewData, configuredSubCriteria)
+          .find((state) => !state.isValid);
+        if (checkboxViolation) {
+          return res.status(400).json({ message: formatEvaluationCheckboxGroupViolation(checkboxViolation) });
+        }
+      }
+
       await db.update(studentSessions)
         .set({ reviewData, reviewPublished: !!published, updatedAt: new Date() })
         .where(inArray(studentSessions.id, studentSessionIds));

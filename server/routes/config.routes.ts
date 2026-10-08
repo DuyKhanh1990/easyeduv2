@@ -1591,12 +1591,29 @@ export function registerConfigRoutes(app: Express): void {
     } catch (err) { res.status(500).json({ message: (err as any).message }); }
   });
 
+  const getEvaluationGroupBoundsError = (minChecked: number | null, maxChecked: number | null) => {
+    if (minChecked != null && (!Number.isSafeInteger(minChecked) || minChecked < 0)) {
+      return "Số tickbox tối thiểu phải là số nguyên không âm.";
+    }
+    if (maxChecked != null && (!Number.isSafeInteger(maxChecked) || maxChecked < 0)) {
+      return "Số tickbox tối đa phải là số nguyên không âm.";
+    }
+    if (minChecked != null && maxChecked != null && minChecked > maxChecked) {
+      return "Số tickbox tối thiểu không được lớn hơn tối đa.";
+    }
+    return null;
+  };
+
   app.post("/api/evaluation-sub-criteria", async (req, res) => {
     try {
       const { evaluationSubCriteria, insertEvaluationSubCriteriaSchema } = await import("@shared/schema");
       const input = insertEvaluationSubCriteriaSchema.parse(req.body);
       const itemType = input.itemType === "heading" ? "heading" : "criterion";
       const parentId = itemType === "criterion" ? (input.parentId || null) : null;
+      const minChecked = itemType === "heading" ? (input.minChecked ?? null) : null;
+      const maxChecked = itemType === "heading" ? (input.maxChecked ?? null) : null;
+      const boundsError = getEvaluationGroupBoundsError(minChecked, maxChecked);
+      if (boundsError) return res.status(400).json({ message: boundsError });
       if (itemType === "criterion" && !parentId) {
         return res.status(400).json({ message: "Tiêu chí con phải chọn Nhóm chung" });
       }
@@ -1615,6 +1632,8 @@ export function registerConfigRoutes(app: Express): void {
         ...input,
         itemType,
         parentId,
+        minChecked,
+        maxChecked,
         inputType: itemType === "criterion" && input.inputType === "checkbox" ? "checkbox" : "text",
       }).returning();
       res.status(201).json(row);
@@ -1634,6 +1653,14 @@ export function registerConfigRoutes(app: Express): void {
       if (!current) return res.status(404).json({ message: "Not found" });
       const itemType = input.itemType === "heading" ? "heading" : input.itemType === "criterion" ? "criterion" : current.itemType;
       const parentId = itemType === "criterion" ? (input.parentId ?? current.parentId) : null;
+      const minChecked = itemType === "heading"
+        ? (input.minChecked === undefined ? current.minChecked : input.minChecked)
+        : null;
+      const maxChecked = itemType === "heading"
+        ? (input.maxChecked === undefined ? current.maxChecked : input.maxChecked)
+        : null;
+      const boundsError = getEvaluationGroupBoundsError(minChecked, maxChecked);
+      if (boundsError) return res.status(400).json({ message: boundsError });
       const isLegacyUngroupedCriterion = itemType === "criterion"
         && !parentId
         && current.itemType === "criterion"
@@ -1657,6 +1684,8 @@ export function registerConfigRoutes(app: Express): void {
         ...input,
         itemType,
         parentId,
+        minChecked,
+        maxChecked,
         inputType: itemType === "criterion" && input.inputType === "checkbox" ? "checkbox" : "text",
         updatedAt: new Date(),
       }).where(eq(evaluationSubCriteria.id, req.params.id)).returning();

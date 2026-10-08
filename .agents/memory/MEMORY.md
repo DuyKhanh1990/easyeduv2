@@ -66,6 +66,7 @@
 - [Bulk makeup across classes](bulk-makeup-cross-class.md) — chọn học viên từ nhiều lớp vẫn dùng chung một lịch đích; backend phải giữ lớp gốc riêng cho từng học viên.
 - [Makeup class eligibility](makeup-class-eligibility.md) — chỉ lớp có buổi tương lai chung cho toàn bộ học viên mới được chọn; các mức thấp hơn chỉ hiển thị để tham khảo.
 - [Evaluation criterion input types](evaluation-criterion-input-types.md) — loại nằm ở tiêu chí con: text để giáo viên nhập nhận xét, checkbox để đánh dấu học viên đạt; nhóm có thể hỗn hợp.
+- [Evaluation checkbox group limits](evaluation-checkbox-group-limits.md) — giới hạn tickbox theo nhóm là tùy chọn; tối thiểu/tối đa có thể đặt riêng hoặc cùng lúc.
 - [Legacy class owner recovery](class-owner-recovery.md) — chỉ khôi phục từ log tạo lớp; createdBy thiếu không được coi là wildcard.
 - [Actual session tuition allocation](actual-session-tuition-allocation.md) — học phí áp dụng của gói khóa phải phân bổ theo số buổi đăng ký thực tế và allocation của hóa đơn.
 - [Tuition refund expense wallet](tuition-refund-expense-wallet.md) — Phiếu chi Hoàn học phí đã thanh toán phải reconcile debit theo invoiceId vào ví Học phí, kể cả đợt thanh toán.
