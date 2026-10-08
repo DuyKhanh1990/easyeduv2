@@ -160,7 +160,7 @@ export function StudentScoreSheet() {
                            className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 sm:grid-cols-3 sm:px-4 md:grid-cols-[minmax(0,1.4fr)_minmax(120px,1fr)_80px_minmax(180px,1.4fr)_48px] xl:grid-cols-[minmax(160px,1fr)_160px_80px_minmax(160px,1fr)_48px] xl:items-center xl:gap-x-4 xl:gap-y-0"
                           data-testid={`row-grade-book-${book.id}`}
                         >
-                          {/* Col 1: Title + class */}
+                           {/* Col 1: Title + class */}
                            <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-1 xl:col-span-1">
                             <p className="text-sm font-semibold text-foreground truncate leading-tight">
                               {book.title}
@@ -185,15 +185,17 @@ export function StudentScoreSheet() {
                                 </span>
                               )}
                             </div>
+                            {book.kind === "conversion" && (
+                              <div className="mt-1">
+                                <Badge className="h-5 border-orange-200 bg-orange-50 px-1.5 text-[10px] font-medium text-orange-700 hover:bg-orange-50 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-300 dark:hover:bg-orange-950/40">
+                                  {t("mySpace.scoreSheet.conversionSheet")}
+                                </Badge>
+                              </div>
+                            )}
                           </div>
 
-                          {/* Col 2: Score sheet type */}
+                          {/* Col 2: Score sheet name */}
                           <div className="min-w-0">
-                            {book.kind === "conversion" && (
-                              <Badge variant="secondary" className="mb-1 text-[10px] whitespace-nowrap">
-                                {t("mySpace.scoreSheet.conversionSheet")}
-                              </Badge>
-                            )}
                             {book.scoreSheetName ? (
                               <Badge variant="outline" className="text-[11px] whitespace-nowrap">
                                 {book.scoreSheetName}
