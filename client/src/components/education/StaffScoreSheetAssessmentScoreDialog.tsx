@@ -882,7 +882,7 @@ export function StaffScoreSheetAssessmentScoreDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[94vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col gap-0 overflow-hidden p-0 sm:w-[94vw] sm:max-w-[94vw] xl:max-w-[1180px]">
+      <DialogContent className="z-[300] flex max-h-[94vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col gap-0 overflow-hidden p-0 sm:w-[94vw] sm:max-w-[94vw] xl:max-w-[1180px]">
         <DialogHeader className="shrink-0 border-b bg-gradient-to-r from-violet-50 via-background to-sky-50 px-5 py-4 text-left dark:from-violet-950/30 dark:to-sky-950/20 sm:px-6">
           <div className="flex flex-wrap items-center gap-2">
             <DialogTitle className="text-base sm:text-lg">

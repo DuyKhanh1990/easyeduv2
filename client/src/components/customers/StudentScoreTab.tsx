@@ -274,13 +274,13 @@ export function StudentScoreTab({
                   data-testid={`score-entry-final-${entry.id}`}
                 >
                   {entry.type === "Bảng điểm quy đổi" ? (
-                    <div className="flex min-w-0 flex-nowrap items-center gap-1.5 whitespace-nowrap">
-                      <span>
+                    <div className="grid min-w-[280px] grid-cols-[minmax(6rem,1.2fr)_minmax(4.5rem,0.9fr)_minmax(5rem,1fr)] items-center gap-x-1.5">
+                      <span className="truncate tabular-nums" title={entry.finalScore ?? undefined}>
                         {entry.finalScore ?? <span className="text-gray-300">—</span>}
                       </span>
                       {entry.conversionResult?.gradeBand && (
                         <span
-                          className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                          className="inline-flex w-fit items-center whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold"
                           style={{
                             color: entry.conversionResult.gradeBand.color,
                             backgroundColor: `${entry.conversionResult.gradeBand.color}1A`,
@@ -289,9 +289,12 @@ export function StudentScoreTab({
                           {entry.conversionResult.gradeBand.label}
                         </span>
                       )}
+                      {!entry.conversionResult?.gradeBand && (
+                        <span aria-hidden="true" className="invisible inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold">—</span>
+                      )}
                       {entry.conversionResult?.passStatus && (
                         <span
-                          className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                          className="inline-flex w-fit items-center whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold"
                           style={{
                             color: entry.conversionResult.passStatus === "passed" ? "#15803D" : "#DC2626",
                             backgroundColor: entry.conversionResult.passStatus === "passed" ? "#15803D1A" : "#DC26261A",
@@ -299,6 +302,9 @@ export function StudentScoreTab({
                         >
                           {entry.conversionResult.passStatus === "passed" ? "Đạt" : "Không đạt"}
                         </span>
+                      )}
+                      {!entry.conversionResult?.passStatus && (
+                        <span aria-hidden="true" className="invisible inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold">—</span>
                       )}
                     </div>
                   ) : (
