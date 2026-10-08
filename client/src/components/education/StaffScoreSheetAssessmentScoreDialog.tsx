@@ -26,6 +26,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { hasScoreSheetAssessmentFeedback } from "@shared/score-sheet-assessment-publication";
+import { getEvaluationCheckboxGroupStates } from "@shared/evaluation-checkbox-limits";
 import {
   calculateScoreSheetAssessmentAttemptResult,
   selectScoreSheetAssessmentAttemptSummary,
@@ -37,6 +38,7 @@ import { evaluateScoreConversionFormula } from "@shared/score-conversion-formula
 import type { ScoreSheetTemplate } from "@shared/score-sheet-template";
 import type { ScoreConversionTemplate } from "@shared/score-conversion";
 import type { StaffAssignedScoreSheetAssessment } from "./StaffScoreSheetAssessmentStudentsDialog";
+import { cn } from "@/lib/utils";
 
 type AssessmentScoreEntryStudent = {
   studentId: string;
@@ -49,9 +51,12 @@ type AssessmentScoreEntryStudent = {
 type AssessmentEvaluationItem = {
   id: string;
   name: string;
+  criteriaId: string;
   itemType: "heading" | "criterion";
   inputType: "text" | "checkbox";
   parentId: string | null;
+  minChecked: number | null;
+  maxChecked: number | null;
 };
 
 type AssessmentEvaluationGroup = {
@@ -645,6 +650,22 @@ export function StaffScoreSheetAssessmentScoreDialog({
     currentValues.notes,
     currentValues.evaluationResponses,
   );
+  const evaluationCheckboxStates = useMemo(() => {
+    if (!details) return [];
+    const reviewData = {
+      [student?.studentId ?? "score-sheet"]: {
+        teacherName: student?.fullName ?? "Học viên",
+        items: Object.entries(currentValues.evaluationResponses).map(([subCriteriaId, response]) => ({
+          subCriteriaId,
+          checked: response === true,
+        })),
+      },
+    };
+    return getEvaluationCheckboxGroupStates(
+      reviewData,
+      details.evaluationCriteria.flatMap((criteria) => criteria.subCriteria ?? []),
+    );
+  }, [details, student?.studentId, student?.fullName, currentValues.evaluationResponses]);
 
   useEffect(() => {
     if (
@@ -699,14 +720,20 @@ export function StaffScoreSheetAssessmentScoreDialog({
     }));
   };
 
-  const renderEvaluationItem = (item: AssessmentEvaluationItem) => {
+  const renderEvaluationItem = (item: AssessmentEvaluationItem, disableNewCheckbox = false) => {
     const response = currentValues.evaluationResponses[item.id];
     if (item.inputType === "checkbox") {
+      const isChecked = response === true;
+      const isDisabled = !isChecked && disableNewCheckbox;
       return (
-        <div key={item.id} className="flex items-start gap-3 rounded-md border bg-background px-3 py-2">
+        <div key={item.id} className={cn(
+          "flex items-start gap-3 rounded-md border bg-background px-3 py-2",
+          isDisabled && "cursor-not-allowed opacity-50",
+        )}>
           <Checkbox
             id={`assessment-evaluation-${item.id}`}
-            checked={response === true}
+            checked={isChecked}
+            disabled={isDisabled}
             onCheckedChange={(checked) => updateDraft((current) => ({
               ...current,
               evaluationResponses: {
@@ -757,6 +784,18 @@ export function StaffScoreSheetAssessmentScoreDialog({
       || selectedAttemptNumber == null
       || (!draftIsDirty && !publicationChanged)
     ) return;
+    const checkboxLimitViolation = evaluationCheckboxStates.find((state) => !state.isValid);
+    if (checkboxLimitViolation) {
+      const requirement = checkboxLimitViolation.minChecked != null && checkboxLimitViolation.maxChecked != null
+        ? `từ ${checkboxLimitViolation.minChecked} đến ${checkboxLimitViolation.maxChecked}`
+        : checkboxLimitViolation.minChecked != null
+          ? `ít nhất ${checkboxLimitViolation.minChecked}`
+          : `không quá ${checkboxLimitViolation.maxChecked}`;
+      setSaveError(
+        `Nhóm "${checkboxLimitViolation.groupName}" cần chọn ${requirement} tickbox (hiện chọn ${checkboxLimitViolation.selectedCount}).`,
+      );
+      return;
+    }
     if (draftIsDirty && !selectedAttempt && !hasEnteredValue(currentValues)) {
       setSaveError("Nhập ít nhất một điểm hoặc ghi chú trước khi lưu.");
       return;
@@ -1194,15 +1233,48 @@ export function StaffScoreSheetAssessmentScoreDialog({
                     return (
                       <section key={criteria.id} className="space-y-2 rounded-lg border bg-background p-3">
                         <h4 className="text-sm font-semibold">{criteria.name}</h4>
-                        {standaloneItems.map(renderEvaluationItem)}
+                        {standaloneItems.map((item) => renderEvaluationItem(item))}
                         {headings.map((heading) => {
                           const children = subCriteria.filter((item) =>
                             item.itemType === "criterion" && item.parentId === heading.id,
                           );
+                          const checkboxChildren = children.filter((item) => item.inputType === "checkbox");
+                          const selectedCount = checkboxChildren
+                            .filter((item) => currentValues.evaluationResponses[item.id] === true).length;
+                          const minChecked = heading.minChecked ?? null;
+                          const maxChecked = heading.maxChecked ?? null;
+                          const hasLimits = minChecked != null || maxChecked != null;
+                          const belowMinimum = minChecked != null && selectedCount < minChecked;
+                          const aboveMaximum = maxChecked != null && selectedCount > maxChecked;
+                          const atMaximum = maxChecked != null && selectedCount >= maxChecked;
                           return (
                             <div key={heading.id} className="space-y-2 border-t pt-2">
-                              <h5 className="text-xs font-semibold text-muted-foreground">{heading.name}</h5>
-                              {children.map(renderEvaluationItem)}
+                              <div>
+                                <h5 className="text-xs font-semibold text-muted-foreground">{heading.name}</h5>
+                                {hasLimits && checkboxChildren.length > 0 && (
+                                  <div className="mt-1 text-[11px] text-muted-foreground">
+                                    <span>
+                                      Đã chọn: {selectedCount}
+                                      {minChecked != null && <> · Tối thiểu: {minChecked}</>}
+                                      {maxChecked != null && <> · Tối đa: {maxChecked}</>}
+                                    </span>
+                                    {belowMinimum && (
+                                      <p role="alert" className="font-medium text-destructive">
+                                        Cần chọn ít nhất {minChecked}.
+                                      </p>
+                                    )}
+                                    {aboveMaximum && (
+                                      <p role="alert" className="font-medium text-destructive">
+                                        Chỉ được chọn tối đa {maxChecked}.
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                              {children.map((item) => renderEvaluationItem(
+                                item,
+                                item.inputType === "checkbox" && atMaximum,
+                              ))}
                             </div>
                           );
                         })}

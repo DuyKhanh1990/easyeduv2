@@ -83,4 +83,18 @@ describe("evaluation checkbox group limits", () => {
       : row);
     expect(getEvaluationCheckboxGroupStates(makeReview([]), rows)).toEqual([]);
   });
+
+  it("validates score-sheet responses keyed by sub-criterion ID", () => {
+    const scoreSheetResponses = {
+      student: {
+        teacherName: "Học viên",
+        items: Object.entries({ a: true, b: true, c: true, d: true }).map(([subCriteriaId, checked]) => ({
+          subCriteriaId,
+          checked,
+        })),
+      },
+    };
+    const [state] = getEvaluationCheckboxGroupStates(scoreSheetResponses, baseRows);
+    expect(state).toMatchObject({ selectedCount: 4, maxChecked: 3, isValid: false });
+  });
 });

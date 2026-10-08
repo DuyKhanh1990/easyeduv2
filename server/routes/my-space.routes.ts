@@ -74,6 +74,7 @@ import { canViewClass } from "../lib/class-access";
 import { canScheduleWrite } from "@shared/schedule-access";
 import { isStaffAssignedToEffectiveFreeClassStudent } from "@shared/my-space-calendar-permissions";
 import { hasMySpaceAssignmentsWritePermission } from "../lib/my-space-assignments-permissions";
+import { getEvaluationCheckboxGroupStates } from "@shared/evaluation-checkbox-limits";
 
 type ScoreSheetAssessmentPublicationNotification = {
   classId: string;
@@ -200,9 +201,12 @@ async function getCurrentScoreSheetTemplate(
 type ScoreSheetEvaluationSubCriterion = {
   id: string;
   name: string;
+  criteriaId: string;
   itemType: string;
   inputType: string;
   parentId: string | null;
+  minChecked: number | null;
+  maxChecked: number | null;
 };
 
 type ScoreSheetEvaluationCriterion = {
@@ -243,9 +247,12 @@ async function getEvaluationCriteriaForScoreSheet(
         .map((subCriteria: any) => ({
           id: subCriteria.id,
           name: subCriteria.name,
+          criteriaId: subCriteria.criteriaId,
           itemType: subCriteria.itemType,
           inputType: subCriteria.inputType,
           parentId: subCriteria.parentId,
+          minChecked: subCriteria.minChecked,
+          maxChecked: subCriteria.maxChecked,
         })),
     }];
   });
@@ -5100,6 +5107,28 @@ export function registerMySpaceRoutes(app: Express): void {
               error.status = 400;
               throw error;
             }
+          }
+          const checkboxLimitViolation = getEvaluationCheckboxGroupStates({
+            [studentId.data]: {
+              teacherName: "Học viên",
+              items: Object.entries(values.evaluationResponses).map(([subCriteriaId, response]) => ({
+                subCriteriaId,
+                checked: response === true,
+              })),
+            },
+          }, configuredEvaluationCriteria.flatMap((criteria) => criteria.subCriteria))
+            .find((state) => !state.isValid);
+          if (checkboxLimitViolation) {
+            const requirement = checkboxLimitViolation.minChecked != null && checkboxLimitViolation.maxChecked != null
+              ? `từ ${checkboxLimitViolation.minChecked} đến ${checkboxLimitViolation.maxChecked}`
+              : checkboxLimitViolation.minChecked != null
+                ? `ít nhất ${checkboxLimitViolation.minChecked}`
+                : `không quá ${checkboxLimitViolation.maxChecked}`;
+            const error: any = new Error(
+              `Nhóm "${checkboxLimitViolation.groupName}" cần chọn ${requirement} tickbox (hiện chọn ${checkboxLimitViolation.selectedCount}).`,
+            );
+            error.status = 400;
+            throw error;
           }
           if (attemptNumber.data > assessment.attemptCount) {
             const error: any = new Error(`Bảng điểm này chỉ cho phép tối đa ${assessment.attemptCount} lần thi.`);

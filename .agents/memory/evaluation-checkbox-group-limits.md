@@ -9,4 +9,4 @@ When editing a review, prevent adding unchecked boxes once the maximum is reache
 
 **Why:** the user confirmed that either bound may be entered alone and both together form a range.
 
-**How to apply:** keep configuration, teacher UI, and server validation consistent across web, free-class, and mobile review flows.
+**How to apply:** keep configuration, teacher UI, and server validation consistent across web, free-class, mobile, and score-sheet assessment flows.
