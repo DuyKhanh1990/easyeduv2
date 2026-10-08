@@ -5,6 +5,8 @@ import { enUS, vi } from "date-fns/locale";
 import { BarChart3, BookOpen, CalendarDays, Clock3, Eye, Pencil, Plus, Users, CheckCircle2, Clock, Circle, CircleDot, Download, Loader2, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { downloadClassGradeBookExcel } from "@/lib/gradeBookExcelExport";
 import { GradeBookEditDialog } from "@/components/education/GradeBookEditDialog";
@@ -57,6 +59,8 @@ type ScoreSheetTimelineEntry =
       dateKey: string;
       assessment: StaffAssignedScoreSheetAssessment;
     };
+
+type StaffScoreSheetTab = "all" | "regular" | "conversion";
 
 type StatusPresentation = {
   label: string;
@@ -153,6 +157,10 @@ export function StaffScoreSheet() {
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedAssessment, setSelectedAssessment] = useState<StaffAssignedScoreSheetAssessment | null>(null);
   const [exportingBookId, setExportingBookId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<StaffScoreSheetTab>("all");
+  const [classFilters, setClassFilters] = useState<string[]>([]);
+  const [scoreSheetFilters, setScoreSheetFilters] = useState<string[]>([]);
+  const [statusFilters, setStatusFilters] = useState<string[]>([]);
   const { toast } = useToast();
   const scoreSheetPermissions = myPermissions?.permissions["/my-space/score-sheet"];
   const canCreateGradeBook = myPermissions?.isSuperAdmin === true
@@ -186,6 +194,54 @@ export function StaffScoreSheet() {
   const gradeBooks = data ?? [];
   const assignedAssessments = assignedAssessmentsData ?? [];
   const nowWallClockMs = getBangkokWallClockMs(new Date());
+
+  const classOptionsById = new Map<string, string>();
+  gradeBooks.forEach((book) => {
+    classOptionsById.set(
+      book.classId,
+      book.className !== book.classCode ? `${book.classCode} — ${book.className}` : book.classCode,
+    );
+  });
+  assignedAssessments.forEach((assessment) => {
+    classOptionsById.set(
+      assessment.classId,
+      assessment.className !== assessment.classCode
+        ? `${assessment.classCode} — ${assessment.className}`
+        : assessment.classCode,
+    );
+  });
+  const classFilterOptions = Array.from(classOptionsById, ([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, lang));
+
+  const scoreSheetOptionsById = new Map<string, string>();
+  gradeBooks.forEach((book) => {
+    scoreSheetOptionsById.set(
+      `regular:${book.scoreSheetId}`,
+      book.scoreSheetName || t("mySpace.scoreSheet.unavailableSheet"),
+    );
+  });
+  assignedAssessments.forEach((assessment) => {
+    scoreSheetOptionsById.set(
+      `conversion:${assessment.assessmentId}`,
+      assessment.templateName || assessment.assessmentName || t("mySpace.scoreSheet.unavailableSheet"),
+    );
+  });
+  const scoreSheetFilterOptions = Array.from(scoreSheetOptionsById, ([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, lang));
+
+  const statusFilterOptions = [
+    { value: "publication:unpublished", label: t("mySpace.scoreSheet.unpublished") },
+    { value: "publication:published", label: t("mySpace.scoreSheet.published") },
+    ...Object.entries(ASSESSMENT_STATUS_PRESENTATION).map(([key, status]) => ({
+      value: `assessment:${key}`,
+      label: status.label,
+    })),
+    ...Object.entries(ASSESSMENT_DEADLINE_STATUS_PRESENTATION).map(([key, status]) => ({
+      value: `deadline:${key}`,
+      label: status.label,
+    })),
+    { value: "deadline:none", label: t("mySpace.scoreSheet.notDue") },
+  ];
 
   const handleExportGradeBook = async (book: StaffGradeBookRow) => {
     setExportingBookId(book.id);
@@ -228,8 +284,45 @@ export function StaffScoreSheet() {
     })),
   ];
 
+  const filteredTimelineEntries = timelineEntries.filter((entry) => {
+    if (activeTab === "regular" && entry.kind !== "grade-book") return false;
+    if (activeTab === "conversion" && entry.kind !== "conversion") return false;
+
+    const classId = entry.kind === "grade-book" ? entry.gradeBook.classId : entry.assessment.classId;
+    if (classFilters.length > 0 && !classFilters.includes(classId)) return false;
+
+    const scoreSheetId = entry.kind === "grade-book"
+      ? `regular:${entry.gradeBook.scoreSheetId}`
+      : `conversion:${entry.assessment.assessmentId}`;
+    if (scoreSheetFilters.length > 0 && !scoreSheetFilters.includes(scoreSheetId)) return false;
+
+    if (statusFilters.length === 0) return true;
+
+    const availableStatuses = new Set<string>();
+    if (entry.kind === "grade-book") {
+      availableStatuses.add(`publication:${entry.gradeBook.published ? "published" : "unpublished"}`);
+    } else {
+      const assessment = entry.assessment;
+      availableStatuses.add(
+        `publication:${assessment.published || assessment.allStudentsIndividuallyPublished ? "published" : "unpublished"}`,
+      );
+      const statusKey = resolveScoreSheetAssessmentStatus(assessment, nowWallClockMs);
+      if (statusKey) availableStatuses.add(`assessment:${statusKey}`);
+      const deadlineStatusKey = resolveScoreSheetAssessmentDeadlineStatus(
+        assessment.scoreDeadlineAt,
+        nowWallClockMs,
+      );
+      if (deadlineStatusKey) {
+        availableStatuses.add(`deadline:${deadlineStatusKey}`);
+      } else if (!assessment.scoreDeadlineAt) {
+        availableStatuses.add("deadline:none");
+      }
+    }
+    return statusFilters.some((status) => availableStatuses.has(status));
+  });
+
   // One timeline for legacy grade books and conversion assessments, grouped by exam/session date.
-  const grouped = timelineEntries.reduce<Record<string, ScoreSheetTimelineEntry[]>>((acc, entry) => {
+  const grouped = filteredTimelineEntries.reduce<Record<string, ScoreSheetTimelineEntry[]>>((acc, entry) => {
     const dateKey = entry.dateKey;
     if (!acc[dateKey]) acc[dateKey] = [];
     acc[dateKey].push(entry);
@@ -262,7 +355,7 @@ export function StaffScoreSheet() {
           <h1 className="truncate text-lg font-semibold sm:text-xl">{t("mySpace.scoreSheet.title")}</h1>
           {timelineEntries.length > 0 && (
             <Badge variant="secondary" className="text-xs font-normal">
-              {timelineEntries.length} {t("mySpace.scoreSheet.count")}
+              {filteredTimelineEntries.length} {t("mySpace.scoreSheet.count")}
             </Badge>
           )}
         </div>
@@ -287,6 +380,90 @@ export function StaffScoreSheet() {
         </div>
       )}
 
+      {timelineEntries.length > 0 && (
+        <div className="space-y-3">
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) => setActiveTab(value as StaffScoreSheetTab)}
+          >
+            <TabsList className="grid h-auto w-full grid-cols-3 gap-1 bg-muted/60 p-1 sm:w-fit sm:min-w-[430px]">
+              <TabsTrigger value="all" className="min-h-9 whitespace-normal px-2 py-2 text-xs leading-tight sm:text-sm">
+                {t("mySpace.scoreSheet.tabAll")}
+              </TabsTrigger>
+              <TabsTrigger value="regular" className="min-h-9 whitespace-normal px-2 py-2 text-xs leading-tight sm:text-sm">
+                {t("mySpace.scoreSheet.regularSheet")}
+              </TabsTrigger>
+              <TabsTrigger value="conversion" className="min-h-9 whitespace-normal px-2 py-2 text-xs leading-tight sm:text-sm">
+                {t("mySpace.scoreSheet.conversionSheet")}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="min-w-0 space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                {t("mySpace.scoreSheet.filterClass")}
+              </label>
+              <SearchableMultiSelect
+                options={classFilterOptions}
+                value={classFilters}
+                onChange={setClassFilters}
+                placeholder={t("mySpace.scoreSheet.filterAllClasses")}
+                searchPlaceholder={t("mySpace.scoreSheet.filterSearchClasses")}
+                className="w-full bg-background"
+                data-testid="filter-my-space-score-sheet-class"
+              />
+            </div>
+            <div className="min-w-0 space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                {t("mySpace.scoreSheet.filterScoreSheet")}
+              </label>
+              <SearchableMultiSelect
+                options={scoreSheetFilterOptions}
+                value={scoreSheetFilters}
+                onChange={setScoreSheetFilters}
+                placeholder={t("mySpace.scoreSheet.filterAllScoreSheets")}
+                searchPlaceholder={t("mySpace.scoreSheet.filterSearchScoreSheets")}
+                className="w-full bg-background"
+                data-testid="filter-my-space-score-sheet-template"
+              />
+            </div>
+            <div className="min-w-0 space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                {t("mySpace.scoreSheet.filterStatus")}
+              </label>
+              <SearchableMultiSelect
+                options={statusFilterOptions}
+                value={statusFilters}
+                onChange={setStatusFilters}
+                placeholder={t("mySpace.scoreSheet.filterAllStatuses")}
+                searchPlaceholder={t("mySpace.scoreSheet.filterSearchStatuses")}
+                className="w-full bg-background"
+                data-testid="filter-my-space-score-sheet-status"
+              />
+            </div>
+          </div>
+
+          {(activeTab !== "all" || classFilters.length > 0 || scoreSheetFilters.length > 0 || statusFilters.length > 0) && (
+            <div className="flex justify-end">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs text-muted-foreground"
+                onClick={() => {
+                  setActiveTab("all");
+                  setClassFilters([]);
+                  setScoreSheetFilters([]);
+                  setStatusFilters([]);
+                }}
+              >
+                {t("mySpace.scoreSheet.filterClear")}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
       {timelineEntries.length === 0 ? (
         !isLoadingAssignedAssessments && !isAssignedAssessmentsError ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground">
@@ -294,6 +471,23 @@ export function StaffScoreSheet() {
             <p className="text-sm">{t("mySpace.scoreSheet.staffEmpty")}</p>
           </div>
         ) : null
+      ) : filteredTimelineEntries.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
+          <BookOpen className="h-10 w-10 opacity-25" />
+          <p className="text-sm">{t("mySpace.scoreSheet.filterNoResults")}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setActiveTab("all");
+              setClassFilters([]);
+              setScoreSheetFilters([]);
+              setStatusFilters([]);
+            }}
+          >
+            {t("mySpace.scoreSheet.filterClear")}
+          </Button>
+        </div>
       ) : (
         <div className="-mx-3 space-y-0 bg-gray-100 px-3 py-4 sm:-mx-4 sm:px-4 dark:bg-muted/20">
             {sortedDates.map((dateKey, dateIdx) => {
@@ -369,9 +563,6 @@ export function StaffScoreSheet() {
                                 </p>
                               </div>
                               <div className="flex shrink-0 items-center gap-1.5">
-                                <Badge className="rounded-full border border-violet-200 bg-violet-100 px-2.5 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-950/40">
-                                  {t("mySpace.scoreSheet.conversionSheet")}
-                                </Badge>
                                 <span className="inline-flex items-center gap-1 text-[11px] font-medium text-violet-700 dark:text-violet-300">
                                   <Eye className="h-3.5 w-3.5" />
                                   <span className="hidden sm:inline">{t("mySpace.scoreSheet.view")}</span>
@@ -381,6 +572,9 @@ export function StaffScoreSheet() {
 
                             <div className="mt-2 space-y-2 border-t border-dashed border-gray-200 pt-2 dark:border-border">
                               <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+                                <Badge className="rounded-full border border-violet-200 bg-violet-100 px-2.5 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-950/40">
+                                  {t("mySpace.scoreSheet.conversionSheet")}
+                                </Badge>
                                 <div className="flex min-w-0 items-center gap-1.5">
                                   <Badge
                                     variant="outline"
@@ -473,9 +667,6 @@ export function StaffScoreSheet() {
                             </div>
 
                             <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-                              <Badge className="rounded-full border border-blue-200 bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-800 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/40">
-                                {t("mySpace.scoreSheet.regularSheet")}
-                              </Badge>
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -507,6 +698,9 @@ export function StaffScoreSheet() {
 
                           <div className="mt-2 space-y-2 border-t border-dashed border-gray-200 pt-2 dark:border-border">
                             <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+                              <Badge className="rounded-full border border-blue-200 bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-800 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/40">
+                                {t("mySpace.scoreSheet.regularSheet")}
+                              </Badge>
                               <div className="flex min-w-0 items-center">
                                 {book.scoreSheetName ? (
                                   <Badge
@@ -539,7 +733,7 @@ export function StaffScoreSheet() {
                               )}
                             </div>
 
-                            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[11px]">
+                            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px]">
                               <p className="min-w-0 truncate text-gray-500 dark:text-muted-foreground">
                                 {t("mySpace.scoreSheet.created")}: {book.createdByName ?? "—"} · {formatDate(book.createdAt)}
                               </p>
