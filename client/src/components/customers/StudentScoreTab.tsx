@@ -266,17 +266,38 @@ export function StudentScoreTab({
         return true;
     }
   });
-  const totalPages = Math.ceil(filteredEntries.length / pageSize) || 1;
-  const currentPage = Math.min(page, totalPages);
-  const paginated = filteredEntries.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const from = filteredEntries.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
-  const to = Math.min(currentPage * pageSize, filteredEntries.length);
-  const timelineGroups = paginated.reduce<Record<string, ScoreEntry[]>>((groups, entry) => {
+  const timelineGroups = filteredEntries.reduce<Record<string, ScoreEntry[]>>((groups, entry) => {
     const dateKey = getTimelineDateKey(entry);
     (groups[dateKey] ??= []).push(entry);
     return groups;
   }, {});
-  const sortedDates = Object.keys(timelineGroups).sort((a, b) => b.localeCompare(a));
+  const sortedDateKeys = Object.keys(timelineGroups).sort((a, b) =>
+    a === "unknown" ? 1 : b === "unknown" ? -1 : b.localeCompare(a),
+  );
+  const timelinePages: string[][] = [];
+  let nextPageDateKeys: string[] = [];
+  let nextPageEntryCount = 0;
+  for (const dateKey of sortedDateKeys) {
+    const dateEntryCount = timelineGroups[dateKey].length;
+    if (nextPageDateKeys.length > 0 && nextPageEntryCount + dateEntryCount > pageSize) {
+      timelinePages.push(nextPageDateKeys);
+      nextPageDateKeys = [];
+      nextPageEntryCount = 0;
+    }
+    nextPageDateKeys.push(dateKey);
+    nextPageEntryCount += dateEntryCount;
+  }
+  if (nextPageDateKeys.length > 0) timelinePages.push(nextPageDateKeys);
+
+  const totalPages = timelinePages.length || 1;
+  const currentPage = Math.min(page, totalPages);
+  const sortedDates = timelinePages[currentPage - 1] ?? [];
+  const entriesBeforePage = timelinePages
+    .slice(0, currentPage - 1)
+    .reduce((count, dateKeys) => count + dateKeys.reduce((pageCount, dateKey) => pageCount + timelineGroups[dateKey].length, 0), 0);
+  const visibleEntryCount = sortedDates.reduce((count, dateKey) => count + timelineGroups[dateKey].length, 0);
+  const from = visibleEntryCount === 0 ? 0 : entriesBeforePage + 1;
+  const to = entriesBeforePage + visibleEntryCount;
 
   return (
     <>
