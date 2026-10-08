@@ -387,13 +387,13 @@ export function StaffScoreSheet() {
             onValueChange={(value) => setActiveTab(value as StaffScoreSheetTab)}
           >
             <TabsList className="grid h-auto w-full grid-cols-3 gap-1 bg-muted/60 p-1 sm:w-fit sm:min-w-[430px]">
-              <TabsTrigger value="all" className="min-h-9 whitespace-normal px-2 py-2 text-xs leading-tight sm:text-sm">
+              <TabsTrigger value="all" className="min-h-9 whitespace-normal px-2 py-2 text-xs leading-tight data-[state=active]:bg-primary data-[state=active]:text-primary-foreground sm:text-sm">
                 {t("mySpace.scoreSheet.tabAll")}
               </TabsTrigger>
-              <TabsTrigger value="regular" className="min-h-9 whitespace-normal px-2 py-2 text-xs leading-tight sm:text-sm">
+              <TabsTrigger value="regular" className="min-h-9 whitespace-normal px-2 py-2 text-xs leading-tight data-[state=active]:bg-primary data-[state=active]:text-primary-foreground sm:text-sm">
                 {t("mySpace.scoreSheet.regularSheet")}
               </TabsTrigger>
-              <TabsTrigger value="conversion" className="min-h-9 whitespace-normal px-2 py-2 text-xs leading-tight sm:text-sm">
+              <TabsTrigger value="conversion" className="min-h-9 whitespace-normal px-2 py-2 text-xs leading-tight data-[state=active]:bg-primary data-[state=active]:text-primary-foreground sm:text-sm">
                 {t("mySpace.scoreSheet.conversionSheet")}
               </TabsTrigger>
             </TabsList>
