@@ -39,6 +39,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/hooks/use-language";
 import { orderScoreSheetItemsByCategorySnapshot } from "@/lib/score-sheet-order";
 import { ScoreSheetTypeSwitch, type ScoreSheetDialogMode } from "./ScoreSheetTypeSwitch";
+import { ScoreSheetConversionSelector } from "./ScoreSheetConversionSelector";
 
 interface GradeBookEditDialogProps {
   open: boolean;
@@ -593,17 +594,7 @@ export function GradeBookEditDialog({
             </div>
           </div>
           ) : (
-            <div className="flex flex-1 min-h-0 items-center justify-center p-6">
-              <div className="max-w-lg rounded-xl border border-dashed bg-muted/20 p-8 text-center">
-                <ClipboardList className="mx-auto mb-3 h-10 w-10 text-primary/40" />
-                <h2 className="text-base font-semibold">
-                  {t("mySpace.scoreSheet.conversionComingSoonTitle")}
-                </h2>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  {t("mySpace.scoreSheet.conversionComingSoonDescription")}
-                </p>
-              </div>
-            </div>
+            <ScoreSheetConversionSelector enabled={open && dialogMode === "conversion"} layout="edit" />
           )}
 
           <DialogFooter className="px-6 py-4 border-t shrink-0 flex items-center justify-end gap-3">

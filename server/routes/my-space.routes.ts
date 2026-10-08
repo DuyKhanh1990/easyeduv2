@@ -4508,6 +4508,131 @@ export function registerMySpaceRoutes(app: Express): void {
     }
   });
 
+  app.get("/api/my-space/score-sheet/staff-students", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+      const staffRecord = await getStaffForUser(user.id);
+      if (!staffRecord) return res.json([]);
+
+      const result = await db.execute(sql`
+        SELECT
+          s.id AS "studentId",
+          s.full_name AS "fullName",
+          s.code,
+          c.id AS "classId",
+          c.class_code AS "classCode",
+          c.name AS "className"
+        FROM student_classes sc
+        JOIN students s ON s.id = sc.student_id
+        JOIN classes c ON c.id = sc.class_id
+        WHERE sc.status = 'active'
+          AND (
+            ${staffRecord.id} = ANY(c.teacher_ids)
+            OR ${staffRecord.id} = ANY(c.manager_ids)
+            OR EXISTS (
+              SELECT 1 FROM class_sessions cs
+              WHERE cs.class_id = c.id
+                AND cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM class_sessions cs
+            JOIN class_session_teacher_assignments csta ON csta.class_session_id = cs.id
+            WHERE cs.class_id = c.id
+              AND csta.teacher_id = ${staffRecord.id}
+            )
+          )
+          AND EXISTS (
+            SELECT 1 FROM staff_assignments sa
+            WHERE sa.staff_id = ${staffRecord.id}
+              AND sa.location_id = c.location_id
+          )
+        ORDER BY LOWER(s.full_name), s.code, c.class_code
+      `);
+
+      const studentsById = new Map<string, {
+        studentId: string;
+        fullName: string;
+        code: string | null;
+        classes: Array<{ classId: string; classCode: string; className: string }>;
+      }>();
+
+      for (const row of result.rows as Array<any>) {
+        const studentId = String(row.studentId);
+        let student = studentsById.get(studentId);
+        if (!student) {
+          student = {
+            studentId,
+            fullName: row.fullName ?? "",
+            code: row.code ?? null,
+            classes: [],
+          };
+          studentsById.set(studentId, student);
+        }
+        if (!student.classes.some((studentClass) => studentClass.classId === String(row.classId))) {
+          student.classes.push({
+            classId: String(row.classId),
+            classCode: row.classCode ?? "",
+            className: row.className ?? "",
+          });
+        }
+      }
+
+      res.json(Array.from(studentsById.values()));
+    } catch (err: any) {
+      console.error("My Space eligible score-sheet students error:", err);
+      res.status(500).json({ message: err.message || "Lỗi khi tải danh sách học viên" });
+    }
+  });
+
+  app.get("/api/my-space/score-sheet/staff-classes", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+      const staffRecord = await getStaffForUser(user.id);
+      if (!staffRecord) return res.json([]);
+
+      const result = await db.execute(sql`
+        SELECT
+          c.id,
+          c.class_code AS "classCode",
+          c.name,
+          c.location_id AS "locationId"
+        FROM classes c
+        WHERE (
+          ${staffRecord.id} = ANY(c.teacher_ids)
+          OR ${staffRecord.id} = ANY(c.manager_ids)
+          OR EXISTS (
+            SELECT 1 FROM class_sessions cs
+            WHERE cs.class_id = c.id
+              AND cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM class_sessions cs
+            JOIN class_session_teacher_assignments csta ON csta.class_session_id = cs.id
+            WHERE cs.class_id = c.id
+              AND csta.teacher_id = ${staffRecord.id}
+          )
+        )
+        AND EXISTS (
+          SELECT 1 FROM staff_assignments sa
+          WHERE sa.staff_id = ${staffRecord.id}
+            AND sa.location_id = c.location_id
+        )
+        ORDER BY c.class_code ASC
+      `);
+
+      res.json(result.rows);
+    } catch (err: any) {
+      console.error("My Space score-sheet classes error:", err);
+      res.status(500).json({ message: err.message || "Lỗi khi tải danh sách lớp" });
+    }
+  });
+
   app.get("/api/my-space/score-sheet/staff", async (req, res) => {
     try {
       const user = req.user as any;
