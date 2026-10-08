@@ -82,12 +82,18 @@ function ScoreDetailDialog({
       : <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{comment}</p>
     : <p className="text-sm italic text-muted-foreground">Chưa có nhận xét cho bảng điểm này.</p>;
 
+  const isWideScoreEntry = entry.type === "Bảng điểm" || entry.type === "BTVN";
+  const wideDialogClassName = "z-[300] max-h-[calc(100dvh-2rem)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] sm:w-[94vw] sm:max-w-[94vw] xl:max-w-[1180px]";
+
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent
+        overlayClassName="z-[250] bg-black/35 backdrop-blur-[2px]"
         className={isGradeBookEntry
-          ? "z-[300] flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-3xl flex-col overflow-hidden p-0"
-          : "z-[300] max-h-[calc(100dvh-2rem)] max-w-md overflow-y-auto"}
+          ? `${wideDialogClassName} flex flex-col overflow-hidden p-0`
+          : isWideScoreEntry
+            ? `${wideDialogClassName} overflow-y-auto`
+            : "z-[300] max-h-[calc(100dvh-2rem)] max-w-md overflow-y-auto"}
       >
         <DialogHeader className={isGradeBookEntry ? "shrink-0 px-5 pt-5 pb-4" : ""}>
           <DialogTitle className="text-sm font-semibold leading-snug pr-6">
