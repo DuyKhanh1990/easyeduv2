@@ -38,6 +38,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/hooks/use-language";
 import { orderScoreSheetItemsByCategorySnapshot } from "@/lib/score-sheet-order";
+import { ScoreSheetTypeSwitch, type ScoreSheetDialogMode } from "./ScoreSheetTypeSwitch";
 
 interface GradeBookEditDialogProps {
   open: boolean;
@@ -64,6 +65,7 @@ export function GradeBookEditDialog({
   const { t } = useLanguage();
 
   const [title, setTitle] = useState(book.title);
+  const [dialogMode, setDialogMode] = useState<ScoreSheetDialogMode>("regular");
   const [published, setPublished] = useState(book.published);
   const [scores, setScores] = useState<Record<string, Record<string, string>>>({});
   const [includedStudentIds, setIncludedStudentIds] = useState<Set<string>>(new Set());
@@ -121,6 +123,7 @@ export function GradeBookEditDialog({
   useEffect(() => {
     if (!open) {
       initializedForBookId.current = null;
+      setDialogMode("regular");
     }
   }, [open, book.id]);
 
@@ -131,6 +134,7 @@ export function GradeBookEditDialog({
     if (initializedForBookId.current === book.id) return;
     initializedForBookId.current = book.id;
 
+    setDialogMode("regular");
     setTitle(book.title);
     setPublished(book.published);
     setScores({});
@@ -354,6 +358,7 @@ export function GradeBookEditDialog({
   const hasData = hasAnyScore || hasAnyComment;
 
   const handleSubmit = () => {
+    if (dialogMode !== "regular") return;
     if (!title.trim()) {
        toast({ title: t("mySpace.scoreSheet.enterTitle"), variant: "destructive" });
       return;
@@ -373,10 +378,18 @@ export function GradeBookEditDialog({
     <>
       <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
         <DialogContent className="w-screen h-screen max-w-none rounded-none m-0 flex flex-col p-0 gap-0">
-          <DialogHeader className="px-6 pt-5 pb-4 border-b shrink-0">
-            <DialogTitle>{t("mySpace.scoreSheet.editTitle")} — {book.title}</DialogTitle>
+          <DialogHeader className="flex-row flex-wrap items-center gap-x-6 gap-y-3 space-y-0 border-b px-6 py-3 shrink-0">
+            <DialogTitle className="min-w-0">
+              {t("mySpace.scoreSheet.editTitle")} — {book.title}
+            </DialogTitle>
+            <ScoreSheetTypeSwitch
+              value={dialogMode}
+              onValueChange={setDialogMode}
+              className="w-full max-w-[360px]"
+            />
           </DialogHeader>
 
+          {dialogMode === "regular" ? (
           <div className="flex flex-1 min-h-0">
             {/* Left sidebar */}
             <div className="w-64 border-r p-5 flex flex-col gap-4 overflow-y-auto shrink-0">
@@ -579,37 +592,54 @@ export function GradeBookEditDialog({
               )}
             </div>
           </div>
+          ) : (
+            <div className="flex flex-1 min-h-0 items-center justify-center p-6">
+              <div className="max-w-lg rounded-xl border border-dashed bg-muted/20 p-8 text-center">
+                <ClipboardList className="mx-auto mb-3 h-10 w-10 text-primary/40" />
+                <h2 className="text-base font-semibold">
+                  {t("mySpace.scoreSheet.conversionComingSoonTitle")}
+                </h2>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {t("mySpace.scoreSheet.conversionComingSoonDescription")}
+                </p>
+              </div>
+            </div>
+          )}
 
           <DialogFooter className="px-6 py-4 border-t shrink-0 flex items-center justify-end gap-3">
             {/* Publish toggle – sits right beside action buttons */}
-            <div className={`flex items-center gap-2 border rounded-lg px-3 py-1.5 ${hasData ? "border-border" : "border-dashed border-border/50 bg-muted/30"}`}>
-              <Switch
-                id="edit-published"
-                checked={published}
-                disabled={!hasData}
-                onCheckedChange={(val) => {
-                  if (val && !hasData) return;
-                  setPublished(val);
-                }}
-              />
-              <Label
-                htmlFor="edit-published"
-                className={`select-none leading-tight ${hasData ? "cursor-pointer" : "cursor-not-allowed"}`}
-              >
-                {published ? (
-                  <span className="text-[12px] font-medium text-green-600 dark:text-green-400">{t("mySpace.scoreSheet.publishedLabel")}</span>
-                ) : hasData ? (
-                  <span className="text-[12px] text-muted-foreground">{t("mySpace.scoreSheet.unpublishedLabel")}</span>
-                ) : (
-                  <span className="text-[11px] italic text-muted-foreground/60">{t("mySpace.scoreSheet.needsScoresOrComments")}</span>
-                )}
-              </Label>
-            </div>
+            {dialogMode === "regular" && (
+              <div className={`flex items-center gap-2 border rounded-lg px-3 py-1.5 ${hasData ? "border-border" : "border-dashed border-border/50 bg-muted/30"}`}>
+                <Switch
+                  id="edit-published"
+                  checked={published}
+                  disabled={!hasData}
+                  onCheckedChange={(val) => {
+                    if (val && !hasData) return;
+                    setPublished(val);
+                  }}
+                />
+                <Label
+                  htmlFor="edit-published"
+                  className={`select-none leading-tight ${hasData ? "cursor-pointer" : "cursor-not-allowed"}`}
+                >
+                  {published ? (
+                    <span className="text-[12px] font-medium text-green-600 dark:text-green-400">{t("mySpace.scoreSheet.publishedLabel")}</span>
+                  ) : hasData ? (
+                    <span className="text-[12px] text-muted-foreground">{t("mySpace.scoreSheet.unpublishedLabel")}</span>
+                  ) : (
+                    <span className="text-[11px] italic text-muted-foreground/60">{t("mySpace.scoreSheet.needsScoresOrComments")}</span>
+                  )}
+                </Label>
+              </div>
+            )}
 
             <Button variant="outline" onClick={onClose}>{t("mySpace.scoreSheet.cancel")}</Button>
-            <Button onClick={handleSubmit} disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? t("mySpace.scoreSheet.saving") : t("mySpace.scoreSheet.update")}
-            </Button>
+            {dialogMode === "regular" && (
+              <Button onClick={handleSubmit} disabled={updateMutation.isPending}>
+                {updateMutation.isPending ? t("mySpace.scoreSheet.saving") : t("mySpace.scoreSheet.update")}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

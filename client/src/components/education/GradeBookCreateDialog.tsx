@@ -42,6 +42,7 @@ import { ClipboardList, MessageSquarePlus, Trash2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/hooks/use-language";
+import { ScoreSheetTypeSwitch, type ScoreSheetDialogMode } from "./ScoreSheetTypeSwitch";
 
 interface GradeBookCreateDialogProps {
   open: boolean;
@@ -60,6 +61,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
   const [title, setTitle] = useState("");
   const [selectedSessionId, setSelectedSessionId] = useState<string>(NONE_VALUE);
   const [selectedScoreSheetId, setSelectedScoreSheetId] = useState<string>("");
+  const [dialogMode, setDialogMode] = useState<ScoreSheetDialogMode>("regular");
   const [scores, setScores] = useState<Record<string, Record<string, string>>>({});
   const [removedStudentIds, setRemovedStudentIds] = useState<Set<string>>(new Set());
   const [pendingRemoval, setPendingRemoval] = useState<{ id: string; name: string } | null>(null);
@@ -123,6 +125,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
       setTitle("");
       setSelectedSessionId(NONE_VALUE);
       setSelectedScoreSheetId("");
+      setDialogMode("regular");
       setScores({});
       setRemovedStudentIds(new Set());
       setPublished(false);
@@ -253,6 +256,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
   });
 
   const handleSubmit = () => {
+    if (dialogMode !== "regular") return;
     if (!selectedClassId) {
       toast({ title: t("mySpace.scoreSheet.chooseClass"), variant: "destructive" });
       return;
@@ -322,10 +326,16 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
     <>
       <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
         <DialogContent className="w-screen h-screen max-w-none rounded-none m-0 flex flex-col p-0 gap-0">
-          <DialogHeader className="px-6 pt-5 pb-4 border-b shrink-0">
-            <DialogTitle>{t("mySpace.scoreSheet.createTitle")}</DialogTitle>
+          <DialogHeader className="flex-row flex-wrap items-center gap-x-6 gap-y-3 space-y-0 border-b px-6 py-3 shrink-0">
+            <DialogTitle className="shrink-0">{t("mySpace.scoreSheet.createTitle")}</DialogTitle>
+            <ScoreSheetTypeSwitch
+              value={dialogMode}
+              onValueChange={setDialogMode}
+              className="w-full max-w-[360px]"
+            />
           </DialogHeader>
 
+          {dialogMode === "regular" ? (
           <div className="flex flex-1 min-h-0">
             <div className="w-[24%] border-r p-5 flex flex-col gap-4 overflow-y-auto shrink-0">
               <div className="space-y-1.5">
@@ -591,34 +601,51 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
               )}
             </div>
           </div>
+          ) : (
+            <div className="flex flex-1 min-h-0 items-center justify-center p-6">
+              <div className="max-w-lg rounded-xl border border-dashed bg-muted/20 p-8 text-center">
+                <ClipboardList className="mx-auto mb-3 h-10 w-10 text-primary/40" />
+                <h2 className="text-base font-semibold">
+                  {t("mySpace.scoreSheet.conversionComingSoonTitle")}
+                </h2>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {t("mySpace.scoreSheet.conversionComingSoonDescription")}
+                </p>
+              </div>
+            </div>
+          )}
 
           <DialogFooter className="px-6 py-4 border-t shrink-0">
-            <div className="flex items-center gap-3 mr-auto">
-              <Switch
-                id="create-published-switch"
-                checked={published}
-                onCheckedChange={setPublished}
-              />
-              <Label htmlFor="create-published-switch" className="cursor-pointer select-none">
-                {published ? (
-                  <span className="text-green-600 dark:text-green-400 font-medium">
-                    {t("mySpace.scoreSheet.publishAndSend")}
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">{t("mySpace.scoreSheet.saveInSystem")}</span>
-                )}
-              </Label>
-            </div>
+            {dialogMode === "regular" && (
+              <div className="flex items-center gap-3 mr-auto">
+                <Switch
+                  id="create-published-switch"
+                  checked={published}
+                  onCheckedChange={setPublished}
+                />
+                <Label htmlFor="create-published-switch" className="cursor-pointer select-none">
+                  {published ? (
+                    <span className="text-green-600 dark:text-green-400 font-medium">
+                      {t("mySpace.scoreSheet.publishAndSend")}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">{t("mySpace.scoreSheet.saveInSystem")}</span>
+                  )}
+                </Label>
+              </div>
+            )}
             <Button variant="outline" onClick={onClose}>
               {t("mySpace.scoreSheet.cancel")}
             </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={createMutation.isPending}
-              data-testid="button-create-gradebook-submit"
-            >
-              {createMutation.isPending ? t("mySpace.scoreSheet.saving") : t("mySpace.scoreSheet.save")}
-            </Button>
+            {dialogMode === "regular" && (
+              <Button
+                onClick={handleSubmit}
+                disabled={createMutation.isPending}
+                data-testid="button-create-gradebook-submit"
+              >
+                {createMutation.isPending ? t("mySpace.scoreSheet.saving") : t("mySpace.scoreSheet.save")}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

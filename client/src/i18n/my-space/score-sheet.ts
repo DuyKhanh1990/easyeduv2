@@ -2,6 +2,9 @@ export const scoreSheetTranslations = {
   vi: {
     "mySpace.scoreSheet.title": "Bảng điểm của tôi",
     "mySpace.scoreSheet.count": "bảng điểm",
+    "mySpace.scoreSheet.typeLabel": "Loại bảng điểm",
+    "mySpace.scoreSheet.conversionComingSoonTitle": "Giao diện bảng điểm quy đổi sẽ được bổ sung sau",
+    "mySpace.scoreSheet.conversionComingSoonDescription": "Chọn Bảng điểm thường để tiếp tục thao tác hiện tại. Dữ liệu bảng điểm thường không bị thay đổi.",
     "mySpace.scoreSheet.tabAll": "Tất cả",
     "mySpace.scoreSheet.filterClass": "Lớp:",
     "mySpace.scoreSheet.filterScoreSheet": "Bảng điểm:",
@@ -131,6 +134,9 @@ export const scoreSheetTranslations = {
   en: {
     "mySpace.scoreSheet.title": "My Score Sheet",
     "mySpace.scoreSheet.count": "score sheets",
+    "mySpace.scoreSheet.typeLabel": "Score sheet type",
+    "mySpace.scoreSheet.conversionComingSoonTitle": "The conversion score sheet interface will be added later",
+    "mySpace.scoreSheet.conversionComingSoonDescription": "Select Regular score sheet to continue with the current workflow. Regular score sheet data is unchanged.",
     "mySpace.scoreSheet.tabAll": "All",
     "mySpace.scoreSheet.filterClass": "Class:",
     "mySpace.scoreSheet.filterScoreSheet": "Score sheet:",
