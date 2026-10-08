@@ -7,7 +7,7 @@ import {
   scoreSheetAssessmentAttemptValuesSchema,
   type ScoreSheetAssessmentAttemptValues,
 } from "@shared/score-sheet-assessment-scoring";
-import type { ManualScoreSheetPayload } from "@shared/manual-score-sheet";
+import type { ScoreSheetAssessmentInput } from "@shared/score-sheet-assessment";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,22 +42,9 @@ type ConversionTemplateOption = ScoreSheetTemplate & {
   conversionTemplate: ScoreConversionTemplate | null;
 };
 
-type ManualScoreSheetDetail = {
-  id: string;
-  templateId: string;
-  templateSnapshot: ScoreSheetTemplate;
-  conversionTemplateSnapshot: ScoreConversionTemplate | null;
-  selectionMode: SelectionMode;
-  classId: string | null;
-  studentIds: string[];
-  students: Array<{ id: string; fullName: string; code: string | null }>;
-  scoresByStudent: Record<string, ScoreSheetAssessmentAttemptValues>;
-};
-
 interface ScoreSheetConversionSelectorProps {
   enabled: boolean;
-  layout: "create" | "edit";
-  manualSheetId?: string;
+  layout: "create";
   onSaved?: () => void;
 }
 
@@ -73,7 +60,6 @@ function getScoreCellKey(skillId: string, partId: string | null): string {
 export function ScoreSheetConversionSelector({
   enabled,
   layout,
-  manualSheetId,
   onSaved,
 }: ScoreSheetConversionSelectorProps) {
   const { t } = useLanguage();
@@ -134,39 +120,15 @@ export function ScoreSheetConversionSelector({
     },
   });
 
-  const { data: manualSheet, isLoading: manualSheetLoading, isError: manualSheetError } =
-    useQuery<ManualScoreSheetDetail>({
-      queryKey: [`/api/my-space/score-sheet/manual-conversions/${manualSheetId}`],
-      enabled: enabled && Boolean(manualSheetId),
-      queryFn: async () => {
-        const response = await fetch(
-          `/api/my-space/score-sheet/manual-conversions/${manualSheetId}`,
-          { credentials: "include" },
-        );
-        const payload = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(payload?.message ?? "Không thể tải bảng điểm.");
-        }
-        return payload;
-      },
-    });
-
   const saveMutation = useMutation({
-    mutationFn: async (payload: ManualScoreSheetPayload) =>
-      apiRequest(
-        manualSheetId ? "PUT" : "POST",
-        manualSheetId
-          ? `/api/my-space/score-sheet/manual-conversions/${manualSheetId}`
-          : "/api/my-space/score-sheet/manual-conversions",
-        payload,
-      ),
+    mutationFn: async (payload: ScoreSheetAssessmentInput) =>
+      apiRequest("POST", "/api/score-sheet-assessments", payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/manual-conversions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned/students"] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff"] });
       toast({
-        title: manualSheetId
-          ? t("mySpace.scoreSheet.conversionUpdateSuccess")
-          : t("mySpace.scoreSheet.conversionCreateSuccess"),
+        title: t("mySpace.scoreSheet.conversionCreateSuccess"),
       });
       onSaved?.();
     },
@@ -181,31 +143,18 @@ export function ScoreSheetConversionSelector({
 
   const studentOptions = [
     ...eligibleStudents.map((student) => ({
-    value: student.studentId,
-    label: [student.fullName || t("mySpace.scoreSheet.studentLabel"), student.code]
-      .filter(Boolean)
-      .join(" — "),
+      value: student.studentId,
+      label: [student.fullName || t("mySpace.scoreSheet.studentLabel"), student.code]
+        .filter(Boolean)
+        .join(" — "),
     })),
-    ...(manualSheet?.students ?? [])
-      .filter((student) => !eligibleStudents.some((eligible) => eligible.studentId === student.id))
-      .map((student) => ({
-        value: student.id,
-        label: [student.fullName || t("mySpace.scoreSheet.studentLabel"), student.code]
-          .filter(Boolean)
-          .join(" — "),
-      })),
   ];
 
   const classRosterStudentIds = classRoster
     .map(getClassRosterStudentId)
     .filter((studentId): studentId is string => Boolean(studentId));
-  const classStudentIds = manualSheet
-    && selectionMode === "class"
-    && selectedClassId === manualSheet.classId
-    ? manualSheet.studentIds
-    : classRosterStudentIds;
   const visibleStudentIds = selectionMode === "class"
-    ? Array.from(new Set(classStudentIds))
+    ? Array.from(new Set(classRosterStudentIds))
     : selectedStudentIds;
   const currentStudentMap = new Map<string, EligibleStudent | any>();
   classRoster.forEach((student: any) => {
@@ -217,15 +166,6 @@ export function ScoreSheetConversionSelector({
     });
   });
   eligibleStudents.forEach((student) => currentStudentMap.set(student.studentId, student));
-  manualSheet?.students.forEach((student) => {
-    if (!currentStudentMap.has(student.id)) {
-      currentStudentMap.set(student.id, {
-        studentId: student.id,
-        fullName: student.fullName,
-        code: student.code,
-      });
-    }
-  });
   const selectedStudents = visibleStudentIds
     .map((id) => currentStudentMap.get(id))
     .filter(Boolean) as EligibleStudent[];
@@ -234,39 +174,7 @@ export function ScoreSheetConversionSelector({
   const usableTemplates = allTemplates.filter(
     (template) => !template.scoreConversionTemplateId || Boolean(template.conversionTemplate),
   );
-  const templateOptions = manualSheet && !usableTemplates.some((item) => item.id === manualSheet.templateId)
-    ? [{
-        ...manualSheet.templateSnapshot,
-        conversionTemplate: manualSheet.conversionTemplateSnapshot,
-      }, ...usableTemplates]
-    : usableTemplates;
-  const selectedTemplate = templateOptions.find((template) => template.id === selectedTemplateId);
-
-  useEffect(() => {
-    if (!manualSheet || !manualSheetId) return;
-    setSelectionMode(manualSheet.selectionMode);
-    setSelectedClassId(manualSheet.classId ?? "");
-    setSelectedStudentIds(manualSheet.selectionMode === "students" ? manualSheet.studentIds : []);
-    setSelectedTemplateId(manualSheet.templateId);
-    setScoresByStudent(manualSheet.scoresByStudent ?? {});
-    const inputs: Record<string, Record<string, string>> = {};
-    for (const studentId of manualSheet.studentIds) {
-      const values = scoreSheetAssessmentAttemptValuesSchema.parse(
-        manualSheet.scoresByStudent?.[studentId] ?? {},
-      );
-      const studentInputs: Record<string, string> = {};
-      for (const [skillId, score] of Object.entries(values.skillScores)) {
-        if (score != null) studentInputs[getScoreCellKey(skillId, null)] = String(score);
-      }
-      for (const [skillId, partValues] of Object.entries(values.partScores)) {
-        for (const [partId, score] of Object.entries(partValues)) {
-          if (score != null) studentInputs[getScoreCellKey(skillId, partId)] = String(score);
-        }
-      }
-      inputs[studentId] = studentInputs;
-    }
-    setScoreInputs(inputs);
-  }, [manualSheet, manualSheetId]);
+  const selectedTemplate = usableTemplates.find((template) => template.id === selectedTemplateId);
 
   const changeSelectionMode = (mode: SelectionMode) => {
     setSelectionMode(mode);
@@ -383,7 +291,6 @@ export function ScoreSheetConversionSelector({
   };
 
   const handleSave = () => {
-    if (manualSheetLoading) return;
     if (!selectedTemplate) {
       toast({
         title: t("mySpace.scoreSheet.conversionSelectTemplate"),
@@ -417,12 +324,17 @@ export function ScoreSheetConversionSelector({
       });
       return;
     }
-    const payload: ManualScoreSheetPayload = {
-      templateId: selectedTemplate.id,
-      selectionMode,
-      classId: selectionMode === "class" ? selectedClassId : null,
-      studentIds: selectedStudents.map((student) => student.studentId),
-      scoresByStudent: Object.fromEntries(
+    const dateCode = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+    const uniqueCode = crypto.randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
+    const payload: ScoreSheetAssessmentInput = {
+      code: `MAN-${dateCode}-${uniqueCode}`,
+      name: `${selectedTemplate.name.slice(0, 108)} - thủ công`,
+      scoreSheetTemplateId: selectedTemplate.id,
+      creationMode: "manual",
+      manualSelectionMode: selectionMode,
+      manualClassId: selectionMode === "class" ? selectedClassId : null,
+      manualStudentIds: selectedStudents.map((student) => student.studentId),
+      initialScoresByStudent: Object.fromEntries(
         selectedStudents.map((student) => [
           student.studentId,
           scoreSheetAssessmentAttemptValuesSchema.parse(
@@ -437,16 +349,12 @@ export function ScoreSheetConversionSelector({
   const formatScore = (score: number | null | undefined) =>
     score == null ? "—" : String(Number(score.toFixed(2)));
 
-  const panelContent = manualSheetLoading
-    ? t("mySpace.scoreSheet.conversionLoadingManualSheet")
-    : manualSheetError
-      ? t("mySpace.scoreSheet.conversionManualSheetLoadError")
-      : !selectedTemplate
-        ? t("mySpace.scoreSheet.conversionSelectTemplateHint")
-        : selectionMode === "class" && selectedClassId && rosterLoading
-          ? t("mySpace.scoreSheet.conversionLoadingStudents")
-          : selectionMode === "class" && selectedClassId && rosterError
-            ? t("mySpace.scoreSheet.conversionStudentsLoadError")
+  const panelContent = !selectedTemplate
+    ? t("mySpace.scoreSheet.conversionSelectTemplateHint")
+    : selectionMode === "class" && selectedClassId && rosterLoading
+      ? t("mySpace.scoreSheet.conversionLoadingStudents")
+      : selectionMode === "class" && selectedClassId && rosterError
+        ? t("mySpace.scoreSheet.conversionStudentsLoadError")
         : selectedStudents.length === 0
           ? selectionMode === "class"
             ? selectedClassId
@@ -555,7 +463,7 @@ export function ScoreSheetConversionSelector({
         <div className="space-y-2">
           <Label>{t("mySpace.scoreSheet.conversionTemplateLabel")}</Label>
           <SearchableSelect
-            options={templateOptions.map((template) => ({
+            options={usableTemplates.map((template) => ({
               value: template.id,
               label: `${template.code} — ${template.name}`,
             }))}
@@ -571,7 +479,7 @@ export function ScoreSheetConversionSelector({
                 : t("mySpace.scoreSheet.conversionSelectTemplate")
             }
             searchPlaceholder={t("mySpace.scoreSheet.conversionSearchTemplates")}
-            disabled={templatesLoading || templatesError || templateOptions.length === 0}
+            disabled={templatesLoading || templatesError || usableTemplates.length === 0}
             data-testid="conversion-template-select"
           />
           {templatesError && (
@@ -579,7 +487,7 @@ export function ScoreSheetConversionSelector({
               {t("mySpace.scoreSheet.conversionTemplatesLoadError")}
             </p>
           )}
-          {!templatesLoading && !templatesError && templateOptions.length === 0 && (
+          {!templatesLoading && !templatesError && usableTemplates.length === 0 && (
             <p className="text-xs text-muted-foreground">
               {t("mySpace.scoreSheet.conversionNoTemplates")}
             </p>
@@ -711,7 +619,6 @@ export function ScoreSheetConversionSelector({
             onClick={handleSave}
             disabled={
               saveMutation.isPending
-              || manualSheetLoading
               || Boolean(panelContent)
               || templatesLoading
               || templatesError
@@ -720,9 +627,7 @@ export function ScoreSheetConversionSelector({
           >
             {saveMutation.isPending
               ? t("mySpace.scoreSheet.saving")
-              : manualSheetId
-                ? t("mySpace.scoreSheet.conversionUpdate")
-                : t("mySpace.scoreSheet.conversionSave")}
+              : t("mySpace.scoreSheet.conversionSave")}
           </Button>
         </div>
       </section>

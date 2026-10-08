@@ -4,6 +4,7 @@ import {
   scoreSheetScoringPolicySchema,
   scoreSheetTemplateSchema,
 } from "./score-sheet-template";
+import { scoreSheetAssessmentAttemptValuesSchema } from "./score-sheet-assessment-scoring";
 
 export const scoreSheetAssessmentScoringPolicySchema = scoreSheetScoringPolicySchema;
 
@@ -25,9 +26,78 @@ const scoreSheetAssessmentInputFieldsSchema = z.object({
   scoreSheetTemplateId: z.string().uuid("Chọn bảng điểm mẫu áp dụng."),
 });
 
-export const scoreSheetAssessmentInputSchema = scoreSheetAssessmentInputFieldsSchema;
+const scoreSheetAssessmentCreationFieldsSchema = z.object({
+  creationMode: z.enum(["session", "manual"]).default("session"),
+  manualSelectionMode: z.enum(["class", "students"]).nullable().default(null),
+  manualClassId: z.string().uuid().nullable().default(null),
+  manualStudentIds: z.array(z.string().uuid()).max(500).default([]),
+});
 
-export const scoreSheetAssessmentSchema = scoreSheetAssessmentInputFieldsSchema.extend({
+const manualScoreSheetValidation = (
+  value: {
+    creationMode: "session" | "manual";
+    manualSelectionMode: "class" | "students" | null;
+    manualClassId: string | null;
+    manualStudentIds: string[];
+    initialScoresByStudent?: Record<string, unknown>;
+  },
+  context: z.RefinementCtx,
+) => {
+  if (value.creationMode !== "manual") return;
+  if (!value.manualSelectionMode || value.manualStudentIds.length === 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Chọn ít nhất một học viên để tạo bảng điểm thủ công.",
+      path: ["manualStudentIds"],
+    });
+  }
+  if (new Set(value.manualStudentIds).size !== value.manualStudentIds.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Học viên bị trùng trong bảng điểm.",
+      path: ["manualStudentIds"],
+    });
+  }
+  if (value.manualSelectionMode === "class" && !value.manualClassId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Chọn lớp trước khi tạo bảng điểm.",
+      path: ["manualClassId"],
+    });
+  }
+  if (value.manualSelectionMode === "students" && value.manualClassId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Không chọn lớp khi nhập học viên riêng lẻ.",
+      path: ["manualClassId"],
+    });
+  }
+  const selectedIds = new Set(value.manualStudentIds);
+  if (
+    value.initialScoresByStudent
+    && Object.keys(value.initialScoresByStudent).some((studentId) => !selectedIds.has(studentId))
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Có điểm thuộc học viên không nằm trong danh sách đã chọn.",
+      path: ["initialScoresByStudent"],
+    });
+  }
+};
+
+export const scoreSheetAssessmentInputSchema = scoreSheetAssessmentInputFieldsSchema
+  .merge(scoreSheetAssessmentCreationFieldsSchema)
+  .extend({
+    initialScoresByStudent: z.record(
+      z.string().uuid(),
+      scoreSheetAssessmentAttemptValuesSchema,
+    ).default({}),
+  })
+  .superRefine(manualScoreSheetValidation);
+
+export const scoreSheetAssessmentSchema = scoreSheetAssessmentInputFieldsSchema
+  .merge(scoreSheetAssessmentCreationFieldsSchema)
+  .extend({
   id: z.string().uuid(),
   // Non-null values are retained for older assessments created with a fixed deadline.
   scoreDeadlineAt: localDateTimeSchema.nullable().default(null),
@@ -37,9 +107,11 @@ export const scoreSheetAssessmentSchema = scoreSheetAssessmentInputFieldsSchema.
   conversionTemplateSnapshot: scoreConversionTemplateSchema.nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
-});
+  })
+  .superRefine(manualScoreSheetValidation);
 
-export type ScoreSheetAssessmentInput = z.infer<typeof scoreSheetAssessmentInputSchema>;
+export type ScoreSheetAssessmentInput = z.input<typeof scoreSheetAssessmentInputSchema>;
+export type ParsedScoreSheetAssessmentInput = z.infer<typeof scoreSheetAssessmentInputSchema>;
 export type ScoreSheetAssessment = z.infer<typeof scoreSheetAssessmentSchema>;
 
 export function resolveScoreSheetAssessmentDeadlineAt(

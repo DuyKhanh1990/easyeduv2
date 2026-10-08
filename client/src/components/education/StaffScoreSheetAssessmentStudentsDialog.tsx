@@ -43,6 +43,7 @@ export type StaffAssignedScoreSheetAssessment = {
   classId: string;
   classCode: string;
   className: string;
+  isManual?: boolean;
   locationName?: string | null;
   teacherNames?: string | null;
   sessionIndex: number | null;
@@ -139,6 +140,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
   const removedStudents = rosterQuery.data?.removedStudents ?? [];
   const scoreSheetTemplateName = assessment?.templateName ?? "Bảng điểm chưa đặt tên";
   const showIndividualPublication = Boolean(canManagePublication && assessment?.hasConversion);
+  const canManageRoster = canManageScores && !assessment?.isManual;
   const [editingStudent, setEditingStudent] = useState<AssessmentRosterStudent | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<AssessmentRosterStudent | null>(null);
   const [restoreMenuOpen, setRestoreMenuOpen] = useState(false);
@@ -317,7 +319,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
             </div>
           ) : (
             <div className="space-y-3">
-              {canManageScores && removedStudents.length > 0 && (
+              {canManageRoster && removedStudents.length > 0 && (
                 <div className="flex justify-end">
                   <Popover open={restoreMenuOpen} onOpenChange={setRestoreMenuOpen}>
                     <PopoverTrigger asChild>
@@ -481,18 +483,20 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                               >
                                 <Settings2 className="h-4 w-4" />
                               </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-destructive hover:text-destructive"
-                                onClick={() => setPendingRemoval(student)}
-                                title={`Xóa ${student.fullName} khỏi bảng điểm`}
-                                aria-label={`Xóa ${student.fullName} khỏi bảng điểm`}
-                                data-testid={`btn-remove-assessment-student-${student.studentId}`}
-                                disabled={removeStudentMutation.isPending}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              {canManageRoster && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-destructive hover:text-destructive"
+                                  onClick={() => setPendingRemoval(student)}
+                                  title={`Xóa ${student.fullName} khỏi bảng điểm`}
+                                  aria-label={`Xóa ${student.fullName} khỏi bảng điểm`}
+                                  data-testid={`btn-remove-assessment-student-${student.studentId}`}
+                                  disabled={removeStudentMutation.isPending}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
                             </div>
                           </TableCell>
                         )}

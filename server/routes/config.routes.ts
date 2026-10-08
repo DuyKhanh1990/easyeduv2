@@ -22,8 +22,12 @@ import {
   scoreSheetAssessmentInputSchema,
   scoreSheetAssessmentSchema,
   type ScoreSheetAssessment,
+  type ParsedScoreSheetAssessmentInput,
 } from "@shared/score-sheet-assessment";
-import { selectScoreSheetAssessmentAttemptSummary } from "@shared/score-sheet-assessment-scoring";
+import {
+  calculateScoreSheetAssessmentAttemptResult,
+  selectScoreSheetAssessmentAttemptSummary,
+} from "@shared/score-sheet-assessment-scoring";
 import { isScoreSheetAssessmentStudentPublished } from "@shared/score-sheet-assessment-publication";
 import {
   MY_SPACE_CALENDAR_RESOURCE,
@@ -31,7 +35,7 @@ import {
 } from "@shared/my-space-calendar-permissions";
 import { eq, and, sql, notExists, inArray, ne, isNull } from "drizzle-orm";
 import {
-  staffAssignments, departments, users, roles, students, shiftTemplates, classes, studentClasses, centerConfig,
+  staff, staffAssignments, departments, users, roles, students, shiftTemplates, classes, studentClasses, centerConfig,
   studentSessions, scoreSheetAssessmentStudentAttempts,
   courses, courseFeePackages, coursePrograms, courseProgramContents, activityLogs,
 } from "@shared/schema";
@@ -266,6 +270,7 @@ async function mutateScoreSheetAssessments(
     assessments: ScoreSheetAssessment[];
     result: ScoreSheetAssessment | null;
   },
+  afterMutate?: (tx: any, result: ScoreSheetAssessment) => Promise<void>,
 ): Promise<ScoreSheetAssessment | null> {
   const { systemSettings } = await import("@shared/schema");
   return db.transaction(async (tx) => {
@@ -282,11 +287,79 @@ async function mutateScoreSheetAssessments(
 
     const assessments = parseScoreSheetAssessments(row.value);
     const result = mutate(assessments);
+    if (result.result && afterMutate) await afterMutate(tx, result.result);
     await tx.update(systemSettings)
       .set({ value: JSON.stringify(result.assessments), updatedAt: new Date() })
       .where(eq(systemSettings.key, SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY));
     return result.result;
   });
+}
+
+async function areManualScoreSheetStudentsAccessible(
+  req: any,
+  input: ParsedScoreSheetAssessmentInput,
+): Promise<boolean> {
+  if (req.isSuperAdmin) return true;
+  const [staffRecord] = await db
+    .select({ id: staff.id })
+    .from(staff)
+    .where(eq(staff.userId, req.user.id))
+    .limit(1);
+  if (!staffRecord) return false;
+
+  const classConstraint = input.manualSelectionMode === "class" && input.manualClassId
+    ? sql`AND c.id = ${input.manualClassId}::uuid`
+    : sql``;
+  const result = await db.execute(sql`
+    SELECT DISTINCT sc.student_id
+    FROM student_classes sc
+    JOIN classes c ON c.id = sc.class_id
+    WHERE sc.status = 'active'
+      AND sc.student_id = ANY(${input.manualStudentIds}::uuid[])
+      ${classConstraint}
+      AND (
+        ${staffRecord.id} = ANY(c.teacher_ids)
+        OR ${staffRecord.id} = ANY(c.manager_ids)
+        OR EXISTS (
+          SELECT 1
+          FROM class_sessions cs
+          WHERE cs.class_id = c.id
+            AND (
+              cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
+              OR EXISTS (
+                SELECT 1
+                FROM class_session_teacher_assignments csta
+                WHERE csta.class_session_id = cs.id
+                  AND csta.teacher_id = ${staffRecord.id}
+              )
+            )
+        )
+      )
+      AND EXISTS (
+        SELECT 1
+        FROM staff_assignments sa
+        WHERE sa.staff_id = ${staffRecord.id}
+          AND sa.location_id = c.location_id
+      )
+  `);
+  return new Set(result.rows.map((row: any) => String(row.student_id))).size
+    === input.manualStudentIds.length;
+}
+
+function hasScoreSheetAssessmentInput(values: {
+  skillScores: Record<string, number | null>;
+  partScores: Record<string, Record<string, number | null>>;
+  notes: Record<string, Record<string, string>>;
+  evaluationResponses: Record<string, string | boolean | null>;
+}): boolean {
+  return Object.values(values.skillScores).some((value) => value !== null)
+    || Object.values(values.partScores).some((parts) =>
+      Object.values(parts).some((value) => value !== null),
+    )
+    || Object.values(values.notes).some((parts) =>
+      Object.values(parts).some((value) => value.trim().length > 0),
+    )
+    || Object.values(values.evaluationResponses).some((value) => value !== null);
 }
 
 function validateScoreSheetTemplateConversion(
@@ -3071,7 +3144,86 @@ export function registerConfigRoutes(app: Express): void {
         }];
       });
 
-      res.json(mapped);
+      const manualAssessments = assessments.filter((assessment) =>
+        assessment.creationMode === "manual"
+        && Boolean(assessment.templateSnapshot.scoreConversionTemplateId),
+      );
+      const manualAssessmentIds = manualAssessments.map((assessment) => assessment.id);
+      const manualAttemptRows = manualAssessmentIds.length > 0
+        ? await db.select({
+            assessmentId: scoreSheetAssessmentStudentAttempts.assessmentId,
+            studentId: scoreSheetAssessmentStudentAttempts.studentId,
+            attemptNumber: scoreSheetAssessmentStudentAttempts.attemptNumber,
+            result: scoreSheetAssessmentStudentAttempts.result,
+          })
+          .from(scoreSheetAssessmentStudentAttempts)
+          .where(and(
+            isNull(scoreSheetAssessmentStudentAttempts.classSessionId),
+            inArray(scoreSheetAssessmentStudentAttempts.assessmentId, manualAssessmentIds),
+          ))
+        : [];
+      const manualAttemptsByAssessment = new Map<string, Map<string, Array<{
+        attemptNumber: number;
+        result: unknown;
+      }>>>();
+      for (const attempt of manualAttemptRows) {
+        const studentsForAssessment = manualAttemptsByAssessment.get(attempt.assessmentId) ?? new Map();
+        const attemptsForStudent = studentsForAssessment.get(attempt.studentId) ?? [];
+        attemptsForStudent.push({
+          attemptNumber: attempt.attemptNumber,
+          result: attempt.result,
+        });
+        studentsForAssessment.set(attempt.studentId, attemptsForStudent);
+        manualAttemptsByAssessment.set(attempt.assessmentId, studentsForAssessment);
+      }
+      const manualMapped = manualAssessments.map((assessment) => {
+        const currentTemplate = scoreSheetTemplatesById.get(assessment.scoreSheetTemplateId);
+        const attemptsByStudent = manualAttemptsByAssessment.get(assessment.id)
+          ?? new Map<string, Array<{ attemptNumber: number; result: unknown }>>();
+        const enteredStudentCount = attemptsByStudent.size;
+        const completedStudentCount = assessment.manualStudentIds.filter((studentId) =>
+          selectScoreSheetAssessmentAttemptSummary(
+            attemptsByStudent.get(studentId) ?? [],
+            assessment.scoringPolicy,
+            true,
+          )?.result.inputComplete,
+        ).length;
+        const individuallyPublishedStudentCount = Array.from(attemptsByStudent.values())
+          .filter((attempts) => attempts.some((attempt) =>
+            isScoreSheetAssessmentStudentPublished(attempt.result),
+          ))
+          .length;
+        return {
+          sessionId: assessment.id,
+          isManual: true,
+          classId: "manual",
+          classCode: "Thủ công",
+          className: "Thủ công",
+          locationName: null,
+          teacherNames: null,
+          sessionIndex: null,
+          studentCount: assessment.manualStudentIds.length,
+          enteredStudentCount,
+          completedStudentCount,
+          individuallyPublishedStudentCount,
+          allStudentsIndividuallyPublished: assessment.manualStudentIds.length > 0
+            && individuallyPublishedStudentCount === assessment.manualStudentIds.length,
+          examDate: assessment.createdAt,
+          assessmentId: assessment.id,
+          assessmentCode: assessment.code,
+          assessmentName: assessment.name,
+          templateName: currentTemplate?.name ?? assessment.templateSnapshot.name,
+          scoreDeadlineAt: null,
+          published: false,
+          attemptCount: assessment.attemptCount,
+          scoringPolicy: assessment.scoringPolicy,
+          hasConversion: true,
+        };
+      });
+
+      res.json([...mapped, ...manualMapped].sort((left, right) =>
+        String(right.examDate).localeCompare(String(left.examDate)),
+      ));
     } catch (err: any) {
       console.error("Assigned score conversion assessments error:", err);
       res.status(500).json({ message: err.message || "Lỗi khi tải danh sách bảng điểm Quy đổi" });
@@ -3138,7 +3290,14 @@ export function registerConfigRoutes(app: Express): void {
       const conversionAssessmentIds = Array.from(
         new Set(conversionRows.map((row: any) => String(row.assessment_id))),
       );
-      if (conversionSessionIds.length === 0) return res.json([]);
+      const manualAssessments = assessments.filter((assessment) =>
+        assessment.creationMode === "manual"
+        && Boolean(assessment.templateSnapshot.scoreConversionTemplateId),
+      );
+      const manualAssessmentIds = manualAssessments.map((assessment) => assessment.id);
+      const manualStudentIds = Array.from(
+        new Set(manualAssessments.flatMap((assessment) => assessment.manualStudentIds)),
+      );
 
       const excludedStudentIdsBySession = new Map<string, Set<string>>(
         conversionRows.map((row: any) => [
@@ -3146,16 +3305,18 @@ export function registerConfigRoutes(app: Express): void {
           new Set<string>((row.excluded_student_ids ?? []).map(String)),
         ]),
       );
-      const rosterRows = await db
-        .select({
-          classSessionId: studentSessions.classSessionId,
-          studentId: studentSessions.studentId,
-          code: students.code,
-          fullName: students.fullName,
-        })
-        .from(studentSessions)
-        .innerJoin(students, eq(students.id, studentSessions.studentId))
-        .where(inArray(studentSessions.classSessionId, conversionSessionIds));
+      const rosterRows = conversionSessionIds.length > 0
+        ? await db
+          .select({
+            classSessionId: studentSessions.classSessionId,
+            studentId: studentSessions.studentId,
+            code: students.code,
+            fullName: students.fullName,
+          })
+          .from(studentSessions)
+          .innerJoin(students, eq(students.id, studentSessions.studentId))
+          .where(inArray(studentSessions.classSessionId, conversionSessionIds))
+        : [];
       const studentsBySession = new Map<string, Map<string, {
         studentId: string;
         code: string;
@@ -3172,26 +3333,28 @@ export function registerConfigRoutes(app: Express): void {
         studentsBySession.set(sessionKey, sessionStudents);
       }
 
-      const attemptRows = await db
-        .select({
-          assessmentId: scoreSheetAssessmentStudentAttempts.assessmentId,
-          classSessionId: scoreSheetAssessmentStudentAttempts.classSessionId,
-          studentId: scoreSheetAssessmentStudentAttempts.studentId,
-          attemptNumber: scoreSheetAssessmentStudentAttempts.attemptNumber,
-          result: scoreSheetAssessmentStudentAttempts.result,
-        })
-        .from(scoreSheetAssessmentStudentAttempts)
-        .innerJoin(
-          studentSessions,
-          and(
-            eq(studentSessions.classSessionId, scoreSheetAssessmentStudentAttempts.classSessionId),
-            eq(studentSessions.studentId, scoreSheetAssessmentStudentAttempts.studentId),
-          ),
-        )
-        .where(and(
-          inArray(scoreSheetAssessmentStudentAttempts.classSessionId, conversionSessionIds),
-          inArray(scoreSheetAssessmentStudentAttempts.assessmentId, conversionAssessmentIds),
-        ));
+      const attemptRows = conversionSessionIds.length > 0
+        ? await db
+          .select({
+            assessmentId: scoreSheetAssessmentStudentAttempts.assessmentId,
+            classSessionId: scoreSheetAssessmentStudentAttempts.classSessionId,
+            studentId: scoreSheetAssessmentStudentAttempts.studentId,
+            attemptNumber: scoreSheetAssessmentStudentAttempts.attemptNumber,
+            result: scoreSheetAssessmentStudentAttempts.result,
+          })
+          .from(scoreSheetAssessmentStudentAttempts)
+          .innerJoin(
+            studentSessions,
+            and(
+              eq(studentSessions.classSessionId, scoreSheetAssessmentStudentAttempts.classSessionId),
+              eq(studentSessions.studentId, scoreSheetAssessmentStudentAttempts.studentId),
+            ),
+          )
+          .where(and(
+            inArray(scoreSheetAssessmentStudentAttempts.classSessionId, conversionSessionIds),
+            inArray(scoreSheetAssessmentStudentAttempts.assessmentId, conversionAssessmentIds),
+          ))
+        : [];
       const attemptsBySessionStudent = new Map<string, Array<{
         attemptNumber: number;
         result: unknown;
@@ -3273,7 +3436,106 @@ export function registerConfigRoutes(app: Express): void {
             };
           });
       });
-      res.json(mapped);
+      const manualStudentRows = manualStudentIds.length > 0
+        ? await db.select({
+            studentId: students.id,
+            code: students.code,
+            fullName: students.fullName,
+          })
+          .from(students)
+          .where(inArray(students.id, manualStudentIds))
+        : [];
+      const manualStudentsById = new Map(
+        manualStudentRows.map((student) => [String(student.studentId), student]),
+      );
+      const manualAttemptRows = manualAssessmentIds.length > 0
+        ? await db.select({
+            assessmentId: scoreSheetAssessmentStudentAttempts.assessmentId,
+            studentId: scoreSheetAssessmentStudentAttempts.studentId,
+            attemptNumber: scoreSheetAssessmentStudentAttempts.attemptNumber,
+            result: scoreSheetAssessmentStudentAttempts.result,
+          })
+          .from(scoreSheetAssessmentStudentAttempts)
+          .where(and(
+            isNull(scoreSheetAssessmentStudentAttempts.classSessionId),
+            inArray(scoreSheetAssessmentStudentAttempts.assessmentId, manualAssessmentIds),
+          ))
+        : [];
+      const manualAttemptsByAssessmentStudent = new Map<string, Array<{
+        attemptNumber: number;
+        result: unknown;
+      }>>();
+      for (const attempt of manualAttemptRows) {
+        const key = `${attempt.assessmentId}:${attempt.studentId}`;
+        const attempts = manualAttemptsByAssessmentStudent.get(key) ?? [];
+        attempts.push({
+          attemptNumber: attempt.attemptNumber,
+          result: attempt.result,
+        });
+        manualAttemptsByAssessmentStudent.set(key, attempts);
+      }
+      const manualMapped = manualAssessments.flatMap((assessment) => {
+        const currentTemplate = scoreSheetTemplatesById.get(assessment.scoreSheetTemplateId);
+        return assessment.manualStudentIds.flatMap((studentId) => {
+          const student = manualStudentsById.get(studentId);
+          if (!student) return [];
+          const attempts = manualAttemptsByAssessmentStudent.get(
+            `${assessment.id}:${studentId}`,
+          ) ?? [];
+          const summary = selectScoreSheetAssessmentAttemptSummary(
+            attempts,
+            assessment.scoringPolicy,
+            true,
+          );
+          return [{
+            sessionId: assessment.id,
+            isManual: true,
+            classId: "manual",
+            classCode: "Thủ công",
+            className: "Thủ công",
+            locationName: null,
+            teacherNames: null,
+            sessionIndex: null,
+            examDate: assessment.createdAt,
+            assessmentId: assessment.id,
+            assessmentCode: assessment.code,
+            assessmentName: assessment.name,
+            templateName: currentTemplate?.name ?? assessment.templateSnapshot.name,
+            scoreDeadlineAt: null,
+            attemptCount: assessment.attemptCount,
+            scoringPolicy: assessment.scoringPolicy,
+            hasConversion: true,
+            published: false,
+            studentId,
+            studentCode: student.code,
+            studentName: student.fullName,
+            attemptsTaken: attempts.length,
+            attemptNumber: summary?.attemptNumber ?? null,
+            rawScore: summary?.result.overallRawScore ?? null,
+            convertedScore: summary?.result.overallConvertedScore ?? null,
+            gradeBandLabel: summary?.result.gradeBand?.label ?? null,
+            gradeBandColor: summary?.result.gradeBand?.color ?? null,
+            passStatus: summary?.result.passStatus ?? null,
+            inputComplete: summary?.result.inputComplete ?? false,
+            individuallyPublished: attempts.some((attempt) =>
+              isScoreSheetAssessmentStudentPublished(attempt.result),
+            ),
+            hasPublishableScore: Boolean(summary && (
+              summary.result.overallConvertedScore !== null
+              || summary.result.skills.some((skill) => skill.convertedScore !== null)
+            )),
+            status: !summary
+              ? "not_entered"
+              : summary.result.inputComplete
+                ? "complete"
+                : "in_progress",
+          }];
+        });
+      });
+
+      res.json([...mapped, ...manualMapped].sort((left, right) =>
+        String(right.examDate).localeCompare(String(left.examDate)),
+      ));
     } catch (err: any) {
       console.error("Assigned score conversion students error:", err);
       res.status(500).json({ message: err.message || "Lỗi khi tải danh sách học viên bảng điểm Quy đổi" });
@@ -3290,7 +3552,7 @@ export function registerConfigRoutes(app: Express): void {
         readScoreSheetTemplates(),
       ]);
       const templatesById = new Map(templates.map((template) => [template.id, template]));
-      res.json(assessments.map((assessment) => {
+      res.json(assessments.filter((assessment) => assessment.creationMode !== "manual").map((assessment) => {
         const currentTemplate = templatesById.get(assessment.scoreSheetTemplateId);
         return {
           ...assessment,
@@ -3306,18 +3568,33 @@ export function registerConfigRoutes(app: Express): void {
 
   app.post("/api/score-sheet-assessments", async (req, res) => {
     try {
+      const parsed = scoreSheetAssessmentInputSchema.parse(req.body);
       const permissions = await getScoreConversionPermissions(req);
-      if (!permissions.canCreate) {
+      const mySpacePermissions = req.isSuperAdmin
+        ? { canCreate: true }
+        : await storage.getEffectivePermissions(req.roleIds ?? [], "/my-space/score-sheet");
+      const canCreate = parsed.creationMode === "manual"
+        ? permissions.canCreate || mySpacePermissions.canCreate
+        : permissions.canCreate;
+      if (!canCreate) {
         return res.status(403).json({ message: "Bạn không có quyền tạo bảng điểm." });
       }
+      if (
+        parsed.creationMode === "manual"
+        && !await areManualScoreSheetStudentsAccessible(req, parsed)
+      ) {
+        return res.status(403).json({ message: "Danh sách có học viên ngoài lớp bạn được phân công." });
+      }
 
-      const parsed = scoreSheetAssessmentInputSchema.parse(req.body);
       const scoreSheetTemplate = (await readScoreSheetTemplates())
         .find((template) => template.id === parsed.scoreSheetTemplateId);
       if (!scoreSheetTemplate) {
         const error: any = new Error("Không tìm thấy bảng điểm mẫu đã chọn.");
         error.code = "SCORE_SHEET_ASSESSMENT_TEMPLATE_MISSING";
         throw error;
+      }
+      if (parsed.creationMode === "manual" && !scoreSheetTemplate.scoreConversionTemplateId) {
+        return res.status(400).json({ message: "Bảng điểm thủ công cần có cấu hình điểm quy đổi." });
       }
       const conversionTemplateSnapshot = scoreSheetTemplate.scoreConversionTemplateId
         ? (await readScoreConversionTemplates()).find(
@@ -3331,9 +3608,10 @@ export function registerConfigRoutes(app: Express): void {
       }
 
       const now = new Date().toISOString();
+      const { initialScoresByStudent, ...assessmentInput } = parsed;
       const assessment = scoreSheetAssessmentSchema.parse({
-        ...parsed,
-        code: parsed.code.toUpperCase(),
+        ...assessmentInput,
+        code: assessmentInput.code.toUpperCase(),
         id: randomUUID(),
         scoreDeadlineAt: null,
         attemptCount: scoreSheetTemplate.attemptCount,
@@ -3343,15 +3621,47 @@ export function registerConfigRoutes(app: Express): void {
         createdAt: now,
         updatedAt: now,
       });
-      const created = await mutateScoreSheetAssessments((assessments) => {
-        if (assessments.some((existing) =>
-          existing.code.toLocaleLowerCase() === assessment.code.toLocaleLowerCase())) {
-          const error: any = new Error("Mã bảng điểm đã tồn tại.");
-          error.code = "SCORE_SHEET_ASSESSMENT_CODE_EXISTS";
-          throw error;
-        }
-        return { assessments: [assessment, ...assessments], result: assessment };
-      });
+      const created = await mutateScoreSheetAssessments(
+        (assessments) => {
+          if (assessments.some((existing) =>
+            existing.code.toLocaleLowerCase() === assessment.code.toLocaleLowerCase())) {
+            const error: any = new Error("Mã bảng điểm đã tồn tại.");
+            error.code = "SCORE_SHEET_ASSESSMENT_CODE_EXISTS";
+            throw error;
+          }
+          return { assessments: [assessment, ...assessments], result: assessment };
+        },
+        async (tx, createdAssessment) => {
+          if (createdAssessment.creationMode !== "manual") return;
+          const userId = (req.user as any)?.id ?? null;
+          const initialAttempts = createdAssessment.manualStudentIds.flatMap((studentId) => {
+            const values = initialScoresByStudent[studentId];
+            if (!values || !hasScoreSheetAssessmentInput(values)) return [];
+            const result = calculateScoreSheetAssessmentAttemptResult({
+              template: createdAssessment.templateSnapshot,
+              conversionTemplate: createdAssessment.conversionTemplateSnapshot ?? null,
+              values,
+            });
+            return [{
+              assessmentId: createdAssessment.id,
+              classSessionId: null,
+              studentId,
+              attemptNumber: 1,
+              partScores: values.partScores,
+              skillScores: values.skillScores,
+              notes: values.notes,
+              result: { ...result, evaluationResponses: values.evaluationResponses },
+              createdBy: userId,
+              updatedBy: userId,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            }];
+          });
+          if (initialAttempts.length > 0) {
+            await tx.insert(scoreSheetAssessmentStudentAttempts).values(initialAttempts);
+          }
+        },
+      );
       res.status(201).json(created);
     } catch (err: any) {
       if (err instanceof z.ZodError) {

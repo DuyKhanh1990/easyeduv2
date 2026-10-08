@@ -62,7 +62,6 @@ import {
   freeClassSessionContents,
   studentClasses,
   systemSettings,
-  manualScoreSheetAssessments,
   scoreSheetAssessmentStudentAttempts,
   evaluationCriteria,
   evaluationSubCriteria,
@@ -76,7 +75,6 @@ import { canScheduleWrite } from "@shared/schedule-access";
 import { isStaffAssignedToEffectiveFreeClassStudent } from "@shared/my-space-calendar-permissions";
 import { hasMySpaceAssignmentsWritePermission } from "../lib/my-space-assignments-permissions";
 import { getEvaluationCheckboxGroupStates } from "@shared/evaluation-checkbox-limits";
-import { manualScoreSheetPayloadSchema } from "@shared/manual-score-sheet";
 
 type ScoreSheetAssessmentPublicationNotification = {
   classId: string;
@@ -105,7 +103,7 @@ function notifyScoreSheetAssessmentPublished(
 async function setScoreSheetAssessmentStudentPublication(
   queryable: any,
   assessmentId: string,
-  sessionId: string,
+  sessionId: string | null,
   studentId: string,
   publishedToStudent: boolean,
 ) {
@@ -125,7 +123,9 @@ async function setScoreSheetAssessmentStudentPublication(
     })
     .where(and(
       eq(scoreSheetAssessmentStudentAttempts.assessmentId, assessmentId),
-      eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId),
+      sessionId == null
+        ? isNull(scoreSheetAssessmentStudentAttempts.classSessionId)
+        : eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId),
       eq(scoreSheetAssessmentStudentAttempts.studentId, studentId),
     ));
 }
@@ -200,31 +200,6 @@ async function getCurrentScoreSheetTemplate(
   return templates.find((template) => template.id === templateId) ?? null;
 }
 
-async function getManualScoreSheetTemplateConfig(templateId: string) {
-  const template = await getCurrentScoreSheetTemplate(templateId);
-  if (!template) return null;
-  if (!template.scoreConversionTemplateId) {
-    return { template, conversionTemplate: null };
-  }
-
-  const [conversionSettings] = await db
-    .select({ value: systemSettings.value })
-    .from(systemSettings)
-    .where(eq(systemSettings.key, "scoreConversionTemplates"))
-    .limit(1);
-  const conversionTemplate = conversionSettings
-    ? parseScoreConversionTemplatesJson(conversionSettings.value)
-      .find((item) => item.id === template.scoreConversionTemplateId) ?? null
-    : null;
-  if (!conversionTemplate) {
-    throw new Error("Không tìm thấy cấu hình quy đổi của bảng điểm mẫu đã chọn.");
-  }
-  return {
-    template,
-    conversionTemplate: scoreConversionTemplateSchema.parse(conversionTemplate),
-  };
-}
-
 async function hasMySpaceScoreSheetPermission(
   req: any,
   action: "view" | "create" | "edit",
@@ -242,72 +217,6 @@ async function hasMySpaceScoreSheetPermission(
     || permissions.canCreate
     || permissions.canEdit,
   );
-}
-
-async function areManualScoreSheetStudentsAccessible(
-  req: any,
-  payload: z.infer<typeof manualScoreSheetPayloadSchema>,
-): Promise<boolean> {
-  if (req.isSuperAdmin) return true;
-  const staffRecord = await getStaffForUser(req.user.id);
-  if (!staffRecord) return false;
-
-  const classConstraint = payload.selectionMode === "class" && payload.classId
-    ? sql`AND c.id = ${payload.classId}::uuid`
-    : sql``;
-  const result = await db.execute(sql`
-    SELECT DISTINCT sc.student_id
-    FROM student_classes sc
-    JOIN classes c ON c.id = sc.class_id
-    WHERE sc.status = 'active'
-      AND sc.student_id = ANY(${payload.studentIds}::uuid[])
-      ${classConstraint}
-      AND (
-        ${staffRecord.id} = ANY(c.teacher_ids)
-        OR ${staffRecord.id} = ANY(c.manager_ids)
-        OR EXISTS (
-          SELECT 1
-          FROM class_sessions cs
-          WHERE cs.class_id = c.id
-            AND (
-              cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
-              OR EXISTS (
-                SELECT 1
-                FROM class_session_teacher_assignments csta
-                WHERE csta.class_session_id = cs.id
-                  AND csta.teacher_id = ${staffRecord.id}
-              )
-            )
-        )
-      )
-      AND EXISTS (
-        SELECT 1
-        FROM staff_assignments sa
-        WHERE sa.staff_id = ${staffRecord.id}
-          AND sa.location_id = c.location_id
-      )
-  `);
-  return new Set(result.rows.map((row: any) => String(row.student_id))).size
-    === payload.studentIds.length;
-}
-
-function validateManualScoreSheetScores(
-  template: ScoreSheetTemplate,
-  conversionTemplate: z.infer<typeof scoreConversionTemplateSchema> | null,
-  payload: z.infer<typeof manualScoreSheetPayloadSchema>,
-): string | null {
-  try {
-    for (const studentId of payload.studentIds) {
-      calculateScoreSheetAssessmentAttemptResult({
-        template,
-        conversionTemplate,
-        values: payload.scoresByStudent[studentId] ?? {},
-      });
-    }
-    return null;
-  } catch (error) {
-    return error instanceof Error ? error.message : "Điểm nhập không hợp lệ.";
-  }
 }
 
 type ScoreSheetEvaluationSubCriterion = {
@@ -376,6 +285,7 @@ type ScoreSheetAssessmentSessionAccess = {
   sessionStartTime: string | null;
   assessment: NonNullable<Awaited<ReturnType<typeof getScoreSheetAssessmentScoringConfig>>> | null;
   currentTemplate: ScoreSheetTemplate | null;
+  isManual: boolean;
 };
 
 async function hasScoreConversionPermission(req: any, action: "view" | "edit"): Promise<boolean> {
@@ -453,7 +363,38 @@ async function getAuthorizedScoreSheetSession(
     accessRow = conversionAccess.rows[0];
   }
 
-  if (!accessRow) return null;
+  if (!accessRow) {
+    if (options.lock) {
+      await queryable
+        .select({ key: systemSettings.key })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, "scoreSheetAssessments"))
+        .for("update")
+        .limit(1);
+    }
+    const manualAssessment = await getScoreSheetAssessmentScoringConfig(sessionId, queryable);
+    if (
+      !manualAssessment
+      || manualAssessment.creationMode !== "manual"
+      || !manualAssessment.templateSnapshot.scoreConversionTemplateId
+    ) return null;
+    const action = options.permission ?? "view";
+    const authorized = await hasScoreConversionPermission(req, action)
+      || await hasMySpaceScoreSheetPermission(req, action);
+    if (!authorized) return null;
+    const currentTemplate = await getCurrentScoreSheetTemplate(
+      manualAssessment.scoreSheetTemplateId,
+      queryable,
+    );
+    return {
+      assessmentId: manualAssessment.id,
+      sessionDate: null,
+      sessionStartTime: null,
+      assessment: manualAssessment,
+      currentTemplate,
+      isManual: true,
+    };
+  }
 
   const assessmentId = String(accessRow.assessment_id);
   const assessment = await getScoreSheetAssessmentScoringConfig(assessmentId, queryable);
@@ -468,6 +409,7 @@ async function getAuthorizedScoreSheetSession(
     sessionStartTime: accessRow.session_start_time == null ? null : accessRow.session_start_time as string,
     assessment,
     currentTemplate,
+    isManual: false,
   };
 }
 
@@ -4663,243 +4605,6 @@ export function registerMySpaceRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/my-space/score-sheet/manual-conversions", async (req, res) => {
-    try {
-      const user = req.user as any;
-      if (!user) return res.status(401).json({ message: "Unauthorized" });
-      if (!await hasMySpaceScoreSheetPermission(req, "view")) {
-        return res.status(403).json({ message: "Bạn không có quyền xem bảng điểm." });
-      }
-
-      const permissions = req.isSuperAdmin
-        ? { canViewAll: true }
-        : await storage.getEffectivePermissions(
-          req.roleIds ?? [],
-          "/my-space/score-sheet",
-        );
-      const rows = await db
-        .select()
-        .from(manualScoreSheetAssessments)
-        .where(
-          req.isSuperAdmin || permissions.canViewAll
-            ? undefined
-            : eq(manualScoreSheetAssessments.createdBy, user.id),
-        )
-        .orderBy(desc(manualScoreSheetAssessments.createdAt));
-
-      const mapped = rows.map((row) => {
-        const template = scoreSheetTemplateSchema.parse(row.scoreSheetTemplateSnapshot);
-        const conversionTemplate = row.conversionTemplateSnapshot
-          ? scoreConversionTemplateSchema.parse(row.conversionTemplateSnapshot)
-          : null;
-        const scoresByStudent = (row.scoresByStudent ?? {}) as Record<string, unknown>;
-        let enteredStudentCount = 0;
-        for (const studentId of row.studentIds) {
-          try {
-            const values = scoreSheetAssessmentAttemptValuesSchema.parse(
-              scoresByStudent[studentId] ?? {},
-            );
-            if (calculateScoreSheetAssessmentAttemptResult({
-              template,
-              conversionTemplate,
-              values,
-            }).inputComplete) {
-              enteredStudentCount += 1;
-            }
-          } catch {
-            // Invalid legacy values are treated as not entered in the list summary.
-          }
-        }
-        return {
-          id: row.id,
-          title: row.title,
-          templateId: row.scoreSheetTemplateId,
-          templateCode: template.code,
-          templateName: template.name,
-          selectionMode: row.selectionMode,
-          classId: row.classId,
-          studentIds: row.studentIds,
-          studentCount: row.studentIds.length,
-          enteredStudentCount,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
-          createdBy: row.createdBy,
-        };
-      });
-      res.json(mapped);
-    } catch (err: any) {
-      console.error("Manual conversion score-sheet list error:", err);
-      res.status(500).json({ message: err.message || "Lỗi khi tải bảng điểm quy đổi." });
-    }
-  });
-
-  app.post("/api/my-space/score-sheet/manual-conversions", async (req, res) => {
-    try {
-      const user = req.user as any;
-      if (!user) return res.status(401).json({ message: "Unauthorized" });
-      if (!await hasMySpaceScoreSheetPermission(req, "create")) {
-        return res.status(403).json({ message: "Bạn không có quyền tạo bảng điểm." });
-      }
-
-      const parsed = manualScoreSheetPayloadSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Dữ liệu bảng điểm không hợp lệ." });
-      }
-      if (!await areManualScoreSheetStudentsAccessible(req, parsed.data)) {
-        return res.status(403).json({ message: "Danh sách có học viên ngoài lớp bạn được phân công." });
-      }
-
-      const config = await getManualScoreSheetTemplateConfig(parsed.data.templateId);
-      if (!config) return res.status(404).json({ message: "Không tìm thấy bảng điểm mẫu." });
-      const scoreValidationMessage = validateManualScoreSheetScores(
-        config.template,
-        config.conversionTemplate,
-        parsed.data,
-      );
-      if (scoreValidationMessage) {
-        return res.status(400).json({ message: scoreValidationMessage });
-      }
-
-      const [created] = await db.insert(manualScoreSheetAssessments).values({
-        title: `${config.template.code} — ${config.template.name}`,
-        scoreSheetTemplateId: config.template.id,
-        scoreSheetTemplateSnapshot: config.template,
-        conversionTemplateSnapshot: config.conversionTemplate,
-        selectionMode: parsed.data.selectionMode,
-        classId: parsed.data.classId,
-        studentIds: parsed.data.studentIds,
-        scoresByStudent: parsed.data.scoresByStudent,
-        createdBy: user.id,
-        updatedBy: user.id,
-      }).returning({ id: manualScoreSheetAssessments.id });
-      res.status(201).json({ id: created.id });
-    } catch (err: any) {
-      console.error("Manual conversion score-sheet create error:", err);
-      res.status(500).json({ message: err.message || "Lỗi khi tạo bảng điểm quy đổi." });
-    }
-  });
-
-  app.get("/api/my-space/score-sheet/manual-conversions/:id", async (req, res) => {
-    try {
-      const user = req.user as any;
-      if (!user) return res.status(401).json({ message: "Unauthorized" });
-      if (!await hasMySpaceScoreSheetPermission(req, "view")) {
-        return res.status(403).json({ message: "Bạn không có quyền xem bảng điểm." });
-      }
-
-      const [row] = await db
-        .select()
-        .from(manualScoreSheetAssessments)
-        .where(eq(manualScoreSheetAssessments.id, req.params.id))
-        .limit(1);
-      if (!row) return res.status(404).json({ message: "Không tìm thấy bảng điểm." });
-      const permissions = req.isSuperAdmin
-        ? { canViewAll: true, canEdit: true }
-        : await storage.getEffectivePermissions(
-          req.roleIds ?? [],
-          "/my-space/score-sheet",
-        );
-      if (
-        row.createdBy !== user.id
-        && !permissions.canViewAll
-        && !permissions.canEdit
-      ) {
-        return res.status(403).json({ message: "Bạn không có quyền xem bảng điểm này." });
-      }
-
-      const studentRows = row.studentIds.length > 0
-        ? await db.select({
-            id: students.id,
-            fullName: students.fullName,
-            code: students.code,
-          }).from(students).where(inArray(students.id, row.studentIds))
-        : [];
-      const studentById = new Map(studentRows.map((student) => [student.id, student]));
-      res.json({
-        id: row.id,
-        title: row.title,
-        templateId: row.scoreSheetTemplateId,
-        templateSnapshot: row.scoreSheetTemplateSnapshot,
-        conversionTemplateSnapshot: row.conversionTemplateSnapshot,
-        selectionMode: row.selectionMode,
-        classId: row.classId,
-        studentIds: row.studentIds,
-        students: row.studentIds.map((studentId) => ({
-          id: studentId,
-          fullName: studentById.get(studentId)?.fullName ?? "Học viên",
-          code: studentById.get(studentId)?.code ?? null,
-        })),
-        scoresByStudent: row.scoresByStudent ?? {},
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-      });
-    } catch (err: any) {
-      console.error("Manual conversion score-sheet load error:", err);
-      res.status(500).json({ message: err.message || "Lỗi khi tải bảng điểm quy đổi." });
-    }
-  });
-
-  app.put("/api/my-space/score-sheet/manual-conversions/:id", async (req, res) => {
-    try {
-      const user = req.user as any;
-      if (!user) return res.status(401).json({ message: "Unauthorized" });
-      if (!await hasMySpaceScoreSheetPermission(req, "edit")) {
-        return res.status(403).json({ message: "Bạn không có quyền sửa bảng điểm." });
-      }
-      const parsed = manualScoreSheetPayloadSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Dữ liệu bảng điểm không hợp lệ." });
-      }
-
-      const [existing] = await db
-        .select({ createdBy: manualScoreSheetAssessments.createdBy })
-        .from(manualScoreSheetAssessments)
-        .where(eq(manualScoreSheetAssessments.id, req.params.id))
-        .limit(1);
-      if (!existing) return res.status(404).json({ message: "Không tìm thấy bảng điểm." });
-      const permissions = req.isSuperAdmin
-        ? { canViewAll: true }
-        : await storage.getEffectivePermissions(
-          req.roleIds ?? [],
-          "/my-space/score-sheet",
-        );
-      if (existing.createdBy !== user.id && !permissions.canViewAll) {
-        return res.status(403).json({ message: "Bạn không có quyền sửa bảng điểm này." });
-      }
-      if (!await areManualScoreSheetStudentsAccessible(req, parsed.data)) {
-        return res.status(403).json({ message: "Danh sách có học viên ngoài lớp bạn được phân công." });
-      }
-
-      const config = await getManualScoreSheetTemplateConfig(parsed.data.templateId);
-      if (!config) return res.status(404).json({ message: "Không tìm thấy bảng điểm mẫu." });
-      const scoreValidationMessage = validateManualScoreSheetScores(
-        config.template,
-        config.conversionTemplate,
-        parsed.data,
-      );
-      if (scoreValidationMessage) {
-        return res.status(400).json({ message: scoreValidationMessage });
-      }
-
-      await db.update(manualScoreSheetAssessments).set({
-        title: `${config.template.code} — ${config.template.name}`,
-        scoreSheetTemplateId: config.template.id,
-        scoreSheetTemplateSnapshot: config.template,
-        conversionTemplateSnapshot: config.conversionTemplate,
-        selectionMode: parsed.data.selectionMode,
-        classId: parsed.data.classId,
-        studentIds: parsed.data.studentIds,
-        scoresByStudent: parsed.data.scoresByStudent,
-        updatedBy: user.id,
-        updatedAt: new Date(),
-      }).where(eq(manualScoreSheetAssessments.id, req.params.id));
-      res.json({ success: true });
-    } catch (err: any) {
-      console.error("Manual conversion score-sheet update error:", err);
-      res.status(500).json({ message: err.message || "Lỗi khi cập nhật bảng điểm quy đổi." });
-    }
-  });
-
   app.get("/api/my-space/score-sheet/staff-students", async (req, res) => {
     try {
       const user = req.user as any;
@@ -5324,24 +5029,38 @@ export function registerMySpaceRoutes(app: Express): void {
         return res.status(409).json({ message: "Cấu hình bảng điểm được giao không còn khả dụng." });
       }
 
-      const [sessionRosterSettings] = await db
-        .select({
-          excludedStudentIds: classSessions.scoreSheetAssessmentExcludedStudentIds,
-        })
-        .from(classSessions)
-        .where(eq(classSessions.id, sessionId.data))
-        .limit(1);
+      const [sessionRosterSettings] = access.isManual
+        ? [null]
+        : await db
+          .select({
+            excludedStudentIds: classSessions.scoreSheetAssessmentExcludedStudentIds,
+          })
+          .from(classSessions)
+          .where(eq(classSessions.id, sessionId.data))
+          .limit(1);
       const excludedStudentIds = new Set(
         (sessionRosterSettings?.excludedStudentIds ?? []).map(String),
       );
-      const roster = await getRegularSessionStudents(sessionId.data);
+      const roster = access.isManual
+        ? await db.select({
+            studentId: students.id,
+            code: students.code,
+            fullName: students.fullName,
+          })
+          .from(students)
+          .where(inArray(students.id, assessment.manualStudentIds))
+        : (await getRegularSessionStudents(sessionId.data)).map((row) => ({
+            studentId: row.studentId,
+            code: row.student.code,
+            fullName: row.student.fullName,
+          }));
       const uniqueStudents = new Map<string, { studentId: string; code: string; fullName: string }>();
       for (const row of roster) {
         if (!uniqueStudents.has(row.studentId)) {
           uniqueStudents.set(row.studentId, {
             studentId: row.studentId,
-            code: row.student.code,
-            fullName: row.student.fullName,
+            code: row.code,
+            fullName: row.fullName,
           });
         }
       }
@@ -5355,7 +5074,9 @@ export function registerMySpaceRoutes(app: Express): void {
         .from(scoreSheetAssessmentStudentAttempts)
         .where(and(
           eq(scoreSheetAssessmentStudentAttempts.assessmentId, assessmentId),
-          eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId.data),
+          access.isManual
+            ? isNull(scoreSheetAssessmentStudentAttempts.classSessionId)
+            : eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId.data),
         ));
       const attemptsByStudent = new Map<string, Array<{ attemptNumber: number; result: unknown }>>();
       for (const attempt of attemptRows) {
@@ -5426,6 +5147,9 @@ export function registerMySpaceRoutes(app: Express): void {
         });
         if (!access?.assessment) {
           return { status: 404, message: "Không tìm thấy buổi thi hoặc bạn không có quyền chỉnh sửa" };
+        }
+        if (access.isManual) {
+          return { status: 409, message: "Danh sách học viên của bảng điểm thủ công được chốt khi tạo." };
         }
 
         const [enrollment] = await tx
@@ -5509,30 +5233,37 @@ export function registerMySpaceRoutes(app: Express): void {
           return res.status(404).json({ message: "Không tìm thấy buổi thi hoặc bạn không có quyền xem." });
         }
 
-        const [membership] = await db
-          .select({ id: studentSessions.id })
-          .from(studentSessions)
-          .where(and(
-            eq(studentSessions.classSessionId, sessionId.data),
-            eq(studentSessions.studentId, studentId.data),
-          ))
-          .limit(1);
-        if (!membership) return res.status(404).json({ message: "Học viên không thuộc buổi thi này." });
-
-        const [rosterSettings] = await db
-          .select({
-            excludedStudentIds: classSessions.scoreSheetAssessmentExcludedStudentIds,
-          })
-          .from(classSessions)
-          .where(eq(classSessions.id, sessionId.data))
-          .limit(1);
-        if (rosterSettings?.excludedStudentIds?.includes(studentId.data)) {
-          return res.status(404).json({ message: "Học viên đã được xóa khỏi bảng điểm này." });
-        }
-
         const { assessmentId, assessment } = access;
         if (!assessment) {
           return res.status(409).json({ message: "Cấu hình bảng điểm được giao không còn khả dụng." });
+        }
+        if (access.isManual) {
+          if (!assessment.manualStudentIds.includes(studentId.data)) {
+            return res.status(404).json({ message: "Học viên không thuộc bảng điểm này." });
+          }
+        } else {
+          const [membership] = await db
+            .select({ id: studentSessions.id })
+            .from(studentSessions)
+            .where(and(
+              eq(studentSessions.classSessionId, sessionId.data),
+              eq(studentSessions.studentId, studentId.data),
+            ))
+            .limit(1);
+          if (!membership) {
+            return res.status(404).json({ message: "Học viên không thuộc buổi thi này." });
+          }
+
+          const [rosterSettings] = await db
+            .select({
+              excludedStudentIds: classSessions.scoreSheetAssessmentExcludedStudentIds,
+            })
+            .from(classSessions)
+            .where(eq(classSessions.id, sessionId.data))
+            .limit(1);
+          if (rosterSettings?.excludedStudentIds?.includes(studentId.data)) {
+            return res.status(404).json({ message: "Học viên đã được xóa khỏi bảng điểm này." });
+          }
         }
         const evaluationCriteriaIds = access.currentTemplate?.evaluationCriteriaIds
           ?? assessment.templateSnapshot.evaluationCriteriaIds;
@@ -5545,7 +5276,9 @@ export function registerMySpaceRoutes(app: Express): void {
           .from(scoreSheetAssessmentStudentAttempts)
           .where(and(
             eq(scoreSheetAssessmentStudentAttempts.assessmentId, assessmentId),
-            eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId.data),
+            access.isManual
+              ? isNull(scoreSheetAssessmentStudentAttempts.classSessionId)
+              : eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId.data),
             eq(scoreSheetAssessmentStudentAttempts.studentId, studentId.data),
           ))
           .orderBy(scoreSheetAssessmentStudentAttempts.attemptNumber);
@@ -5710,31 +5443,39 @@ export function registerMySpaceRoutes(app: Express): void {
             throw error;
           }
 
-          const [membership] = await tx
-            .select({ id: studentSessions.id })
-            .from(studentSessions)
-            .where(and(
-              eq(studentSessions.classSessionId, sessionId.data),
-              eq(studentSessions.studentId, studentId.data),
-            ))
-            .limit(1);
-          if (!membership) {
-            const error: any = new Error("Học viên không thuộc buổi thi này.");
-            error.status = 404;
-            throw error;
-          }
+          if (access.isManual) {
+            if (!assessment.manualStudentIds.includes(studentId.data)) {
+              const error: any = new Error("Học viên không thuộc bảng điểm này.");
+              error.status = 404;
+              throw error;
+            }
+          } else {
+            const [membership] = await tx
+              .select({ id: studentSessions.id })
+              .from(studentSessions)
+              .where(and(
+                eq(studentSessions.classSessionId, sessionId.data),
+                eq(studentSessions.studentId, studentId.data),
+              ))
+              .limit(1);
+            if (!membership) {
+              const error: any = new Error("Học viên không thuộc buổi thi này.");
+              error.status = 404;
+              throw error;
+            }
 
-          const [rosterSettings] = await tx
-            .select({
-              excludedStudentIds: classSessions.scoreSheetAssessmentExcludedStudentIds,
-            })
-            .from(classSessions)
-            .where(eq(classSessions.id, sessionId.data))
-            .limit(1);
-          if (rosterSettings?.excludedStudentIds?.includes(studentId.data)) {
-            const error: any = new Error("Học viên đã được xóa khỏi bảng điểm này.");
-            error.status = 409;
-            throw error;
+            const [rosterSettings] = await tx
+              .select({
+                excludedStudentIds: classSessions.scoreSheetAssessmentExcludedStudentIds,
+              })
+              .from(classSessions)
+              .where(eq(classSessions.id, sessionId.data))
+              .limit(1);
+            if (rosterSettings?.excludedStudentIds?.includes(studentId.data)) {
+              const error: any = new Error("Học viên đã được xóa khỏi bảng điểm này.");
+              error.status = 409;
+              throw error;
+            }
           }
 
           const existingAttempts = await tx
@@ -5745,7 +5486,9 @@ export function registerMySpaceRoutes(app: Express): void {
             .from(scoreSheetAssessmentStudentAttempts)
             .where(and(
               eq(scoreSheetAssessmentStudentAttempts.assessmentId, assessmentId),
-              eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId.data),
+              access.isManual
+                ? isNull(scoreSheetAssessmentStudentAttempts.classSessionId)
+                : eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId.data),
               eq(scoreSheetAssessmentStudentAttempts.studentId, studentId.data),
             ));
           const highestAttempt = existingAttempts.reduce(
@@ -5801,50 +5544,56 @@ export function registerMySpaceRoutes(app: Express): void {
             evaluationResponses: values.evaluationResponses,
           }, publishToStudent);
           const now = new Date();
-          const [attempt] = await tx
-            .insert(scoreSheetAssessmentStudentAttempts)
-            .values({
-              assessmentId,
-              classSessionId: sessionId.data,
-              studentId: studentId.data,
-              attemptNumber: attemptNumber.data,
+          const attemptScope = and(
+            eq(scoreSheetAssessmentStudentAttempts.assessmentId, assessmentId),
+            access.isManual
+              ? isNull(scoreSheetAssessmentStudentAttempts.classSessionId)
+              : eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId.data),
+            eq(scoreSheetAssessmentStudentAttempts.studentId, studentId.data),
+            eq(scoreSheetAssessmentStudentAttempts.attemptNumber, attemptNumber.data),
+          );
+          const [updatedAttempt] = await tx
+            .update(scoreSheetAssessmentStudentAttempts)
+            .set({
               partScores: values.partScores,
               skillScores: values.skillScores,
               notes: values.notes,
               result: storedResult,
-              createdBy: user.id,
               updatedBy: user.id,
-              createdAt: now,
               updatedAt: now,
             })
-            .onConflictDoUpdate({
-              target: [
-                scoreSheetAssessmentStudentAttempts.assessmentId,
-                scoreSheetAssessmentStudentAttempts.classSessionId,
-                scoreSheetAssessmentStudentAttempts.studentId,
-                scoreSheetAssessmentStudentAttempts.attemptNumber,
-              ],
-              set: {
+            .where(attemptScope)
+            .returning();
+          const [attempt] = updatedAttempt
+            ? [updatedAttempt]
+            : await tx
+              .insert(scoreSheetAssessmentStudentAttempts)
+              .values({
+                assessmentId,
+                classSessionId: access.isManual ? null : sessionId.data,
+                studentId: studentId.data,
+                attemptNumber: attemptNumber.data,
                 partScores: values.partScores,
                 skillScores: values.skillScores,
                 notes: values.notes,
                 result: storedResult,
+                createdBy: user.id,
                 updatedBy: user.id,
+                createdAt: now,
                 updatedAt: now,
-              },
-            })
-            .returning();
+              })
+              .returning();
 
           await setScoreSheetAssessmentStudentPublication(
             tx,
             assessmentId,
-            sessionId.data,
+            access.isManual ? null : sessionId.data,
             studentId.data,
             publishToStudent,
           );
 
           let notification: ScoreSheetAssessmentPublicationNotification | null = null;
-          if (publishToStudent && !wasIndividuallyPublished) {
+          if (publishToStudent && !wasIndividuallyPublished && !access.isManual) {
             const [session] = await tx
               .select({
                 classId: classes.id,
@@ -5922,31 +5671,39 @@ export function registerMySpaceRoutes(app: Express): void {
             throw error;
           }
 
-          const [membership] = await tx
-            .select({ id: studentSessions.id })
-            .from(studentSessions)
-            .where(and(
-              eq(studentSessions.classSessionId, sessionId.data),
-              eq(studentSessions.studentId, studentId.data),
-            ))
-            .limit(1);
-          if (!membership) {
-            const error: any = new Error("Học viên không thuộc buổi thi này.");
-            error.status = 404;
-            throw error;
-          }
+          if (access.isManual) {
+            if (!access.assessment.manualStudentIds.includes(studentId.data)) {
+              const error: any = new Error("Học viên không thuộc bảng điểm này.");
+              error.status = 404;
+              throw error;
+            }
+          } else {
+            const [membership] = await tx
+              .select({ id: studentSessions.id })
+              .from(studentSessions)
+              .where(and(
+                eq(studentSessions.classSessionId, sessionId.data),
+                eq(studentSessions.studentId, studentId.data),
+              ))
+              .limit(1);
+            if (!membership) {
+              const error: any = new Error("Học viên không thuộc buổi thi này.");
+              error.status = 404;
+              throw error;
+            }
 
-          const [rosterSettings] = await tx
-            .select({
-              excludedStudentIds: classSessions.scoreSheetAssessmentExcludedStudentIds,
-            })
-            .from(classSessions)
-            .where(eq(classSessions.id, sessionId.data))
-            .limit(1);
-          if (rosterSettings?.excludedStudentIds?.includes(studentId.data)) {
-            const error: any = new Error("Học viên đã được xóa khỏi bảng điểm này.");
-            error.status = 409;
-            throw error;
+            const [rosterSettings] = await tx
+              .select({
+                excludedStudentIds: classSessions.scoreSheetAssessmentExcludedStudentIds,
+              })
+              .from(classSessions)
+              .where(eq(classSessions.id, sessionId.data))
+              .limit(1);
+            if (rosterSettings?.excludedStudentIds?.includes(studentId.data)) {
+              const error: any = new Error("Học viên đã được xóa khỏi bảng điểm này.");
+              error.status = 409;
+              throw error;
+            }
           }
 
           const attempts = await tx
@@ -5957,7 +5714,9 @@ export function registerMySpaceRoutes(app: Express): void {
             .from(scoreSheetAssessmentStudentAttempts)
             .where(and(
               eq(scoreSheetAssessmentStudentAttempts.assessmentId, access.assessmentId),
-              eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId.data),
+              access.isManual
+                ? isNull(scoreSheetAssessmentStudentAttempts.classSessionId)
+                : eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId.data),
               eq(scoreSheetAssessmentStudentAttempts.studentId, studentId.data),
             ));
           const wasPublished = attempts.some((attempt) =>
@@ -5988,13 +5747,13 @@ export function registerMySpaceRoutes(app: Express): void {
           await setScoreSheetAssessmentStudentPublication(
             tx,
             access.assessmentId,
-            sessionId.data,
+            access.isManual ? null : sessionId.data,
             studentId.data,
             published,
           );
 
           let notification: ScoreSheetAssessmentPublicationNotification | null = null;
-          if (published) {
+          if (published && !access.isManual) {
             const [session] = await tx
               .select({
                 classId: classes.id,
@@ -6056,6 +5815,12 @@ export function registerMySpaceRoutes(app: Express): void {
         });
         if (!access?.assessment?.templateSnapshot.scoreConversionTemplateId) {
           return { error: "Không tìm thấy buổi thi hoặc bạn không có quyền công bố bảng điểm.", status: 404 as const };
+        }
+        if (access.isManual) {
+          return {
+            error: "Bảng điểm thủ công cần được công bố riêng theo từng học viên.",
+            status: 409 as const,
+          };
         }
 
         const [session] = await tx

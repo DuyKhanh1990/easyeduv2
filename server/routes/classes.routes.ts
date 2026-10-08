@@ -8616,6 +8616,9 @@ export function registerClassesRoutes(app: Express): void {
         if (!assessment) {
           return res.status(404).json({ message: "Không tìm thấy cấu hình bảng điểm đã chọn." });
         }
+        if (assessment.creationMode === "manual") {
+          return res.status(400).json({ message: "Bảng điểm thủ công không thể gán vào buổi học." });
+        }
         assessmentName = `${assessment.code} — ${assessment.name}`;
       }
 

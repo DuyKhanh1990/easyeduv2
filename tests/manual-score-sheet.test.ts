@@ -1,62 +1,71 @@
 import { describe, expect, it } from "vitest";
-import { manualScoreSheetPayloadSchema } from "../shared/manual-score-sheet";
+import { scoreSheetAssessmentInputSchema } from "../shared/score-sheet-assessment";
 
 const templateId = "10000000-0000-4000-8000-000000000001";
 const classId = "10000000-0000-4000-8000-000000000002";
 const studentId = "10000000-0000-4000-8000-000000000003";
+const otherStudentId = "10000000-0000-4000-8000-000000000004";
 
-describe("manual score-sheet payload", () => {
-  it("accepts a class roster and an individual student selection", () => {
-    expect(manualScoreSheetPayloadSchema.safeParse({
-      templateId,
-      selectionMode: "class",
-      classId,
-      studentIds: [studentId],
-      scoresByStudent: {},
+const baseInput = {
+  code: "MAN-TEST",
+  name: "Manual assessment",
+  scoreSheetTemplateId: templateId,
+  creationMode: "manual" as const,
+};
+
+describe("manual score-sheet assessment input", () => {
+  it("accepts both class and individual student selection within the shared assessment schema", () => {
+    expect(scoreSheetAssessmentInputSchema.safeParse({
+      ...baseInput,
+      manualSelectionMode: "class",
+      manualClassId: classId,
+      manualStudentIds: [studentId],
+      initialScoresByStudent: { [studentId]: {} },
     }).success).toBe(true);
 
-    expect(manualScoreSheetPayloadSchema.safeParse({
-      templateId,
-      selectionMode: "students",
-      classId: null,
-      studentIds: [studentId],
-      scoresByStudent: {},
+    expect(scoreSheetAssessmentInputSchema.safeParse({
+      ...baseInput,
+      manualSelectionMode: "students",
+      manualClassId: null,
+      manualStudentIds: [studentId],
     }).success).toBe(true);
   });
 
-  it("rejects inconsistent selection scope, duplicate students, and scores for unselected students", () => {
-    expect(manualScoreSheetPayloadSchema.safeParse({
-      templateId,
-      selectionMode: "class",
-      classId: null,
-      studentIds: [studentId],
-      scoresByStudent: {},
+  it("rejects empty or inconsistent selection, duplicates, and scores for unselected students", () => {
+    expect(scoreSheetAssessmentInputSchema.safeParse({
+      ...baseInput,
+      manualSelectionMode: "class",
+      manualClassId: classId,
+      manualStudentIds: [],
     }).success).toBe(false);
 
-    expect(manualScoreSheetPayloadSchema.safeParse({
-      templateId,
-      selectionMode: "students",
-      classId,
-      studentIds: [studentId],
-      scoresByStudent: {},
+    expect(scoreSheetAssessmentInputSchema.safeParse({
+      ...baseInput,
+      manualSelectionMode: "class",
+      manualClassId: null,
+      manualStudentIds: [studentId],
     }).success).toBe(false);
 
-    expect(manualScoreSheetPayloadSchema.safeParse({
-      templateId,
-      selectionMode: "students",
-      classId: null,
-      studentIds: [studentId, studentId],
-      scoresByStudent: {},
+    expect(scoreSheetAssessmentInputSchema.safeParse({
+      ...baseInput,
+      manualSelectionMode: "students",
+      manualClassId: classId,
+      manualStudentIds: [studentId],
     }).success).toBe(false);
 
-    expect(manualScoreSheetPayloadSchema.safeParse({
-      templateId,
-      selectionMode: "students",
-      classId: null,
-      studentIds: [studentId],
-      scoresByStudent: {
-        "10000000-0000-4000-8000-000000000004": {},
-      },
+    expect(scoreSheetAssessmentInputSchema.safeParse({
+      ...baseInput,
+      manualSelectionMode: "students",
+      manualClassId: null,
+      manualStudentIds: [studentId, studentId],
+    }).success).toBe(false);
+
+    expect(scoreSheetAssessmentInputSchema.safeParse({
+      ...baseInput,
+      manualSelectionMode: "students",
+      manualClassId: null,
+      manualStudentIds: [studentId],
+      initialScoresByStudent: { [otherStudentId]: {} },
     }).success).toBe(false);
   });
 });
