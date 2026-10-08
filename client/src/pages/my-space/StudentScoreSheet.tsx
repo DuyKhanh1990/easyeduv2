@@ -373,7 +373,7 @@ export function StudentScoreSheet() {
 
       {/* Detail dialog */}
       <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent className={`${selectedConversionDetail ? "max-w-6xl" : "max-w-4xl"} max-h-[90vh] flex flex-col p-0 gap-0`}>
+        <DialogContent className={`${selectedConversionDetail ? "w-[calc(100vw-1rem)] max-w-[1600px]" : "max-w-4xl"} max-h-[90vh] flex flex-col overflow-hidden p-0 gap-0`}>
           <DialogHeader className="px-6 pt-5 pb-4 border-b shrink-0">
             <DialogTitle className="text-base">{selected?.title}</DialogTitle>
             <div className="flex flex-wrap gap-2 pt-1">
@@ -402,44 +402,56 @@ export function StudentScoreSheet() {
 
           {selected?.kind === "conversion" && selectedConversionDetail ? (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
-              <section className="min-h-0 flex-1 overflow-y-auto p-4 md:w-[58%] md:border-r">
-                <div className="mb-3 flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-semibold">
-                    {t("mySpace.scoreSheet.conversionOverallScore")}:{" "}
-                    {formatScore(selectedConversionDetail.attempt.result.overallConvertedScore)}
-                  </span>
-                  {selectedConversionDetail.attempt.result.gradeBand && (
-                    <Badge
-                      variant="outline"
-                      style={{ color: selectedConversionDetail.attempt.result.gradeBand.color }}
-                    >
-                      {selectedConversionDetail.attempt.result.gradeBand.label}
-                    </Badge>
-                  )}
-                  {selectedConversionDetail.attempt.result.passStatus && (
-                    <Badge className={selectedConversionDetail.attempt.result.passStatus === "passed"
-                      ? "bg-emerald-600 hover:bg-emerald-600"
-                      : "bg-red-600 hover:bg-red-600"}
-                    >
-                      {selectedConversionDetail.attempt.result.passStatus === "passed" ? "Đạt" : "Không đạt"}
-                    </Badge>
-                  )}
-                  <span className="text-xs text-muted-foreground">
+              <section className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 md:flex-[0_0_60%] md:border-r">
+                <div className="mb-3 space-y-2">
+                  <p className="text-xs text-muted-foreground">
                     {t("mySpace.scoreSheet.conversionAttempt")} {selectedConversionDetail.attempt.attemptNumber}/{selectedConversionDetail.attemptCount}
                     {" · "}
                     {selectedConversionDetail.scoringPolicy === "highest"
                       ? t("mySpace.scoreSheet.conversionHighestAttempt")
                       : t("mySpace.scoreSheet.conversionLatestAttempt")}
-                  </span>
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium">
+                    {t("mySpace.scoreSheet.conversionOverallScore")}:{" "}
+                      <span className={`text-xl font-bold tabular-nums ${
+                        selectedConversionDetail.attempt.result.passStatus === "passed"
+                          ? "text-green-600 dark:text-green-400"
+                          : selectedConversionDetail.attempt.result.passStatus === "failed"
+                            ? "text-red-600 dark:text-red-400"
+                            : "text-foreground"
+                      }`}>
+                        {formatScore(selectedConversionDetail.attempt.result.overallConvertedScore)}
+                      </span>
+                    </span>
+                    <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                      {selectedConversionDetail.attempt.result.gradeBand && (
+                        <Badge
+                          variant="outline"
+                          style={{ color: selectedConversionDetail.attempt.result.gradeBand.color }}
+                        >
+                          {selectedConversionDetail.attempt.result.gradeBand.label}
+                        </Badge>
+                      )}
+                      {selectedConversionDetail.attempt.result.passStatus && (
+                        <Badge className={selectedConversionDetail.attempt.result.passStatus === "passed"
+                          ? "bg-emerald-600 hover:bg-emerald-600"
+                          : "bg-red-600 hover:bg-red-600"}
+                        >
+                          {selectedConversionDetail.attempt.result.passStatus === "passed" ? "Đạt" : "Không đạt"}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="overflow-x-auto rounded-lg border">
-                  <table className="w-full min-w-[560px] text-left text-sm">
+                <div className="min-w-0 rounded-lg border">
+                  <table className="w-full table-fixed text-left text-sm">
                     <thead className="bg-muted/50 text-xs text-muted-foreground">
                       <tr>
-                        <th className="px-3 py-2 font-semibold">{t("mySpace.scoreSheet.conversionSkill")}</th>
-                        <th className="px-3 py-2 font-semibold">{t("mySpace.scoreSheet.conversionCorrectAnswers")}</th>
-                        <th className="px-3 py-2 font-semibold">{t("mySpace.scoreSheet.conversionInternationalScore")}</th>
+                        <th className="w-[44%] px-2 py-2 font-semibold sm:px-3">{t("mySpace.scoreSheet.conversionSkill")}</th>
+                        <th className="w-[28%] px-2 py-2 font-semibold sm:px-3">{t("mySpace.scoreSheet.conversionCorrectAnswers")}</th>
+                        <th className="w-[28%] px-2 py-2 font-semibold sm:px-3">{t("mySpace.scoreSheet.conversionInternationalScore")}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -462,7 +474,7 @@ export function StudentScoreSheet() {
                         const partScores = selectedConversionDetail.attempt.partScores[skillId] ?? {};
                         return (
                           <tr key={skillId} className="align-top">
-                            <td className="px-3 py-2.5">
+                            <td className="break-words px-2 py-2.5 sm:px-3">
                               <p className="font-medium">
                                 {skill.name || section?.name || `Kỹ năng ${index + 1}`}
                               </p>
@@ -482,10 +494,10 @@ export function StudentScoreSheet() {
                                 </ul>
                               )}
                             </td>
-                            <td className="px-3 py-2.5 font-medium tabular-nums">
+                            <td className="whitespace-nowrap px-2 py-2.5 text-xs font-medium tabular-nums sm:px-3 sm:text-sm">
                               {formatScore(skillResult?.rawScore)} / {formatScore(rawMaximum)}
                             </td>
-                            <td className="px-3 py-2.5 font-medium tabular-nums">
+                            <td className="whitespace-nowrap px-2 py-2.5 text-xs font-medium tabular-nums sm:px-3 sm:text-sm">
                               {formatScore(skillResult?.convertedScore)} / {formatScore(section?.convertedMaxScore)}
                             </td>
                           </tr>
@@ -496,7 +508,7 @@ export function StudentScoreSheet() {
                 </div>
               </section>
 
-              <section className="min-h-0 flex-1 overflow-y-auto p-4 md:w-[42%]">
+              <section className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4">
                 <div className="mb-3 flex items-center gap-1.5">
                   <MessageSquare className="h-4 w-4 text-muted-foreground" />
                   <h3 className="text-sm font-semibold">{t("mySpace.scoreSheet.conversionEvaluations")}</h3>
