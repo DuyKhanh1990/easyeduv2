@@ -2384,6 +2384,7 @@ export function registerStudentsRoutes(app: Express): void {
           gb.class_id,
           gb.score_sheet_id,
           gb.created_at,
+          cs.session_date AS session_date,
           c.name AS class_name,
           (
             SELECT gbc.comment
@@ -2413,6 +2414,7 @@ export function registerStudentsRoutes(app: Express): void {
         FROM class_grade_books gb
         JOIN classes c ON c.id = gb.class_id
         JOIN student_classes sc2 ON sc2.class_id = gb.class_id AND sc2.student_id = ${studentId}
+        LEFT JOIN class_sessions cs ON cs.id = gb.session_id
         WHERE gb.published = TRUE
         ORDER BY gb.created_at DESC
       `);
@@ -2434,6 +2436,7 @@ export function registerStudentsRoutes(app: Express): void {
           gradingComment: row.grading_comment ?? null,
           refId: row.id,
           createdAt: row.created_at,
+          sessionDate: row.session_date,
         };
       }).filter((entry) => entry.scores.length > 0 || Boolean(entry.gradingComment?.trim()));
 
@@ -2560,6 +2563,7 @@ export function registerStudentsRoutes(app: Express): void {
             gradingComment: null,
             refId: row.classSessionId,
             createdAt,
+            sessionDate: examDate,
             conversionResult: {
               gradeBand: summary.result.gradeBand,
               passStatus: summary.result.passStatus,
@@ -2587,6 +2591,7 @@ export function registerStudentsRoutes(app: Express): void {
           ssc.score,
           ssc.grading_comment,
           ssc.created_at,
+          cs.session_date AS session_date,
           c.name AS class_name,
           c.id AS class_id
         FROM student_session_contents ssc
@@ -2610,6 +2615,7 @@ export function registerStudentsRoutes(app: Express): void {
         refId: row.id,
         gradingComment: row.grading_comment,
         createdAt: row.created_at,
+        sessionDate: row.session_date,
       }));
 
       const all = [...gradeBookEntries, ...publishedAssessmentEntries, ...contentEntries].sort(

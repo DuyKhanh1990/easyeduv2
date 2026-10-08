@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
+import { vi } from "date-fns/locale";
 import { Eye, Loader2 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,6 +26,7 @@ interface ScoreEntry {
   refId: string;
   gradingComment?: string | null;
   createdAt: string;
+  sessionDate?: string | null;
   conversionResult?: {
     gradeBand: { label: string; color: string } | null;
     passStatus: "passed" | "failed" | null;
@@ -38,6 +40,31 @@ const TYPE_COLORS: Record<string, string> = {
   "BTVN": "bg-orange-100 text-orange-700 border-orange-200",
   "Bài kiểm tra": "bg-blue-100 text-blue-700 border-blue-200",
 };
+
+type ScoreFilter = "all" | "gradebook" | "homework" | "conversion" | "passed" | "failed";
+
+const SCORE_FILTER_TABS: Array<{ id: ScoreFilter; label: string }> = [
+  { id: "all", label: "Tất cả" },
+  { id: "gradebook", label: "Bảng điểm" },
+  { id: "homework", label: "BTVN" },
+  { id: "conversion", label: "Bảng điểm quy đổi" },
+  { id: "passed", label: "Đạt" },
+  { id: "failed", label: "Không đạt" },
+];
+
+function getTimelineDateKey(entry: ScoreEntry): string {
+  const date = entry.sessionDate || entry.conversionAssessment?.examDate || entry.createdAt;
+  return date?.slice(0, 10) || "unknown";
+}
+
+function formatTimelineDate(dateKey: string): string {
+  if (dateKey === "unknown") return "Chưa xác định ngày";
+  try {
+    return format(new Date(`${dateKey}T00:00:00`), "EEEE, dd/MM/yyyy", { locale: vi });
+  } catch {
+    return dateKey;
+  }
+}
 
 function ScoreDetailDialog({
   entry,
@@ -203,6 +230,7 @@ export function StudentScoreTab({
   const [detailEntry, setDetailEntry] = useState<ScoreEntry | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [filter, setFilter] = useState<ScoreFilter>("all");
 
   const { data: entries = [], isLoading } = useQuery<ScoreEntry[]>({
     queryKey: ["/api/students", studentId, "score-entries"],
@@ -222,122 +250,185 @@ export function StudentScoreTab({
     );
   }
 
-  if (entries.length === 0) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-        Chưa có bảng điểm nào được công bố
-      </div>
-    );
-  }
-
-  const totalPages = Math.ceil(entries.length / pageSize);
-  const paginated = entries.slice((page - 1) * pageSize, page * pageSize);
-  const from = entries.length === 0 ? 0 : (page - 1) * pageSize + 1;
-  const to = Math.min(page * pageSize, entries.length);
+  const filteredEntries = entries.filter((entry) => {
+    switch (filter) {
+      case "gradebook":
+        return entry.type === "Bảng điểm";
+      case "homework":
+        return entry.type === "BTVN";
+      case "conversion":
+        return entry.type === "Bảng điểm quy đổi";
+      case "passed":
+        return entry.conversionResult?.passStatus === "passed";
+      case "failed":
+        return entry.conversionResult?.passStatus === "failed";
+      default:
+        return true;
+    }
+  });
+  const totalPages = Math.ceil(filteredEntries.length / pageSize) || 1;
+  const currentPage = Math.min(page, totalPages);
+  const paginated = filteredEntries.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const from = filteredEntries.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const to = Math.min(currentPage * pageSize, filteredEntries.length);
+  const timelineGroups = paginated.reduce<Record<string, ScoreEntry[]>>((groups, entry) => {
+    const dateKey = getTimelineDateKey(entry);
+    (groups[dateKey] ??= []).push(entry);
+    return groups;
+  }, {});
+  const sortedDates = Object.keys(timelineGroups).sort((a, b) => b.localeCompare(a));
 
   return (
     <>
-      <div className="flex-1 overflow-auto bg-gray-50/50">
-        <table className="w-full min-w-[960px] text-sm border-collapse table-fixed">
-          <colgroup>
-            <col className="w-[5%]" />
-            <col className="w-[22%]" />
-            <col className="w-[18%]" />
-            <col className="w-[13%]" />
-            <col className="w-[34%]" />
-            <col className="w-[8%]" />
-          </colgroup>
-          <thead className="sticky top-0 z-10">
-            <tr className="bg-white border-b-2 border-indigo-100 shadow-sm">
-              <th className="text-left px-3 py-3 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">STT</th>
-              <th className="text-left px-3 py-3 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Tiêu đề</th>
-              <th className="text-left px-3 py-3 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Lớp học</th>
-              <th className="text-left px-3 py-3 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Loại</th>
-              <th className="text-left px-3 py-3 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Điểm tổng kết</th>
-              <th className="text-center px-3 py-3 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Hành động</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {paginated.map((entry, idx) => (
-              <tr
-                key={entry.id}
-                data-testid={`score-entry-row-${entry.id}`}
-                className="bg-white hover:bg-indigo-50/40 transition-colors"
+      <div className="shrink-0 border-b bg-white px-3 py-2">
+        <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Lọc bảng điểm">
+          {SCORE_FILTER_TABS.map((tab) => {
+            const selected = filter === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => {
+                  setFilter(tab.id);
+                  setPage(1);
+                }}
+                className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  selected
+                    ? "bg-violet-600 text-white shadow-sm"
+                    : "text-gray-600 hover:bg-violet-50 hover:text-violet-700"
+                }`}
               >
-                <td className="px-3 py-3 text-gray-400 text-xs font-mono">{(page - 1) * pageSize + idx + 1}</td>
-                <td className="px-3 py-3 font-semibold text-gray-800 truncate" title={entry.title}>{entry.title}</td>
-                <td className="px-3 py-3 text-gray-500 truncate text-xs">{entry.className}</td>
-                <td className="px-3 py-3">
-                  <span
-                    data-testid={`score-entry-type-${entry.id}`}
-                    className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${TYPE_COLORS[entry.type] ?? ""}`}
-                  >
-                    {entry.type}
-                  </span>
-                </td>
-                <td
-                  className="px-3 py-3 font-semibold text-gray-700 text-sm"
-                  data-testid={`score-entry-final-${entry.id}`}
-                >
-                  {entry.type === "Bảng điểm quy đổi" ? (
-                    <div className="grid min-w-[280px] grid-cols-[minmax(6rem,1.2fr)_minmax(4.5rem,0.9fr)_minmax(5rem,1fr)] items-center gap-x-1.5">
-                      <span className="truncate tabular-nums" title={entry.finalScore ?? undefined}>
-                        {entry.finalScore ?? <span className="text-gray-300">—</span>}
-                      </span>
-                      {entry.conversionResult?.gradeBand && (
-                        <span
-                          className="inline-flex w-fit items-center whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold"
-                          style={{
-                            color: entry.conversionResult.gradeBand.color,
-                            backgroundColor: `${entry.conversionResult.gradeBand.color}1A`,
-                          }}
-                        >
-                          {entry.conversionResult.gradeBand.label}
-                        </span>
-                      )}
-                      {!entry.conversionResult?.gradeBand && (
-                        <span aria-hidden="true" className="invisible inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold">—</span>
-                      )}
-                      {entry.conversionResult?.passStatus && (
-                        <span
-                          className="inline-flex w-fit items-center whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold"
-                          style={{
-                            color: entry.conversionResult.passStatus === "passed" ? "#15803D" : "#DC2626",
-                            backgroundColor: entry.conversionResult.passStatus === "passed" ? "#15803D1A" : "#DC26261A",
-                          }}
-                        >
-                          {entry.conversionResult.passStatus === "passed" ? "Đạt" : "Không đạt"}
-                        </span>
-                      )}
-                      {!entry.conversionResult?.passStatus && (
-                        <span aria-hidden="true" className="invisible inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold">—</span>
-                      )}
-                    </div>
-                  ) : (
-                    entry.finalScore ?? <span className="text-gray-300">—</span>
-                  )}
-                </td>
-                <td className="px-3 py-3 text-center">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    data-testid={`score-entry-view-${entry.id}`}
-                    onClick={() => setDetailEntry(entry)}
-                    className="h-7 w-7 p-0 hover:bg-indigo-100 hover:text-indigo-700 rounded-lg"
-                    title="Xem chi tiết"
-                  >
-                    <Eye className="w-4 h-4" />
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {entries.length > 0 && (
+      <div className="flex-1 overflow-auto bg-gray-50/50 px-3 sm:px-4">
+        {filteredEntries.length === 0 ? (
+          <div className="flex h-full min-h-32 items-center justify-center text-center text-sm text-muted-foreground">
+            {entries.length === 0
+              ? "Chưa có bảng điểm nào được công bố"
+              : "Không có bảng điểm phù hợp với bộ lọc"}
+          </div>
+        ) : (
+          <div className="space-y-0 py-4">
+            {sortedDates.map((dateKey, dateIndex) => {
+              const groupEntries = timelineGroups[dateKey];
+              const isLast = dateIndex === sortedDates.length - 1;
+              return (
+                <div
+                  key={dateKey}
+                  className="flex min-w-0 gap-3"
+                  data-testid={`score-timeline-group-${dateKey}`}
+                >
+                  <div className="flex w-5 shrink-0 flex-col items-center pt-1 sm:w-8">
+                    <div className="mt-1 h-3 w-3 shrink-0 rounded-full bg-violet-500 ring-4 ring-violet-100" />
+                    {!isLast && <div className="mt-2 min-h-6 w-px flex-1 bg-violet-200" />}
+                  </div>
+                  <section className="min-w-0 flex-1 pb-5">
+                    <p className="mb-2 text-xs font-semibold capitalize tracking-wide text-violet-700">
+                      {formatTimelineDate(dateKey)}
+                    </p>
+                    <div className="space-y-2">
+                      {groupEntries.map((entry) => (
+                        <article
+                          key={entry.id}
+                          data-testid={`score-entry-row-${entry.id}`}
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-3 transition-colors hover:bg-indigo-50/40 sm:px-4"
+                        >
+                          <div className="flex min-w-0 items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-semibold text-gray-800" title={entry.title}>
+                                {entry.title}
+                              </p>
+                              <p className="mt-0.5 truncate text-xs text-gray-500">{entry.className}</p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              <span
+                                data-testid={`score-entry-type-${entry.id}`}
+                                className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${TYPE_COLORS[entry.type] ?? ""}`}
+                              >
+                                {entry.type}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                data-testid={`score-entry-view-${entry.id}`}
+                                aria-label={`Xem chi tiết: ${entry.title}`}
+                                onClick={() => setDetailEntry(entry)}
+                                className="h-7 w-7 rounded-lg p-0 hover:bg-indigo-100 hover:text-indigo-700"
+                                title="Xem chi tiết"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="mt-2 border-t border-dashed border-gray-200 pt-2">
+                            {entry.type === "Bảng điểm quy đổi" ? (
+                              <div className="grid w-full max-w-[420px] grid-cols-[minmax(4.5rem,1fr)_minmax(3.5rem,0.8fr)_minmax(4rem,0.9fr)] items-center gap-x-2">
+                                <div className="min-w-0">
+                                  <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">Điểm</p>
+                                  <p className="break-words text-sm font-semibold tabular-nums text-gray-700">
+                                    {entry.finalScore ?? <span className="text-gray-300">—</span>}
+                                  </p>
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">Phân loại</p>
+                                  {entry.conversionResult?.gradeBand ? (
+                                    <span
+                                      className="inline-flex w-fit items-center whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                                      style={{
+                                        color: entry.conversionResult.gradeBand.color,
+                                        backgroundColor: `${entry.conversionResult.gradeBand.color}1A`,
+                                      }}
+                                    >
+                                      {entry.conversionResult.gradeBand.label}
+                                    </span>
+                                  ) : <span className="text-sm text-gray-300">—</span>}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">Trạng thái</p>
+                                  {entry.conversionResult?.passStatus ? (
+                                    <span
+                                      className="inline-flex w-fit items-center whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                                      style={{
+                                        color: entry.conversionResult.passStatus === "passed" ? "#15803D" : "#DC2626",
+                                        backgroundColor: entry.conversionResult.passStatus === "passed" ? "#15803D1A" : "#DC26261A",
+                                      }}
+                                    >
+                                      {entry.conversionResult.passStatus === "passed" ? "Đạt" : "Không đạt"}
+                                    </span>
+                                  ) : <span className="text-sm text-gray-300">—</span>}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="min-w-0">
+                                <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">Điểm tổng kết</p>
+                                <p className="break-words text-sm font-semibold text-gray-700">
+                                  {entry.finalScore ?? <span className="text-gray-300">—</span>}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {filteredEntries.length > 0 && (
         <div className="border-t px-4 py-2.5 flex items-center justify-between bg-white shrink-0 shadow-sm">
-          <span className="text-xs text-gray-400 font-medium">{from}–{to} / {entries.length} bản ghi</span>
+          <span className="text-xs text-gray-400 font-medium">{from}–{to} / {filteredEntries.length} bản ghi</span>
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-400">Hiển thị:</span>
             <select
@@ -347,10 +438,10 @@ export function StudentScoreTab({
             >
               {[20, 30, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
             </select>
-            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+            <button onClick={() => setPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1}
               className="px-2.5 py-1 text-xs border border-gray-200 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium">‹</button>
-            <span className="text-xs font-semibold text-gray-600">{page} / {totalPages || 1}</span>
-            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
+            <span className="text-xs font-semibold text-gray-600">{currentPage} / {totalPages}</span>
+            <button onClick={() => setPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage >= totalPages}
               className="px-2.5 py-1 text-xs border border-gray-200 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium">›</button>
           </div>
         </div>
