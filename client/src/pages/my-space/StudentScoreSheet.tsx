@@ -271,6 +271,9 @@ export function StudentScoreSheet() {
                       const headlineScore = book.kind === "conversion"
                         ? scores.find((entry) => entry.categoryId.endsWith(":overall")) ?? lastScore
                         : lastScore;
+                      const conversionResult = book.kind === "conversion"
+                        ? book.conversionDetail?.attempt.result
+                        : undefined;
                       const hasComment = !!book.teacherComment;
 
                       return (
@@ -325,16 +328,41 @@ export function StudentScoreSheet() {
                           </div>
 
                           {/* Col 3: Score */}
-                          <div className="flex min-w-0 items-center gap-1.5">
-                            {headlineScore && headlineScore.score != null && headlineScore.score !== "" ? (
-                              <span className="text-sm font-bold text-violet-600 dark:text-violet-400 whitespace-nowrap">
-                                {headlineScore.score}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">{t("mySpace.scoreSheet.noScore")}</span>
-                            )}
-                            {hasComment && (
-                              <MessageSquare className="h-3.5 w-3.5 text-amber-500 shrink-0" aria-label={t("mySpace.scoreSheet.hasComment")} />
+                          <div className="min-w-0">
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              {headlineScore && headlineScore.score != null && headlineScore.score !== "" ? (
+                                <span className="text-sm font-bold text-violet-600 dark:text-violet-400 whitespace-nowrap">
+                                  {headlineScore.score}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">{t("mySpace.scoreSheet.noScore")}</span>
+                              )}
+                              {hasComment && (
+                                <MessageSquare className="h-3.5 w-3.5 text-amber-500 shrink-0" aria-label={t("mySpace.scoreSheet.hasComment")} />
+                              )}
+                            </div>
+                            {conversionResult && (
+                              <div className="mt-0.5 flex min-w-0 flex-col items-start gap-0.5">
+                                {conversionResult.gradeBand && (
+                                  <span
+                                    className="max-w-full break-words text-[11px] font-bold leading-tight sm:text-xs"
+                                    style={{ color: conversionResult.gradeBand.color }}
+                                  >
+                                    {conversionResult.gradeBand.label}
+                                  </span>
+                                )}
+                                {conversionResult.passStatus && (
+                                  <span
+                                    className={`max-w-full break-words text-[11px] font-bold leading-tight sm:text-xs ${
+                                      conversionResult.passStatus === "passed"
+                                        ? "text-emerald-600 dark:text-emerald-400"
+                                        : "text-red-600 dark:text-red-400"
+                                    }`}
+                                  >
+                                    {conversionResult.passStatus === "passed" ? "Đạt" : "Không đạt"}
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </div>
 
