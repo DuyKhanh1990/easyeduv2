@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ClipboardList, LoaderCircle } from "lucide-react";
 import type { ScoreSheetTemplate } from "@shared/score-sheet-template";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useLanguage } from "@/hooks/use-language";
+import { ScoreSheetConversionResults } from "./ScoreSheetConversionResults";
 
 type SelectionMode = "class" | "students";
 
@@ -28,27 +28,14 @@ type EligibleStudent = {
   }>;
 };
 
-type DisplayStudent = {
-  id: string;
-  name: string;
-  code?: string | null;
-  classLabel?: string;
-};
-
 interface ScoreSheetConversionSelectorProps {
   enabled: boolean;
   layout: "create" | "edit";
 }
 
-function getClassRosterStudent(row: any): DisplayStudent | null {
+function getClassRosterStudentId(row: any): string | null {
   const id = row.studentId || row.student?.id || row.id;
-  if (!id) return null;
-
-  return {
-    id,
-    name: row.fullName || row.full_name || row.student?.fullName || "",
-    code: row.code || row.student?.code || null,
-  };
+  return id ? String(id) : null;
 }
 
 export function ScoreSheetConversionSelector({
@@ -88,15 +75,24 @@ export function ScoreSheetConversionSelector({
     enabled: enabled && selectionMode === "class" && !!selectedClassId,
   });
 
-  const templateSourceClassId =
-    (selectionMode === "class" && selectedClassId) || staffClasses[0]?.id || "";
   const {
     data: allTemplates = [],
     isLoading: templatesLoading,
     isError: templatesError,
   } = useQuery<ScoreSheetTemplate[]>({
-    queryKey: [`/api/classes/${templateSourceClassId}/score-sheet-templates`],
-    enabled: enabled && !!templateSourceClassId,
+    queryKey: ["/api/my-space/score-sheet/conversion-templates"],
+    enabled,
+    queryFn: async () => {
+      const response = await fetch(
+        "/api/my-space/score-sheet/conversion-templates",
+        { credentials: "include" },
+      );
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.message ?? t("mySpace.scoreSheet.conversionTemplatesLoadError"));
+      }
+      return payload;
+    },
   });
 
   const conversionTemplates = allTemplates.filter(
@@ -104,32 +100,27 @@ export function ScoreSheetConversionSelector({
   );
   const studentOptions = eligibleStudents.map((student) => ({
     value: student.studentId,
-    label: student.fullName || student.code || t("mySpace.scoreSheet.studentLabel"),
-    sublabel: [
-      student.code,
-      student.classes.map((studentClass) => studentClass.classCode).join(", "),
-    ].filter(Boolean).join(" · "),
+    label: [student.fullName || t("mySpace.scoreSheet.studentLabel"), student.code]
+      .filter(Boolean)
+      .join(" — "),
   }));
 
-  const classRosterStudents = classRoster
-    .map(getClassRosterStudent)
-    .filter((student): student is DisplayStudent => Boolean(student?.id))
-    .reduce<DisplayStudent[]>((unique, student) => {
-      if (!unique.some((existing) => existing.id === student.id)) unique.push(student);
-      return unique;
-    }, []);
-
-  const manuallySelectedStudents = eligibleStudents
-    .filter((student) => selectedStudentIds.includes(student.studentId))
-    .map((student) => ({
-      id: student.studentId,
-      name: student.fullName || "",
-      code: student.code,
-      classLabel: student.classes.map((studentClass) => studentClass.classCode).join(", "),
-    }));
-
-  const selectedStudents =
-    selectionMode === "class" ? classRosterStudents : manuallySelectedStudents;
+  const classRosterStudentIds = classRoster
+    .map(getClassRosterStudentId)
+    .filter((studentId): studentId is string => Boolean(studentId));
+  const selectedResultStudentIds = selectionMode === "class"
+    ? Array.from(new Set(classRosterStudentIds))
+    : selectedStudentIds;
+  const selectedResultClassIds = selectionMode === "class"
+    ? (selectedClassId ? [selectedClassId] : [])
+    : Array.from(new Set(
+        eligibleStudents
+          .filter((student) => selectedStudentIds.includes(student.studentId))
+          .flatMap((student) => student.classes.map((studentClass) => studentClass.classId)),
+      ));
+  const selectedStudentCount = selectionMode === "class"
+    ? selectedResultStudentIds.length
+    : selectedStudentIds.length;
   const selectedClass = staffClasses.find((staffClass) => staffClass.id === selectedClassId);
 
   const changeSelectionMode = (mode: SelectionMode) => {
@@ -137,15 +128,6 @@ export function ScoreSheetConversionSelector({
     setSelectedClassId("");
     setSelectedStudentIds([]);
   };
-
-  const showRightLoading =
-    selectionMode === "class"
-      ? Boolean(selectedClassId && rosterLoading)
-      : Boolean(studentsLoading && selectedStudentIds.length > 0);
-  const showRightError =
-    selectionMode === "class"
-      ? Boolean(selectedClassId && rosterError)
-      : Boolean(studentsError && selectedStudentIds.length > 0);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col md:flex-row">
@@ -294,57 +276,23 @@ export function ScoreSheetConversionSelector({
             </p>
           </div>
           <Badge variant="secondary" className="shrink-0">
-            {selectedStudents.length} {t("mySpace.scoreSheet.studentCount")}
+            {selectedStudentCount} {t("mySpace.scoreSheet.studentCount")}
           </Badge>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto" data-testid="conversion-selected-students">
-          {showRightLoading ? (
-            <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
-              <LoaderCircle className="h-4 w-4 animate-spin" />
-              {t("mySpace.scoreSheet.conversionLoadingStudents")}
-            </div>
-          ) : showRightError ? (
-            <div className="flex h-full items-center justify-center text-center text-sm text-destructive">
-              {t("mySpace.scoreSheet.conversionStudentsLoadError")}
-            </div>
-          ) : selectedStudents.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
-              <ClipboardList className="h-9 w-9 opacity-30" />
-              <p>
-                {selectionMode === "class"
-                  ? selectedClassId
-                    ? t("mySpace.scoreSheet.noStudents")
-                    : t("mySpace.scoreSheet.conversionSelectClassHint")
-                  : t("mySpace.scoreSheet.conversionSelectStudentsHint")}
-              </p>
-            </div>
-          ) : (
-            <ol className="divide-y">
-              {selectedStudents.map((student, index) => (
-                <li key={student.id} className="flex items-center gap-3 py-3">
-                  <span className="w-7 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                    {index + 1}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
-                      {student.name || t("mySpace.scoreSheet.studentLabel")}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {[
-                        student.code,
-                        student.classLabel ||
-                          (selectionMode === "class" ? selectedClass?.classCode : undefined),
-                      ]
-                        .filter(Boolean)
-                        .join(" · ") || "\u00a0"}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          )}
-        </div>
+        <ScoreSheetConversionResults
+          selectedStudentIds={selectedResultStudentIds}
+          allowedClassIds={selectedResultClassIds}
+          selectionLoading={selectionMode === "class" && Boolean(selectedClassId) && rosterLoading}
+          selectionError={selectionMode === "class" && Boolean(selectedClassId) && rosterError}
+          emptySelectionMessage={
+            selectionMode === "class"
+              ? selectedClassId
+                ? t("mySpace.scoreSheet.noStudents")
+                : t("mySpace.scoreSheet.conversionSelectClassHint")
+              : t("mySpace.scoreSheet.conversionSelectStudentsHint")
+          }
+        />
       </section>
     </div>
   );

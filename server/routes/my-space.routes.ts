@@ -305,6 +305,12 @@ async function getAuthorizedScoreSheetSession(
           ${staffRecord.id} = ANY(c.teacher_ids)
           OR ${staffRecord.id} = ANY(c.manager_ids)
           OR cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
+          OR EXISTS (
+            SELECT 1
+            FROM class_session_teacher_assignments csta
+            WHERE csta.class_session_id = cs.id
+              AND csta.teacher_id = ${staffRecord.id}
+          )
         )
         AND EXISTS (
           SELECT 1
@@ -4508,6 +4514,42 @@ export function registerMySpaceRoutes(app: Express): void {
     }
   });
 
+  app.get("/api/my-space/score-sheet/conversion-templates", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+      const permissions = req.isSuperAdmin
+        ? { canView: true, canViewAll: true, canCreate: true, canEdit: true }
+        : await storage.getEffectivePermissions(
+          req.roleIds ?? [],
+          "/my-space/score-sheet",
+        );
+      if (
+        !req.isSuperAdmin
+        && !permissions.canView
+        && !permissions.canViewAll
+        && !permissions.canCreate
+        && !permissions.canEdit
+      ) {
+        return res.status(403).json({ message: "Bạn không có quyền xem mẫu bảng điểm." });
+      }
+
+      const [templatesRow] = await db
+        .select({ value: systemSettings.value })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, "scoreSheetTemplates"))
+        .limit(1);
+      const templates = templatesRow
+        ? z.array(scoreSheetTemplateSchema).parse(JSON.parse(templatesRow.value))
+        : [];
+      res.json(templates.filter((template) => Boolean(template.scoreConversionTemplateId)));
+    } catch (err: any) {
+      console.error("My Space conversion score-sheet templates error:", err);
+      res.status(500).json({ message: err.message || "Không thể tải mẫu bảng điểm." });
+    }
+  });
+
   app.get("/api/my-space/score-sheet/staff-students", async (req, res) => {
     try {
       const user = req.user as any;
@@ -4761,6 +4803,8 @@ export function registerMySpaceRoutes(app: Express): void {
           st.start_time AS session_start_time,
           c.class_code,
           c.name AS class_name,
+          loc.name AS location_name,
+          assigned_teachers.teacher_names,
           (
             SELECT COUNT(DISTINCT ss.student_id)::int
             FROM student_sessions ss
@@ -4770,11 +4814,29 @@ export function registerMySpaceRoutes(app: Express): void {
         FROM class_sessions cs
         JOIN classes c ON c.id = cs.class_id
         LEFT JOIN shift_templates st ON st.id = cs.shift_template_id
+        LEFT JOIN locations loc ON loc.id = c.location_id
+        LEFT JOIN LATERAL (
+          SELECT string_agg(DISTINCT teacher.full_name, ', ' ORDER BY teacher.full_name) AS teacher_names
+          FROM unnest(
+            COALESCE(
+              NULLIF(cs.teacher_ids, '{}'::uuid[]),
+              c.teacher_ids,
+              '{}'::uuid[]
+            )
+          ) AS assigned_teacher(id)
+          JOIN staff teacher ON teacher.id = assigned_teacher.id
+        ) assigned_teachers ON TRUE
         WHERE cs.score_sheet_assessment_id IS NOT NULL
           AND (
             ${staffRecord.id} = ANY(c.teacher_ids)
             OR ${staffRecord.id} = ANY(c.manager_ids)
             OR cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
+            OR EXISTS (
+              SELECT 1
+              FROM class_session_teacher_assignments csta
+              WHERE csta.class_session_id = cs.id
+                AND csta.teacher_id = ${staffRecord.id}
+            )
           )
           AND EXISTS (
             SELECT 1
@@ -4858,6 +4920,8 @@ export function registerMySpaceRoutes(app: Express): void {
           classId: row.class_id,
           classCode: row.class_code,
           className: row.class_name,
+          locationName: row.location_name ?? null,
+          teacherNames: row.teacher_names ?? null,
           sessionIndex: row.session_index,
           studentCount,
           enteredStudentCount,
