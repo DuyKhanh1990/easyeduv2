@@ -242,25 +242,25 @@ export function StudentScoreSheet() {
           <p className="text-sm">{t("mySpace.scoreSheet.studentEmpty")}</p>
         </div>
       ) : (
-        <div className="space-y-0">
+        <div className="-mx-3 space-y-0 bg-gray-100 px-3 py-4 sm:-mx-4 sm:px-4 dark:bg-muted/20">
           {sortedDates.map((dateKey, dateIdx) => {
             const books = grouped[dateKey];
             const isLast = dateIdx === sortedDates.length - 1;
 
             return (
-              <div key={dateKey} className="flex min-w-0 gap-2 sm:gap-4">
+              <div key={dateKey} className="flex min-w-0 gap-3">
                 {/* Timeline spine */}
-                <div className="flex w-8 shrink-0 flex-col items-center pt-1 sm:w-12 md:w-16 xl:w-[130px]">
-                  <div className="w-3 h-3 rounded-full bg-violet-500 ring-4 ring-violet-100 dark:ring-violet-900/40 shrink-0 mt-1" />
+                <div className="flex w-5 shrink-0 flex-col items-center pt-1 sm:w-8">
+                  <div className="mt-1 h-3 w-3 shrink-0 rounded-full bg-violet-500 ring-4 ring-violet-100 dark:ring-violet-900/40" />
                   {!isLast && (
-                    <div className="flex-1 w-px bg-border mt-2 min-h-[24px]" />
+                    <div className="mt-2 min-h-6 w-px flex-1 bg-violet-200 dark:bg-violet-900" />
                   )}
                 </div>
 
                 {/* Date + cards */}
                 <div className="flex-1 pb-6 min-w-0">
                   {/* Date label */}
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400 mb-2 capitalize">
+                  <p className="mb-2 text-xs font-semibold capitalize tracking-wide text-violet-700 dark:text-violet-400">
                     {formatDateLabel(dateKey, lang)}
                   </p>
 
@@ -277,118 +277,121 @@ export function StudentScoreSheet() {
                       const hasComment = !!book.teacherComment;
 
                       return (
-                        <div
+                        <article
                           key={book.id}
-                           className="grid min-w-0 grid-cols-2 items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-3 transition-colors hover:bg-accent/40 sm:grid-cols-3 sm:px-4 md:grid-cols-[minmax(0,1.4fr)_minmax(120px,1fr)_80px_minmax(180px,1.4fr)_48px] xl:grid-cols-[minmax(160px,1fr)_160px_80px_minmax(160px,1fr)_48px] xl:items-center xl:gap-x-4 xl:gap-y-0"
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-3 shadow-sm transition-colors hover:bg-indigo-50/40 dark:border-border dark:bg-card sm:px-4"
                           data-testid={`row-grade-book-${book.id}`}
                         >
-                           {/* Col 1: Title + class */}
-                           <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-1 xl:col-span-1">
-                            <p className="text-sm font-semibold text-foreground truncate leading-tight">
+                          <div className="flex min-w-0 items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-semibold leading-tight text-gray-800 dark:text-foreground" title={book.title}>
                               {book.title}
                             </p>
-                            <div className="flex items-center gap-1 mt-0.5">
-                              <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
-                                {book.classCode}
-                              </span>
-                              {book.className !== book.classCode && (
-                                <span className="text-xs text-muted-foreground/70 truncate">
-                                  — {book.className}
-                                </span>
-                              )}
-                              {book.sessionIndex != null && (
-                                <span className="text-[11px] text-muted-foreground/60 whitespace-nowrap">
-                                  · {t("mySpace.scoreSheet.session")} {book.sessionIndex}
-                                </span>
-                              )}
-                              {book.studentName && (
-                                <span className="text-[11px] text-muted-foreground truncate">
-                                  · {t("mySpace.scoreSheet.studentLabel")}: {book.studentName}
-                                </span>
-                              )}
+                              <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-muted-foreground">
+                                <span>{book.classCode}</span>
+                                {book.className !== book.classCode && <span> — {book.className}</span>}
+                                {book.sessionIndex != null && (
+                                  <span> · {t("mySpace.scoreSheet.session")} {book.sessionIndex}</span>
+                                )}
+                                {book.studentName && (
+                                  <span> · {t("mySpace.scoreSheet.studentLabel")}: {book.studentName}</span>
+                                )}
+                              </p>
                             </div>
-                            {book.kind === "conversion" && (
-                              <div className="mt-1">
-                                <Badge className="h-5 border-orange-200 bg-orange-50 px-1.5 text-[10px] font-medium text-orange-700 hover:bg-orange-50 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-300 dark:hover:bg-orange-950/40">
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              {book.kind === "conversion" && (
+                                <Badge className="rounded-full border border-violet-200 bg-violet-100 px-2.5 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-950/40">
                                   {t("mySpace.scoreSheet.conversionSheet")}
                                 </Badge>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Col 2: Score sheet name */}
-                          <div className="min-w-0">
-                            {book.scoreSheetName ? (
-                              <Badge variant="outline" className="text-[11px] whitespace-nowrap">
-                                {book.scoreSheetName}
-                              </Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
-                          </div>
-
-                          {/* Col 3: Score */}
-                          <div className="min-w-0">
-                            <div className="flex min-w-0 items-center gap-1.5">
-                              {headlineScore && headlineScore.score != null && headlineScore.score !== "" ? (
-                                <span className="text-sm font-bold text-violet-600 dark:text-violet-400 whitespace-nowrap">
-                                  {headlineScore.score}
-                                </span>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">{t("mySpace.scoreSheet.noScore")}</span>
                               )}
-                              {hasComment && (
-                                <MessageSquare className="h-3.5 w-3.5 text-amber-500 shrink-0" aria-label={t("mySpace.scoreSheet.hasComment")} />
-                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 rounded-lg text-gray-500 hover:bg-indigo-100 hover:text-indigo-700 dark:text-muted-foreground"
+                                onClick={() => setSelected(book)}
+                                data-testid={`btn-view-grade-book-${book.id}`}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
                             </div>
-                            {conversionResult && (
-                              <div className="mt-0.5 flex min-w-0 flex-col items-start gap-0.5">
-                                {conversionResult.gradeBand && (
+                          </div>
+
+                          <div className="mt-2 space-y-2 border-t border-dashed border-gray-200 pt-2 dark:border-border">
+                            <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+                              <div className="flex min-w-0 items-center">
+                                {book.scoreSheetName ? (
+                                  <Badge variant="outline" className="text-[11px] whitespace-nowrap">
+                                    {book.scoreSheetName}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-xs text-gray-400">—</span>
+                                )}
+                              </div>
+
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                                  {t("mySpace.scoreSheet.score")}
+                                </span>
+                                {headlineScore && headlineScore.score != null && headlineScore.score !== "" ? (
+                                  <span className="text-sm font-bold text-violet-700 dark:text-violet-400">
+                                    {headlineScore.score}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">{t("mySpace.scoreSheet.noScore")}</span>
+                                )}
+                                {hasComment && (
+                                  <MessageSquare
+                                    className="h-3.5 w-3.5 shrink-0 text-amber-500"
+                                    aria-label={t("mySpace.scoreSheet.hasComment")}
+                                  />
+                                )}
+                              </div>
+
+                              {conversionResult?.gradeBand && (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                                    {t("mySpace.scoreSheet.classification")}
+                                  </span>
                                   <span
-                                    className="max-w-full break-words text-[11px] font-bold leading-tight sm:text-xs"
-                                    style={{ color: conversionResult.gradeBand.color }}
+                                    className="inline-flex w-fit items-center whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                                    style={{
+                                      color: conversionResult.gradeBand.color,
+                                      backgroundColor: `${conversionResult.gradeBand.color}1A`,
+                                    }}
                                   >
                                     {conversionResult.gradeBand.label}
                                   </span>
-                                )}
-                                {conversionResult.passStatus && (
+                                </div>
+                              )}
+
+                              {conversionResult?.passStatus && (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                                    {t("mySpace.scoreSheet.status")}
+                                  </span>
                                   <span
-                                    className={`max-w-full break-words text-[11px] font-bold leading-tight sm:text-xs ${
-                                      conversionResult.passStatus === "passed"
-                                        ? "text-emerald-600 dark:text-emerald-400"
-                                        : "text-red-600 dark:text-red-400"
-                                    }`}
+                                    className="inline-flex w-fit items-center whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                                    style={{
+                                      color: conversionResult.passStatus === "passed" ? "#15803D" : "#DC2626",
+                                      backgroundColor: conversionResult.passStatus === "passed" ? "#15803D1A" : "#DC26261A",
+                                    }}
                                   >
                                     {conversionResult.passStatus === "passed" ? "Đạt" : "Không đạt"}
                                   </span>
-                                )}
-                              </div>
-                            )}
-                          </div>
+                                </div>
+                              )}
+                            </div>
 
-                          {/* Col 4: Creator + date */}
-                           <div className="col-span-2 min-w-0 sm:col-span-2 md:col-span-1 xl:col-span-1">
-                            <p className="text-[11px] text-muted-foreground whitespace-nowrap truncate">
-                              {t("mySpace.scoreSheet.created")}: {book.createdByName ?? "—"} · {formatDate(book.createdAt)}
-                            </p>
-                            <p className="text-[11px] text-muted-foreground/70 whitespace-nowrap truncate">
-                              {t("mySpace.scoreSheet.updated")}: {formatDate(book.updatedAt)}
-                            </p>
+                            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[11px]">
+                              <p className="min-w-0 truncate text-gray-500 dark:text-muted-foreground">
+                                {t("mySpace.scoreSheet.created")}: {book.createdByName ?? "—"} · {formatDate(book.createdAt)}
+                              </p>
+                              <p className="text-gray-500 dark:text-muted-foreground/70">
+                                {t("mySpace.scoreSheet.updated")}: {formatDate(book.updatedAt)}
+                              </p>
+                            </div>
                           </div>
-
-                          {/* Col 5: View button */}
-                           <div className="col-span-2 flex justify-end border-t border-border/60 pt-2 sm:col-span-1 sm:border-0 sm:pt-0 md:col-span-1 xl:col-span-1 xl:border-0 xl:pt-0">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                              onClick={() => setSelected(book)}
-                              data-testid={`btn-view-grade-book-${book.id}`}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
+                        </article>
                       );
                     })}
                   </div>
