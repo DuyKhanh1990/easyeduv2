@@ -253,8 +253,14 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
   });
 
   const criteriaForm = useForm<{ name: string }>({ defaultValues: { name: "" } });
-  const subForm = useForm<{ name: string; inputType: "text" | "checkbox"; parentId: string }>({
-    defaultValues: { name: "", inputType: "text", parentId: "" },
+  const subForm = useForm<{
+    name: string;
+    inputType: "text" | "checkbox";
+    parentId: string;
+    minChecked: string;
+    maxChecked: string;
+  }>({
+    defaultValues: { name: "", inputType: "text", parentId: "", minChecked: "", maxChecked: "" },
   });
 
   useEffect(() => { criteriaForm.reset({ name: editingCriteria?.name || "" }); }, [editingCriteria]);
@@ -263,6 +269,8 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
       name: editingSubCriteria?.name || "",
       inputType: editingSubCriteria?.inputType === "checkbox" ? "checkbox" : "text",
       parentId: editingSubCriteria?.parentId || "",
+      minChecked: editingSubCriteria?.minChecked != null ? String(editingSubCriteria.minChecked) : "",
+      maxChecked: editingSubCriteria?.maxChecked != null ? String(editingSubCriteria.maxChecked) : "",
     });
   }, [editingSubCriteria]);
 
@@ -287,12 +295,20 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
   });
 
   const createSub = useMutation({
-    mutationFn: async (data: { name: string; inputType: "text" | "checkbox"; parentId: string }) => (
+    mutationFn: async (data: {
+      name: string;
+      inputType: "text" | "checkbox";
+      parentId: string;
+      minChecked: number | null;
+      maxChecked: number | null;
+    }) => (
       await apiRequest("POST", "/api/evaluation-sub-criteria", {
         name: data.name,
         parentId: data.parentId || null,
         itemType: data.parentId ? "criterion" : "heading",
         inputType: data.parentId ? data.inputType : "text",
+        minChecked: data.minChecked,
+        maxChecked: data.maxChecked,
         criteriaId: selectedCriteriaId,
       })
     ).json(),
@@ -305,7 +321,13 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
     onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
   });
   const updateSub = useMutation({
-    mutationFn: async (data: { name: string; inputType: "text" | "checkbox"; parentId: string }) => (
+    mutationFn: async (data: {
+      name: string;
+      inputType: "text" | "checkbox";
+      parentId: string;
+      minChecked: number | null;
+      maxChecked: number | null;
+    }) => (
       await apiRequest("PUT", `/api/evaluation-sub-criteria/${editingSubCriteria?.id}`, {
         name: data.name,
         parentId: data.parentId || null,
@@ -313,6 +335,8 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
           ? "criterion"
           : editingSubCriteria?.itemType === "criterion" ? "criterion" : "heading",
         inputType: data.parentId || editingSubCriteria?.itemType === "criterion" ? data.inputType : "text",
+        minChecked: data.minChecked,
+        maxChecked: data.maxChecked,
         criteriaId: selectedCriteriaId,
       })
     ).json(),
@@ -335,6 +359,43 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
     onError: (e: any) => toast({ title: "Lỗi", description: e.message, variant: "destructive" }),
   });
 
+  const submitSubForm = (data: {
+    name: string;
+    inputType: "text" | "checkbox";
+    parentId: string;
+    minChecked: string;
+    maxChecked: string;
+  }) => {
+    const isGroup = !data.parentId
+      && (!editingSubCriteria || editingSubCriteria.itemType === "heading");
+    const parseBound = (value: string): { value: number | null; invalid: boolean } => {
+      if (!value.trim()) return { value: null, invalid: false };
+      const parsed = Number(value);
+      return Number.isSafeInteger(parsed) && parsed >= 0
+        ? { value: parsed, invalid: false }
+        : { value: null, invalid: true };
+    };
+    const min = isGroup ? parseBound(data.minChecked) : { value: null, invalid: false };
+    const max = isGroup ? parseBound(data.maxChecked) : { value: null, invalid: false };
+    if (min.invalid || max.invalid) {
+      toast({ title: "Lỗi", description: "Giới hạn tickbox phải là số nguyên không âm.", variant: "destructive" });
+      return;
+    }
+    if (min.value != null && max.value != null && min.value > max.value) {
+      toast({ title: "Lỗi", description: "Số tickbox tối thiểu không được lớn hơn tối đa.", variant: "destructive" });
+      return;
+    }
+    const payload = {
+      ...data,
+      minChecked: min.value,
+      maxChecked: max.value,
+    };
+    if (editingSubCriteria) updateSub.mutate(payload);
+    else createSub.mutate(payload);
+  };
+
+  const groupLimitsVisible = !subForm.watch("parentId")
+    && (!editingSubCriteria || editingSubCriteria.itemType === "heading");
   const groupHeadings = subCriteriaList.filter((sub: any) => sub.itemType === "heading");
   const groupedChildren = (parentId: string) => subCriteriaList.filter((sub: any) => sub.itemType !== "heading" && sub.parentId === parentId);
   const ungroupedCriteria = subCriteriaList.filter((sub: any) => sub.itemType !== "heading" && !sub.parentId);
@@ -342,7 +403,14 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
     <TableRow key={sub.id} data-testid={`row-sub-criteria-${sub.id}`}>
       <TableCell className={`font-medium ${nested ? "pl-10" : ""}`}>
         {nested && <span className="text-muted-foreground mr-2">↳</span>}
-        {sub.name}
+        <span>{sub.name}</span>
+        {sub.itemType === "heading" && (sub.minChecked != null || sub.maxChecked != null) && (
+          <span className="ml-2 text-xs font-normal text-muted-foreground">
+            (Tickbox: {sub.minChecked != null ? `tối thiểu ${sub.minChecked}` : ""}
+            {sub.minChecked != null && sub.maxChecked != null ? " · " : ""}
+            {sub.maxChecked != null ? `tối đa ${sub.maxChecked}` : ""})
+          </span>
+        )}
       </TableCell>
       <TableCell>
         {sub.itemType === "heading" ? (
@@ -490,7 +558,7 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
                 : "Thêm tiêu chí con / tiêu đề nhóm"}
             </DialogTitle>
           </DialogHeader>
-          <form onSubmit={subForm.handleSubmit((d) => editingSubCriteria ? updateSub.mutate(d) : createSub.mutate(d))} className="space-y-4">
+          <form onSubmit={subForm.handleSubmit(submitSubForm)} className="space-y-4">
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Tên <span className="text-destructive">*</span></label>
               <Input {...subForm.register("name", { required: true })} placeholder="VD: Tiếp thu bài nhanh" data-testid="input-sub-criteria-name" />
@@ -517,6 +585,38 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
                 Không chọn nhóm sẽ tạo một tiêu đề nhóm. Chọn nhóm để tạo tiêu chí nằm bên trong nhóm đó.
               </p>
             </div>
+            {groupLimitsVisible && (
+              <div className="space-y-2 rounded-md border p-3">
+                <p className="text-sm font-medium">Giới hạn tickbox (không bắt buộc)</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs text-muted-foreground">Tối thiểu</label>
+                    <Input
+                      {...subForm.register("minChecked")}
+                      type="number"
+                      min={0}
+                      step={1}
+                      placeholder="Không giới hạn"
+                      data-testid="input-evaluation-group-min-checked"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs text-muted-foreground">Tối đa</label>
+                    <Input
+                      {...subForm.register("maxChecked")}
+                      type="number"
+                      min={0}
+                      step={1}
+                      placeholder="Không giới hạn"
+                      data-testid="input-evaluation-group-max-checked"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Để trống cả hai thì được tự do chọn. Có thể nhập riêng một giới hạn.
+                </p>
+              </div>
+            )}
             <div className={`space-y-1.5 ${!subForm.watch("parentId") ? "opacity-50" : ""}`}>
               <label className="text-sm font-medium">Loại tiêu chí</label>
               <Select
