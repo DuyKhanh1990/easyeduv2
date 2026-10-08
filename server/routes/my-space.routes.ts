@@ -62,6 +62,7 @@ import {
   freeClassSessionContents,
   studentClasses,
   systemSettings,
+  manualScoreSheetAssessments,
   scoreSheetAssessmentStudentAttempts,
   evaluationCriteria,
   evaluationSubCriteria,
@@ -75,6 +76,7 @@ import { canScheduleWrite } from "@shared/schedule-access";
 import { isStaffAssignedToEffectiveFreeClassStudent } from "@shared/my-space-calendar-permissions";
 import { hasMySpaceAssignmentsWritePermission } from "../lib/my-space-assignments-permissions";
 import { getEvaluationCheckboxGroupStates } from "@shared/evaluation-checkbox-limits";
+import { manualScoreSheetPayloadSchema } from "@shared/manual-score-sheet";
 
 type ScoreSheetAssessmentPublicationNotification = {
   classId: string;
@@ -196,6 +198,116 @@ async function getCurrentScoreSheetTemplate(
 
   const templates = z.array(scoreSheetTemplateSchema).parse(JSON.parse(settingsRow.value));
   return templates.find((template) => template.id === templateId) ?? null;
+}
+
+async function getManualScoreSheetTemplateConfig(templateId: string) {
+  const template = await getCurrentScoreSheetTemplate(templateId);
+  if (!template) return null;
+  if (!template.scoreConversionTemplateId) {
+    return { template, conversionTemplate: null };
+  }
+
+  const [conversionSettings] = await db
+    .select({ value: systemSettings.value })
+    .from(systemSettings)
+    .where(eq(systemSettings.key, "scoreConversionTemplates"))
+    .limit(1);
+  const conversionTemplate = conversionSettings
+    ? parseScoreConversionTemplatesJson(conversionSettings.value)
+      .find((item) => item.id === template.scoreConversionTemplateId) ?? null
+    : null;
+  if (!conversionTemplate) {
+    throw new Error("Không tìm thấy cấu hình quy đổi của bảng điểm mẫu đã chọn.");
+  }
+  return {
+    template,
+    conversionTemplate: scoreConversionTemplateSchema.parse(conversionTemplate),
+  };
+}
+
+async function hasMySpaceScoreSheetPermission(
+  req: any,
+  action: "view" | "create" | "edit",
+): Promise<boolean> {
+  if (req.isSuperAdmin) return true;
+  const permissions = await storage.getEffectivePermissions(
+    req.roleIds ?? [],
+    "/my-space/score-sheet",
+  );
+  if (action === "create") return permissions.canCreate;
+  if (action === "edit") return permissions.canEdit;
+  return Boolean(
+    permissions.canView
+    || permissions.canViewAll
+    || permissions.canCreate
+    || permissions.canEdit,
+  );
+}
+
+async function areManualScoreSheetStudentsAccessible(
+  req: any,
+  payload: z.infer<typeof manualScoreSheetPayloadSchema>,
+): Promise<boolean> {
+  if (req.isSuperAdmin) return true;
+  const staffRecord = await getStaffForUser(req.user.id);
+  if (!staffRecord) return false;
+
+  const classConstraint = payload.selectionMode === "class" && payload.classId
+    ? sql`AND c.id = ${payload.classId}::uuid`
+    : sql``;
+  const result = await db.execute(sql`
+    SELECT DISTINCT sc.student_id
+    FROM student_classes sc
+    JOIN classes c ON c.id = sc.class_id
+    WHERE sc.status = 'active'
+      AND sc.student_id = ANY(${payload.studentIds}::uuid[])
+      ${classConstraint}
+      AND (
+        ${staffRecord.id} = ANY(c.teacher_ids)
+        OR ${staffRecord.id} = ANY(c.manager_ids)
+        OR EXISTS (
+          SELECT 1
+          FROM class_sessions cs
+          WHERE cs.class_id = c.id
+            AND (
+              cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
+              OR EXISTS (
+                SELECT 1
+                FROM class_session_teacher_assignments csta
+                WHERE csta.class_session_id = cs.id
+                  AND csta.teacher_id = ${staffRecord.id}
+              )
+            )
+        )
+      )
+      AND EXISTS (
+        SELECT 1
+        FROM staff_assignments sa
+        WHERE sa.staff_id = ${staffRecord.id}
+          AND sa.location_id = c.location_id
+      )
+  `);
+  return new Set(result.rows.map((row: any) => String(row.student_id))).size
+    === payload.studentIds.length;
+}
+
+function validateManualScoreSheetScores(
+  template: ScoreSheetTemplate,
+  conversionTemplate: z.infer<typeof scoreConversionTemplateSchema> | null,
+  payload: z.infer<typeof manualScoreSheetPayloadSchema>,
+): string | null {
+  try {
+    for (const studentId of payload.studentIds) {
+      calculateScoreSheetAssessmentAttemptResult({
+        template,
+        conversionTemplate,
+        values: payload.scoresByStudent[studentId] ?? {},
+      });
+    }
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : "Điểm nhập không hợp lệ.";
+  }
 }
 
 type ScoreSheetEvaluationSubCriterion = {
@@ -4519,34 +4631,272 @@ export function registerMySpaceRoutes(app: Express): void {
       const user = req.user as any;
       if (!user) return res.status(401).json({ message: "Unauthorized" });
 
+      if (!await hasMySpaceScoreSheetPermission(req, "view")) {
+        return res.status(403).json({ message: "Bạn không có quyền xem mẫu bảng điểm." });
+      }
+
+      const [[templatesRow], [conversionTemplatesRow]] = await Promise.all([
+        db.select({ value: systemSettings.value })
+          .from(systemSettings)
+          .where(eq(systemSettings.key, "scoreSheetTemplates"))
+          .limit(1),
+        db.select({ value: systemSettings.value })
+          .from(systemSettings)
+          .where(eq(systemSettings.key, "scoreConversionTemplates"))
+          .limit(1),
+      ]);
+      const templates: ScoreSheetTemplate[] = templatesRow
+        ? z.array(scoreSheetTemplateSchema).parse(JSON.parse(templatesRow.value))
+        : [];
+      const conversionTemplates = conversionTemplatesRow
+        ? parseScoreConversionTemplatesJson(conversionTemplatesRow.value)
+        : [];
+      res.json(templates.map((template) => ({
+        ...template,
+        conversionTemplate: template.scoreConversionTemplateId
+          ? conversionTemplates.find((item) => item.id === template.scoreConversionTemplateId) ?? null
+          : null,
+      })));
+    } catch (err: any) {
+      console.error("My Space conversion score-sheet templates error:", err);
+      res.status(500).json({ message: err.message || "Không thể tải mẫu bảng điểm." });
+    }
+  });
+
+  app.get("/api/my-space/score-sheet/manual-conversions", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      if (!await hasMySpaceScoreSheetPermission(req, "view")) {
+        return res.status(403).json({ message: "Bạn không có quyền xem bảng điểm." });
+      }
+
       const permissions = req.isSuperAdmin
-        ? { canView: true, canViewAll: true, canCreate: true, canEdit: true }
+        ? { canViewAll: true }
+        : await storage.getEffectivePermissions(
+          req.roleIds ?? [],
+          "/my-space/score-sheet",
+        );
+      const rows = await db
+        .select()
+        .from(manualScoreSheetAssessments)
+        .where(
+          req.isSuperAdmin || permissions.canViewAll
+            ? undefined
+            : eq(manualScoreSheetAssessments.createdBy, user.id),
+        )
+        .orderBy(desc(manualScoreSheetAssessments.createdAt));
+
+      const mapped = rows.map((row) => {
+        const template = scoreSheetTemplateSchema.parse(row.scoreSheetTemplateSnapshot);
+        const conversionTemplate = row.conversionTemplateSnapshot
+          ? scoreConversionTemplateSchema.parse(row.conversionTemplateSnapshot)
+          : null;
+        const scoresByStudent = (row.scoresByStudent ?? {}) as Record<string, unknown>;
+        let enteredStudentCount = 0;
+        for (const studentId of row.studentIds) {
+          try {
+            const values = scoreSheetAssessmentAttemptValuesSchema.parse(
+              scoresByStudent[studentId] ?? {},
+            );
+            if (calculateScoreSheetAssessmentAttemptResult({
+              template,
+              conversionTemplate,
+              values,
+            }).inputComplete) {
+              enteredStudentCount += 1;
+            }
+          } catch {
+            // Invalid legacy values are treated as not entered in the list summary.
+          }
+        }
+        return {
+          id: row.id,
+          title: row.title,
+          templateId: row.scoreSheetTemplateId,
+          templateCode: template.code,
+          templateName: template.name,
+          selectionMode: row.selectionMode,
+          classId: row.classId,
+          studentIds: row.studentIds,
+          studentCount: row.studentIds.length,
+          enteredStudentCount,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+          createdBy: row.createdBy,
+        };
+      });
+      res.json(mapped);
+    } catch (err: any) {
+      console.error("Manual conversion score-sheet list error:", err);
+      res.status(500).json({ message: err.message || "Lỗi khi tải bảng điểm quy đổi." });
+    }
+  });
+
+  app.post("/api/my-space/score-sheet/manual-conversions", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      if (!await hasMySpaceScoreSheetPermission(req, "create")) {
+        return res.status(403).json({ message: "Bạn không có quyền tạo bảng điểm." });
+      }
+
+      const parsed = manualScoreSheetPayloadSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Dữ liệu bảng điểm không hợp lệ." });
+      }
+      if (!await areManualScoreSheetStudentsAccessible(req, parsed.data)) {
+        return res.status(403).json({ message: "Danh sách có học viên ngoài lớp bạn được phân công." });
+      }
+
+      const config = await getManualScoreSheetTemplateConfig(parsed.data.templateId);
+      if (!config) return res.status(404).json({ message: "Không tìm thấy bảng điểm mẫu." });
+      const scoreValidationMessage = validateManualScoreSheetScores(
+        config.template,
+        config.conversionTemplate,
+        parsed.data,
+      );
+      if (scoreValidationMessage) {
+        return res.status(400).json({ message: scoreValidationMessage });
+      }
+
+      const [created] = await db.insert(manualScoreSheetAssessments).values({
+        title: `${config.template.code} — ${config.template.name}`,
+        scoreSheetTemplateId: config.template.id,
+        scoreSheetTemplateSnapshot: config.template,
+        conversionTemplateSnapshot: config.conversionTemplate,
+        selectionMode: parsed.data.selectionMode,
+        classId: parsed.data.classId,
+        studentIds: parsed.data.studentIds,
+        scoresByStudent: parsed.data.scoresByStudent,
+        createdBy: user.id,
+        updatedBy: user.id,
+      }).returning({ id: manualScoreSheetAssessments.id });
+      res.status(201).json({ id: created.id });
+    } catch (err: any) {
+      console.error("Manual conversion score-sheet create error:", err);
+      res.status(500).json({ message: err.message || "Lỗi khi tạo bảng điểm quy đổi." });
+    }
+  });
+
+  app.get("/api/my-space/score-sheet/manual-conversions/:id", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      if (!await hasMySpaceScoreSheetPermission(req, "view")) {
+        return res.status(403).json({ message: "Bạn không có quyền xem bảng điểm." });
+      }
+
+      const [row] = await db
+        .select()
+        .from(manualScoreSheetAssessments)
+        .where(eq(manualScoreSheetAssessments.id, req.params.id))
+        .limit(1);
+      if (!row) return res.status(404).json({ message: "Không tìm thấy bảng điểm." });
+      const permissions = req.isSuperAdmin
+        ? { canViewAll: true, canEdit: true }
         : await storage.getEffectivePermissions(
           req.roleIds ?? [],
           "/my-space/score-sheet",
         );
       if (
-        !req.isSuperAdmin
-        && !permissions.canView
+        row.createdBy !== user.id
         && !permissions.canViewAll
-        && !permissions.canCreate
         && !permissions.canEdit
       ) {
-        return res.status(403).json({ message: "Bạn không có quyền xem mẫu bảng điểm." });
+        return res.status(403).json({ message: "Bạn không có quyền xem bảng điểm này." });
       }
 
-      const [templatesRow] = await db
-        .select({ value: systemSettings.value })
-        .from(systemSettings)
-        .where(eq(systemSettings.key, "scoreSheetTemplates"))
-        .limit(1);
-      const templates = templatesRow
-        ? z.array(scoreSheetTemplateSchema).parse(JSON.parse(templatesRow.value))
+      const studentRows = row.studentIds.length > 0
+        ? await db.select({
+            id: students.id,
+            fullName: students.fullName,
+            code: students.code,
+          }).from(students).where(inArray(students.id, row.studentIds))
         : [];
-      res.json(templates.filter((template) => Boolean(template.scoreConversionTemplateId)));
+      const studentById = new Map(studentRows.map((student) => [student.id, student]));
+      res.json({
+        id: row.id,
+        title: row.title,
+        templateId: row.scoreSheetTemplateId,
+        templateSnapshot: row.scoreSheetTemplateSnapshot,
+        conversionTemplateSnapshot: row.conversionTemplateSnapshot,
+        selectionMode: row.selectionMode,
+        classId: row.classId,
+        studentIds: row.studentIds,
+        students: row.studentIds.map((studentId) => ({
+          id: studentId,
+          fullName: studentById.get(studentId)?.fullName ?? "Học viên",
+          code: studentById.get(studentId)?.code ?? null,
+        })),
+        scoresByStudent: row.scoresByStudent ?? {},
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      });
     } catch (err: any) {
-      console.error("My Space conversion score-sheet templates error:", err);
-      res.status(500).json({ message: err.message || "Không thể tải mẫu bảng điểm." });
+      console.error("Manual conversion score-sheet load error:", err);
+      res.status(500).json({ message: err.message || "Lỗi khi tải bảng điểm quy đổi." });
+    }
+  });
+
+  app.put("/api/my-space/score-sheet/manual-conversions/:id", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      if (!await hasMySpaceScoreSheetPermission(req, "edit")) {
+        return res.status(403).json({ message: "Bạn không có quyền sửa bảng điểm." });
+      }
+      const parsed = manualScoreSheetPayloadSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Dữ liệu bảng điểm không hợp lệ." });
+      }
+
+      const [existing] = await db
+        .select({ createdBy: manualScoreSheetAssessments.createdBy })
+        .from(manualScoreSheetAssessments)
+        .where(eq(manualScoreSheetAssessments.id, req.params.id))
+        .limit(1);
+      if (!existing) return res.status(404).json({ message: "Không tìm thấy bảng điểm." });
+      const permissions = req.isSuperAdmin
+        ? { canViewAll: true }
+        : await storage.getEffectivePermissions(
+          req.roleIds ?? [],
+          "/my-space/score-sheet",
+        );
+      if (existing.createdBy !== user.id && !permissions.canViewAll) {
+        return res.status(403).json({ message: "Bạn không có quyền sửa bảng điểm này." });
+      }
+      if (!await areManualScoreSheetStudentsAccessible(req, parsed.data)) {
+        return res.status(403).json({ message: "Danh sách có học viên ngoài lớp bạn được phân công." });
+      }
+
+      const config = await getManualScoreSheetTemplateConfig(parsed.data.templateId);
+      if (!config) return res.status(404).json({ message: "Không tìm thấy bảng điểm mẫu." });
+      const scoreValidationMessage = validateManualScoreSheetScores(
+        config.template,
+        config.conversionTemplate,
+        parsed.data,
+      );
+      if (scoreValidationMessage) {
+        return res.status(400).json({ message: scoreValidationMessage });
+      }
+
+      await db.update(manualScoreSheetAssessments).set({
+        title: `${config.template.code} — ${config.template.name}`,
+        scoreSheetTemplateId: config.template.id,
+        scoreSheetTemplateSnapshot: config.template,
+        conversionTemplateSnapshot: config.conversionTemplate,
+        selectionMode: parsed.data.selectionMode,
+        classId: parsed.data.classId,
+        studentIds: parsed.data.studentIds,
+        scoresByStudent: parsed.data.scoresByStudent,
+        updatedBy: user.id,
+        updatedAt: new Date(),
+      }).where(eq(manualScoreSheetAssessments.id, req.params.id));
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Manual conversion score-sheet update error:", err);
+      res.status(500).json({ message: err.message || "Lỗi khi cập nhật bảng điểm quy đổi." });
     }
   });
 

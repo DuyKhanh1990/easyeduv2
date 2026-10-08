@@ -603,7 +603,11 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
             </div>
           </div>
           ) : (
-            <ScoreSheetConversionSelector enabled={open && dialogMode === "conversion"} layout="create" />
+            <ScoreSheetConversionSelector
+              enabled={open && dialogMode === "conversion"}
+              layout="create"
+              onSaved={onSaved}
+            />
           )}
 
           <DialogFooter className="px-6 py-4 border-t shrink-0">

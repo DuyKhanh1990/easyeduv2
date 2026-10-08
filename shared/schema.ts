@@ -1913,12 +1913,35 @@ export const scoreSheetAssessmentStudentAttempts = pgTable("score_sheet_assessme
   ),
 }));
 
+export const manualScoreSheetAssessments = pgTable("manual_score_sheet_assessments", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: varchar("title", { length: 255 }).notNull(),
+  scoreSheetTemplateId: uuid("score_sheet_template_id").notNull(),
+  scoreSheetTemplateSnapshot: jsonb("score_sheet_template_snapshot").$type<Record<string, unknown>>().notNull(),
+  conversionTemplateSnapshot: jsonb("conversion_template_snapshot").$type<Record<string, unknown> | null>(),
+  selectionMode: varchar("selection_mode", { length: 20 }).notNull(),
+  classId: uuid("class_id").references(() => classes.id, { onDelete: "set null" }),
+  studentIds: uuid("student_ids").array().notNull().default(sql`'{}'`),
+  scoresByStudent: jsonb("scores_by_student").$type<Record<string, unknown>>().notNull().default({}),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  creatorCreatedIdx: index("manual_score_sheet_assessments_creator_created_idx").on(
+    table.createdBy,
+    table.createdAt,
+  ),
+  classIdx: index("manual_score_sheet_assessments_class_idx").on(table.classId),
+}));
+
 export const insertClassGradeBookSchema = createInsertSchema(classGradeBooks).omit({ id: true, createdAt: true, updatedAt: true });
 export type ClassGradeBook = typeof classGradeBooks.$inferSelect;
 export type InsertClassGradeBook = z.infer<typeof insertClassGradeBookSchema>;
 export const insertScoreSheetAssessmentStudentAttemptSchema = createInsertSchema(scoreSheetAssessmentStudentAttempts).omit({ id: true, createdAt: true, updatedAt: true });
 export type ScoreSheetAssessmentStudentAttempt = typeof scoreSheetAssessmentStudentAttempts.$inferSelect;
 export type InsertScoreSheetAssessmentStudentAttempt = z.infer<typeof insertScoreSheetAssessmentStudentAttemptSchema>;
+export type ManualScoreSheetAssessment = typeof manualScoreSheetAssessments.$inferSelect;
 
 // ==========================================
 // STUDENT WALLET TRANSACTIONS (Ví học phí)

@@ -7,10 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { downloadClassGradeBookExcel } from "@/lib/gradeBookExcelExport";
 import { GradeBookEditDialog } from "@/components/education/GradeBookEditDialog";
 import { GradeBookCreateDialog } from "@/components/education/GradeBookCreateDialog";
+import { ScoreSheetConversionSelector } from "@/components/education/ScoreSheetConversionSelector";
 import {
   StaffScoreSheetAssessmentStudentsDialog,
   type StaffAssignedScoreSheetAssessment,
@@ -61,6 +63,22 @@ type ScoreSheetTimelineEntry =
     };
 
 type StaffScoreSheetTab = "all" | "regular" | "conversion";
+
+type ManualScoreSheetRow = {
+  id: string;
+  title: string;
+  templateId: string;
+  templateCode: string;
+  templateName: string;
+  selectionMode: "class" | "students";
+  classId: string | null;
+  studentIds: string[];
+  studentCount: number;
+  enteredStudentCount: number;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+};
 
 type StatusPresentation = {
   label: string;
@@ -155,6 +173,7 @@ export function StaffScoreSheet() {
   const { data: myPermissions } = useMyPermissions();
   const [editingBook, setEditingBook] = useState<StaffGradeBookRow | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingManualSheetId, setEditingManualSheetId] = useState<string | null>(null);
   const [selectedAssessment, setSelectedAssessment] = useState<StaffAssignedScoreSheetAssessment | null>(null);
   const [exportingBookId, setExportingBookId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<StaffScoreSheetTab>("all");
@@ -167,6 +186,7 @@ export function StaffScoreSheet() {
     || scoreSheetPermissions?.canCreate === true;
   const canEditGradeBook = myPermissions?.isSuperAdmin === true
     || scoreSheetPermissions?.canEdit === true;
+  const canEditManualScoreSheets = canEditGradeBook;
 
   const { data, isLoading, refetch } = useQuery<StaffGradeBookRow[]>({
     queryKey: ["/api/my-space/score-sheet/staff"],
@@ -191,8 +211,25 @@ export function StaffScoreSheet() {
     refetchInterval: 60_000,
   });
 
+  const {
+    data: manualScoreSheetsData,
+    isLoading: isLoadingManualScoreSheets,
+    isError: isManualScoreSheetsError,
+  } = useQuery<ManualScoreSheetRow[]>({
+    queryKey: ["/api/my-space/score-sheet/manual-conversions"],
+    queryFn: async () => {
+      const response = await fetch(
+        "/api/my-space/score-sheet/manual-conversions",
+        { credentials: "include" },
+      );
+      if (!response.ok) throw new Error(t("mySpace.scoreSheet.conversionManualSheetLoadError"));
+      return response.json();
+    },
+  });
+
   const gradeBooks = data ?? [];
   const assignedAssessments = assignedAssessmentsData ?? [];
+  const manualScoreSheets = manualScoreSheetsData ?? [];
   const nowWallClockMs = getBangkokWallClockMs(new Date());
 
   const classOptionsById = new Map<string, string>();
@@ -465,7 +502,10 @@ export function StaffScoreSheet() {
       )}
 
       {timelineEntries.length === 0 ? (
-        !isLoadingAssignedAssessments && !isAssignedAssessmentsError ? (
+        !isLoadingAssignedAssessments
+        && !isAssignedAssessmentsError
+        && !isLoadingManualScoreSheets
+        && manualScoreSheets.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground">
             <BookOpen className="h-10 w-10 opacity-25" />
             <p className="text-sm">{t("mySpace.scoreSheet.staffEmpty")}</p>
@@ -753,6 +793,63 @@ export function StaffScoreSheet() {
         </div>
       )}
 
+      {(manualScoreSheets.length > 0 || isManualScoreSheetsError) && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-base font-semibold">
+              {t("mySpace.scoreSheet.conversionManualSheets")}
+            </h2>
+            <Badge variant="secondary">{manualScoreSheets.length}</Badge>
+          </div>
+          {isManualScoreSheetsError ? (
+            <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+              {t("mySpace.scoreSheet.conversionManualSheetLoadError")}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {manualScoreSheets.map((manualSheet) => (
+                <div
+                  key={manualSheet.id}
+                  className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3"
+                  data-testid={`manual-score-sheet-${manualSheet.id}`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate text-sm font-semibold">{manualSheet.title}</h3>
+                    <p className="mt-1 truncate text-xs text-muted-foreground">
+                      {manualSheet.templateCode} · {manualSheet.templateName}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {manualSheet.studentCount} {t("mySpace.scoreSheet.studentCount")}
+                      {" · "}
+                      {manualSheet.enteredStudentCount}/{manualSheet.studentCount}{" "}
+                      {t("mySpace.scoreSheet.conversionManualEntered")}
+                      {" · "}
+                      {t("mySpace.scoreSheet.updated")}: {formatDate(manualSheet.updatedAt)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Badge variant="outline">{t("mySpace.scoreSheet.conversionSheet")}</Badge>
+                    {canEditManualScoreSheets && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => setEditingManualSheetId(manualSheet.id)}
+                        data-testid={`edit-manual-score-sheet-${manualSheet.id}`}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        {t("mySpace.scoreSheet.edit")}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       <StaffScoreSheetAssessmentStudentsDialog
         assessment={selectedAssessment}
         open={!!selectedAssessment}
@@ -777,6 +874,27 @@ export function StaffScoreSheet() {
           onSaved={() => refetch()}
         />
       )}
+
+      <Dialog
+        open={Boolean(editingManualSheetId)}
+        onOpenChange={(open) => {
+          if (!open) setEditingManualSheetId(null);
+        }}
+      >
+        <DialogContent className="m-0 flex h-screen w-screen max-w-none flex-col gap-0 rounded-none p-0">
+          <DialogHeader className="shrink-0 border-b px-6 py-3">
+            <DialogTitle>{t("mySpace.scoreSheet.conversionEditManualSheet")}</DialogTitle>
+          </DialogHeader>
+          {editingManualSheetId && (
+            <ScoreSheetConversionSelector
+              enabled
+              layout="edit"
+              manualSheetId={editingManualSheetId}
+              onSaved={() => setEditingManualSheetId(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       <GradeBookCreateDialog
         open={createOpen}
