@@ -5,11 +5,17 @@ import { z } from "zod";
 import { runSecurityTests } from "../middleware/security-test";
 import { cacheGet, cacheSet, cacheInvalidate } from "../lib/simple-cache";
 import { db } from "../db";
-import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, students, classes, attendanceFeeRules, users, staff, staffAssignments, locations, roles, departments, classGradeBooks, classGradeBookScores, scoreCategories, scoreSheetItems, sessionContents, studentSessionContents, classSessions, scoreSheetAssessmentStudentAttempts, systemSettings, studentRelationshipHistory, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools, crmCustomFields, crmRequiredFields, evaluationCriteria, evaluationSubCriteria } from "@shared/schema";
+import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, students, classes, attendanceFeeRules, users, staff, staffAssignments, locations, roles, departments, classGradeBooks, classGradeBookScores, scoreCategories, scoreSheetItems, sessionContents, studentSessionContents, classSessions, scoreSheetAssessmentStudentAttempts, systemSettings, studentRelationshipHistory, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools, crmCustomFields, crmRequiredFields, evaluationCriteria, evaluationSubCriteria, shiftTemplates } from "@shared/schema";
 import { eq, and, isNotNull, sql, inArray, desc, gte, lte, ne } from "drizzle-orm";
-import { scoreSheetAssessmentSchema } from "@shared/score-sheet-assessment";
-import { selectScoreSheetAssessmentAttemptSummary } from "@shared/score-sheet-assessment-scoring";
+import { resolveScoreSheetAssessmentDeadlineAt, scoreSheetAssessmentSchema } from "@shared/score-sheet-assessment";
+import {
+  scoreSheetAssessmentAttemptResultSchema,
+  scoreSheetAssessmentEvaluationResponsesSchema,
+  selectScoreSheetAssessmentAttemptSummary,
+} from "@shared/score-sheet-assessment-scoring";
 import { SCORE_SHEET_ASSESSMENT_PUBLICATION_META_KEY } from "@shared/score-sheet-assessment-publication";
+import { parseScoreConversionTemplatesJson, scoreConversionTemplateSchema } from "@shared/score-conversion";
+import { scoreSheetTemplateSchema } from "@shared/score-sheet-template";
 import { getStudentLearningStatusSummary, getCustomerLearningStatusSummary, getCustomerSummary, getNewCustomersSummary, getStudentsBySource, getStudentsByRelationship, getStudentsByLocation, getStudentsByStaff, getStudentsLearningStatuses, getMonthlyStudentCounts } from "../storage/student.storage";
 import { createCrmConfigAuditLog, getCrmConfigAuditLogs } from "../storage/crm-config-audit.storage";
 import { codeStem, nextCodeForStem } from "../lib/role-code";
@@ -2528,19 +2534,22 @@ export function registerStudentsRoutes(app: Express): void {
             ...(summary.result.passStatus
               ? [{
                   categoryName: "Kết quả",
-                  score: summary.result.passStatus === "passed" ? "Đạt" : "Chưa đạt",
+                  score: summary.result.passStatus === "passed" ? "Đạt" : "Không đạt",
                   color: summary.result.passStatus === "passed" ? "#15803D" : "#DC2626",
                 }]
               : []),
           ];
           const row = group.attempts[0];
+          const examDate = row.sessionDate instanceof Date
+            ? row.sessionDate.toISOString().slice(0, 10)
+            : String(row.sessionDate ?? "").slice(0, 10);
           const rawCreatedAt = selectedAttempt?.updatedAt ?? row.sessionDate;
           const createdAt = rawCreatedAt instanceof Date
             ? rawCreatedAt.toISOString()
             : String(rawCreatedAt ?? "");
           return [{
             id: `score-sheet-assessment:${row.classSessionId}:${row.assessmentId}`,
-            type: "Bảng điểm" as const,
+            type: "Bảng điểm quy đổi" as const,
             title: `${group.assessment.name}${row.sessionIndex != null ? ` · Buổi ${row.sessionIndex}` : ""}`,
             className: row.classCode || row.className,
             classId: row.classId,
@@ -2551,6 +2560,20 @@ export function registerStudentsRoutes(app: Express): void {
             gradingComment: null,
             refId: row.classSessionId,
             createdAt,
+            conversionResult: {
+              gradeBand: summary.result.gradeBand,
+              passStatus: summary.result.passStatus,
+            },
+            conversionAssessment: {
+              sessionId: row.classSessionId,
+              classCode: row.classCode || row.className,
+              sessionIndex: row.sessionIndex,
+              examDate,
+              assessmentCode: group.assessment.code,
+              templateName: group.assessment.templateSnapshot.name,
+              attemptCount: group.assessment.attemptCount,
+              scoringPolicy: group.assessment.scoringPolicy,
+            },
           }];
         },
       );
@@ -2600,7 +2623,210 @@ export function registerStudentsRoutes(app: Express): void {
     }
   });
 
-  // GET /api/students/:id/session-reviews – nhận xét tổng hợp từng buổi học
+  // GET /api/students/:id/score-entries/:sessionId/conversion-detail – chi tiết bảng điểm quy đổi đã công bố
+  app.get("/api/students/:id/score-entries/:sessionId/conversion-detail", async (req, res) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+
+      const studentId = z.string().uuid().safeParse(req.params.id);
+      const sessionId = z.string().uuid().safeParse(req.params.sessionId);
+      if (!studentId.success || !sessionId.success) {
+        return res.status(400).json({ message: "Học viên hoặc buổi thi không hợp lệ." });
+      }
+
+      const permissions = await getCrmPermissions(req);
+      if (!permissions.canView && !permissions.canViewAll) {
+        return res.status(403).json({ message: "Bạn không có quyền xem hồ sơ học viên." });
+      }
+      const student = await storage.getStudent(
+        studentId.data,
+        req.allowedLocationIds,
+        req.isSuperAdmin,
+      );
+      if (!student) return res.status(404).json({ message: "Không tìm thấy học viên." });
+      if (!permissions.canViewAll && req.staffId) {
+        const staffId = req.staffId;
+        const isOwner =
+          (student.salesByIds || []).includes(staffId)
+          || (student.managedByIds || []).includes(staffId)
+          || (student.teacherIds || []).includes(staffId);
+        if (!isOwner) {
+          return res.status(403).json({ message: "Bạn không có quyền xem học viên này." });
+        }
+      }
+
+      const [session] = await db
+        .select({
+          assessmentId: classSessions.scoreSheetAssessmentId,
+          sessionDate: classSessions.sessionDate,
+          sessionStartTime: shiftTemplates.startTime,
+          published: classSessions.scoreSheetAssessmentPublished,
+          excludedStudentIds: classSessions.scoreSheetAssessmentExcludedStudentIds,
+        })
+        .from(classSessions)
+        .innerJoin(studentSessions, and(
+          eq(studentSessions.classSessionId, classSessions.id),
+          eq(studentSessions.studentId, studentId.data),
+        ))
+        .leftJoin(shiftTemplates, eq(classSessions.shiftTemplateId, shiftTemplates.id))
+        .where(eq(classSessions.id, sessionId.data))
+        .limit(1);
+      if (
+        !session?.assessmentId
+        || session.excludedStudentIds?.includes(studentId.data)
+      ) {
+        return res.status(404).json({ message: "Không tìm thấy bảng điểm đã công bố cho học viên này." });
+      }
+
+      const [assessmentSettings] = await db
+        .select({ value: systemSettings.value })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, "scoreSheetAssessments"))
+        .limit(1);
+      const savedAssessments = assessmentSettings
+        ? z.array(scoreSheetAssessmentSchema).parse(JSON.parse(assessmentSettings.value))
+        : [];
+      const savedAssessment = savedAssessments.find((item) => item.id === session.assessmentId);
+      const conversionTemplateId = savedAssessment?.templateSnapshot.scoreConversionTemplateId;
+      if (!savedAssessment || !conversionTemplateId) {
+        return res.status(404).json({ message: "Không tìm thấy cấu hình bảng điểm quy đổi." });
+      }
+
+      let conversionTemplate = savedAssessment.conversionTemplateSnapshot ?? null;
+      if (!conversionTemplate) {
+        const [conversionSettings] = await db
+          .select({ value: systemSettings.value })
+          .from(systemSettings)
+          .where(eq(systemSettings.key, "scoreConversionTemplates"))
+          .limit(1);
+        conversionTemplate = conversionSettings
+          ? parseScoreConversionTemplatesJson(conversionSettings.value)
+            .find((item) => item.id === conversionTemplateId) ?? null
+          : null;
+      }
+      if (!conversionTemplate) {
+        return res.status(409).json({ message: "Cấu hình quy đổi của bảng điểm không còn khả dụng." });
+      }
+      const assessment = {
+        ...savedAssessment,
+        conversionTemplateSnapshot: scoreConversionTemplateSchema.parse(conversionTemplate),
+      };
+
+      const [templateSettings] = await db
+        .select({ value: systemSettings.value })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, "scoreSheetTemplates"))
+        .limit(1);
+      const currentTemplates = templateSettings
+        ? z.array(scoreSheetTemplateSchema).parse(JSON.parse(templateSettings.value))
+        : [];
+      const currentTemplate = currentTemplates.find(
+        (template) => template.id === assessment.scoreSheetTemplateId,
+      ) ?? null;
+
+      const attempts = await db
+        .select()
+        .from(scoreSheetAssessmentStudentAttempts)
+        .where(and(
+          eq(scoreSheetAssessmentStudentAttempts.assessmentId, assessment.id),
+          eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId.data),
+          eq(scoreSheetAssessmentStudentAttempts.studentId, studentId.data),
+        ))
+        .orderBy(scoreSheetAssessmentStudentAttempts.attemptNumber);
+      const publishedAttempts = attempts.filter((attempt) => {
+        if (session.published) return true;
+        const storedResult = attempt.result && typeof attempt.result === "object"
+          ? attempt.result as Record<string, unknown>
+          : {};
+        const publicationMeta = storedResult[SCORE_SHEET_ASSESSMENT_PUBLICATION_META_KEY];
+        return Boolean(
+          publicationMeta
+          && typeof publicationMeta === "object"
+          && (publicationMeta as Record<string, unknown>).publishedToStudent === true,
+        );
+      });
+      if (publishedAttempts.length === 0) {
+        return res.status(404).json({ message: "Chưa có điểm được công bố cho học viên này." });
+      }
+
+      const criteriaIds = currentTemplate?.evaluationCriteriaIds
+        ?? assessment.templateSnapshot.evaluationCriteriaIds;
+      const uniqueCriteriaIds = Array.from(new Set(criteriaIds));
+      const [criteriaRows, subCriteriaRows] = uniqueCriteriaIds.length > 0
+        ? await Promise.all([
+          db.select().from(evaluationCriteria)
+            .where(inArray(evaluationCriteria.id, uniqueCriteriaIds)),
+          db.select().from(evaluationSubCriteria)
+            .where(inArray(evaluationSubCriteria.criteriaId, uniqueCriteriaIds))
+            .orderBy(evaluationSubCriteria.name),
+        ])
+        : [[], []];
+      const criteriaById = new Map(
+        criteriaRows.map((criterion) => [criterion.id, { id: criterion.id, name: criterion.name }]),
+      );
+      const configuredEvaluationCriteria = uniqueCriteriaIds.flatMap((criteriaId) => {
+        const criterion = criteriaById.get(criteriaId);
+        if (!criterion) return [];
+        return [{
+          id: criterion.id,
+          name: criterion.name,
+          subCriteria: subCriteriaRows
+            .filter((subCriterion) => subCriterion.criteriaId === criteriaId)
+            .map((subCriterion) => ({
+              id: subCriterion.id,
+              name: subCriterion.name,
+              criteriaId: subCriterion.criteriaId,
+              itemType: subCriterion.itemType,
+              inputType: subCriterion.inputType,
+              parentId: subCriterion.parentId,
+              minChecked: subCriterion.minChecked,
+              maxChecked: subCriterion.maxChecked,
+            })),
+        }];
+      });
+
+      return res.json({
+        assessment: {
+          id: assessment.id,
+          code: assessment.code,
+          name: assessment.name,
+          attemptCount: assessment.attemptCount,
+          scoringPolicy: assessment.scoringPolicy,
+          scoreDeadlineAt: resolveScoreSheetAssessmentDeadlineAt(
+            assessment,
+            session.sessionDate,
+            session.sessionStartTime,
+            currentTemplate?.scoreDeadlineOffsetMinutes,
+          ),
+          templateSnapshot: assessment.templateSnapshot,
+          conversionTemplateSnapshot: assessment.conversionTemplateSnapshot,
+        },
+        evaluationCriteria: configuredEvaluationCriteria,
+        attempts: publishedAttempts.map((attempt) => {
+          const storedResult = attempt.result && typeof attempt.result === "object"
+            ? attempt.result as Record<string, unknown>
+            : {};
+          return {
+            attemptNumber: attempt.attemptNumber,
+            partScores: attempt.partScores,
+            skillScores: attempt.skillScores,
+            notes: attempt.notes,
+            evaluationResponses: scoreSheetAssessmentEvaluationResponsesSchema.parse(
+              storedResult.evaluationResponses ?? {},
+            ),
+            result: scoreSheetAssessmentAttemptResultSchema.parse(attempt.result),
+            createdAt: attempt.createdAt,
+            updatedAt: attempt.updatedAt,
+          };
+        }),
+      });
+    } catch (err: any) {
+      console.error("Customer conversion score entry load error:", err);
+      const status = err instanceof z.ZodError ? 400 : 500;
+      return res.status(status).json({ message: err.message || "Lỗi khi tải chi tiết bảng điểm quy đổi." });
+    }
+  });
+
   // ── GET /api/students/:id/star-rating ────────────────────────────────────────
   // Tổng điểm sao từ tất cả các lần nhận xét của học viên
   app.get("/api/students/:id/star-rating", async (req, res) => {

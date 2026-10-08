@@ -9,10 +9,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  StaffScoreSheetAssessmentScoreDialog,
+  type ScoreSheetAssessmentDialogContext,
+} from "@/components/education/StaffScoreSheetAssessmentScoreDialog";
 
 interface ScoreEntry {
   id: string;
-  type: "Bảng điểm" | "BTVN" | "Bài kiểm tra";
+  type: "Bảng điểm" | "Bảng điểm quy đổi" | "BTVN" | "Bài kiểm tra";
   title: string;
   className: string;
   classId: string;
@@ -21,10 +25,16 @@ interface ScoreEntry {
   refId: string;
   gradingComment?: string | null;
   createdAt: string;
+  conversionResult?: {
+    gradeBand: { label: string; color: string } | null;
+    passStatus: "passed" | "failed" | null;
+  };
+  conversionAssessment?: ScoreSheetAssessmentDialogContext;
 }
 
 const TYPE_COLORS: Record<string, string> = {
   "Bảng điểm": "bg-violet-100 text-violet-700 border-violet-200",
+  "Bảng điểm quy đổi": "bg-violet-100 text-violet-700 border-violet-200",
   "BTVN": "bg-orange-100 text-orange-700 border-orange-200",
   "Bài kiểm tra": "bg-blue-100 text-blue-700 border-blue-200",
 };
@@ -33,13 +43,32 @@ function ScoreDetailDialog({
   entry,
   open,
   onClose,
+  studentId,
+  studentCode,
+  studentName,
 }: {
   entry: ScoreEntry | null;
   open: boolean;
   onClose: () => void;
+  studentId: string;
+  studentCode: string;
+  studentName: string;
 }) {
   if (!entry) return null;
-  const isGradeBookEntry = entry.type === "Bảng điểm";
+  if (entry.type === "Bảng điểm quy đổi" && entry.conversionAssessment) {
+    return (
+      <StaffScoreSheetAssessmentScoreDialog
+        assessment={entry.conversionAssessment}
+        student={{ studentId, code: studentCode, fullName: studentName }}
+        open={open}
+        mode="view"
+        scoreEntryUrl={`/api/students/${encodeURIComponent(studentId)}/score-entries/${encodeURIComponent(entry.conversionAssessment.sessionId)}/conversion-detail`}
+        onOpenChange={(value) => !value && onClose()}
+        onSaved={onClose}
+      />
+    );
+  }
+  const isGradeBookEntry = entry.type === "Bảng điểm" || entry.type === "Bảng điểm quy đổi";
   const comment = entry.gradingComment?.trim() ?? "";
 
   const commentContent = comment
@@ -74,7 +103,7 @@ function ScoreDetailDialog({
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground w-24 shrink-0">Loại</span>
             <span
-              className={`inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium ${TYPE_COLORS[entry.type] ?? ""}`}
+              className={`inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded border text-xs font-medium ${TYPE_COLORS[entry.type] ?? ""}`}
             >
               {entry.type}
             </span>
@@ -156,9 +185,13 @@ function ScoreDetailDialog({
 
 export function StudentScoreTab({
   studentId,
+  studentCode,
+  studentName,
   open,
 }: {
   studentId: string;
+  studentCode: string;
+  studentName: string;
   open: boolean;
 }) {
   const [detailEntry, setDetailEntry] = useState<ScoreEntry | null>(null);
@@ -199,7 +232,7 @@ export function StudentScoreTab({
   return (
     <>
       <div className="flex-1 overflow-auto bg-gray-50/50">
-        <table className="w-full text-sm border-collapse table-fixed">
+        <table className="w-full min-w-[960px] text-sm border-collapse table-fixed">
           <colgroup>
             <col className="w-[5%]" />
             <col className="w-[22%]" />
@@ -240,7 +273,37 @@ export function StudentScoreTab({
                   className="px-3 py-3 font-semibold text-gray-700 text-sm"
                   data-testid={`score-entry-final-${entry.id}`}
                 >
-                  {entry.finalScore ?? <span className="text-gray-300">—</span>}
+                  {entry.type === "Bảng điểm quy đổi" ? (
+                    <div className="flex min-w-0 flex-nowrap items-center gap-1.5 whitespace-nowrap">
+                      <span>
+                        {entry.finalScore ?? <span className="text-gray-300">—</span>}
+                      </span>
+                      {entry.conversionResult?.gradeBand && (
+                        <span
+                          className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                          style={{
+                            color: entry.conversionResult.gradeBand.color,
+                            backgroundColor: `${entry.conversionResult.gradeBand.color}1A`,
+                          }}
+                        >
+                          {entry.conversionResult.gradeBand.label}
+                        </span>
+                      )}
+                      {entry.conversionResult?.passStatus && (
+                        <span
+                          className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                          style={{
+                            color: entry.conversionResult.passStatus === "passed" ? "#15803D" : "#DC2626",
+                            backgroundColor: entry.conversionResult.passStatus === "passed" ? "#15803D1A" : "#DC26261A",
+                          }}
+                        >
+                          {entry.conversionResult.passStatus === "passed" ? "Đạt" : "Không đạt"}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    entry.finalScore ?? <span className="text-gray-300">—</span>
+                  )}
                 </td>
                 <td className="px-3 py-3 text-center">
                   <Button
@@ -285,6 +348,9 @@ export function StudentScoreTab({
         entry={detailEntry}
         open={!!detailEntry}
         onClose={() => setDetailEntry(null)}
+        studentId={studentId}
+        studentCode={studentCode}
+        studentName={studentName}
       />
     </>
   );

@@ -40,6 +40,15 @@ import type { ScoreConversionTemplate } from "@shared/score-conversion";
 import type { StaffAssignedScoreSheetAssessment } from "./StaffScoreSheetAssessmentStudentsDialog";
 import { cn } from "@/lib/utils";
 
+export type ScoreSheetAssessmentDialogContext = Pick<
+  StaffAssignedScoreSheetAssessment,
+  "sessionId" | "classCode" | "sessionIndex" | "examDate" | "templateName" | "attemptCount" | "scoringPolicy"
+> & {
+  assessmentCode?: string | null;
+  hasConversion?: boolean;
+  published?: boolean;
+};
+
 type AssessmentScoreEntryStudent = {
   studentId: string;
   code: string;
@@ -106,11 +115,12 @@ type AssessmentScoreEntryResponse = {
 };
 
 type StaffScoreSheetAssessmentScoreDialogProps = {
-  assessment: StaffAssignedScoreSheetAssessment | null;
+  assessment: ScoreSheetAssessmentDialogContext | null;
   student: AssessmentScoreEntryStudent | null;
   open: boolean;
   mode?: "edit" | "view";
   canManagePublication?: boolean;
+  scoreEntryUrl?: string;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
 };
@@ -248,7 +258,7 @@ function StaffScoreSheetStudentSummaryView({
   attempt,
   onClose,
 }: {
-  assessment: StaffAssignedScoreSheetAssessment;
+  assessment: ScoreSheetAssessmentDialogContext;
   student: AssessmentScoreEntryStudent;
   details: AssessmentScoreEntryResponse;
   attempt: AssessmentScoreEntry | undefined;
@@ -538,6 +548,7 @@ export function StaffScoreSheetAssessmentScoreDialog({
   open,
   mode = "edit",
   canManagePublication = false,
+  scoreEntryUrl,
   onOpenChange,
   onSaved,
 }: StaffScoreSheetAssessmentScoreDialogProps) {
@@ -551,20 +562,26 @@ export function StaffScoreSheetAssessmentScoreDialog({
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
-  const queryKey = [
-    "/api/my-space/score-sheet/staff-assessments",
-    assessment?.sessionId,
-    student?.studentId,
-    "score-entry",
-  ];
+  const queryKey = scoreEntryUrl
+    ? [scoreEntryUrl, "score-entry"]
+    : [
+      "/api/my-space/score-sheet/staff-assessments",
+      assessment?.sessionId,
+      student?.studentId,
+      "score-entry",
+    ];
 
   const entryQuery = useQuery<AssessmentScoreEntryResponse>({
     queryKey,
-    enabled: open && !!assessment?.sessionId && !!student?.studentId,
+    enabled: open && Boolean(scoreEntryUrl || assessment?.sessionId) && !!student?.studentId,
     queryFn: async () => {
-      if (!assessment || !student) throw new Error("Chưa chọn học viên");
+      if (!student) throw new Error("Chưa chọn học viên");
       const response = await fetch(
-        `/api/my-space/score-sheet/staff-assessments/${encodeURIComponent(assessment.sessionId)}/students/${encodeURIComponent(student.studentId)}/score-entry`,
+        scoreEntryUrl ?? (
+          assessment
+            ? `/api/my-space/score-sheet/staff-assessments/${encodeURIComponent(assessment.sessionId)}/students/${encodeURIComponent(student.studentId)}/score-entry`
+            : ""
+        ),
         { credentials: "include" },
       );
       const payload = await response.json().catch(() => null);

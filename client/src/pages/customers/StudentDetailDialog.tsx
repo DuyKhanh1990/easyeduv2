@@ -407,7 +407,12 @@ export function StudentDetailDialog({
                 })}
               </div>
               {scoreReviewSubTab === "score" ? (
-                <StudentScoreTab studentId={student.id} open={open} />
+                <StudentScoreTab
+                  studentId={student.id}
+                  studentCode={student.code ?? ""}
+                  studentName={student.fullName ?? "Học viên"}
+                  open={open}
+                />
               ) : (
                 <StudentReviewTab studentId={student.id} open={open} />
               )}
