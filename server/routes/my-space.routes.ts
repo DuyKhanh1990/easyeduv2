@@ -4219,6 +4219,7 @@ export function registerMySpaceRoutes(app: Express): void {
       const assessmentConfigsById = new Map(assessmentConfigs.map((assessment) => [assessment.id, assessment]));
 
       const allMapped: any[] = [];
+      const evaluationCriteriaByAssessmentId = new Map<string, ScoreSheetEvaluationCriterion[]>();
 
       for (const studentId of ctx.studentIds) {
         const linked = studentNameMap.get(studentId);
@@ -4311,6 +4312,9 @@ export function registerMySpaceRoutes(app: Express): void {
             classSessionId: scoreSheetAssessmentStudentAttempts.classSessionId,
             attemptNumber: scoreSheetAssessmentStudentAttempts.attemptNumber,
             result: scoreSheetAssessmentStudentAttempts.result,
+            partScores: scoreSheetAssessmentStudentAttempts.partScores,
+            skillScores: scoreSheetAssessmentStudentAttempts.skillScores,
+            notes: scoreSheetAssessmentStudentAttempts.notes,
             createdAt: scoreSheetAssessmentStudentAttempts.createdAt,
             updatedAt: scoreSheetAssessmentStudentAttempts.updatedAt,
             sessionDate: classSessions.sessionDate,
@@ -4368,6 +4372,16 @@ export function registerMySpaceRoutes(app: Express): void {
           const selectedAttempt = group.attempts.find(
             (attempt) => attempt.attemptNumber === summary.attemptNumber,
           ) ?? group.attempts[0];
+          let evaluationCriteria = evaluationCriteriaByAssessmentId.get(selectedAttempt.assessmentId);
+          if (!evaluationCriteria) {
+            evaluationCriteria = await getEvaluationCriteriaForScoreSheet(
+              group.assessment.templateSnapshot.evaluationCriteriaIds ?? [],
+            );
+            evaluationCriteriaByAssessmentId.set(selectedAttempt.assessmentId, evaluationCriteria);
+          }
+          const storedResult = selectedAttempt.result && typeof selectedAttempt.result === "object"
+            ? selectedAttempt.result as Record<string, unknown>
+            : {};
           const formatScore = (value: number) =>
             new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(value);
           const skillScores = summary.result.skills
@@ -4423,6 +4437,25 @@ export function registerMySpaceRoutes(app: Express): void {
             teacherComment: null,
             createdByName: null,
             studentName: ctx.isParent ? (linked?.fullName ?? null) : null,
+            conversionDetail: {
+              templateSnapshot: group.assessment.templateSnapshot,
+              conversionTemplateSnapshot: group.assessment.conversionTemplateSnapshot ?? null,
+              evaluationCriteria,
+              attemptCount: group.assessment.attemptCount,
+              scoringPolicy: group.assessment.scoringPolicy,
+              attempt: {
+                attemptNumber: selectedAttempt.attemptNumber,
+                partScores: selectedAttempt.partScores ?? {},
+                skillScores: selectedAttempt.skillScores ?? {},
+                notes: selectedAttempt.notes ?? {},
+                evaluationResponses: scoreSheetAssessmentEvaluationResponsesSchema.parse(
+                  storedResult.evaluationResponses ?? {},
+                ),
+                result: summary.result,
+                createdAt: selectedAttempt.createdAt,
+                updatedAt: selectedAttempt.updatedAt,
+              },
+            },
           });
         }
       }
