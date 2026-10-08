@@ -44,11 +44,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/hooks/use-language";
 import { ScoreSheetTypeSwitch, type ScoreSheetDialogMode } from "./ScoreSheetTypeSwitch";
 import { ScoreSheetConversionSelector } from "./ScoreSheetConversionSelector";
+import type { StaffAssignedScoreSheetAssessment } from "./StaffScoreSheetAssessmentStudentsDialog";
 
 interface GradeBookCreateDialogProps {
   open: boolean;
   onClose: () => void;
-  onSaved?: () => void;
+  onSaved?: (assessment?: StaffAssignedScoreSheetAssessment) => void;
 }
 
 const NONE_VALUE = "__none__";

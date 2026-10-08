@@ -3608,7 +3608,7 @@ export function registerConfigRoutes(app: Express): void {
       }
 
       const now = new Date().toISOString();
-      const { initialScoresByStudent, ...assessmentInput } = parsed;
+      const { initialScoresByStudent = {}, ...assessmentInput } = parsed;
       const assessment = scoreSheetAssessmentSchema.parse({
         ...assessmentInput,
         code: assessmentInput.code.toUpperCase(),

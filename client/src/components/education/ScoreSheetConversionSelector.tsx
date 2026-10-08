@@ -1,23 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { ScoreSheetTemplate } from "@shared/score-sheet-template";
 import type { ScoreConversionTemplate } from "@shared/score-conversion";
-import {
-  calculateScoreSheetAssessmentAttemptResult,
-  scoreSheetAssessmentAttemptValuesSchema,
-  type ScoreSheetAssessmentAttemptValues,
-} from "@shared/score-sheet-assessment-scoring";
 import type { ScoreSheetAssessmentInput } from "@shared/score-sheet-assessment";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useLanguage } from "@/hooks/use-language";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { StaffAssignedScoreSheetAssessment } from "./StaffScoreSheetAssessmentStudentsDialog";
 
 type SelectionMode = "class" | "students";
 
@@ -45,16 +39,23 @@ type ConversionTemplateOption = ScoreSheetTemplate & {
 interface ScoreSheetConversionSelectorProps {
   enabled: boolean;
   layout: "create";
-  onSaved?: () => void;
+  onSaved?: (assessment: StaffAssignedScoreSheetAssessment) => void;
 }
+
+type CreatedManualAssessment = {
+  id: string;
+  code: string;
+  name: string;
+  createdAt: string;
+  attemptCount: number;
+  scoringPolicy: "highest" | "latest";
+  manualStudentIds: string[];
+  templateSnapshot: ScoreSheetTemplate;
+};
 
 function getClassRosterStudentId(row: any): string | null {
   const id = row.studentId || row.student?.id || row.id;
   return id ? String(id) : null;
-}
-
-function getScoreCellKey(skillId: string, partId: string | null): string {
-  return `${skillId}:${partId ?? "__skill__"}`;
 }
 
 export function ScoreSheetConversionSelector({
@@ -68,10 +69,6 @@ export function ScoreSheetConversionSelector({
   const [selectedClassId, setSelectedClassId] = useState("");
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
-  const [scoresByStudent, setScoresByStudent] = useState<
-    Record<string, ScoreSheetAssessmentAttemptValues>
-  >({});
-  const [scoreInputs, setScoreInputs] = useState<Record<string, Record<string, string>>>({});
 
   const {
     data: staffClasses = [],
@@ -121,16 +118,42 @@ export function ScoreSheetConversionSelector({
   });
 
   const saveMutation = useMutation({
-    mutationFn: async (payload: ScoreSheetAssessmentInput) =>
-      apiRequest("POST", "/api/score-sheet-assessments", payload),
-    onSuccess: () => {
+    mutationFn: async (payload: ScoreSheetAssessmentInput) => {
+      const response = await apiRequest("POST", "/api/score-sheet-assessments", payload);
+      return response.json() as Promise<CreatedManualAssessment>;
+    },
+    onSuccess: (createdAssessment) => {
       queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned"] });
       queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned/students"] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff"] });
       toast({
         title: t("mySpace.scoreSheet.conversionCreateSuccess"),
       });
-      onSaved?.();
+      onSaved?.({
+        sessionId: createdAssessment.id,
+        classId: "manual",
+        classCode: "Thủ công",
+        className: "Thủ công",
+        isManual: true,
+        locationName: null,
+        teacherNames: null,
+        sessionIndex: null,
+        examDate: createdAssessment.createdAt,
+        assessmentId: createdAssessment.id,
+        assessmentCode: createdAssessment.code,
+        assessmentName: createdAssessment.name,
+        templateName: createdAssessment.templateSnapshot.name,
+        scoreDeadlineAt: null,
+        published: false,
+        studentCount: createdAssessment.manualStudentIds.length,
+        enteredStudentCount: 0,
+        completedStudentCount: 0,
+        individuallyPublishedStudentCount: 0,
+        allStudentsIndividuallyPublished: false,
+        attemptCount: createdAssessment.attemptCount,
+        scoringPolicy: createdAssessment.scoringPolicy,
+        hasConversion: true,
+      });
     },
     onError: (error: Error) => {
       toast({
@@ -182,114 +205,6 @@ export function ScoreSheetConversionSelector({
     setSelectedStudentIds([]);
   };
 
-  const scoreColumns: Array<{
-    skillId: string;
-    skillName: string;
-    partId: string | null;
-    partName: string;
-    maxScore: number | null;
-  }> = [];
-  selectedTemplate?.skills.forEach((skill, skillIndex) => {
-    const skillId = skill.id ?? skill.sectionId;
-    if (!skillId) return;
-    const conversionSection = skill.sectionId
-      ? selectedTemplate.conversionTemplate?.sections.find(
-          (section) => section.id === skill.sectionId,
-        )
-      : undefined;
-    const configuredSkillMax = skill.rawMaxScore > 0
-      ? skill.rawMaxScore
-      : conversionSection?.rawMaxScore ?? null;
-    const skillMaxScore = conversionSection && configuredSkillMax != null
-      ? Math.min(configuredSkillMax, conversionSection.rawMaxScore)
-      : configuredSkillMax;
-    if (skill.parts.length === 0) {
-      scoreColumns.push({
-        skillId,
-        skillName: skill.name || `Kỹ năng ${skillIndex + 1}`,
-        partId: null,
-        partName: skill.name || `Kỹ năng ${skillIndex + 1}`,
-        maxScore: skillMaxScore,
-      });
-      return;
-    }
-    skill.parts.forEach((part) => {
-      scoreColumns.push({
-        skillId,
-        skillName: skill.name || `Kỹ năng ${skillIndex + 1}`,
-        partId: part.id,
-        partName: part.name,
-        maxScore: part.rawMaxScore,
-      });
-    });
-  });
-
-  const calculatedResults = useMemo(() => {
-    if (!selectedTemplate) {
-      return new Map<string, ReturnType<typeof calculateScoreSheetAssessmentAttemptResult> | null>();
-    }
-    return new Map(selectedStudents.map((student) => {
-      try {
-        const values = scoreSheetAssessmentAttemptValuesSchema.parse(
-          scoresByStudent[student.studentId] ?? {},
-        );
-        return [student.studentId, calculateScoreSheetAssessmentAttemptResult({
-          template: selectedTemplate,
-          conversionTemplate: selectedTemplate.conversionTemplate,
-          values,
-        })] as const;
-      } catch {
-        return [student.studentId, null] as const;
-      }
-    }));
-  }, [scoresByStudent, selectedStudents, selectedTemplate]);
-
-  const updateScore = (
-    studentId: string,
-    skillId: string,
-    partId: string | null,
-    rawValue: string,
-    maxScore: number | null,
-  ) => {
-    const trimmedValue = rawValue.trim();
-    const parsedScore = trimmedValue === "" ? null : Number(trimmedValue);
-    const score = parsedScore != null
-      && Number.isFinite(parsedScore)
-      && parsedScore >= 0
-      && (maxScore == null || parsedScore <= maxScore)
-      ? parsedScore
-      : null;
-    const cellKey = getScoreCellKey(skillId, partId);
-    setScoreInputs((previous) => ({
-      ...previous,
-      [studentId]: { ...previous[studentId], [cellKey]: rawValue },
-    }));
-    setScoresByStudent((previous) => {
-      const current = scoreSheetAssessmentAttemptValuesSchema.parse(
-        previous[studentId] ?? {},
-      );
-      const updated: ScoreSheetAssessmentAttemptValues = partId
-        ? {
-            ...current,
-            partScores: {
-              ...current.partScores,
-              [skillId]: {
-                ...(current.partScores[skillId] ?? {}),
-                [partId]: score,
-              },
-            },
-          }
-        : {
-            ...current,
-            skillScores: {
-              ...current.skillScores,
-              [skillId]: score,
-            },
-          };
-      return { ...previous, [studentId]: updated };
-    });
-  };
-
   const handleSave = () => {
     if (!selectedTemplate) {
       toast({
@@ -305,25 +220,6 @@ export function ScoreSheetConversionSelector({
       });
       return;
     }
-    const hasInvalidScoreInput = selectedStudents.some((student) =>
-      scoreColumns.some((column) => {
-        const rawValue = scoreInputs[student.studentId]?.[
-          getScoreCellKey(column.skillId, column.partId)
-        ] ?? "";
-        if (rawValue.trim() === "") return false;
-        const score = Number(rawValue.trim());
-        return !Number.isFinite(score)
-          || score < 0
-          || (column.maxScore != null && score > column.maxScore);
-      }),
-    );
-    if (hasInvalidScoreInput) {
-      toast({
-        title: t("mySpace.scoreSheet.conversionInvalidScore"),
-        variant: "destructive",
-      });
-      return;
-    }
     const dateCode = new Date().toISOString().slice(0, 10).replaceAll("-", "");
     const uniqueCode = crypto.randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
     const payload: ScoreSheetAssessmentInput = {
@@ -334,20 +230,9 @@ export function ScoreSheetConversionSelector({
       manualSelectionMode: selectionMode,
       manualClassId: selectionMode === "class" ? selectedClassId : null,
       manualStudentIds: selectedStudents.map((student) => student.studentId),
-      initialScoresByStudent: Object.fromEntries(
-        selectedStudents.map((student) => [
-          student.studentId,
-          scoreSheetAssessmentAttemptValuesSchema.parse(
-            scoresByStudent[student.studentId] ?? {},
-          ),
-        ]),
-      ),
     };
     saveMutation.mutate(payload);
   };
-
-  const formatScore = (score: number | null | undefined) =>
-    score == null ? "—" : String(Number(score.toFixed(2)));
 
   const panelContent = !selectedTemplate
     ? t("mySpace.scoreSheet.conversionSelectTemplateHint")
@@ -470,8 +355,6 @@ export function ScoreSheetConversionSelector({
             value={selectedTemplateId}
             onChange={(templateId) => {
               setSelectedTemplateId(templateId);
-              setScoresByStudent({});
-              setScoreInputs({});
             }}
             placeholder={
               templatesLoading
@@ -525,95 +408,12 @@ export function ScoreSheetConversionSelector({
             {panelContent}
           </div>
         ) : (
-          <div className="min-h-0 flex-1 overflow-auto rounded-md border">
-            <Table className="min-w-max">
-              <TableHeader className="sticky top-0 z-20 bg-background">
-                <TableRow>
-                  <TableHead className="sticky left-0 z-30 min-w-[190px] bg-background">
-                    {t("mySpace.scoreSheet.studentLabel")}
-                  </TableHead>
-                  {scoreColumns.map((column, index) => (
-                    <TableHead
-                      key={`${column.skillId}-${column.partId ?? "whole"}-${index}`}
-                      className="min-w-[150px] text-center"
-                    >
-                      <div>{column.partName}</div>
-                      {column.maxScore != null && (
-                        <div className="text-[11px] font-normal text-muted-foreground">
-                          {t("mySpace.scoreSheet.conversionMaximumScore")}: {column.maxScore}
-                        </div>
-                      )}
-                    </TableHead>
-                  ))}
-                  <TableHead className="min-w-[115px] text-right">
-                    {t("mySpace.scoreSheet.conversionRawTotal")}
-                  </TableHead>
-                  <TableHead className="min-w-[115px] text-right">
-                    {t("mySpace.scoreSheet.conversionConvertedTotal")}
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {selectedStudents.map((student) => {
-                  const values = scoreSheetAssessmentAttemptValuesSchema.parse(
-                    scoresByStudent[student.studentId] ?? {},
-                  );
-                  const result = calculatedResults.get(student.studentId);
-                  return (
-                    <TableRow key={student.studentId}>
-                      <TableCell className="sticky left-0 z-10 min-w-[190px] bg-background font-medium">
-                        <div>{student.fullName}</div>
-                        {student.code && (
-                          <div className="text-xs font-normal text-muted-foreground">{student.code}</div>
-                        )}
-                      </TableCell>
-                      {scoreColumns.map((column, index) => {
-                        const score = column.partId
-                          ? values.partScores[column.skillId]?.[column.partId]
-                          : values.skillScores[column.skillId];
-                        return (
-                          <TableCell
-                            key={`${student.studentId}-${column.skillId}-${column.partId ?? "whole"}-${index}`}
-                            className="min-w-[150px]"
-                          >
-                            <Input
-                              type="text"
-                              inputMode="decimal"
-                              value={scoreInputs[student.studentId]?.[getScoreCellKey(column.skillId, column.partId)] ?? (score == null ? "" : String(score))}
-                              placeholder={column.maxScore == null ? undefined : `0–${column.maxScore}`}
-                              aria-label={`${student.fullName}: ${column.partName}`}
-                              data-testid={`manual-score-${student.studentId}-${column.skillId}-${column.partId ?? "whole"}`}
-                              onChange={(event) => updateScore(
-                                student.studentId,
-                                column.skillId,
-                                column.partId,
-                                event.target.value,
-                                column.maxScore,
-                              )}
-                            />
-                          </TableCell>
-                        );
-                      })}
-                      <TableCell className="text-right tabular-nums">
-                        {formatScore(result?.overallRawScore)}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold tabular-nums">
-                        {formatScore(result?.overallConvertedScore)}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+          <div className="flex min-h-0 flex-1 items-center justify-center rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+            {t("mySpace.scoreSheet.conversionSharedResultsHint")}
           </div>
         )}
 
-        <div className="mt-3 flex items-center justify-between gap-3 border-t pt-3">
-          <p className="text-xs text-muted-foreground">
-            {selectedTemplate
-              ? t("mySpace.scoreSheet.conversionBlankGridHint")
-              : t("mySpace.scoreSheet.conversionSelectTemplateHint")}
-          </p>
+        <div className="mt-3 flex items-center justify-end gap-3 border-t pt-3">
           <Button
             type="button"
             onClick={handleSave}

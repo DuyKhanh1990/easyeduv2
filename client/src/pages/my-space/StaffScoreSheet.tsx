@@ -11,7 +11,6 @@ import { useToast } from "@/hooks/use-toast";
 import { downloadClassGradeBookExcel } from "@/lib/gradeBookExcelExport";
 import { GradeBookEditDialog } from "@/components/education/GradeBookEditDialog";
 import { GradeBookCreateDialog } from "@/components/education/GradeBookCreateDialog";
-import { ScoreSheetConversionSelector } from "@/components/education/ScoreSheetConversionSelector";
 import {
   StaffScoreSheetAssessmentStudentsDialog,
   type StaffAssignedScoreSheetAssessment,
@@ -783,7 +782,11 @@ export function StaffScoreSheet() {
       <GradeBookCreateDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        onSaved={() => { setCreateOpen(false); refetch(); }}
+        onSaved={(assessment) => {
+          setCreateOpen(false);
+          refetch();
+          if (assessment) setSelectedAssessment(assessment);
+        }}
       />
     </div>
   );
