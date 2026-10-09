@@ -8,5 +8,7 @@ export const modules: ModuleMap = {
   "./components/mockups/score-conversion-layout/Requested.tsx": () => import("../components/mockups/score-conversion-layout/Requested.tsx"),
   "./components/mockups/score-conversion-layout/ScoreConversionLayoutPreview.tsx": () => import("../components/mockups/score-conversion-layout/ScoreConversionLayoutPreview.tsx"),
   "./components/mockups/score-conversion-layout/ScoreConversionSectionEditor.tsx": () => import("../components/mockups/score-conversion-layout/ScoreConversionSectionEditor.tsx"),
-  "./components/mockups/score-conversion-layout/StudentScoreSheetDialog.tsx": () => import("../components/mockups/score-conversion-layout/StudentScoreSheetDialog.tsx")
+  "./components/mockups/score-conversion-layout/StudentScoreSheetDialog.tsx": () => import("../components/mockups/score-conversion-layout/StudentScoreSheetDialog.tsx"),
+  "./components/mockups/student-score-sheet-cards/Aligned.tsx": () => import("../components/mockups/student-score-sheet-cards/Aligned.tsx"),
+  "./components/mockups/student-score-sheet-cards/Current.tsx": () => import("../components/mockups/student-score-sheet-cards/Current.tsx")
 };

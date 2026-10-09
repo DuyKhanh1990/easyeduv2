@@ -317,27 +317,25 @@ export function StudentScoreSheet() {
                           </div>
 
                           <div className="mt-2 space-y-2 border-t border-dashed border-gray-200 pt-2 dark:border-border">
-                            <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+                            <div className="grid grid-cols-2 items-center gap-x-4 gap-y-1.5 sm:grid-cols-[minmax(8rem,1.15fr)_minmax(6rem,0.85fr)_minmax(7rem,1fr)_minmax(7rem,1fr)]">
                               <div className="flex min-w-0 items-center">
-                                {book.scoreSheetName ? (
-                                  <Badge variant="outline" className="text-[11px] whitespace-nowrap">
+                                {book.scoreSheetName && (
+                                  <Badge variant="outline" className="max-w-full truncate text-[11px]">
                                     {book.scoreSheetName}
                                   </Badge>
-                                ) : (
-                                  <span className="text-xs text-gray-400">—</span>
                                 )}
                               </div>
 
                               <div className="flex min-w-0 items-center gap-1.5">
-                                <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
-                                  {t("mySpace.scoreSheet.score")}
-                                </span>
-                                {headlineScore && headlineScore.score != null && headlineScore.score !== "" ? (
-                                  <span className="text-sm font-bold text-violet-700 dark:text-violet-400">
-                                    {headlineScore.score}
-                                  </span>
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">{t("mySpace.scoreSheet.noScore")}</span>
+                                {headlineScore && headlineScore.score != null && headlineScore.score !== "" && (
+                                  <>
+                                    <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                                      {t("mySpace.scoreSheet.score")}
+                                    </span>
+                                    <span className="text-sm font-bold text-violet-700 dark:text-violet-400">
+                                      {headlineScore.score}
+                                    </span>
+                                  </>
                                 )}
                                 {hasComment && (
                                   <MessageSquare
@@ -347,8 +345,9 @@ export function StudentScoreSheet() {
                                 )}
                               </div>
 
-                              {conversionResult?.gradeBand && (
-                                <div className="flex items-center gap-1.5">
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                {conversionResult?.gradeBand && (
+                                  <>
                                   <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
                                     {t("mySpace.scoreSheet.classification")}
                                   </span>
@@ -361,11 +360,13 @@ export function StudentScoreSheet() {
                                   >
                                     {conversionResult.gradeBand.label}
                                   </span>
-                                </div>
-                              )}
+                                  </>
+                                )}
+                              </div>
 
-                              {conversionResult?.passStatus && (
-                                <div className="flex items-center gap-1.5">
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                {conversionResult?.passStatus && (
+                                  <>
                                   <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
                                     {t("mySpace.scoreSheet.status")}
                                   </span>
@@ -378,15 +379,16 @@ export function StudentScoreSheet() {
                                   >
                                     {conversionResult.passStatus === "passed" ? "Đạt" : "Không đạt"}
                                   </span>
-                                </div>
-                              )}
+                                  </>
+                                )}
+                              </div>
                             </div>
 
-                            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[11px]">
+                            <div className="flex flex-wrap items-center justify-start gap-x-4 gap-y-1 text-[11px]">
                               <p className="min-w-0 truncate text-gray-500 dark:text-muted-foreground">
                                 {t("mySpace.scoreSheet.created")}: {book.createdByName ?? "—"} · {formatDate(book.createdAt)}
                               </p>
-                              <p className="text-gray-500 dark:text-muted-foreground/70">
+                              <p className="shrink-0 text-gray-500 dark:text-muted-foreground/70">
                                 {t("mySpace.scoreSheet.updated")}: {formatDate(book.updatedAt)}
                               </p>
                             </div>
