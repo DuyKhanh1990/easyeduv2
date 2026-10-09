@@ -9,6 +9,7 @@ import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { downloadClassGradeBookExcel } from "@/lib/gradeBookExcelExport";
+import { getConversionScoreSheetFilterId } from "@/lib/scoreSheetFilter";
 import { GradeBookEditDialog } from "@/components/education/GradeBookEditDialog";
 import { GradeBookCreateDialog } from "@/components/education/GradeBookCreateDialog";
 import {
@@ -61,10 +62,6 @@ type ScoreSheetTimelineEntry =
     };
 
 type StaffScoreSheetTab = "all" | "regular" | "conversion";
-
-function getConversionScoreSheetFilterId(assessment: StaffAssignedScoreSheetAssessment) {
-  return `conversion:${assessment.scoreSheetTemplateId ?? assessment.assessmentId}`;
-}
 
 type StatusPresentation = {
   label: string;
