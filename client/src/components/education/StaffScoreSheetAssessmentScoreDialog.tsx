@@ -1387,7 +1387,7 @@ export function StaffScoreSheetAssessmentScoreDialog({
         open={publishConfirmationOpen}
         onOpenChange={setPublishConfirmationOpen}
       >
-        <AlertDialogContent>
+        <AlertDialogContent overlayClassName="z-[390]" className="z-[400]">
           <AlertDialogHeader>
             <AlertDialogTitle>Xác nhận công bố điểm?</AlertDialogTitle>
             <AlertDialogDescription>
