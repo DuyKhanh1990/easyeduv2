@@ -38,11 +38,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ClipboardList, MessageSquarePlus, Trash2 } from "lucide-react";
+import { ArrowLeft, Calculator, ClipboardList, MessageSquarePlus, Trash2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/hooks/use-language";
-import { ScoreSheetTypeSwitch, type ScoreSheetDialogMode } from "./ScoreSheetTypeSwitch";
 import { ScoreSheetConversionSelector } from "./ScoreSheetConversionSelector";
 import type { StaffAssignedScoreSheetAssessment } from "./StaffScoreSheetAssessmentStudentsDialog";
 
@@ -63,7 +62,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
   const [title, setTitle] = useState("");
   const [selectedSessionId, setSelectedSessionId] = useState<string>(NONE_VALUE);
   const [selectedScoreSheetId, setSelectedScoreSheetId] = useState<string>("");
-  const [dialogMode, setDialogMode] = useState<ScoreSheetDialogMode>("regular");
+  const [dialogMode, setDialogMode] = useState<"choice" | "regular" | "conversion">("choice");
   const [scores, setScores] = useState<Record<string, Record<string, string>>>({});
   const [removedStudentIds, setRemovedStudentIds] = useState<Set<string>>(new Set());
   const [pendingRemoval, setPendingRemoval] = useState<{ id: string; name: string } | null>(null);
@@ -127,7 +126,7 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
       setTitle("");
       setSelectedSessionId(NONE_VALUE);
       setSelectedScoreSheetId("");
-      setDialogMode("regular");
+      setDialogMode("choice");
       setScores({});
       setRemovedStudentIds(new Set());
       setPublished(false);
@@ -327,17 +326,89 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
   return (
     <>
       <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-        <DialogContent className="w-screen h-screen max-w-none rounded-none m-0 flex flex-col p-0 gap-0">
-          <DialogHeader className="flex-row flex-wrap items-center gap-x-6 gap-y-3 space-y-0 border-b px-6 py-3 shrink-0">
-            <DialogTitle className="shrink-0">{t("mySpace.scoreSheet.createTitle")}</DialogTitle>
-            <ScoreSheetTypeSwitch
-              value={dialogMode}
-              onValueChange={setDialogMode}
-              className="w-full max-w-[360px]"
-            />
+        <DialogContent
+          className={
+            dialogMode === "regular"
+              ? "w-screen h-screen max-w-none rounded-none m-0 flex flex-col p-0 gap-0"
+              : dialogMode === "conversion"
+                ? "w-[calc(100%-2rem)] max-w-[640px] max-h-[90vh] flex flex-col overflow-hidden p-0 gap-0"
+                : "w-[calc(100%-2rem)] max-w-[720px] max-h-[90vh] flex flex-col overflow-hidden p-0 gap-0"
+          }
+        >
+          <DialogHeader className="flex-row items-center gap-3 space-y-0 border-b px-5 py-4 shrink-0">
+            <div className="flex min-w-0 items-center gap-3">
+              {dialogMode !== "choice" && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 px-2"
+                  onClick={() => setDialogMode("choice")}
+                  data-testid="button-back-score-sheet-type"
+                >
+                  <ArrowLeft className="mr-1 h-4 w-4" />
+                  {t("mySpace.scoreSheet.backToTypeChoice")}
+                </Button>
+              )}
+              <div className="min-w-0">
+                <DialogTitle className="truncate">{t("mySpace.scoreSheet.createTitle")}</DialogTitle>
+                {dialogMode === "choice" ? (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {t("mySpace.scoreSheet.createTypePrompt")}
+                  </p>
+                ) : (
+                  <span className="mt-1 inline-block text-xs text-muted-foreground">
+                    {t(
+                      dialogMode === "regular"
+                        ? "mySpace.scoreSheet.regularSheet"
+                        : "mySpace.scoreSheet.conversionSheet",
+                    )}
+                  </span>
+                )}
+              </div>
+            </div>
           </DialogHeader>
 
-          {dialogMode === "regular" ? (
+          {dialogMode === "choice" ? (
+            <div className="grid flex-1 grid-cols-1 gap-3 overflow-y-auto p-5 sm:grid-cols-2 sm:p-6">
+              <button
+                type="button"
+                className="group flex min-h-32 w-full items-start gap-4 rounded-xl border bg-card p-5 text-left transition-colors hover:border-primary/60 hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => setDialogMode("regular")}
+                data-testid="button-create-score-sheet-regular"
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <ClipboardList className="h-5 w-5" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block font-semibold">
+                    {t("mySpace.scoreSheet.regularSheet")}
+                  </span>
+                  <span className="mt-1 block text-sm leading-relaxed text-muted-foreground">
+                    {t("mySpace.scoreSheet.createRegularDescription")}
+                  </span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className="group flex min-h-32 w-full items-start gap-4 rounded-xl border bg-card p-5 text-left transition-colors hover:border-primary/60 hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => setDialogMode("conversion")}
+                data-testid="button-create-score-sheet-conversion"
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-300">
+                  <Calculator className="h-5 w-5" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block font-semibold">
+                    {t("mySpace.scoreSheet.conversionSheet")}
+                  </span>
+                  <span className="mt-1 block text-sm leading-relaxed text-muted-foreground">
+                    {t("mySpace.scoreSheet.createConversionDescription")}
+                  </span>
+                </span>
+              </button>
+            </div>
+          ) : dialogMode === "regular" ? (
           <div className="flex flex-1 min-h-0">
             <div className="w-[24%] border-r p-5 flex flex-col gap-4 overflow-y-auto shrink-0">
               <div className="space-y-1.5">
@@ -606,13 +677,13 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
           ) : (
             <ScoreSheetConversionSelector
               enabled={open && dialogMode === "conversion"}
-              layout="create"
+              onCancel={onClose}
               onSaved={onSaved}
             />
           )}
 
-          <DialogFooter className="px-6 py-4 border-t shrink-0">
-            {dialogMode === "regular" && (
+          {dialogMode === "regular" && (
+            <DialogFooter className="px-6 py-4 border-t shrink-0">
               <div className="flex items-center gap-3 mr-auto">
                 <Switch
                   id="create-published-switch"
@@ -629,11 +700,9 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
                   )}
                 </Label>
               </div>
-            )}
-            <Button variant="outline" onClick={onClose}>
-              {t("mySpace.scoreSheet.cancel")}
-            </Button>
-            {dialogMode === "regular" && (
+              <Button variant="outline" onClick={onClose}>
+                {t("mySpace.scoreSheet.cancel")}
+              </Button>
               <Button
                 onClick={handleSubmit}
                 disabled={createMutation.isPending}
@@ -641,8 +710,16 @@ export function GradeBookCreateDialog({ open, onClose, onSaved }: GradeBookCreat
               >
                 {createMutation.isPending ? t("mySpace.scoreSheet.saving") : t("mySpace.scoreSheet.save")}
               </Button>
-            )}
-          </DialogFooter>
+            </DialogFooter>
+          )}
+
+          {dialogMode === "choice" && (
+            <DialogFooter className="border-t px-5 py-4 sm:px-6">
+              <Button variant="outline" onClick={onClose}>
+                {t("mySpace.scoreSheet.cancel")}
+              </Button>
+            </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
 
