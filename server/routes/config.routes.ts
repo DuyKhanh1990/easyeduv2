@@ -47,6 +47,7 @@ import {
   upsertAttendanceFeeRule,
   deleteAttendanceFeeRule,
 } from "../storage/attendance-fee-rule.storage";
+import { manualStudentIdInFilter } from "../lib/manual-score-sheet-sql";
 import * as courseStorage from "../storage/course.storage";
 import { createCourseAuditLog, getCourseAuditLogs } from "../storage/course-audit-log.storage";
 import { createActivityLog, getStaffHistory } from "../storage/activity-log.storage";
@@ -310,7 +311,7 @@ async function areManualScoreSheetStudentsAccessible(
   const classConstraint = input.manualSelectionMode === "class" && input.manualClassId
     ? sql`AND c.id = ${input.manualClassId}::uuid`
     : sql``;
-  const selectedStudentConstraint = inArray(sql`sc.student_id`, input.manualStudentIds);
+  const selectedStudentConstraint = manualStudentIdInFilter(input.manualStudentIds);
   const result = await db.execute(sql`
     SELECT DISTINCT sc.student_id
     FROM student_classes sc
