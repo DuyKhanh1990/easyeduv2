@@ -80,7 +80,7 @@ const ASSESSMENT_STATUS_PRESENTATION: Record<ScoreSheetAssessmentStatus, StatusP
   in_progress: {
     label: "Đang thi",
     Icon: CircleDot,
-    className: "text-emerald-700 dark:text-emerald-300",
+    className: "text-primary dark:text-blue-300",
   },
   processing: {
     label: "Đang xử lý",
@@ -598,15 +598,15 @@ export function StaffScoreSheet() {
                                   {scoreProgressLabel}
                                 </span>
 
-                                <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-medium">
+                                <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-bold">
                                   {status && AssessmentStatusIcon ? (
                                     <>
-                                      <AssessmentStatusIcon className="h-3.5 w-3.5 shrink-0" />
+                                      <AssessmentStatusIcon className={`h-3.5 w-3.5 shrink-0 ${status.className}`} />
                                       <span className={status.className}>{status.label}</span>
                                     </>
                                   ) : null}
                                 </span>
-                                <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-medium">
+                                <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-bold">
                                   {deadlineStatus && DeadlineStatusIcon ? (
                                     <>
                                       <DeadlineStatusIcon className={`h-3.5 w-3.5 shrink-0 ${deadlineStatus.className}`} />
@@ -614,7 +614,7 @@ export function StaffScoreSheet() {
                                     </>
                                   ) : null}
                                 </span>
-                                <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-medium">
+                                <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-bold">
                                   {(assessment.published || assessment.allStudentsIndividuallyPublished) && (
                                     <span
                                       className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300"
@@ -724,12 +724,12 @@ export function StaffScoreSheet() {
                               <span aria-hidden="true" className="min-h-5" />
 
                               {book.published ? (
-                                <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-medium text-green-700 dark:text-green-400">
+                                <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-bold text-green-700 dark:text-green-400">
                                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                                   {t("mySpace.scoreSheet.published")}
                                 </span>
                               ) : (
-                                <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-medium text-gray-500 dark:text-muted-foreground">
+                                <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-bold text-gray-500 dark:text-muted-foreground">
                                   <Clock className="h-3.5 w-3.5 shrink-0" />
                                   {t("mySpace.scoreSheet.unpublished")}
                                 </span>
