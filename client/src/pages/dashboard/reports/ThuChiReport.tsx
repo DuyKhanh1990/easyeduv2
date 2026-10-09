@@ -341,8 +341,13 @@ export function ThuChiReport({ onBack }: Props) {
   const COL_COUNT = 14;
 
   function handleDownload() {
-    const pmLabel = (m: string) =>
-      m === "cash" ? "Tiền mặt" : m === "transfer" ? "Chuyển khoản" : m ?? "";
+  const pmLabel = (m: string) =>
+    m === "cash" ? "Tiền mặt"
+      : m === "transfer" ? "Chuyển khoản"
+      : m === "deposit_wallet" ? "Ví Đặt cọc"
+      : m === "card" ? "Quẹt thẻ"
+      : m === "installment" ? "Trả góp"
+      : m ?? "";
 
       const dataRows = allRows.map((inv, idx) => {
       const isIncome = inv.type === "Thu";
@@ -579,6 +584,9 @@ export function ThuChiReport({ onBack }: Props) {
                     <SelectItem value="all">Tất cả</SelectItem>
                     <SelectItem value="cash">Tiền mặt</SelectItem>
                     <SelectItem value="transfer">Chuyển khoản</SelectItem>
+                    <SelectItem value="deposit_wallet">Ví Đặt cọc</SelectItem>
+                    <SelectItem value="card">Quẹt thẻ</SelectItem>
+                    <SelectItem value="installment">Trả góp</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -699,6 +707,9 @@ export function ThuChiReport({ onBack }: Props) {
                   const reportAmount = parseNum(inv.reportAmount ?? inv.paidAmount ?? inv.grandTotal);
                   const pmLabel    = inv.paymentMethod === "cash" ? "Tiền mặt"
                                    : inv.paymentMethod === "transfer" ? "Chuyển khoản"
+                                   : inv.paymentMethod === "deposit_wallet" ? "Ví Đặt cọc"
+                                   : inv.paymentMethod === "card" ? "Quẹt thẻ"
+                                   : inv.paymentMethod === "installment" ? "Trả góp"
                                    : inv.paymentMethod ?? "—";
                   const displayDescription = inv.note?.trim() || inv.description?.trim() || "";
 

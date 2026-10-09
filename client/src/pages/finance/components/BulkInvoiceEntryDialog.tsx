@@ -42,7 +42,7 @@ type RowData = {
   product: string;
   productLabel: string;
   description: string;
-  paymentMethod: "cash" | "transfer";
+  paymentMethod: "cash" | "transfer" | "deposit_wallet" | "card" | "installment";
   amount: string;
   promotionKeys: string[];
   surchargeKeys: string[];
@@ -305,9 +305,14 @@ export function BulkInvoiceEntryDialog({
             product: asText(readCell(record, ["Mã sản phẩm", "packageId", "productId"])),
             productLabel: asText(readCell(record, ["Sản phẩm", "Gói", "packageName", "product"])),
             description: asText(readCell(record, ["Mô tả", "description"])),
-            paymentMethod: /^(chuyen khoan|transfer|bank)$/i.test(
-              normalizeHeader(readCell(record, ["Hình thức thanh toán", "paymentMethod"]))
-            ) ? "transfer" : "cash",
+            paymentMethod: (() => {
+              const method = normalizeHeader(readCell(record, ["Hình thức thanh toán", "paymentMethod"]));
+              if (/^(chuyen khoan|transfer|bank)$/i.test(method)) return "transfer";
+              if (/^(vi dat coc|deposit wallet|deposit_wallet)$/i.test(method)) return "deposit_wallet";
+              if (/^(quet the|card)$/i.test(method)) return "card";
+              if (/^(tra gop|installment)$/i.test(method)) return "installment";
+              return "cash";
+            })(),
             amount: asMoney(readCell(record, ["Số tiền", "Tổng tiền", "totalAmount", "amount"])),
             promotionKeys: [],
             surchargeKeys: [],
@@ -1577,6 +1582,9 @@ const RowEditor = memo(function RowEditor({
           <SelectContent>
             <SelectItem value="cash">Tiền mặt</SelectItem>
             <SelectItem value="transfer">Chuyển khoản</SelectItem>
+            <SelectItem value="deposit_wallet">Ví Đặt cọc</SelectItem>
+            <SelectItem value="card">Quẹt thẻ</SelectItem>
+            <SelectItem value="installment">Trả góp</SelectItem>
           </SelectContent>
         </Select>
       </Td>

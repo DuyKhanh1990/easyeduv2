@@ -33,6 +33,9 @@ interface BulkCollectDialogProps {
 const PAYMENT_METHODS = [
   { value: "cash",     labelKey: "finance.cash" },
   { value: "transfer", labelKey: "finance.transfer" },
+  { value: "deposit_wallet", labelKey: "finance.depositWallet" },
+  { value: "card", labelKey: "finance.card" },
+  { value: "installment", labelKey: "finance.installmentPayment" },
   { value: "other",    labelKey: "finance.other" },
 ];
 

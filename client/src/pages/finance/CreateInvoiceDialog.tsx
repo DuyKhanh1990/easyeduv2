@@ -2610,11 +2610,14 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                 <div className="flex gap-2 items-end">
                     <div className="space-y-0.5 w-36 flex-shrink-0">
                        <span className="text-xs text-muted-foreground">{t("finance.create.method")}</span>
-                      <Select value={directPaymentMethod} onValueChange={v => { setDirectPaymentMethod(v); if (v === "cash") setDirectBank(""); }}>
+                       <Select value={directPaymentMethod} onValueChange={v => { setDirectPaymentMethod(v); if (v !== "transfer") setDirectBank(""); }}>
                         <SelectTrigger className="h-8 text-xs" data-testid="select-direct-payment-method"><SelectValue /></SelectTrigger>
                         <SelectContent>
                            <SelectItem value="cash">{t("finance.cash")}</SelectItem>
                            <SelectItem value="transfer">{t("finance.transfer")}</SelectItem>
+                            <SelectItem value="deposit_wallet">{t("finance.depositWallet")}</SelectItem>
+                            <SelectItem value="card">{t("finance.card")}</SelectItem>
+                            <SelectItem value="installment">{t("finance.installmentPayment")}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -2761,12 +2764,15 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         <Select
                           value={p.paymentMethod}
                             disabled={p.status === "paid"}
-                          onValueChange={v => setPaymentSchedule(prev => prev.map(x => x.id === p.id ? { ...x, paymentMethod: v, bank: v === "cash" ? "" : x.bank } : x))}
+                          onValueChange={v => setPaymentSchedule(prev => prev.map(x => x.id === p.id ? { ...x, paymentMethod: v, bank: v !== "transfer" ? "" : x.bank } : x))}
                         >
                           <SelectTrigger className="h-8 text-xs" data-testid={`select-payment-method-${p.id}`}><SelectValue /></SelectTrigger>
                           <SelectContent>
                              <SelectItem value="cash">{t("finance.cash")}</SelectItem>
                              <SelectItem value="transfer">{t("finance.transfer")}</SelectItem>
+                             <SelectItem value="deposit_wallet">{t("finance.depositWallet")}</SelectItem>
+                             <SelectItem value="card">{t("finance.card")}</SelectItem>
+                             <SelectItem value="installment">{t("finance.installmentPayment")}</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

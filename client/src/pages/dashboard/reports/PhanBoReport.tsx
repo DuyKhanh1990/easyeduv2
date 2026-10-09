@@ -340,6 +340,9 @@ export function PhanBoReport({ onBack }: Props) {
                     <SelectItem value="all">Tất cả</SelectItem>
                     <SelectItem value="cash">Tiền mặt</SelectItem>
                     <SelectItem value="transfer">Chuyển khoản</SelectItem>
+                    <SelectItem value="deposit_wallet">Ví Đặt cọc</SelectItem>
+                    <SelectItem value="card">Quẹt thẻ</SelectItem>
+                    <SelectItem value="installment">Trả góp</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

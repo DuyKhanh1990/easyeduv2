@@ -571,6 +571,9 @@ async function downloadInvoiceListExcel(
   const paymentMethodLabels: Record<string, string> = {
     cash: t("finance.cash"),
     transfer: t("finance.transfer"),
+    deposit_wallet: t("finance.depositWallet"),
+    card: t("finance.card"),
+    installment: t("finance.installmentPayment"),
   };
 
   // Keep each parent invoice immediately above its visible installment rows.
@@ -939,6 +942,12 @@ function renderInvoiceCell(
         ? t("finance.cash")
         : method === "transfer"
           ? t("finance.transfer")
+          : method === "deposit_wallet"
+            ? t("finance.depositWallet")
+            : method === "card"
+              ? t("finance.card")
+              : method === "installment"
+                ? t("finance.installmentPayment")
           : method || "—";
       return <td key="paymentMethod" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{label}</td>;
     }
@@ -2223,7 +2232,7 @@ export default function Invoices() {
                      { label: t("finance.branch"),             key: "branches",       opts: filterOptions.branches.map(v => ({ value: v, label: v })),       withSearch: false },
                      { label: t("finance.type"),               key: "types",          opts: filterOptions.types.map(v => ({ value: v, label: v })),          withSearch: false },
                      { label: t("finance.category"),           key: "categories",     opts: filterOptions.categories.map(v => ({ value: v, label: v })),     withSearch: false },
-                     { label: t("finance.paymentMethod"),      key: "paymentMethods", opts: filterOptions.paymentMethods.map(v => v === "cash" ? { value: v, label: t("finance.cash") } : v === "transfer" ? { value: v, label: t("finance.transfer") } : { value: v, label: v }), withSearch: false },
+                     { label: t("finance.paymentMethod"),      key: "paymentMethods", opts: filterOptions.paymentMethods.map(v => ({ value: v, label: ({ cash: t("finance.cash"), transfer: t("finance.transfer"), deposit_wallet: t("finance.depositWallet"), card: t("finance.card"), installment: t("finance.installmentPayment") } as Record<string, string>)[v] ?? v })), withSearch: false },
                      { label: t("finance.class"),              key: "classes",        opts: filterOptions.classes.map(v => ({ value: v, label: v })),        withSearch: true },
                      { label: t("finance.creator"),            key: "creators",       opts: filterOptions.creators.map(v => ({ value: v, label: v })),       withSearch: true },
                      { label: t("finance.payer"),              key: "payers",         opts: filterOptions.payers.map(v => ({ value: v, label: v })),         withSearch: true },

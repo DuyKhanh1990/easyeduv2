@@ -102,6 +102,9 @@ function paymentMethodLabel(m: string | null | undefined): string {
   if (!m) return "";
   if (m === "cash") return "Tiền mặt";
   if (m === "transfer") return "Chuyển khoản";
+  if (m === "deposit_wallet") return "Ví Đặt cọc";
+  if (m === "card") return "Quẹt thẻ";
+  if (m === "installment") return "Trả góp";
   return m;
 }
 

@@ -186,7 +186,7 @@ export const invoices = pgTable("invoices", {
   paymentNote: text("payment_note"),                                // Ghi chú tự động từ cổng thanh toán (BIDV, VNPay...)
   dueDate: date("due_date"),                                        // Hạn thanh toán
   // Hình thức thanh toán (khi không chia đợt)
-  paymentMethod: varchar("payment_method", { length: 20 }),         // cash | transfer
+  paymentMethod: varchar("payment_method", { length: 20 }),         // cash | transfer | deposit_wallet | card | installment
   appliedBankAccount: jsonb("applied_bank_account"),                // { bankName, bankAccount, accountHolder }
   // Trạng thái
   status: varchar("status", { length: 50 }).notNull().default("unpaid"), // unpaid | partial | paid | confirmed | debt | cancelled
@@ -264,7 +264,7 @@ export const invoicePaymentSchedule = pgTable("invoice_payment_schedule", {
   paidBy: uuid("paid_by").references(() => users.id),
   sortOrder: integer("sort_order").default(0),
   settleCode: varchar("settle_code", { length: 50 }),              // KT0001 khi đợt được thanh toán
-  paymentMethod: varchar("payment_method", { length: 20 }),         // cash | transfer
+  paymentMethod: varchar("payment_method", { length: 20 }),         // cash | transfer | deposit_wallet | card | installment
   appliedBankAccount: jsonb("applied_bank_account"),                // { bankName, bankAccount, accountHolder }
   // Hoá đơn điện tử cho từng đợt (Mắt Bão)
   einvoiceStatus: varchar("einvoice_status", { length: 20 }),

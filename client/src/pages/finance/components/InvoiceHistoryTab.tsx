@@ -157,6 +157,9 @@ function payMethodLabel(m: string | null | undefined, t: Translate) {
   if (!m) return null;
   if (m === "cash")     return t("finance.cash");
   if (m === "transfer") return t("finance.transfer");
+  if (m === "deposit_wallet") return t("finance.depositWallet");
+  if (m === "card") return t("finance.card");
+  if (m === "installment") return t("finance.installmentPayment");
   return m;
 }
 
