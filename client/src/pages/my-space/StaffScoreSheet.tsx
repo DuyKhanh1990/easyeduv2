@@ -557,7 +557,7 @@ export function StaffScoreSheet() {
                             <div className="flex min-w-0 items-start justify-between gap-3">
                               <div className="min-w-0 flex-1">
                                 <p className="truncate text-sm font-semibold leading-tight text-gray-800 dark:text-foreground">
-                                {assessment.assessmentName ?? t("mySpace.scoreSheet.unavailableSheet")}
+                                  {assessment.assessmentName ?? t("mySpace.scoreSheet.unavailableSheet")}
                                 </p>
                                 <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-muted-foreground">
                                   {assessment.classCode}
@@ -566,6 +566,9 @@ export function StaffScoreSheet() {
                                     <> · {t("mySpace.scoreSheet.session")} {assessment.sessionIndex}</>
                                   )}
                                 </p>
+                                <Badge className="mt-1 w-fit rounded-full border border-violet-200 bg-violet-100 px-2.5 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-950/40">
+                                  {t("mySpace.scoreSheet.conversionSheet")}
+                                </Badge>
                               </div>
                               <div className="flex shrink-0 items-center gap-1.5">
                                 <span className="inline-flex items-center gap-1 text-[11px] font-medium text-violet-700 dark:text-violet-300">
@@ -578,9 +581,6 @@ export function StaffScoreSheet() {
                             <div className="mt-2 space-y-2 border-t border-dashed border-gray-200 pt-2 dark:border-border">
                               <div className={SCORE_SHEET_DETAILS_GRID_CLASS}>
                                 <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                                  <Badge className="rounded-full border border-violet-200 bg-violet-100 px-2.5 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-950/40">
-                                    {t("mySpace.scoreSheet.conversionSheet")}
-                                  </Badge>
                                   <Badge
                                     variant="outline"
                                     className="max-w-full truncate text-[11px]"
@@ -672,6 +672,9 @@ export function StaffScoreSheet() {
                                   <span> · {t("mySpace.scoreSheet.session")} {book.sessionIndex}</span>
                                 )}
                               </p>
+                              <Badge className="mt-1 w-fit rounded-full border border-blue-200 bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-800 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/40">
+                                {t("mySpace.scoreSheet.regularSheet")}
+                              </Badge>
                             </div>
 
                             <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
@@ -707,9 +710,6 @@ export function StaffScoreSheet() {
                           <div className="mt-2 space-y-2 border-t border-dashed border-gray-200 pt-2 dark:border-border">
                             <div className={SCORE_SHEET_DETAILS_GRID_CLASS}>
                               <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                                <Badge className="rounded-full border border-blue-200 bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-800 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/40">
-                                  {t("mySpace.scoreSheet.regularSheet")}
-                                </Badge>
                                 {book.scoreSheetName && (
                                   <Badge
                                     variant="outline"
