@@ -6,6 +6,7 @@ import type { ScoreSheetAssessmentInput } from "@shared/score-sheet-assessment";
 import { Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -72,6 +73,7 @@ export function ScoreSheetConversionSelector({
   const [selectedClassId, setSelectedClassId] = useState("");
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [assessmentName, setAssessmentName] = useState("");
 
   const {
     data: staffClasses = [],
@@ -207,6 +209,7 @@ export function ScoreSheetConversionSelector({
   const canCreateAssessment = Boolean(
     enabled
     && selectedTemplate
+    && assessmentName.trim().length > 0
     && selectedStudents.length > 0
     && !selectionLoading
     && !selectionError
@@ -228,7 +231,7 @@ export function ScoreSheetConversionSelector({
     const uniqueCode = crypto.randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
     const payload: ScoreSheetAssessmentInput = {
       code: `MAN-${dateCode}-${uniqueCode}`,
-      name: `${selectedTemplate.name.slice(0, 108)} - thủ công`,
+      name: assessmentName.trim().slice(0, 120),
       scoreSheetTemplateId: selectedTemplate.id,
       creationMode: "manual",
       manualSelectionMode: selectionMode,
@@ -362,6 +365,8 @@ export function ScoreSheetConversionSelector({
             onChange={(templateId) => {
               saveMutation.reset();
               setSelectedTemplateId(templateId);
+              const template = usableTemplates.find((item) => item.id === templateId);
+              setAssessmentName(template ? `${template.name.slice(0, 108)} - thủ công` : "");
             }}
             placeholder={
               templatesLoading
@@ -382,6 +387,25 @@ export function ScoreSheetConversionSelector({
               {t("mySpace.scoreSheet.conversionNoTemplates")}
             </p>
           )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="conversion-assessment-name">
+            {t("mySpace.scoreSheet.conversionAssessmentNameLabel")}
+            <span className="ml-1 text-destructive">*</span>
+          </Label>
+          <Input
+            id="conversion-assessment-name"
+            value={assessmentName}
+            onChange={(event) => {
+              saveMutation.reset();
+              setAssessmentName(event.target.value);
+            }}
+            placeholder={t("mySpace.scoreSheet.conversionAssessmentNamePlaceholder")}
+            maxLength={120}
+            disabled={!selectedTemplate || saveMutation.isPending}
+            data-testid="conversion-assessment-name"
+          />
         </div>
 
         <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2.5">
