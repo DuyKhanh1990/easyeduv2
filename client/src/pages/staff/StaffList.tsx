@@ -209,7 +209,7 @@ export function StaffList() {
 
   const filteredStaff = useMemo(() => {
     if (!staff) return [];
-    return staff.filter((s: any) => {
+    const matches = staff.filter((s: any) => {
       const kw = searchKeyword.toLowerCase();
       if (kw) {
         const match = [s.fullName, s.code, s.email, s.phone, s.username]
@@ -230,6 +230,11 @@ export function StaffList() {
       }
       return true;
     });
+
+    return [
+      ...matches.filter((s: any) => s.status === "Hoạt động"),
+      ...matches.filter((s: any) => s.status !== "Hoạt động"),
+    ];
   }, [staff, searchKeyword, filterLocationIds, filterDepartmentIds, filterRoleIds]);
 
   const { data: staffLimitData } = useQuery<{ limit: number; activeStaffCount: number }>({
