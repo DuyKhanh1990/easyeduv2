@@ -20,6 +20,7 @@ interface SearchableSelectProps {
   disabled?: boolean;
   className?: string;
   contentClassName?: string;
+  modal?: boolean;
   "data-testid"?: string;
 }
 
@@ -32,6 +33,7 @@ export function SearchableSelect({
   disabled = false,
   className,
   contentClassName,
+  modal = false,
   "data-testid": testId,
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false);
@@ -60,7 +62,7 @@ export function SearchableSelect({
   };
 
   return (
-    <Popover open={open} onOpenChange={disabled ? undefined : setOpen}>
+    <Popover modal={modal} open={open} onOpenChange={disabled ? undefined : setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -94,7 +96,7 @@ export function SearchableSelect({
             data-testid={testId ? `${testId}-search` : undefined}
           />
         </div>
-        <div className="max-h-60 overflow-y-auto py-1">
+        <div className="max-h-60 overflow-y-auto overscroll-y-contain py-1">
           {filteredOptions.length === 0 ? (
             <div className="px-3 py-4 text-center text-sm text-muted-foreground">Không tìm thấy</div>
           ) : (

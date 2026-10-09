@@ -1766,6 +1766,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                   options={INVOICE_ACCOUNT_OPTIONS}
                   searchPlaceholder={accountSearchPlaceholder}
                   className="h-9"
+                  modal
                   data-testid="select-account"
                 />
               </div>
@@ -1777,6 +1778,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                   options={INVOICE_ACCOUNT_OPTIONS}
                   searchPlaceholder={accountSearchPlaceholder}
                   className="h-9"
+                  modal
                   data-testid="select-counterpart"
                 />
               </div>
