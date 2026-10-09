@@ -27,6 +27,8 @@ import { SiMessenger, SiZalo, SiFacebook } from "react-icons/si";
 export type SubTabItem = {
   value: string;
   name: string;
+  resource?: string;
+  permissionKeys?: ("canView" | "canViewAll")[];
 };
 
 export type SubTab = {
@@ -43,6 +45,7 @@ export type NavItem = {
   permissionHref?: string;
   defaultVisible?: boolean;
   subTabs?: SubTab[];
+  permissionItems?: SubTabItem[];
 };
 
 export type NavModule = {
@@ -254,7 +257,19 @@ export const navigation: NavEntry[] = [
     color: "text-purple-600 dark:text-purple-400",
     icon: CreditCard,
     items: [
-      { name: "Hoá đơn", href: "/invoices", icon: FileText },
+      {
+        name: "Hoá đơn",
+        href: "/invoices",
+        icon: FileText,
+        permissionItems: [
+          { value: "income-unpaid", name: "Phiếu thu - Chưa thanh toán", resource: "/invoices#visibility/income-unpaid", permissionKeys: ["canView", "canViewAll"] },
+          { value: "income-paid", name: "Phiếu thu - Đã thanh toán", resource: "/invoices#visibility/income-paid", permissionKeys: ["canView", "canViewAll"] },
+          { value: "income-confirmed", name: "Phiếu thu - Đã xác nhận", resource: "/invoices#visibility/income-confirmed", permissionKeys: ["canView", "canViewAll"] },
+          { value: "expense-unpaid", name: "Phiếu chi - Chưa thanh toán", resource: "/invoices#visibility/expense-unpaid", permissionKeys: ["canView", "canViewAll"] },
+          { value: "expense-paid", name: "Phiếu chi - Đã thanh toán", resource: "/invoices#visibility/expense-paid", permissionKeys: ["canView", "canViewAll"] },
+          { value: "expense-confirmed", name: "Phiếu chi - Đã xác nhận", resource: "/invoices#visibility/expense-confirmed", permissionKeys: ["canView", "canViewAll"] },
+        ],
+      },
       { name: "Công nợ", href: "/invoices/debt", icon: FileText, permissionHref: "/invoices" },
       { name: "Học phí trả sau", href: "/deferred-tuition", icon: CreditCard, permissionHref: "/invoices" },
       { name: "Đối soát", href: "/reconciliation", icon: ArrowLeftRight },

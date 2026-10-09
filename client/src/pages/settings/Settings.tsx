@@ -48,6 +48,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { navigation } from "@/lib/sidebar-navigation";
 import { getSubFeaturePermissionResource, EDUCATION_OTHER_CONFIG_RESOURCE } from "@shared/permission-resources";
+import { INVOICE_VISIBILITY_PERMISSIONS } from "@shared/invoice-visibility-permissions";
 import { useSidebarVisibility } from "@/hooks/use-sidebar-visibility";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import type { MyPermissionsResult } from "@/hooks/use-my-permissions";
@@ -2403,6 +2404,18 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
 
   const navItemHasPerm = (item: { href: string; subTabs?: { value: string }[] }): boolean => {
     if (!myPerms || myPerms.isSuperAdmin) return true;
+    if (item.href === "/invoices") {
+      const parent = myPerms.permissions["/invoices"];
+      return !!(
+        parent?.canCreate ||
+        parent?.canEdit ||
+        parent?.canDelete ||
+        INVOICE_VISIBILITY_PERMISSIONS.some(({ resource }) => {
+          const permission = myPerms.permissions[resource];
+          return permission?.canView || permission?.canViewAll;
+        })
+      );
+    }
     if (item.subTabs && item.subTabs.length > 0) {
       return item.subTabs.some(sub => hasAnyPermForResource(`${item.href}#${sub.value}`));
     }
@@ -2417,9 +2430,12 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
       .includes(normalizedPermissionSearch);
   };
 
-  const itemMatchesPermission = (item: { name: string; href: string; subTabs?: { value: string; name: string; permissionItems?: { value: string; name: string }[] }[] }) =>
+  const itemMatchesPermission = (item: { name: string; href: string; permissionItems?: { value: string; name: string; resource?: string }[]; subTabs?: { value: string; name: string; permissionItems?: { value: string; name: string }[] }[] }) =>
     !normalizedPermissionSearch ||
     matchesPermission(item.name, item.href) ||
+    (item.permissionItems ?? []).some(permissionItem =>
+      matchesPermission(permissionItem.name, permissionItem.resource ?? permissionItem.value)
+    ) ||
     (item.subTabs ?? []).some(sub =>
       matchesPermission(sub.name, `${item.href}#${sub.value}`) ||
       (sub.permissionItems ?? []).some(permissionItem =>
@@ -2472,6 +2488,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
 
   const getAllowedKeysForResource = (resource: string, hasSubTabs: boolean): PermKey[] => {
     if (hasSubTabs) return [];
+    if (resource === "/invoices") return ["canCreate", "canEdit", "canDelete"];
     if (resource === MY_SPACE_CALENDAR_RESOURCE) {
       return isStudentSystemRole ? [] : ["canCreate", "canEdit", "canDelete"];
     }
@@ -2513,6 +2530,12 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
         }
       } else {
         list.push({ resource: item.href, allowedKeys: getAllowedKeysForResource(item.href, false) });
+        for (const permissionItem of item.permissionItems ?? []) {
+          list.push({
+            resource: permissionItem.resource ?? permissionItem.value,
+            allowedKeys: permissionItem.permissionKeys ?? ["canView"],
+          });
+        }
       }
     }
     return list;
@@ -2991,6 +3014,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                         const isMySpaceAssignments = item.href === MY_SPACE_ASSIGNMENTS_RESOURCE;
                         const isMySpaceScoreSheet = item.href === MY_SPACE_SCORE_SHEET_RESOURCE;
                         const isMySpaceCalendar = item.href === MY_SPACE_CALENDAR_RESOURCE;
+                        const isInvoicePermissionParent = item.href === "/invoices";
                         // Các trang mặc định khác của role học viên/phụ huynh luôn bật và không sửa được.
                         const isStudentDefaultLocked = isStudentSystemRole
                           && STUDENT_DEFAULT_RESOURCES.has(item.href)
@@ -3114,6 +3138,9 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                   ))
                                 ) : (
                                   PERM_COLS.map(col => {
+                                    if (isInvoicePermissionParent && col.key !== "canCreate" && col.key !== "canEdit" && col.key !== "canDelete") {
+                                      return <div key={col.key} className="w-20 flex justify-center"><span className="text-xs text-muted-foreground/30 select-none">—</span></div>;
+                                    }
                                     const isViewOnly = VIEW_ONLY_RESOURCES.has(item.href);
                                     if (isViewOnly && col.key !== "canView") {
                                       return <div key={col.key} className="w-20 flex justify-center"><span className="text-xs text-muted-foreground/30 select-none">—</span></div>;
@@ -3145,6 +3172,36 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                 <p className="text-[11px] text-muted-foreground/65 italic leading-relaxed">{getPermissionDescription(item.href, lang)}</p>
                               </div>
                             )}
+
+                            {item.permissionItems?.map(permissionItem => {
+                              const resource = permissionItem.resource ?? permissionItem.value;
+                              const permission = getResourcePerm(resource);
+                              const allowedKeys = permissionItem.permissionKeys ?? ["canView"];
+                              return (
+                                <div key={permissionItem.value} className="flex items-center px-5 py-2 hover:bg-muted/10">
+                                  <div className="flex items-center gap-2 pl-16 flex-1">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 shrink-0" />
+                                    <span className="text-sm text-muted-foreground">{tNav(permissionItem.name)}</span>
+                                  </div>
+                                  <div className="flex items-center gap-0 shrink-0">
+                                    {PERM_COLS.map(col => (
+                                      <div key={col.key} className="w-20 flex justify-center">
+                                        {allowedKeys.includes(col.key) ? (
+                                          <Checkbox
+                                            data-testid={`perm-invoices-${permissionItem.value}-${col.key}`}
+                                            checked={permission[col.key]}
+                                            onCheckedChange={() => handleToggle(resource, col.key)}
+                                            className="w-4 h-4"
+                                          />
+                                        ) : (
+                                          <span className="text-xs text-muted-foreground/30 select-none">—</span>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
 
                             {/* Sub-tab rows */}
                             {hasSubTabs && itemExpanded && (
