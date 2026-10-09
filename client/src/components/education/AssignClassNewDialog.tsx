@@ -34,6 +34,7 @@ import { VoucherHint } from "@/components/finance/VoucherHint";
 import { useQuery, useQueries, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
+import { useAutoInvoicePolicy } from "@/hooks/use-auto-invoice-policy";
 
 interface StudentEnrollmentInfo {
   studentId: string;
@@ -64,6 +65,10 @@ export function AssignClassNewDialog({
   locationId,
 }: AssignClassNewDialogProps) {
   const { toast } = useToast();
+  const autoInvoicePolicyQuery = useAutoInvoicePolicy(isOpen);
+  const autoInvoicePolicy = autoInvoicePolicyQuery.data;
+  const canOverrideAutoInvoice = autoInvoicePolicy?.canOverride === true;
+  const defaultAutoInvoice = autoInvoicePolicy?.defaultEnabled ?? true;
   const { data: classesData } = useClasses(locationId, { enabled: isOpen, minimal: true });
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [classPickerOpen, setClassPickerOpen] = useState(false);
@@ -283,6 +288,14 @@ export function AssignClassNewDialog({
 
   const handleAssign = async () => {
     if (!selectedClassId) return;
+    if (!autoInvoicePolicy || autoInvoicePolicyQuery.isFetching || autoInvoicePolicyQuery.isError) {
+      toast({
+        title: "Chưa tải được cấu hình hóa đơn",
+        description: "Vui lòng thử mở lại dialog trước khi tiếp tục.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const existingStudentIds = existingStudents.map((e) => e.studentId);
     const newStudentIds = studentIds.filter((id) => !existingStudentIds.includes(id));
@@ -335,7 +348,7 @@ export function AssignClassNewDialog({
           endDate: classInfo?.endDate ? new Date(classInfo.endDate) : new Date(),
           totalSessions: 20,
           packageId: classInfo?.course?.feePackages?.[0]?.id || "",
-          autoInvoice: true,
+          autoInvoice: defaultAutoInvoice,
           promotionKeys: [],
           surchargeKeys: [],
           useDeposit: undefined,
@@ -345,6 +358,7 @@ export function AssignClassNewDialog({
       setGlobalStart(classInfo?.startDate ? new Date(classInfo.startDate) : new Date());
       setGlobalEnd(classInfo?.endDate ? new Date(classInfo.endDate) : new Date());
       setGlobalPackageId(classInfo?.course?.feePackages?.[0]?.id || "");
+      setGlobalAutoInvoice(defaultAutoInvoice);
 
       setPhase("schedule");
     } catch (error) {
@@ -593,6 +607,15 @@ export function AssignClassNewDialog({
           )}
         </DialogHeader>
 
+        {autoInvoicePolicyQuery.isError && (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
+            <span className="text-destructive">Không thể tải cấu hình hóa đơn tự động; chưa thể tiếp tục.</span>
+            <Button type="button" size="sm" variant="outline" onClick={() => autoInvoicePolicyQuery.refetch()}>
+              Thử lại
+            </Button>
+          </div>
+        )}
+
         {phase === "assign" ? (
           <div className="space-y-6">
             <div className="space-y-2">
@@ -758,6 +781,7 @@ export function AssignClassNewDialog({
                           className="h-4 w-7"
                           thumbClassName="h-3 w-3 data-[state=checked]:translate-x-3"
                           checked={globalAutoInvoice}
+                          disabled={!autoInvoicePolicy || autoInvoicePolicyQuery.isFetching || autoInvoicePolicyQuery.isError || !canOverrideAutoInvoice}
                           onCheckedChange={(v) => {
                             setGlobalAutoInvoice(v);
                             setStudentConfigs(prev => prev.map(config => ({ ...config, autoInvoice: v })));
@@ -1034,6 +1058,7 @@ export function AssignClassNewDialog({
                                 className="h-4 w-7"
                                 thumbClassName="h-3 w-3 data-[state=checked]:translate-x-3"
                                 checked={config.autoInvoice}
+                                disabled={!autoInvoicePolicy || autoInvoicePolicyQuery.isFetching || autoInvoicePolicyQuery.isError || !canOverrideAutoInvoice}
                                 onCheckedChange={(v) => updateStudentConfig(idx, { autoInvoice: v })}
                               />
                             </div>
@@ -1162,6 +1187,9 @@ export function AssignClassNewDialog({
               <Button
                 disabled={
                   scheduleMutation.isPending ||
+                  !autoInvoicePolicy ||
+                  autoInvoicePolicyQuery.isFetching ||
+                  autoInvoicePolicyQuery.isError ||
                   studentConfigs.some(c =>
                     c.shiftType === "specific" && c.selectedShifts.length === 0
                   ) || (hasAutoInvoiceConfigs && isFetchingWallets)

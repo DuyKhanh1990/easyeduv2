@@ -47,6 +47,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { navigation } from "@/lib/sidebar-navigation";
+import { getSubFeaturePermissionResource, EDUCATION_OTHER_CONFIG_RESOURCE } from "@shared/permission-resources";
 import { useSidebarVisibility } from "@/hooks/use-sidebar-visibility";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import type { MyPermissionsResult } from "@/hooks/use-my-permissions";
@@ -1842,8 +1843,9 @@ const READ_ONLY_RESOURCES = new Set([
   "/#bao-cao/lich-su-cuoc-goi",
 ]);
 const NO_EDIT_DELETE_RESOURCES = new Set(["/attendance"]);
-const NO_DELETE_RESOURCES = new Set([`${SETTINGS_HREF}#permissions`]);
-const NO_CREATE_RESOURCES = new Set(["/assessments#results"]);
+const NO_VIEW_ALL_RESOURCES = new Set([EDUCATION_OTHER_CONFIG_RESOURCE]);
+const NO_DELETE_RESOURCES = new Set([`${SETTINGS_HREF}#permissions`, EDUCATION_OTHER_CONFIG_RESOURCE]);
+const NO_CREATE_RESOURCES = new Set(["/assessments#results", EDUCATION_OTHER_CONFIG_RESOURCE]);
 const VIEW_ONLY_RESOURCES = new Set(["/my-space/invoices", "/my-space/payroll"]);
 const EDIT_ONLY_RESOURCES = new Set(["/customers/crm-config#required-info"]);
 const MY_SPACE_ASSIGNMENTS_RESOURCE = "/my-space/assignments";
@@ -1939,6 +1941,8 @@ const PERM_DESCRIPTIONS: Record<string, string> = {
   "/settings#departments": "Xem: nhân sự có quyền xem danh sách phòng ban và vai trò. Xem all: nhân sự có quyền xem tất cả. Thêm / Sửa / Xoá: quản trị viên có quyền thêm mới, chỉnh sửa và xoá phòng ban và vai trò nhân sự.",
   "/settings#system": "Xem: nhân sự có quyền xem cấu hình hệ thống. Xem all: nhân sự có quyền xem tất cả. Thêm / Sửa / Xoá: quản trị viên có quyền thêm mới, chỉnh sửa và xoá các thông số cấu hình hệ thống.",
   "/settings#permissions": "Xem: nhân sự có quyền xem phân quyền các vai trò. Xem all: nhân sự có quyền xem tất cả. Thêm / Sửa: quản trị viên có quyền cấp và thu hồi quyền truy cập cho từng vai trò (không thể xoá bản ghi quyền).",
+  [EDUCATION_OTHER_CONFIG_RESOURCE]: "Xem: truy cập tab Cấu hình khác. Sửa: thay đổi cấu hình mặc định và danh sách vai trò được phép ghi đè.",
+  [getSubFeaturePermissionResource("/education-config", "other-config", "auto-invoice")]: "Tích để hiển thị mục cấu hình hóa đơn tự động trong tab Cấu hình khác.",
   "/settings#ai-accounts": "Xem: nhân sự có quyền xem danh sách tài khoản AI. Xem all: nhân sự có quyền xem tất cả. Thêm / Sửa / Xoá: quản trị viên có quyền thêm mới, chỉnh sửa và xoá tài khoản AI (OpenAI, Gemini) trong hệ thống.",
   "/settings#providers": "Xem: nhân sự có quyền xem danh sách kết nối nhà cung cấp. Xem all: nhân sự có quyền xem tất cả. Thêm / Sửa / Xoá: quản trị viên có quyền thêm mới, chỉnh sửa và xoá kết nối các nhà cung cấp dịch vụ bên ngoài.",
   "/settings#holidays": "Xem / Xem all: nhân sự có quyền xem danh sách ngày nghỉ lễ. Thêm / Sửa / Xoá: quản trị viên có quyền thêm mới, chỉnh sửa và xoá các ngày nghỉ lễ trong năm.",
@@ -2014,6 +2018,8 @@ const PERM_DESCRIPTIONS_EN: Record<string, string> = {
   "/education-config#attendance-fee": "View: view attendance fee rules. View All: view all rules. Create / Edit / Delete: manage fee deductions for absent students.",
   "/education-config#score-sheets": "View: view score sheet templates. View All: view all templates. Create / Edit / Delete: manage score sheet templates.",
   "/education-config#online-learning": "View: view online learning settings. View All: view all settings. Create / Edit / Delete: manage online learning platform settings.",
+  [EDUCATION_OTHER_CONFIG_RESOURCE]: "View: access the Other configuration tab. Edit: change the default setting and the roles allowed to override it.",
+  [getSubFeaturePermissionResource("/education-config", "other-config", "auto-invoice")]: "Check to show the automatic invoice configuration on the Other configuration tab.",
   "/store#nhap-kho": "View: view stock receipt notes. View All: view all stock receipts in the branch. Create / Edit / Delete: manage stock receipts.",
   "/store#xuat-kho": "View: view stock issue notes. View All: view all stock issues. Create / Edit / Delete: manage stock issues.",
   "/store#chuyen-kho": "View: view stock transfer notes. View All: view all transfers. Create / Edit / Delete: manage stock transfers between warehouses.",
@@ -2409,20 +2415,40 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
       .includes(normalizedPermissionSearch);
   };
 
-  const itemMatchesPermission = (item: { name: string; href: string; subTabs?: { value: string; name: string }[] }) =>
+  const itemMatchesPermission = (item: { name: string; href: string; subTabs?: { value: string; name: string; permissionItems?: { value: string; name: string }[] }[] }) =>
     !normalizedPermissionSearch ||
     matchesPermission(item.name, item.href) ||
-    (item.subTabs ?? []).some(sub => matchesPermission(sub.name, `${item.href}#${sub.value}`)) ||
+    (item.subTabs ?? []).some(sub =>
+      matchesPermission(sub.name, `${item.href}#${sub.value}`) ||
+      (sub.permissionItems ?? []).some(permissionItem =>
+        matchesPermission(
+          permissionItem.name,
+          getSubFeaturePermissionResource(item.href, sub.value, permissionItem.value),
+        )
+      )
+    ) ||
     (item.href === "/" && DASHBOARD_REPORTS.some(report =>
       matchesPermission(report.name, `/#bao-cao/${report.value}`)
     ));
 
-  const getPermittedSubTabs = (item: { name: string; href: string; subTabs?: { value: string; name: string }[] }) => {
+  const getPermittedSubTabs = (item: {
+    name: string;
+    href: string;
+    subTabs?: { value: string; name: string; permissionItems?: { value: string; name: string }[] }[];
+  }) => {
     const permitted = (!myPerms || myPerms.isSuperAdmin)
       ? (item.subTabs ?? [])
       : (item.subTabs ?? []).filter(sub => hasAnyPermForResource(`${item.href}#${sub.value}`));
     if (!normalizedPermissionSearch || matchesPermission(item.name, item.href)) return permitted;
-    return permitted.filter(sub => matchesPermission(sub.name, `${item.href}#${sub.value}`));
+    return permitted.filter(sub =>
+      matchesPermission(sub.name, `${item.href}#${sub.value}`) ||
+      (sub.permissionItems ?? []).some(permissionItem =>
+        matchesPermission(
+          permissionItem.name,
+          getSubFeaturePermissionResource(item.href, sub.value, permissionItem.value),
+        )
+      )
+    );
   };
 
   const filteredModules = (!myPerms || myPerms.isSuperAdmin) ? modules : modules
@@ -2462,6 +2488,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
     return PERM_COLS.map(c => c.key).filter(k => {
       if (NO_DELETE_RESOURCES.has(resource) && k === "canDelete") return false;
       if (NO_CREATE_RESOURCES.has(resource) && k === "canCreate") return false;
+      if (NO_VIEW_ALL_RESOURCES.has(resource) && k === "canViewAll") return false;
       if (EDIT_ONLY_RESOURCES.has(resource) && k !== "canEdit") return false;
       return true;
     });
@@ -2475,6 +2502,12 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
         for (const sub of item.subTabs!) {
           const subResource = `${item.href}#${sub.value}`;
           list.push({ resource: subResource, allowedKeys: getAllowedKeysForSubResource(subResource) });
+          for (const permissionItem of sub.permissionItems ?? []) {
+            list.push({
+              resource: getSubFeaturePermissionResource(item.href, sub.value, permissionItem.value),
+              allowedKeys: ["canView"],
+            });
+          }
         }
       } else {
         list.push({ resource: item.href, allowedKeys: getAllowedKeysForResource(item.href, false) });
@@ -3127,10 +3160,11 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                         </div>
                                         <div className="flex items-center gap-0 shrink-0">
                                           {PERM_COLS.map(col => {
+                                            const isNoViewAll = NO_VIEW_ALL_RESOURCES.has(subResource) && col.key === "canViewAll";
                                             const isNoDelete = NO_DELETE_RESOURCES.has(subResource) && col.key === "canDelete";
                                             const isNoCreate = NO_CREATE_RESOURCES.has(subResource) && col.key === "canCreate";
                                             const isEditOnly = EDIT_ONLY_RESOURCES.has(subResource) && col.key !== "canEdit";
-                                            if (isEditOnly) {
+                                            if (isNoViewAll || isEditOnly) {
                                               return <div key={col.key} className="w-20 flex justify-center"><span className="text-xs text-muted-foreground/30 select-none">—</span></div>;
                                             }
                                             const isSubDisabled = isNoDelete || isNoCreate;
@@ -3153,6 +3187,47 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                           <p className="text-[11px] text-muted-foreground/65 italic leading-relaxed">{subDesc}</p>
                                         </div>
                                       )}
+                                      {sub.permissionItems?.map(permissionItem => {
+                                        const permissionResource = getSubFeaturePermissionResource(
+                                          item.href,
+                                          sub.value,
+                                          permissionItem.value,
+                                        );
+                                        const featurePerms = getResourcePerm(permissionResource);
+                                        const featureDesc = getPermissionDescription(permissionResource, lang);
+                                        return (
+                                          <div key={permissionItem.value}>
+                                            <div className="flex items-center px-5 py-2 hover:bg-muted/20 transition-colors">
+                                              <div className="flex items-center gap-2 pl-24 flex-1">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 shrink-0" />
+                                                <span className="text-sm text-muted-foreground">{tNav(permissionItem.name)}</span>
+                                              </div>
+                                              <div className="flex items-center gap-0 shrink-0">
+                                                {PERM_COLS.map(col => (
+                                                  <div key={col.key} className="w-20 flex justify-center">
+                                                    {col.key === "canView" ? (
+                                                      <Checkbox
+                                                        data-testid={`perm-feature-${permissionResource.replace(/[\/#]/g, "-")}`}
+                                                        aria-label={`Quyền xem ${permissionItem.name}`}
+                                                        checked={featurePerms.canView}
+                                                        onCheckedChange={() => handleToggle(permissionResource, "canView")}
+                                                        className="w-4 h-4"
+                                                      />
+                                                    ) : (
+                                                      <span className="text-xs text-muted-foreground/30 select-none">—</span>
+                                                    )}
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </div>
+                                            {featureDesc && (
+                                              <div className="px-5 pb-2 pl-32 -mt-1">
+                                                <p className="text-[11px] text-muted-foreground/65 italic leading-relaxed">{featureDesc}</p>
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   );
                                 })}

@@ -33,6 +33,7 @@ import { canScheduleWrite, isScheduleEntryVisible } from "@shared/schedule-acces
 import { getPreferredSystemTrainingTeacherRoleId } from "@shared/teacher-role-priority";
 import { canUseMySpaceCalendarAction } from "@shared/my-space-calendar-permissions";
 import { mergeSelectedTeacherRoleIds } from "../storage/teacher-role-updates";
+import { getAutoInvoicePolicy, resolveAutoInvoiceValue } from "../lib/auto-invoice-policy";
 
 async function resolveStaffFullName(userId: string | undefined | null): Promise<string | null> {
   if (!userId) return null;
@@ -1708,7 +1709,16 @@ export function registerClassesRoutes(app: Express): void {
 
   app.post(api.classes.scheduleStudents.path, async (req, res) => {
     try {
-      const { configs, classScheduleConfig } = req.body;
+      const { classScheduleConfig } = req.body;
+      const submittedConfigs = req.body?.configs;
+      if (!Array.isArray(submittedConfigs)) {
+        return res.status(400).json({ message: "Thiếu danh sách cấu hình xếp lịch." });
+      }
+      const autoInvoicePolicy = await getAutoInvoicePolicy();
+      const configs = submittedConfigs.map((config: any) => ({
+        ...config,
+        autoInvoice: resolveAutoInvoiceValue(req, autoInvoicePolicy, config?.autoInvoice),
+      }));
       const userId = (req.user as any)?.id;
       const classId = String(req.params.id);
       if (!(await assertScheduleMutationPermission(req, res, "canCreate"))) return;
@@ -6428,6 +6438,12 @@ export function registerClassesRoutes(app: Express): void {
     try {
       const classId = req.params.id;
       const { studentIds, mode, numSessions, endDate, cycleMode, specificShiftIds, extensionName, autoInvoice, perStudent, useStudentCycle } = req.body;
+      const autoInvoicePolicy = await getAutoInvoicePolicy();
+      const effectiveAutoInvoice = resolveAutoInvoiceValue(req, autoInvoicePolicy, autoInvoice);
+      const effectivePerStudent = (Array.isArray(perStudent) ? perStudent : []).map((studentConfig: any) => ({
+        ...studentConfig,
+        autoInvoice: resolveAutoInvoiceValue(req, autoInvoicePolicy, studentConfig?.autoInvoice),
+      }));
 
       // Snapshot max session index BEFORE extension to detect new sessions afterwards
       const [maxIdxRow] = await db
@@ -6445,10 +6461,10 @@ export function registerClassesRoutes(app: Express): void {
         cycleMode,
         specificShiftIds,
         extensionName,
-        autoInvoice,
+        autoInvoice: effectiveAutoInvoice,
         overrideClassWeekdays: Array.isArray(req.body.overrideClassWeekdays) ? req.body.overrideClassWeekdays : undefined,
         useStudentCycle: !!useStudentCycle,
-        perStudent,
+        perStudent: effectivePerStudent,
         userId: (req.user as any).id
       });
 
@@ -6483,9 +6499,9 @@ export function registerClassesRoutes(app: Express): void {
         }
 
         const perStudentMap: Record<string, boolean> = {};
-        for (const ps of Array.isArray(perStudent) ? perStudent : []) {
+        for (const ps of effectivePerStudent) {
           if (ps && ps.studentId) {
-            perStudentMap[ps.studentId] = typeof ps.autoInvoice === "boolean" ? ps.autoInvoice : !!autoInvoice;
+            perStudentMap[ps.studentId] = typeof ps.autoInvoice === "boolean" ? ps.autoInvoice : effectiveAutoInvoice;
           }
         }
 
@@ -6521,7 +6537,7 @@ export function registerClassesRoutes(app: Express): void {
           return {
             name: studentMap[sid]?.name ?? "",
             code: studentMap[sid]?.code ?? "",
-            autoInvoice: sid in perStudentMap ? perStudentMap[sid] : !!autoInvoice,
+            autoInvoice: sid in perStudentMap ? perStudentMap[sid] : effectiveAutoInvoice,
             fromSession: lastBefore
               ? { sessionIndex: lastBefore.sessionIndex, weekday: lastBefore.weekday, sessionDate: lastBefore.sessionDate, startTime: lastBefore.startTime ?? null }
               : null,

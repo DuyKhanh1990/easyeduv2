@@ -35,6 +35,8 @@ import { useSidebarVisibility } from "@/hooks/use-sidebar-visibility";
 import { Badge } from "@/components/ui/badge";
 import { z } from "zod";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
+import { useAutoInvoicePolicy } from "@/hooks/use-auto-invoice-policy";
+import { AUTO_INVOICE_FEATURE_PERMISSION_RESOURCE } from "@shared/permission-resources";
 import type { AttendanceFeeRule, ScoreCategory, ScoreSheet, ScoreSheetItem } from "@shared/schema";
 
 type ConfigTabPerm = { canAdd: boolean; canEdit: boolean; canDelete: boolean };
@@ -744,7 +746,7 @@ function SubjectsTab({ perm }: { perm?: ConfigTabPerm }) {
 }
 
 // ─── Main page ────────────────────────────────────────────────────────────────
-function buildTabPerm(data: import("@/hooks/use-my-permissions").MyPermissionsResult | undefined, tabValue: string): ConfigTabPerm {
+function buildTabPerm(data: import("@/hooks/use-my-permissions").MyPermissionsResult | null | undefined, tabValue: string): ConfigTabPerm {
   if (!data) return { canAdd: false, canEdit: false, canDelete: false };
   if (data.isSuperAdmin) return { canAdd: true, canEdit: true, canDelete: true };
   const key = `${EDUCATION_CONFIG_HREF}#${tabValue}`;
@@ -753,7 +755,7 @@ function buildTabPerm(data: import("@/hooks/use-my-permissions").MyPermissionsRe
   return { canAdd: p.canCreate, canEdit: p.canEdit, canDelete: p.canDelete };
 }
 
-function canViewTab(data: import("@/hooks/use-my-permissions").MyPermissionsResult | undefined, tabValue: string): boolean {
+function canViewTab(data: import("@/hooks/use-my-permissions").MyPermissionsResult | null | undefined, tabValue: string): boolean {
   if (!data) return true;
   if (data.isSuperAdmin) return true;
   const key = `${EDUCATION_CONFIG_HREF}#${tabValue}`;
@@ -1956,6 +1958,148 @@ function AttendanceLimitTab() {
   );
 }
 
+function AutoInvoiceConfigTab({ canEdit }: { canEdit: boolean }) {
+  const { toast } = useToast();
+  const {
+    data: departments = [],
+    isFetched: departmentsFetched,
+    isError: departmentsError,
+    refetch: refetchDepartments,
+  } = useQuery<
+    Array<{ id: string; name: string; roles: Array<{ id: string; name: string }> }>
+  >({
+    queryKey: ["/api/departments"],
+    staleTime: STATIC_STALE_TIME,
+  });
+  const policyQuery = useAutoInvoicePolicy(true);
+  const policy = policyQuery.data;
+  const [defaultEnabled, setDefaultEnabled] = useState(true);
+  const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
+  const [policyInitialized, setPolicyInitialized] = useState(false);
+  const availableRoleIds = policy?.roleIds ?? [];
+
+  const roleOptions = departments
+    .filter((department) => !department.name.toLowerCase().includes("khách hàng"))
+    .flatMap((department) => department.roles.map((role) => ({
+      label: `${department.name} — ${role.name}`,
+      value: role.id,
+    })));
+
+  useEffect(() => {
+    if (policyQuery.isFetching) {
+      setPolicyInitialized(false);
+      return;
+    }
+    if (!policy || !Array.isArray(policy.roleIds)) return;
+    setDefaultEnabled(policy.defaultEnabled);
+    setSelectedRoleIds(policy.roleIds);
+    setPolicyInitialized(true);
+  }, [policy?.defaultEnabled, policy?.roleIds, policyQuery.isFetching]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => apiRequest("PUT", "/api/system-settings/auto-invoice", {
+      defaultEnabled,
+      roleIds: selectedRoleIds,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/system-settings/auto-invoice"] });
+      toast({ title: "Đã lưu cấu hình hóa đơn tự động" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Lỗi khi lưu", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const canLoadRoles = !!policy
+    && Array.isArray(policy.roleIds)
+    && policyInitialized
+    && departmentsFetched
+    && !departmentsError
+    && !policyQuery.isFetching;
+  const canSave = canEdit && canLoadRoles && !policyQuery.isError;
+
+  return (
+    <Card className="max-w-2xl">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base font-semibold">
+          <Settings2 className="h-4 w-4" />
+          Cấu hình hóa đơn tự động
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Thiết lập mặc định cho các dialog Xếp lịch và Gia hạn. Vai trò được chọn có thể đổi trạng thái trong từng lần thao tác.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {policyQuery.isError ? (
+          <div className="space-y-2">
+            <p className="text-sm text-destructive">Không thể tải cấu hình hóa đơn tự động.</p>
+            <Button type="button" variant="outline" onClick={() => policyQuery.refetch()}>
+              Thử tải lại
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between gap-4 rounded-md border p-4">
+              <div className="space-y-1">
+                <Label htmlFor="auto-invoice-default" className="font-medium">Hóa đơn tự động</Label>
+                <p className="text-xs text-muted-foreground">
+                  {defaultEnabled ? "Mặc định bật" : "Mặc định tắt"} trong Xếp lịch và Gia hạn.
+                </p>
+              </div>
+              <Switch
+                id="auto-invoice-default"
+                checked={defaultEnabled}
+                onCheckedChange={setDefaultEnabled}
+                disabled={!canEdit || !canLoadRoles || saveMutation.isPending}
+                aria-label="Mặc định bật hóa đơn tự động"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Vai trò được tự do bật/tắt</Label>
+              <p className="text-xs text-muted-foreground">
+                Chỉ các vai trò được chọn mới đổi được công tắc ở dialog. Không chọn vai trò nào thì chỉ Super Admin được ghi đè.
+              </p>
+              {departmentsError ? (
+                <div className="space-y-2">
+                  <p className="text-sm text-destructive">Không thể tải danh sách vai trò.</p>
+                  <Button type="button" variant="outline" onClick={() => refetchDepartments()}>
+                    Tải lại danh sách
+                  </Button>
+                </div>
+              ) : canLoadRoles ? (
+                <MultiSelect
+                  key={availableRoleIds.join(",") || "empty"}
+                  options={roleOptions}
+                  onValueChange={setSelectedRoleIds}
+                  defaultValue={availableRoleIds}
+                  placeholder="Chọn vai trò…"
+                  maxCount={5}
+                  disabled={!canEdit || policyQuery.isFetching || saveMutation.isPending}
+                />
+              ) : (
+                <div className="h-10 animate-pulse rounded-md border bg-muted/30" />
+              )}
+            </div>
+
+            {canEdit && (
+              <div className="pt-1">
+                <Button
+                  type="button"
+                  onClick={() => saveMutation.mutate()}
+                  disabled={!canSave || saveMutation.isPending}
+                >
+                  {saveMutation.isPending ? "Đang lưu…" : "Lưu cấu hình"}
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function EducationConfig() {
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
@@ -2234,15 +2378,15 @@ export default function EducationConfig() {
 
           {isSubTabVisible(EDUCATION_CONFIG_HREF, "other-config") && canViewTab(myPerms, "other-config") && (
             <TabsContent value="other-config" className="mt-4">
-              <Card className="border-dashed shadow-none">
-                <CardContent className="flex min-h-40 flex-col items-center justify-center text-center">
-                  <Settings2 className="mb-2 h-7 w-7 text-muted-foreground/60" />
-                  <h2 className="font-medium">Cấu hình khác</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Khu vực này sẵn sàng để bổ sung các cấu hình giáo dục khác.
-                  </p>
-                </CardContent>
-              </Card>
+              {myPerms === undefined ? (
+                <Card><CardContent className="p-6 text-sm text-muted-foreground">Đang kiểm tra quyền truy cập…</CardContent></Card>
+              ) : myPerms === null ? (
+                <Card><CardContent className="p-6 text-sm text-muted-foreground">Bạn không có quyền xem mục cấu hình này.</CardContent></Card>
+              ) : myPerms.isSuperAdmin || myPerms.permissions[AUTO_INVOICE_FEATURE_PERMISSION_RESOURCE]?.canView ? (
+                <AutoInvoiceConfigTab canEdit={buildTabPerm(myPerms, "other-config").canEdit} />
+              ) : (
+                <Card><CardContent className="p-6 text-sm text-muted-foreground">Không có mục cấu hình nào được cấp quyền cho vai trò này.</CardContent></Card>
+              )}
             </TabsContent>
           )}
 

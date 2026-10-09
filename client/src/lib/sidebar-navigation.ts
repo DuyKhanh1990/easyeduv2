@@ -33,6 +33,7 @@ export type SubTab = {
   value: string;
   name: string;
   subItems?: SubTabItem[];
+  permissionItems?: SubTabItem[];
 };
 
 export type NavItem = {
@@ -236,7 +237,13 @@ export const navigation: NavEntry[] = [
           { value: "score-sheets", name: "Bảng điểm mẫu" },
           { value: "online-learning", name: "Học online" },
           { value: "attendance-limit", name: "Giới hạn điểm danh" },
-          { value: "other-config", name: "Cấu hình khác" }
+          {
+            value: "other-config",
+            name: "Cấu hình khác",
+            permissionItems: [
+              { value: "auto-invoice", name: "Bật/tắt hóa đơn tự động" },
+            ],
+          }
         ]
       }
     ]

@@ -52,6 +52,14 @@ import { manualStudentIdInFilter } from "../lib/manual-score-sheet-sql";
 import * as courseStorage from "../storage/course.storage";
 import { createCourseAuditLog, getCourseAuditLogs } from "../storage/course-audit-log.storage";
 import { createActivityLog, getStaffHistory } from "../storage/activity-log.storage";
+import {
+  AUTO_INVOICE_POLICY_SETTINGS_KEY,
+  canOverrideAutoInvoice,
+  canViewAutoInvoiceFeature,
+  getAutoInvoicePolicy,
+  hasEducationConfigPermission,
+} from "../lib/auto-invoice-policy";
+import { EDUCATION_OTHER_CONFIG_RESOURCE } from "@shared/permission-resources";
 
 function getBangkokDateOnly(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -457,7 +465,7 @@ async function recordCourseAudit(req: any, data: {
 }
 
 async function recordEducationConfigAudit(req: any, data: {
-  resource: "classroom" | "subject" | "evaluation_criteria" | "evaluation_sub_criteria" | "shift" | "attendance_fee" | "attendance_limit" | "score_category" | "score_sheet" | "score_conversion_template" | "online_learning" | "location" | "department" | "role" | "permission" | "holiday";
+  resource: "classroom" | "subject" | "evaluation_criteria" | "evaluation_sub_criteria" | "shift" | "attendance_fee" | "attendance_limit" | "auto_invoice" | "score_category" | "score_sheet" | "score_conversion_template" | "online_learning" | "location" | "department" | "role" | "permission" | "holiday";
   action: "created" | "updated" | "deleted";
   scope?: "education-config" | "settings";
   entityId?: string | null;
@@ -467,7 +475,7 @@ async function recordEducationConfigAudit(req: any, data: {
 }) {
   try {
     const enrichAttendanceRoles = async (content: unknown) => {
-      if (data.resource !== "attendance_limit" || !content || typeof content !== "object") return content;
+      if (!["attendance_limit", "auto_invoice"].includes(data.resource) || !content || typeof content !== "object") return content;
       const roleIds = Array.isArray((content as any).roleIds) ? (content as any).roleIds : [];
       if (!roleIds.length) return { ...(content as any), roleNames: [] };
       const roleRows = await db.select({ id: roles.id, name: roles.name })
@@ -540,6 +548,14 @@ async function getEducationConfigSnapshot(resource: string, path: string, body?:
       return row?.value ? JSON.parse(row.value) : null;
     } catch (error) {
       console.error("[education-config-audit] failed to snapshot attendance limit:", error);
+      return null;
+    }
+  }
+  if (resource === "auto_invoice" && id === "auto-invoice") {
+    try {
+      return await getAutoInvoicePolicy();
+    } catch (error) {
+      console.error("[education-config-audit] failed to snapshot auto invoice settings:", error);
       return null;
     }
   }
@@ -645,7 +661,8 @@ export function registerConfigRoutes(app: Express): void {
       [/^\/score-sheets(?:\/|$)/, "score_sheet"],
       [/^\/score-conversion-templates(?:\/|$)/, "score_conversion_template"],
       [/^\/online-learning-rules(?:\/|$)/, "online_learning"],
-       [/^\/system-settings\/attendance-limit$/, "attendance_limit"],
+      [/^\/system-settings\/attendance-limit$/, "attendance_limit"],
+      [/^\/system-settings\/auto-invoice$/, "auto_invoice"],
     ];
     const settingsResourceByPath: Array<[RegExp, string]> = [
       [/^\/locations(?:\/|$)/, "location"],
@@ -2369,6 +2386,60 @@ export function registerConfigRoutes(app: Express): void {
     } catch (err: any) {
       if (err instanceof z.ZodError) return res.status(400).json(err.errors);
       res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/system-settings/auto-invoice", async (req, res) => {
+    try {
+      const policy = await getAutoInvoicePolicy();
+      const canViewFeature = await canViewAutoInvoiceFeature(req);
+      res.json({
+        defaultEnabled: policy.defaultEnabled,
+        canOverride: canOverrideAutoInvoice(req, policy),
+        ...(canViewFeature ? { roleIds: policy.roleIds } : {}),
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Không thể tải cấu hình hóa đơn tự động." });
+    }
+  });
+
+  app.put("/api/system-settings/auto-invoice", async (req, res) => {
+    try {
+      const [canEditTab, canViewFeature] = await Promise.all([
+        hasEducationConfigPermission(req, EDUCATION_OTHER_CONFIG_RESOURCE, "canEdit"),
+        canViewAutoInvoiceFeature(req),
+      ]);
+      if (!canEditTab || !canViewFeature) {
+        return res.status(403).json({ message: "Bạn không có quyền sửa cấu hình hóa đơn tự động." });
+      }
+
+      const payload = z.object({
+        defaultEnabled: z.boolean(),
+        roleIds: z.array(z.string().uuid()).max(500),
+      }).parse(req.body);
+
+      if (payload.roleIds.length > 0) {
+        const matchingRoles = await db.select({ id: roles.id })
+          .from(roles)
+          .where(inArray(roles.id, payload.roleIds));
+        if (matchingRoles.length !== payload.roleIds.length) {
+          return res.status(400).json({ message: "Danh sách vai trò không hợp lệ." });
+        }
+      }
+
+      const { systemSettings } = await import("@shared/schema");
+      const value = JSON.stringify(payload);
+      await db.insert(systemSettings)
+        .values({ key: AUTO_INVOICE_POLICY_SETTINGS_KEY, value })
+        .onConflictDoUpdate({
+          target: systemSettings.key,
+          set: { value, updatedAt: new Date() },
+        });
+
+      res.json(payload);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) return res.status(400).json(err.errors);
+      res.status(500).json({ message: err.message || "Không thể lưu cấu hình hóa đơn tự động." });
     }
   });
 

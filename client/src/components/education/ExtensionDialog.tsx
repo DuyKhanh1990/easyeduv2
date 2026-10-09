@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { VoucherHint } from "@/components/finance/VoucherHint";
 import { apiRequest } from "@/lib/queryClient";
+import { useAutoInvoicePolicy } from "@/hooks/use-auto-invoice-policy";
 import {
   Dialog,
   DialogContent,
@@ -148,6 +149,10 @@ export function ExtensionDialog({
   onConfirm: (data: any) => void;
   isPending: boolean;
 }) {
+  const autoInvoicePolicyQuery = useAutoInvoicePolicy(isOpen);
+  const autoInvoicePolicy = autoInvoicePolicyQuery.data;
+  const canOverrideAutoInvoice = autoInvoicePolicy?.canOverride === true;
+  const defaultAutoInvoice = autoInvoicePolicy?.defaultEnabled ?? true;
   const [mode, setMode] = useState<"class" | "student">("class");
   const [extensionType, setExtensionType] = useState<"sessions" | "date">("sessions");
   const [numSessions, setNumSessions] = useState(0);
@@ -185,6 +190,7 @@ export function ExtensionDialog({
   });
 
   const prevIsOpenRef = useRef(false);
+  const [autoInvoicePolicyApplied, setAutoInvoicePolicyApplied] = useState(false);
 
   // Default to most recent cycle when cycles load
   useEffect(() => {
@@ -210,15 +216,33 @@ export function ExtensionDialog({
       const autoInv: Record<string, boolean> = {};
       for (const s of selectedStudents) {
         pkgs[s.id] = s.packageId || classFeePackageId || coursePkgId || "";
-        autoInv[s.id] = true;
+        autoInv[s.id] = defaultAutoInvoice;
       }
       setStudentPkgIds(pkgs);
       setStudentAutoInvoice(autoInv);
-      setAllAutoInvoice(true);
+      setAllAutoInvoice(defaultAutoInvoice);
       setStudentDiscountIds({});
       setStudentSurchargeIds({});
     }
-  }, [isOpen, selectedStudents, classData]);
+  }, [isOpen, selectedStudents, classData, defaultAutoInvoice]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setAutoInvoicePolicyApplied(false);
+      return;
+    }
+    if (!autoInvoicePolicy || autoInvoicePolicyQuery.isFetching || autoInvoicePolicyQuery.isError || autoInvoicePolicyApplied) return;
+
+    setAutoInvoicePolicyApplied(true);
+    setAllAutoInvoice(autoInvoicePolicy.defaultEnabled);
+    setStudentAutoInvoice((previous) => {
+      const next = { ...previous };
+      for (const student of selectedStudents) {
+        next[student.id] = autoInvoicePolicy.defaultEnabled;
+      }
+      return next;
+    });
+  }, [isOpen, autoInvoicePolicy, autoInvoicePolicyQuery.isFetching, autoInvoicePolicyApplied, selectedStudents]);
 
   const lastClassSession = useMemo(() => {
     if (!classSessions || classSessions.length === 0) return null;
@@ -547,6 +571,15 @@ export function ExtensionDialog({
           <DialogTitle>Gia hạn học viên</DialogTitle>
         </DialogHeader>
 
+        {autoInvoicePolicyQuery.isError && (
+          <div className="flex items-center justify-between gap-3 border-b border-destructive/30 bg-destructive/5 px-6 py-2 text-sm">
+            <span className="text-destructive">Không tải được cấu hình hóa đơn tự động; chưa thể xác nhận gia hạn.</span>
+            <Button type="button" size="sm" variant="outline" onClick={() => autoInvoicePolicyQuery.refetch()}>
+              Thử lại
+            </Button>
+          </div>
+        )}
+
         <div className="flex flex-1 min-h-0 overflow-hidden">
           {/* ── LEFT PANEL: settings ─────────────────────────────── */}
           <div className="w-[380px] shrink-0 border-r overflow-y-auto p-6 space-y-5">
@@ -729,6 +762,7 @@ export function ExtensionDialog({
                 <span className="text-xs text-muted-foreground">Hoá đơn tự động</span>
                 <Switch
                   checked={allAutoInvoice}
+                  disabled={!autoInvoicePolicy || !autoInvoicePolicyApplied || autoInvoicePolicyQuery.isFetching || autoInvoicePolicyQuery.isError || !canOverrideAutoInvoice}
                   onCheckedChange={(v) => {
                     setAllAutoInvoice(v);
                     const next: Record<string, boolean> = {};
@@ -937,7 +971,8 @@ export function ExtensionDialog({
                         {/* Hoá đơn tự động */}
                         <td className="px-3 py-2 text-center">
                           <Switch
-                            checked={studentAutoInvoice[s.id] ?? true}
+                            checked={studentAutoInvoice[s.id] ?? defaultAutoInvoice}
+                            disabled={!autoInvoicePolicy || !autoInvoicePolicyApplied || autoInvoicePolicyQuery.isFetching || autoInvoicePolicyQuery.isError || !canOverrideAutoInvoice}
                             onCheckedChange={(v) =>
                               setStudentAutoInvoice((prev) => ({ ...prev, [s.id]: v }))
                             }
@@ -957,7 +992,7 @@ export function ExtensionDialog({
             Hủy
           </Button>
           <Button
-            disabled={isPending || (extensionType === "sessions" && numSessions <= 0)}
+            disabled={!autoInvoicePolicy || !autoInvoicePolicyApplied || autoInvoicePolicyQuery.isFetching || autoInvoicePolicyQuery.isError || isPending || (extensionType === "sessions" && numSessions <= 0)}
             onClick={() =>
               onConfirm({
                 mode,
@@ -972,7 +1007,7 @@ export function ExtensionDialog({
                 studentIds: selectedStudents.map((s) => s.studentId),
                 perStudent: selectedStudents.map((s) => {
                   const amounts = getAmounts(s);
-                  const autoInv = studentAutoInvoice[s.id] ?? true;
+                  const autoInv = studentAutoInvoice[s.id] ?? defaultAutoInvoice;
                   return {
                     studentId: s.studentId,
                     packageId: studentPkgIds[s.id] || s.packageId || null,
