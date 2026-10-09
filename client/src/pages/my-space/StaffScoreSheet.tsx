@@ -69,6 +69,8 @@ type StatusPresentation = {
   className: string;
 };
 
+const SCORE_SHEET_DETAILS_GRID_CLASS = "grid grid-cols-2 items-start gap-x-4 gap-y-2 sm:grid-cols-3 lg:grid-cols-6";
+
 const ASSESSMENT_STATUS_PRESENTATION: Record<ScoreSheetAssessmentStatus, StatusPresentation> = {
   not_started: {
     label: "Chưa thi",
@@ -573,7 +575,7 @@ export function StaffScoreSheet() {
                             </div>
 
                             <div className="mt-2 space-y-2 border-t border-dashed border-gray-200 pt-2 dark:border-border">
-                              <div className="grid grid-cols-2 items-start gap-x-4 gap-y-2 sm:grid-cols-3 lg:grid-cols-6">
+                              <div className={SCORE_SHEET_DETAILS_GRID_CLASS}>
                                 <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                   <Badge className="rounded-full border border-violet-200 bg-violet-100 px-2.5 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-950/40">
                                     {t("mySpace.scoreSheet.conversionSheet")}
@@ -696,12 +698,12 @@ export function StaffScoreSheet() {
                           </div>
 
                           <div className="mt-2 space-y-2 border-t border-dashed border-gray-200 pt-2 dark:border-border">
-                            <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
-                              <Badge className="rounded-full border border-blue-200 bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-800 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/40">
-                                {t("mySpace.scoreSheet.regularSheet")}
-                              </Badge>
-                              <div className="flex min-w-0 items-center">
-                                {book.scoreSheetName ? (
+                            <div className={SCORE_SHEET_DETAILS_GRID_CLASS}>
+                              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                <Badge className="rounded-full border border-blue-200 bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-800 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/40">
+                                  {t("mySpace.scoreSheet.regularSheet")}
+                                </Badge>
+                                {book.scoreSheetName && (
                                   <Badge
                                     variant="outline"
                                     className="max-w-full truncate text-[11px]"
@@ -709,23 +711,25 @@ export function StaffScoreSheet() {
                                   >
                                     {book.scoreSheetName}
                                   </Badge>
-                                ) : (
-                                  <span className="text-xs text-gray-400">—</span>
                                 )}
                               </div>
 
-                              <span className="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-muted-foreground">
+                              <span className="inline-flex min-h-5 items-center gap-1 text-xs text-gray-600 dark:text-muted-foreground">
                                 <Users className="h-3.5 w-3.5 shrink-0" />
                                 {book.studentCount ?? 0} {t("mySpace.scoreSheet.studentCount")}
                               </span>
 
+                              <span aria-hidden="true" className="min-h-5" />
+                              <span aria-hidden="true" className="min-h-5" />
+                              <span aria-hidden="true" className="min-h-5" />
+
                               {book.published ? (
-                                <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-green-700 dark:text-green-400">
+                                <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-medium text-green-700 dark:text-green-400">
                                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                                   {t("mySpace.scoreSheet.published")}
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-gray-500 dark:text-muted-foreground">
+                                <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-medium text-gray-500 dark:text-muted-foreground">
                                   <Clock className="h-3.5 w-3.5 shrink-0" />
                                   {t("mySpace.scoreSheet.unpublished")}
                                 </span>
