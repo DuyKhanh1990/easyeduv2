@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 export type PastSchedulePolicyResponse = {
   enabled: boolean;
   canRunPast: boolean;
-  roleIds?: string[];
+  deniedRoleIds?: string[];
 };
 
 export function usePastSchedulePolicy(enabled = true) {

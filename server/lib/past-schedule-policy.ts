@@ -5,18 +5,17 @@ import { systemSettings } from "@shared/schema";
 
 export const PAST_SCHEDULE_POLICY_SETTINGS_KEY = "pastSchedulePolicy";
 export const DEFAULT_PAST_SCHEDULE_POLICY = {
-  enabled: false,
-  roleIds: [] as string[],
+  enabled: true,
+  deniedRoleIds: [] as string[],
 };
 
 export type PastSchedulePolicy = {
-  enabled: boolean;
-  roleIds: string[];
+  enabled: true;
+  deniedRoleIds: string[];
 };
 
 const pastSchedulePolicySchema = z.object({
-  enabled: z.boolean(),
-  roleIds: z.array(z.string().uuid()).max(500),
+  deniedRoleIds: z.array(z.string().uuid()).max(500),
 });
 
 export function getBangkokDateString(now = new Date()): string {
@@ -51,18 +50,30 @@ export async function getPastSchedulePolicy(): Promise<PastSchedulePolicy> {
   } catch {
     throw new Error("Cấu hình chạy lịch học trong quá khứ không hợp lệ.");
   }
-  const result = pastSchedulePolicySchema.safeParse(parsed);
-  if (!result.success) {
-    throw new Error("Cấu hình chạy lịch học trong quá khứ không hợp lệ.");
+  if (typeof parsed === "object" && parsed !== null) {
+    const record = parsed as Record<string, unknown>;
+    if ("deniedRoleIds" in record) {
+      const result = pastSchedulePolicySchema.safeParse(parsed);
+      if (!result.success) {
+        throw new Error("Cấu hình chạy lịch học trong quá khứ không hợp lệ.");
+      }
+      return { enabled: true, deniedRoleIds: result.data.deniedRoleIds };
+    }
+
+    // Old allowlist settings must not silently lock out staff during rollout.
+    if ("enabled" in record || "roleIds" in record) {
+      return DEFAULT_PAST_SCHEDULE_POLICY;
+    }
   }
-  return result.data;
+  throw new Error("Cấu hình chạy lịch học trong quá khứ không hợp lệ.");
 }
 
 export function canRunPastSchedule(req: any, policy: PastSchedulePolicy): boolean {
   if (req?.isSuperAdmin === true) return true;
-  if (!policy.enabled) return false;
+  if (req?.isStudent === true) return false;
   const roleIds: string[] = Array.isArray(req?.roleIds) ? req.roleIds : [];
-  return roleIds.some((roleId) => policy.roleIds.includes(roleId));
+  if (roleIds.length === 0) return false;
+  return !roleIds.some((roleId) => policy.deniedRoleIds.includes(roleId));
 }
 
 export async function canRunPastScheduleForRequest(req: any): Promise<boolean> {

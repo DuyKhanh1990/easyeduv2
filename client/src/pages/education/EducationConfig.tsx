@@ -2117,11 +2117,12 @@ function PastScheduleConfigCard({ canEdit }: { canEdit: boolean }) {
   });
   const policyQuery = usePastSchedulePolicy(true);
   const policy = policyQuery.data;
-  const [enabled, setEnabled] = useState(false);
-  const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
+  const [deniedRoleIds, setDeniedRoleIds] = useState<string[]>([]);
   const [policyInitialized, setPolicyInitialized] = useState(false);
-  const availableRoleIds = policy?.roleIds;
-  const roleOptions = departments.flatMap((department) =>
+  const availableDeniedRoleIds = policy?.deniedRoleIds;
+  const roleOptions = departments
+    .filter((department) => !department.name.toLowerCase().includes("khách hàng"))
+    .flatMap((department) =>
     department.roles.map((role) => ({
       label: `${department.name} — ${role.name}`,
       value: role.id,
@@ -2133,16 +2134,14 @@ function PastScheduleConfigCard({ canEdit }: { canEdit: boolean }) {
       setPolicyInitialized(false);
       return;
     }
-    if (!policy || !Array.isArray(policy.roleIds)) return;
-    setEnabled(policy.enabled);
-    setSelectedRoleIds(policy.roleIds);
+    if (!policy || !Array.isArray(policy.deniedRoleIds)) return;
+    setDeniedRoleIds(policy.deniedRoleIds);
     setPolicyInitialized(true);
-  }, [policy?.enabled, policy?.roleIds, policyQuery.isFetching]);
+  }, [policy?.deniedRoleIds, policyQuery.isFetching]);
 
   const saveMutation = useMutation({
     mutationFn: () => apiRequest("PUT", "/api/system-settings/past-schedule", {
-      enabled,
-      roleIds: selectedRoleIds,
+      deniedRoleIds,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/system-settings/past-schedule"] });
@@ -2154,7 +2153,7 @@ function PastScheduleConfigCard({ canEdit }: { canEdit: boolean }) {
   });
 
   const canLoadRoles = !!policy
-    && Array.isArray(availableRoleIds)
+    && Array.isArray(availableDeniedRoleIds)
     && policyInitialized
     && departmentsFetched
     && !departmentsError
@@ -2168,7 +2167,7 @@ function PastScheduleConfigCard({ canEdit }: { canEdit: boolean }) {
           Chạy lịch học trong quá khứ
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          Cho phép các vai trò được chọn tạo hoặc điều chỉnh lịch có ngày trước hôm nay. Ngày được tính theo múi giờ Bangkok.
+          Quyền chạy lịch luôn được bật cho nhân sự. Có thể loại trừ từng vai trò; ngày được tính theo múi giờ Bangkok.
         </p>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -2183,24 +2182,25 @@ function PastScheduleConfigCard({ canEdit }: { canEdit: boolean }) {
           <>
             <div className="flex items-center justify-between gap-4 rounded-md border p-4">
               <div className="space-y-1">
-                <Label htmlFor="past-schedule-enabled" className="font-medium">Cho phép chạy lịch quá khứ</Label>
+                <Label htmlFor="past-schedule-enabled" className="font-medium">Quyền chạy lịch trong quá khứ</Label>
                 <p className="text-xs text-muted-foreground">
-                  {enabled ? "Đang bật cho các vai trò được chọn." : "Đang tắt; buổi quá khứ bị khóa với vai trò thông thường."}
+                  Luôn bật cho nhân sự, trừ các vai trò được đưa vào danh sách loại trừ.
                 </p>
               </div>
               <Switch
                 id="past-schedule-enabled"
-                checked={enabled}
-                onCheckedChange={setEnabled}
-                disabled={!canEdit || !canLoadRoles || saveMutation.isPending}
+                checked
+                disabled
+                className="cursor-not-allowed opacity-100"
                 aria-label="Cho phép chạy lịch học trong quá khứ"
+                aria-readonly="true"
               />
             </div>
 
             <div className="space-y-2">
-              <Label>Vai trò được phép</Label>
+              <Label>Vai trò không được phép</Label>
               <p className="text-xs text-muted-foreground">
-                Super Admin luôn có thể ghi đè. Chỉ vai trò được chọn mới thao tác lịch trước hôm nay khi công tắc bật.
+                Mặc định nhân sự được thao tác lịch trước hôm nay. Vai trò trong Phòng Khách hàng (phụ huynh và học viên) không tham gia cấu hình này.
               </p>
               {departmentsError ? (
                 <div className="space-y-2">
@@ -2211,11 +2211,11 @@ function PastScheduleConfigCard({ canEdit }: { canEdit: boolean }) {
                 </div>
               ) : canLoadRoles ? (
                 <MultiSelect
-                  key={availableRoleIds.join(",") || "empty"}
+                  key={availableDeniedRoleIds.join(",") || "empty"}
                   options={roleOptions}
-                  onValueChange={setSelectedRoleIds}
-                  defaultValue={availableRoleIds}
-                  placeholder="Chọn vai trò được phép…"
+                  onValueChange={setDeniedRoleIds}
+                  defaultValue={availableDeniedRoleIds}
+                  placeholder="Chọn vai trò cần chặn…"
                   maxCount={5}
                   disabled={!canEdit || saveMutation.isPending}
                 />

@@ -2461,9 +2461,9 @@ export function registerConfigRoutes(app: Express): void {
         ]).then(([canViewTab, canViewChild]) => canViewTab && canViewChild),
       ]);
       res.json({
-        enabled: policy.enabled,
+        enabled: true,
         canRunPast: canRunPastSchedule(req, policy),
-        ...(canViewFeature ? { roleIds: policy.roleIds } : {}),
+        ...(canViewFeature ? { deniedRoleIds: policy.deniedRoleIds } : {}),
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Không thể tải cấu hình chạy lịch học trong quá khứ." });
@@ -2481,27 +2481,37 @@ export function registerConfigRoutes(app: Express): void {
       }
 
       const payload = z.object({
-        enabled: z.boolean(),
-        roleIds: z.array(z.string().uuid()).max(500),
+        deniedRoleIds: z.array(z.string().uuid()).max(500),
       }).parse(req.body);
-      if (payload.roleIds.length > 0) {
-        const matchingRoles = await db.select({ id: roles.id })
+      if (new Set(payload.deniedRoleIds).size !== payload.deniedRoleIds.length) {
+        return res.status(400).json({ message: "Danh sách vai trò bị trùng." });
+      }
+      if (payload.deniedRoleIds.length > 0) {
+        const matchingRoles = await db.select({
+          id: roles.id,
+          departmentName: departments.name,
+        })
           .from(roles)
-          .where(inArray(roles.id, payload.roleIds));
-        if (matchingRoles.length !== payload.roleIds.length) {
-          return res.status(400).json({ message: "Danh sách vai trò không hợp lệ." });
+          .innerJoin(departments, eq(roles.departmentId, departments.id))
+          .where(inArray(roles.id, payload.deniedRoleIds));
+        const staffRoles = matchingRoles.filter(
+          (role) => !role.departmentName.toLowerCase().includes("khách hàng"),
+        );
+        if (staffRoles.length !== payload.deniedRoleIds.length) {
+          return res.status(400).json({ message: "Chỉ được chọn vai trò nhân sự ngoài Phòng Khách hàng." });
         }
       }
 
       const { systemSettings } = await import("@shared/schema");
-      const value = JSON.stringify(payload);
+      const policy = { enabled: true as const, deniedRoleIds: payload.deniedRoleIds };
+      const value = JSON.stringify(policy);
       await db.insert(systemSettings)
         .values({ key: PAST_SCHEDULE_POLICY_SETTINGS_KEY, value })
         .onConflictDoUpdate({
           target: systemSettings.key,
           set: { value, updatedAt: new Date() },
         });
-      res.json({ ...payload, canRunPast: canRunPastSchedule(req, payload) });
+      res.json({ ...policy, canRunPast: canRunPastSchedule(req, policy) });
     } catch (err: any) {
       if (err instanceof z.ZodError) return res.status(400).json({ message: "Dữ liệu cấu hình không hợp lệ.", errors: err.errors });
       res.status(500).json({ message: err.message || "Không thể lưu cấu hình chạy lịch học trong quá khứ." });
