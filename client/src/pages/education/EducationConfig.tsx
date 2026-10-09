@@ -2029,9 +2029,6 @@ function AutoInvoiceConfigTab({ canEdit }: { canEdit: boolean }) {
           <Settings2 className="h-4 w-4" />
           Cấu hình hóa đơn tự động
         </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Thiết lập mặc định cho các dialog Xếp lịch và Gia hạn. Vai trò được chọn có thể đổi trạng thái trong từng lần thao tác.
-        </p>
       </CardHeader>
       <CardContent className="space-y-6">
         {policyQuery.isError ? (
@@ -2061,9 +2058,6 @@ function AutoInvoiceConfigTab({ canEdit }: { canEdit: boolean }) {
 
             <div className="space-y-2">
               <Label>Vai trò được tự do bật/tắt</Label>
-              <p className="text-xs text-muted-foreground">
-                Chỉ các vai trò được chọn mới đổi được công tắc ở dialog. Không chọn vai trò nào thì chỉ Super Admin được ghi đè.
-              </p>
               {departmentsError ? (
                 <div className="space-y-2">
                   <p className="text-sm text-destructive">Không thể tải danh sách vai trò.</p>
@@ -2166,9 +2160,6 @@ function PastScheduleConfigCard({ canEdit }: { canEdit: boolean }) {
           <Settings2 className="h-4 w-4" />
           Chạy lịch học trong quá khứ
         </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Quyền chạy lịch luôn được bật cho nhân sự. Có thể loại trừ từng vai trò; ngày được tính theo múi giờ Bangkok.
-        </p>
       </CardHeader>
       <CardContent className="space-y-6">
         {policyQuery.isError ? (
@@ -2181,11 +2172,8 @@ function PastScheduleConfigCard({ canEdit }: { canEdit: boolean }) {
         ) : (
           <>
             <div className="flex items-center justify-between gap-4 rounded-md border p-4">
-              <div className="space-y-1">
+              <div>
                 <Label htmlFor="past-schedule-enabled" className="font-medium">Quyền chạy lịch trong quá khứ</Label>
-                <p className="text-xs text-muted-foreground">
-                  Luôn bật cho nhân sự, trừ các vai trò được đưa vào danh sách loại trừ.
-                </p>
               </div>
               <Switch
                 id="past-schedule-enabled"
@@ -2199,9 +2187,6 @@ function PastScheduleConfigCard({ canEdit }: { canEdit: boolean }) {
 
             <div className="space-y-2">
               <Label>Vai trò không được phép</Label>
-              <p className="text-xs text-muted-foreground">
-                Mặc định nhân sự được thao tác lịch trước hôm nay. Super Admin luôn có thể ghi đè. Vai trò trong Phòng Khách hàng (phụ huynh và học viên) không tham gia cấu hình này.
-              </p>
               {departmentsError ? (
                 <div className="space-y-2">
                   <p className="text-sm text-destructive">Không thể tải danh sách vai trò.</p>
