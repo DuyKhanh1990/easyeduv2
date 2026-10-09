@@ -9,8 +9,8 @@ description: Keep manually assembled student rosters on the existing score-conve
 
 **How to apply:** Keep `class_session_id` nullable in every database target. When changing manual assessments, verify creation, listing, score entry, editing, and publication still use the shared flow; assign class sessions only to session-created assessments.
 
-**Rule:** Each manual creation remains its own assessment instance with a unique assessment code and roster, even when it reuses a score-sheet template. The My Space score-sheet filter groups instances by template ID, but the cards and their results remain separate.
+**Rule:** A score-sheet template is reusable configuration: assigning the same template to different class sessions or manual boards should retain the same template code. Each board still needs its own internal assessment ID and its own student/attempt data.
 
-**Why:** A reusable template defines scoring; it does not identify one exam or roster. Merging by template alone could mix independent students, attempts, and publication states.
+**Why:** The user clarified that choosing a score sheet selects reusable information to assign, as it does for different class sessions; generated manual-instance codes obscured that identity.
 
-**How to apply:** Do not merge existing manual assessments based only on template or date. If the user wants a shared manual board, confirm the desired reuse criteria and roster behavior first.
+**How to apply:** Distinguish the shared template code from each assessment's internal identity. Group filters by template ID, but keep each board's roster, attempts, and publication state scoped to its own assessment; do not merge results just because the template is shared.
