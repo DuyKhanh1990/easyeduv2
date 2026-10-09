@@ -5,6 +5,8 @@ import { z } from "zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { usePastSchedulePolicy } from "@/hooks/use-past-schedule-policy";
+import { getCenterDateString, isPastCenterDate } from "@/lib/center-time-format";
 import {
   Dialog,
   DialogContent,
@@ -245,6 +247,9 @@ export function TransferClassDialog({
   const [roundingMode, setRoundingMode] = useState<"none" | "down" | "up">("none");
   const [excludeSourceSurcharge, setExcludeSourceSurcharge] = useState(true);
   const { data: myPerms } = useMyPermissions();
+  const { data: pastSchedulePolicy } = usePastSchedulePolicy(isOpen);
+  const canRunPast = pastSchedulePolicy?.canRunPast === true;
+  const today = getCenterDateString();
   const canCreatePromotion = Boolean(
     myPerms?.isSuperAdmin || myPerms?.permissions["/finance-config#promotions"]?.canCreate,
   );
@@ -320,6 +325,10 @@ export function TransferClassDialog({
 
   const isTransferableSourceSession = (session: any) =>
     session.status !== "transferred" && session.status !== "cancelled";
+  const isPastTransferSession = (session: any) => {
+    const sessionDate = session.classSession?.sessionDate ?? session.sessionDate;
+    return Boolean(sessionDate && isPastCenterDate(sessionDate, today));
+  };
 
   // Fetch sessions for the selected target class
   const { data: targetSessions, isLoading: loadingTarget } = useQuery<any[]>({
@@ -344,22 +353,56 @@ export function TransferClassDialog({
     session.sessionIndex != null
     && session.sessionDate
     && session.status === "scheduled"
-    && !targetExistingSessionIds.has(session.id),
+    && !targetExistingSessionIds.has(session.id)
+    && (canRunPast || !isPastTransferSession(session)),
   );
   const targetAvailableSessions = (targetSessions ?? []).filter((session) => {
     const sessionIndex = Number(session.sessionIndex);
     return Number.isFinite(sessionIndex)
       && sessionIndex >= Number(toSessionIndex)
       && session.status === "scheduled"
-      && !targetExistingSessionIds.has(session.id);
+      && !targetExistingSessionIds.has(session.id)
+      && (canRunPast || !isPastTransferSession(session));
   });
   const targetAvailableCount = targetAvailableSessions.length;
   const currentAvailableSessionCount = (currentSessions ?? []).filter((session) => {
     const sessionIndex = Number(session.classSession?.sessionIndex ?? session.sessionIndex);
     return isTransferableSourceSession(session)
       && Number.isFinite(sessionIndex)
-      && sessionIndex >= Number(fromSessionIndex);
+      && sessionIndex >= Number(fromSessionIndex)
+      && (canRunPast || !isPastTransferSession(session));
   }).length;
+  const sourceSessionsForTransfer = (currentSessions ?? [])
+    .filter((session) => isTransferableSourceSession(session)
+      && Number(session.classSession?.sessionIndex ?? session.sessionIndex) >= Number(fromSessionIndex))
+    .sort((left, right) =>
+      Number(left.classSession?.sessionIndex ?? left.sessionIndex)
+      - Number(right.classSession?.sessionIndex ?? right.sessionIndex),
+    )
+    .slice(0, transferCount);
+  const targetSessionsForTransfer = (targetSessions ?? [])
+    .filter((session) => Number(session.sessionIndex) >= Number(toSessionIndex)
+      && session.status === "scheduled"
+      && !targetExistingSessionIds.has(session.id))
+    .sort((left, right) => Number(left.sessionIndex) - Number(right.sessionIndex))
+    .slice(0, targetTransferCount);
+
+  useEffect(() => {
+    if (!currentSessions?.length || canRunPast) return;
+    const currentIndex = Number(form.getValues("fromSessionIndex"));
+    const selectedSession = currentSessions.find(
+      (session) => Number(session.classSession?.sessionIndex ?? session.sessionIndex) === currentIndex,
+    );
+    if (!selectedSession || !isPastTransferSession(selectedSession)) return;
+    const firstAvailable = currentSessions
+      .filter((session) => isTransferableSourceSession(session) && !isPastTransferSession(session))
+      .sort((left, right) =>
+        Number(left.classSession?.sessionIndex ?? left.sessionIndex)
+        - Number(right.classSession?.sessionIndex ?? right.sessionIndex),
+      )[0];
+    const nextIndex = firstAvailable?.classSession?.sessionIndex ?? firstAvailable?.sessionIndex;
+    if (nextIndex != null) form.setValue("fromSessionIndex", Number(nextIndex), { shouldValidate: false });
+  }, [currentSessions, canRunPast, today, form]);
 
   useEffect(() => {
     if (!selectedToClassId || targetDataLoading || selectableTargetSessions.length === 0) return;
@@ -368,7 +411,8 @@ export function TransferClassDialog({
     );
     const selectedSessionIsAvailable =
       selectedSession?.status === "scheduled"
-      && !targetExistingSessionIds.has(selectedSession.id);
+      && !targetExistingSessionIds.has(selectedSession.id)
+      && (canRunPast || !isPastTransferSession(selectedSession));
     if (!selectedSessionIsAvailable) {
       form.setValue("toSessionIndex", Number(selectableTargetSessions[0].sessionIndex), {
         shouldValidate: false,
@@ -380,6 +424,8 @@ export function TransferClassDialog({
     targetStudentSessions,
     targetDataLoading,
     toSessionIndex,
+    canRunPast,
+    today,
     form,
   ]);
 
@@ -392,12 +438,13 @@ export function TransferClassDialog({
       const sessionIndex = s.classSession?.sessionIndex ?? s.sessionIndex;
       return isTransferableSourceSession(s)
         && sessionIndex != null
-        && Number(sessionIndex) >= idx;
+        && Number(sessionIndex) >= idx
+        && (canRunPast || !isPastTransferSession(s));
     }).length;
     if (remaining > 0) {
       form.setValue("transferCount", remaining, { shouldValidate: false });
     }
-  }, [fromSessionIndex, currentSessions]);
+  }, [fromSessionIndex, currentSessions, canRunPast, today]);
 
   useEffect(() => {
     if (!selectedToClassId || targetDataLoading || targetAvailableCount <= 0) return;
@@ -1126,6 +1173,17 @@ export function TransferClassDialog({
   });
 
   const onSubmit = (values: TransferFormValues) => {
+    if (!canRunPast && (
+      sourceSessionsForTransfer.some(isPastTransferSession)
+      || targetSessionsForTransfer.some(isPastTransferSession)
+    )) {
+      toast({
+        title: "Không thể chuyển buổi học trong quá khứ",
+        description: "Hãy chọn mốc chuyển bắt đầu từ hôm nay hoặc một ngày sau.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (
       currentAvailableSessionCount > 0
       && values.transferCount > currentAvailableSessionCount
@@ -1246,8 +1304,14 @@ export function TransferClassDialog({
                                 const sessionIndex = s.classSession?.sessionIndex ?? s.sessionIndex;
                                 const sessionDate = s.classSession?.sessionDate ?? s.sessionDate;
                                 if (sessionIndex == null || !sessionDate) return null;
+                                const pastRestricted = !canRunPast && isPastTransferSession(s);
                                 return (
-                                  <SelectItem key={s.id} value={sessionIndex.toString()}>
+                                  <SelectItem
+                                    key={s.id}
+                                    value={sessionIndex.toString()}
+                                    disabled={pastRestricted}
+                                    className={pastRestricted ? "opacity-50" : undefined}
+                                  >
                                     Buổi {sessionIndex}: {getDayName(new Date(sessionDate).getDay())}, {format(new Date(sessionDate), "dd/MM/yyyy")}
                                   </SelectItem>
                                 );
@@ -1581,19 +1645,25 @@ export function TransferClassDialog({
                             <SelectContent>
                               {targetSessions?.map((s) => {
                                 if (s.sessionIndex == null || !s.sessionDate || s.status !== "scheduled") return null;
-                                 const isAlreadyRegistered = targetExistingSessionIds.has(s.id);
+                                const isAlreadyRegistered = targetExistingSessionIds.has(s.id);
+                                const pastRestricted = !canRunPast && isPastTransferSession(s);
                                 return (
                                    <SelectItem
                                      key={s.id}
                                      value={s.sessionIndex.toString()}
-                                     disabled={isAlreadyRegistered}
+                                     disabled={isAlreadyRegistered || pastRestricted}
                                    >
-                                     <span className={cn(isAlreadyRegistered && "text-muted-foreground")}>
+                                     <span className={cn((isAlreadyRegistered || pastRestricted) && "text-muted-foreground")}>
                                        Buổi {s.sessionIndex}: {getDayName(new Date(s.sessionDate).getDay())}, {format(new Date(s.sessionDate), "dd/MM/yyyy")}
                                      </span>
                                      {isAlreadyRegistered && (
                                        <span className="ml-2 text-[10px] text-muted-foreground">
                                          (Đã có học viên)
+                                       </span>
+                                     )}
+                                     {pastRestricted && (
+                                       <span className="ml-2 text-[10px] text-muted-foreground">
+                                         (Đã qua ngày)
                                        </span>
                                      )}
                                   </SelectItem>

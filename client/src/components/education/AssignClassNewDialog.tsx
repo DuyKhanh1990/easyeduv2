@@ -9,6 +9,8 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { usePastSchedulePolicy } from "@/hooks/use-past-schedule-policy";
+import { getCenterDateString, isPastCenterDate } from "@/lib/center-time-format";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
   Table, 
@@ -65,6 +67,9 @@ export function AssignClassNewDialog({
   locationId,
 }: AssignClassNewDialogProps) {
   const { toast } = useToast();
+  const { data: pastSchedulePolicy } = usePastSchedulePolicy(isOpen);
+  const canRunPast = pastSchedulePolicy?.canRunPast === true;
+  const today = getCenterDateString();
   const autoInvoicePolicyQuery = useAutoInvoicePolicy(isOpen);
   const autoInvoicePolicy = autoInvoicePolicyQuery.data;
   const canOverrideAutoInvoice = autoInvoicePolicy?.canOverride === true;
@@ -506,6 +511,17 @@ export function AssignClassNewDialog({
   };
 
   const handleScheduleConfirm = () => {
+    if (!canRunPast && studentConfigs.some(
+      (config) => config.startDate && isPastCenterDate(config.startDate, today),
+    )) {
+      toast({
+        title: "Không thể xếp lịch trước hôm nay",
+        description: "Chọn hôm nay hoặc một ngày sau làm ngày bắt đầu.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (hasMissingAutoInvoicePackage) {
       setIsMissingPackageWarningOpen(true);
       return;
@@ -556,7 +572,7 @@ export function AssignClassNewDialog({
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
-                      <CalendarComponent mode="single" selected={globalStart} onSelect={setGlobalStart} initialFocus />
+                      <CalendarComponent mode="single" selected={globalStart} onSelect={setGlobalStart} disabled={(date) => !canRunPast && isPastCenterDate(date, today)} initialFocus />
                     </PopoverContent>
                   </Popover>
                 </div>
@@ -578,7 +594,7 @@ export function AssignClassNewDialog({
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0">
-                        <CalendarComponent mode="single" selected={globalEnd} onSelect={setGlobalEnd} initialFocus />
+                        <CalendarComponent mode="single" selected={globalEnd} onSelect={setGlobalEnd} disabled={(date) => !canRunPast && isPastCenterDate(date, today)} initialFocus />
                       </PopoverContent>
                     </Popover>
                   ) : (
@@ -831,6 +847,7 @@ export function AssignClassNewDialog({
                                   mode="single"
                                   selected={config.startDate}
                                   onSelect={(date) => date && updateStudentConfig(idx, { startDate: date })}
+                                  disabled={(date) => !canRunPast && isPastCenterDate(date, today)}
                                 />
                               </PopoverContent>
                             </Popover>
@@ -918,6 +935,7 @@ export function AssignClassNewDialog({
                                       mode="single"
                                       selected={config.endDate}
                                       onSelect={(date) => date && updateStudentConfig(idx, { endDate: date })}
+                                      disabled={(date) => !canRunPast && isPastCenterDate(date, today)}
                                     />
                                   </PopoverContent>
                                 </Popover>

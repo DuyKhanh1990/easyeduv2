@@ -34,6 +34,10 @@ import { getPreferredSystemTrainingTeacherRoleId } from "@shared/teacher-role-pr
 import { canUseMySpaceCalendarAction } from "@shared/my-space-calendar-permissions";
 import { mergeSelectedTeacherRoleIds } from "../storage/teacher-role-updates";
 import { getAutoInvoicePolicy, resolveAutoInvoiceValue } from "../lib/auto-invoice-policy";
+import {
+  canRunPastScheduleForRequest,
+  isPastScheduleDate,
+} from "../lib/past-schedule-policy";
 
 async function resolveStaffFullName(userId: string | undefined | null): Promise<string | null> {
   if (!userId) return null;
@@ -142,6 +146,87 @@ function getBangkokDateString(): string {
   }).formatToParts(new Date());
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}`;
+}
+
+async function assertNoPastScheduleDates(
+  req: any,
+  res: any,
+  dates: unknown[],
+): Promise<boolean> {
+  if (await canRunPastScheduleForRequest(req)) return true;
+  if (!dates.some((date) => isPastScheduleDate(date))) return true;
+  res.status(403).json({
+    message: "Bạn không có quyền thao tác với lịch học trước hôm nay.",
+  });
+  return false;
+}
+
+async function assertNoPastClassSessions(
+  req: any,
+  res: any,
+  classId: string,
+  fromIndex: number,
+  toIndex: number,
+): Promise<boolean> {
+  const sessions = await db.select({ sessionDate: classSessions.sessionDate })
+    .from(classSessions)
+    .where(and(
+      eq(classSessions.classId, classId),
+      between(classSessions.sessionIndex, Math.min(fromIndex, toIndex), Math.max(fromIndex, toIndex)),
+    ));
+  return assertNoPastScheduleDates(req, res, sessions.map((session) => session.sessionDate));
+}
+
+async function assertTransferHasNoPastSessions(req: any, res: any, data: {
+  studentId: string;
+  fromClassId: string;
+  toClassId: string;
+  fromSessionIndex: number;
+  toSessionIndex: number;
+  transferCount: number;
+  targetTransferCount?: number;
+}): Promise<boolean> {
+  if (await canRunPastScheduleForRequest(req)) return true;
+  const sourceSessions = await db.select({ sessionDate: classSessions.sessionDate })
+    .from(studentSessions)
+    .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
+    .where(and(
+      eq(studentSessions.studentId, data.studentId),
+      eq(studentSessions.classId, data.fromClassId),
+      sql`${classSessions.sessionIndex} >= ${data.fromSessionIndex}`,
+      sql`${studentSessions.status} NOT IN ('transferred', 'cancelled')`,
+    ))
+    .orderBy(asc(classSessions.sessionIndex))
+    .limit(data.transferCount);
+
+  const targetPool = await db.select({
+    id: classSessions.id,
+    sessionDate: classSessions.sessionDate,
+  })
+    .from(classSessions)
+    .where(and(
+      eq(classSessions.classId, data.toClassId),
+      eq(classSessions.status, "scheduled"),
+      sql`${classSessions.sessionIndex} >= ${data.toSessionIndex}`,
+    ))
+    .orderBy(asc(classSessions.sessionIndex));
+  const existingTargets = targetPool.length
+    ? await db.select({ classSessionId: studentSessions.classSessionId })
+      .from(studentSessions)
+      .where(and(
+        eq(studentSessions.studentId, data.studentId),
+        inArray(studentSessions.classSessionId, targetPool.map((session) => session.id)),
+        sql`${studentSessions.status} NOT IN ('transferred', 'cancelled')`,
+      ))
+    : [];
+  const occupiedIds = new Set(existingTargets.map((session) => session.classSessionId));
+  const targetSessions = targetPool
+    .filter((session) => !occupiedIds.has(session.id))
+    .slice(0, data.targetTransferCount ?? data.transferCount);
+  return assertNoPastScheduleDates(req, res, [
+    ...sourceSessions.map((session) => session.sessionDate),
+    ...targetSessions.map((session) => session.sessionDate),
+  ]);
 }
 
 async function getClassReadScope(
@@ -1101,9 +1186,33 @@ const deleteSessionsSchema = z.object({
 export function registerClassesRoutes(app: Express): void {
   // Makeup
   app.post(api.classes.makeup.path, async (req, res) => {
-    const classId = req.params.id;
+    const classId = String(req.params.id);
     const userId = (req.user as any).id;
     try {
+      const makeupDates: unknown[] = [];
+      if (req.body?.selectedTargetSessionId) {
+        const [target] = await db.select({ sessionDate: classSessions.sessionDate })
+          .from(classSessions)
+          .where(eq(classSessions.id, String(req.body.selectedTargetSessionId)))
+          .limit(1);
+        if (target) makeupDates.push(target.sessionDate);
+      }
+      if (req.body?.option === "new_schedule") {
+        makeupDates.push(
+          req.body?.startDate,
+          req.body?.sessionDate,
+          req.body?.targetDate,
+          ...(Array.isArray(req.body?.newSchedule?.scheduleConfig)
+            ? req.body.newSchedule.scheduleConfig.map((config: any) => config?.date)
+            : []),
+        );
+      }
+      if (makeupDates.some((date) => isPastScheduleDate(date))) {
+        return res.status(400).json({
+          message: "Không thể xếp buổi bù vào ngày trước hôm nay.",
+        });
+      }
+      if (!(await assertNoPastScheduleDates(req, res, makeupDates))) return;
       await storage.makeupClassStudents(classId, req.body, userId);
 
       // ── Activity log ──────────────────────────────────────────────────────
@@ -1737,6 +1846,47 @@ export function registerClassesRoutes(app: Express): void {
         .where(eq(classes.id, classId))
         .limit(1);
       if (!classRow) return res.status(404).json({ message: "Không tìm thấy lớp học" });
+
+      const submittedScheduleDates = configs.flatMap((config: any) => [
+        config?.startDate,
+        config?.sessionDate,
+        classRow.classType === "free" ? classRow.startDate : undefined,
+      ]);
+      if (classScheduleConfig) {
+        submittedScheduleDates.push(
+          classScheduleConfig.startDate,
+          classScheduleConfig.sessionDate,
+        );
+      }
+      if (!(await assertNoPastScheduleDates(req, res, submittedScheduleDates))) return;
+      if (classRow.classType !== "free") {
+        const scheduleWindows = configs
+          .map((config: any) => ({
+            start: String(config?.startDate || classScheduleConfig?.startDate || "").slice(0, 10),
+            end: String(config?.endDate || classScheduleConfig?.endDate || "").slice(0, 10),
+          }))
+          .filter((window: any) => /^\d{4}-\d{2}-\d{2}$/.test(window.start));
+        const affectedSessions = scheduleWindows.length > 0
+          ? (await Promise.all(scheduleWindows.map((window: any) =>
+              db.select({ sessionDate: classSessions.sessionDate })
+                .from(classSessions)
+                .where(and(
+                  eq(classSessions.classId, classId),
+                  gte(classSessions.sessionDate, window.start),
+                  ...( /^\d{4}-\d{2}-\d{2}$/.test(window.end)
+                    ? [lte(classSessions.sessionDate, window.end)]
+                    : []),
+                )),
+            ))).flat()
+          : await db.select({ sessionDate: classSessions.sessionDate })
+              .from(classSessions)
+              .where(eq(classSessions.classId, classId));
+        if (!(await assertNoPastScheduleDates(
+          req,
+          res,
+          affectedSessions.map((session) => session.sessionDate),
+        ))) return;
+      }
 
       // Free classes do not have fixed class_sessions. Scheduling a student
       // activates their enrollment and stores the configured allowance/window
@@ -2828,6 +2978,7 @@ export function registerClassesRoutes(app: Express): void {
       });
 
       const data = transferSchema.parse(req.body);
+      if (!(await assertTransferHasNoPastSessions(req, res, data))) return;
       const userId = (req.user as any).id;
       const transferResult = await storage.transferStudentClass({
         ...data,
@@ -2901,6 +3052,7 @@ export function registerClassesRoutes(app: Express): void {
   app.post(api.students.transferClass.path, async (req, res) => {
     try {
       const data = api.students.transferClass.input.parse(req.body);
+      if (!(await assertTransferHasNoPastSessions(req, res, data))) return;
       const userId = (req.user as any).id;
       const transferResult = await storage.transferStudentClass({
         ...data,
@@ -3287,6 +3439,11 @@ export function registerClassesRoutes(app: Express): void {
         students: Array<{ studentClassId: string; weekdays: number[] | null }>;
         mode: "all" | "unattended_only";
       };
+      const [sessionForCycle] = await db.select({
+        sessionDate: classSessions.sessionDate,
+      }).from(classSessions).where(eq(classSessions.id, sessionId)).limit(1);
+      if (!sessionForCycle) return res.status(404).json({ message: "Không tìm thấy buổi học" });
+      if (!(await assertNoPastScheduleDates(req, res, [sessionForCycle.sessionDate]))) return;
       if (!students || !Array.isArray(students) || students.length === 0) {
         return res.status(400).json({ message: "Thiếu danh sách học viên" });
       }
@@ -3904,6 +4061,13 @@ export function registerClassesRoutes(app: Express): void {
         return res.status(400).json({ message: "Danh sách học viên không hợp lệ hoặc không cùng một lớp." });
       }
       if (!(await assertClassReadable(req, res, uniqueClassIds[0]))) return;
+      if (!(await assertNoPastClassSessions(
+        req,
+        res,
+        uniqueClassIds[0],
+        Number(from_session_order),
+        Number(to_session_order),
+      ))) return;
 
       // ── Pre-fetch for activity log (before update) ──────────────────────
       let logPreData: {
@@ -4142,6 +4306,12 @@ export function registerClassesRoutes(app: Express): void {
           ))
           .orderBy(asc(classSessions.sessionIndex));
       }
+
+      if (!(await assertNoPastScheduleDates(
+        req,
+        res,
+        sessionsInRange.map((session) => session.sessionDate),
+      ))) return;
 
       // Collect all staff IDs (old + new) and look up names
       const allStaffIds = [...new Set([
@@ -4400,6 +4570,25 @@ export function registerClassesRoutes(app: Express): void {
         sessionDate: classSessions.sessionDate,
         weekday: classSessions.weekday,
       }).from(classSessions).where(eq(classSessions.id, validatedData.sessionId)).limit(1);
+      if (!fromSession) {
+        return res.status(404).json({ message: "Không tìm thấy buổi học" });
+      }
+
+      const affectedSessions = await db.select({ sessionDate: classSessions.sessionDate })
+        .from(classSessions)
+        .where(and(
+          eq(classSessions.classId, validatedData.classId),
+          validatedData.deleteType === "single"
+            ? eq(classSessions.id, validatedData.sessionId)
+            : validatedData.deleteType === "next" && fromSession?.sessionIndex != null
+              ? gte(classSessions.sessionIndex, fromSession.sessionIndex)
+              : sql`true`,
+        ));
+      if (!(await assertNoPastScheduleDates(
+        req,
+        res,
+        affectedSessions.map((session) => session.sessionDate),
+      ))) return;
 
       // For "next" type, also find the last session in the range
       let toSession: typeof fromSession | null = null;
@@ -4571,6 +4760,19 @@ export function registerClassesRoutes(app: Express): void {
             .where(eq(classSessions.classId, classId))
             .orderBy(desc(classSessions.sessionIndex))
             .limit(1);
+
+      if (!(await assertNoPastScheduleDates(req, res, [
+        startDate,
+        fromSession?.sessionDate,
+        toSession?.sessionDate,
+      ]))) return;
+      if (fromSession && toSession && !(await assertNoPastClassSessions(
+        req,
+        res,
+        classId,
+        fromSession.sessionIndex ?? 0,
+        toSession.sessionIndex ?? 0,
+      ))) return;
 
       // Collect existing teachers and weekdays in the range before update
       let oldTeacherIdsSet = new Set<string>();
@@ -4855,6 +5057,21 @@ export function registerClassesRoutes(app: Express): void {
       const { fromSessionId, toSessionId, reason } = req.body;
       const classId = req.params.id;
       const userId = (req.user as any).id;
+      const [fromRangeSession] = await db.select({ sessionIndex: classSessions.sessionIndex })
+        .from(classSessions)
+        .where(and(eq(classSessions.id, fromSessionId), eq(classSessions.classId, classId)))
+        .limit(1);
+      const [toRangeSession] = await db.select({ sessionIndex: classSessions.sessionIndex })
+        .from(classSessions)
+        .where(and(eq(classSessions.id, toSessionId), eq(classSessions.classId, classId)))
+        .limit(1);
+      if (fromRangeSession && toRangeSession && !(await assertNoPastClassSessions(
+        req,
+        res,
+        classId,
+        fromRangeSession.sessionIndex ?? 0,
+        toRangeSession.sessionIndex ?? 0,
+      ))) return;
 
       // Pre-fetch session info trước khi hủy (session bị cancelled nhưng ID vẫn còn)
       const [cancelFromSession] = await db.select({
@@ -4972,6 +5189,16 @@ export function registerClassesRoutes(app: Express): void {
           fromIndex: Math.min(fromSession.sessionIndex ?? 0, toSession.sessionIndex ?? 0),
           toIndex:   Math.max(fromSession.sessionIndex ?? 0, toSession.sessionIndex ?? 0),
         });
+      }
+
+      for (const range of resolvedRanges) {
+        if (!(await assertNoPastClassSessions(
+          req,
+          res,
+          classId,
+          range.fromIndex,
+          range.toIndex,
+        ))) return;
       }
 
       // Validate no overlapping ranges
@@ -6109,6 +6336,11 @@ export function registerClassesRoutes(app: Express): void {
         shiftTemplateId: classSessions.shiftTemplateId,
       }).from(classSessions).where(eq(classSessions.id, sessionId)).limit(1);
 
+      if (!(await assertNoPastScheduleDates(req, res, [
+        existingSession?.sessionDate,
+        req.body?.sessionDate,
+      ]))) return;
+
       const { classSessionTeacherAssignments } = await import("@shared/schema");
       const oldTeacherTimeAssignments = await db.select({
         teacherId: classSessionTeacherAssignments.teacherId,
@@ -7106,6 +7338,24 @@ export function registerClassesRoutes(app: Express): void {
         const clsPerms = await getClassPermissions(req);
         if (!clsPerms.canEdit) {
           return res.status(403).json({ message: "Bạn không có quyền chỉnh sửa lớp học." });
+        }
+      }
+      const isScheduleRegeneration = req.body?.regenerateSessions === true;
+      const hasScheduleDateChange =
+        isScheduleRegeneration
+        || Object.prototype.hasOwnProperty.call(req.body ?? {}, "startDate")
+        || Object.prototype.hasOwnProperty.call(req.body ?? {}, "schedule_config");
+      if (hasScheduleDateChange) {
+        if (!(await assertNoPastScheduleDates(req, res, [req.body?.startDate]))) return;
+        if (isScheduleRegeneration) {
+          const existingSessionDates = await db.select({ sessionDate: classSessions.sessionDate })
+            .from(classSessions)
+            .where(eq(classSessions.classId, classId));
+          if (!(await assertNoPastScheduleDates(
+            req,
+            res,
+            existingSessionDates.map((session) => session.sessionDate),
+          ))) return;
         }
       }
       const [storedClass] = await db.select({ classType: classes.classType })

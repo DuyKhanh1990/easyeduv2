@@ -2,6 +2,8 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { VoucherHint } from "@/components/finance/VoucherHint";
 import { useToast } from "@/hooks/use-toast";
+import { usePastSchedulePolicy } from "@/hooks/use-past-schedule-policy";
+import { getCenterDateString, isPastCenterDate } from "@/lib/center-time-format";
 import { apiRequest } from "@/lib/queryClient";
 import { normalizeSearchText } from "@/lib/search-text";
 import { useScheduleTab, ScheduleHeaderActions } from "@/hooks/use-schedule-tab";
@@ -76,6 +78,12 @@ export function ScheduleTabContent({
   classPerm,
 }: ScheduleTabContentProps) {
   const { toast } = useToast();
+  const { data: pastSchedulePolicy } = usePastSchedulePolicy(true);
+  const canRunPast = pastSchedulePolicy?.canRunPast === true;
+  const today = getCenterDateString();
+  const selectableTuitionSessions = (classSessions || []).filter((session: any) =>
+    canRunPast || !session.sessionDate || !isPastCenterDate(session.sessionDate, today),
+  );
 
   const {
     selectedClassSessionId,
@@ -213,8 +221,11 @@ export function ScheduleTabContent({
   useEffect(() => {
     if (isChangeTuitionPackageDialogOpen && !prevOpenRef.current) {
       // Dialog just became open — set default session range
-      setFromSessionId(selectedClassSessionId || "");
-      const sessions = classSessions || [];
+      const defaultTuitionSession = selectableTuitionSessions.find(
+        (session: any) => session.id === selectedClassSessionId,
+      ) ?? selectableTuitionSessions[0];
+      setFromSessionId(defaultTuitionSession?.id || "");
+      const sessions = selectableTuitionSessions;
       const lastSession = sessions.reduce<any | null>((latest, current) =>
         !latest || (current.sessionIndex ?? -1) > (latest.sessionIndex ?? -1) ? current : latest,
         null,
@@ -282,6 +293,13 @@ export function ScheduleTabContent({
     const count = sessionsToCount.filter((s: any) => (s.sessionIndex ?? 0) >= min && (s.sessionIndex ?? 0) <= max).length;
     return { min, max, count };
   }, [fromSessionId, toSessionId, classSessions, selectedStudentIds, firstStudentSessions, sessionsForDropdown]);
+  const tuitionRangeContainsRestrictedPast = !canRunPast
+    && Boolean(classSessions?.some((session: any) =>
+      (session.sessionIndex ?? 0) >= tuitionSessionRange.min
+      && (session.sessionIndex ?? 0) <= tuitionSessionRange.max
+      && session.sessionDate
+      && isPastCenterDate(session.sessionDate, today),
+    ));
 
   const { data: studentAllocatedFees = {} } = useQuery<Record<string, {
     total: string;
@@ -520,6 +538,7 @@ export function ScheduleTabContent({
         classId={classId}
         sessionId={selectedClassSessionId || ""}
         sessionIndex={classSessions?.find((s: any) => s.id === selectedClassSessionId)?.sessionIndex ?? 0}
+        classSessions={classSessions || []}
       />
       {studentToRemove && (
         <RemoveStudentFromSessionDialog
@@ -958,6 +977,11 @@ export function ScheduleTabContent({
                 {/* Session range */}
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Khoảng buổi áp dụng</p>
+                  {tuitionRangeContainsRestrictedPast && (
+                    <p className="text-xs text-destructive" role="alert">
+                      Khoảng này có buổi học trong quá khứ. Chọn buổi bắt đầu từ hôm nay hoặc sau đó.
+                    </p>
+                  )}
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-xs text-foreground mb-1 block">Từ buổi</label>
@@ -968,10 +992,18 @@ export function ScheduleTabContent({
                         <SelectContent className="min-w-[340px]">
                           {sessionsForDropdown.map((session: any) => {
                             const feeInfo = sessionFeeMap[session.id];
+                            const pastRestricted = !canRunPast
+                              && session.sessionDate
+                              && isPastCenterDate(session.sessionDate, today);
                             return (
-                              <SelectItem key={session.id} value={session.id} className="text-xs">
+                              <SelectItem
+                                key={session.id}
+                                value={session.id}
+                                className={`text-xs ${pastRestricted ? "opacity-50" : ""}`}
+                                disabled={Boolean(pastRestricted)}
+                              >
                                 <span className="flex items-center gap-2 w-full">
-                                  <span className="shrink-0 font-medium">
+                                  <span className={`shrink-0 font-medium ${pastRestricted ? "text-muted-foreground" : ""}`}>
                                     Buổi {session.sessionIndex} – {session.sessionDate}
                                   </span>
                                   {feeInfo && (
@@ -998,10 +1030,18 @@ export function ScheduleTabContent({
                         <SelectContent className="min-w-[340px]">
                           {sessionsForDropdown.map((session: any) => {
                             const feeInfo = sessionFeeMap[session.id];
+                            const pastRestricted = !canRunPast
+                              && session.sessionDate
+                              && isPastCenterDate(session.sessionDate, today);
                             return (
-                              <SelectItem key={session.id} value={session.id} className="text-xs">
+                              <SelectItem
+                                key={session.id}
+                                value={session.id}
+                                className={`text-xs ${pastRestricted ? "opacity-50" : ""}`}
+                                disabled={Boolean(pastRestricted)}
+                              >
                                 <span className="flex items-center gap-2 w-full">
-                                  <span className="shrink-0 font-medium">
+                                  <span className={`shrink-0 font-medium ${pastRestricted ? "text-muted-foreground" : ""}`}>
                                     Buổi {session.sessionIndex} – {session.sessionDate}
                                   </span>
                                   {feeInfo && (
@@ -1393,7 +1433,16 @@ export function ScheduleTabContent({
               </Button>
               <Button
                 size="sm"
+                disabled={tuitionRangeContainsRestrictedPast || updateTuitionPackageMutation.isPending}
                 onClick={() => {
+                  if (tuitionRangeContainsRestrictedPast) {
+                    toast({
+                      title: "Khoảng đổi gói có buổi trong quá khứ",
+                      description: "Chọn khoảng chỉ gồm hôm nay hoặc các ngày sau.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
                   if (!fromSessionId || !toSessionId) {
                     toast({ title: "Lỗi", description: "Vui lòng chọn khoảng buổi học", variant: "destructive" });
                     return;

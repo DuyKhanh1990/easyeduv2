@@ -30,6 +30,8 @@ import {
   resolveTeacherRoleId,
 } from "@/lib/staff-role-options";
 import { isTeacherTimeRangeWithinShift } from "@shared/teacher-time-assignments";
+import { usePastSchedulePolicy } from "@/hooks/use-past-schedule-policy";
+import { getCenterDateString, isPastCenterDate } from "@/lib/center-time-format";
 
 const WEEKDAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 const USE_DEFAULT_ROLE = "__use_default_role__";
@@ -91,13 +93,19 @@ export function UpdateCycleDialog({
   >({});
   const [reason, setReason] = useState<string>("");
   const [showErrors, setShowErrors] = useState(false);
+  const { data: pastSchedulePolicy } = usePastSchedulePolicy(isOpen);
+  const canRunPast = pastSchedulePolicy?.canRunPast === true;
+  const today = getCenterDateString();
+  const selectableSessions = (classSessions ?? []).filter((session) =>
+    canRunPast || !session.sessionDate || !isPastCenterDate(session.sessionDate, today),
+  );
 
   // Live conflict check state
   const [liveConflicts, setLiveConflicts] = useState<ConflictItem[]>([]);
   const [isLiveChecking, setIsLiveChecking] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const toSessionId = [...(classSessions || [])]
+  const toSessionId = [...selectableSessions]
     .sort((a: any, b: any) => (a.sessionIndex ?? 0) - (b.sessionIndex ?? 0))
     .at(-1)?.id ?? "";
 
@@ -128,13 +136,19 @@ export function UpdateCycleDialog({
 
   useEffect(() => {
     if (isOpen && classSessions?.length > 0) {
-      const fromId = defaultFromSessionId || classSessions[0].id;
+      const fromId = (
+        defaultFromSessionId
+        && selectableSessions.some((session: any) => session.id === defaultFromSessionId)
+          ? defaultFromSessionId
+          : selectableSessions[0]?.id
+      );
+      if (!fromId) return;
       setFromSessionId(fromId);
       setReason("");
       setShowErrors(false);
       setLiveConflicts([]);
 
-      const allSorted = (classSessions as any[])
+      const allSorted = selectableSessions
         .filter((s: any) => s.status !== "cancelled")
         .sort((a: any, b: any) => (a.sessionIndex ?? 0) - (b.sessionIndex ?? 0));
 
@@ -223,7 +237,7 @@ export function UpdateCycleDialog({
       setWeekdayTeacherRoleSelections(roleSelections);
       setWeekdayTeacherTimeRanges(timeRanges);
     }
-  }, [isOpen, classSessions, classData, defaultFromSessionId]);
+  }, [isOpen, classSessions, classData, defaultFromSessionId, canRunPast]);
 
   // Debounced live conflict check
   useEffect(() => {
@@ -516,6 +530,7 @@ export function UpdateCycleDialog({
                         <Label>Chọn ngày</Label>
                         <Input
                           type="date"
+                          min={canRunPast ? undefined : today}
                           value={startDate}
                           onChange={(e) => {
                             setStartDate(e.target.value);

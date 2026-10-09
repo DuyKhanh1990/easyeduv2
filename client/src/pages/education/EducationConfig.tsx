@@ -36,7 +36,11 @@ import { Badge } from "@/components/ui/badge";
 import { z } from "zod";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { useAutoInvoicePolicy } from "@/hooks/use-auto-invoice-policy";
-import { AUTO_INVOICE_FEATURE_PERMISSION_RESOURCE } from "@shared/permission-resources";
+import { usePastSchedulePolicy } from "@/hooks/use-past-schedule-policy";
+import {
+  AUTO_INVOICE_FEATURE_PERMISSION_RESOURCE,
+  PAST_SCHEDULE_FEATURE_PERMISSION_RESOURCE,
+} from "@shared/permission-resources";
 import type { AttendanceFeeRule, ScoreCategory, ScoreSheet, ScoreSheetItem } from "@shared/schema";
 
 type ConfigTabPerm = { canAdd: boolean; canEdit: boolean; canDelete: boolean };
@@ -2100,6 +2104,142 @@ function AutoInvoiceConfigTab({ canEdit }: { canEdit: boolean }) {
   );
 }
 
+function PastScheduleConfigCard({ canEdit }: { canEdit: boolean }) {
+  const { toast } = useToast();
+  const {
+    data: departments = [],
+    isFetched: departmentsFetched,
+    isError: departmentsError,
+    refetch: refetchDepartments,
+  } = useQuery<Array<{ id: string; name: string; roles: Array<{ id: string; name: string }> }>>({
+    queryKey: ["/api/departments"],
+    staleTime: STATIC_STALE_TIME,
+  });
+  const policyQuery = usePastSchedulePolicy(true);
+  const policy = policyQuery.data;
+  const [enabled, setEnabled] = useState(false);
+  const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
+  const [policyInitialized, setPolicyInitialized] = useState(false);
+  const availableRoleIds = policy?.roleIds;
+  const roleOptions = departments.flatMap((department) =>
+    department.roles.map((role) => ({
+      label: `${department.name} — ${role.name}`,
+      value: role.id,
+    })),
+  );
+
+  useEffect(() => {
+    if (policyQuery.isFetching) {
+      setPolicyInitialized(false);
+      return;
+    }
+    if (!policy || !Array.isArray(policy.roleIds)) return;
+    setEnabled(policy.enabled);
+    setSelectedRoleIds(policy.roleIds);
+    setPolicyInitialized(true);
+  }, [policy?.enabled, policy?.roleIds, policyQuery.isFetching]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => apiRequest("PUT", "/api/system-settings/past-schedule", {
+      enabled,
+      roleIds: selectedRoleIds,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/system-settings/past-schedule"] });
+      toast({ title: "Đã lưu cấu hình chạy lịch học trong quá khứ" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Lỗi khi lưu", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const canLoadRoles = !!policy
+    && Array.isArray(availableRoleIds)
+    && policyInitialized
+    && departmentsFetched
+    && !departmentsError
+    && !policyQuery.isFetching;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base font-semibold">
+          <Settings2 className="h-4 w-4" />
+          Chạy lịch học trong quá khứ
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Cho phép các vai trò được chọn tạo hoặc điều chỉnh lịch có ngày trước hôm nay. Ngày được tính theo múi giờ Bangkok.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {policyQuery.isError ? (
+          <div className="space-y-2">
+            <p className="text-sm text-destructive">Không thể tải cấu hình chạy lịch học trong quá khứ.</p>
+            <Button type="button" variant="outline" onClick={() => policyQuery.refetch()}>
+              Thử tải lại
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between gap-4 rounded-md border p-4">
+              <div className="space-y-1">
+                <Label htmlFor="past-schedule-enabled" className="font-medium">Cho phép chạy lịch quá khứ</Label>
+                <p className="text-xs text-muted-foreground">
+                  {enabled ? "Đang bật cho các vai trò được chọn." : "Đang tắt; buổi quá khứ bị khóa với vai trò thông thường."}
+                </p>
+              </div>
+              <Switch
+                id="past-schedule-enabled"
+                checked={enabled}
+                onCheckedChange={setEnabled}
+                disabled={!canEdit || !canLoadRoles || saveMutation.isPending}
+                aria-label="Cho phép chạy lịch học trong quá khứ"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Vai trò được phép</Label>
+              <p className="text-xs text-muted-foreground">
+                Super Admin luôn có thể ghi đè. Chỉ vai trò được chọn mới thao tác lịch trước hôm nay khi công tắc bật.
+              </p>
+              {departmentsError ? (
+                <div className="space-y-2">
+                  <p className="text-sm text-destructive">Không thể tải danh sách vai trò.</p>
+                  <Button type="button" variant="outline" onClick={() => refetchDepartments()}>
+                    Tải lại danh sách
+                  </Button>
+                </div>
+              ) : canLoadRoles ? (
+                <MultiSelect
+                  key={availableRoleIds.join(",") || "empty"}
+                  options={roleOptions}
+                  onValueChange={setSelectedRoleIds}
+                  defaultValue={availableRoleIds}
+                  placeholder="Chọn vai trò được phép…"
+                  maxCount={5}
+                  disabled={!canEdit || saveMutation.isPending}
+                />
+              ) : (
+                <div className="h-9 rounded-md border bg-muted/30 animate-pulse" />
+              )}
+            </div>
+
+            <div className="pt-2">
+              <Button
+                type="button"
+                onClick={() => saveMutation.mutate()}
+                disabled={!canEdit || !canLoadRoles || policyQuery.isError || saveMutation.isPending}
+              >
+                {saveMutation.isPending ? "Đang lưu…" : "Lưu cấu hình"}
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function EducationConfig() {
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
@@ -2382,8 +2522,17 @@ export default function EducationConfig() {
                 <Card><CardContent className="p-6 text-sm text-muted-foreground">Đang kiểm tra quyền truy cập…</CardContent></Card>
               ) : myPerms === null ? (
                 <Card><CardContent className="p-6 text-sm text-muted-foreground">Bạn không có quyền xem mục cấu hình này.</CardContent></Card>
-              ) : myPerms.isSuperAdmin || myPerms.permissions[AUTO_INVOICE_FEATURE_PERMISSION_RESOURCE]?.canView ? (
-                <AutoInvoiceConfigTab canEdit={buildTabPerm(myPerms, "other-config").canEdit} />
+              ) : (myPerms.isSuperAdmin
+                || myPerms.permissions[AUTO_INVOICE_FEATURE_PERMISSION_RESOURCE]?.canView
+                || myPerms.permissions[PAST_SCHEDULE_FEATURE_PERMISSION_RESOURCE]?.canView) ? (
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  {(myPerms.isSuperAdmin || myPerms.permissions[AUTO_INVOICE_FEATURE_PERMISSION_RESOURCE]?.canView) && (
+                    <AutoInvoiceConfigTab canEdit={buildTabPerm(myPerms, "other-config").canEdit} />
+                  )}
+                  {(myPerms.isSuperAdmin || myPerms.permissions[PAST_SCHEDULE_FEATURE_PERMISSION_RESOURCE]?.canView) && (
+                    <PastScheduleConfigCard canEdit={buildTabPerm(myPerms, "other-config").canEdit} />
+                  )}
+                </div>
               ) : (
                 <Card><CardContent className="p-6 text-sm text-muted-foreground">Không có mục cấu hình nào được cấp quyền cho vai trò này.</CardContent></Card>
               )}

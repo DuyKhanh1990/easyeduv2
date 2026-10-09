@@ -1,9 +1,12 @@
 import { useState, useEffect } from "react";
 import { isSameDay } from "date-fns";
+import { usePastSchedulePolicy } from "@/hooks/use-past-schedule-policy";
+import { getCenterDateString, isPastCenterDate } from "@/lib/center-time-format";
 
 export interface ScheduleHeaderActions {
   selectedSessionId: string | null;
   isCancelled: boolean;
+  isPastReadOnly: boolean;
   openContent: () => void;
   openUpdateSession: () => void;
   openChangeTeacher: () => void;
@@ -32,6 +35,9 @@ export function useScheduleTab({
   const [sessionPage, setSessionPage] = useState(0);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
+  const { data: pastSchedulePolicy } = usePastSchedulePolicy(true);
+  const canRunPast = pastSchedulePolicy?.canRunPast === true;
+  const today = getCenterDateString();
 
   const [isCancelSessionsDialogOpen, setIsCancelSessionsDialogOpen] = useState(false);
   const [isDeleteScheduleOpen, setIsDeleteScheduleOpen] = useState(false);
@@ -119,9 +125,15 @@ export function useScheduleTab({
       return;
     }
     const session = classSessions?.find((s) => s.id === selectedClassSessionId);
+    const isPastReadOnly = Boolean(
+      session?.sessionDate
+      && isPastCenterDate(session.sessionDate, today)
+      && !canRunPast,
+    );
     onActionsChange({
       selectedSessionId: selectedClassSessionId,
       isCancelled: session?.status === "cancelled",
+      isPastReadOnly,
       openContent: () => setIsSessionContentDialogOpen(true),
       openUpdateSession: () => setIsUpdateSessionOpen(true),
       openChangeTeacher: () => setIsChangeTeacherOpen(true),
@@ -133,7 +145,7 @@ export function useScheduleTab({
       openExcludeSession: () => setIsExcludeSessionsOpen(true),
       openDeleteSchedule: () => setIsDeleteScheduleOpen(true),
     });
-  }, [selectedClassSessionId, classSessions, onActionsChange]);
+  }, [selectedClassSessionId, classSessions, onActionsChange, canRunPast, today]);
 
   return {
     selectedClassSessionId,

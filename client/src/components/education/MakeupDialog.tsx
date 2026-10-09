@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { getCenterDateString, isPastCenterDate } from "@/lib/center-time-format";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -75,6 +76,7 @@ export function MakeupDialog({
   onConfirm,
   isPending,
 }: MakeupDialogProps) {
+  const today = getCenterDateString();
   const [option, setOption] = useState<string>("current_class");
   const [subOption, setSubOption] = useState<string>("specific_session");
   const [selectedTargetSessionId, setSelectedTargetSessionId] = useState<string>("");
@@ -292,10 +294,8 @@ export function MakeupDialog({
     )
   );
 
-  const todayForOther = new Date();
-  todayForOther.setHours(0, 0, 0, 0);
   const futureTargetSessions = targetClassSessions.filter(
-    (s) => s.status !== "cancelled" && new Date(s.sessionDate) >= todayForOther
+    (s) => s.status !== "cancelled" && !isPastCenterDate(s.sessionDate, today)
   );
 
   // ── Categorize other-class sessions (available / partial / occupied) ───────
@@ -372,6 +372,17 @@ export function MakeupDialog({
       }
     }
 
+    for (const session of targetClassSessions) {
+      if (
+        session.status !== "cancelled"
+        && isPastCenterDate(session.sessionDate, today)
+        && !occupied.some((item) => item.id === session.id)
+      ) {
+        occupied.push(session);
+        statusMap[session.id] = "past";
+      }
+    }
+
     return {
       otherAllAvailableSessions: available,
       otherPartialSessions: partial,
@@ -379,7 +390,7 @@ export function MakeupDialog({
       otherOccupiedSessions: occupied,
       otherOccupiedStatusMap: statusMap,
     };
-  }, [futureTargetSessions, selectedStudents, targetClassActiveStudents]);
+  }, [futureTargetSessions, targetClassSessions, selectedStudents, targetClassActiveStudents, today]);
 
   // ── Attendance status → Vietnamese label ───────────────────────────────────
   function getAttendanceLabel(status: string | undefined): string {
@@ -390,6 +401,7 @@ export function MakeupDialog({
       case "makeup_done": return "Đã bù";
       case "pending":     return "Chưa điểm danh";
       case "cancelled":   return "Đã huỷ";
+      case "past":        return "Đã qua ngày";
       default:            return "Đã xếp lịch";
     }
   }
@@ -401,12 +413,8 @@ export function MakeupDialog({
   // partialSessionMap    : sessionId → { canAttend[], cannotAttend[] }
   // occupiedStatusMap    : sessionId → attendanceStatus
   const { allAvailableSessions, partialSessions, partialSessionMap, occupiedSessions, occupiedStatusMap } = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
      const future = currentClassSessions.filter((session) => {
-      const sessionDate = new Date(session.sessionDate);
-      if (sessionDate < today) return false;
+      if (isPastCenterDate(session.sessionDate, today)) return false;
       const isOriginal = selectedStudents.some(
         (st) =>
           st.original_session_id === session.id ||
@@ -481,6 +489,21 @@ export function MakeupDialog({
       }
     }
 
+    for (const session of currentClassSessions) {
+      const isOriginal = selectedStudents.some(
+        (student) => student.original_session_id === session.id || student.classSessionId === session.id,
+      );
+      if (
+        !isOriginal
+        && session.status !== "cancelled"
+        && isPastCenterDate(session.sessionDate, today)
+        && !occupied.some((item) => item.id === session.id)
+      ) {
+        occupied.push(session);
+        statusMap[session.id] = "past";
+      }
+    }
+
     return {
       allAvailableSessions: allAvailable,
       partialSessions: partial,
@@ -488,7 +511,7 @@ export function MakeupDialog({
       occupiedSessions: occupied,
       occupiedStatusMap: statusMap,
     };
-   }, [currentClassSessions, selectedStudents, currentClassId]);
+   }, [currentClassSessions, selectedStudents, currentClassId, today]);
 
   // Bulk makeup requires every selected student to share the same target
   // session. Partial sessions remain visible for explanation but are disabled.
@@ -1203,11 +1226,9 @@ export function MakeupDialog({
                                         setNewScheduleConfig(next);
                                         setDatePickerOpen((prev) => ({ ...prev, [dayIdx]: false }));
                                       }}
-                                      disabled={(date) => {
-                                        const today = new Date();
-                                        today.setHours(0, 0, 0, 0);
-                                        return date < today || date.getDay() !== dayConfig.weekday;
-                                      }}
+                                      disabled={(date) =>
+                                        isPastCenterDate(date, today) || date.getDay() !== dayConfig.weekday
+                                      }
                                       initialFocus
                                     />
                                   </PopoverContent>

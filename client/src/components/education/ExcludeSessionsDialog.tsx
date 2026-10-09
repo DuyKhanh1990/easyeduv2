@@ -26,6 +26,8 @@ import { format } from "date-fns";
 import { vi } from "date-fns/locale";
 import { ConflictDetailSheet } from "@/components/education/ConflictDetailSheet";
 import type { ConflictItem } from "@/components/education/ConflictDetailSheet";
+import { usePastSchedulePolicy } from "@/hooks/use-past-schedule-policy";
+import { getCenterDateString, isPastCenterDate } from "@/lib/center-time-format";
 
 interface ExcludeSessionsDialogProps {
   isOpen: boolean;
@@ -76,6 +78,12 @@ export function ExcludeSessionsDialog({
   const [reason, setReason] = useState<string>("");
   const [showWarning, setShowWarning] = useState(false);
   const { toast } = useToast();
+  const { data: pastSchedulePolicy } = usePastSchedulePolicy(isOpen);
+  const canRunPast = pastSchedulePolicy?.canRunPast === true;
+  const today = getCenterDateString();
+  const selectableSessions = classSessions.filter((session) =>
+    canRunPast || !session.sessionDate || !isPastCenterDate(session.sessionDate),
+  );
 
   // Live conflict check
   const [liveConflicts, setLiveConflicts] = useState<ConflictItem[]>([]);
@@ -85,12 +93,13 @@ export function ExcludeSessionsDialog({
 
   useEffect(() => {
     if (isOpen && currentSessionId) {
-      const defaultSession = classSessions.find(s => s.id === currentSessionId);
+      const defaultSession = selectableSessions.find(s => s.id === currentSessionId)
+        ?? selectableSessions[0];
       if (defaultSession) {
         setRanges([{ fromSessionId: defaultSession.id, toSessionId: defaultSession.id }]);
       }
     }
-  }, [isOpen, currentSessionId, classSessions]);
+  }, [isOpen, currentSessionId, classSessions, canRunPast]);
 
   // Debounced live conflict check — watches validRanges changes
   const validRanges = ranges.filter(r => r.fromSessionId && r.toSessionId);
@@ -265,11 +274,19 @@ export function ExcludeSessionsDialog({
                               <SelectValue placeholder="Chọn buổi" />
                             </SelectTrigger>
                             <SelectContent>
-                              {classSessions.map((s) => (
-                                <SelectItem key={s.id} value={s.id} className="text-xs">
+                              {classSessions.map((s) => {
+                                const pastRestricted = !canRunPast
+                                  && s.sessionDate
+                                  && isPastCenterDate(s.sessionDate, today);
+                                return <SelectItem
+                                  key={s.id}
+                                  value={s.id}
+                                  className={`text-xs ${pastRestricted ? "opacity-50" : ""}`}
+                                  disabled={Boolean(pastRestricted)}
+                                >
                                   Buổi {String(s.sessionIndex ?? "?").padStart(2, '0')}: {format(new Date(s.sessionDate), "EEE d/M/yy HH:mm", { locale: vi })}
-                                </SelectItem>
-                              ))}
+                                </SelectItem>;
+                              })}
                             </SelectContent>
                           </Select>
                         </div>
@@ -284,11 +301,19 @@ export function ExcludeSessionsDialog({
                               <SelectValue placeholder="Chọn buổi" />
                             </SelectTrigger>
                             <SelectContent>
-                              {classSessions.map((s) => (
-                                <SelectItem key={s.id} value={s.id} className="text-xs">
+                              {classSessions.map((s) => {
+                                const pastRestricted = !canRunPast
+                                  && s.sessionDate
+                                  && isPastCenterDate(s.sessionDate, today);
+                                return <SelectItem
+                                  key={s.id}
+                                  value={s.id}
+                                  className={`text-xs ${pastRestricted ? "opacity-50" : ""}`}
+                                  disabled={Boolean(pastRestricted)}
+                                >
                                   Buổi {String(s.sessionIndex ?? "?").padStart(2, '0')}: {format(new Date(s.sessionDate), "EEE d/M/yy HH:mm", { locale: vi })}
-                                </SelectItem>
-                              ))}
+                                </SelectItem>;
+                              })}
                             </SelectContent>
                           </Select>
                         </div>

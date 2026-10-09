@@ -19,6 +19,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { AlertCircle } from "lucide-react";
+import { usePastSchedulePolicy } from "@/hooks/use-past-schedule-policy";
+import { getCenterDateString, isPastCenterDate } from "@/lib/center-time-format";
 
 export function CancelSessionsDialog({
   isOpen,
@@ -38,24 +40,30 @@ export function CancelSessionsDialog({
   const [fromSessionId, setFromSessionId] = useState<string>("");
   const [toSessionId, setToSessionId] = useState<string>("");
   const [reason, setReason] = useState<string>("");
+  const { data: pastSchedulePolicy } = usePastSchedulePolicy(isOpen);
+  const canRunPast = pastSchedulePolicy?.canRunPast === true;
+  const today = getCenterDateString();
+  const selectableSessions = (classSessions ?? []).filter((session) =>
+    canRunPast || !session.sessionDate || !isPastCenterDate(session.sessionDate),
+  );
 
   useEffect(() => {
     if (isOpen) {
-      if (selectedSessionId) {
+      if (selectedSessionId && selectableSessions.some((session) => session.id === selectedSessionId)) {
         setFromSessionId(selectedSessionId);
-      } else if (classSessions?.length > 0) {
-        setFromSessionId(classSessions[0].id);
+      } else if (selectableSessions.length > 0) {
+        setFromSessionId(selectableSessions[0].id);
       }
 
-      if (classSessions?.length > 0) {
-        const lastSession = classSessions.reduce((latest, current) =>
+      if (selectableSessions.length > 0) {
+        const lastSession = selectableSessions.reduce((latest, current) =>
           (current.sessionIndex ?? -1) > (latest.sessionIndex ?? -1) ? current : latest
         );
         setToSessionId(lastSession.id);
       }
       setReason("");
     }
-  }, [isOpen, selectedSessionId, classSessions]);
+  }, [isOpen, selectedSessionId, classSessions, canRunPast]);
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -73,12 +81,20 @@ export function CancelSessionsDialog({
                   <SelectValue placeholder="Chọn buổi" />
                 </SelectTrigger>
                 <SelectContent>
-                  {classSessions?.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
+                  {(classSessions ?? []).map((s) => {
+                    const pastRestricted = !canRunPast
+                      && s.sessionDate
+                      && isPastCenterDate(s.sessionDate, today);
+                    return <SelectItem
+                      key={s.id}
+                      value={s.id}
+                      disabled={Boolean(pastRestricted)}
+                      className={pastRestricted ? "opacity-50" : undefined}
+                    >
                       Buổi {String(s.sessionIndex || "").padStart(2, "0")} -{" "}
                       {format(new Date(s.sessionDate), "dd/MM/yyyy")}
-                    </SelectItem>
-                  ))}
+                    </SelectItem>;
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -89,12 +105,20 @@ export function CancelSessionsDialog({
                   <SelectValue placeholder="Chọn buổi" />
                 </SelectTrigger>
                 <SelectContent>
-                  {classSessions?.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
+                  {(classSessions ?? []).map((s) => {
+                    const pastRestricted = !canRunPast
+                      && s.sessionDate
+                      && isPastCenterDate(s.sessionDate, today);
+                    return <SelectItem
+                      key={s.id}
+                      value={s.id}
+                      disabled={Boolean(pastRestricted)}
+                      className={pastRestricted ? "opacity-50" : undefined}
+                    >
                       Buổi {String(s.sessionIndex || "").padStart(2, "0")} -{" "}
                       {format(new Date(s.sessionDate), "dd/MM/yyyy")}
-                    </SelectItem>
-                  ))}
+                    </SelectItem>;
+                  })}
                 </SelectContent>
               </Select>
             </div>

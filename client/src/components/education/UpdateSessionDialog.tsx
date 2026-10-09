@@ -33,6 +33,8 @@ import {
   resolveTeacherRoleId,
 } from "@/lib/staff-role-options";
 import { isTeacherTimeRangeWithinShift } from "@shared/teacher-time-assignments";
+import { usePastSchedulePolicy } from "@/hooks/use-past-schedule-policy";
+import { getCenterDateString, isPastCenterDate } from "@/lib/center-time-format";
 
 const USE_DEFAULT_ROLE = "__use_default_role__";
 
@@ -64,6 +66,9 @@ export function UpdateSessionDialog({
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [confirmIndexChange, setConfirmIndexChange] = useState(false);
   const [pendingUpdate, setPendingUpdate] = useState<any>(null);
+  const { data: pastSchedulePolicy } = usePastSchedulePolicy(isOpen);
+  const canRunPast = pastSchedulePolicy?.canRunPast === true;
+  const today = getCenterDateString();
 
   // Live conflict check state
   const [liveConflicts, setLiveConflicts] = useState<ConflictItem[]>([]);
@@ -351,6 +356,7 @@ export function UpdateSessionDialog({
                     mode="single"
                     selected={sessionDate ? new Date(sessionDate) : undefined}
                     onSelect={(date) => date && setSessionDate(format(date, "yyyy-MM-dd"))}
+                    disabled={(date) => !canRunPast && isPastCenterDate(date, today)}
                     initialFocus
                   />
                 </PopoverContent>

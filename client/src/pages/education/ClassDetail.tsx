@@ -447,17 +447,22 @@ export function ClassDetail() {
                   )}
                   {scheduleActions?.selectedSessionId && (
                     <>
-                      {classPerm.canEdit && (
+                      {scheduleActions.isPastReadOnly && (
+                        <p className="text-xs text-muted-foreground">
+                          Buổi học đã qua ngày; quyền hiện tại chỉ cho phép xem.
+                        </p>
+                      )}
+                      {classPerm.canEdit && !scheduleActions.isPastReadOnly && (
                         <button className={actionBtn("from-sky-500 to-blue-500")} onClick={() => scheduleActions.openUpdateSession()}>
                           <RefreshCw className="h-3 w-3" /> Cập nhật buổi
                         </button>
                       )}
-                      {classPerm.canEdit && (
+                      {classPerm.canEdit && !scheduleActions.isPastReadOnly && (
                         <button className={actionBtn("from-amber-500 to-orange-500")} onClick={() => scheduleActions.openChangeTeacher()}>
                           <UserCog className="h-3 w-3" /> Đổi giáo viên
                         </button>
                       )}
-                      {classPerm.canEdit && (
+                      {classPerm.canEdit && !scheduleActions.isPastReadOnly && (
                         <button
                           className={actionBtn("from-red-500 to-rose-500", scheduleActions.isCancelled ? "opacity-50 cursor-not-allowed" : "")}
                           disabled={scheduleActions.isCancelled}
@@ -466,17 +471,17 @@ export function ClassDetail() {
                           <XCircle className="h-3 w-3" /> Huỷ buổi
                         </button>
                       )}
-                      {classPerm.canEdit && (
+                      {classPerm.canEdit && !scheduleActions.isPastReadOnly && (
                         <button className={actionBtn("from-emerald-500 to-teal-500")} onClick={() => scheduleActions.openUpdateCycle()}>
                           <Calendar className="h-3 w-3" /> Cập nhật chu kỳ
                         </button>
                       )}
-                      {classPerm.canEdit && (
+                      {classPerm.canEdit && !scheduleActions.isPastReadOnly && (
                         <button className={actionBtn("from-slate-500 to-slate-600")} onClick={() => scheduleActions.openExcludeSession()}>
                           ··· Loại trừ ngày
                         </button>
                       )}
-                      {classPerm.canDelete && (
+                      {classPerm.canDelete && !scheduleActions.isPastReadOnly && (
                         <button className={actionBtn("from-rose-500 to-red-600")} onClick={() => scheduleActions.openDeleteSchedule()}>
                           <Trash2 className="h-3 w-3" /> Xoá lịch
                         </button>

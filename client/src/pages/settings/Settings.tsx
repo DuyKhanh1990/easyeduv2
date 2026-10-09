@@ -111,13 +111,13 @@ export function Settings() {
   const deleteRole = useDeleteRole();
 
   const { data: myPerms } = useMyPermissions();
-  const locPerm = buildSettingsTabPerm(myPerms, "locations");
-  const deptPerm = buildSettingsTabPerm(myPerms, "departments");
-  const canViewLoc = canViewSettingsTab(myPerms, "locations");
-  const canViewDept = canViewSettingsTab(myPerms, "departments");
-  const canViewPermTab = canViewSettingsTab(myPerms, "permissions");
-  const canViewHolidays = canViewSettingsTab(myPerms, "holidays");
-  const holidayPerm = buildSettingsTabPerm(myPerms, "holidays");
+  const locPerm = buildSettingsTabPerm(myPerms ?? undefined, "locations");
+  const deptPerm = buildSettingsTabPerm(myPerms ?? undefined, "departments");
+  const canViewLoc = canViewSettingsTab(myPerms ?? undefined, "locations");
+  const canViewDept = canViewSettingsTab(myPerms ?? undefined, "departments");
+  const canViewPermTab = canViewSettingsTab(myPerms ?? undefined, "permissions");
+  const canViewHolidays = canViewSettingsTab(myPerms ?? undefined, "holidays");
+  const holidayPerm = buildSettingsTabPerm(myPerms ?? undefined, "holidays");
   const permTabRaw = !myPerms ? { canViewAll: true, canCreate: true, canEdit: true }
     : myPerms.isSuperAdmin ? { canViewAll: true, canCreate: true, canEdit: true }
     : {
@@ -1943,6 +1943,7 @@ const PERM_DESCRIPTIONS: Record<string, string> = {
   "/settings#permissions": "Xem: nhân sự có quyền xem phân quyền các vai trò. Xem all: nhân sự có quyền xem tất cả. Thêm / Sửa: quản trị viên có quyền cấp và thu hồi quyền truy cập cho từng vai trò (không thể xoá bản ghi quyền).",
   [EDUCATION_OTHER_CONFIG_RESOURCE]: "Xem: truy cập tab Cấu hình khác. Sửa: thay đổi cấu hình mặc định và danh sách vai trò được phép ghi đè.",
   [getSubFeaturePermissionResource("/education-config", "other-config", "auto-invoice")]: "Tích để hiển thị mục cấu hình hóa đơn tự động trong tab Cấu hình khác.",
+  [getSubFeaturePermissionResource("/education-config", "other-config", "past-schedule")]: "Tích để hiển thị cấu hình cho phép một số vai trò thao tác lịch học trước ngày hiện tại.",
   "/settings#ai-accounts": "Xem: nhân sự có quyền xem danh sách tài khoản AI. Xem all: nhân sự có quyền xem tất cả. Thêm / Sửa / Xoá: quản trị viên có quyền thêm mới, chỉnh sửa và xoá tài khoản AI (OpenAI, Gemini) trong hệ thống.",
   "/settings#providers": "Xem: nhân sự có quyền xem danh sách kết nối nhà cung cấp. Xem all: nhân sự có quyền xem tất cả. Thêm / Sửa / Xoá: quản trị viên có quyền thêm mới, chỉnh sửa và xoá kết nối các nhà cung cấp dịch vụ bên ngoài.",
   "/settings#holidays": "Xem / Xem all: nhân sự có quyền xem danh sách ngày nghỉ lễ. Thêm / Sửa / Xoá: quản trị viên có quyền thêm mới, chỉnh sửa và xoá các ngày nghỉ lễ trong năm.",
@@ -2020,6 +2021,7 @@ const PERM_DESCRIPTIONS_EN: Record<string, string> = {
   "/education-config#online-learning": "View: view online learning settings. View All: view all settings. Create / Edit / Delete: manage online learning platform settings.",
   [EDUCATION_OTHER_CONFIG_RESOURCE]: "View: access the Other configuration tab. Edit: change the default setting and the roles allowed to override it.",
   [getSubFeaturePermissionResource("/education-config", "other-config", "auto-invoice")]: "Check to show the automatic invoice configuration on the Other configuration tab.",
+  [getSubFeaturePermissionResource("/education-config", "other-config", "past-schedule")]: "Check to show the setting that allows selected roles to manage schedules dated before today.",
   "/store#nhap-kho": "View: view stock receipt notes. View All: view all stock receipts in the branch. Create / Edit / Delete: manage stock receipts.",
   "/store#xuat-kho": "View: view stock issue notes. View All: view all stock issues. Create / Edit / Delete: manage stock issues.",
   "/store#chuyen-kho": "View: view stock transfer notes. View All: view all transfers. Create / Edit / Delete: manage stock transfers between warehouses.",

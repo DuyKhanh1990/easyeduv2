@@ -23,6 +23,7 @@
 - [Page guide edit permissions](page-guide-edit-permissions.md) — tài liệu riêng theo từng trang; chỉ host gốc và Super Admin được sửa, host khác chỉ đọc.
 - [Schedule popup responsiveness](schedule-popup-responsiveness.md) — ưu tiên hiển thị popup lịch học trước khi mount cây component nặng; không thay đổi cơ chế chi tiết theo session.
 - [Schedule read access](schedule-permission-read-scope.md) — scope API đọc theo lớp/vị trí được giao; giữ API TEST dùng chung tách biệt và quyền ghi riêng.
+- [Past schedule access](past-schedule-access.md) — chỉ ngày trước hôm nay ở Asia/Bangkok là quá khứ; server kiểm tra mọi thao tác và target buổi bù luôn phải từ hôm nay.
 - [CRM relationship history preservation](crm-relationship-history-preservation.md) — không backfill relationship IDs bằng tên pipeline lúc khởi động; tên trùng có thể khôi phục nhầm quan hệ đã xóa.
 - [CRM relationship filter scope](crm-relationship-filter-scope.md) — bộ lọc Mối quan hệ chỉ có tiêu đề nhóm và mục con; loại quan hệ rời khỏi danh sách chọn.
 - [Invoice editable dates](invoice-editable-dates.md) — ngày tạo và ngày thanh toán được sửa inline; ngày thanh toán không được trước ngày tạo và mọi thay đổi phải vào audit history.

@@ -15,6 +15,8 @@ import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { useToast } from "@/hooks/use-toast";
+import { usePastSchedulePolicy } from "@/hooks/use-past-schedule-policy";
+import { getCenterDateString, isPastCenterDate } from "@/lib/center-time-format";
 
 const WEEKDAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 
@@ -37,6 +39,9 @@ export function ClassScheduleSetupDialog({
 }: ClassScheduleSetupDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const pastSchedulePolicyQuery = usePastSchedulePolicy(isOpen);
+  const canRunPast = pastSchedulePolicyQuery.data?.canRunPast === true;
+  const today = getCenterDateString();
   const effectiveLocationId = locationId || classData?.locationId;
 
   // Step 1 fields
@@ -172,6 +177,15 @@ export function ClassScheduleSetupDialog({
 
   const handleSave = async () => {
     if (!isValid) return;
+    const effectiveStartDate = startDate ?? (classData?.startDate ? new Date(classData.startDate) : undefined);
+    if (!canRunPast && effectiveStartDate && isPastCenterDate(effectiveStartDate, today)) {
+      toast({
+        title: "Không thể tạo lịch trước hôm nay",
+        description: "Chọn hôm nay hoặc một ngày sau làm ngày bắt đầu.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsSaving(true);
     try {
       const payload: any = {
@@ -377,7 +391,13 @@ export function ClassScheduleSetupDialog({
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0">
-                    <CalendarComponent mode="single" selected={startDate} onSelect={setStartDate} initialFocus />
+                    <CalendarComponent
+                      mode="single"
+                      selected={startDate}
+                      onSelect={setStartDate}
+                      disabled={(date) => !canRunPast && isPastCenterDate(date, today)}
+                      initialFocus
+                    />
                   </PopoverContent>
                 </Popover>
               </div>
@@ -415,7 +435,13 @@ export function ClassScheduleSetupDialog({
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0">
-                        <CalendarComponent mode="single" selected={endDate} onSelect={setEndDate} initialFocus />
+                        <CalendarComponent
+                          mode="single"
+                          selected={endDate}
+                          onSelect={setEndDate}
+                          disabled={(date) => !canRunPast && isPastCenterDate(date, today)}
+                          initialFocus
+                        />
                       </PopoverContent>
                     </Popover>
                   )}

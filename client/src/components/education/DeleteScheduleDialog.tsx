@@ -14,6 +14,8 @@ import { AlertCircle, Trash2 } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { usePastSchedulePolicy } from "@/hooks/use-past-schedule-policy";
+import { getCenterDateString, isPastCenterDate } from "@/lib/center-time-format";
 
 interface DeleteScheduleDialogProps {
   isOpen: boolean;
@@ -21,6 +23,7 @@ interface DeleteScheduleDialogProps {
   classId: string;
   sessionId: string;
   sessionIndex: number;
+  classSessions: any[];
 }
 
 export function DeleteScheduleDialog({
@@ -28,7 +31,8 @@ export function DeleteScheduleDialog({
   onOpenChange,
   classId,
   sessionId,
-  sessionIndex
+  sessionIndex,
+  classSessions,
 }: DeleteScheduleDialogProps) {
   const [deleteType, setDeleteType] = useState<"single" | "next" | "all">("single");
   const [showWarning, setShowWarning] = useState(false);
@@ -36,6 +40,18 @@ export function DeleteScheduleDialog({
   const [orphanedStudents, setOrphanedStudents] = useState<Array<{ studentClassId: string; studentId: string; studentName: string }>>([]);
   const [pendingDeleteMode, setPendingDeleteMode] = useState<"force" | "skip_attended">("skip_attended");
   const { toast } = useToast();
+  const { data: pastSchedulePolicy } = usePastSchedulePolicy(isOpen);
+  const canRunPast = pastSchedulePolicy?.canRunPast === true;
+  const today = getCenterDateString();
+  const affectedSessions = classSessions.filter((session) =>
+    deleteType === "all"
+      || (deleteType === "single" && session.id === sessionId)
+      || (deleteType === "next" && Number(session.sessionIndex) >= Number(sessionIndex)),
+  );
+  const deleteBlockedByPast = !canRunPast
+    && affectedSessions.some((session) =>
+      session.sessionDate && isPastCenterDate(session.sessionDate, today),
+    );
 
   useEffect(() => {
     if (!isOpen) {
@@ -45,6 +61,12 @@ export function DeleteScheduleDialog({
       setPendingDeleteMode("skip_attended");
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && deleteBlockedByPast && deleteType !== "single") {
+      setDeleteType("single");
+    }
+  }, [isOpen, deleteBlockedByPast, deleteType]);
 
   const checkAttendanceMutation = useMutation({
     mutationFn: async () => {
@@ -174,12 +196,20 @@ export function DeleteScheduleDialog({
                 <RadioGroupItem value="single" id="single" />
                 <Label htmlFor="single" className="flex-1 cursor-pointer font-medium">Xóa buổi này (Buổi {sessionIndex})</Label>
               </div>
-              <div className="flex items-center space-x-3 space-y-0 border rounded-md p-3 cursor-pointer hover:bg-accent transition-colors">
-                <RadioGroupItem value="next" id="next" />
+              <div className={`flex items-center space-x-3 space-y-0 border rounded-md p-3 transition-colors ${!canRunPast && classSessions.some((session) => Number(session.sessionIndex) >= Number(sessionIndex) && session.sessionDate && isPastCenterDate(session.sessionDate, today)) ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-accent"}`}>
+                <RadioGroupItem
+                  value="next"
+                  id="next"
+                  disabled={!canRunPast && classSessions.some((session) => Number(session.sessionIndex) >= Number(sessionIndex) && session.sessionDate && isPastCenterDate(session.sessionDate, today))}
+                />
                 <Label htmlFor="next" className="flex-1 cursor-pointer font-medium">Xóa các buổi kế tiếp (Từ buổi {sessionIndex} đến hết)</Label>
               </div>
-              <div className="flex items-center space-x-3 space-y-0 border rounded-md p-3 cursor-pointer hover:bg-accent transition-colors">
-                <RadioGroupItem value="all" id="all" />
+              <div className={`flex items-center space-x-3 space-y-0 border rounded-md p-3 transition-colors ${!canRunPast && classSessions.some((session) => session.sessionDate && isPastCenterDate(session.sessionDate, today)) ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-accent"}`}>
+                <RadioGroupItem
+                  value="all"
+                  id="all"
+                  disabled={!canRunPast && classSessions.some((session) => session.sessionDate && isPastCenterDate(session.sessionDate, today))}
+                />
                 <Label htmlFor="all" className="flex-1 cursor-pointer font-medium">Xóa toàn bộ lịch của lớp</Label>
               </div>
             </RadioGroup>

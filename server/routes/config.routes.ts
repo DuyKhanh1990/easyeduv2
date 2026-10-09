@@ -59,7 +59,15 @@ import {
   getAutoInvoicePolicy,
   hasEducationConfigPermission,
 } from "../lib/auto-invoice-policy";
-import { EDUCATION_OTHER_CONFIG_RESOURCE } from "@shared/permission-resources";
+import {
+  EDUCATION_OTHER_CONFIG_RESOURCE,
+  PAST_SCHEDULE_FEATURE_PERMISSION_RESOURCE,
+} from "@shared/permission-resources";
+import {
+  canRunPastSchedule,
+  getPastSchedulePolicy,
+  PAST_SCHEDULE_POLICY_SETTINGS_KEY,
+} from "../lib/past-schedule-policy";
 
 function getBangkokDateOnly(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -2440,6 +2448,63 @@ export function registerConfigRoutes(app: Express): void {
     } catch (err: any) {
       if (err instanceof z.ZodError) return res.status(400).json(err.errors);
       res.status(500).json({ message: err.message || "Không thể lưu cấu hình hóa đơn tự động." });
+    }
+  });
+
+  app.get("/api/system-settings/past-schedule", async (req, res) => {
+    try {
+      const [policy, canViewFeature] = await Promise.all([
+        getPastSchedulePolicy(),
+        Promise.all([
+          hasEducationConfigPermission(req, EDUCATION_OTHER_CONFIG_RESOURCE, "canView"),
+          hasEducationConfigPermission(req, PAST_SCHEDULE_FEATURE_PERMISSION_RESOURCE, "canView"),
+        ]).then(([canViewTab, canViewChild]) => canViewTab && canViewChild),
+      ]);
+      res.json({
+        enabled: policy.enabled,
+        canRunPast: canRunPastSchedule(req, policy),
+        ...(canViewFeature ? { roleIds: policy.roleIds } : {}),
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Không thể tải cấu hình chạy lịch học trong quá khứ." });
+    }
+  });
+
+  app.put("/api/system-settings/past-schedule", async (req, res) => {
+    try {
+      const [canEditTab, canViewFeature] = await Promise.all([
+        hasEducationConfigPermission(req, EDUCATION_OTHER_CONFIG_RESOURCE, "canEdit"),
+        hasEducationConfigPermission(req, PAST_SCHEDULE_FEATURE_PERMISSION_RESOURCE, "canView"),
+      ]);
+      if (!canEditTab || !canViewFeature) {
+        return res.status(403).json({ message: "Bạn không có quyền sửa cấu hình chạy lịch học trong quá khứ." });
+      }
+
+      const payload = z.object({
+        enabled: z.boolean(),
+        roleIds: z.array(z.string().uuid()).max(500),
+      }).parse(req.body);
+      if (payload.roleIds.length > 0) {
+        const matchingRoles = await db.select({ id: roles.id })
+          .from(roles)
+          .where(inArray(roles.id, payload.roleIds));
+        if (matchingRoles.length !== payload.roleIds.length) {
+          return res.status(400).json({ message: "Danh sách vai trò không hợp lệ." });
+        }
+      }
+
+      const { systemSettings } = await import("@shared/schema");
+      const value = JSON.stringify(payload);
+      await db.insert(systemSettings)
+        .values({ key: PAST_SCHEDULE_POLICY_SETTINGS_KEY, value })
+        .onConflictDoUpdate({
+          target: systemSettings.key,
+          set: { value, updatedAt: new Date() },
+        });
+      res.json({ ...payload, canRunPast: canRunPastSchedule(req, payload) });
+    } catch (err: any) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: "Dữ liệu cấu hình không hợp lệ.", errors: err.errors });
+      res.status(500).json({ message: err.message || "Không thể lưu cấu hình chạy lịch học trong quá khứ." });
     }
   });
 

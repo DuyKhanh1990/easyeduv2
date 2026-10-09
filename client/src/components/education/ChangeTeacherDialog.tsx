@@ -24,6 +24,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ChevronRight, AlertCircle, Search, X } from "lucide-react";
+import { usePastSchedulePolicy } from "@/hooks/use-past-schedule-policy";
+import { getCenterDateString, isPastCenterDate } from "@/lib/center-time-format";
 import {
   getStaffRoleOptions,
   isDefaultTrainingDepartmentStaff,
@@ -54,6 +56,12 @@ export function ChangeTeacherDialog({
   const [toSessionId, setToSessionId] = useState<string>("");
   const [teacherSearch, setTeacherSearch] = useState<string>("");
   const [teacherRoleChanges, setTeacherRoleChanges] = useState<Record<string, string | null>>({});
+  const { data: pastSchedulePolicy } = usePastSchedulePolicy(isOpen);
+  const canRunPast = pastSchedulePolicy?.canRunPast === true;
+  const today = getCenterDateString();
+  const selectableSessions = (classSessions ?? []).filter((session) =>
+    canRunPast || !session.sessionDate || !isPastCenterDate(session.sessionDate),
+  );
 
   const selectedSession = classSessions?.find((s) => s.id === selectedSessionId);
   const currentSessionTeachers: { id: string; fullName: string }[] =
@@ -61,14 +69,14 @@ export function ChangeTeacherDialog({
 
   useEffect(() => {
     if (isOpen) {
-      if (selectedSessionId) {
+      if (selectedSessionId && selectableSessions.some((session) => session.id === selectedSessionId)) {
         setFromSessionId(selectedSessionId);
-      } else if (classSessions?.length > 0) {
-        setFromSessionId(classSessions[0].id);
+      } else if (selectableSessions.length > 0) {
+        setFromSessionId(selectableSessions[0].id);
       }
 
-      if (classSessions?.length > 0) {
-        const lastSession = classSessions.reduce((latest, current) =>
+      if (selectableSessions.length > 0) {
+        const lastSession = selectableSessions.reduce((latest, current) =>
           (current.sessionIndex ?? -1) > (latest.sessionIndex ?? -1) ? current : latest
         );
         setToSessionId(lastSession.id);
@@ -79,7 +87,7 @@ export function ChangeTeacherDialog({
       setTeacherSearch("");
       setTeacherRoleChanges({});
     }
-  }, [isOpen, selectedSessionId, classSessions]);
+  }, [isOpen, selectedSessionId, classSessions, canRunPast]);
 
   const { data: staffList } = useQuery<any[]>({
     queryKey: ["/api/staff?minimal=true"],
@@ -309,12 +317,20 @@ export function ChangeTeacherDialog({
                   <SelectValue placeholder="Chọn buổi" />
                 </SelectTrigger>
                 <SelectContent>
-                  {classSessions?.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
+                  {(classSessions ?? []).map((s) => {
+                    const pastRestricted = !canRunPast
+                      && s.sessionDate
+                      && isPastCenterDate(s.sessionDate, today);
+                    return <SelectItem
+                      key={s.id}
+                      value={s.id}
+                      disabled={Boolean(pastRestricted)}
+                      className={pastRestricted ? "opacity-50" : undefined}
+                    >
                       Buổi {String(s.sessionIndex ?? "?").padStart(2, "0")} -{" "}
                       {format(new Date(s.sessionDate), "dd/MM/yyyy")}
-                    </SelectItem>
-                  ))}
+                    </SelectItem>;
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -325,12 +341,20 @@ export function ChangeTeacherDialog({
                   <SelectValue placeholder="Chọn buổi" />
                 </SelectTrigger>
                 <SelectContent>
-                  {classSessions?.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
+                  {(classSessions ?? []).map((s) => {
+                    const pastRestricted = !canRunPast
+                      && s.sessionDate
+                      && isPastCenterDate(s.sessionDate, today);
+                    return <SelectItem
+                      key={s.id}
+                      value={s.id}
+                      disabled={Boolean(pastRestricted)}
+                      className={pastRestricted ? "opacity-50" : undefined}
+                    >
                       Buổi {String(s.sessionIndex ?? "?").padStart(2, "0")} -{" "}
                       {format(new Date(s.sessionDate), "dd/MM/yyyy")}
-                    </SelectItem>
-                  ))}
+                    </SelectItem>;
+                  })}
                 </SelectContent>
               </Select>
             </div>

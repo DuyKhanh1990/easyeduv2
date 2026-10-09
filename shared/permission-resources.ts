@@ -14,3 +14,9 @@ export const AUTO_INVOICE_FEATURE_PERMISSION_RESOURCE = getSubFeaturePermissionR
   "other-config",
   "auto-invoice",
 );
+
+export const PAST_SCHEDULE_FEATURE_PERMISSION_RESOURCE = getSubFeaturePermissionResource(
+  EDUCATION_CONFIG_HREF,
+  "other-config",
+  "past-schedule",
+);
