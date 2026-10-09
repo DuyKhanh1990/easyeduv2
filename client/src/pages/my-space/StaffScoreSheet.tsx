@@ -530,8 +530,9 @@ export function StaffScoreSheet() {
                           : null;
                         const AssessmentStatusIcon = status?.Icon;
                         const DeadlineStatusIcon = deadlineStatus?.Icon;
-                        const scoreProgressLabel = assessment.studentCount > 0
-                          && assessment.completedStudentCount >= assessment.studentCount
+                        const allStudentsComplete = assessment.studentCount > 0
+                          && assessment.completedStudentCount >= assessment.studentCount;
+                        const scoreProgressLabel = allStudentsComplete
                           ? t("mySpace.scoreSheet.enteredAll")
                           : assessment.enteredStudentCount > 0
                             ? `${assessment.enteredStudentCount}/${assessment.studentCount} ${t("mySpace.scoreSheet.enteredProgress")}`
@@ -593,7 +594,13 @@ export function StaffScoreSheet() {
                                   <Users className="h-3.5 w-3.5 shrink-0" />
                                   {assessment.studentCount ?? 0} {t("mySpace.scoreSheet.studentCount")}
                                 </span>
-                                <span className="inline-flex min-h-5 items-center gap-1 text-xs text-gray-600 dark:text-muted-foreground">
+                                <span
+                                  className={`inline-flex min-h-5 items-center gap-1 text-[11px] font-bold ${
+                                    allStudentsComplete
+                                      ? "text-green-700 dark:text-green-400"
+                                      : "text-gray-600 dark:text-muted-foreground"
+                                  }`}
+                                >
                                   <CircleDot className="h-3.5 w-3.5 shrink-0" />
                                   {scoreProgressLabel}
                                 </span>
