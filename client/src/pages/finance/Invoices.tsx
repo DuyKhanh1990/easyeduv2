@@ -70,6 +70,7 @@ import { useLanguage } from "@/hooks/use-language";
 
 type TabKey = "all" | "unpaid" | "paid" | "confirmed" | "debt" | "history" | "print-template";
 type DebtCondition = "all" | "overdue" | "today" | "soon" | "upcoming" | "no-due-date";
+const INVOICE_PAYMENT_METHOD_FILTER_VALUES = ["cash", "transfer", "deposit_wallet", "card", "installment"] as const;
 
 type SummaryComparison = {
   direction: "up" | "down" | "flat";
@@ -2232,7 +2233,7 @@ export default function Invoices() {
                      { label: t("finance.branch"),             key: "branches",       opts: filterOptions.branches.map(v => ({ value: v, label: v })),       withSearch: false },
                      { label: t("finance.type"),               key: "types",          opts: filterOptions.types.map(v => ({ value: v, label: v })),          withSearch: false },
                      { label: t("finance.category"),           key: "categories",     opts: filterOptions.categories.map(v => ({ value: v, label: v })),     withSearch: false },
-                     { label: t("finance.paymentMethod"),      key: "paymentMethods", opts: filterOptions.paymentMethods.map(v => ({ value: v, label: ({ cash: t("finance.cash"), transfer: t("finance.transfer"), deposit_wallet: t("finance.depositWallet"), card: t("finance.card"), installment: t("finance.installmentPayment") } as Record<string, string>)[v] ?? v })), withSearch: false },
+                     { label: t("finance.paymentMethod"),      key: "paymentMethods", opts: [...new Set([...INVOICE_PAYMENT_METHOD_FILTER_VALUES, ...filterOptions.paymentMethods])].map(v => ({ value: v, label: ({ cash: t("finance.cash"), transfer: t("finance.transfer"), deposit_wallet: t("finance.depositWallet"), card: t("finance.card"), installment: t("finance.installmentPayment") } as Record<string, string>)[v] ?? v })), withSearch: false },
                      { label: t("finance.class"),              key: "classes",        opts: filterOptions.classes.map(v => ({ value: v, label: v })),        withSearch: true },
                      { label: t("finance.creator"),            key: "creators",       opts: filterOptions.creators.map(v => ({ value: v, label: v })),       withSearch: true },
                      { label: t("finance.payer"),              key: "payers",         opts: filterOptions.payers.map(v => ({ value: v, label: v })),         withSearch: true },
