@@ -29,6 +29,7 @@ import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { fmtMoney, getTodayVietnamDate, isInvoicePaidLike } from "@/types/invoice-types";
 import { isLegacyAutoInvoiceDepositDoubleCount } from "@shared/invoice-deposit-accounting";
 import { FinancePromotionDialog, type FinancePromotionType } from "./components/FinancePromotionDialog";
+import { INVOICE_ACCOUNT_OPTIONS } from "./invoiceAccountOptions";
 import { useLanguage } from "@/hooks/use-language";
 
 interface Product {
@@ -327,6 +328,9 @@ function AdjustmentRowsEditor({
 export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }: { open: boolean; onClose: () => void; invoiceId?: string | null; defaultStudent?: { id: string; fullName: string; code: string } | null }) {
   const isEdit = Boolean(invoiceId);
   const { lang, t } = useLanguage();
+  const accountSearchPlaceholder = lang === "en"
+    ? "Search by account code or name..."
+    : "Tìm theo mã hoặc tên tài khoản...";
 
   const [invoiceType, setInvoiceType] = useState<"income" | "expense">("income");
   const [locationId, setLocationId]   = useState<string>("");
@@ -1756,30 +1760,25 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">{invoiceType === "income" ? t("finance.invoiceTypeIncome") : t("finance.invoiceTypeExpense")} <span className="text-red-500">*</span></label>
-                <Select value={account} onValueChange={setAccount}>
-                  <SelectTrigger className="h-9" data-testid="select-account"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="111">111 - {t("finance.create.accountCash")}</SelectItem>
-                    <SelectItem value="112">112 - {t("finance.create.accountBank")}</SelectItem>
-                    <SelectItem value="131">131 - {t("finance.create.accountReceivable")}</SelectItem>
-                    <SelectItem value="141">141 - {t("finance.create.accountAdvance")}</SelectItem>
-                    <SelectItem value="338">338 - {t("finance.create.accountOtherPayable")}</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={account}
+                  onChange={setAccount}
+                  options={INVOICE_ACCOUNT_OPTIONS}
+                  searchPlaceholder={accountSearchPlaceholder}
+                  className="h-9"
+                  data-testid="select-account"
+                />
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">{t("finance.create.counterAccount")}</label>
-                <Select value={counterAccount} onValueChange={setCounterAccount}>
-                  <SelectTrigger className="h-9" data-testid="select-counterpart"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="511">511 - {t("finance.create.accountRevenue")}</SelectItem>
-                    <SelectItem value="711">711 - {t("finance.create.accountOtherIncome")}</SelectItem>
-                    <SelectItem value="3387">3387 - {t("finance.create.accountUnearnedRevenue")}</SelectItem>
-                    <SelectItem value="331">331 - {t("finance.create.accountVendorPayable")}</SelectItem>
-                    <SelectItem value="334">334 - {t("finance.create.accountEmployeePayable")}</SelectItem>
-                    <SelectItem value="642">642 - {t("finance.create.accountAdminExpense")}</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={counterAccount}
+                  onChange={setCounterAccount}
+                  options={INVOICE_ACCOUNT_OPTIONS}
+                  searchPlaceholder={accountSearchPlaceholder}
+                  className="h-9"
+                  data-testid="select-counterpart"
+                />
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">{t("finance.create.dueDate")}</label>
