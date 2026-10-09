@@ -5,7 +5,7 @@ import { systemSettings } from "@shared/schema";
 
 export const PAST_SCHEDULE_POLICY_SETTINGS_KEY = "pastSchedulePolicy";
 export const DEFAULT_PAST_SCHEDULE_POLICY = {
-  enabled: true,
+  enabled: true as const,
   deniedRoleIds: [] as string[],
 };
 
@@ -16,6 +16,10 @@ export type PastSchedulePolicy = {
 
 const pastSchedulePolicySchema = z.object({
   deniedRoleIds: z.array(z.string().uuid()).max(500),
+});
+const legacyPastSchedulePolicySchema = z.object({
+  enabled: z.boolean(),
+  roleIds: z.array(z.string().uuid()).max(500),
 });
 
 export function getBangkokDateString(now = new Date()): string {
@@ -61,7 +65,7 @@ export async function getPastSchedulePolicy(): Promise<PastSchedulePolicy> {
     }
 
     // Old allowlist settings must not silently lock out staff during rollout.
-    if ("enabled" in record || "roleIds" in record) {
+    if (legacyPastSchedulePolicySchema.safeParse(parsed).success) {
       return DEFAULT_PAST_SCHEDULE_POLICY;
     }
   }

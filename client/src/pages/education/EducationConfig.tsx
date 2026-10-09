@@ -2123,11 +2123,11 @@ function PastScheduleConfigCard({ canEdit }: { canEdit: boolean }) {
   const roleOptions = departments
     .filter((department) => !department.name.toLowerCase().includes("khách hàng"))
     .flatMap((department) =>
-    department.roles.map((role) => ({
-      label: `${department.name} — ${role.name}`,
-      value: role.id,
-    })),
-  );
+      department.roles.map((role) => ({
+        label: `${department.name} — ${role.name}`,
+        value: role.id,
+      })),
+    );
 
   useEffect(() => {
     if (policyQuery.isFetching) {
@@ -2200,7 +2200,7 @@ function PastScheduleConfigCard({ canEdit }: { canEdit: boolean }) {
             <div className="space-y-2">
               <Label>Vai trò không được phép</Label>
               <p className="text-xs text-muted-foreground">
-                Mặc định nhân sự được thao tác lịch trước hôm nay. Vai trò trong Phòng Khách hàng (phụ huynh và học viên) không tham gia cấu hình này.
+                Mặc định nhân sự được thao tác lịch trước hôm nay. Super Admin luôn có thể ghi đè. Vai trò trong Phòng Khách hàng (phụ huynh và học viên) không tham gia cấu hình này.
               </p>
               {departmentsError ? (
                 <div className="space-y-2">
