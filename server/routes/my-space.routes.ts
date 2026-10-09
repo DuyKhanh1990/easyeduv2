@@ -4989,6 +4989,7 @@ export function registerMySpaceRoutes(app: Express): void {
           published: Boolean(row.published),
           examDate: row.session_date,
           assessmentId: row.assessment_id,
+          scoreSheetTemplateId: assessment?.scoreSheetTemplateId ?? null,
           assessmentCode: assessment?.code ?? null,
           assessmentName: assessment?.name ?? null,
           templateName: currentTemplate?.name ?? assessment?.templateSnapshot.name ?? null,
@@ -5125,6 +5126,7 @@ export function registerMySpaceRoutes(app: Express): void {
           published: false,
           examDate: assessment.createdAt,
           assessmentId: assessment.id,
+          scoreSheetTemplateId: assessment.scoreSheetTemplateId,
           assessmentCode: assessment.code,
           assessmentName: assessment.name,
           templateName: currentTemplatesById.get(assessment.scoreSheetTemplateId)?.name

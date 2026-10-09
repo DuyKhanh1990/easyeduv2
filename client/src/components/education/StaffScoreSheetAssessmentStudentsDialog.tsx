@@ -49,6 +49,7 @@ export type StaffAssignedScoreSheetAssessment = {
   sessionIndex: number | null;
   examDate: string;
   assessmentId: string;
+  scoreSheetTemplateId?: string | null;
   assessmentCode: string | null;
   assessmentName: string | null;
   templateName: string | null;

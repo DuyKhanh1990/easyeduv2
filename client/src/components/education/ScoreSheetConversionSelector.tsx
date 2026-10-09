@@ -47,6 +47,7 @@ type CreatedManualAssessment = {
   code: string;
   name: string;
   createdAt: string;
+  scoreSheetTemplateId: string;
   scoreDeadlineAt: string | null;
   attemptCount: number;
   scoringPolicy: "highest" | "latest";
@@ -143,6 +144,7 @@ export function ScoreSheetConversionSelector({
         sessionIndex: null,
         examDate: createdAssessment.createdAt,
         assessmentId: createdAssessment.id,
+        scoreSheetTemplateId: createdAssessment.scoreSheetTemplateId,
         assessmentCode: createdAssessment.code,
         assessmentName: createdAssessment.name,
         templateName: createdAssessment.templateSnapshot.name,

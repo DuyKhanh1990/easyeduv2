@@ -62,6 +62,10 @@ type ScoreSheetTimelineEntry =
 
 type StaffScoreSheetTab = "all" | "regular" | "conversion";
 
+function getConversionScoreSheetFilterId(assessment: StaffAssignedScoreSheetAssessment) {
+  return `conversion:${assessment.scoreSheetTemplateId ?? assessment.assessmentId}`;
+}
+
 type StatusPresentation = {
   label: string;
   Icon: LucideIcon;
@@ -222,7 +226,7 @@ export function StaffScoreSheet() {
   });
   assignedAssessments.forEach((assessment) => {
     scoreSheetOptionsById.set(
-      `conversion:${assessment.assessmentId}`,
+      getConversionScoreSheetFilterId(assessment),
       assessment.templateName || assessment.assessmentName || t("mySpace.scoreSheet.unavailableSheet"),
     );
   });
@@ -293,7 +297,7 @@ export function StaffScoreSheet() {
 
     const scoreSheetId = entry.kind === "grade-book"
       ? `regular:${entry.gradeBook.scoreSheetId}`
-      : `conversion:${entry.assessment.assessmentId}`;
+      : getConversionScoreSheetFilterId(entry.assessment);
     if (scoreSheetFilters.length > 0 && !scoreSheetFilters.includes(scoreSheetId)) return false;
 
     if (statusFilters.length === 0) return true;
