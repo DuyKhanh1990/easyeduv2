@@ -3204,7 +3204,7 @@ export function registerConfigRoutes(app: Express): void {
           classCode: "Thủ công",
           className: "Thủ công",
           locationName: null,
-          teacherNames: null,
+          teacherNames: assessment.createdByName,
           sessionIndex: null,
           studentCount: assessment.manualStudentIds.length,
           enteredStudentCount,
@@ -3503,7 +3503,7 @@ export function registerConfigRoutes(app: Express): void {
             classCode: "Thủ công",
             className: "Thủ công",
             locationName: null,
-            teacherNames: null,
+            teacherNames: assessment.createdByName,
             sessionIndex: null,
             examDate: assessment.createdAt,
             assessmentId: assessment.id,
@@ -3623,6 +3623,22 @@ export function registerConfigRoutes(app: Express): void {
 
       const now = new Date().toISOString();
       const { initialScoresByStudent = {}, ...assessmentInput } = parsed;
+      let createdByName: string | null = null;
+      if (assessmentInput.creationMode === "manual") {
+        const creatorUserId = requestUserId(req);
+        const creatorFilter = req.staffId
+          ? eq(staff.id, req.staffId)
+          : creatorUserId
+            ? eq(staff.userId, creatorUserId)
+            : null;
+        if (creatorFilter) {
+          const [creatorStaff] = await db.select({ fullName: staff.fullName })
+            .from(staff)
+            .where(creatorFilter)
+            .limit(1);
+          createdByName = creatorStaff?.fullName?.trim() || null;
+        }
+      }
       const assessment = scoreSheetAssessmentSchema.parse({
         ...assessmentInput,
         code: assessmentInput.code.toUpperCase(),
@@ -3634,6 +3650,7 @@ export function registerConfigRoutes(app: Express): void {
         conversionTemplateSnapshot,
         createdAt: now,
         updatedAt: now,
+        createdByName,
       });
       const created = await mutateScoreSheetAssessments(
         (assessments) => {

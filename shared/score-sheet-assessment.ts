@@ -107,6 +107,7 @@ export const scoreSheetAssessmentSchema = scoreSheetAssessmentInputFieldsSchema
   conversionTemplateSnapshot: scoreConversionTemplateSchema.nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+  createdByName: z.string().trim().min(1).max(120).nullable().default(null),
   })
   .superRefine(manualScoreSheetValidation);
 

@@ -34,6 +34,18 @@ describe("manual score-sheet assessment input", () => {
     }).success).toBe(true);
   });
 
+  it("does not accept client-supplied creator metadata", () => {
+    const parsed = scoreSheetAssessmentInputSchema.parse({
+      ...baseInput,
+      manualSelectionMode: "students",
+      manualClassId: null,
+      manualStudentIds: [studentId],
+      createdByName: "Forged creator",
+    });
+
+    expect(parsed).not.toHaveProperty("createdByName");
+  });
+
   it("rejects empty or inconsistent selection, duplicates, and scores for unselected students", () => {
     expect(scoreSheetAssessmentInputSchema.safeParse({
       ...baseInput,
