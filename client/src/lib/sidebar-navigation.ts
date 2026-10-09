@@ -235,7 +235,8 @@ export const navigation: NavEntry[] = [
           { value: "attendance-fee", name: "Trừ tiền học phí" },
           { value: "score-sheets", name: "Bảng điểm mẫu" },
           { value: "online-learning", name: "Học online" },
-          { value: "attendance-limit", name: "Giới hạn điểm danh" }
+          { value: "attendance-limit", name: "Giới hạn điểm danh" },
+          { value: "other-config", name: "Cấu hình khác" }
         ]
       }
     ]

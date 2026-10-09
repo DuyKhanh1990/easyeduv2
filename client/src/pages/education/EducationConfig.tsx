@@ -28,7 +28,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertShiftTemplateSchema } from "@shared/schema";
-import { Plus, Pencil, Trash2, Clock, Building2, BookOpen, ListChecks, School, Banknote, X, FileSpreadsheet, Check, Monitor, Timer, History, GripVertical } from "lucide-react";
+import { Plus, Pencil, Trash2, Clock, Building2, BookOpen, ListChecks, School, Banknote, X, FileSpreadsheet, Check, Monitor, Timer, Settings2, History, GripVertical } from "lucide-react";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { useToast } from "@/hooks/use-toast";
 import { useSidebarVisibility } from "@/hooks/use-sidebar-visibility";
@@ -49,6 +49,7 @@ const EDUCATION_TABS = [
   { value: "score-sheets", label: "Bảng điểm", icon: FileSpreadsheet },
   { value: "online-learning", label: "Học online", icon: Monitor },
   { value: "attendance-limit", label: "Giới hạn điểm danh", icon: Timer },
+  { value: "other-config", label: "Cấu hình khác", icon: Settings2 },
   { value: "history", label: "Lịch sử", icon: History },
 ];
 
@@ -2228,6 +2229,20 @@ export default function EducationConfig() {
           {isSubTabVisible(EDUCATION_CONFIG_HREF, "attendance-limit") && canViewTab(myPerms, "attendance-limit") && (
             <TabsContent value="attendance-limit" className="mt-4">
               <AttendanceLimitTab />
+            </TabsContent>
+          )}
+
+          {isSubTabVisible(EDUCATION_CONFIG_HREF, "other-config") && canViewTab(myPerms, "other-config") && (
+            <TabsContent value="other-config" className="mt-4">
+              <Card className="border-dashed shadow-none">
+                <CardContent className="flex min-h-40 flex-col items-center justify-center text-center">
+                  <Settings2 className="mb-2 h-7 w-7 text-muted-foreground/60" />
+                  <h2 className="font-medium">Cấu hình khác</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Khu vực này sẵn sàng để bổ sung các cấu hình giáo dục khác.
+                  </p>
+                </CardContent>
+              </Card>
             </TabsContent>
           )}
 
