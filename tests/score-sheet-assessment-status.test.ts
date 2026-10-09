@@ -74,6 +74,33 @@ describe("score-sheet assessment status", () => {
     }, Date.UTC(2026, 8, 29, 12, 0))).toBe("completed");
   });
 
+  it("marks a fully graded assessment as completed when every student is individually published", () => {
+    expect(resolveScoreSheetAssessmentStatus({
+      ...baseAssessment,
+      enteredStudentCount: 2,
+      completedStudentCount: 2,
+      allStudentsIndividuallyPublished: true,
+    }, Date.UTC(2026, 8, 29, 12, 0))).toBe("completed");
+  });
+
+  it("keeps a fully graded assessment processing while any student remains unpublished", () => {
+    expect(resolveScoreSheetAssessmentStatus({
+      ...baseAssessment,
+      enteredStudentCount: 2,
+      completedStudentCount: 2,
+      allStudentsIndividuallyPublished: false,
+    }, Date.UTC(2026, 8, 30, 12, 0))).toBe("processing");
+  });
+
+  it("keeps an assessment processing when a student is published but still lacks a complete score", () => {
+    expect(resolveScoreSheetAssessmentStatus({
+      ...baseAssessment,
+      enteredStudentCount: 2,
+      completedStudentCount: 1,
+      allStudentsIndividuallyPublished: true,
+    }, Date.UTC(2026, 8, 30, 12, 0))).toBe("processing");
+  });
+
   it("leaves overdue assessments without grades unlabelled for a separate status column", () => {
     expect(resolveScoreSheetAssessmentStatus(
       baseAssessment,

@@ -17,6 +17,12 @@ For score-conversion sessions, when the non-excluded roster is non-empty and eve
 
 **How to apply:** Derive the label from the current roster and saved attempt metadata; an empty roster must not count as fully published. Refresh the assessment summary when an individual release changes.
 
+The conversion-board status is “Hoàn thành” only when every student has a complete score and publication is complete either session-wide or for every student individually. If scoring has started and any student is missing a complete score or publication, keep the status as “Đang xử lý”.
+
+**Why:** A board whose complete roster has already received results should not remain “Đang xử lý”; the status should identify only unfinished scoring or publication.
+
+**How to apply:** Pass the aggregate all-students-individually-published state into the shared status resolver alongside the session-wide publication flag and completed-score count.
+
 In the “Theo học viên” score-conversion view, show a green “Đã công bố” badge beside a student's name when that student has a publishable result released individually or through the whole session.
 
 **Why:** The user expects publication status to remain visible when switching between assessment-group and student views.

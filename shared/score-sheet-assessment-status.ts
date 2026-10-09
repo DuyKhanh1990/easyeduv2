@@ -13,6 +13,7 @@ export type ScoreSheetAssessmentStatusInput = {
   enteredStudentCount: number;
   completedStudentCount: number;
   published?: boolean;
+  allStudentsIndividuallyPublished?: boolean;
 };
 
 function parseBangkokDateStart(value: string): number | null {
@@ -65,11 +66,13 @@ export function resolveScoreSheetAssessmentStatus(
     ? Math.max(0, Math.min(assessment.completedStudentCount, studentCount))
     : 0;
   const allStudentsComplete = studentCount > 0 && completedStudentCount >= studentCount;
+  const allStudentsPublished = assessment.published === true
+    || assessment.allStudentsIndividuallyPublished === true;
 
-  if (allStudentsComplete && assessment.published) return "completed";
+  if (allStudentsComplete && allStudentsPublished) return "completed";
   if (
     assessment.enteredStudentCount > 0
-    && (!allStudentsComplete || !assessment.published)
+    && (!allStudentsComplete || !allStudentsPublished)
   ) return "processing";
 
   const examDateStart = parseBangkokDateStart(assessment.examDate);
