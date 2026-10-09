@@ -135,8 +135,14 @@ export function CreateClass() {
   });
 
   const { data: locations } = useQuery<any[]>({ queryKey: ["/api/locations"], staleTime: STATIC_STALE_TIME });
-  const { data: programs } = useQuery<any[]>({ queryKey: ["/api/course-programs"], staleTime: STATIC_STALE_TIME });
-  const { data: courses } = useQuery<any[]>({ queryKey: ["/api/courses"], staleTime: STATIC_STALE_TIME });
+  const { data: programs, isFetching: isFetchingPrograms } = useQuery<any[]>({
+    queryKey: ["/api/course-programs"],
+    staleTime: 0,
+  });
+  const { data: courses, isFetching: isFetchingCourses } = useQuery<any[]>({
+    queryKey: ["/api/courses"],
+    staleTime: 0,
+  });
   const { data: subjects } = useQuery<any[]>({ queryKey: ["/api/subjects"], staleTime: STATIC_STALE_TIME });
   const { data: evaluationCriteriaList } = useQuery<any[]>({ queryKey: ["/api/evaluation-criteria"], staleTime: STATIC_STALE_TIME });
   
@@ -157,9 +163,10 @@ export function CreateClass() {
     queryKey: ["/api/classrooms"],
     enabled: !!selectedLocationId
   });
-  const { data: feePackages } = useQuery<any[]>({
+  const { data: feePackages, isFetching: isFetchingFeePackages } = useQuery<any[]>({
     queryKey: [selectedCourseId ? `/api/courses/${selectedCourseId}/fee-packages` : null],
-    enabled: !!selectedCourseId
+    enabled: !!selectedCourseId,
+    staleTime: 0,
   });
   const { data: scoreSheets } = useQuery<any[]>({ queryKey: ["/api/score-sheets"] });
   const { data: holidays } = useQuery<any[]>({ queryKey: ["/api/public-holidays"], staleTime: STATIC_STALE_TIME });
@@ -624,6 +631,7 @@ export function CreateClass() {
                                 options={(courses || []).map((c: any) => ({ value: String(c.id), label: c.name }))}
                                 value={field.value || ""}
                                 onChange={field.onChange}
+                                disabled={isFetchingCourses}
                                 placeholder="Chọn khóa học"
                                 searchPlaceholder="Tìm kiếm khóa học..."
                                 data-testid="select-course"
@@ -639,7 +647,7 @@ export function CreateClass() {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Gói học phí {selectedCourseId ? <span className="text-destructive">*</span> : ""}</FormLabel>
-                              <Select onValueChange={field.onChange} value={field.value || ""} disabled={!selectedCourseId}>
+                              <Select onValueChange={field.onChange} value={field.value || ""} disabled={!selectedCourseId || isFetchingFeePackages}>
                                 <FormControl>
                                   <SelectTrigger><SelectValue placeholder={selectedCourseId ? "Chọn gói học phí" : "Chọn khóa học trước"} /></SelectTrigger>
                                 </FormControl>
@@ -732,6 +740,7 @@ export function CreateClass() {
                                   options={(programs || []).map((p: any) => ({ value: String(p.id), label: p.name }))}
                                   value={field.value || ""}
                                   onChange={field.onChange}
+                                  disabled={isFetchingPrograms}
                                   placeholder="Chọn chương trình"
                                   searchPlaceholder="Tìm kiếm chương trình..."
                                   data-testid="select-program"

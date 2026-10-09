@@ -625,10 +625,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const { data: classes = [] } = useClasses(locationId || undefined, { minimal: true, enabled: open });
 
   const feePackageUrl = `/api/fee-packages${locationId ? `?locationId=${encodeURIComponent(locationId)}` : ""}`;
-  const { data: feePackages = [] } = useQuery<any[]>({
+  const { data: feePackages = [], isFetching: isFetchingFeePackages } = useQuery<any[]>({
     queryKey: ["/api/fee-packages", locationId],
     queryFn: () => apiRequest("GET", feePackageUrl).then(r => r.json()),
     enabled: open,
+    staleTime: 0,
   });
 
   const { data: promotionOptions = [] } = useQuery<any[]>({
@@ -1896,6 +1897,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                   <SearchableSelect
                                     value={p.packageId ?? feePackages.find((fp: any) => fp.name === p.name)?.id ?? ""}
                                     onChange={v => handleSelectFeePackage(p.id, v)}
+                                    disabled={isFetchingFeePackages}
                                      placeholder={t("finance.create.choosePackage")}
                                      searchPlaceholder={t("finance.searchCourse")}
                                     options={packageOptions}

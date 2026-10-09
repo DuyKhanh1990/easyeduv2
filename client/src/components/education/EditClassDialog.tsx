@@ -175,12 +175,14 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
       ? `/api/course-programs?includeInactiveId=${encodeURIComponent(selectedProgramId)}`
       : "/api/course-programs"],
     enabled: isOpen,
+    staleTime: 0,
   });
   const { data: courses } = useQuery<any[]>({
     queryKey: [selectedCourseIdForLookup
       ? `/api/courses?includeInactiveId=${encodeURIComponent(selectedCourseIdForLookup)}`
       : "/api/courses"],
     enabled: isOpen,
+    staleTime: 0,
   });
 
   const effectiveLocationId = selectedLocationId || cls?.locationId;
@@ -211,6 +213,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
       return res.json();
     },
     enabled: isOpen && !!effectiveCourseId,
+    staleTime: 0,
   });
 
   const filteredShifts = Array.isArray(shifts)

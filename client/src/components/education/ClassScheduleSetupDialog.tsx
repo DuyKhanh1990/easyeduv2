@@ -85,16 +85,19 @@ export function ClassScheduleSetupDialog({
       ? `/api/course-programs?includeInactiveId=${encodeURIComponent(programId)}`
       : "/api/course-programs"],
     enabled: isOpen,
+    staleTime: 0,
   });
   const { data: coursesList = [] } = useQuery<any[]>({
     queryKey: [courseId
       ? `/api/courses?includeInactiveId=${encodeURIComponent(courseId)}`
       : "/api/courses"],
     enabled: isOpen,
+    staleTime: 0,
   });
   const { data: feePackages = [] } = useQuery<any[]>({
     queryKey: [`/api/courses/${courseId}/fee-packages${feePackageId ? `?includeInactiveId=${encodeURIComponent(feePackageId)}` : ""}`],
     enabled: !!courseId && isOpen,
+    staleTime: 0,
   });
   const { data: scoreSheets = [] } = useQuery<any[]>({ queryKey: ["/api/score-sheets"], enabled: isOpen });
   const { data: subjects = [] } = useQuery<any[]>({ queryKey: ["/api/subjects"], enabled: isOpen });

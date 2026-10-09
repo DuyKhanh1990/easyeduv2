@@ -230,6 +230,7 @@ export function ScheduleDialog({
       ? `/api/courses?includeInactiveId=${encodeURIComponent(selectedCourseId)}`
       : "/api/courses"],
     enabled: isOpen,
+    staleTime: 0,
   });
 
   // Fetch packages for the selected course, or all packages available at the
@@ -240,6 +241,7 @@ export function ScheduleDialog({
   const { data: feePackages = [] } = useQuery<any[]>({
     queryKey: [feePackagesQueryKey],
     enabled: isOpen && (!!selectedCourseId || !!effectiveLocationId),
+    staleTime: 0,
   });
 
   // Fetch promotions & surcharges from finance config

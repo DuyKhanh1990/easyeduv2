@@ -54,6 +54,7 @@ export function FreeScheduleDialog({
   const { data: queriedPackages = [] } = useQuery<any[]>({
     queryKey: [packagesQueryKey],
     enabled: isOpen && (!!courseId || !!locationId),
+    staleTime: 0,
   });
   const feePackages = useMemo(
     () => (queriedPackages.length > 0 ? queriedPackages : classData?.course?.feePackages || []),

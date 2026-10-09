@@ -125,10 +125,10 @@ export function CreateTutorClass() {
   });
 
   const { data: locations } = useQuery({ queryKey: ["/api/locations"], staleTime: STATIC_STALE_TIME });
-  const { data: courses } = useQuery({ queryKey: ["/api/courses"], staleTime: STATIC_STALE_TIME });
+  const { data: courses, isFetching: isFetchingCourses } = useQuery({ queryKey: ["/api/courses"], staleTime: 0 });
   const { data: subjects } = useQuery<any[]>({ queryKey: ["/api/subjects"], staleTime: STATIC_STALE_TIME });
   const { data: scoreSheets } = useQuery<any[]>({ queryKey: ["/api/score-sheets"] });
-  const { data: programs } = useQuery({ queryKey: ["/api/course-programs"], staleTime: STATIC_STALE_TIME });
+  const { data: programs, isFetching: isFetchingPrograms } = useQuery({ queryKey: ["/api/course-programs"], staleTime: 0 });
   const { data: evaluationCriteriaList } = useQuery<any[]>({ queryKey: ["/api/evaluation-criteria"], staleTime: STATIC_STALE_TIME });
 
   const selectedLocationId = form.watch("locationId");
@@ -147,9 +147,10 @@ export function CreateTutorClass() {
     queryKey: ["/api/classrooms"],
     enabled: !!selectedLocationId,
   });
-  const { data: feePackages } = useQuery<any[]>({
+  const { data: feePackages, isFetching: isFetchingFeePackages } = useQuery<any[]>({
     queryKey: [selectedCourseId ? `/api/courses/${selectedCourseId}/fee-packages` : null],
     enabled: !!selectedCourseId,
+    staleTime: 0,
   });
 
   const studentListUrl = (() => {
@@ -689,6 +690,7 @@ export function CreateTutorClass() {
                                 options={(courses || []).map((c: any) => ({ value: String(c.id), label: c.name }))}
                                 value={field.value || ""}
                                 onChange={field.onChange}
+                                disabled={isFetchingCourses}
                                 placeholder="Chọn khóa học"
                                 searchPlaceholder="Tìm kiếm khóa học..."
                                 data-testid="select-tutor-course"
@@ -709,7 +711,7 @@ export function CreateTutorClass() {
                             <Select
                               onValueChange={field.onChange}
                               defaultValue={field.value}
-                              disabled={!selectedCourseId}
+                              disabled={!selectedCourseId || isFetchingFeePackages}
                             >
                               <FormControl>
                                 <SelectTrigger>
@@ -780,6 +782,7 @@ export function CreateTutorClass() {
                                   options={(programs || []).map((p: any) => ({ value: String(p.id), label: p.name }))}
                                   value={field.value || ""}
                                   onChange={field.onChange}
+                                  disabled={isFetchingPrograms}
                                   placeholder="Chọn chương trình"
                                   searchPlaceholder="Tìm kiếm chương trình..."
                                   data-testid="select-tutor-program"

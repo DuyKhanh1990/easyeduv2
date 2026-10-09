@@ -187,8 +187,8 @@ export function CopyClassDialog({ open, onClose, sourceClass }: CopyClassDialogP
   }, [open, sourceClass?.id]);
 
   const { data: locations } = useQuery({ queryKey: ["/api/locations"], staleTime: STATIC_STALE_TIME });
-  const { data: programs } = useQuery({ queryKey: ["/api/course-programs"], staleTime: STATIC_STALE_TIME });
-  const { data: courses } = useQuery({ queryKey: ["/api/courses"], staleTime: STATIC_STALE_TIME });
+  const { data: programs } = useQuery({ queryKey: ["/api/course-programs"], enabled: open, staleTime: 0 });
+  const { data: courses } = useQuery({ queryKey: ["/api/courses"], enabled: open, staleTime: 0 });
   const { data: subjects } = useQuery<any[]>({ queryKey: ["/api/subjects"], staleTime: STATIC_STALE_TIME });
   const { data: evaluationCriteriaList } = useQuery<any[]>({ queryKey: ["/api/evaluation-criteria"], staleTime: STATIC_STALE_TIME });
 
@@ -210,7 +210,8 @@ export function CopyClassDialog({ open, onClose, sourceClass }: CopyClassDialogP
   });
   const { data: feePackages } = useQuery<any[]>({
     queryKey: [selectedCourseId ? `/api/courses/${selectedCourseId}/fee-packages` : null],
-    enabled: !!selectedCourseId,
+    enabled: open && !!selectedCourseId,
+    staleTime: 0,
   });
   const { data: scoreSheets } = useQuery<any[]>({ queryKey: ["/api/score-sheets"] });
   const { data: holidays } = useQuery<any[]>({ queryKey: ["/api/public-holidays"], staleTime: STATIC_STALE_TIME });

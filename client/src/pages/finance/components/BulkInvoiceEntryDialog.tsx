@@ -1923,7 +1923,7 @@ function FeePackageCombobox({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
-  const { data: packages = [] } = useQuery<any[]>({
+  const { data: packages = [], isFetching: isFetchingPackages } = useQuery<any[]>({
     queryKey: ["/api/fee-packages", branchId || "all"],
     queryFn: () => {
       const url = branchId
@@ -1932,6 +1932,7 @@ function FeePackageCombobox({
       return apiRequest("GET", url).then(r => r.json());
     },
     enabled: open,
+    staleTime: 0,
   });
 
   const filtered = useMemo(() => {
@@ -1972,6 +1973,7 @@ function FeePackageCombobox({
                   <CommandItem
                     key={p.id}
                     value={p.id}
+                    disabled={isFetchingPackages}
                     onSelect={() => {
                       onSelect(p.id, lbl, amount);
                       setOpen(false);
