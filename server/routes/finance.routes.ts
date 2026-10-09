@@ -22,6 +22,11 @@ import { staff, classes, invoices, invoicePaymentSchedule, students, classSessio
 import { eq, asc, sql, and, isNotNull, gte, lte, inArray } from "drizzle-orm";
 import { ensureVirtualAccount } from "../services/bidv/bidv-virtual-account.service";
 import { resolveInvoiceRecipientUserIds, sendInvoiceCreatedNotification, sendInvoicePaidNotification } from "../lib/invoice-notification";
+import {
+  INVOICE_VISIBILITY_PERMISSIONS,
+  invoiceStatusMatchesVisibilityPermission,
+  type InvoiceVisibilityPermission,
+} from "@shared/invoice-visibility-permissions";
 
 async function generateNextSettleCode(locationId?: string | null): Promise<string> {
   return getNextLocationCode(locationId, "KT");
@@ -257,6 +262,58 @@ async function getInvoicePermissions(req: any) {
     return { canView: true, canViewAll: true, canCreate: true, canEdit: true, canDelete: true };
   }
   return storage.getEffectivePermissions(req.roleIds || [], INVOICE_RESOURCE);
+}
+
+async function getInvoiceVisibilityScopes(req: any): Promise<InvoiceVisibilityPermission[]> {
+  if (req.isSuperAdmin) return [...INVOICE_VISIBILITY_PERMISSIONS];
+  const permissions = await Promise.all(INVOICE_VISIBILITY_PERMISSIONS.map(({ resource }) =>
+    storage.getEffectivePermissions(req.roleIds || [], resource)
+  ));
+  return INVOICE_VISIBILITY_PERMISSIONS.filter((_scope, index) =>
+    permissions[index].canView
+  );
+}
+
+function filterInvoiceDetailsByVisibility(
+  invoice: any,
+  scopes: readonly InvoiceVisibilityPermission[],
+): any | null {
+  const isVisibleStatus = (type: string, status: string | null | undefined) =>
+    scopes.some(scope =>
+      scope.type === type && invoiceStatusMatchesVisibilityPermission(status, scope.status)
+    );
+  const schedules = Array.isArray(invoice.paymentSchedule) ? invoice.paymentSchedule : [];
+  if (schedules.length === 0) {
+    return isVisibleStatus(invoice.type, invoice.status) ? invoice : null;
+  }
+
+  const visibleSchedules = schedules.filter((schedule: any) =>
+    isVisibleStatus(invoice.type, schedule.status)
+  );
+  if (visibleSchedules.length === 0) return null;
+
+  const visibleTotal = visibleSchedules.reduce(
+    (sum: number, schedule: any) => sum + (Number(schedule.amount) || 0),
+    0,
+  );
+  const visiblePaid = visibleSchedules.reduce(
+    (sum: number, schedule: any) =>
+      sum + (isPaidInvoiceStatus(schedule.status) ? Number(schedule.amount) || 0 : 0),
+    0,
+  );
+  invoice.paymentSchedule = visibleSchedules;
+  invoice.grandTotal = visibleTotal.toFixed(2);
+  invoice.totalAmount = visibleTotal.toFixed(2);
+  invoice.paidAmount = visiblePaid.toFixed(2);
+  invoice.remainingAmount = Math.max(0, visibleTotal - visiblePaid).toFixed(2);
+  const allPaidLike = visibleSchedules.every((schedule: any) => isPaidInvoiceStatus(schedule.status));
+  const anyPaidLike = visibleSchedules.some((schedule: any) => isPaidInvoiceStatus(schedule.status));
+  invoice.status = visibleSchedules.every((schedule: any) => schedule.status === "confirmed")
+    ? "confirmed"
+    : allPaidLike
+      ? "paid"
+      : anyPaidLike ? "partial" : "unpaid";
+  return invoice;
 }
 
 function buildInvoiceHistoryBaseUnion(locSnippet: string, isSuperAdmin: boolean): string {
@@ -543,6 +600,7 @@ export function registerFinanceRoutes(app: Express): void {
         const a = Array.isArray(v) ? v : [v];
         return a.length > 0 ? a : undefined;
       };
+      const invoiceVisibilityScopes = await getInvoiceVisibilityScopes(req);
       const data = await storage.getInvoices({
         tabFilter:              q.tabFilter as string | undefined,
         type:                   q.type as string | undefined,
@@ -570,6 +628,7 @@ export function registerFinanceRoutes(app: Express): void {
         includeTabCounts:       q.includeTabCounts === "true",
         allowedLocationIds:     req.allowedLocationIds,
         isSuperAdmin:           req.isSuperAdmin,
+        invoiceVisibilityScopes,
       });
       res.json(data);
     } catch (err: any) {
@@ -580,7 +639,8 @@ export function registerFinanceRoutes(app: Express): void {
   app.get("/api/finance/invoices/filter-options", async (req, res) => {
     try {
        const { dateFrom, dateTo, dueDateFrom, dueDateTo, tabFilter } = req.query as Record<string, string>;
-       const data = await getInvoiceFilterOptions({ dateFrom, dateTo, dueDateFrom, dueDateTo, tabFilter, allowedLocationIds: req.allowedLocationIds, isSuperAdmin: req.isSuperAdmin });
+       const invoiceVisibilityScopes = await getInvoiceVisibilityScopes(req);
+       const data = await getInvoiceFilterOptions({ dateFrom, dateTo, dueDateFrom, dueDateTo, tabFilter, allowedLocationIds: req.allowedLocationIds, isSuperAdmin: req.isSuperAdmin, invoiceVisibilityScopes });
       res.json(data);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -622,6 +682,7 @@ export function registerFinanceRoutes(app: Express): void {
         const a = Array.isArray(v) ? v : [v];
         return a.length > 0 ? a : undefined;
       };
+      const invoiceVisibilityScopes = await getInvoiceVisibilityScopes(req);
       const data = await storage.getInvoicesSummary({
         locationId: q.locationId as string | undefined,
         locationNames: getArr(q.locationNames),
@@ -640,6 +701,7 @@ export function registerFinanceRoutes(app: Express): void {
         paymentMethods: getArr(q.paymentMethods),
         allowedLocationIds: req.allowedLocationIds,
         isSuperAdmin: req.isSuperAdmin,
+        invoiceVisibilityScopes,
       });
       res.json(data);
     } catch (err: any) {
@@ -934,7 +996,10 @@ export function registerFinanceRoutes(app: Express): void {
 
   app.get("/api/finance/invoices/:id", async (req, res) => {
     try {
-      const data = await storage.getInvoice(req.params.id);
+      const scopes = await getInvoiceVisibilityScopes(req);
+      const invoice = await storage.getInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ message: "Không tìm thấy phiếu" });
+      const data = filterInvoiceDetailsByVisibility(invoice, scopes);
       if (!data) return res.status(404).json({ message: "Không tìm thấy phiếu" });
       res.json(data);
     } catch (err: any) {
@@ -1585,8 +1650,12 @@ export function registerFinanceRoutes(app: Express): void {
 
   app.get("/api/finance/invoices/:id/payment-schedules", async (req, res) => {
     try {
-      const schedules = await storage.getInvoicePaymentSchedules(req.params.id);
-      res.json(schedules);
+      const scopes = await getInvoiceVisibilityScopes(req);
+      const invoice = await storage.getInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ message: "Không tìm thấy phiếu" });
+      const data = filterInvoiceDetailsByVisibility(invoice, scopes);
+      if (!data) return res.status(404).json({ message: "Không tìm thấy phiếu" });
+      res.json(data.paymentSchedule ?? []);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
     }

@@ -29,6 +29,7 @@ import {
   type Question, type InsertQuestion,
   type InvoicePrintTemplateRow, type InsertInvoicePrintTemplate,
 } from "@shared/schema";
+import type { InvoiceVisibilityPermission } from "@shared/invoice-visibility-permissions";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
 import * as staffStorage from "./storage/staff.storage";
@@ -362,7 +363,7 @@ export interface IStorage {
   getFinanceVoucherAudienceStudents(id: string): Promise<Array<{ id: string; fullName: string; code: string; phone: string | null }>>;
 
   // Finance - Invoices
-  getInvoices(filters?: { tabFilter?: string; type?: string; types?: string[]; locationId?: string; locationNames?: string[]; search?: string; dateFrom?: string; dateTo?: string; dueDateFrom?: string; dueDateTo?: string; paidAtFrom?: string; paidAtTo?: string; salaryTableId?: string; categories?: string[]; classNames?: string[]; creatorNames?: string[]; payerNames?: string[]; commissionStaffNames?: string[]; paymentMethods?: string[]; allowedLocationIds?: string[] | null; isSuperAdmin?: boolean; sortKey?: string; sortDir?: "asc" | "desc"; page?: number; limit?: number; includeTabCounts?: boolean }): Promise<{ data: any[]; total: number; parentTotal: number; tabCounts: Record<string, number>; rowPage?: { invoiceId: string; scheduleId: string | null }[] }>;
+  getInvoices(filters?: { tabFilter?: string; type?: string; types?: string[]; locationId?: string; locationNames?: string[]; search?: string; dateFrom?: string; dateTo?: string; dueDateFrom?: string; dueDateTo?: string; paidAtFrom?: string; paidAtTo?: string; salaryTableId?: string; categories?: string[]; classNames?: string[]; creatorNames?: string[]; payerNames?: string[]; commissionStaffNames?: string[]; paymentMethods?: string[]; allowedLocationIds?: string[] | null; isSuperAdmin?: boolean; invoiceVisibilityScopes?: readonly InvoiceVisibilityPermission[]; sortKey?: string; sortDir?: "asc" | "desc"; page?: number; limit?: number; includeTabCounts?: boolean }): Promise<{ data: any[]; total: number; parentTotal: number; tabCounts: Record<string, number>; rowPage?: { invoiceId: string; scheduleId: string | null }[] }>;
   getInvoicesSummary(filters?: {
     locationId?: string;
     locationNames?: string[];
@@ -381,6 +382,7 @@ export interface IStorage {
     paymentMethods?: string[];
     allowedLocationIds?: string[] | null;
     isSuperAdmin?: boolean;
+    invoiceVisibilityScopes?: readonly InvoiceVisibilityPermission[];
   }): Promise<{
     totalCount: number;
     byStatus: { unpaid: number; partial: number; paid: number; debt: number; cancelled: number };
@@ -1258,6 +1260,7 @@ export class DatabaseStorage implements IStorage {
     paymentMethods?: string[];
     allowedLocationIds?: string[] | null;
     isSuperAdmin?: boolean;
+    invoiceVisibilityScopes?: readonly InvoiceVisibilityPermission[];
   } = {}) {
     return financeStorage.getInvoicesSummary(filters);
   }

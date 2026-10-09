@@ -15,6 +15,7 @@ import type {
   FinanceVoucher, InsertFinanceVoucher,
   InvoicePrintTemplateRow, InsertInvoicePrintTemplate,
 } from "@shared/schema";
+import type { InvoiceVisibilityPermission } from "@shared/invoice-visibility-permissions";
 
 function getBusinessDateString(date = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -56,6 +57,18 @@ const isPaidInvoiceStatus = (status: string | null | undefined): boolean =>
 
 const isPaidScheduleStatus = (status: string | null | undefined): boolean =>
   status === "paid" || status === "confirmed";
+
+function buildInvoiceVisibilityCondition(
+  scopes: readonly InvoiceVisibilityPermission[],
+  statusExpression: any,
+) {
+  const groups = scopes.map(scope => {
+    const statuses = scope.status === "unpaid" ? ["unpaid", "partial"] : [scope.status];
+    const statusList = sql.join(statuses.map(status => sql`${status}`), sql`, `);
+    return sql`(${invoices.type} = ${scope.type} AND ${statusExpression} IN (${statusList}))`;
+  });
+  return groups.length > 0 ? or(...groups)! : sql`FALSE`;
+}
 
 function calculateScheduleAdjustments(
   baseAmount: number,
@@ -517,6 +530,7 @@ export async function getInvoices(filters: {
   paymentMethods?: string[];
   allowedLocationIds?: string[] | null;
   isSuperAdmin?: boolean;
+  invoiceVisibilityScopes?: readonly InvoiceVisibilityPermission[];
   sortKey?: string;
   sortDir?: "asc" | "desc";
   page?: number;
@@ -546,6 +560,10 @@ export async function getInvoices(filters: {
     WHERE date_filter_parent_schedule.invoice_id = ${invoices.id}
   )`;
 
+  if (f.invoiceVisibilityScopes && f.invoiceVisibilityScopes.length === 0) {
+    return { data: [], total: 0, parentTotal: 0, tabCounts: { all: 0, unpaid: 0, partial: 0, paid: 0, confirmed: 0, debt: 0 }, rowPage: [] };
+  }
+
   if (f.type)          conditions.push(eq(invoices.type, f.type));
   if (f.types?.length) conditions.push(inArray(invoices.type, f.types) as any);
   if (f.salaryTableId) conditions.push(eq(invoices.salaryTableId, f.salaryTableId));
@@ -561,6 +579,23 @@ export async function getInvoices(filters: {
     conditions.push(inArray(invoices.locationId, f.allowedLocationIds) as any);
   } else if (!f.isSuperAdmin && f.allowedLocationIds !== null && f.allowedLocationIds !== undefined && f.allowedLocationIds.length === 0) {
       return { data: [], total: 0, parentTotal: 0, tabCounts: { all: 0, unpaid: 0, partial: 0, paid: 0, confirmed: 0, debt: 0 }, rowPage: [] };
+  }
+
+  if (f.invoiceVisibilityScopes) {
+    const scheduleAlias = "invoice_visibility_schedule";
+    const scheduleMatch = buildInvoiceVisibilityCondition(
+      f.invoiceVisibilityScopes,
+      sql.raw(`${scheduleAlias}.status`),
+    );
+    conditions.push(or(
+      and(noPaymentSchedule, buildInvoiceVisibilityCondition(f.invoiceVisibilityScopes, invoices.status)),
+      sql`EXISTS (
+        SELECT 1
+        FROM invoice_payment_schedule AS ${sql.raw(scheduleAlias)}
+        WHERE ${sql.raw(`${scheduleAlias}.invoice_id`)} = ${invoices.id}
+          AND ${scheduleMatch}
+      )`,
+    ) as any);
   }
 
   if (f.paidAtFrom || f.paidAtTo) {
@@ -759,12 +794,26 @@ export async function getInvoices(filters: {
           FROM invoice_payment_schedule AS debt_schedule
           WHERE debt_schedule.invoice_id = ${invoices.id}
         )
-        AND ${invoices.grandTotal}::numeric - COALESCE((
-          SELECT SUM(paid_schedule.amount::numeric)
-          FROM invoice_payment_schedule AS paid_schedule
-          WHERE paid_schedule.invoice_id = ${invoices.id}
-            AND paid_schedule.status IN ('paid', 'confirmed')
-        ), 0) > 0
+        AND (
+          ${f.invoiceVisibilityScopes
+            ? sql`EXISTS (
+              SELECT 1
+              FROM invoice_payment_schedule AS visible_debt_schedule
+              WHERE visible_debt_schedule.invoice_id = ${invoices.id}
+                AND visible_debt_schedule.status NOT IN ('paid', 'confirmed')
+                AND visible_debt_schedule.amount::numeric > 0
+                AND ${buildInvoiceVisibilityCondition(
+                  f.invoiceVisibilityScopes,
+                  sql.raw("visible_debt_schedule.status"),
+                )}
+            )`
+            : sql`${invoices.grandTotal}::numeric - COALESCE((
+              SELECT SUM(paid_schedule.amount::numeric)
+              FROM invoice_payment_schedule AS paid_schedule
+              WHERE paid_schedule.invoice_id = ${invoices.id}
+                AND paid_schedule.status IN ('paid', 'confirmed')
+            ), 0) > 0`}
+        )
       )
     )
   )`;
@@ -775,6 +824,9 @@ export async function getInvoices(filters: {
     SELECT COUNT(*)
     FROM invoice_payment_schedule AS count_schedule
     WHERE count_schedule.invoice_id = ${invoices.id}
+      ${f.invoiceVisibilityScopes
+        ? sql`AND ${buildInvoiceVisibilityCondition(f.invoiceVisibilityScopes, sql.raw("count_schedule.status"))}`
+        : sql``}
   )`;
   const scheduleRowDateCondition = (tableAlias: string) => {
     const rowConditions: any[] = [];
@@ -813,6 +865,12 @@ export async function getInvoices(filters: {
     const column = (name: string) => sql.raw(`${tableAlias}.${name}`);
     const rowConditions: any[] = [scheduleRowDateCondition(tableAlias)];
     rowConditions.push(...buildInvoiceScheduleRowArrayFilterConditions(tableAlias, f));
+    if (f.invoiceVisibilityScopes) {
+      rowConditions.push(buildInvoiceVisibilityCondition(
+        f.invoiceVisibilityScopes,
+        sql.raw(`${tableAlias}.status`),
+      ));
+    }
     if (f.search) {
       const searchTerms = f.search.trim().split(/\s+/).filter(Boolean);
       for (const term of searchTerms) {
@@ -1125,17 +1183,24 @@ export async function getInvoices(filters: {
         total: sql<number>`COUNT(*)::int`,
         paidCount: sql<number>`SUM(CASE WHEN ${invoicePaymentSchedule.status} IN ('paid', 'confirmed') THEN 1 ELSE 0 END)::int`,
         confirmedCount: sql<number>`SUM(CASE WHEN ${invoicePaymentSchedule.status} = 'confirmed' THEN 1 ELSE 0 END)::int`,
+        visibleAmount: sql<string>`COALESCE(SUM(${invoicePaymentSchedule.amount}::numeric), 0)::text`,
         paidSum: sql<string>`COALESCE(SUM(CASE WHEN ${invoicePaymentSchedule.status} IN ('paid', 'confirmed') THEN ${invoicePaymentSchedule.amount}::numeric ELSE 0 END), 0)::text`,
         nextDueDate: sql<string | null>`MIN(CASE WHEN ${invoicePaymentSchedule.status} NOT IN ('paid', 'confirmed') THEN ${invoicePaymentSchedule.dueDate} END)`,
         lastPaidDate: sql<string | null>`MAX(CASE WHEN ${invoicePaymentSchedule.status} IN ('paid', 'confirmed') THEN ${invoicePaymentSchedule.dueDate} END)`,
       })
       .from(invoicePaymentSchedule)
-      .where(inArray(invoicePaymentSchedule.invoiceId, invoiceIds))
+      .innerJoin(invoices, eq(invoicePaymentSchedule.invoiceId, invoices.id))
+      .where(and(
+        inArray(invoicePaymentSchedule.invoiceId, invoiceIds),
+        ...(f.invoiceVisibilityScopes
+          ? [buildInvoiceVisibilityCondition(f.invoiceVisibilityScopes, invoicePaymentSchedule.status)]
+          : []),
+      ))
       .groupBy(invoicePaymentSchedule.invoiceId);
 
-    const statsMap: Record<string, { total: number; paidCount: number; confirmedCount: number; paidSum: number; nextDueDate: string | null; lastPaidDate: string | null }> = {};
+    const statsMap: Record<string, { total: number; paidCount: number; confirmedCount: number; visibleAmount: number; paidSum: number; nextDueDate: string | null; lastPaidDate: string | null }> = {};
     for (const s of scheduleStats2) {
-      statsMap[s.invoiceId] = { total: Number(s.total), paidCount: Number(s.paidCount), confirmedCount: Number(s.confirmedCount), paidSum: parseFloat(s.paidSum ?? "0"), nextDueDate: s.nextDueDate ?? null, lastPaidDate: s.lastPaidDate ?? null };
+      statsMap[s.invoiceId] = { total: Number(s.total), paidCount: Number(s.paidCount), confirmedCount: Number(s.confirmedCount), visibleAmount: parseFloat(s.visibleAmount ?? "0"), paidSum: parseFloat(s.paidSum ?? "0"), nextDueDate: s.nextDueDate ?? null, lastPaidDate: s.lastPaidDate ?? null };
     }
 
     for (const row of invoiceRows) {
@@ -1147,10 +1212,14 @@ export async function getInvoices(filters: {
         (row as any).schedulePaidCount = stats.paidCount;
         (row as any).scheduleNextDueDate = stats.nextDueDate;
         (row as any).scheduleLastPaidDate = stats.lastPaidDate;
+        if (f.invoiceVisibilityScopes) {
+          row.grandTotal = stats.visibleAmount.toFixed(2);
+          row.totalAmount = stats.visibleAmount.toFixed(2);
+        }
         row.paidAmount = stats.paidSum.toFixed(2);
-        row.remainingAmount = Math.max(0, grand - stats.paidSum).toFixed(2);
+        row.remainingAmount = Math.max(0, (f.invoiceVisibilityScopes ? stats.visibleAmount : grand) - stats.paidSum).toFixed(2);
         if (stats.paidCount === stats.total) {
-          row.status = row.status === "confirmed" || stats.confirmedCount === stats.total ? "confirmed" : "paid";
+          row.status = stats.confirmedCount === stats.total ? "confirmed" : "paid";
         } else if (stats.paidCount > 0) {
           row.status = "partial";
         } else {
@@ -1175,10 +1244,16 @@ export async function getInvoices(filters: {
         updatedByName: scheduleUpdaterStaff.fullName,
       })
       .from(invoicePaymentSchedule)
+      .innerJoin(invoices, eq(invoicePaymentSchedule.invoiceId, invoices.id))
       .leftJoin(scheduleCreatorStaff, eq(invoicePaymentSchedule.createdBy, scheduleCreatorStaff.userId))
       .leftJoin(schedulePaidByStaff, eq(invoicePaymentSchedule.paidBy, schedulePaidByStaff.userId))
       .leftJoin(scheduleUpdaterStaff, eq(invoicePaymentSchedule.updatedBy, scheduleUpdaterStaff.userId))
-      .where(inArray(invoicePaymentSchedule.invoiceId, invoiceIds))
+      .where(and(
+        inArray(invoicePaymentSchedule.invoiceId, invoiceIds),
+        ...(f.invoiceVisibilityScopes
+          ? [buildInvoiceVisibilityCondition(f.invoiceVisibilityScopes, invoicePaymentSchedule.status)]
+          : []),
+      ))
       .orderBy(asc(invoicePaymentSchedule.sortOrder));
 
     const schedulesByInvoice: Record<string, any[]> = {};
@@ -1233,6 +1308,7 @@ export async function getInvoiceFilterOptions(filters: {
   tabFilter?: string;
   allowedLocationIds?: string[] | null;
   isSuperAdmin?: boolean;
+  invoiceVisibilityScopes?: readonly InvoiceVisibilityPermission[];
 } = {}): Promise<Record<string, string[]>> {
   const accessConditions: any[] = [];
   const invoiceRowConditions: any[] = [];
@@ -1242,6 +1318,9 @@ export async function getInvoiceFilterOptions(filters: {
       return { locationNames: [], categories: [], classNames: [], creatorNames: [], payerNames: [], commissionStaffNames: [], paymentMethods: [] };
     }
     accessConditions.push(inArray(invoices.locationId, filters.allowedLocationIds));
+  }
+  if (filters.invoiceVisibilityScopes && filters.invoiceVisibilityScopes.length === 0) {
+    return { locationNames: [], categories: [], classNames: [], creatorNames: [], payerNames: [], commissionStaffNames: [], paymentMethods: [] };
   }
   if (filters.dueDateFrom) {
     invoiceRowConditions.push(gte(invoices.dueDate, filters.dueDateFrom));
@@ -1271,6 +1350,12 @@ export async function getInvoiceFilterOptions(filters: {
     `);
     scheduleRowConditions.push(sql`${invoicePaymentSchedule.status} NOT IN ('paid', 'confirmed')`);
   }
+  if (filters.invoiceVisibilityScopes) {
+    scheduleRowConditions.push(buildInvoiceVisibilityCondition(
+      filters.invoiceVisibilityScopes,
+      invoicePaymentSchedule.status,
+    ));
+  }
 
   const hasRowScope = invoiceRowConditions.length > 0 || scheduleRowConditions.length > 0;
   const invoiceConditions = [...accessConditions];
@@ -1279,11 +1364,29 @@ export async function getInvoiceFilterOptions(filters: {
     FROM invoice_payment_schedule AS filter_option_parent_schedule
     WHERE filter_option_parent_schedule.invoice_id = ${invoices.id}
   )`;
+  if (filters.invoiceVisibilityScopes) {
+    const scopeScheduleInvoices = db
+      .select({ invoiceId: invoicePaymentSchedule.invoiceId })
+      .from(invoicePaymentSchedule)
+      .innerJoin(invoices, eq(invoicePaymentSchedule.invoiceId, invoices.id))
+      .where(buildInvoiceVisibilityCondition(
+        filters.invoiceVisibilityScopes,
+        invoicePaymentSchedule.status,
+      ));
+    invoiceConditions.push(or(
+      and(
+        sql`NOT ${scheduleExists}`,
+        buildInvoiceVisibilityCondition(filters.invoiceVisibilityScopes, invoices.status),
+      ),
+      inArray(invoices.id, scopeScheduleInvoices),
+    ) as any);
+  }
   if (hasRowScope) {
     const noSchedule = sql`NOT ${scheduleExists}`;
     const matchingScheduleInvoiceIds = db
       .select({ invoiceId: invoicePaymentSchedule.invoiceId })
       .from(invoicePaymentSchedule)
+      .innerJoin(invoices, eq(invoicePaymentSchedule.invoiceId, invoices.id))
       .where(and(...scheduleRowConditions));
     invoiceConditions.push(or(
       and(noSchedule, ...invoiceRowConditions),
@@ -1528,6 +1631,7 @@ export async function getInvoicesSummary(filters: {
   paymentMethods?: string[];
   allowedLocationIds?: string[] | null;
   isSuperAdmin?: boolean;
+  invoiceVisibilityScopes?: readonly InvoiceVisibilityPermission[];
 } = {}): Promise<{
   totalCount: number;
   byStatus: { unpaid: number; partial: number; paid: number; debt: number; cancelled: number };

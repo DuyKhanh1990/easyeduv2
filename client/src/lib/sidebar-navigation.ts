@@ -266,7 +266,6 @@ export const navigation: NavEntry[] = [
           value,
           resource,
           name,
-          permissionKeys: ["canView", "canViewAll"],
         })),
       },
       { name: "Công nợ", href: "/invoices/debt", icon: FileText, permissionHref: "/invoices" },

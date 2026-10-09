@@ -110,3 +110,4 @@
 - [Zalo OA profile tier limits](zalo-oa-profile-tier-limit.md) — error `-224` blocks current profile lookup; legacy v2 `getprofile` is retired for business OAs.
 - [Invoice payment method wallet semantics](invoice-payment-method-wallet-semantics.md) — choosing Ví Đặt cọc records the method only; actual debit stays on the separate Đặt cọc field.
 - [Fresh status catalog selectors](course-catalog-freshness.md) — refresh course, program, and fee-package choices when create flows open; separate tabs/users do not share query invalidation.
+- [Invoice visibility scopes](invoice-visibility-scopes.md) — parent Hóa đơn controls page/CRUD access; six child view scopes limit type/status visibility, using each installment's status.

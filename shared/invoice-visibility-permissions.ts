@@ -8,3 +8,15 @@ export const INVOICE_VISIBILITY_PERMISSIONS = [
 ] as const;
 
 export type InvoiceVisibilityPermission = typeof INVOICE_VISIBILITY_PERMISSIONS[number];
+export type InvoiceVisibilityStatus = InvoiceVisibilityPermission["status"];
+export type InvoiceVisibilityType = InvoiceVisibilityPermission["type"];
+
+export function invoiceStatusMatchesVisibilityPermission(
+  invoiceStatus: string | null | undefined,
+  permissionStatus: InvoiceVisibilityStatus,
+): boolean {
+  if (permissionStatus === "unpaid") {
+    return invoiceStatus === "unpaid" || invoiceStatus === "partial";
+  }
+  return invoiceStatus === permissionStatus;
+}
