@@ -4,6 +4,7 @@ import { sendNotificationToMany } from "../lib/notification";
 import { db, pool } from "../db";
 import { z } from "zod";
 import {
+  resolveManualScoreSheetAssessmentDeadlineAt,
   resolveScoreSheetAssessmentDeadlineAt,
   scoreSheetAssessmentSchema,
 } from "@shared/score-sheet-assessment";
@@ -5128,7 +5129,11 @@ export function registerMySpaceRoutes(app: Express): void {
           assessmentName: assessment.name,
           templateName: currentTemplatesById.get(assessment.scoreSheetTemplateId)?.name
             ?? assessment.templateSnapshot.name,
-          scoreDeadlineAt: null,
+          scoreDeadlineAt: resolveManualScoreSheetAssessmentDeadlineAt(
+            assessment,
+            assessment.createdAt,
+            currentTemplatesById.get(assessment.scoreSheetTemplateId)?.scoreDeadlineOffsetMinutes,
+          ),
           attemptCount: assessment.attemptCount,
           scoringPolicy: assessment.scoringPolicy,
           hasConversion: true,
@@ -5421,12 +5426,18 @@ export function registerMySpaceRoutes(app: Express): void {
             name: assessment.name,
             attemptCount: assessment.attemptCount,
             scoringPolicy: assessment.scoringPolicy,
-            scoreDeadlineAt: resolveScoreSheetAssessmentDeadlineAt(
-              assessment,
-              access.sessionDate ?? "",
-              access.sessionStartTime,
-              access.currentTemplate?.scoreDeadlineOffsetMinutes,
-            ),
+            scoreDeadlineAt: access.isManual
+              ? resolveManualScoreSheetAssessmentDeadlineAt(
+                  assessment,
+                  assessment.createdAt,
+                  access.currentTemplate?.scoreDeadlineOffsetMinutes,
+                )
+              : resolveScoreSheetAssessmentDeadlineAt(
+                  assessment,
+                  access.sessionDate ?? "",
+                  access.sessionStartTime,
+                  access.currentTemplate?.scoreDeadlineOffsetMinutes,
+                ),
             templateSnapshot: assessment.templateSnapshot,
             conversionTemplateSnapshot: assessment.conversionTemplateSnapshot,
           },

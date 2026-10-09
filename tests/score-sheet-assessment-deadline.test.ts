@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolveScoreSheetAssessmentDeadlineAt } from "../shared/score-sheet-assessment";
+import {
+  resolveManualScoreSheetAssessmentDeadlineAt,
+  resolveScoreSheetAssessmentDeadlineAt,
+} from "../shared/score-sheet-assessment";
 
 describe("score-sheet assessment deadlines", () => {
   it("calculates a relative deadline from the assigned session start", () => {
@@ -64,6 +67,29 @@ describe("score-sheet assessment deadlines", () => {
 
     expect(resolveScoreSheetAssessmentDeadlineAt(assessment, "2026-09-28", null))
       .toBe("2026-09-28T01:00");
+  });
+
+  it("calculates a manual assessment deadline from its exam date and the current template", () => {
+    const assessment = {
+      scoreDeadlineAt: null,
+      templateSnapshot: { scoreDeadlineOffsetMinutes: 6 * 60 },
+    };
+
+    expect(resolveManualScoreSheetAssessmentDeadlineAt(
+      assessment,
+      "2026-10-08T18:30:00.000Z",
+      24 * 60,
+    )).toBe("2026-10-10T00:00");
+  });
+
+  it("returns null when a manual assessment has no valid exam date", () => {
+    const assessment = {
+      scoreDeadlineAt: null,
+      templateSnapshot: { scoreDeadlineOffsetMinutes: 60 },
+    };
+
+    expect(resolveManualScoreSheetAssessmentDeadlineAt(assessment, "invalid-date"))
+      .toBeNull();
   });
 
   it("returns null for an invalid session date", () => {

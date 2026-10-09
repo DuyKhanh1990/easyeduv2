@@ -23,6 +23,14 @@ Deletion eligibility is based on current class-session assignments resolved thro
 
 **How to apply:** Keep API validation, edit-form state, and conversion switching consistent with these rules. Preserve old linked templates that lack an explicit overall rule. Use the current linked template for relative deadlines and evaluation criteria, but use the saved template snapshot for score calculation. Include assigned assessments in the staff score-sheet timeline by `sessionDate`, with the existing row style and a conversion label. Persist per-student criterion responses with that attempt, separately from calculated score fields. Assignment pickers may display current template code/name alongside the assessment's own label.
 
+## Manual assessment deadlines
+
+**Rule:** A manual assessment's exam date is its creation date. Calculate its deadline from that date using the selected template's current relative deadline, even though it has no class session; use midnight in Asia/Bangkok as the date-only exam anchor.
+
+**Why:** The user clarified that manual score sheets already have an exam date and should use the deadline configured in their score-sheet template.
+
+**How to apply:** Keep manual deadline calculation consistent across staff lists, student rows, and score-entry details. Do not leave the deadline empty merely because there is no class-session start time.
+
 Manual class-session assignment keeps ordinary legacy score sheets in their own list. Its conversion-side picker uses every score-sheet template in the `/score-conversion` “Bảng điểm mẫu” tab, whether or not it links a conversion configuration.
 
 **Why:** The user explicitly wants the whole sample-template list as the source; filtering to templates with a conversion link omits valid choices.

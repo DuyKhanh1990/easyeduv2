@@ -156,3 +156,36 @@ export function resolveScoreSheetAssessmentDeadlineAt(
   deadline.setUTCMinutes(deadline.getUTCMinutes() + offsetMinutes);
   return deadline.toISOString().slice(0, 16);
 }
+
+export function resolveManualScoreSheetAssessmentDeadlineAt(
+  assessment: {
+    scoreDeadlineAt?: string | null;
+    templateSnapshot: { scoreDeadlineOffsetMinutes: number };
+  },
+  examAt: string | Date | null | undefined,
+  currentTemplateOffsetMinutes?: number | null,
+): string | null {
+  if (examAt == null) return null;
+  const parsedExamAt = examAt instanceof Date ? examAt : new Date(examAt);
+  if (Number.isNaN(parsedExamAt.getTime())) return null;
+
+  const dateParts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(parsedExamAt)
+      .map(({ type, value }) => [type, value]),
+  ) as Record<string, string>;
+  const examDate = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+
+  // Manual assessments have a date but no class-session start time, so the
+  // configured relative deadline starts at midnight on the exam date.
+  return resolveScoreSheetAssessmentDeadlineAt(
+    assessment,
+    examDate,
+    null,
+    currentTemplateOffsetMinutes,
+  );
+}

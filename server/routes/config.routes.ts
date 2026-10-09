@@ -18,6 +18,7 @@ import {
   type ScoreSheetTemplateInput,
 } from "@shared/score-sheet-template";
 import {
+  resolveManualScoreSheetAssessmentDeadlineAt,
   resolveScoreSheetAssessmentDeadlineAt,
   scoreSheetAssessmentInputSchema,
   scoreSheetAssessmentSchema,
@@ -3215,7 +3216,11 @@ export function registerConfigRoutes(app: Express): void {
           assessmentCode: assessment.code,
           assessmentName: assessment.name,
           templateName: currentTemplate?.name ?? assessment.templateSnapshot.name,
-          scoreDeadlineAt: null,
+          scoreDeadlineAt: resolveManualScoreSheetAssessmentDeadlineAt(
+            assessment,
+            assessment.createdAt,
+            currentTemplate?.scoreDeadlineOffsetMinutes,
+          ),
           published: false,
           attemptCount: assessment.attemptCount,
           scoringPolicy: assessment.scoringPolicy,
@@ -3503,7 +3508,11 @@ export function registerConfigRoutes(app: Express): void {
             assessmentCode: assessment.code,
             assessmentName: assessment.name,
             templateName: currentTemplate?.name ?? assessment.templateSnapshot.name,
-            scoreDeadlineAt: null,
+            scoreDeadlineAt: resolveManualScoreSheetAssessmentDeadlineAt(
+              assessment,
+              assessment.createdAt,
+              currentTemplate?.scoreDeadlineOffsetMinutes,
+            ),
             attemptCount: assessment.attemptCount,
             scoringPolicy: assessment.scoringPolicy,
             hasConversion: true,
@@ -3664,7 +3673,17 @@ export function registerConfigRoutes(app: Express): void {
           }
         },
       );
-      res.status(201).json(created);
+      if (!created) throw new Error("Không thể tạo bảng điểm.");
+      res.status(201).json({
+        ...created,
+        scoreDeadlineAt: created.creationMode === "manual"
+          ? resolveManualScoreSheetAssessmentDeadlineAt(
+              created,
+              created.createdAt,
+              scoreSheetTemplate.scoreDeadlineOffsetMinutes,
+            )
+          : created.scoreDeadlineAt,
+      });
     } catch (err: any) {
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: err.errors[0]?.message ?? "Thông tin bảng điểm không hợp lệ." });
