@@ -310,12 +310,13 @@ async function areManualScoreSheetStudentsAccessible(
   const classConstraint = input.manualSelectionMode === "class" && input.manualClassId
     ? sql`AND c.id = ${input.manualClassId}::uuid`
     : sql``;
+  const selectedStudentConstraint = inArray(sql`sc.student_id`, input.manualStudentIds);
   const result = await db.execute(sql`
     SELECT DISTINCT sc.student_id
     FROM student_classes sc
     JOIN classes c ON c.id = sc.class_id
     WHERE sc.status = 'active'
-      AND sc.student_id = ANY(${input.manualStudentIds}::uuid[])
+      AND ${selectedStudentConstraint}
       ${classConstraint}
       AND (
         ${staffRecord.id} = ANY(c.teacher_ids)
