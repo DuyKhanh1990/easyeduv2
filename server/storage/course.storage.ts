@@ -17,8 +17,18 @@ import type {
 // COURSES & FEE PACKAGES
 // ==========================================
 
-export async function getCourses(allowedLocationIds?: string[]): Promise<CourseWithLocations[]> {
+export async function getCourses(
+  allowedLocationIds?: string[],
+  includeInactive = false,
+  includeInactiveId?: string,
+): Promise<CourseWithLocations[]> {
   const scopedLocationIds = allowedLocationIds?.length ? [...new Set(allowedLocationIds)] : undefined;
+  const conditions = [];
+  if (!includeInactive) {
+    conditions.push(includeInactiveId
+      ? or(eq(courses.isActive, true), eq(courses.id, includeInactiveId))
+      : eq(courses.isActive, true));
+  }
   let rows: Course[];
 
   if (scopedLocationIds) {
@@ -32,9 +42,12 @@ export async function getCourses(allowedLocationIds?: string[]): Promise<CourseW
     ];
     const linkedCourseIds = [...new Set(linkedCourses.map(row => row.courseId))];
     if (linkedCourseIds.length) scopes.push(inArray(courses.id, linkedCourseIds));
-    rows = await db.select().from(courses).where(or(...scopes)).orderBy(sql`${courses.createdAt} desc`);
+    conditions.push(or(...scopes));
+    rows = await db.select().from(courses).where(and(...conditions)).orderBy(sql`${courses.createdAt} desc`);
   } else {
-    rows = await db.select().from(courses).orderBy(sql`${courses.createdAt} desc`);
+    rows = await db.select().from(courses)
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(sql`${courses.createdAt} desc`);
   }
 
   if (!rows.length) return [];
@@ -103,11 +116,36 @@ export async function deleteCourse(id: string): Promise<void> {
   await db.delete(courses).where(eq(courses.id, id));
 }
 
-export async function getCourseFeePackages(courseId: string): Promise<CourseFeePackage[]> {
-  return await db.select().from(courseFeePackages).where(eq(courseFeePackages.courseId, courseId)).orderBy(sql`${courseFeePackages.createdAt} asc`);
+export async function getCourseFeePackages(
+  courseId: string,
+  includeInactive = false,
+  includeInactiveId?: string,
+): Promise<CourseFeePackage[]> {
+  const [course] = await db.select({ isActive: courses.isActive }).from(courses)
+    .where(eq(courses.id, courseId)).limit(1);
+  if (!course) return [];
+  const conditions = [eq(courseFeePackages.courseId, courseId)];
+  if (!includeInactive) {
+    if (course.isActive) {
+      conditions.push(includeInactiveId
+        ? or(eq(courseFeePackages.isActive, true), eq(courseFeePackages.id, includeInactiveId))!
+        : eq(courseFeePackages.isActive, true));
+    } else if (includeInactiveId) {
+      conditions.push(eq(courseFeePackages.id, includeInactiveId));
+    } else {
+      return [];
+    }
+  }
+  return await db.select().from(courseFeePackages)
+    .where(and(...conditions))
+    .orderBy(sql`${courseFeePackages.createdAt} asc`);
 }
 
-export async function getAllFeePackages(locationId?: string): Promise<any[]> {
+export async function getAllFeePackages(
+  locationId?: string,
+  includeInactive = false,
+  includeInactiveId?: string,
+): Promise<any[]> {
   const linkedCourses = locationId
     ? await db.select({ courseId: courseLocations.courseId }).from(courseLocations).where(eq(courseLocations.locationId, locationId))
     : [];
@@ -123,12 +161,23 @@ export async function getAllFeePackages(locationId?: string): Promise<any[]> {
       fee: courseFeePackages.fee,
       sessions: courseFeePackages.sessions,
       totalAmount: courseFeePackages.totalAmount,
+      isActive: courseFeePackages.isActive,
       courseName: sql<string>`courses.name`,
       courseLocationId: courses.locationId,
     })
     .from(courseFeePackages)
     .leftJoin(courses, eq(courseFeePackages.courseId, courses.id))
-    .where(courseConditions.length > 0 ? or(...courseConditions) : undefined)
+    .where(and(
+      ...(includeInactive
+        ? []
+        : [includeInactiveId
+          ? or(
+              and(eq(courseFeePackages.isActive, true), eq(courses.isActive, true)),
+              eq(courseFeePackages.id, includeInactiveId),
+            )!
+          : and(eq(courseFeePackages.isActive, true), eq(courses.isActive, true))!]),
+      ...(courseConditions.length > 0 ? [or(...courseConditions)!] : []),
+    ))
     .orderBy(courseFeePackages.name);
   return rows;
 }
@@ -151,12 +200,27 @@ export async function deleteCourseFeePackage(id: string): Promise<void> {
 // COURSE PROGRAMS
 // ==========================================
 
-export async function getCoursePrograms(allowedLocationIds?: string[]): Promise<CourseProgram[]> {
+export async function getCoursePrograms(
+  allowedLocationIds?: string[],
+  includeInactive = false,
+  includeInactiveId?: string,
+): Promise<CourseProgram[]> {
+  const activeCondition = includeInactive
+    ? undefined
+    : includeInactiveId
+      ? or(eq(coursePrograms.isActive, true), eq(coursePrograms.id, includeInactiveId))
+      : eq(coursePrograms.isActive, true);
   if (!allowedLocationIds || allowedLocationIds.length === 0) {
-    return await db.select().from(coursePrograms);
+    return await db.select().from(coursePrograms)
+      .where(activeCondition)
+      .orderBy(coursePrograms.name);
   }
   return await db.select().from(coursePrograms)
-    .where(sql`(${coursePrograms.locationIds} = '{}'::uuid[] OR ${coursePrograms.locationIds} && ${allowedLocationIds}::uuid[])`);
+    .where(and(
+      activeCondition,
+      sql`(${coursePrograms.locationIds} = '{}'::uuid[] OR ${coursePrograms.locationIds} && ${allowedLocationIds}::uuid[])`,
+    ))
+    .orderBy(coursePrograms.name);
 }
 
 export async function updateCourseProgram(id: string, data: any): Promise<CourseProgram> {

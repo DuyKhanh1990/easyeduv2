@@ -53,7 +53,7 @@ export function SessionDetailSheet({ sessionId, classId, onClose, readOnly = fal
   });
 
   const { data: feePackages } = useQuery<any[]>({
-    queryKey: [`/api/courses/${classData?.courseId}/fee-packages`],
+    queryKey: [`/api/courses/${classData?.courseId}/fee-packages${classData?.feePackageId ? `?includeInactiveId=${encodeURIComponent(classData.feePackageId)}` : ""}`],
     enabled: !!classData?.courseId,
     staleTime: 0,
   });

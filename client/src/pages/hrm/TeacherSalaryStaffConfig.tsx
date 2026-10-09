@@ -61,7 +61,7 @@ export function TeacherSalaryStaffConfig() {
   });
 
   const { data: courses = [], isLoading: coursesLoading } = useQuery<Course[]>({
-    queryKey: ["/api/courses"],
+    queryKey: ["/api/courses?includeInactive=true"],
   });
 
   const { data: packages = [], isLoading: packagesLoading } = useQuery<TeacherSalaryPackage[]>({
@@ -351,7 +351,9 @@ export function TeacherSalaryStaffConfig() {
                       <SelectItem value="empty" disabled>Không có khoá học</SelectItem>
                     ) : (
                       courses.map(c => (
-                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        <SelectItem key={c.id} value={c.id} disabled={c.isActive === false && row.courseId !== c.id}>
+                          {c.isActive === false ? `${c.name} (Không hoạt động)` : c.name}
+                        </SelectItem>
                       ))
                     )}
                   </SelectContent>

@@ -1025,7 +1025,9 @@ export function registerConfigRoutes(app: Express): void {
   // Courses & Fee Packages
   app.get(api.courses.list.path, async (req, res) => {
     const locationFilter = req.isSuperAdmin ? undefined : req.allowedLocationIds;
-    res.json(await storage.getCourses(locationFilter));
+    const includeInactive = req.query.includeInactive === "true";
+    const includeInactiveId = typeof req.query.includeInactiveId === "string" ? req.query.includeInactiveId : undefined;
+    res.json(await storage.getCourses(locationFilter, includeInactive, includeInactiveId));
   });
 
   // Course/program/content history timeline
@@ -1098,13 +1100,18 @@ export function registerConfigRoutes(app: Express): void {
   });
 
   app.get(api.courses.feePackages.path, async (req, res) => {
-    res.json(await storage.getCourseFeePackages(req.params.id));
+    const includeInactive = req.query.includeInactive === "true";
+    const includeInactiveId = typeof req.query.includeInactiveId === "string" ? req.query.includeInactiveId : undefined;
+    const courseId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    res.json(await storage.getCourseFeePackages(courseId, includeInactive, includeInactiveId));
   });
 
   app.get("/api/fee-packages", async (req, res) => {
     try {
       const locationId = req.query.locationId as string | undefined;
-      res.json(await storage.getAllFeePackages(locationId || undefined));
+      const includeInactive = req.query.includeInactive === "true";
+      const includeInactiveId = typeof req.query.includeInactiveId === "string" ? req.query.includeInactiveId : undefined;
+      res.json(await storage.getAllFeePackages(locationId || undefined, includeInactive, includeInactiveId));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -1238,7 +1245,9 @@ export function registerConfigRoutes(app: Express): void {
   // Course Programs
   app.get("/api/course-programs", async (req, res) => {
     const locationFilter = req.isSuperAdmin ? undefined : req.allowedLocationIds;
-    const allPrograms = await storage.getCoursePrograms(locationFilter);
+    const includeInactive = req.query.includeInactive === "true";
+    const includeInactiveId = typeof req.query.includeInactiveId === "string" ? req.query.includeInactiveId : undefined;
+    const allPrograms = await storage.getCoursePrograms(locationFilter, includeInactive, includeInactiveId);
     res.json(allPrograms);
   });
 

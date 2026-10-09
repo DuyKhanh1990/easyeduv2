@@ -247,11 +247,11 @@ export function CoursesHistoryTab() {
     staleTime: 30_000,
   });
   const { data: courses = [] } = useQuery<Array<{ id: string; name: string }>>({
-    queryKey: ["/api/courses"],
+    queryKey: ["/api/courses?includeInactive=true"],
     staleTime: 60_000,
   });
   const { data: programs = [] } = useQuery<Array<{ id: string; name: string }>>({
-    queryKey: ["/api/course-programs"],
+    queryKey: ["/api/course-programs?includeInactive=true"],
     staleTime: 60_000,
   });
   const courseNames = Object.fromEntries(courses.map(course => [course.id, course.name]));

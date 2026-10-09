@@ -97,7 +97,7 @@ export function ClassDetailDialog({ classId, isOpen, onClose }: ClassDetailDialo
   });
 
   const { data: feePackages } = useQuery<any[]>({
-    queryKey: [`/api/courses/${classData?.courseId}/fee-packages`],
+    queryKey: [`/api/courses/${classData?.courseId}/fee-packages${classData?.feePackageId ? `?includeInactiveId=${encodeURIComponent(classData.feePackageId)}` : ""}`],
     enabled: !!classData?.courseId && isOpen && activeTab === "schedule",
     staleTime: 0,
   });

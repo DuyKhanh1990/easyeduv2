@@ -439,6 +439,7 @@ export const coursePrograms = pgTable("course_programs", {
   locationIds: uuid("location_ids").array().notNull(),
   sessions: decimal("sessions", { precision: 10, scale: 2 }).notNull(),
   note: text("note"),
+  isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -866,6 +867,7 @@ export const courses = pgTable("courses", {
   locationId: uuid("location_id").references(() => locations.id),
   note: text("note"),
   createdBy: uuid("created_by").references(() => users.id),
+  isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -890,6 +892,7 @@ export const courseFeePackages = pgTable("course_fee_packages", {
   fee: decimal("fee", { precision: 15, scale: 2 }).notNull(),
   sessions: decimal("sessions", { precision: 10, scale: 2 }).notNull(),
   totalAmount: decimal("total_amount", { precision: 15, scale: 2 }).notNull(),
+  isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

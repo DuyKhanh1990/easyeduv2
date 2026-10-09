@@ -226,15 +226,17 @@ export function ScheduleDialog({
 
   // Fetch all courses for the course selector
   const { data: coursesList = [] } = useQuery<any[]>({
-    queryKey: ["/api/courses"],
+    queryKey: [selectedCourseId
+      ? `/api/courses?includeInactiveId=${encodeURIComponent(selectedCourseId)}`
+      : "/api/courses"],
     enabled: isOpen,
   });
 
   // Fetch packages for the selected course, or all packages available at the
   // class location when the class has no course assigned yet.
   const feePackagesQueryKey = selectedCourseId
-    ? `/api/courses/${selectedCourseId}/fee-packages`
-    : `/api/fee-packages?locationId=${encodeURIComponent(effectiveLocationId || "")}`;
+    ? `/api/courses/${selectedCourseId}/fee-packages?includeInactive=true`
+    : `/api/fee-packages?locationId=${encodeURIComponent(effectiveLocationId || "")}&includeInactive=true`;
   const { data: feePackages = [] } = useQuery<any[]>({
     queryKey: [feePackagesQueryKey],
     enabled: isOpen && (!!selectedCourseId || !!effectiveLocationId),
@@ -884,7 +886,9 @@ export function ScheduleDialog({
                   </SelectTrigger>
                   <SelectContent>
                     {(coursesList as any[]).map((c: any) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      <SelectItem key={c.id} value={c.id} disabled={c.isActive === false && c.id !== selectedCourseId}>
+                        {c.isActive === false ? `${c.name} (Không hoạt động)` : c.name}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -901,7 +905,9 @@ export function ScheduleDialog({
                   </SelectTrigger>
                   <SelectContent>
                     {feePackages.map((pkg: any) => (
-                      <SelectItem key={pkg.id} value={pkg.id}>{pkg.name}</SelectItem>
+                      <SelectItem key={pkg.id} value={pkg.id} disabled={pkg.isActive === false && pkg.id !== globalPackageId}>
+                        {pkg.isActive === false ? `${pkg.name} (Không hoạt động)` : pkg.name}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -1248,7 +1254,9 @@ export function ScheduleDialog({
                           </SelectTrigger>
                           <SelectContent>
                             {feePackages.map((pkg: any) => (
-                              <SelectItem key={pkg.id} value={pkg.id}>{pkg.name}</SelectItem>
+                              <SelectItem key={pkg.id} value={pkg.id} disabled={pkg.isActive === false && pkg.id !== config.packageId}>
+                                {pkg.isActive === false ? `${pkg.name} (Không hoạt động)` : pkg.name}
+                              </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>

@@ -139,8 +139,6 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
   const isFreeClass = cls?.classType === "free";
 
   const { data: locations } = useQuery<any[]>({ queryKey: ["/api/locations"], enabled: isOpen });
-  const { data: programs } = useQuery<any[]>({ queryKey: ["/api/course-programs"], enabled: isOpen });
-  const { data: courses } = useQuery<any[]>({ queryKey: ["/api/courses"], enabled: isOpen });
   const { data: subjects } = useQuery<any[]>({ queryKey: ["/api/subjects"], enabled: isOpen });
   const { data: evaluationCriteriaList } = useQuery<any[]>({ queryKey: ["/api/evaluation-criteria"], enabled: isOpen });
   const { data: scoreSheets } = useQuery<any[]>({ queryKey: ["/api/score-sheets"], enabled: isOpen });
@@ -163,11 +161,27 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
 
   const selectedLocationId = form.watch("locationId");
   const selectedCourseId = form.watch("courseId");
+  const selectedProgramId = form.watch("programId");
+  const selectedCourseIdForLookup = selectedCourseId;
+  const selectedFeePackageId = form.watch("feePackageId");
   const selectedLearningFormat = form.watch("learningFormat");
   const selectedFreeClassMode = form.watch("freeClassMode");
   const selectedWeekdays = form.watch("weekdays") || [];
   const scheduleConfig = form.watch("schedule_config") || [];
   const teachersConfig = form.watch("teachers_config") || [];
+
+  const { data: programs } = useQuery<any[]>({
+    queryKey: [selectedProgramId
+      ? `/api/course-programs?includeInactiveId=${encodeURIComponent(selectedProgramId)}`
+      : "/api/course-programs"],
+    enabled: isOpen,
+  });
+  const { data: courses } = useQuery<any[]>({
+    queryKey: [selectedCourseIdForLookup
+      ? `/api/courses?includeInactiveId=${encodeURIComponent(selectedCourseIdForLookup)}`
+      : "/api/courses"],
+    enabled: isOpen,
+  });
 
   const effectiveLocationId = selectedLocationId || cls?.locationId;
 
@@ -186,9 +200,13 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
   const effectiveCourseId = selectedCourseId || cls?.courseId;
 
   const { data: feePackages } = useQuery<any[]>({
-    queryKey: ["/api/courses", effectiveCourseId, "fee-packages"],
+    queryKey: [effectiveCourseId
+      ? `/api/courses/${effectiveCourseId}/fee-packages${selectedFeePackageId ? `?includeInactiveId=${encodeURIComponent(selectedFeePackageId)}` : ""}`
+      : null],
     queryFn: async () => {
-      const res = await fetch(`/api/courses/${effectiveCourseId}/fee-packages`, { credentials: "include" });
+      const includeInactiveId = form.getValues("feePackageId") || cls?.feePackageId;
+      const search = includeInactiveId ? `?includeInactiveId=${encodeURIComponent(includeInactiveId)}` : "";
+      const res = await fetch(`/api/courses/${effectiveCourseId}/fee-packages${search}`, { credentials: "include" });
       if (!res.ok) throw new Error("Không thể tải gói học phí");
       return res.json();
     },
@@ -693,7 +711,11 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                             <FormLabel>Khóa học</FormLabel>
                             <FormControl>
                               <SearchableSelect
-                                options={(courses || []).map((c: any) => ({ value: String(c.id), label: c.name }))}
+                                options={(courses || []).map((c: any) => ({
+                                  value: String(c.id),
+                                  label: c.isActive === false ? `${c.name} (Không hoạt động)` : c.name,
+                                  disabled: c.isActive === false && String(c.id) !== String(field.value || ""),
+                                }))}
                                 value={field.value || ""}
                                 onChange={field.onChange}
                                 placeholder="Chọn khóa học"
@@ -715,7 +737,15 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                             >
                               <FormControl><SelectTrigger><SelectValue placeholder={selectedCourseId ? "Chọn gói học phí" : "Chọn khóa học trước"} /></SelectTrigger></FormControl>
                               <SelectContent>
-                                {feePackages?.map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
+                                {feePackages?.map((p: any) => (
+                                  <SelectItem
+                                    key={p.id}
+                                    value={String(p.id)}
+                                    disabled={p.isActive === false && String(p.id) !== String(field.value || "")}
+                                  >
+                                    {p.isActive === false ? `${p.name} (Không hoạt động)` : p.name}
+                                  </SelectItem>
+                                ))}
                               </SelectContent>
                             </Select>
                             <FormMessage />
@@ -777,7 +807,11 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                               <FormLabel>Chương trình</FormLabel>
                               <FormControl>
                                 <SearchableSelect
-                                  options={(programs || []).map((p: any) => ({ value: String(p.id), label: p.name }))}
+                                  options={(programs || []).map((p: any) => ({
+                                    value: String(p.id),
+                                    label: p.isActive === false ? `${p.name} (Không hoạt động)` : p.name,
+                                    disabled: p.isActive === false && String(p.id) !== String(field.value || ""),
+                                  }))}
                                   value={field.value || ""}
                                   onChange={field.onChange}
                                   placeholder="Chọn chương trình"

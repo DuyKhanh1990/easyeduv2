@@ -159,19 +159,19 @@ export interface IStorage {
   deleteCrmCustomField(id: string): Promise<void>;
 
   // Courses & Fee Packages
-  getCourses(allowedLocationIds?: string[]): Promise<CourseWithLocations[]>;
+  getCourses(allowedLocationIds?: string[], includeInactive?: boolean, includeInactiveId?: string): Promise<CourseWithLocations[]>;
   createCourse(course: InsertCourse, locationIds?: string[]): Promise<CourseWithLocations>;
   updateCourse(id: string, data: Partial<InsertCourse>, locationIds?: string[]): Promise<CourseWithLocations>;
   deleteCourse(id: string): Promise<void>;
-  getCourseFeePackages(courseId: string): Promise<CourseFeePackage[]>;
-  getAllFeePackages(locationId?: string): Promise<any[]>;
+  getCourseFeePackages(courseId: string, includeInactive?: boolean, includeInactiveId?: string): Promise<CourseFeePackage[]>;
+  getAllFeePackages(locationId?: string, includeInactive?: boolean, includeInactiveId?: string): Promise<any[]>;
   getNextInvoiceCode(type: string): Promise<string>;
   createCourseFeePackage(pkg: InsertCourseFeePackage): Promise<CourseFeePackage>;
   updateCourseFeePackage(id: string, data: Partial<InsertCourseFeePackage>): Promise<CourseFeePackage>;
   deleteCourseFeePackage(id: string): Promise<void>;
 
   // Course Programs
-  getCoursePrograms(): Promise<CourseProgram[]>;
+  getCoursePrograms(allowedLocationIds?: string[], includeInactive?: boolean, includeInactiveId?: string): Promise<CourseProgram[]>;
   updateCourseProgram(id: string, data: any): Promise<CourseProgram>;
   deleteCourseProgram(id: string): Promise<void>;
   createCourseProgram(program: any): Promise<CourseProgram>;
@@ -579,8 +579,8 @@ export class DatabaseStorage implements IStorage {
     return shiftStorage.checkAvailabilityDuplicate(data);
   }
 
-  async getCoursePrograms(): Promise<CourseProgram[]> {
-    return courseStorage.getCoursePrograms();
+  async getCoursePrograms(allowedLocationIds?: string[], includeInactive?: boolean, includeInactiveId?: string): Promise<CourseProgram[]> {
+    return courseStorage.getCoursePrograms(allowedLocationIds, includeInactive, includeInactiveId);
   }
 
   async updateCourseProgram(id: string, data: any): Promise<CourseProgram> {
@@ -1037,8 +1037,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Courses & Fee Packages
-  async getCourses(allowedLocationIds?: string[]): Promise<CourseWithLocations[]> {
-    return courseStorage.getCourses(allowedLocationIds);
+  async getCourses(allowedLocationIds?: string[], includeInactive?: boolean, includeInactiveId?: string): Promise<CourseWithLocations[]> {
+    return courseStorage.getCourses(allowedLocationIds, includeInactive, includeInactiveId);
   }
 
   async createCourse(course: InsertCourse, locationIds?: string[]): Promise<CourseWithLocations> {
@@ -1053,12 +1053,12 @@ export class DatabaseStorage implements IStorage {
     return courseStorage.deleteCourse(id);
   }
 
-  async getCourseFeePackages(courseId: string): Promise<CourseFeePackage[]> {
-    return courseStorage.getCourseFeePackages(courseId);
+  async getCourseFeePackages(courseId: string, includeInactive?: boolean, includeInactiveId?: string): Promise<CourseFeePackage[]> {
+    return courseStorage.getCourseFeePackages(courseId, includeInactive, includeInactiveId);
   }
 
-  async getAllFeePackages(locationId?: string): Promise<any[]> {
-    return courseStorage.getAllFeePackages(locationId);
+  async getAllFeePackages(locationId?: string, includeInactive?: boolean, includeInactiveId?: string): Promise<any[]> {
+    return courseStorage.getAllFeePackages(locationId, includeInactive, includeInactiveId);
   }
 
   async getNextInvoiceCode(type: string): Promise<string> {

@@ -130,6 +130,57 @@ function canViewTab(data: MyPermissionsResult | null | undefined, tabValue: stri
   return p.canView || p.canViewAll;
 }
 
+function invalidateCourseCatalogQueries() {
+  return queryClient.invalidateQueries({
+    predicate: ({ queryKey }) => {
+      const key = String(queryKey[0] ?? "");
+      return ["/api/courses", "/api/course-programs", "/api/fee-packages"].some(path => key.startsWith(path));
+    },
+  });
+}
+
+function ActivityStatusField({ control }: { control: any }) {
+  return (
+    <FormField
+      control={control}
+      name="isActive"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>Trạng thái</FormLabel>
+          <Select
+            value={field.value === false ? "inactive" : "active"}
+            onValueChange={(value) => field.onChange(value === "active")}
+          >
+            <FormControl>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+            </FormControl>
+            <SelectContent>
+              <SelectItem value="active">Hoạt động</SelectItem>
+              <SelectItem value="inactive">Không hoạt động</SelectItem>
+            </SelectContent>
+          </Select>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+function ActivityStatusBadge({ isActive }: { isActive: boolean }) {
+  return (
+    <Badge
+      variant="outline"
+      className={isActive
+        ? "shrink-0 border-emerald-200 bg-emerald-50 text-emerald-700"
+        : "shrink-0 border-slate-200 bg-slate-100 text-slate-600"}
+    >
+      {isActive ? "Hoạt động" : "Không hoạt động"}
+    </Badge>
+  );
+}
+
 export default function CoursesPrograms() {
   const { isSubTabVisible } = useSidebarVisibility();
   const { data: myPerms } = useMyPermissions();
@@ -162,7 +213,7 @@ export default function CoursesPrograms() {
   const { toast } = useToast();
 
   const { data: deletingCourseFeePackages = [] } = useQuery<CourseFeePackage[]>({
-    queryKey: ["/api/courses", deletingCourse?.id, "fee-packages"],
+    queryKey: [deletingCourse ? `/api/courses/${deletingCourse.id}/fee-packages?includeInactive=true` : null],
     enabled: !!deletingCourse,
   });
 
@@ -172,7 +223,7 @@ export default function CoursesPrograms() {
       return course;
     },
     onSuccess: (_, course) => {
-      queryClient.setQueryData<Course[]>(["/api/courses"], (old = []) =>
+      queryClient.setQueryData<Course[]>(["/api/courses?includeInactive=true"], (old = []) =>
         old.filter(c => c.id !== course.id)
       );
       queryClient.removeQueries({ queryKey: ["/api/courses", course.id, "fee-packages"] });
@@ -191,7 +242,7 @@ export default function CoursesPrograms() {
       return program;
     },
     onSuccess: (_, program) => {
-      queryClient.setQueryData<CourseProgram[]>(["/api/course-programs"], (old = []) =>
+      queryClient.setQueryData<CourseProgram[]>(["/api/course-programs?includeInactive=true"], (old = []) =>
         old.filter(p => p.id !== program.id)
       );
       toast({ title: "Đã xoá", description: "Chương trình học đã được xoá thành công" });
@@ -208,7 +259,9 @@ export default function CoursesPrograms() {
       await apiRequest("DELETE", `/api/courses/${pkg.courseId}/fee-packages/${pkg.id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/courses", selectedCourseId, "fee-packages"] });
+      queryClient.invalidateQueries({
+        queryKey: [selectedCourseId ? `/api/courses/${selectedCourseId}/fee-packages?includeInactive=true` : ""],
+      });
       toast({ title: "Đã xoá", description: "Gói học phí đã được xoá thành công" });
       setDeletingPackage(null);
     },
@@ -218,11 +271,11 @@ export default function CoursesPrograms() {
   });
 
   const { data: courses = [], isLoading: isLoadingCourses } = useQuery<CourseWithLocations[]>({
-    queryKey: ["/api/courses"],
+    queryKey: ["/api/courses?includeInactive=true"],
   });
 
   const { data: feePackages = [], isLoading: isLoadingPackages } = useQuery<CourseFeePackage[]>({
-    queryKey: ["/api/courses", selectedCourseId, "fee-packages"],
+    queryKey: [selectedCourseId ? `/api/courses/${selectedCourseId}/fee-packages?includeInactive=true` : null],
     enabled: !!selectedCourseId,
   });
 
@@ -231,7 +284,7 @@ export default function CoursesPrograms() {
   });
 
   const { data: programs = [], isLoading: isLoadingPrograms } = useQuery<CourseProgram[]>({
-    queryKey: ["/api/course-programs"],
+    queryKey: ["/api/course-programs?includeInactive=true"],
     enabled: activeTab === "programs",
   });
 
@@ -335,7 +388,7 @@ export default function CoursesPrograms() {
                           >
                             <div className="flex items-start justify-between">
                               <div className="space-y-1">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <span className="text-xs font-bold px-2 py-0.5 rounded bg-primary/10 text-primary uppercase tracking-wider">
                                     {course.code}
                                   </span>
@@ -345,6 +398,7 @@ export default function CoursesPrograms() {
                                   )}>
                                     {course.name}
                                   </h4>
+                                  <ActivityStatusBadge isActive={course.isActive !== false} />
                                 </div>
                                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
                                   <span className="flex items-center gap-1">
@@ -392,7 +446,9 @@ export default function CoursesPrograms() {
                     </div>
                     <CardTitle className="text-lg font-display">Gói học phí: {selectedCourse?.name}</CardTitle>
                   </div>
-                  {coursesPerm.canAdd && <FeePackageDialog courseId={selectedCourseId} />}
+                  {coursesPerm.canAdd && (
+                    <FeePackageDialog courseId={selectedCourseId} courseIsActive={selectedCourse?.isActive !== false} />
+                  )}
                 </CardHeader>
                 <CardContent className="flex-1 overflow-y-auto p-4">
                   {isLoadingPackages ? (
@@ -413,6 +469,7 @@ export default function CoursesPrograms() {
                                 )}>
                                   {pkg.type}
                                 </span>
+                                <ActivityStatusBadge isActive={pkg.isActive !== false} />
                               </div>
                               {(coursesPerm.canEdit || coursesPerm.canDelete) && (
                                 <DropdownMenu>
@@ -472,8 +529,8 @@ export default function CoursesPrograms() {
                         Hãy thêm các gói học phí (theo buổi hoặc theo khoá) cho khoá học này.
                       </p>
                       {coursesPerm.canAdd && (
-                        <FeePackageDialog courseId={selectedCourseId} trigger={
-                          <Button variant="outline" className="mt-6 gap-2" disabled={!selectedCourseId}>
+                        <FeePackageDialog courseId={selectedCourseId} courseIsActive={selectedCourse?.isActive !== false} trigger={
+                          <Button variant="outline" className="mt-6 gap-2" disabled={!selectedCourseId || selectedCourse?.isActive === false}>
                             <Plus className="h-4 w-4" />
                             Thêm gói đầu tiên
                           </Button>
@@ -525,7 +582,7 @@ export default function CoursesPrograms() {
                         >
                           <div className="flex items-start justify-between">
                             <div className="space-y-1">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-xs font-bold px-2 py-0.5 rounded bg-primary/10 text-primary uppercase tracking-wider">
                                   {program.code}
                                 </span>
@@ -535,6 +592,7 @@ export default function CoursesPrograms() {
                                 )}>
                                   {program.name}
                                 </h4>
+                                <ActivityStatusBadge isActive={program.isActive !== false} />
                               </div>
                               <div className="flex items-center gap-4 text-xs text-muted-foreground">
                                 <span className="flex items-center gap-1">
@@ -1428,7 +1486,8 @@ function ProgramDialog({
       name: editProgram?.name ?? "",
       locationIds: (editProgram?.locationIds ?? []) as string[],
       sessions: editProgram ? Number(editProgram.sessions) : 0,
-      note: editProgram?.note ?? ""
+      note: editProgram?.note ?? "",
+      isActive: editProgram?.isActive ?? true,
     }
   });
 
@@ -1439,10 +1498,11 @@ function ProgramDialog({
         name: editProgram.name,
         locationIds: (editProgram.locationIds ?? []) as string[],
         sessions: Number(editProgram.sessions),
-        note: editProgram.note ?? ""
+        note: editProgram.note ?? "",
+        isActive: editProgram.isActive !== false,
       });
     } else if (open && !editProgram) {
-      form.reset({ code: "", name: "", locationIds: [], sessions: 0, note: "" });
+      form.reset({ code: "", name: "", locationIds: [], sessions: 0, note: "", isActive: true });
     }
   }, [open, editProgram]);
 
@@ -1457,14 +1517,15 @@ function ProgramDialog({
     },
     onSuccess: (updatedProgram) => {
       if (isEdit && updatedProgram?.id) {
-        queryClient.setQueryData<CourseProgram[]>(["/api/course-programs"], (old = []) =>
+        queryClient.setQueryData<CourseProgram[]>(["/api/course-programs?includeInactive=true"], (old = []) =>
           old.map(p => p.id === updatedProgram.id ? updatedProgram : p)
         );
       } else if (updatedProgram?.id) {
-        queryClient.setQueryData<CourseProgram[]>(["/api/course-programs"], (old = []) =>
+        queryClient.setQueryData<CourseProgram[]>(["/api/course-programs?includeInactive=true"], (old = []) =>
           [updatedProgram, ...(old || [])]
         );
       }
+      void invalidateCourseCatalogQueries();
       toast({ title: "Thành công", description: isEdit ? "Đã cập nhật chương trình học" : "Đã lưu chương trình học mới" });
       setOpen(false);
       if (!isEdit) form.reset();
@@ -1558,6 +1619,8 @@ function ProgramDialog({
                 </FormItem>
               )}
             />
+
+            <ActivityStatusField control={form.control} />
 
             <FormField
               control={form.control}
@@ -2842,7 +2905,8 @@ function CourseDialog({ locations, editCourse, open: openProp, onOpenChange }: {
       locationIds: editCourse?.locationIds?.length
         ? editCourse.locationIds
         : (editCourse?.locationId ? [editCourse.locationId] : []),
-      note: editCourse?.note ?? ""
+      note: editCourse?.note ?? "",
+      isActive: editCourse?.isActive ?? true,
     }
   });
 
@@ -2855,9 +2919,10 @@ function CourseDialog({ locations, editCourse, open: openProp, onOpenChange }: {
           ? editCourse.locationIds
           : (editCourse.locationId ? [editCourse.locationId] : []),
         note: editCourse.note ?? "",
+        isActive: editCourse.isActive !== false,
       });
     } else if (open && !editCourse) {
-      form.reset({ code: "", name: "", locationIds: [], note: "" });
+      form.reset({ code: "", name: "", locationIds: [], note: "", isActive: true });
     }
   }, [open, editCourse]);
 
@@ -2874,14 +2939,15 @@ function CourseDialog({ locations, editCourse, open: openProp, onOpenChange }: {
     },
     onSuccess: (updatedCourse) => {
       if (isEdit && updatedCourse?.id) {
-        queryClient.setQueryData<CourseWithLocations[]>(["/api/courses"], (old = []) =>
+        queryClient.setQueryData<CourseWithLocations[]>(["/api/courses?includeInactive=true"], (old = []) =>
           old.map(c => c.id === updatedCourse.id ? updatedCourse : c)
         );
       } else if (updatedCourse?.id) {
-        queryClient.setQueryData<CourseWithLocations[]>(["/api/courses"], (old = []) =>
+        queryClient.setQueryData<CourseWithLocations[]>(["/api/courses?includeInactive=true"], (old = []) =>
           [updatedCourse, ...(old || [])]
         );
       }
+      void invalidateCourseCatalogQueries();
       toast({ title: "Thành công", description: isEdit ? "Đã cập nhật khoá học" : "Đã lưu khoá học mới" });
       setOpen(false);
       if (!isEdit) form.reset();
@@ -2960,6 +3026,7 @@ function CourseDialog({ locations, editCourse, open: openProp, onOpenChange }: {
                 </FormItem>
               )}
             />
+            <ActivityStatusField control={form.control} />
             <FormField
               control={form.control}
               name="note"
@@ -2988,12 +3055,14 @@ function CourseDialog({ locations, editCourse, open: openProp, onOpenChange }: {
 
 function FeePackageDialog({
   courseId,
+  courseIsActive = true,
   trigger,
   editPackage,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
 }: {
   courseId: string | null;
+  courseIsActive?: boolean;
   trigger?: React.ReactNode;
   editPackage?: CourseFeePackage;
   open?: boolean;
@@ -3014,6 +3083,7 @@ function FeePackageDialog({
       fee: Number(editPackage?.fee) || 0,
       sessions: Number(editPackage?.sessions) || 0,
       totalAmount: Number(editPackage?.totalAmount) || 0,
+      isActive: editPackage?.isActive ?? true,
     }
   });
 
@@ -3026,6 +3096,7 @@ function FeePackageDialog({
         fee: Number(editPackage?.fee) || 0,
         sessions: Number(editPackage?.sessions) || 0,
         totalAmount: Number(editPackage?.totalAmount) || 0,
+        isActive: editPackage?.isActive !== false,
       });
     }
   }, [open, editPackage, courseId]);
@@ -3060,7 +3131,12 @@ function FeePackageDialog({
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/courses", effectiveCourseId, "fee-packages"] });
+      if (effectiveCourseId) {
+        queryClient.invalidateQueries({
+          queryKey: [`/api/courses/${effectiveCourseId}/fee-packages?includeInactive=true`],
+        });
+      }
+      void invalidateCourseCatalogQueries();
       toast({ title: "Thành công", description: isEdit ? "Đã cập nhật gói học phí" : "Đã lưu gói học phí mới" });
       setOpen(false);
       if (!isEdit) form.reset();
@@ -3087,6 +3163,7 @@ function FeePackageDialog({
               </FormItem>
             )}
           />
+          <ActivityStatusField control={form.control} />
           <div className="grid grid-cols-2 gap-4">
             <FormField
               control={form.control}
@@ -3180,7 +3257,7 @@ function FeePackageDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {trigger || (
-          <Button size="sm" variant="outline" className="gap-2 border-primary/20 hover:bg-primary/5 text-primary" disabled={!courseId}>
+          <Button size="sm" variant="outline" className="gap-2 border-primary/20 hover:bg-primary/5 text-primary" disabled={!courseId || !courseIsActive}>
             <Plus className="h-4 w-4" />
             Gói học phí
           </Button>

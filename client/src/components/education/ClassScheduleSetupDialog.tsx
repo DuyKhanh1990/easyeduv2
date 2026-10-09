@@ -80,10 +80,20 @@ export function ClassScheduleSetupDialog({
   const [isSaving, setIsSaving] = useState(false);
 
   // Queries
-  const { data: programs = [] } = useQuery<any[]>({ queryKey: ["/api/course-programs"], enabled: isOpen });
-  const { data: coursesList = [] } = useQuery<any[]>({ queryKey: ["/api/courses"], enabled: isOpen });
+  const { data: programs = [] } = useQuery<any[]>({
+    queryKey: [programId
+      ? `/api/course-programs?includeInactiveId=${encodeURIComponent(programId)}`
+      : "/api/course-programs"],
+    enabled: isOpen,
+  });
+  const { data: coursesList = [] } = useQuery<any[]>({
+    queryKey: [courseId
+      ? `/api/courses?includeInactiveId=${encodeURIComponent(courseId)}`
+      : "/api/courses"],
+    enabled: isOpen,
+  });
   const { data: feePackages = [] } = useQuery<any[]>({
-    queryKey: [`/api/courses/${courseId}/fee-packages`],
+    queryKey: [`/api/courses/${courseId}/fee-packages${feePackageId ? `?includeInactiveId=${encodeURIComponent(feePackageId)}` : ""}`],
     enabled: !!courseId && isOpen,
   });
   const { data: scoreSheets = [] } = useQuery<any[]>({ queryKey: ["/api/score-sheets"], enabled: isOpen });
@@ -235,7 +245,9 @@ export function ClassScheduleSetupDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {(programs as any[]).map((p: any) => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    <SelectItem key={p.id} value={p.id} disabled={p.isActive === false && p.id !== programId}>
+                      {p.isActive === false ? `${p.name} (Không hoạt động)` : p.name}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -248,7 +260,9 @@ export function ClassScheduleSetupDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {(coursesList as any[]).map((c: any) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    <SelectItem key={c.id} value={c.id} disabled={c.isActive === false && c.id !== courseId}>
+                      {c.isActive === false ? `${c.name} (Không hoạt động)` : c.name}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -261,7 +275,9 @@ export function ClassScheduleSetupDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {(feePackages as any[]).map((p: any) => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    <SelectItem key={p.id} value={p.id} disabled={p.isActive === false && p.id !== feePackageId}>
+                      {p.isActive === false ? `${p.name} (Không hoạt động)` : p.name}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
