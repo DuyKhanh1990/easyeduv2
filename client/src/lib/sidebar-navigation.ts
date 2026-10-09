@@ -23,6 +23,7 @@ import {
   HardDrive,
 } from "lucide-react";
 import { SiMessenger, SiZalo, SiFacebook } from "react-icons/si";
+import { INVOICE_VISIBILITY_PERMISSIONS } from "@shared/invoice-visibility-permissions";
 
 export type SubTabItem = {
   value: string;
@@ -261,14 +262,12 @@ export const navigation: NavEntry[] = [
         name: "Hoá đơn",
         href: "/invoices",
         icon: FileText,
-        permissionItems: [
-          { value: "income-unpaid", name: "Phiếu thu - Chưa thanh toán", resource: "/invoices#visibility/income-unpaid", permissionKeys: ["canView", "canViewAll"] },
-          { value: "income-paid", name: "Phiếu thu - Đã thanh toán", resource: "/invoices#visibility/income-paid", permissionKeys: ["canView", "canViewAll"] },
-          { value: "income-confirmed", name: "Phiếu thu - Đã xác nhận", resource: "/invoices#visibility/income-confirmed", permissionKeys: ["canView", "canViewAll"] },
-          { value: "expense-unpaid", name: "Phiếu chi - Chưa thanh toán", resource: "/invoices#visibility/expense-unpaid", permissionKeys: ["canView", "canViewAll"] },
-          { value: "expense-paid", name: "Phiếu chi - Đã thanh toán", resource: "/invoices#visibility/expense-paid", permissionKeys: ["canView", "canViewAll"] },
-          { value: "expense-confirmed", name: "Phiếu chi - Đã xác nhận", resource: "/invoices#visibility/expense-confirmed", permissionKeys: ["canView", "canViewAll"] },
-        ],
+        permissionItems: INVOICE_VISIBILITY_PERMISSIONS.map(({ value, resource, name }) => ({
+          value,
+          resource,
+          name,
+          permissionKeys: ["canView", "canViewAll"],
+        })),
       },
       { name: "Công nợ", href: "/invoices/debt", icon: FileText, permissionHref: "/invoices" },
       { name: "Học phí trả sau", href: "/deferred-tuition", icon: CreditCard, permissionHref: "/invoices" },

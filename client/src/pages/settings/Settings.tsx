@@ -48,7 +48,6 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { navigation } from "@/lib/sidebar-navigation";
 import { getSubFeaturePermissionResource, EDUCATION_OTHER_CONFIG_RESOURCE } from "@shared/permission-resources";
-import { INVOICE_VISIBILITY_PERMISSIONS } from "@shared/invoice-visibility-permissions";
 import { useSidebarVisibility } from "@/hooks/use-sidebar-visibility";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import type { MyPermissionsResult } from "@/hooks/use-my-permissions";
@@ -2404,18 +2403,6 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
 
   const navItemHasPerm = (item: { href: string; subTabs?: { value: string }[] }): boolean => {
     if (!myPerms || myPerms.isSuperAdmin) return true;
-    if (item.href === "/invoices") {
-      const parent = myPerms.permissions["/invoices"];
-      return !!(
-        parent?.canCreate ||
-        parent?.canEdit ||
-        parent?.canDelete ||
-        INVOICE_VISIBILITY_PERMISSIONS.some(({ resource }) => {
-          const permission = myPerms.permissions[resource];
-          return permission?.canView || permission?.canViewAll;
-        })
-      );
-    }
     if (item.subTabs && item.subTabs.length > 0) {
       return item.subTabs.some(sub => hasAnyPermForResource(`${item.href}#${sub.value}`));
     }
@@ -2488,7 +2475,6 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
 
   const getAllowedKeysForResource = (resource: string, hasSubTabs: boolean): PermKey[] => {
     if (hasSubTabs) return [];
-    if (resource === "/invoices") return ["canCreate", "canEdit", "canDelete"];
     if (resource === MY_SPACE_CALENDAR_RESOURCE) {
       return isStudentSystemRole ? [] : ["canCreate", "canEdit", "canDelete"];
     }
@@ -3014,7 +3000,6 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                         const isMySpaceAssignments = item.href === MY_SPACE_ASSIGNMENTS_RESOURCE;
                         const isMySpaceScoreSheet = item.href === MY_SPACE_SCORE_SHEET_RESOURCE;
                         const isMySpaceCalendar = item.href === MY_SPACE_CALENDAR_RESOURCE;
-                        const isInvoicePermissionParent = item.href === "/invoices";
                         // Các trang mặc định khác của role học viên/phụ huynh luôn bật và không sửa được.
                         const isStudentDefaultLocked = isStudentSystemRole
                           && STUDENT_DEFAULT_RESOURCES.has(item.href)
@@ -3138,9 +3123,6 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                   ))
                                 ) : (
                                   PERM_COLS.map(col => {
-                                    if (isInvoicePermissionParent && col.key !== "canCreate" && col.key !== "canEdit" && col.key !== "canDelete") {
-                                      return <div key={col.key} className="w-20 flex justify-center"><span className="text-xs text-muted-foreground/30 select-none">—</span></div>;
-                                    }
                                     const isViewOnly = VIEW_ONLY_RESOURCES.has(item.href);
                                     if (isViewOnly && col.key !== "canView") {
                                       return <div key={col.key} className="w-20 flex justify-center"><span className="text-xs text-muted-foreground/30 select-none">—</span></div>;
