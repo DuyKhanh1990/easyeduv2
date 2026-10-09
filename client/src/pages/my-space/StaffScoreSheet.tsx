@@ -573,11 +573,11 @@ export function StaffScoreSheet() {
                             </div>
 
                             <div className="mt-2 space-y-2 border-t border-dashed border-gray-200 pt-2 dark:border-border">
-                              <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
-                                <Badge className="rounded-full border border-violet-200 bg-violet-100 px-2.5 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-950/40">
-                                  {t("mySpace.scoreSheet.conversionSheet")}
-                                </Badge>
-                                <div className="flex min-w-0 items-center gap-1.5">
+                              <div className="grid grid-cols-2 items-start gap-x-4 gap-y-2 sm:grid-cols-3 lg:grid-cols-6">
+                                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                  <Badge className="rounded-full border border-violet-200 bg-violet-100 px-2.5 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-950/40">
+                                    {t("mySpace.scoreSheet.conversionSheet")}
+                                  </Badge>
                                   <Badge
                                     variant="outline"
                                     className="max-w-full truncate text-[11px]"
@@ -585,62 +585,59 @@ export function StaffScoreSheet() {
                                   >
                                     {assessment.templateName ?? assessment.assessmentName ?? t("mySpace.scoreSheet.unavailableSheet")}
                                   </Badge>
-                                  {assessment.assessmentCode && (
-                                    <span className="max-w-full truncate text-[10px] text-gray-500 dark:text-muted-foreground" title={assessment.assessmentCode}>
-                                      {assessment.assessmentCode}
-                                    </span>
-                                  )}
                                 </div>
 
-                                <span className="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-muted-foreground">
+                                <span className="inline-flex min-h-5 items-center gap-1 text-xs text-gray-600 dark:text-muted-foreground">
                                   <Users className="h-3.5 w-3.5 shrink-0" />
                                   {assessment.studentCount ?? 0} {t("mySpace.scoreSheet.studentCount")}
                                 </span>
-                                <span className="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-muted-foreground">
+                                <span className="inline-flex min-h-5 items-center gap-1 text-xs text-gray-600 dark:text-muted-foreground">
                                   <CircleDot className="h-3.5 w-3.5 shrink-0" />
                                   {scoreProgressLabel}
                                 </span>
 
-                                <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-medium">
+                                <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-medium">
                                   {status && AssessmentStatusIcon ? (
                                     <>
                                       <AssessmentStatusIcon className="h-3.5 w-3.5 shrink-0" />
                                       <span className={status.className}>{status.label}</span>
                                     </>
-                                  ) : (
-                                    <span className="text-gray-400" aria-label="Chưa có trạng thái">—</span>
-                                  )}
+                                  ) : null}
                                 </span>
-                                <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-medium">
+                                <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-medium">
                                   {deadlineStatus && DeadlineStatusIcon ? (
                                     <>
                                       <DeadlineStatusIcon className={`h-3.5 w-3.5 shrink-0 ${deadlineStatus.className}`} />
                                       <span className={deadlineStatus.className}>{deadlineStatus.label}</span>
                                     </>
-                                  ) : (
-                                    <span className="text-gray-400" aria-label="Chưa có hạn trả">—</span>
+                                  ) : null}
+                                </span>
+                                <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-medium">
+                                  {(assessment.published || assessment.allStudentsIndividuallyPublished) && (
+                                    <span
+                                      className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300"
+                                      data-testid={`badge-my-space-score-sheet-published-${assessment.sessionId}`}
+                                    >
+                                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                      Đã công bố
+                                    </span>
                                   )}
                                 </span>
-                                {(assessment.published || assessment.allStudentsIndividuallyPublished) && (
-                                  <span
-                                    className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-emerald-700 dark:text-emerald-300"
-                                    data-testid={`badge-my-space-score-sheet-published-${assessment.sessionId}`}
-                                  >
-                                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                                    Đã công bố
-                                  </span>
-                                )}
                               </div>
 
-                              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-gray-500 dark:text-muted-foreground">
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-gray-500 dark:text-muted-foreground">
                                 <p className="inline-flex items-center gap-1">
                                   <CalendarDays className="h-3 w-3 shrink-0" />
                                   {t("mySpace.scoreSheet.examDate")}: {formatAssessmentDate(assessment.examDate)}
                                 </p>
-                                <p className="inline-flex items-center gap-1">
-                                  <Clock3 className="h-3 w-3 shrink-0" />
-                                  {t("mySpace.scoreSheet.scoreDeadline")}: {formatAssessmentDeadline(assessment.scoreDeadlineAt)}
-                                </p>
+                                <div className="min-h-4">
+                                  {assessment.scoreDeadlineAt ? (
+                                    <p className="inline-flex items-center gap-1">
+                                      <Clock3 className="h-3 w-3 shrink-0" />
+                                      {t("mySpace.scoreSheet.scoreDeadline")}: {formatAssessmentDeadline(assessment.scoreDeadlineAt)}
+                                    </p>
+                                  ) : null}
+                                </div>
                               </div>
                             </div>
                           </div>
