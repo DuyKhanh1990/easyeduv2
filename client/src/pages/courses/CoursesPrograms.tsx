@@ -172,9 +172,12 @@ function ActivityStatusBadge({ isActive }: { isActive: boolean }) {
   return (
     <Badge
       variant="outline"
-      className={isActive
-        ? "shrink-0 border-emerald-200 bg-emerald-50 text-emerald-700"
-        : "shrink-0 border-slate-200 bg-slate-100 text-slate-600"}
+      className={cn(
+        "shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold leading-none tracking-wider",
+        isActive
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+          : "border-slate-200 bg-slate-100 text-slate-600",
+      )}
     >
       {isActive ? "Hoạt động" : "Không hoạt động"}
     </Badge>
