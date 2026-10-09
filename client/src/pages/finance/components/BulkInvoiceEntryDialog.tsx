@@ -307,10 +307,10 @@ export function BulkInvoiceEntryDialog({
             description: asText(readCell(record, ["Mô tả", "description"])),
             paymentMethod: (() => {
               const method = normalizeHeader(readCell(record, ["Hình thức thanh toán", "paymentMethod"]));
-              if (/^(chuyen khoan|transfer|bank)$/i.test(method)) return "transfer";
-              if (/^(vi dat coc|deposit wallet|deposit_wallet)$/i.test(method)) return "deposit_wallet";
-              if (/^(quet the|card)$/i.test(method)) return "card";
-              if (/^(tra gop|installment)$/i.test(method)) return "installment";
+              if (/^(chuyenkhoan|transfer|bank)$/i.test(method)) return "transfer";
+              if (/^(vidatcoc|depositwallet)$/i.test(method)) return "deposit_wallet";
+              if (/^(quetthe|card|swipecard|creditcard)$/i.test(method)) return "card";
+              if (/^(tragop|installment|installments|installmentpayment)$/i.test(method)) return "installment";
               return "cash";
             })(),
             amount: asMoney(readCell(record, ["Số tiền", "Tổng tiền", "totalAmount", "amount"])),
