@@ -126,6 +126,7 @@ export function ScoreSheetConversionSelector({
     onSuccess: (createdAssessment) => {
       queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned"] });
       queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned/students"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff-assessments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff"] });
       toast({
         title: t("mySpace.scoreSheet.conversionCreateSuccess"),

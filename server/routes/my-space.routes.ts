@@ -71,6 +71,7 @@ import { eq, and, gte, lte, sql, inArray, isNotNull, isNull, or, desc } from "dr
 import { updateStudentAttendance } from "../storage/attendance.storage";
 import { getTeacherIdsForTimeRange } from "@shared/teacher-time-assignments";
 import { canViewClass } from "../lib/class-access";
+import { manualStudentIdInFilter } from "../lib/manual-score-sheet-sql";
 import { canScheduleWrite } from "@shared/schedule-access";
 import { isStaffAssignedToEffectiveFreeClassStudent } from "@shared/my-space-calendar-permissions";
 import { hasMySpaceAssignmentsWritePermission } from "../lib/my-space-assignments-permissions";
@@ -5004,7 +5005,137 @@ export function registerMySpaceRoutes(app: Express): void {
         };
       });
 
-      res.json(mapped);
+      const manualAssessments = assessments.filter((assessment) =>
+        assessment.creationMode === "manual"
+        && Boolean(assessment.templateSnapshot.scoreConversionTemplateId),
+      );
+      const manualStudentIds = Array.from(
+        new Set(manualAssessments.flatMap((assessment) => assessment.manualStudentIds)),
+      );
+      const manualAccessRows = manualStudentIds.length > 0
+        ? await db.execute(sql`
+          SELECT DISTINCT sc.student_id, c.id AS class_id
+          FROM student_classes sc
+          JOIN classes c ON c.id = sc.class_id
+          WHERE sc.status = 'active'
+            AND ${manualStudentIdInFilter(manualStudentIds)}
+            AND (
+              ${staffRecord.id} = ANY(c.teacher_ids)
+              OR ${staffRecord.id} = ANY(c.manager_ids)
+              OR EXISTS (
+                SELECT 1
+                FROM class_sessions cs
+                WHERE cs.class_id = c.id
+                  AND (
+                    cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
+                    OR EXISTS (
+                      SELECT 1
+                      FROM class_session_teacher_assignments csta
+                      WHERE csta.class_session_id = cs.id
+                        AND csta.teacher_id = ${staffRecord.id}
+                    )
+                  )
+              )
+            )
+            AND EXISTS (
+              SELECT 1
+              FROM staff_assignments sa
+              WHERE sa.staff_id = ${staffRecord.id}
+                AND sa.location_id = c.location_id
+            )
+        `)
+        : { rows: [] };
+      const accessibleClassesByStudent = new Map<string, Set<string>>();
+      for (const row of manualAccessRows.rows as Array<{ student_id: string; class_id: string }>) {
+        const studentId = String(row.student_id);
+        const classIds = accessibleClassesByStudent.get(studentId) ?? new Set<string>();
+        classIds.add(String(row.class_id));
+        accessibleClassesByStudent.set(studentId, classIds);
+      }
+      const accessibleManualAssessments = manualAssessments.filter((assessment) =>
+        assessment.manualStudentIds.every((studentId) => {
+          const classIds = accessibleClassesByStudent.get(studentId);
+          if (!classIds) return false;
+          if (assessment.manualSelectionMode === "class" && assessment.manualClassId) {
+            return classIds.has(assessment.manualClassId);
+          }
+          return assessment.manualSelectionMode === "students";
+        }),
+      );
+      const manualAttemptRows = accessibleManualAssessments.length > 0
+        ? await db
+          .select({
+            assessmentId: scoreSheetAssessmentStudentAttempts.assessmentId,
+            studentId: scoreSheetAssessmentStudentAttempts.studentId,
+            attemptNumber: scoreSheetAssessmentStudentAttempts.attemptNumber,
+            result: scoreSheetAssessmentStudentAttempts.result,
+          })
+          .from(scoreSheetAssessmentStudentAttempts)
+          .where(and(
+            isNull(scoreSheetAssessmentStudentAttempts.classSessionId),
+            inArray(
+              scoreSheetAssessmentStudentAttempts.assessmentId,
+              accessibleManualAssessments.map((assessment) => assessment.id),
+            ),
+          ))
+        : [];
+      const manualAttemptsByAssessment = new Map<string, Map<string, Array<{
+        attemptNumber: number;
+        result: unknown;
+      }>>>();
+      for (const attempt of manualAttemptRows) {
+        const studentsForAssessment = manualAttemptsByAssessment.get(attempt.assessmentId) ?? new Map();
+        const studentAttempts = studentsForAssessment.get(attempt.studentId) ?? [];
+        studentAttempts.push({
+          attemptNumber: attempt.attemptNumber,
+          result: attempt.result,
+        });
+        studentsForAssessment.set(attempt.studentId, studentAttempts);
+        manualAttemptsByAssessment.set(attempt.assessmentId, studentsForAssessment);
+      }
+      const manualMapped = accessibleManualAssessments.map((assessment) => {
+        const attemptsByStudent = manualAttemptsByAssessment.get(assessment.id)
+          ?? new Map<string, Array<{ attemptNumber: number; result: unknown }>>();
+        const allStudentAttempts = Array.from(attemptsByStudent.values());
+        const individuallyPublishedStudentCount = allStudentAttempts.filter((attempts) =>
+          attempts.some((attempt) => isScoreSheetAssessmentStudentPublished(attempt.result)),
+        ).length;
+        return {
+          sessionId: assessment.id,
+          isManual: true,
+          classId: "manual",
+          classCode: "Thủ công",
+          className: "Thủ công",
+          locationName: null,
+          teacherNames: null,
+          sessionIndex: null,
+          studentCount: assessment.manualStudentIds.length,
+          enteredStudentCount: attemptsByStudent.size,
+          completedStudentCount: assessment.manualStudentIds.filter((studentId) =>
+            selectScoreSheetAssessmentAttemptSummary(
+              attemptsByStudent.get(studentId) ?? [],
+              assessment.scoringPolicy,
+              true,
+            )?.result.inputComplete,
+          ).length,
+          individuallyPublishedStudentCount,
+          allStudentsIndividuallyPublished: assessment.manualStudentIds.length > 0
+            && individuallyPublishedStudentCount === assessment.manualStudentIds.length,
+          published: false,
+          examDate: assessment.createdAt,
+          assessmentId: assessment.id,
+          assessmentCode: assessment.code,
+          assessmentName: assessment.name,
+          templateName: currentTemplatesById.get(assessment.scoreSheetTemplateId)?.name
+            ?? assessment.templateSnapshot.name,
+          scoreDeadlineAt: null,
+          attemptCount: assessment.attemptCount,
+          scoringPolicy: assessment.scoringPolicy,
+          hasConversion: true,
+        };
+      });
+
+      res.json([...mapped, ...manualMapped]);
     } catch (err: any) {
       console.error("Staff assigned score assessments error:", err);
       res.status(500).json({ message: err.message || "Lỗi khi tải bảng điểm được giao" });
