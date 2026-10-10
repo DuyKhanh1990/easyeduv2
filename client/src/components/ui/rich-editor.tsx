@@ -204,6 +204,7 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
   const [colorOpen, setColorOpen] = useState(false);
   const [highlightOpen, setHighlightOpen] = useState(false);
   const [tableOpen, setTableOpen] = useState(false);
+  const [tableSize, setTableSize] = useState({ rows: 1, cols: 1 });
 
   const editor = useEditor({
     extensions: [
@@ -535,28 +536,38 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
               </button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-3" align="end">
-              <p className="text-xs font-medium text-muted-foreground mb-2">Chọn số dòng và cột</p>
-              <div className="grid grid-cols-6 gap-1">
-                {Array.from({ length: 36 }, (_, index) => {
-                  const rows = Math.floor(index / 6) + 1;
-                  const cols = (index % 6) + 1;
+              <p className="text-xs font-medium text-muted-foreground mb-2">Chọn kích thước bảng</p>
+              <div className="grid grid-cols-8 gap-1" role="group" aria-label="Kích thước bảng">
+                {Array.from({ length: 64 }, (_, index) => {
+                  const rows = Math.floor(index / 8) + 1;
+                  const cols = (index % 8) + 1;
+                  const isHighlighted = rows <= tableSize.rows && cols <= tableSize.cols;
                   return (
                     <button
                       key={`${rows}-${cols}`}
                       type="button"
-                      title={`${rows} dòng × ${cols} cột`}
+                      title={`${cols} cột × ${rows} dòng`}
                       aria-label={`Chèn bảng ${rows} dòng ${cols} cột`}
+                      aria-pressed={rows === tableSize.rows && cols === tableSize.cols}
+                      onMouseEnter={() => setTableSize({ rows, cols })}
+                      onFocus={() => setTableSize({ rows, cols })}
                       onClick={() => {
                         editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
                         setTableOpen(false);
                       }}
-                      className="h-7 w-7 rounded border border-border text-[10px] hover:border-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      {rows}×{cols}
-                    </button>
+                      className={cn(
+                        "h-5 w-5 rounded-[2px] border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        isHighlighted
+                          ? "border-blue-500 bg-blue-200 dark:bg-blue-900"
+                          : "border-border bg-muted/30 hover:border-blue-400"
+                      )}
+                    />
                   );
                 })}
               </div>
+              <p className="mt-2 text-center text-sm font-medium text-foreground">
+                {tableSize.cols} × {tableSize.rows}
+              </p>
             </PopoverContent>
           </Popover>
         )}

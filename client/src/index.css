@@ -249,30 +249,36 @@ table[data-borderless="true"] th {
   border: none;
 }
 
-.rich-content-table {
+.tiptap-rich-editor .ProseMirror table,
+.prose table.rich-content-table {
   width: 100%;
-  border-collapse: collapse;
+  border: 1px solid #64748b !important;
+  border-collapse: collapse !important;
   table-layout: fixed;
+  margin: 6px 0;
 }
-.rich-content-table th,
-.rich-content-table td {
-  min-width: 60px;
-  border: 1px solid #94a3b8;
-  padding: 6px 8px;
+.tiptap-rich-editor .ProseMirror table th,
+.tiptap-rich-editor .ProseMirror table td,
+.prose table.rich-content-table th,
+.prose table.rich-content-table td {
+  min-width: 64px;
+  height: 34px;
+  border: 1px solid #64748b !important;
+  padding: 6px 8px !important;
   vertical-align: top;
 }
-.rich-content-table th {
-  background: #f1f5f9;
+.tiptap-rich-editor .ProseMirror table th,
+.prose table.rich-content-table th {
+  background: #e2e8f0 !important;
   font-weight: 600;
 }
-.dark .rich-content-table th {
-  background: #1e293b;
+.dark .tiptap-rich-editor .ProseMirror table th,
+.dark .prose table.rich-content-table th {
+  background: #1e293b !important;
 }
 .tiptap-rich-editor .ProseMirror .tableWrapper {
   overflow-x: auto;
-}
-.prose .rich-content-table {
-  border-collapse: collapse;
+  margin: 6px 0;
 }
 
 /* Hide scrollbar but keep scrollable */
