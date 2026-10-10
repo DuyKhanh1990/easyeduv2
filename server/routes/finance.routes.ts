@@ -1597,6 +1597,12 @@ export function registerFinanceRoutes(app: Express): void {
         }).catch(() => {});
       }
 
+      if (
+        parsed.data.status !== undefined &&
+        !isInvoiceStatusVisible(data.type, data.status, await getInvoiceVisibilityScopes(req))
+      ) {
+        return res.json({ success: true });
+      }
       res.json(data);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -2042,6 +2048,9 @@ export function registerFinanceRoutes(app: Express): void {
         }
       }
 
+      if (!isInvoiceStatusVisible(invoice.type, status, scopes)) {
+        return res.json({ success: true });
+      }
       res.json(updated);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -2458,6 +2467,9 @@ export function registerFinanceRoutes(app: Express): void {
         }
       }
 
+      if (!isInvoiceStatusVisible(updated.type, updated.status, scopes)) {
+        return res.json({ success: true });
+      }
       res.json(updated);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
