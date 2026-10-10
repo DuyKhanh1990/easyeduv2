@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
-import { Node, mergeAttributes } from "@tiptap/core";
+import { Node, mergeAttributes, type Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -15,7 +15,7 @@ import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   List, ListOrdered, ImageIcon, Paperclip, Link as LinkIcon,
-  Baseline, Highlighter, Table2,
+  Baseline, Highlighter, Table2, Plus, Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -187,6 +187,49 @@ function ColorSwatches({ colors, onSelect, onClose }: ColorSwatchProps) {
   );
 }
 
+function isSelectionInsideTable(editor: Editor): boolean {
+  const { $from } = editor.state.selection;
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    if ($from.node(depth).type.name === "table") return true;
+  }
+  return false;
+}
+
+function TableToolbarButton({
+  title,
+  onClick,
+  disabled = false,
+  danger = false,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      disabled={disabled}
+      onMouseDown={(event) => {
+        event.preventDefault();
+      }}
+      onClick={() => {
+        if (!disabled) onClick();
+      }}
+      className={cn(
+        "inline-flex h-7 items-center gap-1 rounded border border-border bg-background px-2 text-[11px] font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40",
+        danger && "text-destructive hover:bg-destructive/10"
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 export interface RichEditorProps {
   value: string;
   onChange: (val: string) => void;
@@ -198,13 +241,14 @@ export interface RichEditorProps {
   enableTable?: boolean;
 }
 
-export function RichEditor({ value, onChange, placeholder, minHeight = "72px", maxHeight, enableTable = false }: RichEditorProps) {
+export function RichEditor({ value, onChange, placeholder, minHeight = "72px", maxHeight, enableTable = true }: RichEditorProps) {
   const { toast } = useToast();
   const [isUploading, setIsUploading] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
   const [highlightOpen, setHighlightOpen] = useState(false);
   const [tableOpen, setTableOpen] = useState(false);
   const [tableSize, setTableSize] = useState({ rows: 1, cols: 1 });
+  const [selectionInsideTable, setSelectionInsideTable] = useState(false);
 
   const editor = useEditor({
     extensions: [
@@ -239,7 +283,10 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
         : []),
     ],
     content: legacyToHtml(value),
+    onCreate: ({ editor }) => setSelectionInsideTable(isSelectionInsideTable(editor)),
+    onSelectionUpdate: ({ editor }) => setSelectionInsideTable(isSelectionInsideTable(editor)),
     onUpdate: ({ editor }) => {
+      setSelectionInsideTable(isSelectionInsideTable(editor));
       const html = editor.getHTML();
       onChange(html === "<p></p>" ? "" : html);
     },
@@ -579,6 +626,50 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
         style={maxHeight ? { maxHeight, overflowY: "auto" } : undefined}
         className={maxHeight ? "overflow-y-auto" : undefined}
       >
+        {enableTable && selectionInsideTable && (
+          <div
+            className="flex flex-wrap items-center gap-1.5 border-y border-border/60 bg-muted/30 px-2 py-1.5"
+            aria-label="Công cụ chỉnh sửa bảng"
+            data-testid="rich-editor-table-toolbar"
+          >
+            <span className="mr-1 text-[11px] font-semibold text-muted-foreground">Hàng</span>
+            <TableToolbarButton title="Thêm hàng phía trên" onClick={() => editor.chain().focus().addRowBefore().run()}>
+              <Plus className="h-3 w-3" /> Trên
+            </TableToolbarButton>
+            <TableToolbarButton title="Thêm hàng phía dưới" onClick={() => editor.chain().focus().addRowAfter().run()}>
+              <Plus className="h-3 w-3" /> Dưới
+            </TableToolbarButton>
+            <TableToolbarButton title="Xóa hàng hiện tại" danger disabled={!editor.can().deleteRow()} onClick={() => editor.chain().focus().deleteRow().run()}>
+              <Trash2 className="h-3 w-3" /> Xóa
+            </TableToolbarButton>
+
+            <span className="ml-1 mr-1 text-[11px] font-semibold text-muted-foreground">Cột</span>
+            <TableToolbarButton title="Thêm cột phía trước" onClick={() => editor.chain().focus().addColumnBefore().run()}>
+              <Plus className="h-3 w-3" /> Trước
+            </TableToolbarButton>
+            <TableToolbarButton title="Thêm cột phía sau" onClick={() => editor.chain().focus().addColumnAfter().run()}>
+              <Plus className="h-3 w-3" /> Sau
+            </TableToolbarButton>
+            <TableToolbarButton title="Xóa cột hiện tại" danger disabled={!editor.can().deleteColumn()} onClick={() => editor.chain().focus().deleteColumn().run()}>
+              <Trash2 className="h-3 w-3" /> Xóa
+            </TableToolbarButton>
+
+            <span className="ml-1 mr-1 text-[11px] font-semibold text-muted-foreground">Căn ô</span>
+            <ToolbarBtn active={editor.isActive({ textAlign: "left" })} title="Căn nội dung ô sang trái" onClick={() => editor.chain().focus().setTextAlign("left").run()}>
+              <AlignLeft className="h-3.5 w-3.5" />
+            </ToolbarBtn>
+            <ToolbarBtn active={editor.isActive({ textAlign: "center" })} title="Căn nội dung ô vào giữa" onClick={() => editor.chain().focus().setTextAlign("center").run()}>
+              <AlignCenter className="h-3.5 w-3.5" />
+            </ToolbarBtn>
+            <ToolbarBtn active={editor.isActive({ textAlign: "right" })} title="Căn nội dung ô sang phải" onClick={() => editor.chain().focus().setTextAlign("right").run()}>
+              <AlignRight className="h-3.5 w-3.5" />
+            </ToolbarBtn>
+
+            <TableToolbarButton title="Xóa toàn bộ bảng" danger onClick={() => editor.chain().focus().deleteTable().run()}>
+              <Trash2 className="h-3 w-3" /> Xóa bảng
+            </TableToolbarButton>
+          </div>
+        )}
         <EditorContent editor={editor} />
       </div>
     </div>

@@ -250,7 +250,7 @@ table[data-borderless="true"] th {
 }
 
 .tiptap-rich-editor .ProseMirror table,
-.prose table.rich-content-table {
+.rich-content-table {
   width: 100%;
   border: 1px solid #64748b !important;
   border-collapse: collapse !important;
@@ -259,8 +259,8 @@ table[data-borderless="true"] th {
 }
 .tiptap-rich-editor .ProseMirror table th,
 .tiptap-rich-editor .ProseMirror table td,
-.prose table.rich-content-table th,
-.prose table.rich-content-table td {
+.rich-content-table th,
+.rich-content-table td {
   min-width: 64px;
   height: 34px;
   border: 1px solid #64748b !important;
@@ -268,12 +268,12 @@ table[data-borderless="true"] th {
   vertical-align: top;
 }
 .tiptap-rich-editor .ProseMirror table th,
-.prose table.rich-content-table th {
+.rich-content-table th {
   background: #e2e8f0 !important;
   font-weight: 600;
 }
 .dark .tiptap-rich-editor .ProseMirror table th,
-.dark .prose table.rich-content-table th {
+.dark .rich-content-table th {
   background: #1e293b !important;
 }
 .tiptap-rich-editor .ProseMirror .tableWrapper {
