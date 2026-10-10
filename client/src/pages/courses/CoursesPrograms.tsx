@@ -2550,18 +2550,19 @@ function ProgramContentDialog({ program, defaultSession, content, trigger }: {
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="w-[90vw] max-w-[90vw] max-h-[90vh] flex flex-col">
+      <DialogContent className="flex h-[99vh] max-h-[99vh] w-[99vw] max-w-[99vw] flex-col gap-0 overflow-hidden p-0">
         <Form {...form}>
-          <form onSubmit={form.handleSubmit((data) => mutation.mutate(data))} className="flex flex-col flex-1 min-h-0">
-        <DialogHeader className="shrink-0 flex flex-row items-center justify-between space-y-0 pb-2 border-b">
-          <DialogTitle className="text-xl font-display">{content ? "Chỉnh sửa" : "Thêm"} Nội dung buổi học</DialogTitle>
-          <Button type="submit" size="sm" className="ml-4 shrink-0" disabled={mutation.isPending || isUploading}>
-            {mutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}
-            Lưu nội dung
-          </Button>
-        </DialogHeader>
-            <div className="flex-1 overflow-y-auto space-y-4 py-4 pr-1">
-              <div className="grid grid-cols-2 gap-4">
+          <form onSubmit={form.handleSubmit((data) => mutation.mutate(data))} className="flex min-h-0 flex-1 flex-col">
+            <DialogHeader className="flex shrink-0 flex-row items-center justify-between space-y-0 border-b px-5 py-3">
+              <DialogTitle className="text-xl font-display">{content ? "Chỉnh sửa" : "Thêm"} Nội dung buổi học</DialogTitle>
+              <Button type="submit" size="sm" className="ml-4 shrink-0" disabled={mutation.isPending || isUploading}>
+                {mutation.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+                Lưu nội dung
+              </Button>
+            </DialogHeader>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
+              <aside className="shrink-0 border-b bg-muted/20 px-4 py-4 md:h-full md:w-1/4 md:overflow-y-auto md:border-b-0 md:border-r">
+                <div className="space-y-4">
                 <FormField
                   control={form.control}
                   name="sessionNumber"
@@ -2584,130 +2585,134 @@ function ProgramContentDialog({ program, defaultSession, content, trigger }: {
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="type"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Loại</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Chọn loại" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="Bài học">Bài học</SelectItem>
-                          <SelectItem value="Bài tập về nhà">Bài tập về nhà</SelectItem>
-                          <SelectItem value="Giáo trình">Giáo trình</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <FormField
-                control={form.control}
-                name="title"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Tên nội dung</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Nhập tên nội dung" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="content"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Mô tả nội dung</FormLabel>
-                    <RichEditor
-                      value={field.value || ""}
-                      onChange={field.onChange}
-                      placeholder="Nhập mô tả chi tiết, hoặc paste ảnh trực tiếp vào đây..."
-                      minHeight="120px"
-                      maxHeight="320px"
-                      enableTable
-                    />
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="space-y-2">
-                <FormLabel>Đính kèm file</FormLabel>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  accept="image/*,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.pdf,video/*,.mp3,.wav,.ogg"
-                  onChange={handleFileChange}
-                />
-                <div className="flex flex-wrap gap-2">
-                  {form.watch("attachments")?.map((att, idx) => {
-                    const { name } = parseAttachment(att);
-                    return (
-                      <div key={idx} className="bg-muted px-2 py-1 rounded text-xs flex items-center gap-1 max-w-[200px]">
-                        <Paperclip className="h-3 w-3 shrink-0" />
-                        <span className="truncate">{name}</span>
-                        <button
-                          type="button"
-                          className="ml-1 text-muted-foreground hover:text-destructive shrink-0"
-                          onClick={() => handleRemoveAttachment(idx)}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    );
-                  })}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-7 px-2 border-dashed text-xs gap-1"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploading}
-                    data-testid="button-add-attachment"
-                  >
-                    {isUploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                    Thêm file
-                  </Button>
-                </div>
-                <p className="text-[10px] text-muted-foreground">Ảnh, Word, Excel, PowerPoint, PDF, Video, MP3... | Tối đa {MAX_FILE_SIZE_MB}MB/file</p>
-              </div>
-
-              <FormField
-                control={form.control}
-                name="allowDownload"
-                render={({ field }) => (
-                  <FormItem>
-                    <div className="flex items-center gap-3 py-1">
-                      <Checkbox
-                        id="content-allow-download"
-                        checked={field.value === true}
-                        onCheckedChange={(checked) => field.onChange(checked === true ? true : (field.value === false ? false : null))}
-                        className="w-4 h-4"
-                      />
-                      <label htmlFor="content-allow-download" className="text-sm font-medium cursor-pointer select-none">
-                        Cho phép tải file đính kèm
-                      </label>
-                      <span className="text-xs text-muted-foreground">(để trống = theo mặc định vai trò)</span>
-                    </div>
-                    {field.value !== null && field.value !== undefined && (
-                      <button type="button" onClick={() => field.onChange(null)} className="text-[11px] text-muted-foreground/70 hover:text-muted-foreground underline ml-7">
-                        Xoá ghi đè, dùng mặc định vai trò
-                      </button>
+                  <FormField
+                    control={form.control}
+                    name="type"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Loại</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Chọn loại" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="Bài học">Bài học</SelectItem>
+                            <SelectItem value="Bài tập về nhà">Bài tập về nhà</SelectItem>
+                            <SelectItem value="Giáo trình">Giáo trình</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
                     )}
-                  </FormItem>
-                )}
-              />
+                  />
+                  <FormField
+                    control={form.control}
+                    name="title"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Tên nội dung</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Nhập tên nội dung" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </aside>
+
+              <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-4 md:w-3/4">
+                <div className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="content"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Mô tả nội dung</FormLabel>
+                        <RichEditor
+                          value={field.value || ""}
+                          onChange={field.onChange}
+                          placeholder="Nhập mô tả chi tiết, hoặc paste ảnh trực tiếp vào đây..."
+                          minHeight="120px"
+                          maxHeight="320px"
+                          enableTable
+                        />
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="space-y-2">
+                    <FormLabel>Đính kèm file</FormLabel>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      accept="image/*,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.pdf,video/*,.mp3,.wav,.ogg"
+                      onChange={handleFileChange}
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      {form.watch("attachments")?.map((att, idx) => {
+                        const { name } = parseAttachment(att);
+                        return (
+                          <div key={idx} className="flex max-w-[200px] items-center gap-1 rounded bg-muted px-2 py-1 text-xs">
+                            <Paperclip className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{name}</span>
+                            <button
+                              type="button"
+                              className="ml-1 shrink-0 text-muted-foreground hover:text-destructive"
+                              onClick={() => handleRemoveAttachment(idx)}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        );
+                      })}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-7 gap-1 border-dashed px-2 text-xs"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isUploading}
+                        data-testid="button-add-attachment"
+                      >
+                        {isUploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                        Thêm file
+                      </Button>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">Ảnh, Word, Excel, PowerPoint, PDF, Video, MP3... | Tối đa {MAX_FILE_SIZE_MB}MB/file</p>
+                  </div>
+
+                  <FormField
+                    control={form.control}
+                    name="allowDownload"
+                    render={({ field }) => (
+                      <FormItem>
+                        <div className="flex items-center gap-3 py-1">
+                          <Checkbox
+                            id="content-allow-download"
+                            checked={field.value === true}
+                            onCheckedChange={(checked) => field.onChange(checked === true ? true : (field.value === false ? false : null))}
+                            className="h-4 w-4"
+                          />
+                          <label htmlFor="content-allow-download" className="cursor-pointer select-none text-sm font-medium">
+                            Cho phép tải file đính kèm
+                          </label>
+                          <span className="text-xs text-muted-foreground">(để trống = theo mặc định vai trò)</span>
+                        </div>
+                        {field.value !== null && field.value !== undefined && (
+                          <button type="button" onClick={() => field.onChange(null)} className="ml-7 text-[11px] text-muted-foreground/70 underline hover:text-muted-foreground">
+                            Xoá ghi đè, dùng mặc định vai trò
+                          </button>
+                        )}
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </main>
             </div>
 
           </form>
