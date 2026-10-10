@@ -276,24 +276,23 @@ table[data-borderless="true"] th {
 .dark .rich-content-table th {
   background: #1e293b !important;
 }
-.tiptap-rich-editor .ProseMirror .rich-editor-active-row {
+.tiptap-rich-editor .ProseMirror td.selectedCell,
+.tiptap-rich-editor .ProseMirror th.selectedCell {
   background: #dbeafe !important;
-}
-.tiptap-rich-editor .ProseMirror .rich-editor-active-column {
-  background: #eff6ff !important;
+  box-shadow: inset 0 0 0 1px #60a5fa;
 }
 .tiptap-rich-editor .ProseMirror .rich-editor-active-cell {
-  background: #93c5fd !important;
+  background: #dbeafe !important;
   box-shadow: inset 0 0 0 2px #2563eb;
 }
-.dark .tiptap-rich-editor .ProseMirror .rich-editor-active-row {
+.dark .tiptap-rich-editor .ProseMirror td.selectedCell,
+.dark .tiptap-rich-editor .ProseMirror th.selectedCell {
   background: #1e3a8a !important;
-}
-.dark .tiptap-rich-editor .ProseMirror .rich-editor-active-column {
-  background: #172554 !important;
+  box-shadow: inset 0 0 0 1px #3b82f6;
 }
 .dark .tiptap-rich-editor .ProseMirror .rich-editor-active-cell {
-  background: #1d4ed8 !important;
+  background: #1e3a8a !important;
+  box-shadow: inset 0 0 0 2px #60a5fa;
 }
 .tiptap-rich-editor .ProseMirror .tableWrapper {
   overflow-x: auto;

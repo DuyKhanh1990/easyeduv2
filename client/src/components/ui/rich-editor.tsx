@@ -23,6 +23,7 @@ import { getAuthHeaders } from "@/lib/queryClient";
 import { TableKit } from "@tiptap/extension-table";
 import { Plugin } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { CellSelection } from "@tiptap/pm/tables";
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
@@ -204,50 +205,63 @@ const TableSelectionHighlight = Extension.create({
       new Plugin({
         props: {
           decorations(state) {
+            if (state.selection instanceof CellSelection) return DecorationSet.empty;
             const { $from } = state.selection;
-            let tableDepth = -1;
+            let cellDepth = -1;
             for (let depth = $from.depth; depth > 0; depth -= 1) {
-              if ($from.node(depth).type.name === "table") {
-                tableDepth = depth;
+              const nodeName = $from.node(depth).type.name;
+              if (nodeName === "tableCell" || nodeName === "tableHeader") {
+                cellDepth = depth;
                 break;
               }
             }
-            if (tableDepth < 0 || $from.depth < tableDepth + 2) return DecorationSet.empty;
-
-            const table = $from.node(tableDepth);
-            const activeRow = $from.index(tableDepth);
-            const activeColumn = $from.index(tableDepth + 1);
-            let rowPosition = $from.before(tableDepth) + 1;
-            const decorations: Decoration[] = [];
-
-            table.forEach((row, _rowOffset, rowIndex) => {
-              let cellPosition = rowPosition + 1;
-              row.forEach((cell, _cellOffset, columnIndex) => {
-                const classes: string[] = [];
-                if (rowIndex === activeRow) classes.push("rich-editor-active-row");
-                if (columnIndex === activeColumn) classes.push("rich-editor-active-column");
-                if (rowIndex === activeRow && columnIndex === activeColumn) {
-                  classes.push("rich-editor-active-cell");
-                }
-                if (classes.length > 0) {
-                  decorations.push(
-                    Decoration.node(cellPosition, cellPosition + cell.nodeSize, {
-                      class: classes.join(" "),
-                    })
-                  );
-                }
-                cellPosition += cell.nodeSize;
-              });
-              rowPosition += row.nodeSize;
-            });
-
-            return DecorationSet.create(state.doc, decorations);
+            if (cellDepth < 0) return DecorationSet.empty;
+            const cellPosition = $from.before(cellDepth);
+            const cell = $from.node(cellDepth);
+            return DecorationSet.create(state.doc, [
+              Decoration.node(cellPosition, cellPosition + cell.nodeSize, {
+                class: "rich-editor-active-cell",
+              }),
+            ]);
           },
         },
       }),
     ];
   },
 });
+
+type TableSelectionMode = "cell" | "row" | "column";
+
+function selectTableRegion(editor: Editor, mode: TableSelectionMode) {
+  const { selection, doc } = editor.state;
+  let anchorCell = selection instanceof CellSelection ? selection.$anchorCell : null;
+  let headCell = selection instanceof CellSelection ? selection.$headCell : null;
+
+  const findCellPosition = (position: typeof selection.$from): number | null => {
+    for (let depth = position.depth; depth > 0; depth -= 1) {
+      const nodeName = position.node(depth).type.name;
+      if (nodeName === "tableCell" || nodeName === "tableHeader") return position.before(depth);
+    }
+    return null;
+  };
+
+  if (!anchorCell || !headCell) {
+    const anchorPosition = findCellPosition(selection.$from);
+    const headPosition = findCellPosition(selection.$to) ?? anchorPosition;
+    if (anchorPosition === null || headPosition === null) return;
+    anchorCell = doc.resolve(anchorPosition);
+    headCell = doc.resolve(headPosition);
+  }
+
+  const nextSelection =
+    mode === "row"
+      ? CellSelection.rowSelection(anchorCell, headCell)
+      : mode === "column"
+        ? CellSelection.colSelection(anchorCell, headCell)
+        : new CellSelection(anchorCell);
+  editor.view.dispatch(editor.state.tr.setSelection(nextSelection).scrollIntoView());
+  editor.view.focus();
+}
 
 function TableToolbarButton({
   title,
@@ -687,6 +701,17 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
             aria-label="Công cụ chỉnh sửa bảng"
             data-testid="rich-editor-table-toolbar"
           >
+            <span className="mr-1 text-[11px] font-semibold text-muted-foreground">Chọn</span>
+            <TableToolbarButton title="Chỉ chọn ô hiện tại" onClick={() => selectTableRegion(editor, "cell")}>
+              Ô
+            </TableToolbarButton>
+            <TableToolbarButton title="Chọn hàng chứa ô hiện tại" onClick={() => selectTableRegion(editor, "row")}>
+              Hàng
+            </TableToolbarButton>
+            <TableToolbarButton title="Chọn cột chứa ô hiện tại" onClick={() => selectTableRegion(editor, "column")}>
+              Cột
+            </TableToolbarButton>
+
             <span className="mr-1 text-[11px] font-semibold text-muted-foreground">Hàng</span>
             <TableToolbarButton title="Thêm hàng phía trên" onClick={() => editor.chain().focus().addRowBefore().run()}>
               <Plus className="h-3 w-3" /> Trên
