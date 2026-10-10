@@ -2438,7 +2438,9 @@ function ProgramContentDialog({ program, defaultSession, content, trigger }: {
 }) {
   const [open, setOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [viewerFile, setViewerFile] = useState<{ url: string; name: string } | null>(null);
   const { toast } = useToast();
+  const roleCanDownload = useCanDownloadFiles();
   const form = useForm({
     resolver: zodResolver(insertCourseProgramContentSchema),
     defaultValues: content ? {
@@ -2632,23 +2634,41 @@ function ProgramContentDialog({ program, defaultSession, content, trigger }: {
                     />
                     <div className="grid grid-cols-3 gap-2">
                       {form.watch("attachments")?.map((att, idx) => {
-                        const { name } = parseAttachment(att);
+                        const { name, url } = parseAttachment(att);
                         const { icon, color } = getFileTypeInfo(name);
+                        const canView = !!url;
                         return (
                           <div
                             key={`${name}-${idx}`}
                             title={name}
-                            className="group relative flex aspect-square min-w-0 flex-col items-center justify-center gap-1.5 rounded-lg border bg-background p-2 text-center transition-colors hover:border-primary/50"
+                            className={cn(
+                              "group relative flex aspect-square min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-lg border bg-background p-2 text-center transition-colors",
+                              canView ? "cursor-pointer hover:border-primary/50" : "opacity-70"
+                            )}
                           >
                             <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-md", color)}>
                               {icon}
                             </div>
                             <span className="w-full truncate text-[10px] text-muted-foreground">{name}</span>
+                            {canView && (
+                              <button
+                                type="button"
+                                aria-label={`Xem tệp ${name}`}
+                                className="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-1 rounded-lg bg-black/50 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100"
+                                onClick={() => url && setViewerFile({ url, name })}
+                              >
+                                <Eye className="h-5 w-5 text-white" />
+                                <span className="text-[10px] font-semibold text-white">Xem</span>
+                              </button>
+                            )}
                             <button
                               type="button"
                               aria-label={`Xóa tệp ${name}`}
-                              className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-background/90 text-muted-foreground shadow-sm hover:text-destructive"
-                              onClick={() => handleRemoveAttachment(idx)}
+                              className="absolute right-1 top-1 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-background/90 text-muted-foreground shadow-sm hover:text-destructive"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleRemoveAttachment(idx);
+                              }}
                             >
                               <X className="h-3 w-3" />
                             </button>
@@ -2731,6 +2751,13 @@ function ProgramContentDialog({ program, defaultSession, content, trigger }: {
           </form>
         </Form>
       </DialogContent>
+      <FileViewer
+        open={!!viewerFile}
+        onClose={() => setViewerFile(null)}
+        url={viewerFile?.url ?? ""}
+        name={viewerFile?.name ?? ""}
+        canDownload={resolveCanDownload(form.watch("allowDownload"), roleCanDownload)}
+      />
     </Dialog>
   );
 }
