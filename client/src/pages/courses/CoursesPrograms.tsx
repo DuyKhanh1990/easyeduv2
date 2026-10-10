@@ -2636,7 +2636,6 @@ function ProgramContentDialog({ program, defaultSession, content, trigger }: {
                           onChange={field.onChange}
                           placeholder="Nhập mô tả chi tiết, hoặc paste ảnh trực tiếp vào đây..."
                           minHeight="120px"
-                          maxHeight="320px"
                           enableTable
                         />
                         <FormMessage />
