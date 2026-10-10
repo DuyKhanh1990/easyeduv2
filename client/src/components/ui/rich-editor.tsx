@@ -15,11 +15,12 @@ import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   List, ListOrdered, ImageIcon, Paperclip, Link as LinkIcon,
-  Baseline, Highlighter,
+  Baseline, Highlighter, Table2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { getAuthHeaders } from "@/lib/queryClient";
+import { TableKit } from "@tiptap/extension-table";
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
@@ -193,13 +194,16 @@ export interface RichEditorProps {
   minHeight?: string;
   /** Giới hạn chiều cao vùng soạn thảo — khi vượt quá sẽ scroll nội bộ thay vì đẩy dialog ra ngoài */
   maxHeight?: string;
+  /** Bật công cụ chèn bảng cho các nội dung cần trình bày dạng bảng. */
+  enableTable?: boolean;
 }
 
-export function RichEditor({ value, onChange, placeholder, minHeight = "72px", maxHeight }: RichEditorProps) {
+export function RichEditor({ value, onChange, placeholder, minHeight = "72px", maxHeight, enableTable = false }: RichEditorProps) {
   const { toast } = useToast();
   const [isUploading, setIsUploading] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
   const [highlightOpen, setHighlightOpen] = useState(false);
+  const [tableOpen, setTableOpen] = useState(false);
 
   const editor = useEditor({
     extensions: [
@@ -222,6 +226,16 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
       Color,
       Highlight.configure({ multicolor: true }),
       Underline,
+      ...(enableTable
+        ? [
+            TableKit.configure({
+              table: {
+                resizable: true,
+                HTMLAttributes: { class: "rich-content-table" },
+              },
+            }),
+          ]
+        : []),
     ],
     content: legacyToHtml(value),
     onUpdate: ({ editor }) => {
@@ -507,6 +521,45 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
         <ToolbarBtn active={editor.isActive("link")} title="Gắn link vào đoạn văn bản" onClick={handleLink}>
           <LinkIcon className="w-3.5 h-3.5" />
         </ToolbarBtn>
+        {enableTable && (
+          <Popover open={tableOpen} onOpenChange={setTableOpen}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                title="Chèn bảng"
+                aria-label="Chèn bảng"
+                data-testid="rich-editor-insert-table"
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <Table2 className="w-3.5 h-3.5" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-3" align="end">
+              <p className="text-xs font-medium text-muted-foreground mb-2">Chọn số dòng và cột</p>
+              <div className="grid grid-cols-6 gap-1">
+                {Array.from({ length: 36 }, (_, index) => {
+                  const rows = Math.floor(index / 6) + 1;
+                  const cols = (index % 6) + 1;
+                  return (
+                    <button
+                      key={`${rows}-${cols}`}
+                      type="button"
+                      title={`${rows} dòng × ${cols} cột`}
+                      aria-label={`Chèn bảng ${rows} dòng ${cols} cột`}
+                      onClick={() => {
+                        editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
+                        setTableOpen(false);
+                      }}
+                      className="h-7 w-7 rounded border border-border text-[10px] hover:border-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {rows}×{cols}
+                    </button>
+                  );
+                })}
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
 
         {isUploading && <span className="text-[10px] text-muted-foreground ml-1">Đang tải...</span>}
       </div>

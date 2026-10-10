@@ -249,6 +249,32 @@ table[data-borderless="true"] th {
   border: none;
 }
 
+.rich-content-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.rich-content-table th,
+.rich-content-table td {
+  min-width: 60px;
+  border: 1px solid #94a3b8;
+  padding: 6px 8px;
+  vertical-align: top;
+}
+.rich-content-table th {
+  background: #f1f5f9;
+  font-weight: 600;
+}
+.dark .rich-content-table th {
+  background: #1e293b;
+}
+.tiptap-rich-editor .ProseMirror .tableWrapper {
+  overflow-x: auto;
+}
+.prose .rich-content-table {
+  border-collapse: collapse;
+}
+
 /* Hide scrollbar but keep scrollable */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

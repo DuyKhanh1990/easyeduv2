@@ -34,9 +34,7 @@ import {
   FileType2,
   Download,
   X,
-  ImageIcon,
-  LinkIcon
-  ,History as HistoryIcon
+  History as HistoryIcon
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1735,21 +1733,6 @@ function getFileTypeInfo(filename: string): { icon: ReactNode; color: string } {
   return { icon: <File className="h-5 w-5" />, color: "text-muted-foreground bg-muted" };
 }
 
-function getYoutubeId(url: string): string | null {
-  const match = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
-  return match ? match[1] : null;
-}
-
-function isVideoUrl(url: string): boolean {
-  const ext = getFileExt(url.split("?")[0]);
-  return ["mp4", "mov", "avi", "mkv", "webm", "ogg"].includes(ext);
-}
-
-function isImageUrl(url: string): boolean {
-  const ext = getFileExt(url.split("?")[0]);
-  return ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"].includes(ext);
-}
-
 function FileViewerModal({ name, url, onClose }: { name: string; url: string; onClose: () => void }) {
   const ext = getFileExt(name);
   const isImage = ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"].includes(ext);
@@ -2455,9 +2438,6 @@ function ProgramContentDialog({ program, defaultSession, content, trigger }: {
 }) {
   const [open, setOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [linkInputVisible, setLinkInputVisible] = useState(false);
-  const [linkValue, setLinkValue] = useState("");
-  const [linkPreview, setLinkPreview] = useState<string | null>(null);
   const { toast } = useToast();
   const form = useForm({
     resolver: zodResolver(insertCourseProgramContentSchema),
@@ -2517,13 +2497,6 @@ function ProgramContentDialog({ program, defaultSession, content, trigger }: {
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const imgInputRef = useRef<HTMLInputElement>(null);
-  const contentTextareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const autoResizeTextarea = (el: HTMLTextAreaElement | null) => {
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  };
   const MAX_FILE_SIZE_MB = 100;
 
   const uploadFiles = async (files: File[]): Promise<Array<{ name: string; url: string }>> => {
@@ -2559,70 +2532,6 @@ function ProgramContentDialog({ program, defaultSession, content, trigger }: {
     } finally {
       setIsUploading(false);
       e.target.value = "";
-    }
-  };
-
-  const handleImagePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const items = Array.from(e.clipboardData.items);
-    const imageItem = items.find(item => item.type.startsWith("image/"));
-    if (!imageItem) return;
-    e.preventDefault();
-    const file = imageItem.getAsFile();
-    if (!file) return;
-    setIsUploading(true);
-    try {
-      const uploaded = await uploadFiles([file]);
-      const current = form.getValues("content") || "";
-      const imgUrl = uploaded[0].url;
-      form.setValue("content", current + (current ? "\n" : "") + imgUrl);
-      setTimeout(() => autoResizeTextarea(contentTextareaRef.current), 0);
-    } catch {
-      toast({ title: "Lỗi upload ảnh", variant: "destructive" });
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const handleImageAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-    setIsUploading(true);
-    try {
-      const uploaded = await uploadFiles(files);
-      const current = form.getValues("content") || "";
-      const urls = uploaded.map(f => f.url).join("\n");
-      form.setValue("content", current + (current ? "\n" : "") + urls);
-      setTimeout(() => autoResizeTextarea(contentTextareaRef.current), 0);
-    } catch {
-      toast({ title: "Lỗi upload ảnh", variant: "destructive" });
-    } finally {
-      setIsUploading(false);
-      e.target.value = "";
-    }
-  };
-
-  const handleInsertLink = () => {
-    const url = linkValue.trim();
-    if (!url) return;
-    const current = form.getValues("content") || "";
-    form.setValue("content", current + (current ? "\n" : "") + url);
-    setLinkValue("");
-    setLinkPreview(null);
-    setLinkInputVisible(false);
-    setTimeout(() => autoResizeTextarea(contentTextareaRef.current), 0);
-  };
-
-  const handleLinkChange = (val: string) => {
-    setLinkValue(val);
-    const ytId = getYoutubeId(val);
-    if (ytId) {
-      setLinkPreview(`youtube:${ytId}`);
-    } else if (isVideoUrl(val)) {
-      setLinkPreview(`video:${val}`);
-    } else if (isImageUrl(val)) {
-      setLinkPreview(`image:${val}`);
-    } else {
-      setLinkPreview(null);
     }
   };
 
@@ -2718,97 +2627,15 @@ function ProgramContentDialog({ program, defaultSession, content, trigger }: {
                 name="content"
                 render={({ field }) => (
                   <FormItem>
-                    <div className="flex items-center justify-between mb-1">
-                      <FormLabel className="mb-0">Mô tả nội dung</FormLabel>
-                      <div className="flex items-center gap-1">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                              onClick={() => imgInputRef.current?.click()}
-                              disabled={isUploading}
-                            >
-                              <ImageIcon className="h-4 w-4" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent>Đính kèm ảnh vào mô tả</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              className={cn("p-1.5 rounded hover:bg-muted transition-colors", linkInputVisible ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground")}
-                              onClick={() => setLinkInputVisible(v => !v)}
-                            >
-                              <LinkIcon className="h-4 w-4" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent>Thêm link / video</TooltipContent>
-                        </Tooltip>
-                        <input
-                          ref={imgInputRef}
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          className="hidden"
-                          onChange={handleImageAttach}
-                        />
-                      </div>
-                    </div>
-                    {linkInputVisible && (
-                      <div className="space-y-2 mb-2 p-3 rounded-lg border bg-muted/30">
-                        <div className="flex gap-2">
-                          <Input
-                            placeholder="Dán link video, ảnh hoặc URL..."
-                            value={linkValue}
-                            onChange={e => handleLinkChange(e.target.value)}
-                            className="text-sm h-8"
-                          />
-                          <Button type="button" size="sm" onClick={handleInsertLink} disabled={!linkValue.trim()} className="shrink-0">
-                            Chèn
-                          </Button>
-                        </div>
-                        {linkPreview && (
-                          <div className="rounded-lg overflow-hidden">
-                            {linkPreview.startsWith("youtube:") && (
-                              <div className="aspect-video">
-                                <iframe
-                                  src={`https://www.youtube.com/embed/${linkPreview.replace("youtube:", "")}`}
-                                  className="w-full h-full"
-                                  allowFullScreen
-                                  title="preview"
-                                />
-                              </div>
-                            )}
-                            {linkPreview.startsWith("video:") && (
-                              <video src={linkPreview.replace("video:", "")} controls className="w-full max-h-40 rounded" />
-                            )}
-                            {linkPreview.startsWith("image:") && (
-                              <img src={linkPreview.replace("image:", "")} alt="preview" className="max-h-40 rounded object-contain" />
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    <FormControl>
-                      <Textarea
-                        placeholder="Nhập mô tả chi tiết, hoặc paste ảnh trực tiếp vào đây..."
-                        {...field}
-                        ref={(el) => {
-                          contentTextareaRef.current = el;
-                          field.ref(el);
-                        }}
-                        onPaste={handleImagePaste}
-                        onInput={(e) => autoResizeTextarea(e.currentTarget)}
-                        className="resize-none overflow-hidden min-h-[120px]"
-                      />
-                    </FormControl>
-                    {isUploading && (
-                      <p className="text-xs text-muted-foreground flex items-center gap-1">
-                        <Loader2 className="h-3 w-3 animate-spin" /> Đang tải lên...
-                      </p>
-                    )}
+                    <FormLabel>Mô tả nội dung</FormLabel>
+                    <RichEditor
+                      value={field.value || ""}
+                      onChange={field.onChange}
+                      placeholder="Nhập mô tả chi tiết, hoặc paste ảnh trực tiếp vào đây..."
+                      minHeight="120px"
+                      maxHeight="320px"
+                      enableTable
+                    />
                     <FormMessage />
                   </FormItem>
                 )}
