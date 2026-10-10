@@ -276,6 +276,28 @@ table[data-borderless="true"] th {
 .dark .rich-content-table th {
   background: #1e293b !important;
 }
+.tiptap-rich-editor .ProseMirror .rich-editor-active-row {
+  background: #dbeafe !important;
+}
+.tiptap-rich-editor .ProseMirror .rich-editor-active-column {
+  background: #eff6ff !important;
+}
+.tiptap-rich-editor .ProseMirror .rich-editor-active-cell {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
+  background: #bfdbfe !important;
+}
+.dark .tiptap-rich-editor .ProseMirror .rich-editor-active-row {
+  background: #1e3a8a !important;
+}
+.dark .tiptap-rich-editor .ProseMirror .rich-editor-active-column {
+  background: #172554 !important;
+}
+.dark .tiptap-rich-editor .ProseMirror .rich-editor-active-cell {
+  background: #1d4ed8 !important;
+}
 .tiptap-rich-editor .ProseMirror .tableWrapper {
   overflow-x: auto;
   margin: 6px 0;

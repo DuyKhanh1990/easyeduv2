@@ -187,12 +187,27 @@ function ColorSwatches({ colors, onSelect, onClose }: ColorSwatchProps) {
   );
 }
 
-function isSelectionInsideTable(editor: Editor): boolean {
+interface ActiveTableCell {
+  row: number;
+  column: number;
+  position: number;
+}
+
+function getActiveTableCell(editor: Editor): ActiveTableCell | null {
   const { $from } = editor.state.selection;
+  let tableDepth = -1;
   for (let depth = $from.depth; depth > 0; depth -= 1) {
-    if ($from.node(depth).type.name === "table") return true;
+    if ($from.node(depth).type.name === "table") {
+      tableDepth = depth;
+      break;
+    }
   }
-  return false;
+  if (tableDepth < 0 || $from.depth < tableDepth + 2) return null;
+  return {
+    row: $from.index(tableDepth) + 1,
+    column: $from.index(tableDepth + 1) + 1,
+    position: $from.before(tableDepth + 2),
+  };
 }
 
 function TableToolbarButton({
@@ -249,6 +264,33 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
   const [tableOpen, setTableOpen] = useState(false);
   const [tableSize, setTableSize] = useState({ rows: 1, cols: 1 });
   const [selectionInsideTable, setSelectionInsideTable] = useState(false);
+  const [activeTableCell, setActiveTableCell] = useState<ActiveTableCell | null>(null);
+
+  const updateActiveTableCell = useCallback((currentEditor: Editor) => {
+    const root = currentEditor.view.dom;
+    root.querySelectorAll(".rich-editor-active-cell, .rich-editor-active-row, .rich-editor-active-column")
+      .forEach((element) => element.classList.remove("rich-editor-active-cell", "rich-editor-active-row", "rich-editor-active-column"));
+    const activeCell = getActiveTableCell(currentEditor);
+    const cellDom = activeCell ? currentEditor.view.nodeDOM(activeCell.position) : null;
+    if (!activeCell || !(cellDom instanceof HTMLElement)) {
+      setSelectionInsideTable(false);
+      setActiveTableCell(null);
+      return;
+    }
+
+    const rowDom = cellDom.closest("tr");
+    const tableDom = cellDom.closest("table");
+    rowDom?.querySelectorAll("th, td").forEach((element) => element.classList.add("rich-editor-active-row"));
+    cellDom.classList.add("rich-editor-active-cell");
+    if (tableDom && "cellIndex" in cellDom) {
+      const columnIndex = (cellDom as HTMLTableCellElement).cellIndex;
+      Array.from(tableDom.rows).forEach((row) => {
+        row.cells.item(columnIndex)?.classList.add("rich-editor-active-column");
+      });
+    }
+    setSelectionInsideTable(true);
+    setActiveTableCell(activeCell);
+  }, []);
 
   const editor = useEditor({
     extensions: [
@@ -283,10 +325,10 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
         : []),
     ],
     content: legacyToHtml(value),
-    onCreate: ({ editor }) => setSelectionInsideTable(isSelectionInsideTable(editor)),
-    onSelectionUpdate: ({ editor }) => setSelectionInsideTable(isSelectionInsideTable(editor)),
+    onCreate: ({ editor }) => updateActiveTableCell(editor),
+    onSelectionUpdate: ({ editor }) => updateActiveTableCell(editor),
     onUpdate: ({ editor }) => {
-      setSelectionInsideTable(isSelectionInsideTable(editor));
+      updateActiveTableCell(editor);
       const html = editor.getHTML();
       onChange(html === "<p></p>" ? "" : html);
     },
@@ -632,6 +674,9 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
             aria-label="Công cụ chỉnh sửa bảng"
             data-testid="rich-editor-table-toolbar"
           >
+            <span className="mr-1 rounded bg-blue-100 px-2 py-1 text-[11px] font-semibold text-blue-800 dark:bg-blue-950 dark:text-blue-200" aria-live="polite">
+              Ô đang chọn: hàng {activeTableCell?.row ?? "—"}, cột {activeTableCell?.column ?? "—"}
+            </span>
             <span className="mr-1 text-[11px] font-semibold text-muted-foreground">Hàng</span>
             <TableToolbarButton title="Thêm hàng phía trên" onClick={() => editor.chain().focus().addRowBefore().run()}>
               <Plus className="h-3 w-3" /> Trên
@@ -639,7 +684,7 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
             <TableToolbarButton title="Thêm hàng phía dưới" onClick={() => editor.chain().focus().addRowAfter().run()}>
               <Plus className="h-3 w-3" /> Dưới
             </TableToolbarButton>
-            <TableToolbarButton title="Xóa hàng hiện tại" danger disabled={!editor.can().deleteRow()} onClick={() => editor.chain().focus().deleteRow().run()}>
+            <TableToolbarButton title={`Xóa hàng ${activeTableCell?.row ?? "hiện tại"}`} danger disabled={!editor.can().deleteRow()} onClick={() => editor.chain().focus().deleteRow().run()}>
               <Trash2 className="h-3 w-3" /> Xóa
             </TableToolbarButton>
 
@@ -650,7 +695,7 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
             <TableToolbarButton title="Thêm cột phía sau" onClick={() => editor.chain().focus().addColumnAfter().run()}>
               <Plus className="h-3 w-3" /> Sau
             </TableToolbarButton>
-            <TableToolbarButton title="Xóa cột hiện tại" danger disabled={!editor.can().deleteColumn()} onClick={() => editor.chain().focus().deleteColumn().run()}>
+            <TableToolbarButton title={`Xóa cột ${activeTableCell?.column ?? "hiện tại"}`} danger disabled={!editor.can().deleteColumn()} onClick={() => editor.chain().focus().deleteColumn().run()}>
               <Trash2 className="h-3 w-3" /> Xóa
             </TableToolbarButton>
 
