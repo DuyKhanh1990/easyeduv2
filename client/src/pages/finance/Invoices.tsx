@@ -67,6 +67,7 @@ import { HistoryDialog } from "@/components/common/HistoryDialog";
 import { useLocations } from "@/hooks/use-locations";
 import type { SortKey } from "@/hooks/use-invoice-filters";
 import { useLanguage } from "@/hooks/use-language";
+import { INVOICE_STATUS_ACTION_PERMISSIONS } from "@shared/invoice-visibility-permissions";
 
 type TabKey = "all" | "unpaid" | "paid" | "confirmed" | "debt" | "history" | "print-template";
 type DebtCondition = "all" | "overdue" | "today" | "soon" | "upcoming" | "no-due-date";
@@ -726,6 +727,7 @@ function renderInvoiceCell(
     isPending: boolean;
   },
   canEdit: boolean,
+  allowedStatusTargets: readonly string[],
   isSelected?: boolean,
   isOdd?: boolean,
 ) {
@@ -794,7 +796,7 @@ function renderInvoiceCell(
         const parentInvoice = inv.parentInvoice ?? inv;
         return (
           <td key="scheduleProgress" className="p-2 text-center" style={{ minWidth: 140 }}>
-            <ScheduleProgressPopover inv={parentInvoice}>
+            <ScheduleProgressPopover inv={parentInvoice} allowedStatusTargets={allowedStatusTargets}>
               <button
                 type="button"
                 className="w-full rounded-md py-1 hover:bg-violet-50 transition-colors cursor-pointer"
@@ -842,7 +844,7 @@ function renderInvoiceCell(
 
       return (
         <td key="scheduleProgress" className="p-2 text-center" style={{ minWidth: 140 }}>
-          <ScheduleProgressPopover inv={inv}>
+          <ScheduleProgressPopover inv={inv} allowedStatusTargets={allowedStatusTargets}>
             <div className="flex items-center justify-center gap-1.5 mb-0.5 hover:opacity-80 transition-opacity">
               {allDone
                 ? <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
@@ -895,16 +897,19 @@ function renderInvoiceCell(
       return (
         <td key="status" className="p-3 whitespace-nowrap">
           {inv.isScheduleRow && inv.scheduleId ? (
-            <ScheduleStatusDropdown
-              scheduleId={inv.scheduleId}
-              currentStatus={inv.status}
-              updateStatusMutation={updateScheduleStatusMutation}
-            />
+            allowedStatusTargets.length > 0 ? (
+              <ScheduleStatusDropdown
+                scheduleId={inv.scheduleId}
+                currentStatus={inv.status}
+                allowedStatuses={allowedStatusTargets}
+                updateStatusMutation={updateScheduleStatusMutation}
+              />
+            ) : <Badge className={`text-xs font-medium ${status.className}`}>{invoiceStatusLabel(inv.status, t)}</Badge>
           ) : inv.hasSchedules ? (
             <Badge className={`text-xs font-medium ${status.className}`}>{invoiceStatusLabel(inv.status, t)}</Badge>
-          ) : (
-            <InvoiceStatusDropdown invoiceId={inv.id} currentStatus={inv.status} updateStatusMutation={updateStatusMutation} />
-          )}
+          ) : allowedStatusTargets.length > 0 ? (
+            <InvoiceStatusDropdown invoiceId={inv.id} currentStatus={inv.status} allowedStatuses={allowedStatusTargets} updateStatusMutation={updateStatusMutation} />
+          ) : <Badge className={`text-xs font-medium ${status.className}`}>{invoiceStatusLabel(inv.status, t)}</Badge>}
         </td>
       );
     }
@@ -1861,6 +1866,11 @@ export default function Invoices() {
     if (!p) return { canCreate: false, canEdit: false, canDelete: false };
     return { canCreate: p.canCreate, canEdit: p.canEdit, canDelete: p.canDelete };
   })();
+  const allowedStatusTargets = myPerms?.isSuperAdmin
+    ? INVOICE_STATUS_ACTION_PERMISSIONS.map(permission => permission.targetStatus)
+    : INVOICE_STATUS_ACTION_PERMISSIONS
+      .filter(permission => myPerms?.permissions[permission.resource]?.canView)
+      .map(permission => permission.targetStatus);
   const {
     search, setSearch,
     dateRange, setDateRange,
@@ -2447,45 +2457,45 @@ export default function Invoices() {
                     >
                       <FileText className="w-4 h-4 text-cyan-600" /><span>{t("finance.printTemplates")}</span>
                     </ActionMenuItem>
-                    <ActionMenuItem
-                      className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
-                      disabled={bulkUpdateStatusMutation.isPending}
-                      onClick={() => {
-                        bulkUpdateStatusMutation.mutate({
+                    {allowedStatusTargets.includes("unpaid") && (
+                      <ActionMenuItem
+                        className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
+                        disabled={bulkUpdateStatusMutation.isPending}
+                        onClick={() => bulkUpdateStatusMutation.mutate({
                           invoiceIds: Array.from(selectedIds),
                           scheduleIds: Array.from(selectedSchedules.keys()),
                           status: "unpaid",
-                        });
-                      }}
-                    >
-                      <CreditCard className="w-4 h-4 text-yellow-600" /><span>{t("finance.tab.unpaid")}</span>
-                    </ActionMenuItem>
-                    <ActionMenuItem
-                      className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
-                      disabled={bulkUpdateStatusMutation.isPending}
-                      onClick={() => {
-                        bulkUpdateStatusMutation.mutate({
+                        })}
+                      >
+                        <CreditCard className="w-4 h-4 text-yellow-600" /><span>{t("finance.tab.unpaid")}</span>
+                      </ActionMenuItem>
+                    )}
+                    {allowedStatusTargets.includes("paid") && (
+                      <ActionMenuItem
+                        className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
+                        disabled={bulkUpdateStatusMutation.isPending}
+                        onClick={() => bulkUpdateStatusMutation.mutate({
                           invoiceIds: Array.from(selectedIds),
                           scheduleIds: Array.from(selectedSchedules.keys()),
                           status: "paid",
-                        });
-                      }}
-                    >
-                      <CheckCircle className="w-4 h-4 text-green-600" /><span>{t("finance.tab.paid")}</span>
-                    </ActionMenuItem>
-                    <ActionMenuItem
-                      className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
-                      disabled={bulkUpdateStatusMutation.isPending}
-                      onClick={() => {
-                        bulkUpdateStatusMutation.mutate({
+                        })}
+                      >
+                        <CheckCircle className="w-4 h-4 text-green-600" /><span>{t("finance.tab.paid")}</span>
+                      </ActionMenuItem>
+                    )}
+                    {allowedStatusTargets.includes("confirmed") && (
+                      <ActionMenuItem
+                        className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
+                        disabled={bulkUpdateStatusMutation.isPending}
+                        onClick={() => bulkUpdateStatusMutation.mutate({
                           invoiceIds: Array.from(selectedIds),
                           scheduleIds: Array.from(selectedSchedules.keys()),
                           status: "confirmed",
-                        });
-                      }}
-                    >
-                      <CheckCircle className="w-4 h-4 text-blue-700" /><span>{t("finance.tab.confirmed")}</span>
-                    </ActionMenuItem>
+                        })}
+                      >
+                        <CheckCircle className="w-4 h-4 text-blue-700" /><span>{t("finance.tab.confirmed")}</span>
+                      </ActionMenuItem>
+                    )}
                     <ActionMenuItem
                       className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
                       disabled={bulkAssignCommissionMutation.isPending}
@@ -2672,13 +2682,14 @@ export default function Invoices() {
                         />
                       )}
                     </td>
-                   {visibleColumns.map(col => renderInvoiceCell(
+                    {visibleColumns.map(col => renderInvoiceCell(
                       col.key,
                       inv,
                        t,
                       updateStatusMutation,
                       updateScheduleStatusMutation,
                       invPerm.canEdit,
+                      allowedStatusTargets,
                       isSelected,
                       idx % 2 === 1,
                     ))}
@@ -2819,6 +2830,7 @@ export default function Invoices() {
                       selectedScheduleIds={selectedScheduleIdSet}
                       onToggleSchedule={toggleSchedule}
                       canSelect={invPerm.canDelete}
+                      allowedStatusTargets={allowedStatusTargets}
                       payerNames={filters.payers}
                       onViewPrint={(s) => setPrintPreviewSchedule({ schedule: s, invoice: inv })}
                     />

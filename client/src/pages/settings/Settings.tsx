@@ -48,7 +48,10 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { navigation } from "@/lib/sidebar-navigation";
 import { getSubFeaturePermissionResource, EDUCATION_OTHER_CONFIG_RESOURCE } from "@shared/permission-resources";
-import { INVOICE_VISIBILITY_PERMISSIONS } from "@shared/invoice-visibility-permissions";
+import {
+  INVOICE_STATUS_ACTION_PERMISSIONS,
+  INVOICE_VISIBILITY_PERMISSIONS,
+} from "@shared/invoice-visibility-permissions";
 import { useSidebarVisibility } from "@/hooks/use-sidebar-visibility";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import type { MyPermissionsResult } from "@/hooks/use-my-permissions";
@@ -2128,7 +2131,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
           ? { canView: true, canViewAll: false, canCreate: perms.canCreate, canEdit: perms.canEdit, canDelete: false }
           : resource === MY_SPACE_ASSIGNMENTS_RESOURCE
           ? { canView: true, canViewAll: false, canCreate: perms.canCreate, canEdit: perms.canEdit, canDelete: false }
-          : INVOICE_VISIBILITY_PERMISSIONS.some(scope => scope.resource === resource)
+          : [...INVOICE_VISIBILITY_PERMISSIONS, ...INVOICE_STATUS_ACTION_PERMISSIONS].some(scope => scope.resource === resource)
           ? { canView: perms.canView, canViewAll: false, canCreate: false, canEdit: false, canDelete: false }
           : VIEW_ONLY_RESOURCES.has(resource)
           ? { canView: perms.canView, canViewAll: false, canCreate: false, canEdit: false, canDelete: false }
@@ -3158,19 +3161,27 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                               </div>
                             )}
 
-                            {item.permissionItems?.map(permissionItem => {
+                            {item.permissionItems?.map((permissionItem, index) => {
                               const resource = permissionItem.resource ?? permissionItem.value;
                               const permission = getResourcePerm(resource);
+                              const previousSection = item.permissionItems?.[index - 1]?.section;
                               return (
-                                <div key={permissionItem.value} className="flex items-center px-5 py-2 hover:bg-muted/10">
-                                  <div className="flex items-center gap-2 pl-16 flex-1">
-                                    <Checkbox
-                                      data-testid={`perm-invoices-${permissionItem.value}`}
-                                      checked={permission.canView}
-                                      onCheckedChange={() => handleToggle(resource, "canView")}
-                                      className="w-4 h-4 shrink-0"
-                                    />
-                                    <span className="text-sm text-muted-foreground">{tNav(permissionItem.name)}</span>
+                                <div key={permissionItem.value}>
+                                  {permissionItem.section && permissionItem.section !== previousSection && (
+                                    <div className="px-5 pt-3 pb-1 pl-16 text-xs font-semibold text-muted-foreground">
+                                      {permissionItem.section}
+                                    </div>
+                                  )}
+                                  <div className="flex items-center px-5 py-2 hover:bg-muted/10">
+                                    <div className="flex items-center gap-2 pl-16 flex-1">
+                                      <Checkbox
+                                        data-testid={`perm-invoices-${permissionItem.value}`}
+                                        checked={permission.canView}
+                                        onCheckedChange={() => handleToggle(resource, "canView")}
+                                        className="w-4 h-4 shrink-0"
+                                      />
+                                      <span className="text-sm text-muted-foreground">{tNav(permissionItem.name)}</span>
+                                    </div>
                                   </div>
                                 </div>
                               );

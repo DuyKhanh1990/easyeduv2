@@ -16,10 +16,12 @@ interface UpdateStatusMutation {
 export function ScheduleStatusDropdown({
   scheduleId,
   currentStatus,
+  allowedStatuses,
   updateStatusMutation,
 }: {
   scheduleId: string;
   currentStatus: string;
+  allowedStatuses: readonly string[];
   updateStatusMutation: UpdateStatusMutation;
 }) {
   const [open, setOpen] = useState(false);
@@ -29,7 +31,7 @@ export function ScheduleStatusDropdown({
     status === "paid" ? t("finance.paidStatus") : status === "confirmed" ? t("finance.tab.confirmed") : t("finance.unpaidStatus");
   const currentLabel = getStatusLabel(currentStatus);
   const currentClass = STATUS_CONFIG[currentStatus]?.className ?? STATUS_CONFIG.unpaid.className;
-  const statusOptions = ["unpaid", "paid", "confirmed"] as const;
+  const statusOptions = (["unpaid", "paid", "confirmed"] as const).filter(status => allowedStatuses.includes(status));
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

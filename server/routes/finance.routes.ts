@@ -24,6 +24,7 @@ import { ensureVirtualAccount } from "../services/bidv/bidv-virtual-account.serv
 import { resolveInvoiceRecipientUserIds, sendInvoiceCreatedNotification, sendInvoicePaidNotification } from "../lib/invoice-notification";
 import {
   INVOICE_VISIBILITY_PERMISSIONS,
+  getInvoiceStatusActionPermission,
   invoiceStatusMatchesVisibilityPermission,
   type InvoiceVisibilityPermission,
 } from "@shared/invoice-visibility-permissions";
@@ -271,6 +272,27 @@ async function getInvoiceVisibilityScopes(req: any): Promise<InvoiceVisibilityPe
   ));
   return INVOICE_VISIBILITY_PERMISSIONS.filter((_scope, index) =>
     permissions[index].canView
+  );
+}
+
+async function canSetInvoiceStatus(req: any, targetStatus: string): Promise<boolean> {
+  if (req.isSuperAdmin) return true;
+  const actionPermission = getInvoiceStatusActionPermission(targetStatus);
+  if (!actionPermission) {
+    const invoicePermissions = await getInvoicePermissions(req);
+    return invoicePermissions.canEdit;
+  }
+  const permission = await storage.getEffectivePermissions(req.roleIds || [], actionPermission.resource);
+  return permission.canView;
+}
+
+function isInvoiceStatusVisible(
+  type: string,
+  status: string | null | undefined,
+  scopes: readonly InvoiceVisibilityPermission[],
+): boolean {
+  return scopes.some(scope =>
+    scope.type === type && invoiceStatusMatchesVisibilityPermission(status, scope.status)
   );
 }
 
@@ -1269,6 +1291,15 @@ export function registerFinanceRoutes(app: Express): void {
       }
       const userId = (req as any).user?.id;
       const before = await storage.getInvoice(req.params.id);
+      if (parsed.data.status !== undefined) {
+        if (!await canSetInvoiceStatus(req, parsed.data.status)) {
+          return res.status(403).json({ message: "Bạn không có quyền chuyển hóa đơn sang trạng thái này." });
+        }
+        const scopes = await getInvoiceVisibilityScopes(req);
+        if (!before || !isInvoiceStatusVisible(before.type, before.status, scopes)) {
+          return res.status(404).json({ message: "Không tìm thấy hóa đơn" });
+        }
+      }
       const effectiveCreatedAt = invoiceBusinessDateOnly(
         parsed.data.createdAt ?? before?.createdAt,
         parsed.data.createdAt !== undefined ? req.body?.createdAt : undefined,
@@ -1826,6 +1857,9 @@ export function registerFinanceRoutes(app: Express): void {
        if (!status || !["unpaid", "paid", "confirmed"].includes(status)) {
         return res.status(400).json({ message: "Trạng thái không hợp lệ" });
       }
+      if (!await canSetInvoiceStatus(req, status)) {
+        return res.status(403).json({ message: "Bạn không có quyền chuyển hóa đơn sang trạng thái này." });
+      }
       const userId = (req as any).user?.id;
 
       // Fetch schedule before update to know its invoiceId, amount, and previous status
@@ -1835,8 +1869,19 @@ export function registerFinanceRoutes(app: Express): void {
         .where(eq(invoicePaymentSchedule.id, req.params.id))
         .limit(1);
 
+      if (!scheduleBefore) {
+        return res.status(404).json({ message: "Không tìm thấy đợt thanh toán" });
+      }
+      const invoice = await storage.getInvoice(scheduleBefore.invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Không tìm thấy hóa đơn" });
+      }
+      const scopes = await getInvoiceVisibilityScopes(req);
+      if (!isInvoiceStatusVisible(invoice.type, scheduleBefore.status, scopes)) {
+        return res.status(404).json({ message: "Không tìm thấy đợt thanh toán" });
+      }
+
       if (scheduleBefore?.invoiceId) {
-        const invoice = await storage.getInvoice(scheduleBefore.invoiceId);
         if (isTuitionRefundInvoice(invoice)) {
           const schedules = await db
             .select()
@@ -2305,8 +2350,18 @@ export function registerFinanceRoutes(app: Express): void {
       if (!status || !["unpaid", "partial", "paid", "confirmed", "debt", "cancelled"].includes(status)) {
         return res.status(400).json({ message: "Trạng thái không hợp lệ" });
       }
+      if (!await canSetInvoiceStatus(req, status)) {
+        return res.status(403).json({ message: "Bạn không có quyền chuyển hóa đơn sang trạng thái này." });
+      }
       const userId = (req as any).user?.id;
       const before = await storage.getInvoice(req.params.id);
+      if (!before) {
+        return res.status(404).json({ message: "Không tìm thấy hóa đơn" });
+      }
+      const scopes = await getInvoiceVisibilityScopes(req);
+      if (!filterInvoiceDetailsByVisibility({ ...before }, scopes)) {
+        return res.status(404).json({ message: "Không tìm thấy hóa đơn" });
+      }
       if ((before?.paymentSchedule?.length ?? 0) > 0) {
         return res.status(400).json({
           message: "Hoá đơn có các đợt thanh toán; hãy thao tác trên từng đợt con.",

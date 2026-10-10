@@ -23,13 +23,17 @@ import {
   HardDrive,
 } from "lucide-react";
 import { SiMessenger, SiZalo, SiFacebook } from "react-icons/si";
-import { INVOICE_VISIBILITY_PERMISSIONS } from "@shared/invoice-visibility-permissions";
+import {
+  INVOICE_STATUS_ACTION_PERMISSIONS,
+  INVOICE_VISIBILITY_PERMISSIONS,
+} from "@shared/invoice-visibility-permissions";
 
 export type SubTabItem = {
   value: string;
   name: string;
   resource?: string;
   permissionKeys?: ("canView" | "canViewAll")[];
+  section?: string;
 };
 
 export type SubTab = {
@@ -262,11 +266,22 @@ export const navigation: NavEntry[] = [
         name: "Hoá đơn",
         href: "/invoices",
         icon: FileText,
-        permissionItems: INVOICE_VISIBILITY_PERMISSIONS.map(({ value, resource, name }) => ({
-          value,
-          resource,
-          name,
-        })),
+        permissionItems: [
+          ...INVOICE_VISIBILITY_PERMISSIONS.map(({ value, resource, name }) => ({
+            value,
+            resource,
+            name,
+            permissionKeys: ["canView"] as ("canView" | "canViewAll")[],
+            section: "Quyền xem hóa đơn",
+          })),
+          ...INVOICE_STATUS_ACTION_PERMISSIONS.map(({ value, resource, name }) => ({
+            value,
+            resource,
+            name,
+            permissionKeys: ["canView"] as ("canView" | "canViewAll")[],
+            section: "Quyền chuyển trạng thái",
+          })),
+        ],
       },
       { name: "Công nợ", href: "/invoices/debt", icon: FileText, permissionHref: "/invoices" },
       { name: "Học phí trả sau", href: "/deferred-tuition", icon: CreditCard, permissionHref: "/invoices" },

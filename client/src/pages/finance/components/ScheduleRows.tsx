@@ -42,6 +42,7 @@ export function ScheduleRows({
   canSelect = true,
   onViewPrint,
   payerNames = [],
+  allowedStatusTargets = [],
 }: {
   invoiceId: string;
   isExpanded: boolean;
@@ -53,6 +54,7 @@ export function ScheduleRows({
   canSelect?: boolean;
   onViewPrint?: (s: ScheduleItem) => void;
   payerNames?: string[];
+  allowedStatusTargets?: readonly string[];
 }) {
   const { toast } = useToast();
   const [editTarget, setEditTarget] = useState<ScheduleItem | null>(null);
@@ -134,11 +136,18 @@ export function ScheduleRows({
       case "status":
         return (
           <td key="status" className="py-2 px-3 whitespace-nowrap">
-            <ScheduleStatusDropdown
-              scheduleId={s.id}
-              currentStatus={s.status}
-              updateStatusMutation={updateStatusMutation}
-            />
+            {allowedStatusTargets.length > 0 ? (
+              <ScheduleStatusDropdown
+                scheduleId={s.id}
+                currentStatus={s.status}
+                allowedStatuses={allowedStatusTargets}
+                updateStatusMutation={updateStatusMutation}
+              />
+            ) : (
+              <Badge className={`text-xs font-medium ${STATUS_CONFIG[s.status]?.className ?? STATUS_CONFIG.unpaid.className}`}>
+                {s.status === "confirmed" ? "Đã xác nhận" : s.status === "paid" ? "Đã thanh toán" : "Chưa thanh toán"}
+              </Badge>
+            )}
           </td>
         );
       case "einvoice": {

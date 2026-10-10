@@ -16,21 +16,27 @@ interface UpdateStatusMutation {
 export function InvoiceStatusDropdown({
   invoiceId,
   currentStatus,
+  allowedStatuses,
   updateStatusMutation,
 }: {
   invoiceId: string;
   currentStatus: string;
+  allowedStatuses: readonly string[];
   updateStatusMutation: UpdateStatusMutation;
 }) {
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
   const { t } = useLanguage();
-  const statusOptions = (["unpaid", "paid", "confirmed"] as const).map(value => ({
+  const statusOptions = (["unpaid", "paid", "confirmed"] as const).filter(value => allowedStatuses.includes(value)).map(value => ({
     value,
     label: value === "paid" ? t("finance.paidStatus") : value === "confirmed" ? t("finance.tab.confirmed") : t("finance.unpaidStatus"),
     className: STATUS_CONFIG[value].className,
   }));
-  const current = statusOptions.find(o => o.value === currentStatus) ?? statusOptions[0];
+  const current = statusOptions.find(o => o.value === currentStatus) ?? {
+    value: currentStatus,
+    label: currentStatus === "paid" ? t("finance.paidStatus") : currentStatus === "confirmed" ? t("finance.tab.confirmed") : t("finance.unpaidStatus"),
+    className: STATUS_CONFIG[currentStatus]?.className ?? STATUS_CONFIG.unpaid.className,
+  };
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

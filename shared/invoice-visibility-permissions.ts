@@ -7,9 +7,20 @@ export const INVOICE_VISIBILITY_PERMISSIONS = [
   { value: "expense-confirmed", resource: "/invoices#visibility/expense-confirmed", type: "Chi", status: "confirmed", name: "Phiếu chi - Đã xác nhận" },
 ] as const;
 
+export const INVOICE_STATUS_ACTION_PERMISSIONS = [
+  { value: "status-confirmed", resource: "/invoices#status/confirmed", targetStatus: "confirmed", name: "Chuyển sang Đã xác nhận" },
+  { value: "status-paid", resource: "/invoices#status/paid", targetStatus: "paid", name: "Chuyển sang Đã thanh toán" },
+  { value: "status-unpaid", resource: "/invoices#status/unpaid", targetStatus: "unpaid", name: "Chuyển sang Chưa thanh toán" },
+] as const;
+
 export type InvoiceVisibilityPermission = typeof INVOICE_VISIBILITY_PERMISSIONS[number];
 export type InvoiceVisibilityStatus = InvoiceVisibilityPermission["status"];
 export type InvoiceVisibilityType = InvoiceVisibilityPermission["type"];
+export type InvoiceStatusActionPermission = typeof INVOICE_STATUS_ACTION_PERMISSIONS[number];
+
+export function getInvoiceStatusActionPermission(targetStatus: string): InvoiceStatusActionPermission | undefined {
+  return INVOICE_STATUS_ACTION_PERMISSIONS.find(permission => permission.targetStatus === targetStatus);
+}
 
 export function invoiceStatusMatchesVisibilityPermission(
   invoiceStatus: string | null | undefined,

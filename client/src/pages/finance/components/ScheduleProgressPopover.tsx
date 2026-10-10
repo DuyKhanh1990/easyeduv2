@@ -29,9 +29,9 @@ function StatusLabel({ status, dueDate }: { status: string; dueDate?: string | n
   return <span className="text-muted-foreground flex items-center gap-1">⏳ {t("finance.unpaidStatus")}</span>;
 }
 
-interface Props { inv: InvoiceRow; children: React.ReactNode; }
+interface Props { inv: InvoiceRow; children: React.ReactNode; allowedStatusTargets: readonly string[]; }
 
-export function ScheduleProgressPopover({ inv, children }: Props) {
+export function ScheduleProgressPopover({ inv, children, allowedStatusTargets }: Props) {
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
   const { lang, t } = useLanguage();
@@ -73,14 +73,8 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
     onSuccess: () => { invalidate(); setCalOpenId(null); },
   });
   const updateInvoiceMutation = useMutation({
-    mutationFn: ({ status }: { status: string }) => {
-      const isPaid = status === "paid";
-      return apiRequest("PATCH", `/api/finance/invoices/${inv.id}`, {
-        status,
-        paidAmount: isPaid ? String(grandTotal) : "0",
-        remainingAmount: isPaid ? "0" : String(grandTotal),
-      });
-    },
+    mutationFn: ({ status }: { status: string }) =>
+      apiRequest("PATCH", `/api/finance/invoices/${inv.id}/status`, { status }),
     onSuccess: invalidate,
   });
   const updateInvoiceDueDateMutation = useMutation({
@@ -389,7 +383,7 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
                         <div className="mt-1.5">
                           <select
                             value={sch.status}
-                              disabled={isPaid || isStatusPending}
+                            disabled={allowedStatusTargets.length === 0 || isStatusPending}
                             onChange={(e) => {
                                 if (sch.isSynthetic) {
                                   updateInvoiceMutation.mutate({ status: e.target.value });
@@ -405,8 +399,12 @@ export function ScheduleProgressPopover({ inv, children }: Props) {
                                 : "border-yellow-200 bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
                               }`}
                           >
-                             <option value="paid">✓ {t("finance.paidStatus")}</option>
-                             <option value="unpaid">⏳ {t("finance.unpaidStatus")}</option>
+                            {!allowedStatusTargets.includes(sch.status) && (
+                              <option value={sch.status} disabled>{sch.status === "confirmed" ? t("finance.tab.confirmed") : sch.status === "paid" ? t("finance.paidStatus") : t("finance.unpaidStatus")}</option>
+                            )}
+                            {allowedStatusTargets.includes("paid") && <option value="paid">✓ {t("finance.paidStatus")}</option>}
+                            {allowedStatusTargets.includes("unpaid") && <option value="unpaid">⏳ {t("finance.unpaidStatus")}</option>}
+                            {allowedStatusTargets.includes("confirmed") && <option value="confirmed">✓ {t("finance.tab.confirmed")}</option>}
                           </select>
                         </div>
 
