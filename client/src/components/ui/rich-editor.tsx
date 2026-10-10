@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
-import { Node, mergeAttributes, type Editor } from "@tiptap/core";
+import { Extension, Node, mergeAttributes, type Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -21,6 +21,8 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { getAuthHeaders } from "@/lib/queryClient";
 import { TableKit } from "@tiptap/extension-table";
+import { Plugin } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
@@ -187,28 +189,65 @@ function ColorSwatches({ colors, onSelect, onClose }: ColorSwatchProps) {
   );
 }
 
-interface ActiveTableCell {
-  row: number;
-  column: number;
-  position: number;
+function isSelectionInsideTable(editor: Editor): boolean {
+  const { $from } = editor.state.selection;
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    if ($from.node(depth).type.name === "table") return true;
+  }
+  return false;
 }
 
-function getActiveTableCell(editor: Editor): ActiveTableCell | null {
-  const { $from } = editor.state.selection;
-  let tableDepth = -1;
-  for (let depth = $from.depth; depth > 0; depth -= 1) {
-    if ($from.node(depth).type.name === "table") {
-      tableDepth = depth;
-      break;
-    }
-  }
-  if (tableDepth < 0 || $from.depth < tableDepth + 2) return null;
-  return {
-    row: $from.index(tableDepth) + 1,
-    column: $from.index(tableDepth + 1) + 1,
-    position: $from.before(tableDepth + 2),
-  };
-}
+const TableSelectionHighlight = Extension.create({
+  name: "tableSelectionHighlight",
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        props: {
+          decorations(state) {
+            const { $from } = state.selection;
+            let tableDepth = -1;
+            for (let depth = $from.depth; depth > 0; depth -= 1) {
+              if ($from.node(depth).type.name === "table") {
+                tableDepth = depth;
+                break;
+              }
+            }
+            if (tableDepth < 0 || $from.depth < tableDepth + 2) return DecorationSet.empty;
+
+            const table = $from.node(tableDepth);
+            const activeRow = $from.index(tableDepth);
+            const activeColumn = $from.index(tableDepth + 1);
+            let rowPosition = $from.before(tableDepth) + 1;
+            const decorations: Decoration[] = [];
+
+            table.forEach((row, _rowOffset, rowIndex) => {
+              let cellPosition = rowPosition + 1;
+              row.forEach((cell, _cellOffset, columnIndex) => {
+                const classes: string[] = [];
+                if (rowIndex === activeRow) classes.push("rich-editor-active-row");
+                if (columnIndex === activeColumn) classes.push("rich-editor-active-column");
+                if (rowIndex === activeRow && columnIndex === activeColumn) {
+                  classes.push("rich-editor-active-cell");
+                }
+                if (classes.length > 0) {
+                  decorations.push(
+                    Decoration.node(cellPosition, cellPosition + cell.nodeSize, {
+                      class: classes.join(" "),
+                    })
+                  );
+                }
+                cellPosition += cell.nodeSize;
+              });
+              rowPosition += row.nodeSize;
+            });
+
+            return DecorationSet.create(state.doc, decorations);
+          },
+        },
+      }),
+    ];
+  },
+});
 
 function TableToolbarButton({
   title,
@@ -264,33 +303,6 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
   const [tableOpen, setTableOpen] = useState(false);
   const [tableSize, setTableSize] = useState({ rows: 1, cols: 1 });
   const [selectionInsideTable, setSelectionInsideTable] = useState(false);
-  const [activeTableCell, setActiveTableCell] = useState<ActiveTableCell | null>(null);
-
-  const updateActiveTableCell = useCallback((currentEditor: Editor) => {
-    const root = currentEditor.view.dom;
-    root.querySelectorAll(".rich-editor-active-cell, .rich-editor-active-row, .rich-editor-active-column")
-      .forEach((element) => element.classList.remove("rich-editor-active-cell", "rich-editor-active-row", "rich-editor-active-column"));
-    const activeCell = getActiveTableCell(currentEditor);
-    const cellDom = activeCell ? currentEditor.view.nodeDOM(activeCell.position) : null;
-    if (!activeCell || !(cellDom instanceof HTMLElement)) {
-      setSelectionInsideTable(false);
-      setActiveTableCell(null);
-      return;
-    }
-
-    const rowDom = cellDom.closest("tr");
-    const tableDom = cellDom.closest("table");
-    rowDom?.querySelectorAll("th, td").forEach((element) => element.classList.add("rich-editor-active-row"));
-    cellDom.classList.add("rich-editor-active-cell");
-    if (tableDom && "cellIndex" in cellDom) {
-      const columnIndex = (cellDom as HTMLTableCellElement).cellIndex;
-      Array.from(tableDom.rows).forEach((row) => {
-        row.cells.item(columnIndex)?.classList.add("rich-editor-active-column");
-      });
-    }
-    setSelectionInsideTable(true);
-    setActiveTableCell(activeCell);
-  }, []);
 
   const editor = useEditor({
     extensions: [
@@ -321,14 +333,15 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
                 HTMLAttributes: { class: "rich-content-table" },
               },
             }),
+            TableSelectionHighlight,
           ]
         : []),
     ],
     content: legacyToHtml(value),
-    onCreate: ({ editor }) => updateActiveTableCell(editor),
-    onSelectionUpdate: ({ editor }) => updateActiveTableCell(editor),
+    onCreate: ({ editor }) => setSelectionInsideTable(isSelectionInsideTable(editor)),
+    onSelectionUpdate: ({ editor }) => setSelectionInsideTable(isSelectionInsideTable(editor)),
     onUpdate: ({ editor }) => {
-      updateActiveTableCell(editor);
+      setSelectionInsideTable(isSelectionInsideTable(editor));
       const html = editor.getHTML();
       onChange(html === "<p></p>" ? "" : html);
     },
@@ -674,9 +687,6 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
             aria-label="Công cụ chỉnh sửa bảng"
             data-testid="rich-editor-table-toolbar"
           >
-            <span className="mr-1 rounded bg-blue-100 px-2 py-1 text-[11px] font-semibold text-blue-800 dark:bg-blue-950 dark:text-blue-200" aria-live="polite">
-              Ô đang chọn: hàng {activeTableCell?.row ?? "—"}, cột {activeTableCell?.column ?? "—"}
-            </span>
             <span className="mr-1 text-[11px] font-semibold text-muted-foreground">Hàng</span>
             <TableToolbarButton title="Thêm hàng phía trên" onClick={() => editor.chain().focus().addRowBefore().run()}>
               <Plus className="h-3 w-3" /> Trên
@@ -684,7 +694,7 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
             <TableToolbarButton title="Thêm hàng phía dưới" onClick={() => editor.chain().focus().addRowAfter().run()}>
               <Plus className="h-3 w-3" /> Dưới
             </TableToolbarButton>
-            <TableToolbarButton title={`Xóa hàng ${activeTableCell?.row ?? "hiện tại"}`} danger disabled={!editor.can().deleteRow()} onClick={() => editor.chain().focus().deleteRow().run()}>
+            <TableToolbarButton title="Xóa hàng hiện tại" danger disabled={!editor.can().deleteRow()} onClick={() => editor.chain().focus().deleteRow().run()}>
               <Trash2 className="h-3 w-3" /> Xóa
             </TableToolbarButton>
 
@@ -695,7 +705,7 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
             <TableToolbarButton title="Thêm cột phía sau" onClick={() => editor.chain().focus().addColumnAfter().run()}>
               <Plus className="h-3 w-3" /> Sau
             </TableToolbarButton>
-            <TableToolbarButton title={`Xóa cột ${activeTableCell?.column ?? "hiện tại"}`} danger disabled={!editor.can().deleteColumn()} onClick={() => editor.chain().focus().deleteColumn().run()}>
+            <TableToolbarButton title="Xóa cột hiện tại" danger disabled={!editor.can().deleteColumn()} onClick={() => editor.chain().focus().deleteColumn().run()}>
               <Trash2 className="h-3 w-3" /> Xóa
             </TableToolbarButton>
 
