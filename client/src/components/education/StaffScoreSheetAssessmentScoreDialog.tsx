@@ -26,7 +26,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { hasScoreSheetAssessmentFeedback } from "@shared/score-sheet-assessment-publication";
-import { getEvaluationCheckboxGroupStates } from "@shared/evaluation-checkbox-limits";
+import {
+  formatEvaluationExclusionViolation,
+  getEvaluationCheckboxGroupStates,
+  getEvaluationExclusionViolation,
+} from "@shared/evaluation-checkbox-limits";
 import {
   calculateScoreSheetAssessmentAttemptResult,
   selectScoreSheetAssessmentAttemptSummary,
@@ -63,6 +67,7 @@ type AssessmentEvaluationItem = {
   criteriaId: string;
   itemType: "heading" | "criterion";
   inputType: "text" | "checkbox";
+  exclusionCode: string | null;
   parentId: string | null;
   minChecked: number | null;
   maxChecked: number | null;
@@ -741,7 +746,16 @@ export function StaffScoreSheetAssessmentScoreDialog({
     const response = currentValues.evaluationResponses[item.id];
     if (item.inputType === "checkbox") {
       const isChecked = response === true;
-      const isDisabled = !isChecked && disableNewCheckbox;
+      const code = item.exclusionCode?.trim();
+      const blockedByCode = !!code && Boolean(details?.evaluationCriteria.some((criteria) =>
+        criteria.subCriteria.some((other) =>
+          other.id !== item.id
+          && other.inputType === "checkbox"
+          && other.exclusionCode?.trim() === code
+          && currentValues.evaluationResponses[other.id] === true,
+        ),
+      ));
+      const isDisabled = !isChecked && (disableNewCheckbox || blockedByCode);
       return (
         <div key={item.id} className={cn(
           "flex items-start gap-3 rounded-md border bg-background px-3 py-2",
@@ -801,6 +815,22 @@ export function StaffScoreSheetAssessmentScoreDialog({
       || selectedAttemptNumber == null
       || (!draftIsDirty && !publicationChanged)
     ) return;
+    const exclusionViolation = getEvaluationExclusionViolation(
+      {
+        [student.studentId]: {
+          teacherName: student.fullName,
+          items: Object.entries(currentValues.evaluationResponses).map(([subCriteriaId, response]) => ({
+            subCriteriaId,
+            checked: response === true,
+          })),
+        },
+      },
+      details?.evaluationCriteria.flatMap((criteria) => criteria.subCriteria ?? []) ?? [],
+    );
+    if (exclusionViolation) {
+      setSaveError(formatEvaluationExclusionViolation(exclusionViolation));
+      return;
+    }
     const checkboxLimitViolation = evaluationCheckboxStates.find((state) => !state.isValid);
     if (checkboxLimitViolation) {
       const requirement = checkboxLimitViolation.minChecked != null && checkboxLimitViolation.maxChecked != null

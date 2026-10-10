@@ -18,7 +18,11 @@ import { useToast } from "@/hooks/use-toast";
 import { Star } from "lucide-react";
 import { RichEditor } from "@/components/ui/rich-editor";
 import { useLanguage } from "@/hooks/use-language";
-import { getEvaluationCheckboxGroupStates } from "@shared/evaluation-checkbox-limits";
+import {
+  formatEvaluationExclusionViolation,
+  getEvaluationCheckboxGroupStates,
+  getEvaluationExclusionViolation,
+} from "@shared/evaluation-checkbox-limits";
 
 interface SubCriteriaItem {
   id: string;
@@ -27,6 +31,7 @@ interface SubCriteriaItem {
   parentId?: string | null;
   itemType?: "heading" | "criterion";
   inputType?: "text" | "checkbox";
+  exclusionCode?: string | null;
   minChecked?: number | null;
   maxChecked?: number | null;
 }
@@ -288,6 +293,19 @@ export function ReviewDialog({
 
   const handleSaveReview = () => {
     const reviewData = buildReviewData();
+    const exclusionIssue = getEvaluationExclusionViolation(
+      reviewData,
+      criteria.flatMap((criterion) => criterion.subCriteria ?? []),
+    );
+    if (exclusionIssue) {
+      setActiveTeacher(exclusionIssue.teacherId);
+      toast({
+        title: t("mySpace.calendar.error"),
+        description: formatEvaluationExclusionViolation(exclusionIssue),
+        variant: "destructive",
+      });
+      return;
+    }
     const issue = getEvaluationCheckboxGroupStates(
       reviewData,
       criteria.flatMap((criterion) => criterion.subCriteria ?? []),
@@ -444,7 +462,16 @@ function CriteriaForm({
   const { t } = useLanguage();
   const renderSubCriterion = (sc: SubCriteriaItem, disableNewCheckbox = false) => {
     const isChecked = checked[teacherId]?.[sc.id] === true;
-    const isDisabled = sc.inputType === "checkbox" && !isChecked && disableNewCheckbox;
+    const code = sc.exclusionCode?.trim();
+    const blockedByCode = !!code && criteria.some((criterion) =>
+      criterion.subCriteria.some((other) =>
+        other.id !== sc.id
+        && other.inputType === "checkbox"
+        && other.exclusionCode?.trim() === code
+        && checked[teacherId]?.[other.id] === true,
+      ),
+    );
+    const isDisabled = sc.inputType === "checkbox" && !isChecked && (disableNewCheckbox || blockedByCode);
     return (
     <div key={sc.id} className="space-y-1">
       {sc.inputType === "checkbox" ? (

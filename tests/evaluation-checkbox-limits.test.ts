@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  getEvaluationExclusionViolation,
   getEvaluationCheckboxGroupStates,
   type EvaluationCheckboxGroupRow,
 } from "@shared/evaluation-checkbox-limits";
@@ -96,5 +97,36 @@ describe("evaluation checkbox group limits", () => {
     };
     const [state] = getEvaluationCheckboxGroupStates(scoreSheetResponses, baseRows);
     expect(state).toMatchObject({ selectedCount: 4, maxChecked: 3, isValid: false });
+  });
+});
+
+describe("evaluation checkbox exclusion codes", () => {
+  const rows: EvaluationCheckboxGroupRow[] = [
+    { id: "heading-a", name: "Nhóm A", criteriaId: "criteria-1", itemType: "heading" },
+    { id: "heading-b", name: "Nhóm B", criteriaId: "criteria-1", itemType: "heading" },
+    { id: "option-a", name: "Lựa chọn A", criteriaId: "criteria-1", parentId: "heading-a", itemType: "criterion", inputType: "checkbox", exclusionCode: "1" },
+    { id: "option-b", name: "Lựa chọn B", criteriaId: "criteria-1", parentId: "heading-b", itemType: "criterion", inputType: "checkbox", exclusionCode: "1" },
+    { id: "option-c", name: "Lựa chọn C", criteriaId: "criteria-2", itemType: "criterion", inputType: "checkbox", exclusionCode: "2" },
+    { id: "text", name: "Nhận xét", criteriaId: "criteria-1", itemType: "criterion", inputType: "text", exclusionCode: "1" },
+  ];
+
+  it("blocks duplicate codes across groups, regardless of criterion set", () => {
+    const violation = getEvaluationExclusionViolation(makeReview(["option-a", "option-b"]), rows);
+    expect(violation).toMatchObject({
+      code: "1",
+      criteriaNames: ["Lựa chọn A", "Lựa chọn B"],
+    });
+  });
+
+  it("ignores unchecked, text, heading, and different-code criteria", () => {
+    expect(getEvaluationExclusionViolation(makeReview(["option-a", "option-c", "text"]), rows)).toBeNull();
+  });
+
+  it("validates each student's response independently", () => {
+    const reviewData = {
+      first: { items: [{ subCriteriaId: "option-a", checked: true }] },
+      second: { items: [{ subCriteriaId: "option-b", checked: true }] },
+    };
+    expect(getEvaluationExclusionViolation(reviewData, rows)).toBeNull();
   });
 });

@@ -76,7 +76,11 @@ import { manualStudentIdInFilter } from "../lib/manual-score-sheet-sql";
 import { canScheduleWrite } from "@shared/schedule-access";
 import { isStaffAssignedToEffectiveFreeClassStudent } from "@shared/my-space-calendar-permissions";
 import { hasMySpaceAssignmentsWritePermission } from "../lib/my-space-assignments-permissions";
-import { getEvaluationCheckboxGroupStates } from "@shared/evaluation-checkbox-limits";
+import {
+  formatEvaluationExclusionViolation,
+  getEvaluationCheckboxGroupStates,
+  getEvaluationExclusionViolation,
+} from "@shared/evaluation-checkbox-limits";
 
 type ScoreSheetAssessmentPublicationNotification = {
   classId: string;
@@ -227,6 +231,7 @@ type ScoreSheetEvaluationSubCriterion = {
   criteriaId: string;
   itemType: string;
   inputType: string;
+  exclusionCode: string | null;
   parentId: string | null;
   minChecked: number | null;
   maxChecked: number | null;
@@ -273,6 +278,7 @@ async function getEvaluationCriteriaForScoreSheet(
           criteriaId: subCriteria.criteriaId,
           itemType: subCriteria.itemType,
           inputType: subCriteria.inputType,
+          exclusionCode: subCriteria.exclusionCode,
           parentId: subCriteria.parentId,
           minChecked: subCriteria.minChecked,
           maxChecked: subCriteria.maxChecked,
@@ -5578,6 +5584,20 @@ export function registerMySpaceRoutes(app: Express): void {
             const error: any = new Error(
               `Nhóm "${checkboxLimitViolation.groupName}" cần chọn ${requirement} tickbox (hiện chọn ${checkboxLimitViolation.selectedCount}).`,
             );
+            error.status = 400;
+            throw error;
+          }
+          const exclusionViolation = getEvaluationExclusionViolation({
+            [studentId.data]: {
+              teacherName: "Học viên",
+              items: Object.entries(values.evaluationResponses).map(([subCriteriaId, response]) => ({
+                subCriteriaId,
+                checked: response === true,
+              })),
+            },
+          }, configuredEvaluationCriteria.flatMap((criteria) => criteria.subCriteria));
+          if (exclusionViolation) {
+            const error: any = new Error(formatEvaluationExclusionViolation(exclusionViolation));
             error.status = 400;
             throw error;
           }

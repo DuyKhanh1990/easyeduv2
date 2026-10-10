@@ -49,8 +49,10 @@ import {
   studentLocations,
 } from "@shared/schema";
 import {
+  formatEvaluationExclusionViolation,
   formatEvaluationCheckboxGroupViolation,
   getEvaluationCheckboxGroupStates,
+  getEvaluationExclusionViolation,
 } from "@shared/evaluation-checkbox-limits";
 import { eq, and, gte, lte, sql, inArray, desc, or, isNull } from "drizzle-orm";
 import { enforceAttendanceTimeLimit, getStaffRoleIds } from "../lib/attendance-limit";
@@ -3552,6 +3554,7 @@ export function registerMobileRoutes(app: Express) {
            parentId: string | null;
            itemType: "heading" | "criterion";
            inputType: "text" | "checkbox";
+            exclusionCode: string | null;
             minChecked: number | null;
             maxChecked: number | null;
          }[];
@@ -3570,6 +3573,7 @@ export function registerMobileRoutes(app: Express) {
             parentId: evaluationSubCriteria.parentId,
             itemType: evaluationSubCriteria.itemType,
             inputType: evaluationSubCriteria.inputType,
+            exclusionCode: evaluationSubCriteria.exclusionCode,
             minChecked: evaluationSubCriteria.minChecked,
             maxChecked: evaluationSubCriteria.maxChecked,
           })
@@ -3582,6 +3586,7 @@ export function registerMobileRoutes(app: Express) {
            parentId: string | null;
            itemType: "heading" | "criterion";
            inputType: "text" | "checkbox";
+             exclusionCode: string | null;
             minChecked: number | null;
             maxChecked: number | null;
          }[]>();
@@ -3593,6 +3598,7 @@ export function registerMobileRoutes(app: Express) {
              parentId: s.parentId,
              itemType: s.itemType === "heading" ? "heading" : "criterion",
              inputType: s.inputType === "checkbox" ? "checkbox" : "text",
+              exclusionCode: s.exclusionCode,
               minChecked: s.minChecked,
               maxChecked: s.maxChecked,
            });
@@ -3761,6 +3767,10 @@ export function registerMobileRoutes(app: Express) {
           .find((state) => !state.isValid);
         if (checkboxViolation) {
           return res.status(400).json({ message: formatEvaluationCheckboxGroupViolation(checkboxViolation) });
+        }
+        const exclusionViolation = getEvaluationExclusionViolation(normalizedReviewData, configuredSubCriteria);
+        if (exclusionViolation) {
+          return res.status(400).json({ message: formatEvaluationExclusionViolation(exclusionViolation) });
         }
       }
 

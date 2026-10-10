@@ -1477,6 +1477,7 @@ export const evaluationSubCriteria = pgTable("evaluation_sub_criteria", {
   name: varchar("name", { length: 255 }).notNull(),
   itemType: varchar("item_type", { length: 20 }).notNull().default("criterion"), // heading | criterion
   inputType: varchar("input_type", { length: 20 }).notNull().default("text"), // text | checkbox
+  exclusionCode: varchar("exclusion_code", { length: 100 }),
   minChecked: integer("min_checked"),
   maxChecked: integer("max_checked"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

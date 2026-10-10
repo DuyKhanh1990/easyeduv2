@@ -266,8 +266,9 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
     parentId: string;
     minChecked: string;
     maxChecked: string;
+    exclusionCode: string;
   }>({
-    defaultValues: { name: "", inputType: "text", parentId: "", minChecked: "", maxChecked: "" },
+    defaultValues: { name: "", inputType: "text", parentId: "", minChecked: "", maxChecked: "", exclusionCode: "" },
   });
 
   useEffect(() => { criteriaForm.reset({ name: editingCriteria?.name || "" }); }, [editingCriteria]);
@@ -278,6 +279,7 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
       parentId: editingSubCriteria?.parentId || "",
       minChecked: editingSubCriteria?.minChecked != null ? String(editingSubCriteria.minChecked) : "",
       maxChecked: editingSubCriteria?.maxChecked != null ? String(editingSubCriteria.maxChecked) : "",
+      exclusionCode: editingSubCriteria?.exclusionCode || "",
     });
   }, [editingSubCriteria]);
 
@@ -308,6 +310,7 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
       parentId: string;
       minChecked: number | null;
       maxChecked: number | null;
+      exclusionCode: string;
     }) => (
       await apiRequest("POST", "/api/evaluation-sub-criteria", {
         name: data.name,
@@ -316,6 +319,7 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
         inputType: data.parentId ? data.inputType : "text",
         minChecked: data.minChecked,
         maxChecked: data.maxChecked,
+        exclusionCode: data.exclusionCode || null,
         criteriaId: selectedCriteriaId,
       })
     ).json(),
@@ -334,6 +338,7 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
       parentId: string;
       minChecked: number | null;
       maxChecked: number | null;
+      exclusionCode: string;
     }) => (
       await apiRequest("PUT", `/api/evaluation-sub-criteria/${editingSubCriteria?.id}`, {
         name: data.name,
@@ -344,6 +349,7 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
         inputType: data.parentId || editingSubCriteria?.itemType === "criterion" ? data.inputType : "text",
         minChecked: data.minChecked,
         maxChecked: data.maxChecked,
+        exclusionCode: data.exclusionCode || null,
         criteriaId: selectedCriteriaId,
       })
     ).json(),
@@ -372,6 +378,7 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
     parentId: string;
     minChecked: string;
     maxChecked: string;
+    exclusionCode: string;
   }) => {
     const isGroup = !data.parentId
       && (!editingSubCriteria || editingSubCriteria.itemType === "heading");
@@ -396,6 +403,7 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
       ...data,
       minChecked: min.value,
       maxChecked: max.value,
+      exclusionCode: data.parentId && data.inputType === "checkbox" ? data.exclusionCode.trim() : "",
     };
     if (editingSubCriteria) updateSub.mutate(payload);
     else createSub.mutate(payload);
@@ -411,6 +419,9 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
       <TableCell className={`font-medium ${nested ? "pl-10" : ""}`}>
         {nested && <span className="text-muted-foreground mr-2">↳</span>}
         <span>{sub.name}</span>
+        {sub.itemType !== "heading" && sub.inputType === "checkbox" && sub.exclusionCode && (
+          <Badge variant="secondary" className="ml-2 text-[10px]">Mã loại trừ: {sub.exclusionCode}</Badge>
+        )}
         {sub.itemType === "heading" && (sub.minChecked != null || sub.maxChecked != null) && (
           <span className="ml-2 text-xs font-normal text-muted-foreground">
             (Tickbox: {sub.minChecked != null ? `tối thiểu ${sub.minChecked}` : ""}
@@ -621,6 +632,20 @@ function EvaluationCriteriaTab({ perm }: { perm?: ConfigTabPerm }) {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Để trống cả hai thì được tự do chọn. Có thể nhập riêng một giới hạn.
+                </p>
+              </div>
+            )}
+            {!!subForm.watch("parentId") && subForm.watch("inputType") === "checkbox" && (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Mã loại trừ</label>
+                <Input
+                  {...subForm.register("exclusionCode")}
+                  placeholder="VD: 1"
+                  maxLength={100}
+                  data-testid="input-evaluation-exclusion-code"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Các tiêu chí checkbox trùng mã trong toàn bộ bảng đánh giá chỉ cho chọn một.
                 </p>
               </div>
             )}

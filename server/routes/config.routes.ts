@@ -29,6 +29,10 @@ import {
   calculateScoreSheetAssessmentAttemptResult,
   selectScoreSheetAssessmentAttemptSummary,
 } from "@shared/score-sheet-assessment-scoring";
+import {
+  formatEvaluationExclusionViolation,
+  getEvaluationExclusionViolation,
+} from "@shared/evaluation-checkbox-limits";
 import { isScoreSheetAssessmentStudentPublished } from "@shared/score-sheet-assessment-publication";
 import {
   MY_SPACE_CALENDAR_RESOURCE,
@@ -1745,6 +1749,9 @@ export function registerConfigRoutes(app: Express): void {
         minChecked,
         maxChecked,
         inputType: itemType === "criterion" && input.inputType === "checkbox" ? "checkbox" : "text",
+        exclusionCode: itemType === "criterion" && input.inputType === "checkbox"
+          ? input.exclusionCode?.trim() || null
+          : null,
       }).returning();
       res.status(201).json(row);
     } catch (err) {
@@ -1768,6 +1775,12 @@ export function registerConfigRoutes(app: Express): void {
         : null;
       const maxChecked = itemType === "heading"
         ? (input.maxChecked === undefined ? current.maxChecked : input.maxChecked)
+        : null;
+      const inputType = itemType === "criterion" && (input.inputType ?? current.inputType) === "checkbox"
+        ? "checkbox"
+        : "text";
+      const exclusionCode = itemType === "criterion" && inputType === "checkbox"
+        ? (input.exclusionCode === undefined ? current.exclusionCode : input.exclusionCode?.trim() || null)
         : null;
       const boundsError = getEvaluationGroupBoundsError(minChecked, maxChecked);
       if (boundsError) return res.status(400).json({ message: boundsError });
@@ -1796,7 +1809,8 @@ export function registerConfigRoutes(app: Express): void {
         parentId,
         minChecked,
         maxChecked,
-        inputType: itemType === "criterion" && input.inputType === "checkbox" ? "checkbox" : "text",
+        inputType,
+        exclusionCode,
         updatedAt: new Date(),
       }).where(eq(evaluationSubCriteria.id, req.params.id)).returning();
       if (!row) return res.status(404).json({ message: "Not found" });
@@ -3778,6 +3792,27 @@ export function registerConfigRoutes(app: Express): void {
 
       const now = new Date().toISOString();
       const { initialScoresByStudent = {}, ...assessmentInput } = parsed;
+      if (assessmentInput.creationMode === "manual" && scoreSheetTemplate.evaluationCriteriaIds.length > 0) {
+        const { evaluationSubCriteria } = await import("@shared/schema");
+        const configuredSubCriteria = await db.select().from(evaluationSubCriteria)
+          .where(inArray(evaluationSubCriteria.criteriaId, scoreSheetTemplate.evaluationCriteriaIds));
+        for (const [studentId, values] of Object.entries(initialScoresByStudent)) {
+          const exclusionViolation = getEvaluationExclusionViolation({
+            [studentId]: {
+              teacherName: "Học viên",
+              items: Object.entries(values.evaluationResponses).map(([subCriteriaId, response]) => ({
+                subCriteriaId,
+                checked: response === true,
+              })),
+            },
+          }, configuredSubCriteria);
+          if (exclusionViolation) {
+            const error: any = new Error(formatEvaluationExclusionViolation(exclusionViolation));
+            error.status = 400;
+            throw error;
+          }
+        }
+      }
       let createdByName: string | null = null;
       if (assessmentInput.creationMode === "manual") {
         const creatorUserId = requestUserId(req);

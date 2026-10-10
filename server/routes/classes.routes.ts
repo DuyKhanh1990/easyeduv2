@@ -15,8 +15,10 @@ import { db, pool } from "../db";
 import { classSessions, classSessionTeacherAssignments, studentSessions, freeClassRegistrations, freeClassDayAssignments, students, classes, studentClasses, staff, staffAssignments, departments, studentLocations, classGradeBooks, classGradeBookScores, classGradeBookStudentComments, users, roles, scoreSheets, scoreSheetItems, scoreCategories, locations, invoiceSessionAllocations, sessionContents, studentSessionContents, shiftTemplates, invoices, invoiceItems, courseFeePackages, financePromotions, evaluationCriteria, evaluationSubCriteria, courseProgramContents, examSubmissions, centerConfig, publicHolidays } from "@shared/schema";
 import { eq, and, sql, inArray, avg, between, gte, lte, gt, desc, asc, or, ilike, isNotNull, isNull, ne } from "drizzle-orm";
 import {
+  formatEvaluationExclusionViolation,
   formatEvaluationCheckboxGroupViolation,
   getEvaluationCheckboxGroupStates,
+  getEvaluationExclusionViolation,
 } from "@shared/evaluation-checkbox-limits";
 import { sendAttendanceNotificationWithLimit, sendReviewNotification, sendContentNotification } from "../lib/attendance-notification";
 import { enforceAttendanceTimeLimit, getStaffRoleIds } from "../lib/attendance-limit";
@@ -2823,6 +2825,10 @@ export function registerClassesRoutes(app: Express): void {
       if (checkboxViolation) {
         return res.status(400).json({ message: formatEvaluationCheckboxGroupViolation(checkboxViolation) });
       }
+      const exclusionViolation = getEvaluationExclusionViolation(body.reviewData, configuredSubCriteria);
+      if (exclusionViolation) {
+        return res.status(400).json({ message: formatEvaluationExclusionViolation(exclusionViolation) });
+      }
 
       const [updated] = await db
         .update(freeClassRegistrations)
@@ -3956,6 +3962,10 @@ export function registerClassesRoutes(app: Express): void {
           .find((state) => !state.isValid);
         if (checkboxViolation) {
           return res.status(400).json({ message: formatEvaluationCheckboxGroupViolation(checkboxViolation) });
+        }
+        const exclusionViolation = getEvaluationExclusionViolation(reviewData, configuredSubCriteria);
+        if (exclusionViolation) {
+          return res.status(400).json({ message: formatEvaluationExclusionViolation(exclusionViolation) });
         }
       }
 
