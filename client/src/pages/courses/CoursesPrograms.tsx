@@ -2620,6 +2620,87 @@ function ProgramContentDialog({ program, defaultSession, content, trigger }: {
                       </FormItem>
                     )}
                   />
+                  <section className="space-y-3 border-t pt-4">
+                    <FormLabel>Đính kèm file</FormLabel>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      accept="image/*,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.pdf,video/*,.mp3,.wav,.ogg"
+                      onChange={handleFileChange}
+                    />
+                    <div className="grid grid-cols-3 gap-2">
+                      {form.watch("attachments")?.map((att, idx) => {
+                        const { name } = parseAttachment(att);
+                        const { icon, color } = getFileTypeInfo(name);
+                        return (
+                          <div
+                            key={`${name}-${idx}`}
+                            title={name}
+                            className="group relative flex aspect-square min-w-0 flex-col items-center justify-center gap-1.5 rounded-lg border bg-background p-2 text-center transition-colors hover:border-primary/50"
+                          >
+                            <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-md", color)}>
+                              {icon}
+                            </div>
+                            <span className="w-full truncate text-[10px] text-muted-foreground">{name}</span>
+                            <button
+                              type="button"
+                              aria-label={`Xóa tệp ${name}`}
+                              className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-background/90 text-muted-foreground shadow-sm hover:text-destructive"
+                              onClick={() => handleRemoveAttachment(idx)}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        className="flex aspect-square min-w-0 flex-col items-center justify-center gap-1 rounded-lg border border-dashed text-muted-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isUploading}
+                        data-testid="button-add-attachment"
+                      >
+                        {isUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Plus className="h-5 w-5" />}
+                        <span className="text-[10px]">{isUploading ? "Đang tải" : "Thêm file"}</span>
+                      </button>
+                    </div>
+                    <p className="text-[10px] leading-snug text-muted-foreground">
+                      Ảnh, Word, Excel, PowerPoint, PDF, Video, MP3... Tối đa {MAX_FILE_SIZE_MB}MB/file
+                    </p>
+                    <FormField
+                      control={form.control}
+                      name="allowDownload"
+                      render={({ field }) => (
+                        <FormItem className="border-t pt-3">
+                          <div className="flex items-start gap-2">
+                            <Checkbox
+                              id="content-allow-download"
+                              checked={field.value === true}
+                              onCheckedChange={(checked) => field.onChange(checked === true ? true : (field.value === false ? false : null))}
+                              className="mt-0.5 h-4 w-4 shrink-0"
+                            />
+                            <label htmlFor="content-allow-download" className="cursor-pointer select-none text-xs font-medium leading-snug">
+                              Cho phép tải file đính kèm
+                            </label>
+                          </div>
+                          <p className="ml-6 mt-1 text-[10px] leading-snug text-muted-foreground">
+                            Để trống = theo mặc định vai trò
+                          </p>
+                          {field.value !== null && field.value !== undefined && (
+                            <button
+                              type="button"
+                              onClick={() => field.onChange(null)}
+                              className="ml-6 mt-1 text-[10px] text-muted-foreground/70 underline hover:text-muted-foreground"
+                            >
+                              Xoá ghi đè, dùng mặc định vai trò
+                            </button>
+                          )}
+                        </FormItem>
+                      )}
+                    />
+                  </section>
                 </div>
               </aside>
 
@@ -2643,73 +2724,6 @@ function ProgramContentDialog({ program, defaultSession, content, trigger }: {
                     )}
                   />
 
-                  <div className="space-y-2">
-                    <FormLabel>Đính kèm file</FormLabel>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      className="hidden"
-                      accept="image/*,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.pdf,video/*,.mp3,.wav,.ogg"
-                      onChange={handleFileChange}
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      {form.watch("attachments")?.map((att, idx) => {
-                        const { name } = parseAttachment(att);
-                        return (
-                          <div key={idx} className="flex max-w-[200px] items-center gap-1 rounded bg-muted px-2 py-1 text-xs">
-                            <Paperclip className="h-3 w-3 shrink-0" />
-                            <span className="truncate">{name}</span>
-                            <button
-                              type="button"
-                              className="ml-1 shrink-0 text-muted-foreground hover:text-destructive"
-                              onClick={() => handleRemoveAttachment(idx)}
-                            >
-                              ×
-                            </button>
-                          </div>
-                        );
-                      })}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-7 gap-1 border-dashed px-2 text-xs"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={isUploading}
-                        data-testid="button-add-attachment"
-                      >
-                        {isUploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                        Thêm file
-                      </Button>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground">Ảnh, Word, Excel, PowerPoint, PDF, Video, MP3... | Tối đa {MAX_FILE_SIZE_MB}MB/file</p>
-                  </div>
-
-                  <FormField
-                    control={form.control}
-                    name="allowDownload"
-                    render={({ field }) => (
-                      <FormItem>
-                        <div className="flex items-center gap-3 py-1">
-                          <Checkbox
-                            id="content-allow-download"
-                            checked={field.value === true}
-                            onCheckedChange={(checked) => field.onChange(checked === true ? true : (field.value === false ? false : null))}
-                            className="h-4 w-4"
-                          />
-                          <label htmlFor="content-allow-download" className="cursor-pointer select-none text-sm font-medium">
-                            Cho phép tải file đính kèm
-                          </label>
-                          <span className="text-xs text-muted-foreground">(để trống = theo mặc định vai trò)</span>
-                        </div>
-                        {field.value !== null && field.value !== undefined && (
-                          <button type="button" onClick={() => field.onChange(null)} className="ml-7 text-[11px] text-muted-foreground/70 underline hover:text-muted-foreground">
-                            Xoá ghi đè, dùng mặc định vai trò
-                          </button>
-                        )}
-                      </FormItem>
-                    )}
-                  />
                 </div>
               </main>
             </div>
