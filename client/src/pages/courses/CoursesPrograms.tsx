@@ -1183,7 +1183,9 @@ function LibraryContentDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [viewerFile, setViewerFile] = useState<{ url: string; name: string } | null>(null);
   const { toast } = useToast();
+  const roleCanDownload = useCanDownloadFiles();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const LIB_MAX_FILE_SIZE_MB = 100;
 
@@ -1295,10 +1297,10 @@ function LibraryContentDialog({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="w-[90vw] max-w-[90vw] max-h-[90vh] flex flex-col">
+      <DialogContent className="flex h-[99vh] max-h-[99vh] w-[99vw] max-w-[99vw] flex-col gap-0 overflow-hidden p-0">
         <Form {...form}>
-          <form onSubmit={form.handleSubmit((data) => mutation.mutate(data))} className="flex flex-col flex-1 min-h-0">
-            <DialogHeader className="shrink-0 flex flex-row items-center justify-between space-y-0 pb-2 border-b">
+          <form onSubmit={form.handleSubmit((data) => mutation.mutate(data))} className="flex min-h-0 flex-1 flex-col">
+            <DialogHeader className="flex shrink-0 flex-row items-center justify-between space-y-0 border-b px-5 py-3">
               <DialogTitle className="text-xl font-display">
                 {content ? "Chỉnh sửa nội dung" : "Thêm nội dung thư viện"}
               </DialogTitle>
@@ -1307,8 +1309,9 @@ function LibraryContentDialog({
                 {content ? "Lưu thay đổi" : "Thêm vào thư viện"}
               </Button>
             </DialogHeader>
-            <div className="flex-1 overflow-y-auto space-y-4 py-4 pr-1">
-              <div className="grid grid-cols-2 gap-4">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
+              <aside className="shrink-0 border-b bg-muted/20 px-4 py-4 md:h-full md:w-1/4 md:overflow-y-auto md:border-b-0 md:border-r">
+                <div className="space-y-4">
                 <FormField
                   control={form.control}
                   name="type"
@@ -1331,131 +1334,168 @@ function LibraryContentDialog({
                     </FormItem>
                   )}
                 />
+                  <FormField
+                    control={form.control}
+                    name="programId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Chương trình học</FormLabel>
+                        <Select
+                          onValueChange={(v) => field.onChange(v === "__none__" ? null : v)}
+                          value={field.value || "__none__"}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-library-program">
+                              <SelectValue placeholder="Chưa gán" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="__none__">Chưa gán</SelectItem>
+                            {programs.map((p) => (
+                              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="title"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Tên nội dung *</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Nhập tên nội dung" {...field} data-testid="input-library-title" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <section className="space-y-3 border-t pt-4">
+                    <FormLabel>Đính kèm file</FormLabel>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={libHandleFileChange}
+                      accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.mp3,.mp4,.mov,.avi,.wav,.ogg,.aac,.mkv,.webm,.zip,.rar,.txt,.csv"
+                    />
+                    <div className="grid grid-cols-3 gap-2">
+                      {(form.watch("attachments") || []).map((att, idx) => {
+                        const { name, url } = parseAttachment(att);
+                        const { icon, color } = getFileTypeInfo(name);
+                        const canView = !!url;
+                        return (
+                          <div
+                            key={`${name}-${idx}`}
+                            title={name}
+                            className="group relative flex aspect-square min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-lg border bg-background p-2 text-center transition-colors hover:border-primary/50"
+                          >
+                            <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-md", color)}>{icon}</div>
+                            <span className="w-full truncate text-[10px] text-muted-foreground">{name}</span>
+                            {canView && (
+                              <button
+                                type="button"
+                                aria-label={`Xem tệp ${name}`}
+                                className="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-1 rounded-lg bg-black/50 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100"
+                                onClick={() => {
+                                  if (url) setViewerFile({ url, name });
+                                }}
+                              >
+                                <Eye className="h-5 w-5 text-white" />
+                                <span className="text-[10px] font-semibold text-white">Xem</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              aria-label={`Xóa tệp ${name}`}
+                              className="absolute right-1 top-1 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-background/90 text-muted-foreground shadow-sm hover:text-destructive"
+                              onClick={() => libHandleRemoveAttachment(idx)}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        className="flex aspect-square min-w-0 flex-col items-center justify-center gap-1 rounded-lg border border-dashed text-muted-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isUploading}
+                        data-testid="button-add-library-attachment"
+                      >
+                        {isUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Plus className="h-5 w-5" />}
+                        <span className="text-[10px]">{isUploading ? "Đang tải" : "Thêm file"}</span>
+                      </button>
+                    </div>
+                    <p className="text-[10px] leading-snug text-muted-foreground">
+                      Ảnh, Word, Excel, PowerPoint, PDF, Video, MP3... Tối đa {LIB_MAX_FILE_SIZE_MB}MB/file
+                    </p>
+                  </section>
+                  <FormField
+                    control={form.control}
+                    name="allowDownload"
+                    render={({ field }) => (
+                      <FormItem className="border-t pt-3">
+                        <div className="flex items-start gap-2">
+                          <Checkbox
+                            id="lib-allow-download"
+                            checked={field.value === true}
+                            onCheckedChange={(checked) => field.onChange(checked === true ? true : (field.value === false ? false : null))}
+                            className="mt-0.5 h-4 w-4 shrink-0"
+                          />
+                          <label htmlFor="lib-allow-download" className="cursor-pointer select-none text-xs font-medium leading-snug">
+                            Cho phép tải file đính kèm
+                          </label>
+                        </div>
+                        <p className="ml-6 mt-1 text-[10px] leading-snug text-muted-foreground">
+                          Để trống = theo mặc định vai trò
+                        </p>
+                        {field.value !== null && field.value !== undefined && (
+                          <button type="button" onClick={() => field.onChange(null)} className="ml-6 mt-1 text-[10px] text-muted-foreground/70 underline hover:text-muted-foreground">
+                            Xoá ghi đè, dùng mặc định vai trò
+                          </button>
+                        )}
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </aside>
+              <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-4 md:w-3/4">
                 <FormField
                   control={form.control}
-                  name="programId"
+                  name="content"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Chương trình học</FormLabel>
-                      <Select
-                        onValueChange={(v) => field.onChange(v === "__none__" ? null : v)}
-                        value={field.value || "__none__"}
-                      >
-                        <FormControl>
-                          <SelectTrigger data-testid="select-library-program">
-                            <SelectValue placeholder="Chưa gán" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="__none__">Chưa gán</SelectItem>
-                          {programs.map((p) => (
-                            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormLabel>Mô tả nội dung</FormLabel>
+                      <RichEditor
+                        value={field.value || ""}
+                        onChange={field.onChange}
+                        placeholder="Nhập mô tả chi tiết, hoặc paste ảnh trực tiếp vào đây..."
+                        minHeight="120px"
+                        enableTable
+                        data-testid="textarea-library-content"
+                      />
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-              </div>
-
-              <FormField
-                control={form.control}
-                name="title"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Tên nội dung *</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Nhập tên nội dung" {...field} data-testid="input-library-title" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="content"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Mô tả nội dung</FormLabel>
-                    <RichEditor
-                      value={field.value || ""}
-                      onChange={field.onChange}
-                      placeholder="Nhập mô tả chi tiết, hoặc paste ảnh trực tiếp vào đây..."
-                      data-testid="textarea-library-content"
-                    />
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="attachments"
-                render={({ field }) => (
-                  <FormItem>
-                    <div className="space-y-2">
-                      <FormLabel>Đính kèm file</FormLabel>
-                      {(field.value || []).length > 0 && (
-                        <div className="grid grid-cols-6 gap-2">
-                          {(field.value || []).map((att, idx) => {
-                            const { name, url } = parseAttachment(att);
-                            const { icon, color } = getFileTypeInfo(name);
-                            return (
-                              <div key={idx} className="group relative flex flex-col items-center gap-1.5 px-1.5 py-2 rounded-lg bg-muted/30 border border-border text-center">
-                                <div className={cn("flex items-center justify-center w-8 h-8 rounded-md shrink-0", color)}>{icon}</div>
-                                <span className="text-[10px] text-foreground w-full truncate px-0.5">{name}</span>
-                                <button type="button" className="absolute top-1 right-1 h-4 w-4 rounded-full bg-destructive/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => libHandleRemoveAttachment(idx)}>
-                                  <X className="h-2.5 w-2.5" />
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                      <div>
-                        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={libHandleFileChange} accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.mp3,.mp4,.mov,.avi,.wav,.ogg,.aac,.mkv,.webm,.zip,.rar,.txt,.csv" />
-                        <Button type="button" variant="outline" size="sm" className="gap-2 border-dashed" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
-                          <Plus className="h-3.5 w-3.5" />
-                          Thêm file
-                        </Button>
-                        <p className="text-[10px] text-muted-foreground mt-1">Ảnh, Word, Excel, PowerPoint, PDF, Video, MP3... | Tối đa {LIB_MAX_FILE_SIZE_MB}MB/file</p>
-                      </div>
-                    </div>
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="allowDownload"
-                render={({ field }) => (
-                  <FormItem>
-                    <div className="flex items-center gap-3 py-1">
-                      <Checkbox
-                        id="lib-allow-download"
-                        checked={field.value === true}
-                        onCheckedChange={(checked) => field.onChange(checked === true ? true : (field.value === false ? false : null))}
-                        className="w-4 h-4"
-                      />
-                      <label htmlFor="lib-allow-download" className="text-sm font-medium cursor-pointer select-none">
-                        Cho phép tải file đính kèm
-                      </label>
-                      <span className="text-xs text-muted-foreground">(để trống = theo mặc định vai trò)</span>
-                    </div>
-                    {field.value !== null && field.value !== undefined && (
-                      <button type="button" onClick={() => field.onChange(null)} className="text-[11px] text-muted-foreground/70 hover:text-muted-foreground underline ml-7">
-                        Xoá ghi đè, dùng mặc định vai trò
-                      </button>
-                    )}
-                  </FormItem>
-                )}
-              />
+              </main>
             </div>
           </form>
         </Form>
       </DialogContent>
+      <FileViewer
+        open={!!viewerFile}
+        onClose={() => setViewerFile(null)}
+        url={viewerFile?.url ?? ""}
+        name={viewerFile?.name ?? ""}
+        canDownload={resolveCanDownload(form.watch("allowDownload"), roleCanDownload)}
+      />
     </Dialog>
   );
 }
