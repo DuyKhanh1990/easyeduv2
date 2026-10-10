@@ -317,6 +317,13 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
   const [tableOpen, setTableOpen] = useState(false);
   const [tableSize, setTableSize] = useState({ rows: 1, cols: 1 });
   const [selectionInsideTable, setSelectionInsideTable] = useState(false);
+  const [canMergeCells, setCanMergeCells] = useState(false);
+  const [canSplitCell, setCanSplitCell] = useState(false);
+  const updateTableToolbarState = useCallback((activeEditor: Editor) => {
+    setSelectionInsideTable(isSelectionInsideTable(activeEditor));
+    setCanMergeCells(activeEditor.can().mergeCells());
+    setCanSplitCell(activeEditor.can().splitCell());
+  }, []);
 
   const editor = useEditor({
     extensions: [
@@ -352,10 +359,10 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
         : []),
     ],
     content: legacyToHtml(value),
-    onCreate: ({ editor }) => setSelectionInsideTable(isSelectionInsideTable(editor)),
-    onSelectionUpdate: ({ editor }) => setSelectionInsideTable(isSelectionInsideTable(editor)),
+    onCreate: ({ editor }) => updateTableToolbarState(editor),
+    onSelectionUpdate: ({ editor }) => updateTableToolbarState(editor),
     onUpdate: ({ editor }) => {
-      setSelectionInsideTable(isSelectionInsideTable(editor));
+      updateTableToolbarState(editor);
       const html = editor.getHTML();
       onChange(html === "<p></p>" ? "" : html);
     },
@@ -732,6 +739,14 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
             </TableToolbarButton>
             <TableToolbarButton title="Xóa cột hiện tại" danger disabled={!editor.can().deleteColumn()} onClick={() => editor.chain().focus().deleteColumn().run()}>
               <Trash2 className="h-3 w-3" /> Xóa
+            </TableToolbarButton>
+
+            <span className="ml-1 mr-1 text-[11px] font-semibold text-muted-foreground">Ô</span>
+            <TableToolbarButton title="Gộp các ô đang chọn" disabled={!canMergeCells} onClick={() => editor.chain().focus().mergeCells().run()}>
+              Gộp ô
+            </TableToolbarButton>
+            <TableToolbarButton title="Tách ô đã gộp" disabled={!canSplitCell} onClick={() => editor.chain().focus().splitCell().run()}>
+              Tách ô
             </TableToolbarButton>
 
             <span className="ml-1 mr-1 text-[11px] font-semibold text-muted-foreground">Căn ô</span>
