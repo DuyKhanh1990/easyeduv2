@@ -31,6 +31,17 @@ export function shouldApplyAttendanceLimit(
     && userRoleIds.some((roleId) => configuredRoleIds.includes(roleId));
 }
 
+export function isWithinMinuteRange(
+  now: Date,
+  earliest: Date,
+  latest: Date,
+): boolean {
+  const nowMinute = Math.floor(now.getTime() / 60_000);
+  const earliestMinute = Math.floor(earliest.getTime() / 60_000);
+  const latestMinute = Math.floor(latest.getTime() / 60_000);
+  return nowMinute >= earliestMinute && nowMinute <= latestMinute;
+}
+
 export function isWithinAttendanceTimeLimit(
   now: Date,
   sessionStart: Date,
@@ -39,7 +50,7 @@ export function isWithinAttendanceTimeLimit(
 ): boolean {
   const earliest = new Date(sessionStart.getTime() - beforeSeconds * 1000);
   const latest = new Date(sessionStart.getTime() + afterSeconds * 1000);
-  return now >= earliest && now <= latest;
+  return isWithinMinuteRange(now, earliest, latest);
 }
 
 export interface AttendanceTimingWindow {
@@ -145,8 +156,8 @@ export async function getAttendanceTimingWindow(
     displayFrom,
     attendanceOpenAt,
     attendanceLatestAt,
-    isVisible: now >= displayFrom && now <= attendanceLatestAt,
-    canAttend: now >= attendanceOpenAt && now <= attendanceLatestAt,
+    isVisible: isWithinMinuteRange(now, displayFrom, attendanceLatestAt),
+    canAttend: isWithinMinuteRange(now, attendanceOpenAt, attendanceLatestAt),
   };
 }
 

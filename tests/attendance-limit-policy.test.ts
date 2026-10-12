@@ -4,6 +4,7 @@ vi.mock("../server/db", () => ({ db: {} }));
 
 import {
   isWithinAttendanceTimeLimit,
+  isWithinMinuteRange,
   shouldApplyAttendanceLimit,
 } from "../server/lib/attendance-limit";
 
@@ -31,37 +32,66 @@ describe("attendance limit role scope", () => {
 describe("attendance limit time window", () => {
   const start = new Date("2026-10-12T03:00:00.000Z");
 
-  it("allows exactly the scheduled start when both limits are zero", () => {
+  it("allows the scheduled start minute when both limits are zero", () => {
     expect(isWithinAttendanceTimeLimit(start, start, 0, 0)).toBe(true);
-  });
-
-  it("rejects times immediately before or after a zero/zero window", () => {
+    expect(isWithinAttendanceTimeLimit(
+      new Date(start.getTime() + 1),
+      start,
+      0,
+      0,
+    )).toBe(true);
+    expect(isWithinAttendanceTimeLimit(
+      new Date(start.getTime() + 59_999),
+      start,
+      0,
+      0,
+    )).toBe(true);
+    expect(isWithinAttendanceTimeLimit(
+      new Date(start.getTime() + 60_000),
+      start,
+      0,
+      0,
+    )).toBe(false);
     expect(isWithinAttendanceTimeLimit(
       new Date(start.getTime() - 1),
       start,
       0,
       0,
     )).toBe(false);
+  });
+
+  it("compares configured bounds using hour/minute precision", () => {
     expect(isWithinAttendanceTimeLimit(
-      new Date(start.getTime() + 1),
+      new Date(start.getTime() - 1),
       start,
-      0,
-      0,
+      60,
+      60,
+    )).toBe(true);
+    expect(isWithinAttendanceTimeLimit(
+      new Date(start.getTime() + 119_999),
+      start,
+      60,
+      60,
+    )).toBe(true);
+    expect(isWithinAttendanceTimeLimit(
+      new Date(start.getTime() + 120_000),
+      start,
+      60,
+      60,
     )).toBe(false);
   });
 
-  it("includes both configured boundaries", () => {
-    expect(isWithinAttendanceTimeLimit(
-      new Date(start.getTime() - 60_000),
+  it("compares the QR visibility range at minute precision too", () => {
+    const start = new Date("2026-10-12T03:00:00.000Z");
+    expect(isWithinMinuteRange(
+      new Date(start.getTime() + 59_999),
       start,
-      60,
-      60,
+      start,
     )).toBe(true);
-    expect(isWithinAttendanceTimeLimit(
+    expect(isWithinMinuteRange(
       new Date(start.getTime() + 60_000),
       start,
-      60,
-      60,
-    )).toBe(true);
+      start,
+    )).toBe(false);
   });
 });
