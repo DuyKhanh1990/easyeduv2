@@ -92,7 +92,7 @@
 - [Score-sheet template configuration](score-sheet-template-configuration.md) — scoring keeps its saved snapshot; linked templates supply current deadlines and evaluation criteria.
 - [Score-sheet category order snapshots](score-sheet-category-order.md) — existing gradebooks keep their category order when a shared score sheet is reordered; new books use the new order.
 - [Score conversion publication](score-assessment-publication.md) — publish state belongs to each class session; students only see their enrolled session's policy-selected result.
-- [Individual score publication](score-assessment-individual-publication.md) — store per-student release with attempt results; keep enrollment, exclusion, and attempt-policy checks in sync.
+- [Score conversion status and publication](score-assessment-individual-publication.md) — keep processing separate; retain completion criteria and use exam date for in-progress status.
 - [Student conversion result detail](student-conversion-result-detail.md) — show raw/international score columns and entered feedback from the same released highest/latest attempt.
 - [Score-sheet classification ownership](score-sheet-classification-ownership.md) — templates own thresholds; old snapshots fall back to linked conversion settings, and manual sheets classify the raw total.
 - [Manual score-sheet assessments](manual-score-sheet-assessment.md) — manual changes only roster creation; keep lifecycle and results in the standard assessment/attempt flow.

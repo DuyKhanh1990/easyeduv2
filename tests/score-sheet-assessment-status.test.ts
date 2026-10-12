@@ -39,7 +39,7 @@ describe("score-sheet assessment status", () => {
     )).toBe("not_started");
   });
 
-  it("marks an ungraded assessment as in progress from exam date through deadline", () => {
+  it("marks an ungraded assessment as in progress from exam date onward, regardless of deadline", () => {
     expect(resolveScoreSheetAssessmentStatus(
       baseAssessment,
       Date.UTC(2026, 8, 30, 0, 0),
@@ -47,6 +47,10 @@ describe("score-sheet assessment status", () => {
     expect(resolveScoreSheetAssessmentStatus(
       baseAssessment,
       Date.UTC(2026, 9, 1, 11, 5),
+    )).toBe("in_progress");
+    expect(resolveScoreSheetAssessmentStatus(
+      baseAssessment,
+      Date.UTC(2026, 9, 2, 0, 0),
     )).toBe("in_progress");
   });
 
@@ -101,11 +105,11 @@ describe("score-sheet assessment status", () => {
     }, Date.UTC(2026, 8, 30, 12, 0))).toBe("processing");
   });
 
-  it("leaves overdue assessments without grades unlabelled for a separate status column", () => {
+  it("keeps assessments without grades in progress after the deadline", () => {
     expect(resolveScoreSheetAssessmentStatus(
       baseAssessment,
       Date.UTC(2026, 9, 1, 11, 6),
-    )).toBeNull();
+    )).toBe("in_progress");
   });
 
   it("keeps overdue assessments with started scoring in processing", () => {

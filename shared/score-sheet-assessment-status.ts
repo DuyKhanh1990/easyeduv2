@@ -79,8 +79,5 @@ export function resolveScoreSheetAssessmentStatus(
   if (examDateStart === null) return null;
   if (nowBangkokWallClockMs < examDateStart) return "not_started";
 
-  const deadline = parseBangkokDeadline(assessment.scoreDeadlineAt);
-  if (deadline !== null && nowBangkokWallClockMs <= deadline) return "in_progress";
-
-  return null;
+  return "in_progress";
 }

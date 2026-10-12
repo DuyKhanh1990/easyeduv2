@@ -23,6 +23,12 @@ The conversion-board status is “Hoàn thành” only when every student has a 
 
 **How to apply:** Pass the aggregate all-students-individually-published state into the shared status resolver alongside the session-wide publication flag and completed-score count.
 
+Keep “Đang xử lý” distinct from “Đang thi” and “Hoàn thành”. The “Đang thi” date rule starts on the exam date and continues afterward; do not change the existing completion rule or collapse processing into another status. On the conversion assessment list, show “Đang xử lý” below the student counts instead of as a top-level status tab.
+
+**Why:** The user clarified that only the start rule for “Đang thi” changes; completion retains its existing score/publication logic, while processing remains a separate state.
+
+**How to apply:** Preserve the resolver’s completed/processing precedence. Apply the exam-date threshold only to “Đang thi”; keep processing available in detailed status filters even when it is removed from the top tabs.
+
 In the “Theo học viên” score-conversion view, show a green “Đã công bố” badge beside a student's name when that student has a publishable result released individually or through the whole session.
 
 **Why:** The user expects publication status to remain visible when switching between assessment-group and student views.

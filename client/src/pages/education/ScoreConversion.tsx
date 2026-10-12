@@ -1118,10 +1118,9 @@ export default function ScoreConversion() {
                     <div className="flex min-w-0 items-center gap-2 overflow-x-auto py-0.5 sm:flex-wrap">
                       {([
                         { value: "all", label: "Tất cả" },
-                        { value: "not_started", label: "Chưa thi" },
                         { value: "in_progress", label: "Đang thi" },
-                        { value: "processing", label: "Đang xử lý" },
                         { value: "completed", label: "Hoàn thành" },
+                        { value: "not_started", label: "Chưa thi" },
                       ] as const).map((filter) => {
                         const isSelected = filter.value === "all"
                           ? statusFilters.length === 0
@@ -1739,6 +1738,14 @@ export default function ScoreConversion() {
                                         <Circle className="h-3.5 w-3.5" />
                                         Chưa nhập: {notCompletedStudentCount}
                                       </span>
+                                      {status?.key === "processing" && (
+                                        <span
+                                          className={`inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-0.5 text-[11px] font-medium ${status.className}`}
+                                          data-testid={`row-score-conversion-processing-${assessment.sessionId}`}
+                                        >
+                                          {status.indicator} {status.label}
+                                        </span>
+                                      )}
                                     </div>
                                   </td>
                                   <td className="whitespace-nowrap border-b border-r border-border px-3 py-2.5 group-hover:bg-accent/50">
@@ -1754,7 +1761,7 @@ export default function ScoreConversion() {
                                     </span>
                                   </td>
                                   <td className="border-b border-r border-border px-3 py-2.5 group-hover:bg-accent/50">
-                                    {status ? (
+                                    {status && status.key !== "processing" ? (
                                       <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-0.5 text-[11px] font-medium ${status.className}`}>
                                         {status.indicator} {status.label}
                                       </span>
