@@ -499,10 +499,24 @@ export function renderTemplate(
   const parentTongPt = parentFinancialSource.totalSurcharge != null
     ? Number(parentFinancialSource.totalSurcharge) || 0
     : ptTheoSp + (Number(parentFinancialSource.invoiceSurchargeAmount) || 0);
-  const parentTongTruocKmpt = parentFinancialSource.totalAmount != null
-    ? Number(parentFinancialSource.totalAmount) || 0
-    : tongHdGoc + parentTongKm - parentTongPt;
   const parentKhauTru = Number(parentFinancialSource.deduction) || 0;
+  const sourceTotalAmount = parentFinancialSource.totalAmount != null
+    ? Number(parentFinancialSource.totalAmount)
+    : null;
+  const sourceGrandTotal = parentFinancialSource.grandTotal != null
+    ? Number(parentFinancialSource.grandTotal)
+    : tongHdGoc;
+  // Visibility-scoped invoice lists replace totalAmount with the visible
+  // schedule total (after adjustments). Detect that projection and reconstruct
+  // the pre-KM/PT amount from the persisted final total and its adjustments.
+  const totalAmountIsFinalProjection =
+    sourceTotalAmount != null &&
+    Math.abs(sourceTotalAmount - sourceGrandTotal) < 0.005 &&
+    (parentTongKm !== 0 || parentTongPt !== 0 || parentKhauTru !== 0);
+  const parentTongTruocKmpt =
+    sourceTotalAmount != null && !totalAmountIsFinalProjection
+      ? sourceTotalAmount
+      : sourceGrandTotal + parentTongKm - parentTongPt + parentKhauTru;
   const parentTongSauKmpt = parentTongTruocKmpt - parentTongKm + parentTongPt;
 
   // Pre-computed derived values — template only does {{variable}} replacement, no expressions

@@ -19,7 +19,9 @@ describe("legacy invoice-print financial variables", () => {
         createdAt: "2026-10-12T00:00:00.000Z",
         parentInvoice: {
           code: "INV-1",
-          totalAmount: "12000000",
+          // Visibility-scoped invoice queries can overwrite totalAmount with
+          // the final schedule total; the print variable must still be pre-KM/PT.
+          totalAmount: "10160000",
           totalPromotion: "840000",
           totalSurcharge: "0",
           deduction: "1000000",
@@ -44,7 +46,6 @@ describe("legacy invoice-print financial variables", () => {
         grandTotal: "10160000",
         paidAmount: "5580000",
         remainingAmount: "4580000",
-        totalAmount: "12000000",
         totalPromotion: "840000",
         totalSurcharge: "0",
         deduction: "1000000",

@@ -27,4 +27,6 @@ Customers may use one saved print template for both single invoices and installm
 
 **Why:** The user asked to remove duplicate parent-total and `{{thanh_tien}}` choices from the template variable picker while preserving old saved templates.
 
-**How to apply:** Resolve the listed parent-summary values from `parentInvoice` with a self-fallback when it is absent. Keep `total` and `tong_sau_khau_tru` as aliases. Hide duplicate parent `_hd_goc` tokens and `thanh_tien` from new-template choices, but retain runtime aliases for saved templates.
+**Why:** Visibility-scoped invoice-list projections can replace `totalAmount` with an adjusted visible-schedule total, so it is not always safe as the source for `tong_truoc_kmpt`.
+
+**How to apply:** Resolve the listed parent-summary values from `parentInvoice` with a self-fallback when it is absent. Keep `total` and `tong_sau_khau_tru` as aliases. Hide duplicate parent `_hd_goc` tokens and `thanh_tien` from new-template choices, but retain runtime aliases for saved templates. When scoped `totalAmount` equals the adjusted `grandTotal` despite nonzero adjustments, reconstruct the pre-KM/PT base from grand total + promotions - surcharges + deduction.
