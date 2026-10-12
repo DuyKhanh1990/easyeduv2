@@ -71,6 +71,7 @@ import {
 } from "@/components/education/StaffScoreSheetAssessmentStudentsDialog";
 import { StaffScoreSheetAssessmentScoreDialog } from "@/components/education/StaffScoreSheetAssessmentScoreDialog";
 import { SCORE_CONVERSION_TYPES } from "./score-conversion/score-conversion-presets";
+import { keepLatestResultPerStudent } from "./score-conversion/student-results";
 
 const TEMPLATE_ENDPOINT = "/api/score-conversion-templates";
 const TEMPLATE_QUERY_KEY = [TEMPLATE_ENDPOINT];
@@ -370,6 +371,7 @@ export default function ScoreConversion() {
   const [assessmentFilters, setAssessmentFilters] = useState<string[]>([]);
   const [classificationFilters, setClassificationFilters] = useState<string[]>([]);
   const [studentResultFilter, setStudentResultFilter] = useState<StudentResultFilter>("all");
+  const [latestStudentResultOnly, setLatestStudentResultOnly] = useState(false);
   const [statusFilters, setStatusFilters] = useState<ScoreSheetAssessmentStatus[]>([]);
   const [deadlineStatusFilters, setDeadlineStatusFilters] = useState<ScoreSheetAssessmentDeadlineStatus[]>([]);
   const [examDateFrom, setExamDateFrom] = useState("");
@@ -514,7 +516,7 @@ export default function ScoreConversion() {
   });
   const eligibleAssessmentSessionIds = new Set(filteredConversionAssessments.map((assessment) => assessment.sessionId));
   const studentSearchTerm = assessmentSearchTerm.trim().toLocaleLowerCase("vi");
-  const filteredStudentResults = (assignedScoreSheetStudentsQuery.data ?? []).filter((student) => {
+  const matchingStudentResults = (assignedScoreSheetStudentsQuery.data ?? []).filter((student) => {
     if (!eligibleAssessmentSessionIds.has(student.sessionId)) return false;
     if (studentResultFilter === "passed" && student.passStatus !== "passed") return false;
     if (studentResultFilter === "failed" && student.passStatus !== "failed") return false;
@@ -538,6 +540,9 @@ export default function ScoreConversion() {
     ) return false;
     return true;
   });
+  const filteredStudentResults = latestStudentResultOnly
+    ? keepLatestResultPerStudent(matchingStudentResults)
+    : matchingStudentResults;
   const studentResultsByDate = filteredStudentResults.reduce<
     Record<string, Record<string, { assessment: ScoreConversionStudentResult; students: ScoreConversionStudentResult[] }>>
   >((grouped, student) => {
@@ -573,6 +578,7 @@ export default function ScoreConversion() {
     setAssessmentFilters([]);
     setClassificationFilters([]);
     setStudentResultFilter("all");
+    setLatestStudentResultOnly(false);
     setStatusFilters([]);
     setAssessmentStatusFilter("all");
     setDeadlineStatusFilters([]);
@@ -1193,6 +1199,19 @@ export default function ScoreConversion() {
                           </button>
                         );
                       })}
+                      <button
+                        type="button"
+                        aria-pressed={latestStudentResultOnly}
+                        data-testid="filter-score-conversion-student-latest"
+                        onClick={() => setLatestStudentResultOnly((current) => !current)}
+                        className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-3 text-[13px] font-semibold transition-colors ${
+                          latestStudentResultOnly
+                            ? "border-violet-600 bg-violet-600 text-white"
+                            : "border-violet-300 bg-background text-violet-700 hover:bg-violet-50 dark:border-violet-800 dark:text-violet-300 dark:hover:bg-violet-950/40"
+                        }`}
+                      >
+                        Bảng điểm gần nhất
+                      </button>
                     </div>
                   )}
 
