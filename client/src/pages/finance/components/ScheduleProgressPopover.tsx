@@ -184,6 +184,8 @@ export function ScheduleProgressPopover({ inv, children, allowedStatusTargets }:
         totalAmount: invAny.totalAmount ?? null,
         totalPromotion: invAny.totalPromotion ?? null,
         totalSurcharge: invAny.totalSurcharge ?? null,
+        invoicePromotionAmount: invAny.invoicePromotionAmount ?? null,
+        invoiceSurchargeAmount: invAny.invoiceSurchargeAmount ?? null,
         deduction: invAny.deduction ?? null,
       },
       // Bản in theo đợt dùng skipFetch, vì vậy phải mang theo toàn bộ lịch

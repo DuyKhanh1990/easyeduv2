@@ -3268,6 +3268,8 @@ export default function Invoices() {
             totalAmount: invAny.totalAmount ?? null,
             totalPromotion: invAny.totalPromotion ?? null,
             totalSurcharge: invAny.totalSurcharge ?? null,
+            invoicePromotionAmount: invAny.invoicePromotionAmount ?? null,
+            invoiceSurchargeAmount: invAny.invoiceSurchargeAmount ?? null,
             deduction: invAny.deduction ?? null,
           },
            sourceInvoiceId: inv.id,

@@ -83,6 +83,8 @@ interface InvoicePrintData {
     totalAmount?: string | number | null;
     totalPromotion?: string | number | null;
     totalSurcharge?: string | number | null;
+    invoicePromotionAmount?: string | number | null;
+    invoiceSurchargeAmount?: string | number | null;
     deduction?: string | number | null;
   } | null;
   paymentSchedule?: Array<{
@@ -437,7 +439,7 @@ function renderItemsHtml(
   </table>`;
 }
 
-function renderTemplate(
+export function renderTemplate(
   html: string,
   invoice: InvoicePrintData,
   promotionOptions: PromoOption[] = [],
@@ -488,6 +490,19 @@ function renderTemplate(
     ? Number(parent.remainingAmount) || 0
     : Math.max(tongHdGoc - daThuHdGoc, 0);
   const maHdGoc = parent?.code ?? invoice.code ?? "";
+  const parentFinancialSource = parent ?? invoice;
+  // Legacy financial variables now consistently describe the parent invoice.
+  // A single-invoice print has no parentInvoice, so it naturally uses itself.
+  const parentTongKm = parentFinancialSource.totalPromotion != null
+    ? Number(parentFinancialSource.totalPromotion) || 0
+    : kmTheoSp + (Number(parentFinancialSource.invoicePromotionAmount) || 0);
+  const parentTongPt = parentFinancialSource.totalSurcharge != null
+    ? Number(parentFinancialSource.totalSurcharge) || 0
+    : ptTheoSp + (Number(parentFinancialSource.invoiceSurchargeAmount) || 0);
+  const parentTongTruocKmpt = parentFinancialSource.totalAmount != null
+    ? Number(parentFinancialSource.totalAmount) || 0
+    : tongHdGoc + parentTongKm - parentTongPt;
+  const parentKhauTru = Number(parentFinancialSource.deduction) || 0;
 
   // Pre-computed derived values — template only does {{variable}} replacement, no expressions
   const tongSauKm = tongTruocKmpt - tongKm;          // after promotions, before surcharges
@@ -504,13 +519,13 @@ function renderTemplate(
     han_thanh_toan: fmtDate(invoice.dueDate),
     // Compatibility alias for templates saved before the variable was renamed.
     date: fmtDate(invoice.createdAt),
-    total,
+    total: tongHdGoc,
     // Full invoices show the post-adjustment amount before the parent deduction.
     // A schedule print is already scoped to one installment, whose amount is
     // the installment-level post-adjustment amount.
     thanh_tien: invoice.parentInvoice ? total : tongSauKmpt,
-    da_thanh_toan: paid,
-    con_lai: remaining,
+    da_thanh_toan: daThuHdGoc,
+    con_lai: conLaiHdGoc,
     lop: invoice.className ?? invoice.class ?? invoice.class_name ?? "",
     // Keep both keys: ghi_chu is the user-facing code, while noi_dung
     // preserves compatibility with existing saved templates.
@@ -530,14 +545,14 @@ function renderTemplate(
       ?? "",
     nguoi_thu_tien: collectorName,
     // KM / PT / Khấu trừ
-    tong_truoc_kmpt: tongTruocKmpt,
+    tong_truoc_kmpt: parentTongTruocKmpt,
     km_theo_sp: kmTheoSp,
     pt_theo_sp: ptTheoSp,
     km_toan_don: kmToanDon,
     pt_toan_don: ptToanDon,
-    tong_km: tongKm,
-    tong_pt: tongPt,
-    khau_tru: khauTru,
+    tong_km: parentTongKm,
+    tong_pt: parentTongPt,
+    khau_tru: parentKhauTru,
     // Giá trị đã tính sẵn — dùng thay cho công thức trong template
     tong_sau_km: tongSauKm,
     tong_sau_kmpt: tongSauKmpt,
