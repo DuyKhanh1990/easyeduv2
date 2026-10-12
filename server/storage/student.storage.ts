@@ -2519,8 +2519,7 @@ export async function getStudentLearningStatusSummary(params: {
   };
 }
 
-// Customer-page stat cards: derive one status per student from class enrollments.
-// This is intentionally separate from the session-based summary used by reports.
+  // Customer-page stat cards use the same current-day session rules as the roster column.
 export async function getCustomerLearningStatusSummary(params: {
   isSuperAdmin: boolean;
   allowedLocationIds: string[];
@@ -2535,50 +2534,52 @@ export async function getCustomerLearningStatusSummary(params: {
 }> {
   const locationWhere = buildLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
   const queryStr = `
-    WITH enrollment_flags AS (
+    WITH session_stats AS (
       SELECT
-        s.id AS student_id,
-        COUNT(sc.id) AS enrollment_count,
-        BOOL_OR(
-          sc.id IS NOT NULL
-          AND COALESCE(sc.status, '') NOT IN ('paused', 'completed', 'dropped')
-          AND (sc.start_date IS NOT NULL OR sc.end_date IS NOT NULL)
-          AND (sc.start_date IS NULL OR sc.start_date <= CURRENT_DATE)
-          AND (sc.end_date IS NULL OR sc.end_date >= CURRENT_DATE)
-        ) AS has_active_class,
-        BOOL_OR(sc.status = 'paused') AS has_paused_class,
-        BOOL_OR(
-          sc.id IS NOT NULL
-          AND COALESCE(sc.status, '') NOT IN ('paused', 'completed', 'dropped')
-          AND sc.start_date > CURRENT_DATE
-        ) AS has_future_class,
-        BOOL_OR(
-          sc.id IS NOT NULL
-          AND (
-            sc.status IN ('completed', 'dropped')
-            OR (sc.end_date IS NOT NULL AND sc.end_date < CURRENT_DATE)
-          )
-        ) AS has_ended_class
-      FROM students s
-      LEFT JOIN student_classes sc ON sc.student_id = s.id
-      WHERE ${locationWhere}
-      GROUP BY s.id
+        ss.student_id,
+        COUNT(*) FILTER (
+          WHERE cs.session_date < CURRENT_DATE
+            AND ss.attendance_status <> 'paused'
+        ) AS past_active,
+        COUNT(*) FILTER (
+          WHERE cs.session_date = CURRENT_DATE
+            AND ss.attendance_status <> 'paused'
+        ) AS today_active,
+        COUNT(*) FILTER (
+          WHERE cs.session_date > CURRENT_DATE
+        ) AS future_any,
+        COUNT(*) FILTER (
+          WHERE cs.session_date = CURRENT_DATE
+            AND ss.attendance_status = 'paused'
+        ) AS paused_today
+      FROM student_sessions ss
+      JOIN class_sessions cs ON cs.id = ss.class_session_id
+      WHERE ss.status NOT IN ('transferred', 'cancelled')
+        AND ss.attendance_status <> 'cancelled'
+        AND cs.status <> 'cancelled'
+      GROUP BY ss.student_id
     ),
     student_status AS (
       SELECT
-        student_id,
+        s.id AS student_id,
         CASE
-          WHEN COALESCE(has_active_class, false)
+          WHEN COALESCE(st.today_active, 0) > 0
             THEN 'dang_hoc'
-          WHEN COALESCE(has_paused_class, false)
+          WHEN COALESCE(st.paused_today, 0) > 0
             THEN 'bao_luu'
-          WHEN COALESCE(has_future_class, false)
+          WHEN COALESCE(st.future_any, 0) > 0
+               AND COALESCE(st.past_active, 0) = 0
             THEN 'cho_lich'
-          WHEN COALESCE(has_ended_class, false)
+          WHEN COALESCE(st.past_active, 0) > 0
+               AND COALESCE(st.future_any, 0) > 0
+            THEN 'dang_hoc'
+          WHEN COALESCE(st.past_active, 0) > 0
             THEN 'da_nghi'
           ELSE 'chua_co_lich'
         END AS learning_status
-      FROM enrollment_flags
+      FROM students s
+      LEFT JOIN session_stats st ON st.student_id = s.id
+      WHERE ${locationWhere}
     )
     SELECT
       COUNT(*) FILTER (WHERE learning_status = 'dang_hoc') AS dang_hoc,
@@ -2862,10 +2863,12 @@ export async function getStudentsLearningStatuses(
         ss.student_id,
         COUNT(*) FILTER (
           WHERE cs.session_date < CURRENT_DATE
-        ) AS past_any,
+            AND ss.attendance_status <> 'paused'
+        ) AS past_active,
         COUNT(*) FILTER (
           WHERE cs.session_date = CURRENT_DATE
-        ) AS today_any,
+            AND ss.attendance_status <> 'paused'
+        ) AS today_active,
         COUNT(*) FILTER (
           WHERE cs.session_date > CURRENT_DATE
         ) AS future_any,
@@ -2876,26 +2879,25 @@ export async function getStudentsLearningStatuses(
       FROM student_sessions ss
       JOIN class_sessions cs ON cs.id = ss.class_session_id
       WHERE ss.student_id = ANY(ARRAY[${safeIds}]::uuid[])
+        AND ss.status NOT IN ('transferred', 'cancelled')
+        AND ss.attendance_status <> 'cancelled'
+        AND cs.status <> 'cancelled'
       GROUP BY ss.student_id
     )
     SELECT
       s.id AS student_id,
       CASE
-        WHEN COALESCE(st.today_any,0) > 0
-             OR (COALESCE(st.past_any,0) > 0 AND COALESCE(st.future_any,0) > 0)
-             OR COALESCE(st.future_any,0) > 0
-          THEN CASE
-                 WHEN COALESCE(st.past_any,0) = 0
-                      AND COALESCE(st.today_any,0) = 0
-                      AND COALESCE(st.future_any,0) > 0
-                   THEN 'cho_lich'
-                 ELSE 'dang_hoc'
-               END
+        WHEN COALESCE(st.today_active,0) > 0
+          THEN 'dang_hoc'
         WHEN COALESCE(st.paused_today,0) > 0
           THEN 'bao_luu'
-        WHEN COALESCE(st.past_any,0) > 0
-             AND COALESCE(st.today_any,0) = 0
-             AND COALESCE(st.future_any,0) = 0
+        WHEN COALESCE(st.future_any,0) > 0
+             AND COALESCE(st.past_active,0) = 0
+          THEN 'cho_lich'
+        WHEN COALESCE(st.past_active,0) > 0
+             AND COALESCE(st.future_any,0) > 0
+          THEN 'dang_hoc'
+        WHEN COALESCE(st.past_active,0) > 0
           THEN 'da_nghi'
         ELSE 'chua_co_lich'
       END AS learning_status
