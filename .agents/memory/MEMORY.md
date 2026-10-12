@@ -64,6 +64,7 @@
 - [Attendance facility source](attendance-facility-source.md) — attendance and payroll follow monthly `/shifts?tab=board`; same employee salary rows stay adjacent.
 - [Attendance notification isolation](attendance-notification-concurrency.md) — keep post-commit notification work bounded; it must never hold or roll back attendance writes.
 - [QR attendance time zone](qr-attendance-time-window.md) — giờ lịch lưu dạng wall-clock Asia/Bangkok trong khi Node chạy UTC; QR hiển thị tối thiểu 15 phút và mở nút theo role.
+- [Attendance duration normalization](attendance-limit-duration-normalization.md) — chuẩn hóa phút/giờ vượt ngưỡng khi lưu, giữ nguyên tổng thời lượng và không sửa hàng loạt cấu hình cũ.
 - [Bulk makeup across classes](bulk-makeup-cross-class.md) — chọn học viên từ nhiều lớp vẫn dùng chung một lịch đích; backend phải giữ lớp gốc riêng cho từng học viên.
 - [Makeup class eligibility](makeup-class-eligibility.md) — chỉ lớp có buổi tương lai chung cho toàn bộ học viên mới được chọn; các mức thấp hơn chỉ hiển thị để tham khảo.
 - [Evaluation criterion input types](evaluation-criterion-input-types.md) — loại nằm ở tiêu chí con; checkbox cùng mã loại trừ chỉ cho chọn một trên toàn bảng của từng học viên.

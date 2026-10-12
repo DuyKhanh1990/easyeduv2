@@ -42,6 +42,7 @@ import {
   PAST_SCHEDULE_FEATURE_PERMISSION_RESOURCE,
 } from "@shared/permission-resources";
 import type { AttendanceFeeRule, ScoreCategory, ScoreSheet, ScoreSheetItem } from "@shared/schema";
+import { normalizeAttendanceDuration } from "@shared/attendance-limit-duration";
 
 type ConfigTabPerm = { canAdd: boolean; canEdit: boolean; canDelete: boolean };
 
@@ -1887,16 +1888,36 @@ function AttendanceLimitTab() {
   }, [savedConfig]);
 
   const saveMutation = useMutation({
-    mutationFn: () => apiRequest("PUT", "/api/system-settings/attendance-limit", {
-      beforeDays: parseInt(beforeDays) || 0,
-      beforeHours: parseInt(beforeHours) || 0,
-      beforeMinutes: parseInt(beforeMinutes) || 0,
-      afterDays: parseInt(afterDays) || 0,
-      afterHours: parseInt(afterHours) || 0,
-      afterMinutes: parseInt(afterMinutes) || 0,
-      roleIds: selectedRoleIds,
-    }),
-    onSuccess: () => {
+    mutationFn: async () => {
+      const before = normalizeAttendanceDuration(
+        parseInt(beforeDays, 10) || 0,
+        parseInt(beforeHours, 10) || 0,
+        parseInt(beforeMinutes, 10) || 0,
+      );
+      const after = normalizeAttendanceDuration(
+        parseInt(afterDays, 10) || 0,
+        parseInt(afterHours, 10) || 0,
+        parseInt(afterMinutes, 10) || 0,
+      );
+      const normalizedConfig = {
+        beforeDays: before.days,
+        beforeHours: before.hours,
+        beforeMinutes: before.minutes,
+        afterDays: after.days,
+        afterHours: after.hours,
+        afterMinutes: after.minutes,
+        roleIds: selectedRoleIds,
+      };
+      await apiRequest("PUT", "/api/system-settings/attendance-limit", normalizedConfig);
+      return normalizedConfig;
+    },
+    onSuccess: (savedConfig) => {
+      setBeforeDays(String(savedConfig.beforeDays));
+      setBeforeHours(String(savedConfig.beforeHours));
+      setBeforeMinutes(String(savedConfig.beforeMinutes));
+      setAfterDays(String(savedConfig.afterDays));
+      setAfterHours(String(savedConfig.afterHours));
+      setAfterMinutes(String(savedConfig.afterMinutes));
       queryClient.invalidateQueries({ queryKey: ["/api/system-settings/attendance-limit"] });
       toast({ title: "Đã lưu cấu hình giới hạn điểm danh" });
     },
