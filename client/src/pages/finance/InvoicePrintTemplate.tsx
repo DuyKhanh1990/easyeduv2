@@ -358,22 +358,20 @@ const VARIABLE_SECTIONS = [
     ],
   },
   {
-    id: "single",
-    label: "Hóa đơn 1 đợt",
-    keys: [
-      "tong_truoc_kmpt", "tong_km", "tong_pt", "tong_sau_kmpt",
-      "khau_tru", "tong_sau_khau_tru", "total", "da_thanh_toan", "con_lai",
-    ],
-  },
-  {
-    id: "multiple",
-    label: "Hóa đơn nhiều đợt",
+    id: "parent",
+    label: "Hóa đơn cha",
     keys: [
       "ma_hd_goc", "tong_truoc_kmpt", "tong_km", "tong_pt",
       "tong_sau_kmpt", "khau_tru", "tong_sau_khau_tru", "total",
-      "da_thanh_toan", "con_lai", "so_tien_dot_con", "khuyen_mai_dot_con",
-      "phu_thu_dot_con", "tong_sau_kmpt_dot_con", "thu_ky_nay",
-      "lich_su_thanh_toan",
+      "da_thanh_toan", "con_lai", "lich_su_thanh_toan",
+    ],
+  },
+  {
+    id: "child",
+    label: "Hóa đơn con",
+    keys: [
+      "so_tien_dot_con", "khuyen_mai_dot_con", "phu_thu_dot_con",
+      "tong_sau_kmpt_dot_con", "thu_ky_nay",
     ],
   },
   {
@@ -1614,7 +1612,7 @@ export function InvoicePrintTemplate({
                   ? <div className="text-xs text-muted-foreground px-2 py-2">Không tìm thấy</div>
                   : visibleSections.map(section => (
                       <div key={section.id} className="flex flex-col gap-1">
-                        <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80 mt-2 px-1">
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-orange-600 dark:text-orange-400 mt-2 px-1">
                           {section.number}. {section.label}
                         </div>
                         {section.variables.map(v => (
