@@ -1106,6 +1106,8 @@ export function registerConfigRoutes(app: Express): void {
     try {
       const { insertCourseSchema } = await import("@shared/schema");
       const inputSchema = insertCourseSchema.extend({
+        code: z.string().trim().min(1, "Mã khóa học không được để trống"),
+        name: z.string().trim().min(1, "Tên khóa học không được để trống"),
         locationIds: z.array(z.string().uuid()).min(1).optional(),
       });
       const { locationIds, ...courseInput } = inputSchema.parse(req.body);
@@ -1173,6 +1175,8 @@ export function registerConfigRoutes(app: Express): void {
     try {
       const { insertCourseSchema } = await import("@shared/schema");
       const inputSchema = insertCourseSchema.partial().extend({
+        code: z.string().trim().min(1, "Mã khóa học không được để trống").optional(),
+        name: z.string().trim().min(1, "Tên khóa học không được để trống").optional(),
         locationIds: z.array(z.string().uuid()).min(1).optional(),
       });
       const { locationIds, ...courseInput } = inputSchema.parse(req.body);
@@ -1283,7 +1287,11 @@ export function registerConfigRoutes(app: Express): void {
   app.post("/api/course-programs", async (req, res) => {
     try {
       const { insertCourseProgramSchema } = await import("@shared/schema");
-      const parsed = insertCourseProgramSchema.safeParse(req.body);
+      const inputSchema = insertCourseProgramSchema.extend({
+        code: z.string().trim().min(1, "Mã chương trình không được để trống"),
+        name: z.string().trim().min(1, "Tên chương trình không được để trống"),
+      });
+      const parsed = inputSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json(parsed.error);
       const program = await storage.createCourseProgram(parsed.data);
       await recordCourseAudit(req, {
@@ -1305,7 +1313,11 @@ export function registerConfigRoutes(app: Express): void {
   app.put("/api/course-programs/:id", async (req, res) => {
     try {
       const { insertCourseProgramSchema } = await import("@shared/schema");
-      const input = insertCourseProgramSchema.partial().parse(req.body);
+      const inputSchema = insertCourseProgramSchema.partial().extend({
+        code: z.string().trim().min(1, "Mã chương trình không được để trống").optional(),
+        name: z.string().trim().min(1, "Tên chương trình không được để trống").optional(),
+      });
+      const input = inputSchema.parse(req.body);
       const [oldProgram] = await db.select().from(coursePrograms).where(eq(coursePrograms.id, req.params.id)).limit(1);
       const updated = await storage.updateCourseProgram(req.params.id, input);
       if (!updated) return res.status(404).json({ message: "Chương trình không tồn tại" });
@@ -1322,6 +1334,7 @@ export function registerConfigRoutes(app: Express): void {
       });
       res.json(updated);
     } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json(err.errors);
       res.status(500).json({ message: (err as any).message });
     }
   });

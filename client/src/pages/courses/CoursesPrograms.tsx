@@ -1500,6 +1500,11 @@ function LibraryContentDialog({
   );
 }
 
+const courseProgramDialogSchema = insertCourseProgramSchema.extend({
+  code: z.string().trim().min(1, "Mã chương trình không được để trống"),
+  name: z.string().trim().min(1, "Tên chương trình không được để trống"),
+});
+
 function ProgramDialog({
   locations,
   editProgram,
@@ -1521,7 +1526,7 @@ function ProgramDialog({
   const { toast } = useToast();
 
   const form = useForm({
-    resolver: zodResolver(insertCourseProgramSchema),
+    resolver: zodResolver(courseProgramDialogSchema),
     defaultValues: {
       code: editProgram?.code ?? "",
       name: editProgram?.name ?? "",
@@ -1603,7 +1608,9 @@ function ProgramDialog({
                 name="code"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Mã chương trình</FormLabel>
+                    <FormLabel>
+                      Mã chương trình <span className="text-destructive">*</span>
+                    </FormLabel>
                     <FormControl>
                       <Input placeholder="VD: IELTS-F" {...field} />
                     </FormControl>
@@ -1616,7 +1623,9 @@ function ProgramDialog({
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Tên chương trình</FormLabel>
+                    <FormLabel>
+                      Tên chương trình <span className="text-destructive">*</span>
+                    </FormLabel>
                     <FormControl>
                       <Input placeholder="Nhập tên chương trình" {...field} />
                     </FormControl>
@@ -2804,7 +2813,11 @@ function ProgramContentDialog({ program, defaultSession, content, trigger }: {
 
 const courseDialogSchema = insertCourseSchema
   .omit({ locationId: true })
-  .extend({ locationIds: z.array(z.string().uuid()).min(1, "Chọn ít nhất một cơ sở") });
+  .extend({
+    code: z.string().trim().min(1, "Mã khóa học không được để trống"),
+    name: z.string().trim().min(1, "Tên khóa học không được để trống"),
+    locationIds: z.array(z.string().uuid()).min(1, "Chọn ít nhất một cơ sở"),
+  });
 
 function CourseDialog({ locations, editCourse, open: openProp, onOpenChange }: { locations: Location[]; editCourse?: CourseWithLocations; open?: boolean; onOpenChange?: (open: boolean) => void }) {
   const isEdit = !!editCourse;
@@ -2899,7 +2912,9 @@ function CourseDialog({ locations, editCourse, open: openProp, onOpenChange }: {
                 name="code"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Mã khoá học</FormLabel>
+                    <FormLabel>
+                      Mã khoá học <span className="text-destructive">*</span>
+                    </FormLabel>
                     <FormControl>
                       <Input placeholder="VD: ENG-01" {...field} />
                     </FormControl>
@@ -2912,7 +2927,9 @@ function CourseDialog({ locations, editCourse, open: openProp, onOpenChange }: {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Tên Khoá học</FormLabel>
+                    <FormLabel>
+                      Tên Khoá học <span className="text-destructive">*</span>
+                    </FormLabel>
                     <FormControl>
                       <Input placeholder="Nhập tên khoá học" {...field} />
                     </FormControl>
