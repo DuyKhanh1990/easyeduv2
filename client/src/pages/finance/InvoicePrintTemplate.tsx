@@ -339,6 +339,45 @@ const VARIABLES: VariableDef[] = [
   { group: "Ngân hàng", label: "Mã QR ngân hàng", key: "qr_ngan_hang", description: "{{qr_ngan_hang}}" },
 ];
 
+const VARIABLE_SECTIONS = [
+  {
+    id: "common",
+    label: "Thông tin chung",
+    keys: [
+      "customer_name", "phone", "address", "invoice_code", "ngay_tao",
+      "ngay_in_phieu", "ngay_thanh_toan", "han_thanh_toan", "lop",
+      "ghi_chu", "khoan_thu", "logo", "ten_co_so", "dia_chi_co_so",
+      "sdt_co_so", "ten_ngan_hang", "so_tai_khoan", "chu_tai_khoan",
+      "qr_ngan_hang",
+    ],
+  },
+  {
+    id: "single",
+    label: "Hóa đơn 1 đợt",
+    keys: [
+      "tong_truoc_kmpt", "tong_km", "tong_pt", "thanh_tien",
+      "khau_tru", "total", "da_thanh_toan", "con_lai",
+    ],
+  },
+  {
+    id: "multiple",
+    label: "Hóa đơn nhiều đợt",
+    keys: [
+      "ma_hd_goc", "tong_hd_goc", "da_thu_hd_goc",
+      "con_lai_hd_goc", "thu_ky_nay", "lich_su_thanh_toan",
+    ],
+  },
+  {
+    id: "other",
+    label: "Các biến còn lại",
+    keys: [
+      "km_theo_sp", "pt_theo_sp", "km_toan_don", "pt_toan_don",
+      "tong_sau_km", "tong_sau_kmpt", "phuong_thuc", "nguoi_tao",
+      "nguoi_thanh_toan", "nguoi_thu_tien", "thanh_chu", "items",
+    ],
+  },
+] as const;
+
 const VARIABLE_HELP: Record<string, { meaning: string; example: string }> = {
   customer_name: { meaning: "Tên khách hàng, học viên hoặc đối tượng đứng tên hóa đơn.", example: "Nguyễn Văn A" },
   phone: { meaning: "Số điện thoại của khách hàng hoặc phụ huynh.", example: "0901 234 567" },
@@ -1545,32 +1584,30 @@ export function InvoicePrintTemplate({
                       v.description.toLowerCase().includes(q)
                     )
                   : VARIABLES;
+                const filteredKeys = new Set(filtered.map(v => v.key));
+                const visibleSections = VARIABLE_SECTIONS
+                  .map((section, index) => ({
+                    ...section,
+                    number: index + 1,
+                    variables: section.keys
+                      .filter(key => filteredKeys.has(key))
+                      .map(key => filtered.find(v => v.key === key))
+                      .filter((v): v is VariableDef => Boolean(v)),
+                  }))
+                  .filter(section => section.variables.length > 0);
 
-                if (q) {
-                  // Flat list when searching
-                  return filtered.length === 0
-                    ? <div className="text-xs text-muted-foreground px-2 py-2">Không tìm thấy</div>
-                    : filtered.map((v) => (
-                        <VariableSidebarItem key={v.key} variable={v} onInsert={insertVar} />
-                      ));
-                }
-
-                // Grouped list when not searching
-                const groups: Record<string, VariableDef[]> = {};
-                filtered.forEach((v) => {
-                  const g = v.group ?? "Khác";
-                  (groups[g] ||= []).push(v);
-                });
-                return Object.entries(groups).map(([groupName, vars]) => (
-                  <div key={groupName} className="flex flex-col gap-1">
-                    <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80 mt-1.5 px-1">
-                      {groupName}
-                    </div>
-                    {vars.map((v) => (
-                      <VariableSidebarItem key={v.key} variable={v} onInsert={insertVar} />
-                    ))}
-                  </div>
-                ));
+                return visibleSections.length === 0
+                  ? <div className="text-xs text-muted-foreground px-2 py-2">Không tìm thấy</div>
+                  : visibleSections.map(section => (
+                      <div key={section.id} className="flex flex-col gap-1">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80 mt-2 px-1">
+                          {section.number}. {section.label}
+                        </div>
+                        {section.variables.map(v => (
+                          <VariableSidebarItem key={v.key} variable={v} onInsert={insertVar} />
+                        ))}
+                      </div>
+                    ));
               })()}
             </div>
           </div>
