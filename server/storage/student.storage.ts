@@ -2394,6 +2394,9 @@ export async function getStudentLearningStatusSummary(params: {
           COUNT(*) AS total_sessions
         FROM student_sessions ss
         JOIN class_sessions cs ON cs.id = ss.class_session_id
+        WHERE ss.status NOT IN ('transferred', 'cancelled')
+          AND ss.attendance_status <> 'cancelled'
+          AND cs.status <> 'cancelled'
         GROUP BY ss.student_id
       ),
       student_status AS (
@@ -2452,6 +2455,9 @@ export async function getStudentLearningStatusSummary(params: {
           COUNT(*) AS total_sessions
         FROM student_sessions ss
         JOIN class_sessions cs ON cs.id = ss.class_session_id
+        WHERE ss.status NOT IN ('transferred', 'cancelled')
+          AND ss.attendance_status <> 'cancelled'
+          AND cs.status <> 'cancelled'
         GROUP BY ss.student_id
       ),
       student_status AS (

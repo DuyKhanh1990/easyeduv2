@@ -115,3 +115,4 @@
 - [Fresh status catalog selectors](course-catalog-freshness.md) — refresh course, program, and fee-package choices when create flows open; separate tabs/users do not share query invalidation.
 - [Invoice visibility scopes](invoice-visibility-scopes.md) — parent Hóa đơn controls page/CRUD access; six child view scopes limit type/status visibility, using each installment's status.
 - [Course catalog required labels](course-catalog-required-code-name.md) — courses and programs require nonblank codes and display names; validate in forms and server APIs.
+- [Learning-status session validity](learning-status-session-validity.md) — cancelled or transferred sessions do not count as active learning; valid future lessons prevent a student being marked ended.
