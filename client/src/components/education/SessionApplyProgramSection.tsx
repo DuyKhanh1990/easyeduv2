@@ -94,11 +94,19 @@ export function SessionApplyProgramSection({
   setApplyScoreSheetToIdx,
 }: SessionApplyProgramSectionProps) {
   const { toast } = useToast();
+  const [programPickerOpen, setProgramPickerOpen] = useState(false);
   const [scoreSheetPickerOpen, setScoreSheetPickerOpen] = useState(false);
 
-  const { data: allCoursePrograms } = useQuery<any[]>({
+  const {
+    data: allCoursePrograms,
+    isLoading: courseProgramsLoading,
+    isError: courseProgramsError,
+  } = useQuery<any[]>({
     queryKey: ["/api/course-programs"],
   });
+  const selectedCourseProgram = (allCoursePrograms ?? []).find(
+    (program: any) => program.id === applyProgramId,
+  );
 
   const { data: allScoreSheets } = useQuery<any[]>({
     queryKey: ["/api/score-sheets"],
@@ -230,16 +238,59 @@ export function SessionApplyProgramSection({
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Chương trình</label>
-              <Select value={applyProgramId} onValueChange={setApplyProgramId}>
-                <SelectTrigger data-testid="select-apply-program">
-                  <SelectValue placeholder="Chọn chương trình..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {(allCoursePrograms || []).map((p: any) => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover open={programPickerOpen} onOpenChange={setProgramPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={programPickerOpen}
+                    data-testid="select-apply-program"
+                    className="w-full justify-between font-normal"
+                  >
+                    <span className="truncate">
+                      {selectedCourseProgram?.name || "Chọn chương trình..."}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Tìm theo tên hoặc mã chương trình..." />
+                    <CommandList>
+                      <CommandEmpty>
+                        {courseProgramsLoading
+                          ? "Đang tải danh sách chương trình..."
+                          : courseProgramsError
+                            ? "Không thể tải danh sách chương trình."
+                            : "Không tìm thấy chương trình phù hợp với quyền cơ sở của bạn."}
+                      </CommandEmpty>
+                      <CommandGroup>
+                        {(allCoursePrograms ?? []).map((program: any) => (
+                          <CommandItem
+                            key={program.id}
+                            value={`${program.code ?? ""} ${program.name ?? ""}`}
+                            onSelect={() => {
+                              setApplyProgramId(program.id);
+                              setProgramPickerOpen(false);
+                            }}
+                          >
+                            <Check
+                              className={`mr-2 h-4 w-4 ${
+                                applyProgramId === program.id ? "opacity-100" : "opacity-0"
+                              }`}
+                            />
+                            <span className="truncate">
+                              {program.name}
+                              {program.code ? ` · ${program.code}` : ""}
+                            </span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
