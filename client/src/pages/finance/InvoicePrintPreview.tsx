@@ -15,6 +15,7 @@ interface InvoicePrintData {
   code?: string | null;
   type: string;
   subjectName?: string | null;
+  isChildInstallment?: boolean;
   grandTotal: string;
   paidAmount: string;
   remainingAmount?: string | null;
@@ -541,16 +542,16 @@ function renderTemplate(
     tong_sau_km: tongSauKm,
     tong_sau_kmpt: tongSauKmpt,
     // Child-installment amounts are separate from the generic parent/single-invoice totals.
-    so_tien_dot_con: invoice.parentInvoice
+    so_tien_dot_con: invoice.isChildInstallment
       ? Number(invoice.installmentBaseAmount) || 0
       : "",
-    khuyen_mai_dot_con: invoice.parentInvoice
+    khuyen_mai_dot_con: invoice.isChildInstallment
       ? Number(invoice.installmentPromotionAmount) || 0
       : "",
-    phu_thu_dot_con: invoice.parentInvoice
+    phu_thu_dot_con: invoice.isChildInstallment
       ? Number(invoice.installmentSurchargeAmount) || 0
       : "",
-    tong_sau_kmpt_dot_con: invoice.parentInvoice
+    tong_sau_kmpt_dot_con: invoice.isChildInstallment
       ? Number(invoice.installmentTotalAmount ?? total) || 0
       : "",
     // Hoá đơn gốc (parent)

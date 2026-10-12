@@ -21,4 +21,4 @@ Customers may use one saved print template for both single invoices and installm
 
 **Why:** The user said customers may share one print template across invoice types and does not want existing variable behavior changed.
 
-**How to apply:** Keep `total` and `thanh_tien` distinct in both template-variable descriptions and print rendering. Child-specific print variables must use that installment's values; parent variables must summarize the children and must not substitute for child data.
+**How to apply:** Keep legacy variable mappings unchanged for templates shared across invoice types. Keep `total` and `thanh_tien` distinct. Gate child-only values on a real schedule row, not merely the presence of `parentInvoice`, because a single invoice can be represented by a synthetic schedule row.

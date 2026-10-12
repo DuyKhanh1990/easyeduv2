@@ -3225,6 +3225,7 @@ export default function Invoices() {
         const invAny = inv as any;
         const scheduleAsInvoice: any = {
           id: s.id,
+          isChildInstallment: true,
           code: `${inv.code ?? ""}/${s.code ?? s.label}`,
           type: inv.type,
           subjectName: inv.name ?? null,

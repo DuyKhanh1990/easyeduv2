@@ -145,6 +145,7 @@ export function ScheduleProgressPopover({ inv, children, allowedStatusTargets }:
     return {
       id: s.id,
       sourceInvoiceId: inv.id,
+      isChildInstallment: !s.isSynthetic,
       code: `${inv.code ?? ""}/${s.code ?? s.label}`,
       type: inv.type,
       subjectName: inv.name ?? null,
