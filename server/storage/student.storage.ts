@@ -2378,11 +2378,11 @@ export async function getStudentLearningStatusSummary(params: {
           ss.student_id,
           COUNT(*) FILTER (
             WHERE cs.session_date < CURRENT_DATE
-              AND ss.attendance_status NOT IN ('pending', 'paused')
+              AND ss.attendance_status <> 'paused'
           ) AS past_active,
           COUNT(*) FILTER (
             WHERE cs.session_date = CURRENT_DATE
-              AND ss.attendance_status NOT IN ('pending', 'paused')
+              AND ss.attendance_status <> 'paused'
           ) AS today_active,
           COUNT(*) FILTER (
             WHERE cs.session_date > CURRENT_DATE
@@ -2440,7 +2440,11 @@ export async function getStudentLearningStatusSummary(params: {
           ss.student_id,
           COUNT(*) FILTER (
             WHERE cs.session_date BETWEEN '${from}'::date AND '${to}'::date
-              AND ss.attendance_status NOT IN ('pending', 'paused')
+              AND ss.attendance_status <> 'paused'
+              AND (
+                cs.session_date <= CURRENT_DATE
+                OR ss.attendance_status <> 'pending'
+              )
           ) AS in_range_active,
           COUNT(*) FILTER (
             WHERE cs.session_date BETWEEN '${from}'::date AND '${to}'::date
@@ -2448,11 +2452,11 @@ export async function getStudentLearningStatusSummary(params: {
           ) AS in_range_paused,
           COUNT(*) FILTER (
             WHERE cs.session_date < CURRENT_DATE
-              AND ss.attendance_status NOT IN ('pending', 'paused')
+              AND ss.attendance_status <> 'paused'
           ) AS past_active,
           COUNT(*) FILTER (
             WHERE cs.session_date = CURRENT_DATE
-              AND ss.attendance_status NOT IN ('pending', 'paused')
+              AND ss.attendance_status <> 'paused'
           ) AS today_active,
           COUNT(*) FILTER (
             WHERE cs.session_date > CURRENT_DATE
@@ -2470,6 +2474,7 @@ export async function getStudentLearningStatusSummary(params: {
           s.id AS student_id,
           CASE
             WHEN COALESCE(st.in_range_active,0) > 0
+                 OR COALESCE(st.today_active,0) > 0
                  OR (
                    (COALESCE(st.past_active,0) > 0 OR COALESCE(st.today_active,0) > 0)
                    AND COALESCE(st.future_any,0) > 0
