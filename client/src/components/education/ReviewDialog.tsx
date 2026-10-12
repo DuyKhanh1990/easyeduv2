@@ -160,6 +160,13 @@ export function ReviewDialog({
   const [published, setPublished] = useState(false);
   const [activeTeacher, setActiveTeacher] = useState<string>("");
 
+  // Parents may derive these props inline on every render. Compare their content,
+  // not their array/object identities, so unrelated rerenders do not discard edits.
+  const criteriaKey = JSON.stringify(criteria);
+  const teachersKey = JSON.stringify(teachers);
+  const existingReviewKey = JSON.stringify(existingReviewData);
+  const studentSessionIdsKey = JSON.stringify(studentSessionIds);
+
   useEffect(() => {
     if (!open) return;
     if (!isBulk && existingReviewData && Object.keys(existingReviewData).length > 0) {
@@ -201,7 +208,7 @@ export function ReviewDialog({
       setPublished(false);
     }
     if (teachers.length > 0) setActiveTeacher(teachers[0].id);
-  }, [open, existingReviewData, existingPublished, criteria, teachers, isBulk]);
+  }, [open, existingReviewKey, existingPublished, criteriaKey, teachersKey, isBulk, studentSessionIdsKey]);
 
   const buildReviewData = () => {
     const reviewData: Record<string, { teacherName: string; items: any[]; criteriaRatings: Record<string, number> }> = {};
