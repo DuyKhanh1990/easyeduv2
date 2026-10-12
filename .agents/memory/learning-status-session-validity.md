@@ -9,8 +9,8 @@ Learning-status summaries must exclude student-session rows marked cancelled or 
 
 **How to apply:** Use these exclusions in schedule-based status summaries and active-student filters; when evaluating a date range, keep future valid sessions visible to the status classification.
 
-For the Customers page cards and per-student status column, aggregate valid sessions across classes by the current day first: any non-paused session today means “Đang học”; otherwise, a paused session today means “Bảo lưu,” even if future lessons remain. Only when there is no session today should past/future lessons decide waiting, active, or ended.
+For the Customers page cards and per-student status column, aggregate each class's effective status as of today before combining classes: a class that has not started yet is not “Đang học” just because it has a non-paused future lesson. Any class actively underway now means overall “Đang học”; otherwise, a started class currently in a paused period means “Bảo lưu,” even if a new class or resumed lesson starts later. Only when no class is active or paused should future-only schedules mean waiting; use past activity with no future lessons for ended.
 
-**Why:** The user clarified that an active session in any class today overrides a paused session in another class, but future lessons alone must not override a day where all of today's sessions are paused.
+**Why:** The user clarified that current active study overrides a pause, while a future class start must not end an existing pause early.
 
-**How to apply:** Keep this current-day, cross-class precedence consistent between the Customers page cards and roster column; the Dashboard summary still uses its selected-date-range rules.
+**How to apply:** Resolve each class's state as of the current date, then aggregate consistently between the Customers page cards and roster column; the Dashboard summary still uses its selected-date-range rules.
