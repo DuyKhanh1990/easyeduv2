@@ -503,6 +503,7 @@ export function renderTemplate(
     ? Number(parentFinancialSource.totalAmount) || 0
     : tongHdGoc + parentTongKm - parentTongPt;
   const parentKhauTru = Number(parentFinancialSource.deduction) || 0;
+  const parentTongSauKmpt = parentTongTruocKmpt - parentTongKm + parentTongPt;
 
   // Pre-computed derived values — template only does {{variable}} replacement, no expressions
   const tongSauKm = tongTruocKmpt - tongKm;          // after promotions, before surcharges
@@ -555,7 +556,8 @@ export function renderTemplate(
     khau_tru: parentKhauTru,
     // Giá trị đã tính sẵn — dùng thay cho công thức trong template
     tong_sau_km: tongSauKm,
-    tong_sau_kmpt: tongSauKmpt,
+    tong_sau_kmpt: parentTongSauKmpt,
+    tong_sau_khau_tru: tongHdGoc,
     // Child-installment amounts are separate from the generic parent/single-invoice totals.
     so_tien_dot_con: invoice.isChildInstallment
       ? Number(invoice.installmentBaseAmount) || 0

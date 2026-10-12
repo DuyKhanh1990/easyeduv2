@@ -25,4 +25,6 @@ Customers may use one saved print template for both single invoices and installm
 
 **Why:** The user accepted `{{total}}` and `{{tong_sau_khau_tru}}` sharing one function so templates can use the clearer name without losing compatibility.
 
-**How to apply:** Resolve the listed parent-summary values from `parentInvoice` with a self-fallback when it is absent. Keep `total` and `thanh_tien` distinct; leave unlisted tokens and child-specific installment tokens on their existing mappings.
+**Why:** The user asked to remove duplicate parent-total and `{{thanh_tien}}` choices from the template variable picker while preserving old saved templates.
+
+**How to apply:** Resolve the listed parent-summary values from `parentInvoice` with a self-fallback when it is absent. Keep `total` and `tong_sau_khau_tru` as aliases. Hide duplicate parent `_hd_goc` tokens and `thanh_tien` from new-template choices, but retain runtime aliases for saved templates.
