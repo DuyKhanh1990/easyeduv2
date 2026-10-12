@@ -4,7 +4,7 @@ import { renderHistoryHtml, renderTemplate } from "./InvoicePrintPreview";
 describe("legacy invoice-print financial variables", () => {
   it("uses parent invoice amounts when printing an installment", () => {
     const html = renderTemplate(
-      "{{tong_truoc_kmpt}}|{{tong_km}}|{{khau_tru}}|{{tong_pt}}|{{tong_sau_kmpt}}|{{total}}|{{tong_sau_khau_tru}}|{{da_thanh_toan}}|{{con_lai}}",
+      "{{tong_truoc_kmpt}}|{{tong_km}}|{{khau_tru}}|{{tong_pt}}|{{tong_sau_km}}|{{tong_sau_kmpt}}|{{total}}|{{tong_sau_khau_tru}}|{{da_thanh_toan}}|{{con_lai}}|{{km_theo_sp}}|{{km_toan_don}}|{{pt_toan_don}}",
       {
         id: "child",
         code: "INV-1/1",
@@ -24,22 +24,24 @@ describe("legacy invoice-print financial variables", () => {
           totalAmount: "10160000",
           totalPromotion: "840000",
           totalSurcharge: "0",
+          invoicePromotionAmount: "700000",
+          invoiceSurchargeAmount: "0",
           deduction: "1000000",
           grandTotal: "10160000",
           paidAmount: "5580000",
           remainingAmount: "4580000",
         },
-        items: [],
+        items: [{ promotionAmount: "140000", surchargeAmount: "0" }],
         paymentSchedule: [],
       },
     );
 
-    expect(html).toBe("12.000.000|840.000|1.000.000|0|11.160.000|10.160.000|10.160.000|5.580.000|4.580.000");
+    expect(html).toBe("12.000.000|840.000|1.000.000|0|11.160.000|11.160.000|10.160.000|10.160.000|5.580.000|4.580.000|140.000|700.000|0");
   });
 
   it("uses the invoice itself when there is no separate parent (single invoice)", () => {
     const html = renderTemplate(
-      "{{tong_truoc_kmpt}}|{{tong_km}}|{{khau_tru}}|{{tong_pt}}|{{tong_sau_kmpt}}|{{total}}|{{tong_sau_khau_tru}}|{{da_thanh_toan}}|{{con_lai}}",
+      "{{tong_truoc_kmpt}}|{{tong_km}}|{{khau_tru}}|{{tong_pt}}|{{tong_sau_km}}|{{tong_sau_kmpt}}|{{total}}|{{tong_sau_khau_tru}}|{{da_thanh_toan}}|{{con_lai}}|{{km_theo_sp}}|{{km_toan_don}}|{{pt_toan_don}}",
       {
         id: "single",
         type: "Thu",
@@ -48,14 +50,16 @@ describe("legacy invoice-print financial variables", () => {
         remainingAmount: "4580000",
         totalPromotion: "840000",
         totalSurcharge: "0",
+        invoicePromotionAmount: "700000",
+        invoiceSurchargeAmount: "0",
         deduction: "1000000",
         createdAt: "2026-10-12T00:00:00.000Z",
-        items: [],
+        items: [{ promotionAmount: "140000", surchargeAmount: "0" }],
         paymentSchedule: [],
       },
     );
 
-    expect(html).toBe("12.000.000|840.000|1.000.000|0|11.160.000|10.160.000|10.160.000|5.580.000|4.580.000");
+    expect(html).toBe("12.000.000|840.000|1.000.000|0|11.160.000|11.160.000|10.160.000|10.160.000|5.580.000|4.580.000|140.000|700.000|0");
   });
 });
 

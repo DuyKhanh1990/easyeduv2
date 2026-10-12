@@ -362,7 +362,7 @@ const VARIABLE_SECTIONS = [
     label: "Hóa đơn cha",
     keys: [
       "ma_hd_goc", "tong_truoc_kmpt", "tong_km", "tong_pt",
-      "tong_sau_kmpt", "khau_tru", "tong_sau_khau_tru", "total",
+      "tong_sau_km", "tong_sau_kmpt", "khau_tru", "tong_sau_khau_tru", "total",
       "da_thanh_toan", "con_lai", "lich_su_thanh_toan",
     ],
   },
@@ -379,7 +379,7 @@ const VARIABLE_SECTIONS = [
     label: "Các biến còn lại",
     keys: [
       "km_theo_sp", "pt_theo_sp", "km_toan_don", "pt_toan_don",
-      "tong_sau_km", "phuong_thuc", "nguoi_tao",
+      "phuong_thuc", "nguoi_tao",
       "nguoi_thanh_toan", "nguoi_thu_tien", "thanh_chu", "items",
     ],
   },
@@ -406,7 +406,7 @@ const VARIABLE_HELP: Record<string, { meaning: string; example: string }> = {
   tong_km: { meaning: "Tổng tất cả khuyến mãi theo sản phẩm và toàn hóa đơn.", example: "500.000 đ" },
   tong_pt: { meaning: "Tổng tất cả phụ thu theo sản phẩm và toàn hóa đơn.", example: "150.000 đ" },
   khau_tru: { meaning: "Khoản đặt cọc hoặc khấu trừ được tính vào hóa đơn.", example: "500.000 đ" },
-  tong_sau_km: { meaning: "Giá trị sau khi trừ khuyến mãi nhưng chưa cộng phụ thu.", example: "5.000.000 đ" },
+  tong_sau_km: { meaning: "Tổng của hóa đơn cha sau khi trừ khuyến mãi, trước khi cộng phụ thu; hóa đơn một đợt dùng chính số liệu của nó.", example: "5.000.000 đ" },
   tong_sau_kmpt: { meaning: "Tổng của hóa đơn cha sau khi trừ khuyến mãi và cộng phụ thu, trước khi trừ khấu trừ.", example: "5.150.000 đ" },
   tong_sau_khau_tru: { meaning: "Tổng tiền hóa đơn cha sau khi trừ khoản khấu trừ; cùng giá trị với {{total}}.", example: "4.650.000 đ" },
   thanh_tien: { meaning: "Thành tiền sau khuyến mãi và phụ thu; với hóa đơn gốc là trước khi trừ đặt cọc/khấu trừ, còn khi in một đợt là số tiền của chính đợt đó.", example: "5.150.000 đ" },

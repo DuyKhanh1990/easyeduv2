@@ -469,8 +469,12 @@ export function renderTemplate(
     (s, it: any) => s + (Number(it?.surchargeAmount) || 0),
     0,
   );
-  const kmToanDon = Number(invoice.invoicePromotionAmount) || 0;
-  const ptToanDon = Number(invoice.invoiceSurchargeAmount) || 0;
+  const kmToanDon = Number(
+    invoice.parentInvoice?.invoicePromotionAmount ?? invoice.invoicePromotionAmount,
+  ) || 0;
+  const ptToanDon = Number(
+    invoice.parentInvoice?.invoiceSurchargeAmount ?? invoice.invoiceSurchargeAmount,
+  ) || 0;
   const tongKm = invoice.totalPromotion != null
     ? Number(invoice.totalPromotion) || 0
     : kmTheoSp + kmToanDon;
@@ -520,7 +524,7 @@ export function renderTemplate(
   const parentTongSauKmpt = parentTongTruocKmpt - parentTongKm + parentTongPt;
 
   // Pre-computed derived values — template only does {{variable}} replacement, no expressions
-  const tongSauKm = tongTruocKmpt - tongKm;          // after promotions, before surcharges
+  const tongSauKm = parentTongTruocKmpt - parentTongKm; // parent after promotions, before surcharges
   const tongSauKmpt = tongTruocKmpt - tongKm + tongPt; // after promotions and surcharges
 
   const data: Record<string, string | number> = {
