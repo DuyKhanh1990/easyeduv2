@@ -1982,7 +1982,7 @@ function AttendanceLimitTab() {
         <div className="space-y-2">
           <Label>Vai trò áp dụng</Label>
           <p className="text-xs text-muted-foreground">
-            Để trống = áp dụng cho tất cả vai trò. Không bao gồm các vai trò thuộc phòng Khách hàng.
+            Không chọn vai trò = không áp dụng giới hạn cho role nào. Chọn role cần áp dụng; không bao gồm các vai trò thuộc phòng Khách hàng.
           </p>
           {showMultiSelect ? (
             <MultiSelect

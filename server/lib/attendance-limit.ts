@@ -21,6 +21,27 @@ export interface AttendanceLimitConfig {
 
 export const QR_ATTENDANCE_DISPLAY_MINUTES = 15;
 
+export function shouldApplyAttendanceLimit(
+  configuredRoleIds: string[],
+  userRoleIds: string[],
+  isSuperAdmin = false,
+): boolean {
+  return !isSuperAdmin
+    && configuredRoleIds.length > 0
+    && userRoleIds.some((roleId) => configuredRoleIds.includes(roleId));
+}
+
+export function isWithinAttendanceTimeLimit(
+  now: Date,
+  sessionStart: Date,
+  beforeSeconds: number,
+  afterSeconds: number,
+): boolean {
+  const earliest = new Date(sessionStart.getTime() - beforeSeconds * 1000);
+  const latest = new Date(sessionStart.getTime() + afterSeconds * 1000);
+  return now >= earliest && now <= latest;
+}
+
 export interface AttendanceTimingWindow {
   sessionDate: string;
   startTime: string;
@@ -91,10 +112,8 @@ export async function getAttendanceTimingWindow(
   const sessionEnd = getSessionDateTime(sessionRow.sessionDate, sessionRow.endTime);
   const config = await getAttendanceLimitConfig();
   const configRoleIds = config?.roleIds ?? [];
-  const roleIsRestricted =
-    !isSuperAdmin &&
-    !!config &&
-    (configRoleIds.length === 0 || userRoleIds.some((roleId) => configRoleIds.includes(roleId)));
+  const roleIsRestricted = !!config
+    && shouldApplyAttendanceLimit(configRoleIds, userRoleIds, isSuperAdmin);
 
   const beforeSec = roleIsRestricted
     ? (config?.beforeDays ?? 0) * 86400 + (config?.beforeHours ?? 0) * 3600 + (config?.beforeMinutes ?? 0) * 60
@@ -178,9 +197,8 @@ export async function enforceAttendanceTimeLimit(
   const config = await getAttendanceLimitConfig();
   if (!config) return;
 
-  // Check role applicability: empty roleIds = all roles; non-empty = only listed roles
   const configRoleIds = config.roleIds ?? [];
-  if (configRoleIds.length > 0 && !userRoleIds.some((r) => configRoleIds.includes(r))) return;
+  if (!shouldApplyAttendanceLimit(configRoleIds, userRoleIds)) return;
 
   const beforeSec =
     (config.beforeDays ?? 0) * 86400 +
@@ -190,8 +208,6 @@ export async function enforceAttendanceTimeLimit(
     (config.afterDays ?? 0) * 86400 +
     (config.afterHours ?? 0) * 3600 +
     (config.afterMinutes ?? 0) * 60;
-  if (beforeSec === 0 && afterSec === 0) return;
-
   const [sessionRow] = await db
     .select({
       sessionDate: classSessions.sessionDate,
@@ -210,7 +226,7 @@ export async function enforceAttendanceTimeLimit(
   const latest = new Date(sessionStart.getTime() + afterSec * 1000);
   const now = new Date();
 
-  if (now < earliest || now > latest) {
+  if (!isWithinAttendanceTimeLimit(now, sessionStart, beforeSec, afterSec)) {
     const err: any = new Error(
       `Vượt quá thời gian điểm danh. Chỉ được phép điểm danh từ ${formatAttendanceLimitDateTime(earliest)} đến ${formatAttendanceLimitDateTime(latest)}.`
     );
