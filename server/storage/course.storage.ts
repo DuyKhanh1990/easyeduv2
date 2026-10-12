@@ -1,5 +1,6 @@
 import {
   db, eq, and, asc, sql, inArray, isNull, or,
+  arrayOverlaps,
   courses, courseLocations, courseFeePackages, coursePrograms, courseProgramContents, users,
   studentClasses, studentSessions, classSessions, classes,
   invoices, invoiceItems, invoicePaymentSchedule, invoiceSessionAllocations,
@@ -218,7 +219,7 @@ export async function getCoursePrograms(
   return await db.select().from(coursePrograms)
     .where(and(
       activeCondition,
-      sql`(${coursePrograms.locationIds} = '{}'::uuid[] OR ${coursePrograms.locationIds} && ${allowedLocationIds}::uuid[])`,
+      sql`(${coursePrograms.locationIds} = '{}'::uuid[] OR ${arrayOverlaps(coursePrograms.locationIds, allowedLocationIds)})`,
     ))
     .orderBy(coursePrograms.name);
 }

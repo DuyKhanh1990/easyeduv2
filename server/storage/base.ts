@@ -1,7 +1,7 @@
 export { db } from "../db";
 
 export {
-  eq, sql, and, inArray, asc, desc, or, ilike, gte, lte, isNull, isNotNull,
+  eq, sql, and, inArray, arrayOverlaps, asc, desc, or, ilike, gte, lte, isNull, isNotNull,
 } from "drizzle-orm";
 
 export { format, parseISO } from "date-fns";
