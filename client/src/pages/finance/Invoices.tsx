@@ -3216,6 +3216,11 @@ export default function Invoices() {
       {printPreviewSchedule && (() => {
         const { schedule: s, invoice: inv } = printPreviewSchedule;
         const amount = parseFloat(s.amount ?? "0");
+        const installmentPromotionAmount = parseFloat(s.promotionAmount ?? "0") || 0;
+        const installmentSurchargeAmount = parseFloat(s.surchargeAmount ?? "0") || 0;
+        const installmentBaseAmount = s.baseAmount != null
+          ? parseFloat(s.baseAmount) || 0
+          : amount + installmentPromotionAmount - installmentSurchargeAmount;
         const isPaid = isInvoicePaidLike(s.status);
         const invAny = inv as any;
         const scheduleAsInvoice: any = {
@@ -3224,6 +3229,10 @@ export default function Invoices() {
           type: inv.type,
           subjectName: inv.name ?? null,
           grandTotal: String(amount),
+          installmentBaseAmount: String(installmentBaseAmount),
+          installmentPromotionAmount: String(installmentPromotionAmount),
+          installmentSurchargeAmount: String(installmentSurchargeAmount),
+          installmentTotalAmount: String(amount),
           paidAmount: isPaid ? String(amount) : "0",
           remainingAmount: isPaid ? "0" : String(amount),
           createdAt: typeof inv.createdAt === "string" ? inv.createdAt : new Date(inv.createdAt).toISOString(),

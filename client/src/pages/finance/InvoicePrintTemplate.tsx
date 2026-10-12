@@ -250,6 +250,10 @@ const SAMPLE_DATA = {
   // Giá trị đã tính sẵn (dùng trực tiếp trong template, không cần công thức)
   tong_sau_km: 5300000 - 330000,           // = 4.970.000 (sau khuyến mãi, trước phụ thu)
   tong_sau_kmpt: 5300000 - 330000 + 30000, // = 5.000.000 (sau KM và phụ thu, trước khấu trừ)
+  so_tien_dot_con: 1200000,
+  khuyen_mai_dot_con: 100000,
+  phu_thu_dot_con: 50000,
+  tong_sau_kmpt_dot_con: 1150000,
   // Hoá đơn gốc (parent) – mẫu cho phiếu thu của 1 đợt
   ma_hd_goc: "INV-2026-001",
   tong_hd_goc: 5000000,
@@ -318,6 +322,10 @@ const VARIABLES: VariableDef[] = [
   { group: "Hoá đơn Cha (nhiều đợt)", label: "Tổng tiền HĐ gốc", key: "tong_hd_goc", description: "{{tong_hd_goc}}" },
   { group: "Hoá đơn Cha (nhiều đợt)", label: "Đã thu HĐ gốc", key: "da_thu_hd_goc", description: "{{da_thu_hd_goc}}" },
   { group: "Hoá đơn Cha (nhiều đợt)", label: "Còn lại HĐ gốc", key: "con_lai_hd_goc", description: "{{con_lai_hd_goc}}" },
+  { group: "Hoá đơn đợt con", label: "Số tiền đợt con (trước KM/PT)", key: "so_tien_dot_con", description: "{{so_tien_dot_con}}" },
+  { group: "Hoá đơn đợt con", label: "Khuyến mãi đợt con", key: "khuyen_mai_dot_con", description: "{{khuyen_mai_dot_con}}" },
+  { group: "Hoá đơn đợt con", label: "Phụ thu đợt con", key: "phu_thu_dot_con", description: "{{phu_thu_dot_con}}" },
+  { group: "Hoá đơn đợt con", label: "Tổng sau KM/PT đợt con", key: "tong_sau_kmpt_dot_con", description: "{{tong_sau_kmpt_dot_con}}" },
 
   // ── Bằng chữ ──
   { group: "Thanh toán", label: "Thành chữ (tiền đã TT)", key: "thanh_chu", description: "{{thanh_chu}}" },
@@ -364,7 +372,9 @@ const VARIABLE_SECTIONS = [
     label: "Hóa đơn nhiều đợt",
     keys: [
       "ma_hd_goc", "tong_hd_goc", "da_thu_hd_goc",
-      "con_lai_hd_goc", "thu_ky_nay", "lich_su_thanh_toan",
+      "con_lai_hd_goc", "so_tien_dot_con", "khuyen_mai_dot_con",
+      "phu_thu_dot_con", "tong_sau_kmpt_dot_con", "thu_ky_nay",
+      "lich_su_thanh_toan",
     ],
   },
   {
@@ -414,6 +424,10 @@ const VARIABLE_HELP: Record<string, { meaning: string; example: string }> = {
   tong_hd_goc: { meaning: "Tổng tiền của toàn bộ hóa đơn cha, gồm tất cả các đợt.", example: "3.000.000 đ" },
   da_thu_hd_goc: { meaning: "Tổng số tiền đã thu cộng dồn từ tất cả các đợt của hóa đơn cha.", example: "Đã thu 2 đợt: 2.000.000 đ" },
   con_lai_hd_goc: { meaning: "Số tiền còn phải thu của toàn bộ hóa đơn cha sau các đợt đã thanh toán.", example: "1.000.000 đ" },
+  so_tien_dot_con: { meaning: "Số tiền cơ sở của riêng đợt con, trước khuyến mãi và phụ thu.", example: "1.200.000 đ" },
+  khuyen_mai_dot_con: { meaning: "Khuyến mãi áp dụng riêng cho đợt con đang in.", example: "100.000 đ" },
+  phu_thu_dot_con: { meaning: "Phụ thu áp dụng riêng cho đợt con đang in.", example: "50.000 đ" },
+  tong_sau_kmpt_dot_con: { meaning: "Tổng tiền phải trả của đợt con sau khuyến mãi và phụ thu; đợt con không có khấu trừ riêng.", example: "1.150.000 đ" },
   thanh_chu: { meaning: "Số tiền đã thanh toán của phiếu đang in được viết bằng chữ.", example: "Một triệu đồng" },
   items: { meaning: "Chèn bảng động liệt kê sản phẩm, số lượng, khuyến mãi, phụ thu và thành tiền.", example: "Bảng các gói học phí trên hóa đơn" },
   lich_su_thanh_toan: { meaning: "Chèn bảng tất cả đợt đã thanh toán và chưa thanh toán của hóa đơn.", example: "Đợt 1 đã thanh toán; Đợt 3 chưa thanh toán" },
@@ -1624,7 +1638,7 @@ export function InvoicePrintTemplate({
               <p className="font-mono bg-background rounded px-1 py-0.5 text-[10px]">{"{{tong_sau_kmpt}}"}</p>
               <p className="text-[10px] text-muted-foreground">Tổng sau KM & phụ thu</p>
               <p className="font-mono bg-background rounded px-1 py-0.5 text-[10px]">{"{{thanh_tien}}"}</p>
-              <p className="text-[10px] text-muted-foreground">Thành tiền cuối (sau khấu trừ)</p>
+              <p className="text-[10px] text-muted-foreground">Thành tiền sau KM/PT, trước khấu trừ</p>
             </div>
           </div>
 

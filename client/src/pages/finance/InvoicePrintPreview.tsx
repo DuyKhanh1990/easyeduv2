@@ -63,6 +63,11 @@ interface InvoicePrintData {
   totalAmount?: string | number | null;
   totalPromotion?: string | number | null;
   totalSurcharge?: string | number | null;
+  // Values from the child installment currently being printed.
+  installmentBaseAmount?: string | number | null;
+  installmentPromotionAmount?: string | number | null;
+  installmentSurchargeAmount?: string | number | null;
+  installmentTotalAmount?: string | number | null;
   invoicePromotionAmount?: string | number | null;
   invoiceSurchargeAmount?: string | number | null;
   invoicePromotionKeys?: string[] | null;
@@ -535,6 +540,19 @@ function renderTemplate(
     // Giá trị đã tính sẵn — dùng thay cho công thức trong template
     tong_sau_km: tongSauKm,
     tong_sau_kmpt: tongSauKmpt,
+    // Child-installment amounts are separate from the generic parent/single-invoice totals.
+    so_tien_dot_con: invoice.parentInvoice
+      ? Number(invoice.installmentBaseAmount) || 0
+      : "",
+    khuyen_mai_dot_con: invoice.parentInvoice
+      ? Number(invoice.installmentPromotionAmount) || 0
+      : "",
+    phu_thu_dot_con: invoice.parentInvoice
+      ? Number(invoice.installmentSurchargeAmount) || 0
+      : "",
+    tong_sau_kmpt_dot_con: invoice.parentInvoice
+      ? Number(invoice.installmentTotalAmount ?? total) || 0
+      : "",
     // Hoá đơn gốc (parent)
     ma_hd_goc: maHdGoc,
     tong_hd_goc: tongHdGoc,
