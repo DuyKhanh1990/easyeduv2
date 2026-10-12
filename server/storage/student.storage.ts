@@ -2447,11 +2447,16 @@ export async function getStudentLearningStatusSummary(params: {
               AND ss.attendance_status = 'paused'
           ) AS in_range_paused,
           COUNT(*) FILTER (
-            WHERE cs.session_date < '${from}'::date
-          ) AS before_range_any,
+            WHERE cs.session_date < CURRENT_DATE
+              AND ss.attendance_status NOT IN ('pending', 'paused')
+          ) AS past_active,
           COUNT(*) FILTER (
-            WHERE cs.session_date > '${to}'::date
-          ) AS after_range_any,
+            WHERE cs.session_date = CURRENT_DATE
+              AND ss.attendance_status NOT IN ('pending', 'paused')
+          ) AS today_active,
+          COUNT(*) FILTER (
+            WHERE cs.session_date > CURRENT_DATE
+          ) AS future_any,
           COUNT(*) AS total_sessions
         FROM student_sessions ss
         JOIN class_sessions cs ON cs.id = ss.class_session_id
@@ -2465,19 +2470,20 @@ export async function getStudentLearningStatusSummary(params: {
           s.id AS student_id,
           CASE
             WHEN COALESCE(st.in_range_active,0) > 0
+                 OR (
+                   (COALESCE(st.past_active,0) > 0 OR COALESCE(st.today_active,0) > 0)
+                   AND COALESCE(st.future_any,0) > 0
+                 )
               THEN 'dang_hoc'
             WHEN COALESCE(st.in_range_paused,0) > 0
                  AND COALESCE(st.in_range_active,0) = 0
               THEN 'bao_luu'
-            WHEN COALESCE(st.in_range_active,0) = 0
-                 AND COALESCE(st.in_range_paused,0) = 0
-                 AND COALESCE(st.before_range_any,0) = 0
-                 AND COALESCE(st.after_range_any,0) > 0
+            WHEN COALESCE(st.past_active,0) = 0
+                 AND COALESCE(st.today_active,0) = 0
+                 AND COALESCE(st.future_any,0) > 0
               THEN 'cho_lich'
-            WHEN COALESCE(st.before_range_any,0) > 0
-                 AND COALESCE(st.in_range_active,0) = 0
-                 AND COALESCE(st.in_range_paused,0) = 0
-                 AND COALESCE(st.after_range_any,0) = 0
+            WHEN (COALESCE(st.past_active,0) > 0 OR COALESCE(st.today_active,0) > 0)
+                 AND COALESCE(st.future_any,0) = 0
               THEN 'da_nghi'
             ELSE 'chua_co_lich'
           END AS learning_status
