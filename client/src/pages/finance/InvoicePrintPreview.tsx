@@ -499,7 +499,10 @@ function renderTemplate(
     // Compatibility alias for templates saved before the variable was renamed.
     date: fmtDate(invoice.createdAt),
     total,
-    thanh_tien: total,
+    // Full invoices show the post-adjustment amount before the parent deduction.
+    // A schedule print is already scoped to one installment, whose amount is
+    // the installment-level post-adjustment amount.
+    thanh_tien: invoice.parentInvoice ? total : tongSauKmpt,
     da_thanh_toan: paid,
     con_lai: remaining,
     lop: invoice.className ?? invoice.class ?? invoice.class_name ?? "",

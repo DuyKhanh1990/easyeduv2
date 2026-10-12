@@ -362,7 +362,7 @@ const VARIABLE_HELP: Record<string, { meaning: string; example: string }> = {
   khau_tru: { meaning: "Khoản đặt cọc hoặc khấu trừ được tính vào hóa đơn.", example: "500.000 đ" },
   tong_sau_km: { meaning: "Giá trị sau khi trừ khuyến mãi nhưng chưa cộng phụ thu.", example: "5.000.000 đ" },
   tong_sau_kmpt: { meaning: "Giá trị sau khi trừ khuyến mãi và cộng phụ thu.", example: "5.150.000 đ" },
-  thanh_tien: { meaning: "Thành tiền cuối của hóa đơn hoặc đợt đang in.", example: "1.000.000 đ" },
+  thanh_tien: { meaning: "Thành tiền sau khuyến mãi và phụ thu; với hóa đơn gốc là trước khi trừ đặt cọc/khấu trừ, còn khi in một đợt là số tiền của chính đợt đó.", example: "5.150.000 đ" },
   total: { meaning: "Tổng tiền của riêng hóa đơn hoặc đợt đang được in, không phải toàn chuỗi nhiều đợt.", example: "Đợt 1 có giá trị 1.000.000 đ" },
   da_thanh_toan: { meaning: "Số tiền đã thanh toán của riêng hóa đơn hoặc đợt đang in.", example: "1.000.000 đ" },
   con_lai: { meaning: "Số tiền còn lại của riêng hóa đơn hoặc đợt đang in.", example: "0 đ" },
