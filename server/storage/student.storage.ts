@@ -26,6 +26,137 @@ import type {
 import { studentWalletTransactions } from "@shared/schema";
 import { calculateClassFundedAmounts } from "./class-transfer-accounting";
 
+function buildCustomerLearningStatusCtes(targetStudentsSql: string): string {
+  return `
+    WITH target_students AS (${targetStudentsSql}),
+    valid_sessions AS (
+      SELECT
+        ss.student_id,
+        ss.class_id,
+        cs.session_date,
+        ss.attendance_status
+      FROM student_sessions ss
+      JOIN class_sessions cs ON cs.id = ss.class_session_id
+      JOIN target_students ts ON ts.id = ss.student_id
+      WHERE ss.status NOT IN ('transferred', 'cancelled')
+        AND ss.attendance_status <> 'cancelled'
+        AND cs.status <> 'cancelled'
+    ),
+    next_future_dates AS (
+      SELECT student_id, class_id, MIN(session_date) AS session_date
+      FROM valid_sessions
+      WHERE session_date > CURRENT_DATE
+      GROUP BY student_id, class_id
+    ),
+    class_stats AS (
+      SELECT
+        vs.student_id,
+        vs.class_id,
+        COUNT(*) FILTER (
+          WHERE vs.session_date < CURRENT_DATE
+            AND vs.attendance_status <> 'paused'
+        ) AS past_active,
+        COUNT(*) FILTER (
+          WHERE vs.session_date = CURRENT_DATE
+            AND vs.attendance_status <> 'paused'
+        ) AS today_active,
+        COUNT(*) FILTER (
+          WHERE vs.session_date = CURRENT_DATE
+            AND vs.attendance_status = 'paused'
+        ) AS today_paused,
+        COUNT(*) FILTER (
+          WHERE vs.session_date > CURRENT_DATE
+        ) AS future_any,
+        nfd.session_date AS next_future_date,
+        COUNT(*) FILTER (
+          WHERE vs.session_date = nfd.session_date
+            AND vs.attendance_status = 'paused'
+        ) AS next_future_paused,
+        COUNT(*) FILTER (
+          WHERE vs.session_date = nfd.session_date
+            AND vs.attendance_status <> 'paused'
+        ) AS next_future_active
+      FROM valid_sessions vs
+      LEFT JOIN next_future_dates nfd
+        ON nfd.student_id = vs.student_id
+       AND nfd.class_id = vs.class_id
+      GROUP BY vs.student_id, vs.class_id, nfd.session_date
+    ),
+    class_status AS (
+      SELECT
+        student_id,
+        class_id,
+        CASE
+          WHEN COALESCE(today_active, 0) > 0
+            THEN 'dang_hoc'
+          WHEN COALESCE(today_paused, 0) > 0
+            THEN 'bao_luu'
+          WHEN next_future_date IS NOT NULL
+               AND COALESCE(next_future_paused, 0) > 0
+               AND COALESCE(next_future_active, 0) = 0
+            THEN 'bao_luu'
+          WHEN COALESCE(future_any, 0) > 0
+               AND COALESCE(past_active, 0) = 0
+            THEN 'cho_lich'
+          WHEN COALESCE(future_any, 0) > 0
+               AND COALESCE(past_active, 0) > 0
+            THEN 'dang_hoc'
+          WHEN COALESCE(past_active, 0) > 0
+            THEN 'da_nghi'
+          ELSE 'chua_co_lich'
+        END AS learning_status
+      FROM class_stats
+    )
+  `;
+}
+
+async function getStudentClassLearningStatusMap(studentIds: string[]): Promise<Map<string, string>> {
+  if (studentIds.length === 0) return new Map();
+
+  const safeIds = studentIds.map(id => `'${id.replace(/[^a-zA-Z0-9\-]/g, "")}'`).join(",");
+  const queryStr = `
+    ${buildCustomerLearningStatusCtes(
+      `SELECT s.id FROM students s WHERE s.id = ANY(ARRAY[${safeIds}]::uuid[])`
+    )}
+    SELECT student_id, class_id, learning_status
+    FROM class_status
+  `;
+  const result = await db.execute(sql.raw(queryStr));
+  const map = new Map<string, string>();
+  (result.rows as any[]).forEach(row => {
+    map.set(`${row.student_id}-${row.class_id}`, row.learning_status as string);
+  });
+  return map;
+}
+
+function buildCustomerStudentStatusIdsSql(statuses: string[]): string {
+  const allowedStatuses = new Set(["dang_hoc", "bao_luu", "cho_lich", "da_nghi", "chua_co_lich"]);
+  const safeStatuses = Array.from(new Set(statuses.filter(status => allowedStatuses.has(status))));
+  if (safeStatuses.length === 0) return "SELECT NULL::uuid AS student_id WHERE FALSE";
+
+  const statusList = safeStatuses.map(status => `'${status}'`).join(",");
+  return `
+    ${buildCustomerLearningStatusCtes("SELECT s.id FROM students s")},
+    student_status AS (
+      SELECT
+        ts.id AS student_id,
+        CASE
+          WHEN BOOL_OR(cs.learning_status = 'dang_hoc') THEN 'dang_hoc'
+          WHEN BOOL_OR(cs.learning_status = 'bao_luu') THEN 'bao_luu'
+          WHEN BOOL_OR(cs.learning_status = 'cho_lich') THEN 'cho_lich'
+          WHEN BOOL_OR(cs.learning_status = 'da_nghi') THEN 'da_nghi'
+          ELSE 'chua_co_lich'
+        END AS learning_status
+      FROM target_students ts
+      LEFT JOIN class_status cs ON cs.student_id = ts.id
+      GROUP BY ts.id
+    )
+    SELECT student_id
+    FROM student_status
+    WHERE learning_status IN (${statusList})
+  `;
+}
+
 // ==========================================
 // STUDENT METHODS
 // ==========================================
@@ -219,61 +350,10 @@ export async function getStudents(params: {
     }
   }
   if (learningStatuses && learningStatuses.length > 0) {
-    whereClause = sql`${whereClause} AND ${students.id} IN (
-      SELECT s2.id FROM students s2
-      LEFT JOIN (
-        SELECT ss.student_id,
-          COUNT(*) FILTER (WHERE cs.session_date < CURRENT_DATE) AS past_any,
-          COUNT(*) FILTER (WHERE cs.session_date = CURRENT_DATE) AS today_any,
-          COUNT(*) FILTER (WHERE cs.session_date > CURRENT_DATE) AS future_any,
-          COUNT(*) FILTER (WHERE cs.session_date = CURRENT_DATE AND ss.attendance_status = 'paused') AS paused_today
-        FROM student_sessions ss
-        JOIN class_sessions cs ON cs.id = ss.class_session_id
-        GROUP BY ss.student_id
-      ) st ON st.student_id = s2.id
-      WHERE (
-        CASE
-          WHEN COALESCE(st.today_any,0) > 0 OR (COALESCE(st.past_any,0) > 0 AND COALESCE(st.future_any,0) > 0) OR COALESCE(st.future_any,0) > 0
-            THEN CASE WHEN COALESCE(st.past_any,0) = 0 AND COALESCE(st.today_any,0) = 0 AND COALESCE(st.future_any,0) > 0 THEN 'cho_lich' ELSE 'dang_hoc' END
-          WHEN COALESCE(st.paused_today,0) > 0 THEN 'bao_luu'
-          WHEN COALESCE(st.past_any,0) > 0 AND COALESCE(st.today_any,0) = 0 AND COALESCE(st.future_any,0) = 0 THEN 'da_nghi'
-          ELSE 'chua_co_lich'
-        END
-      ) IN ${learningStatuses}
-    )`;
+    whereClause = sql`${whereClause} AND ${students.id} IN (${sql.raw(buildCustomerStudentStatusIdsSql(learningStatuses))})`;
   }
   if (customerLearningStatus) {
-    const classEnrollmentStatus = sql`CASE
-      WHEN EXISTS (
-        SELECT 1 FROM student_classes card_status_active
-        WHERE card_status_active.student_id = ${students.id}
-          AND COALESCE(card_status_active.status, '') NOT IN ('paused', 'completed', 'dropped')
-          AND (card_status_active.start_date IS NOT NULL OR card_status_active.end_date IS NOT NULL)
-          AND (card_status_active.start_date IS NULL OR card_status_active.start_date <= CURRENT_DATE)
-          AND (card_status_active.end_date IS NULL OR card_status_active.end_date >= CURRENT_DATE)
-      ) THEN 'dang_hoc'
-      WHEN EXISTS (
-        SELECT 1 FROM student_classes card_status_paused
-        WHERE card_status_paused.student_id = ${students.id}
-          AND card_status_paused.status = 'paused'
-      ) THEN 'bao_luu'
-      WHEN EXISTS (
-        SELECT 1 FROM student_classes card_status_future
-        WHERE card_status_future.student_id = ${students.id}
-          AND COALESCE(card_status_future.status, '') NOT IN ('paused', 'completed', 'dropped')
-          AND card_status_future.start_date > CURRENT_DATE
-      ) THEN 'cho_lich'
-      WHEN EXISTS (
-        SELECT 1 FROM student_classes card_status_ended
-        WHERE card_status_ended.student_id = ${students.id}
-          AND (
-            card_status_ended.status IN ('completed', 'dropped')
-            OR (card_status_ended.end_date IS NOT NULL AND card_status_ended.end_date < CURRENT_DATE)
-          )
-      ) THEN 'da_nghi'
-      ELSE 'chua_co_lich'
-    END`;
-    whereClause = sql`${whereClause} AND ${classEnrollmentStatus} = ${customerLearningStatus}`;
+    whereClause = sql`${whereClause} AND ${students.id} IN (${sql.raw(buildCustomerStudentStatusIdsSql([customerLearningStatus]))})`;
   }
   const normalizedSearch = normalizeSearchText(searchTerm);
   if (normalizedSearch) {
@@ -408,7 +488,12 @@ export async function getStudents(params: {
   const relevantSchoolIds = Array.from(new Set(studentsList.flatMap(s => s.schoolIds || [])));
 
   // Fetch studentClasses first so we can include ALL enrolled class IDs in the classMap
-  const allStudentClasses = studentIds.length === 0 ? [] : await db.select().from(studentClasses).where(inArray(studentClasses.studentId, studentIds));
+  const [allStudentClasses, classLearningStatusMap] = await Promise.all([
+    studentIds.length === 0
+      ? Promise.resolve([])
+      : db.select().from(studentClasses).where(inArray(studentClasses.studentId, studentIds)),
+    getStudentClassLearningStatusMap(studentIds),
+  ]);
 
   const relevantClassIds = Array.from(new Set([
     ...studentsList.flatMap(s => s.classIds || []),
@@ -485,6 +570,7 @@ export async function getStudents(params: {
           studentStatus: sc.studentStatus || 'Không xác định',
           startDate: sc.startDate || null,
           endDate: sc.endDate || null,
+          learningStatus: classLearningStatusMap.get(`${sc.studentId}-${sc.classId}`) || 'chua_co_lich',
           totalSessions: sc.totalSessions || 0,
           attendedSessions: sc.attendedSessions || 0,
           remainingSessions: sc.remainingSessions || 0,
@@ -2534,52 +2620,22 @@ export async function getCustomerLearningStatusSummary(params: {
 }> {
   const locationWhere = buildLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
   const queryStr = `
-    WITH session_stats AS (
-      SELECT
-        ss.student_id,
-        COUNT(*) FILTER (
-          WHERE cs.session_date < CURRENT_DATE
-            AND ss.attendance_status <> 'paused'
-        ) AS past_active,
-        COUNT(*) FILTER (
-          WHERE cs.session_date = CURRENT_DATE
-            AND ss.attendance_status <> 'paused'
-        ) AS today_active,
-        COUNT(*) FILTER (
-          WHERE cs.session_date > CURRENT_DATE
-        ) AS future_any,
-        COUNT(*) FILTER (
-          WHERE cs.session_date = CURRENT_DATE
-            AND ss.attendance_status = 'paused'
-        ) AS paused_today
-      FROM student_sessions ss
-      JOIN class_sessions cs ON cs.id = ss.class_session_id
-      WHERE ss.status NOT IN ('transferred', 'cancelled')
-        AND ss.attendance_status <> 'cancelled'
-        AND cs.status <> 'cancelled'
-      GROUP BY ss.student_id
-    ),
+    ${buildCustomerLearningStatusCtes(
+      `SELECT s.id FROM students s WHERE ${locationWhere}`
+    )},
     student_status AS (
       SELECT
-        s.id AS student_id,
+        ts.id AS student_id,
         CASE
-          WHEN COALESCE(st.today_active, 0) > 0
-            THEN 'dang_hoc'
-          WHEN COALESCE(st.paused_today, 0) > 0
-            THEN 'bao_luu'
-          WHEN COALESCE(st.future_any, 0) > 0
-               AND COALESCE(st.past_active, 0) = 0
-            THEN 'cho_lich'
-          WHEN COALESCE(st.past_active, 0) > 0
-               AND COALESCE(st.future_any, 0) > 0
-            THEN 'dang_hoc'
-          WHEN COALESCE(st.past_active, 0) > 0
-            THEN 'da_nghi'
+          WHEN BOOL_OR(cs.learning_status = 'dang_hoc') THEN 'dang_hoc'
+          WHEN BOOL_OR(cs.learning_status = 'bao_luu') THEN 'bao_luu'
+          WHEN BOOL_OR(cs.learning_status = 'cho_lich') THEN 'cho_lich'
+          WHEN BOOL_OR(cs.learning_status = 'da_nghi') THEN 'da_nghi'
           ELSE 'chua_co_lich'
         END AS learning_status
-      FROM students s
-      LEFT JOIN session_stats st ON st.student_id = s.id
-      WHERE ${locationWhere}
+      FROM target_students ts
+      LEFT JOIN class_status cs ON cs.student_id = ts.id
+      GROUP BY ts.id
     )
     SELECT
       COUNT(*) FILTER (WHERE learning_status = 'dang_hoc') AS dang_hoc,
@@ -2858,52 +2914,27 @@ export async function getStudentsLearningStatuses(
   const safeIds = studentIds.map(id => `'${id.replace(/[^a-zA-Z0-9\-]/g, "")}'`).join(",");
 
   const queryStr = `
-    WITH session_stats AS (
+    ${buildCustomerLearningStatusCtes(
+      `SELECT s.id FROM students s WHERE s.id = ANY(ARRAY[${safeIds}]::uuid[])`
+    )},
+    student_status AS (
       SELECT
-        ss.student_id,
-        COUNT(*) FILTER (
-          WHERE cs.session_date < CURRENT_DATE
-            AND ss.attendance_status <> 'paused'
-        ) AS past_active,
-        COUNT(*) FILTER (
-          WHERE cs.session_date = CURRENT_DATE
-            AND ss.attendance_status <> 'paused'
-        ) AS today_active,
-        COUNT(*) FILTER (
-          WHERE cs.session_date > CURRENT_DATE
-        ) AS future_any,
-        COUNT(*) FILTER (
-          WHERE cs.session_date = CURRENT_DATE
-            AND ss.attendance_status = 'paused'
-        ) AS paused_today
-      FROM student_sessions ss
-      JOIN class_sessions cs ON cs.id = ss.class_session_id
-      WHERE ss.student_id = ANY(ARRAY[${safeIds}]::uuid[])
-        AND ss.status NOT IN ('transferred', 'cancelled')
-        AND ss.attendance_status <> 'cancelled'
-        AND cs.status <> 'cancelled'
-      GROUP BY ss.student_id
+        ts.id AS student_id,
+        CASE
+          WHEN BOOL_OR(cs.learning_status = 'dang_hoc') THEN 'dang_hoc'
+          WHEN BOOL_OR(cs.learning_status = 'bao_luu') THEN 'bao_luu'
+          WHEN BOOL_OR(cs.learning_status = 'cho_lich') THEN 'cho_lich'
+          WHEN BOOL_OR(cs.learning_status = 'da_nghi') THEN 'da_nghi'
+          ELSE 'chua_co_lich'
+        END AS learning_status
+      FROM target_students ts
+      LEFT JOIN class_status cs ON cs.student_id = ts.id
+      GROUP BY ts.id
     )
     SELECT
-      s.id AS student_id,
-      CASE
-        WHEN COALESCE(st.today_active,0) > 0
-          THEN 'dang_hoc'
-        WHEN COALESCE(st.paused_today,0) > 0
-          THEN 'bao_luu'
-        WHEN COALESCE(st.future_any,0) > 0
-             AND COALESCE(st.past_active,0) = 0
-          THEN 'cho_lich'
-        WHEN COALESCE(st.past_active,0) > 0
-             AND COALESCE(st.future_any,0) > 0
-          THEN 'dang_hoc'
-        WHEN COALESCE(st.past_active,0) > 0
-          THEN 'da_nghi'
-        ELSE 'chua_co_lich'
-      END AS learning_status
-    FROM students s
-    LEFT JOIN session_stats st ON st.student_id = s.id
-    WHERE s.id = ANY(ARRAY[${safeIds}]::uuid[])
+      student_id,
+      learning_status
+    FROM student_status
   `;
 
   const result = await db.execute(sql.raw(queryStr));

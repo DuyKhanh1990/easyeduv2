@@ -673,24 +673,16 @@ export function CustomersTable({
           <div className="flex w-[386px] min-w-[386px] flex-col gap-1">
             {student.classDetails && student.classDetails.length > 0 ? (
               student.classDetails.map((detail: any, idx: number) => {
-                const today = new Date(); today.setHours(0, 0, 0, 0);
-                const start = detail.startDate ? new Date(detail.startDate) : null;
-                const end = detail.endDate ? new Date(detail.endDate) : null;
-                let computedLabel: string;
-                let statusBadge: string;
-                if (!start && !end) {
-                  computedLabel = "waiting";
-                  statusBadge = "bg-slate-50 text-slate-500 border-slate-200";
-                } else if (start && today < start) {
-                  computedLabel = "Chờ lịch";
-                  statusBadge = "bg-purple-50 text-purple-700 border-purple-200";
-                } else if (end && today > end) {
-                  computedLabel = "Kết thúc";
-                  statusBadge = "bg-rose-50 text-rose-700 border-rose-200";
-                } else {
-                  computedLabel = "Đang học";
-                  statusBadge = "bg-emerald-50 text-emerald-700 border-emerald-200";
-                }
+                const classStatusConfig: Record<string, { label: string; badge: string }> = {
+                  dang_hoc: { label: "Đang học", badge: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+                  bao_luu: { label: "Bảo lưu", badge: "bg-amber-50 text-amber-700 border-amber-200" },
+                  cho_lich: { label: "Chờ lịch", badge: "bg-purple-50 text-purple-700 border-purple-200" },
+                  da_nghi: { label: "Kết thúc", badge: "bg-rose-50 text-rose-700 border-rose-200" },
+                  chua_co_lich: { label: "Chưa có lịch", badge: "bg-slate-50 text-slate-500 border-slate-200" },
+                };
+                const classStatus = classStatusConfig[detail.learningStatus] ?? classStatusConfig.chua_co_lich;
+                const computedLabel = classStatus.label;
+                const statusBadge = classStatus.badge;
                 return (
                   <TooltipProvider key={idx}>
                     <Tooltip>
