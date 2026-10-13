@@ -9,6 +9,7 @@ import {
 import { saveInvoiceCommissions, getInvoiceFilterOptions, getThuChiReportEntries, getNextLocationCode, getAvailableFinanceVouchers } from "../storage/finance.storage";
 import { createInvoiceAuditLog } from "../storage/invoice-audit-log.storage";
 import { createIssueReceiptsForInvoice, cancelIssueReceiptForInvoice } from "./store-issue-receipt.routes";
+import { allocateInvoiceWalletAmountsToSchedules } from "../utils/invoice-schedule-wallet";
 
 import { z } from "zod";
 import {
@@ -189,6 +190,66 @@ function computeDepositWalletAmount(items: any[]): number {
     if ((item.category ?? "").trim() === "Đặt cọc") return sum + (parseFloat(item.subtotal) || 0);
     return sum;
   }, 0);
+}
+
+async function syncSchedulePaymentSideEffects(
+  invoice: any,
+  previousSchedules: any[],
+  nextSchedules: any[],
+  userId?: string | null,
+): Promise<void> {
+  const previousById = new Map(previousSchedules.map(schedule => [schedule.id, schedule]));
+  const allocations = allocateInvoiceWalletAmountsToSchedules(
+    parseFloat(invoice.grandTotal ?? "0") || 0,
+    invoice.items ?? [],
+    nextSchedules,
+  );
+  const [creatorName, className] = await Promise.all([
+    resolveCreatorName(userId),
+    resolveClassName(invoice.classId),
+  ]);
+
+  for (const schedule of nextSchedules) {
+    const previous = previousById.get(schedule.id);
+    const wasPaid = isPaidInvoiceStatus(previous?.status);
+    const isPaid = isPaidInvoiceStatus(schedule.status);
+    if (wasPaid === isPaid) continue;
+
+    const label = schedule.label ?? schedule.code ?? schedule.id;
+    const amounts = allocations.get(schedule.id) ?? { tuition: 0, deposit: 0 };
+    if (invoice.studentId && invoice.type === "Thu") {
+      for (const [category, amount] of [["Học phí", amounts.tuition], ["Đặt cọc", amounts.deposit]] as const) {
+        if (amount <= 0) continue;
+        await createWalletEntry({
+          studentId: invoice.studentId,
+          invoiceId: invoice.id,
+          type: isPaid ? "credit" : "debit",
+          amount,
+          category,
+          action: `${isPaid ? "Cộng" : "Trừ"} ví ${category} do ${isPaid ? "thu" : "hủy thu"} ${label} (đợt ${schedule.id})`,
+          classId: invoice.classId,
+          className,
+          invoiceCode: invoice.code,
+          invoiceDescription: invoice.note || invoice.description,
+          createdBy: userId,
+          createdByName: creatorName,
+        });
+      }
+    }
+
+    if (!wasPaid && isPaid && !schedule.settleCode) {
+      const settleCode = await generateNextSettleCode(invoice.locationId);
+      await db.update(invoicePaymentSchedule)
+        .set({ settleCode })
+        .where(eq(invoicePaymentSchedule.id, schedule.id));
+      schedule.settleCode = settleCode;
+    } else if (wasPaid && !isPaid && previous?.settleCode) {
+      await db.update(invoicePaymentSchedule)
+        .set({ settleCode: null })
+        .where(eq(invoicePaymentSchedule.id, schedule.id));
+      schedule.settleCode = null;
+    }
+  }
 }
 
 const invoiceItemBodySchema = insertInvoiceItemSchema.omit({ invoiceId: true }).partial({ invoiceId: true }).extend({
@@ -1105,7 +1166,10 @@ export function registerFinanceRoutes(app: Express): void {
         : 0;
       await syncTuitionRefundWallet(data, paidAmount, userId);
     }
-    if (data.studentId && isPaidInvoiceStatus(data.status) && data.type === "Thu") {
+    const createdSchedules = data.paymentSchedule ?? [];
+    if (createdSchedules.length > 0) {
+      await syncSchedulePaymentSideEffects(data, [], createdSchedules, userId);
+    } else if (data.studentId && isPaidInvoiceStatus(data.status) && data.type === "Thu") {
       const grandTotal = parseFloat(data.grandTotal ?? "0");
       const creationItems = payload.items ?? [];
       const hocPhiAmount = computeHocPhiWalletAmount(grandTotal, creationItems);
@@ -1354,6 +1418,11 @@ export function registerFinanceRoutes(app: Express): void {
       const data = await storage.updateInvoice(req.params.id, patchData);
       if (data.studentId && data.classId && data.category === "Học phí") {
         await distributeInvoiceFeeToSessions(data.id, data.studentId, data.classId);
+      }
+      const beforeSchedules = before?.paymentSchedule ?? [];
+      const afterSchedules = data.paymentSchedule ?? [];
+      if (afterSchedules.length > 0) {
+        await syncSchedulePaymentSideEffects(data, beforeSchedules, afterSchedules, userId);
       }
       if (isTuitionRefundInvoice(data)) {
         const grandTotal = parseFloat(data.grandTotal ?? "0") || 0;
@@ -1906,67 +1975,21 @@ export function registerFinanceRoutes(app: Express): void {
 
       const updated = await storage.updateInvoiceScheduleStatus(req.params.id, status, userId);
 
-      // Create wallet entry for Học phí if applicable
-      if (scheduleBefore && scheduleBefore.invoiceId) {
-        const prevPaid = isPaidInvoiceStatus(scheduleBefore.status);
-        const nowPaid = isPaidInvoiceStatus(status);
-        if (prevPaid !== nowPaid) {
-          const invoice = await storage.getInvoice(scheduleBefore.invoiceId);
-          if (invoice && invoice.studentId && invoice.type === "Thu") {
-            const grandTotal = parseFloat(invoice.grandTotal ?? "0");
-            const invoiceItems = invoice.items ?? [];
-            const totalHocPhi = computeHocPhiWalletAmount(grandTotal, invoiceItems);
-            const totalDeposit = computeDepositWalletAmount(invoiceItems);
-            const grandWalletTotal = totalHocPhi + totalDeposit;
-
-            if (grandWalletTotal > 0) {
-              // Get all OTHER schedules for this invoice (excluding the current one)
-              const allSchedules = await db
-                .select()
-                .from(invoicePaymentSchedule)
-                .where(eq(invoicePaymentSchedule.invoiceId, scheduleBefore.invoiceId))
-                .orderBy(asc(invoicePaymentSchedule.sortOrder));
-              const otherPaidSchedules = allSchedules.filter(
-                (s) => s.id !== req.params.id && isPaidInvoiceStatus(s.status)
-              );
-              const alreadyPaidFromOthers = otherPaidSchedules.reduce(
-                (sum, s) => sum + (parseFloat(s.amount ?? "0") || 0),
-                0
-              );
-              const scheduleAmt = parseFloat(scheduleBefore.amount ?? "0") || 0;
-              const [creatorName, className] = await Promise.all([
-                resolveCreatorName(userId),
-                resolveClassName(invoice.classId),
-              ]);
-              const scheduleLabel = scheduleBefore.label ?? scheduleBefore.code ?? req.params.id;
-
-              for (const [cat, catTotal] of [["Học phí", totalHocPhi], ["Đặt cọc", totalDeposit]] as [string, number][]) {
-                if (catTotal <= 0) continue;
-                const remaining = Math.max(0, catTotal - alreadyPaidFromOthers);
-                const thisAmt = Math.min(scheduleAmt, remaining);
-                if (thisAmt > 0) {
-                  await createWalletEntry({
-                    studentId: invoice.studentId,
-                    invoiceId: invoice.id,
-                    type: nowPaid ? "credit" : "debit",
-                    amount: thisAmt,
-                    category: cat,
-                    action: nowPaid
-                      ? `Cộng tiền vào tài khoản ${cat === "Học phí" ? "học phí" : "đặt cọc"} do thanh toán ${scheduleLabel} (hoá đơn ${invoice.code ?? ""})`
-                      : `Hoàn tiền ${cat === "Học phí" ? "học phí" : "đặt cọc"} do huỷ thanh toán ${scheduleLabel} (hoá đơn ${invoice.code ?? ""})`,
-                    classId: invoice.classId,
-                    className,
-                    invoiceCode: invoice.code,
-                    invoiceDescription: invoice.note || invoice.description,
-                    createdBy: userId,
-                    createdByName: creatorName,
-                  });
-                }
-              }
-            }
-          }
-        }
-      }
+      const schedulesAfterStatusChange = await db
+        .select()
+        .from(invoicePaymentSchedule)
+        .where(eq(invoicePaymentSchedule.invoiceId, scheduleBefore.invoiceId));
+      const schedulesBeforeStatusChange = schedulesAfterStatusChange.map(schedule =>
+        schedule.id === scheduleBefore.id ? scheduleBefore : schedule,
+      );
+      await syncSchedulePaymentSideEffects(
+        invoice,
+        schedulesBeforeStatusChange,
+        schedulesAfterStatusChange,
+        userId,
+      );
+      (updated as any).settleCode = schedulesAfterStatusChange
+        .find(schedule => schedule.id === scheduleBefore.id)?.settleCode ?? null;
 
       if (scheduleBefore?.invoiceId) {
         const invoice = await storage.getInvoice(scheduleBefore.invoiceId);
@@ -1984,42 +2007,21 @@ export function registerFinanceRoutes(app: Express): void {
         }
       }
 
-      // Assign/clear settle code on schedule installment paid status change
+      if (!isPaidInvoiceStatus(scheduleBefore.status) && isPaidInvoiceStatus(status)) {
+        const scheduleLabel = scheduleBefore.label ?? scheduleBefore.code ?? null;
+        const recipientIds = await resolveInvoiceRecipientUserIds(invoice);
+        await sendInvoicePaidNotification(
+          invoice.code,
+          scheduleBefore.amount,
+          recipientIds,
+          invoice.id,
+          scheduleLabel,
+          invoice.studentId,
+          invoice.note ?? invoice.description ?? null,
+        );
+      }
+
       if (scheduleBefore) {
-        const prevPaid = isPaidInvoiceStatus(scheduleBefore.status);
-        const nowPaid = isPaidInvoiceStatus(status);
-        if (!prevPaid && nowPaid) {
-          let parentLocId: string | null = null;
-          if (scheduleBefore.invoiceId) {
-            const [pinv] = await db.select({ locationId: invoices.locationId }).from(invoices).where(eq(invoices.id, scheduleBefore.invoiceId)).limit(1);
-            parentLocId = pinv?.locationId ?? null;
-          }
-          const kode = await generateNextSettleCode(parentLocId);
-          await db.update(invoicePaymentSchedule).set({ settleCode: kode }).where(eq(invoicePaymentSchedule.id, req.params.id));
-          (updated as any).settleCode = kode;
-
-          // Send paid notification for this schedule installment
-          if (scheduleBefore.invoiceId) {
-            const invoice = await storage.getInvoice(scheduleBefore.invoiceId);
-            if (invoice) {
-              const scheduleLabel = scheduleBefore.label ?? scheduleBefore.code ?? null;
-              const recipientIds = await resolveInvoiceRecipientUserIds(invoice);
-              await sendInvoicePaidNotification(
-                invoice.code,
-                scheduleBefore.amount,
-                recipientIds,
-                invoice.id,
-                scheduleLabel,
-                invoice.studentId,
-                invoice.note ?? invoice.description ?? null,
-              );
-            }
-          }
-        } else if (prevPaid && !nowPaid && scheduleBefore.settleCode) {
-          await db.update(invoicePaymentSchedule).set({ settleCode: null }).where(eq(invoicePaymentSchedule.id, req.params.id));
-          (updated as any).settleCode = null;
-        }
-
         // Sync invoice-level paidBy/paidAt based on schedule completion
         if (scheduleBefore.invoiceId) {
           const allSchedules = await db
@@ -2273,70 +2275,20 @@ export function registerFinanceRoutes(app: Express): void {
               );
             }
 
-          // Assign settle code
-          let schedLocId: string | null = null;
-          if (scheduleBefore.invoiceId) {
-            const [pinv] = await db.select({ locationId: invoices.locationId }).from(invoices).where(eq(invoices.id, scheduleBefore.invoiceId)).limit(1);
-            schedLocId = pinv?.locationId ?? null;
-          }
-          const schedKode = await generateNextSettleCode(schedLocId);
-          await db.update(invoicePaymentSchedule)
-            .set({ settleCode: schedKode } as any)
-            .where(eq(invoicePaymentSchedule.id, schedId));
-
-          // Wallet credit if applicable
-          if (scheduleBefore.invoiceId) {
-            const invoice = await storage.getInvoice(scheduleBefore.invoiceId);
-            if (invoice && invoice.studentId && invoice.type === "Thu") {
-              const grandTotal = parseFloat(invoice.grandTotal ?? "0");
-              const invoiceItems = invoice.items ?? [];
-              const totalHocPhi = computeHocPhiWalletAmount(grandTotal, invoiceItems);
-              const totalDeposit = computeDepositWalletAmount(invoiceItems);
-              const grandWalletTotal = totalHocPhi + totalDeposit;
-
-              if (grandWalletTotal > 0) {
-                const allSchedules = await db
-                  .select()
-                  .from(invoicePaymentSchedule)
-                  .where(eq(invoicePaymentSchedule.invoiceId, scheduleBefore.invoiceId))
-                  .orderBy(asc(invoicePaymentSchedule.sortOrder));
-                const otherPaidSchedules = allSchedules.filter(
-                  (s) => s.id !== schedId && isPaidInvoiceStatus(s.status)
-                );
-                const alreadyPaidFromOthers = otherPaidSchedules.reduce(
-                  (sum, s) => sum + (parseFloat(s.amount ?? "0") || 0),
-                  0
-                );
-                const scheduleAmt = parseFloat(scheduleBefore.amount ?? "0") || 0;
-                const scheduleLabel = scheduleBefore.label ?? scheduleBefore.code ?? schedId;
-                const [creatorName, className] = await Promise.all([
-                  resolveCreatorName(userId),
-                  resolveClassName(invoice.classId),
-                ]);
-
-                for (const [cat, catTotal] of [["Học phí", totalHocPhi], ["Đặt cọc", totalDeposit]] as [string, number][]) {
-                  if (catTotal <= 0) continue;
-                  const remaining = Math.max(0, catTotal - alreadyPaidFromOthers);
-                  const thisAmt = Math.min(scheduleAmt, remaining);
-                  if (thisAmt > 0) {
-                    await createWalletEntry({
-                      studentId: invoice.studentId,
-                      invoiceId: invoice.id,
-                      type: "credit",
-                      amount: thisAmt,
-                      category: cat,
-                      action: `Cộng tiền vào tài khoản ${cat === "Học phí" ? "học phí" : "đặt cọc"} do thanh toán ${scheduleLabel} (hoá đơn ${invoice.code ?? ""}) - Gộp phiếu`,
-                      classId: invoice.classId,
-                      className,
-                      invoiceCode: invoice.code,
-                      invoiceDescription: invoice.note || invoice.description,
-                      createdBy: userId,
-                      createdByName: creatorName,
-                    });
-                  }
-                }
-              }
-            }
+          const schedulesAfterBulkPayment = await db
+            .select()
+            .from(invoicePaymentSchedule)
+            .where(eq(invoicePaymentSchedule.invoiceId, scheduleBefore.invoiceId));
+          const schedulesBeforeBulkPayment = schedulesAfterBulkPayment.map(schedule =>
+            schedule.id === scheduleBefore.id ? scheduleBefore : schedule,
+          );
+          if (invoice) {
+            await syncSchedulePaymentSideEffects(
+              invoice,
+              schedulesBeforeBulkPayment,
+              schedulesAfterBulkPayment,
+              userId,
+            );
           }
 
           results.push({ id: schedId, ok: true, code: scheduleBefore.code ?? undefined });

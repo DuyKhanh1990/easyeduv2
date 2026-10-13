@@ -2010,7 +2010,9 @@ export async function createInvoice(data: any): Promise<any> {
   }
   const invoiceCode = invoiceData.code;
   return await db.transaction(async (tx) => {
-    const isPaidOnCreate = isPaidInvoiceStatus(invoiceData.status);
+    // When child installments exist, their statuses—not the parent payload—
+    // define whether any payment has been collected.
+    const isPaidOnCreate = paymentSchedule.length === 0 && isPaidInvoiceStatus(invoiceData.status);
     const [inv] = await tx.insert(invoices).values({
       ...invoiceData,
       totalAmount: invoiceData.totalAmount?.toString() ?? "0",
@@ -2082,6 +2084,33 @@ export async function createInvoice(data: any): Promise<any> {
           }))
         ).returning()
       : [];
+
+    if (savedSchedule.length > 0) {
+      const paidSchedules = savedSchedule.filter(schedule => isPaidScheduleStatus(schedule.status));
+      const paidAmount = paidSchedules.reduce(
+        (sum, schedule) => sum + (parseFloat(schedule.amount ?? "0") || 0),
+        0,
+      );
+      const grandTotal = parseFloat(inv.grandTotal ?? "0") || 0;
+      const remainingAmount = Math.max(0, grandTotal - paidAmount);
+      const summaryStatus = paidAmount >= grandTotal && grandTotal > 0
+        ? "paid"
+        : paidAmount > 0
+          ? "partial"
+          : "unpaid";
+      const lastPaidSchedule = [...paidSchedules]
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+        .at(-1);
+      const [summaryInvoice] = await tx.update(invoices).set({
+        status: summaryStatus,
+        paidAmount: paidAmount.toFixed(2),
+        remainingAmount: remainingAmount.toFixed(2),
+        paidBy: summaryStatus === "paid" ? lastPaidSchedule?.paidBy ?? null : null,
+        paidAt: summaryStatus === "paid" ? lastPaidSchedule?.paidAt ?? null : null,
+        updatedAt: new Date(),
+      }).where(eq(invoices.id, inv.id)).returning();
+      return { ...summaryInvoice, items: savedItems, paymentSchedule: savedSchedule };
+    }
 
     return { ...inv, items: savedItems, paymentSchedule: savedSchedule };
   });
@@ -2290,12 +2319,12 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
           createdBy: previous?.createdBy ?? inv.createdBy ?? invoiceData.updatedBy ?? null,
           paidAt: wasPaid
             ? previous!.paidAt
-            : nextStatus === "paid"
+            : isPaidScheduleStatus(nextStatus)
               ? (previous?.paidAt ?? s.paidAt ?? now)
               : null,
           paidBy: wasPaid
             ? previous!.paidBy
-            : nextStatus === "paid"
+            : isPaidScheduleStatus(nextStatus)
               ? (previous?.paidBy ?? s.paidBy ?? invoiceData.updatedBy ?? null)
               : null,
           updatedAt: now,
@@ -2372,8 +2401,8 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
     const savedSchedule = await tx.select().from(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.invoiceId, id)).orderBy(asc(invoicePaymentSchedule.sortOrder));
     if (savedSchedule.length > 0) {
       const grandTotal = parseFloat((toUpdate.grandTotal ?? inv.grandTotal) ?? "0");
-      const paidAmount = savedSchedule
-        .filter((schedule) => isPaidScheduleStatus(schedule.status))
+      const paidSchedules = savedSchedule.filter((schedule) => isPaidScheduleStatus(schedule.status));
+      const paidAmount = paidSchedules
         .reduce((sum, schedule) => sum + parseFloat(schedule.amount ?? "0"), 0);
       const remainingAmount = Math.max(0, grandTotal - paidAmount);
       const scheduleStatus = paidAmount >= grandTotal && grandTotal > 0
@@ -2381,12 +2410,17 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
         : paidAmount > 0
           ? "partial"
           : "unpaid";
+      const lastPaidSchedule = [...paidSchedules]
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+        .at(-1);
       const [summaryInvoice] = await tx
         .update(invoices)
         .set({
           paidAmount: paidAmount.toFixed(2),
           remainingAmount: remainingAmount.toFixed(2),
           status: scheduleStatus,
+          paidBy: scheduleStatus === "paid" ? lastPaidSchedule?.paidBy ?? null : null,
+          paidAt: scheduleStatus === "paid" ? lastPaidSchedule?.paidAt ?? null : null,
           updatedAt: new Date(),
         })
         .where(eq(invoices.id, id))
