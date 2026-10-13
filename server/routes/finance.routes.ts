@@ -1355,11 +1355,39 @@ export function registerFinanceRoutes(app: Express): void {
       }
       const userId = (req as any).user?.id;
       const before = await storage.getInvoice(req.params.id);
-      const attemptedContentEdit = Object.keys(parsed.data).some((key) => key !== "status");
-      if (before && isPaidInvoiceStatus(before.status) && attemptedContentEdit) {
+      const paidInvoicePatchKeys = Object.keys(parsed.data);
+      const isPaidInvoice = Boolean(before && isPaidInvoiceStatus(before.status));
+      const isPaidNoteOnlyUpdate = isPaidInvoice
+        && paidInvoicePatchKeys.length === 1
+        && paidInvoicePatchKeys[0] === "note";
+      const isPaidStatusOnlyUpdate = isPaidInvoice
+        && paidInvoicePatchKeys.length === 1
+        && paidInvoicePatchKeys[0] === "status";
+      if (isPaidInvoice && !isPaidNoteOnlyUpdate && !isPaidStatusOnlyUpdate) {
         return res.status(409).json({
-          message: "Hóa đơn đã thanh toán/đã xác nhận không được chỉnh sửa. Hãy chuyển trạng thái về Chưa thanh toán trước.",
+          message: "Hóa đơn đã thanh toán/đã xác nhận chỉ được sửa ghi chú hoặc trạng thái. Hãy chuyển trạng thái về Chưa thanh toán trước khi sửa nội dung khác.",
         });
+      }
+      if (isPaidNoteOnlyUpdate && before) {
+        const data = await storage.updateInvoice(req.params.id, {
+          note: parsed.data.note,
+          updatedBy: userId,
+        });
+        if (String(before.note ?? before.description ?? "") !== String(data.note ?? data.description ?? "")) {
+          createInvoiceAuditLog({
+            invoiceId: data.id,
+            invoiceCode: data.code ?? null,
+            invoiceType: data.type ?? null,
+            subjectName: (data as any).subjectName ?? (before as any).subjectName ?? null,
+            grandTotal: data.grandTotal ?? null,
+            action: "Sửa ghi chú hoá đơn",
+            userId: userId ?? null,
+            locationId: (data as any).locationId ?? (before as any).locationId ?? null,
+            oldContent: { note: before.note ?? before.description ?? null },
+            newContent: { note: data.note ?? data.description ?? null },
+          }).catch(() => {});
+        }
+        return res.json(data);
       }
       if (parsed.data.status !== undefined) {
         if (!await canSetInvoiceStatus(req, parsed.data.status)) {

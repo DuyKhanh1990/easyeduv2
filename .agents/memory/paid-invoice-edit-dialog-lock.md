@@ -3,8 +3,8 @@ name: Paid invoice edit dialog lock
 description: The UI and API behavior for editing paid or confirmed invoices
 ---
 
-Paid and confirmed invoices cannot have their content edited until they are separately transitioned to unpaid. If a user opens the edit dialog anyway, keep it open, show the warning inside the dialog, block field interaction, and disable saving; do not close it or show only a toast.
+Paid and confirmed invoices cannot have their content edited until they are separately transitioned to unpaid, except that the note may be changed. In the edit dialog, keep the note editable and all other content locked. Keep the dialog close controls outside the lock overlay so users can always close it.
 
-**Why:** Finance users need a clear explanation in context without losing the invoice view, while preserving the rule that collected values cannot be edited directly.
+**Why:** Finance users need a clear explanation in context while preserving the rule that collected values cannot be edited directly; notes remain useful for recording non-financial context after payment.
 
-**How to apply:** Keep the status-transition control available outside the locked edit form. Enforce the lock at the API as well as in the UI. For invoices with installments, status changes are made on the child installments.
+**How to apply:** Keep status-only changes available and enforce the content lock at the API as well as in the UI. Allow paid-invoice note-only PATCH requests; reject any patch that combines note changes with other fields. For invoices with installments, status changes are made on the child installments.

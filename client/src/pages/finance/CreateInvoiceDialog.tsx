@@ -403,6 +403,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     enabled: open && Boolean(invoiceId),
   });
   const isPaidInvoiceLocked = isEdit && Boolean(editData && isInvoicePaidLike(editData.status));
+  const originalNote = String(editData?.note ?? editData?.description ?? "");
+  const isPaidNoteDirty = isPaidInvoiceLocked && note !== originalNote;
 
   const { data: allCategoriesForEdit = [] } = useQuery<any[]>({ queryKey: ["/api/finance/transaction-categories"], enabled: open && Boolean(invoiceId) });
 
@@ -1274,6 +1276,10 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   };
 
   const handleSave = () => {
+    if (isPaidInvoiceLocked) {
+      if (isPaidNoteDirty) saveMutation.mutate({ note });
+      return;
+    }
     if (!locationId) { toast({ title: t("finance.create.branchRequiredError"), variant: "destructive" }); return; }
     if (products.some(p => !p.categoryId)) { toast({ title: t("finance.create.categoryRequiredError"), variant: "destructive" }); return; }
     if (!studentId && !subjectName.trim()) { toast({ title: t("finance.create.nameRequiredError"), variant: "destructive" }); return; }
@@ -2276,7 +2282,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
             </div>
 
             {/* Note */}
-            <div className="space-y-1">
+            <div className={isPaidInvoiceLocked ? "relative z-30 space-y-1" : "space-y-1"}>
               <label className="text-xs font-medium text-muted-foreground">{t("finance.note")}</label>
               <Textarea
                 placeholder={t("finance.notePlaceholder")}
@@ -2888,13 +2894,13 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
             </div>
           </div>
         </div>
-        </div>
         {isPaidInvoiceLocked && (
           <div
             className="absolute inset-0 z-20 cursor-not-allowed bg-background/20"
             aria-hidden="true"
           />
         )}
+        </div>
 
         {/* Footer actions */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 border-t bg-muted/20 flex-shrink-0">
@@ -2904,13 +2910,13 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
               role="alert"
               data-testid="paid-invoice-edit-warning"
             >
-              Hóa đơn đã thanh toán/đã xác nhận. Hãy chuyển trạng thái về Chưa thanh toán trước khi sửa.
+              Hóa đơn đã thanh toán/đã xác nhận: chỉ được sửa Ghi chú. Muốn sửa nội dung khác, hãy chuyển trạng thái về Chưa thanh toán trước.
             </div>
           )}
           <div className="ml-auto flex items-center justify-end gap-2">
            <Button variant="outline" onClick={onClose} disabled={saveMutation.isPending} data-testid="button-cancel">{t("finance.cancel")}</Button>
-          <Button className="bg-purple-600 hover:bg-purple-700 gap-1" onClick={handleSave} disabled={saveMutation.isPending || isPaidInvoiceLocked} data-testid="button-save-pay">
-             {saveMutation.isPending ? t("finance.create.saving") : isEdit ? t("finance.create.updateReceipt") : t("finance.save")}
+           <Button className="bg-purple-600 hover:bg-purple-700 gap-1" onClick={handleSave} disabled={saveMutation.isPending || (isPaidInvoiceLocked && !isPaidNoteDirty)} data-testid="button-save-pay">
+              {saveMutation.isPending ? t("finance.create.saving") : isPaidInvoiceLocked ? t("finance.save") : isEdit ? t("finance.create.updateReceipt") : t("finance.save")}
           </Button>
           </div>
         </div>
