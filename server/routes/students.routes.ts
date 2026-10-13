@@ -549,7 +549,7 @@ export function registerStudentsRoutes(app: Express): void {
   });
 
   // ── GET /api/students/customer-learning-status-summary ────────────────────
-  // Customer-page cards use class enrollments, not individual session activity.
+  // Customer-page cards aggregate each student's effective status per enrolled class.
   app.get("/api/students/customer-learning-status-summary", async (req, res) => {
     try {
       const user = (req as any).user;
