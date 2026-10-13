@@ -1513,6 +1513,7 @@ export function CustomersList() {
               crmRelationships={crmRelationships}
               parents={parents}
               learningStatuses={tableLearningStatuses}
+              latestScoreResults={latestScoreResultsMap}
               toggleSelectAll={toggleSelectAll}
               toggleSelect={toggleSelect}
               onEdit={(student) => { setEditingStudent(student); setIsEditOpen(true); }}
