@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { rebalanceUnpaidInstallments } from "./paymentScheduleAllocation";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -374,7 +375,6 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     | null
   >(null);
   const [paymentSchedule, setPaymentSchedule] = useState<PaymentScheduleEntry[]>([]);
-  const [scheduleAdjustmentDelta, setScheduleAdjustmentDelta] = useState(0);
   const [openDuePicker, setOpenDuePicker] = useState<string | null>(null);
   const [splitPaymentId, setSplitPaymentId] = useState<string | null>(null);
   const [splitAmount, setSplitAmount] = useState<number>(0);
@@ -425,7 +425,6 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         setInvoicePromotionRows([]);
         setInvoiceSurchargeRows([]);
         setPaymentSchedule([]);
-        setScheduleAdjustmentDelta(0);
         setOpenSchedulePromo(null);
         setOpenScheduleSurcharge(null);
         setOpenSchedulePromoPicker(null);
@@ -470,16 +469,6 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       hasSchedule || legacyDepositWasCountedAsPayment
         ? 0
         : (parseFloat(inv.paidAmount) || 0),
-    );
-    const storedInvoiceBaseTotal = Math.max(
-      0,
-      (parseFloat(inv.totalAmount) || 0)
-        - (parseFloat(inv.totalPromotion) || 0)
-        + (parseFloat(inv.totalSurcharge) || 0)
-        - (parseFloat(inv.deduction) || 0),
-    );
-    setScheduleAdjustmentDelta(
-      hasSchedule ? (parseFloat(inv.grandTotal) || 0) - storedInvoiceBaseTotal : 0,
     );
     setDirectPaymentMethod(inv.paymentMethod ?? "cash");
     setDirectBank(inv.appliedBankAccount?.bankAccount ?? "");
@@ -757,12 +746,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
             const keys = Array.from(new Set([...(entry[keysKey] ?? []), createdId]));
             return recalculateScheduleAdjustment(entry, isPromotion ? "promotion" : "surcharge", rows, keys);
           });
-          const previousTotal = paymentSchedule.reduce((sum, entry) => sum + entry.amount, 0);
-          const nextTotal = nextEntries.reduce((sum, entry) => sum + entry.amount, 0);
           setPaymentSchedule(nextEntries);
-          if (Math.abs(nextTotal - previousTotal) > 0.01) {
-            setScheduleAdjustmentDelta(delta => delta + nextTotal - previousTotal);
-          }
         } else if (quickCreateType === "promotion") {
           setInvoicePromoKeys(prev => [...new Set([...prev, createdId])]);
           setInvoicePromotionRows(prev => [...prev, {
@@ -915,13 +899,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const totalSurcharge = itemSurcharge + invoiceSurchargeAmt;
   const subTotal = invoiceSurchargeResult.finalAmount;
   const calculatedFinalTotal = Math.max(0, subTotal - deduction);
-  // Installment-level adjustments are stored on child schedules and are
-  // already included in the persisted parent grand total. Preserve that
-  // delta while editing the invoice so the reconciliation effect does not
-  // erase a child promotion/surcharge.
-  const finalTotal = paymentSchedule.length > 0
-    ? Math.max(0, calculatedFinalTotal + scheduleAdjustmentDelta)
-    : calculatedFinalTotal;                                           // Tổng tiền (sau khấu trừ)
+  // The invoice fields are authoritative; payment installments only allocate
+  // this total and must never change it.
+  const finalTotal = calculatedFinalTotal;                            // Tổng tiền (sau khấu trừ)
   const grandTotal   = finalTotal;                                   // alias dùng trong submit
   // Always include directPaidAmount in paid total; paid schedule entries add on top
   const paid = directPaidAmount + paymentSchedule.filter(p => p.status === "paid").reduce((s, p) => s + p.amount, 0);
@@ -956,47 +936,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
 
       if (Math.abs(difference) < 0.01) return prev;
 
-      const autoIndex = prev.findIndex(entry => entry.isAuto && entry.status !== "paid");
-      if (difference > 0) {
-        if (autoIndex >= 0) {
-          return prev.map((entry, index) =>
-            index === autoIndex ? { ...entry, amount: entry.amount + difference } : entry
-          );
-        }
-        const nextNum = getNextPaymentNumber(prev, directPaidAmount);
-        return [...prev, {
-          id: `auto-${Date.now()}`,
-          label: t("finance.installmentLabel", { number: nextNum }),
-          code: `PT-${Date.now()}`,
-          amount: difference,
-          due: getTodayVietnamDate(),
-          status: "unpaid",
-          paymentMethod: "cash",
-          bank: "",
-          isAuto: true,
-        }];
-      }
-
-      // If the invoice total decreases, reduce only unpaid entries and prefer
-      // the auto remainder. Paid history remains immutable.
-      let excess = Math.abs(difference);
-      const next = prev.map(entry => ({ ...entry }));
-      const candidateIndexes = [
-        ...(autoIndex >= 0 ? [autoIndex] : []),
-        ...next
-          .map((entry, index) => ({ entry, index }))
-          .filter(({ entry, index }) => entry.status !== "paid" && index !== autoIndex)
-          .map(({ index }) => index)
-          .reverse(),
-      ];
-      for (const index of candidateIndexes) {
-        if (excess <= 0) break;
-        const reduction = Math.min(next[index].amount, excess);
-        next[index].amount -= reduction;
-        excess -= reduction;
-      }
-      if (excess > 0.01) return prev;
-      return next.filter(entry => !(entry.isAuto && entry.status !== "paid" && entry.amount <= 0));
+      return rebalanceUnpaidInstallments(prev, difference);
     });
   }, [directPaidAmount, finalTotal, open, scheduleAllocated]);
 
@@ -1122,12 +1062,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     updater: (entries: PaymentScheduleEntry[]) => PaymentScheduleEntry[],
   ) => {
     const nextEntries = updater(paymentSchedule);
-    const previousTotal = paymentSchedule.reduce((sum, entry) => sum + entry.amount, 0);
-    const nextTotal = nextEntries.reduce((sum, entry) => sum + entry.amount, 0);
     setPaymentSchedule(nextEntries);
-    if (Math.abs(nextTotal - previousTotal) > 0.01) {
-      setScheduleAdjustmentDelta(delta => delta + nextTotal - previousTotal);
-    }
   };
 
   const updateScheduleAdjustmentRows = (
@@ -1341,12 +1276,25 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     if (!locationId) { toast({ title: t("finance.create.branchRequiredError"), variant: "destructive" }); return; }
     if (products.some(p => !p.categoryId)) { toast({ title: t("finance.create.categoryRequiredError"), variant: "destructive" }); return; }
     if (!studentId && !subjectName.trim()) { toast({ title: t("finance.create.nameRequiredError"), variant: "destructive" }); return; }
+    if (directPaidAmount > finalTotal + 0.01) {
+      toast({
+        title: t("finance.create.paidAmountExceedsTotal"),
+        description: t("finance.create.paidAmountExceedsTotalDescription"),
+        variant: "destructive",
+      });
+      return;
+    }
     if (paymentSchedule.length > 0) {
       const allocated = directPaidAmount + paymentSchedule.reduce((sum, entry) => sum + entry.amount, 0);
       if (Math.abs(allocated - finalTotal) > 0.01) {
+        const allInstallmentsPaid = paymentSchedule.every(entry => isInvoicePaidLike(entry.status));
         toast({
-           title: t("finance.create.scheduleMismatch"),
-           description: t("finance.create.scheduleMismatchDescription", { allocated: fmtMoney(allocated), total: fmtMoney(finalTotal) }),
+           title: allInstallmentsPaid
+             ? t("finance.create.allInstallmentsPaid")
+             : t("finance.create.scheduleMismatch"),
+           description: allInstallmentsPaid
+             ? t("finance.create.allInstallmentsPaidDescription")
+             : t("finance.create.scheduleMismatchDescription", { allocated: fmtMoney(allocated), total: fmtMoney(finalTotal) }),
           variant: "destructive",
         });
         return;

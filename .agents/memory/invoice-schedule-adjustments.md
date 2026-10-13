@@ -3,8 +3,8 @@ name: Invoice installment adjustments
 description: Rules for promotions and surcharges assigned to unpaid invoice installments.
 ---
 
-An installment's final amount is `max(0, base amount - installment promotions + installment surcharges)`. Legacy rows without adjustment data treat their current amount as the base and remain unchanged until explicitly edited.
+The invoice total is authoritative and is calculated from invoice line amounts, invoice promotions, surcharges, and deposit deduction; installment rows must sum to that total and never recalculate it. When the total changes, preserve paid installments and redistribute only across unpaid installments. If there is no unpaid installment capacity, block the edit until a payment is properly reversed.
 
-**Why:** Each child installment is the financial record used by cash-flow, debt, and payment reporting; recalculating from the final amount or leaving the hidden parent total unchanged would compound adjustments or make summaries disagree.
+**Why:** The user clarified that payment schedules allocate the invoice total rather than define it; deriving the parent from child rows caused stale totals and phantom installments.
 
-**How to apply:** Only unpaid installments may change adjustment data. Recalculate on the server from configured promotion/surcharge records, keep paid/confirmed installments immutable, and synchronize the hidden parent invoice's grand total, paid amount, remaining amount, and status when child totals change.
+**How to apply:** Keep paid/confirmed installments immutable. Reconcile edits only into unpaid rows, validate that all saved schedule amounts equal the invoice total, and compute paid/remaining/status from the fixed parent total plus actually paid rows.

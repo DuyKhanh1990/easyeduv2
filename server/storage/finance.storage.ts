@@ -109,8 +109,16 @@ async function loadScheduleAdjustmentOptions(tx: any, promotionKeys: string[], s
 }
 
 async function syncInvoiceScheduleSummaryTx(tx: any, invoiceId: string, userId?: string | null) {
+  const [invoice] = await tx
+    .select({ grandTotal: invoices.grandTotal })
+    .from(invoices)
+    .where(eq(invoices.id, invoiceId))
+    .limit(1);
+  if (!invoice) return null;
+
   const schedules = await tx
     .select({
+      id: invoicePaymentSchedule.id,
       status: invoicePaymentSchedule.status,
       amount: invoicePaymentSchedule.amount,
     })
@@ -118,7 +126,7 @@ async function syncInvoiceScheduleSummaryTx(tx: any, invoiceId: string, userId?:
     .where(eq(invoicePaymentSchedule.invoiceId, invoiceId));
   if (schedules.length === 0) return null;
 
-  const grandTotal = schedules.reduce((sum: number, schedule: any) => sum + (parseFloat(schedule.amount ?? "0") || 0), 0);
+  const grandTotal = parseFloat(invoice.grandTotal ?? "0") || 0;
   const paidAmount = schedules
     .filter((schedule: any) => isPaidScheduleStatus(schedule.status))
     .reduce((sum: number, schedule: any) => sum + (parseFloat(schedule.amount ?? "0") || 0), 0);
@@ -129,10 +137,43 @@ async function syncInvoiceScheduleSummaryTx(tx: any, invoiceId: string, userId?:
       ? "partial"
       : "unpaid";
 
+  const unpaidSchedules = schedules.filter((schedule: any) => !isPaidScheduleStatus(schedule.status));
+  const targetUnpaidTotal = Math.max(0, grandTotal - paidAmount);
+  const currentUnpaidTotal = unpaidSchedules.reduce(
+    (sum: number, schedule: any) => sum + (parseFloat(schedule.amount ?? "0") || 0),
+    0,
+  );
+  let allocationDelta = targetUnpaidTotal - currentUnpaidTotal;
+  if (Math.abs(allocationDelta) > 0.01) {
+    if (unpaidSchedules.length === 0) {
+      throw new Error("Không thể đổi phân bổ khi tất cả các đợt đã thanh toán");
+    }
+    const allocationOrder = allocationDelta >= 0
+      ? [unpaidSchedules.length - 1]
+      : unpaidSchedules.map((_: any, index: number) => index).reverse();
+    for (const index of allocationOrder) {
+      if (Math.abs(allocationDelta) <= 0.01) break;
+      const entry = unpaidSchedules[index];
+      const currentAmount = parseFloat(entry.amount ?? "0") || 0;
+      const adjustment = allocationDelta > 0
+        ? allocationDelta
+        : -Math.min(currentAmount, Math.abs(allocationDelta));
+      const nextAmount = currentAmount + adjustment;
+      if (nextAmount < -0.01) continue;
+      await tx
+        .update(invoicePaymentSchedule)
+        .set({ amount: Math.max(0, nextAmount).toFixed(2), updatedAt: new Date() })
+        .where(eq(invoicePaymentSchedule.id, entry.id));
+      allocationDelta -= adjustment;
+    }
+    if (Math.abs(allocationDelta) > 0.01) {
+      throw new Error("Không thể phân bổ Tổng tiền mới vào các đợt chưa thanh toán");
+    }
+  }
+
   const [updated] = await tx
     .update(invoices)
     .set({
-      grandTotal: grandTotal.toFixed(2),
       paidAmount: paidAmount.toFixed(2),
       remainingAmount: remainingAmount.toFixed(2),
       status,
@@ -1943,6 +1984,25 @@ export async function getNextInvoiceCode(type: string, locationId?: string | nul
 
 export async function createInvoice(data: any): Promise<any> {
   const { items = [], paymentSchedule = [], ...invoiceData } = data;
+  const hasInvoiceAmounts = ["totalAmount", "totalPromotion", "totalSurcharge", "deduction"]
+    .some((key) => invoiceData[key] !== undefined && invoiceData[key] !== null);
+  const calculatedGrandTotal = Math.max(
+    0,
+    (parseFloat(invoiceData.totalAmount ?? "0") || 0)
+      - (parseFloat(invoiceData.totalPromotion ?? "0") || 0)
+      + (parseFloat(invoiceData.totalSurcharge ?? "0") || 0)
+      - (parseFloat(invoiceData.deduction ?? "0") || 0),
+  );
+  if (hasInvoiceAmounts) invoiceData.grandTotal = calculatedGrandTotal.toFixed(2);
+  if (paymentSchedule.length > 0) {
+    const allocatedTotal = paymentSchedule.reduce(
+      (sum: number, entry: any) => sum + (parseFloat(entry.amount ?? "0") || 0),
+      0,
+    );
+    if (Math.abs(allocatedTotal - Number(invoiceData.grandTotal ?? 0)) > 0.01) {
+      throw new Error("Tổng các đợt thanh toán phải bằng Tổng tiền hóa đơn");
+    }
+  }
   const defaultDueDate = getBusinessDateString();
   invoiceData.dueDate = invoiceData.dueDate || defaultDueDate;
   if (!invoiceData.code) {
@@ -2122,6 +2182,21 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
   if (toUpdate.remainingAmount !== undefined) toUpdate.remainingAmount = toUpdate.remainingAmount.toString();
 
   return await db.transaction(async (tx) => {
+    const [currentInvoice] = await tx
+      .select()
+      .from(invoices)
+      .where(eq(invoices.id, id))
+      .limit(1);
+    if (!currentInvoice) throw new Error("Không tìm thấy hóa đơn");
+
+    const calculatedGrandTotal = Math.max(
+      0,
+      (parseFloat(String(toUpdate.totalAmount ?? currentInvoice.totalAmount ?? "0")) || 0)
+        - (parseFloat(String(toUpdate.totalPromotion ?? currentInvoice.totalPromotion ?? "0")) || 0)
+        + (parseFloat(String(toUpdate.totalSurcharge ?? currentInvoice.totalSurcharge ?? "0")) || 0)
+        - (parseFloat(String(toUpdate.deduction ?? currentInvoice.deduction ?? "0")) || 0),
+    );
+    toUpdate.grandTotal = calculatedGrandTotal.toFixed(2);
     const [inv] = await tx.update(invoices).set(toUpdate).where(eq(invoices.id, id)).returning();
 
     if (Array.isArray(items)) {
@@ -2226,6 +2301,15 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
         if (isPaidScheduleStatus(previous.status) && !retainedIds.has(previous.id)) {
           retainedIds.add(previous.id);
         }
+      }
+
+      const finalAllocatedTotal = [
+        ...scheduleRows,
+        ...existingSchedules.filter(row => isPaidScheduleStatus(row.status) && !scheduleRows.some(next => next.id === row.id)),
+      ].reduce((sum, row) => sum + (parseFloat(String(row.amount ?? "0")) || 0), 0);
+      const invoiceGrandTotal = parseFloat(String(toUpdate.grandTotal ?? inv.grandTotal ?? "0")) || 0;
+      if (Math.abs(finalAllocatedTotal - invoiceGrandTotal) > 0.01) {
+        throw new Error("Tổng các đợt thanh toán phải bằng Tổng tiền hóa đơn");
       }
 
       for (const previous of existingSchedules) {
