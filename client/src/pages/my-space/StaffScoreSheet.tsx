@@ -1,10 +1,18 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { enUS, vi } from "date-fns/locale";
-import { BarChart3, BookOpen, CalendarDays, Clock3, Eye, Pencil, Plus, Users, CheckCircle2, Clock, Circle, CircleDot, Download, Loader2, type LucideIcon } from "lucide-react";
+import { BarChart3, BookOpen, CalendarDays, Clock3, Eye, Pencil, Plus, Users, CheckCircle2, Clock, Circle, CircleDot, Download, Filter, Loader2, Search, X, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
@@ -94,6 +102,40 @@ const ASSESSMENT_STATUS_PRESENTATION: Record<ScoreSheetAssessmentStatus, StatusP
   },
 };
 
+const ASSESSMENT_FILTER_COLORS: Record<
+  ScoreSheetAssessmentStatus,
+  { dot: string; idle: string; active: string }
+> = {
+  not_started: {
+    dot: "bg-violet-500",
+    idle: "border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-800 dark:text-violet-300 dark:hover:bg-violet-950/40",
+    active: "border-violet-600 bg-violet-600 text-white hover:bg-violet-700",
+  },
+  in_progress: {
+    dot: "bg-emerald-500",
+    idle: "border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/40",
+    active: "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700",
+  },
+  processing: {
+    dot: "bg-orange-500",
+    idle: "border-orange-300 text-orange-800 hover:bg-orange-50 dark:border-orange-800 dark:text-orange-300 dark:hover:bg-orange-950/40",
+    active: "border-orange-600 bg-orange-600 text-white hover:bg-orange-700",
+  },
+  completed: {
+    dot: "bg-green-800",
+    idle: "border-green-700 text-green-800 hover:bg-green-50 dark:border-green-700 dark:text-green-300 dark:hover:bg-green-950/40",
+    active: "border-green-800 bg-green-800 text-white hover:bg-green-900",
+  },
+};
+
+const ASSESSMENT_DEADLINE_FILTER_PRESENTATION: Record<
+  ScoreSheetAssessmentDeadlineStatus,
+  { label: string }
+> = {
+  within_deadline: { label: "Trong hạn" },
+  overdue: { label: "Quá hạn" },
+};
+
 const ASSESSMENT_DEADLINE_STATUS_PRESENTATION: Record<
   ScoreSheetAssessmentDeadlineStatus,
   Pick<StatusPresentation, "label" | "Icon" | "className">
@@ -164,6 +206,18 @@ export function StaffScoreSheet() {
   const [classFilters, setClassFilters] = useState<string[]>([]);
   const [scoreSheetFilters, setScoreSheetFilters] = useState<string[]>([]);
   const [statusFilters, setStatusFilters] = useState<string[]>([]);
+  const [conversionSearchInput, setConversionSearchInput] = useState("");
+  const [conversionSearchTerm, setConversionSearchTerm] = useState("");
+  const [conversionClassFilters, setConversionClassFilters] = useState<string[]>([]);
+  const [conversionTeacherFilters, setConversionTeacherFilters] = useState<string[]>([]);
+  const [conversionAssessmentFilters, setConversionAssessmentFilters] = useState<string[]>([]);
+  const [conversionStatusFilters, setConversionStatusFilters] = useState<ScoreSheetAssessmentStatus[]>([]);
+  const [conversionDeadlineStatusFilters, setConversionDeadlineStatusFilters] = useState<ScoreSheetAssessmentDeadlineStatus[]>([]);
+  const [conversionExamDateFrom, setConversionExamDateFrom] = useState("");
+  const [conversionExamDateTo, setConversionExamDateTo] = useState("");
+  const [conversionDeadlineDateFrom, setConversionDeadlineDateFrom] = useState("");
+  const [conversionDeadlineDateTo, setConversionDeadlineDateTo] = useState("");
+  const [conversionFilterDialogOpen, setConversionFilterDialogOpen] = useState(false);
   const { toast } = useToast();
   const scoreSheetPermissions = myPermissions?.permissions["/my-space/score-sheet"];
   const canCreateGradeBook = myPermissions?.isSuperAdmin === true
@@ -246,6 +300,42 @@ export function StaffScoreSheet() {
     { value: "deadline:none", label: t("mySpace.scoreSheet.notDue") },
   ];
 
+  const conversionClassFilterOptions = useMemo(() => {
+    const options = new Map<string, string>();
+    assignedAssessments.forEach((assessment) => {
+      options.set(
+        assessment.classId,
+        assessment.className !== assessment.classCode
+          ? `${assessment.classCode} — ${assessment.className}`
+          : assessment.classCode,
+      );
+    });
+    return Array.from(options, ([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, lang));
+  }, [assignedAssessments, lang]);
+
+  const conversionTeacherFilterOptions = useMemo(() => {
+    const names = new Set<string>();
+    assignedAssessments.forEach((assessment) => {
+      assessment.teacherNames?.split(",").map((name) => name.trim()).filter(Boolean)
+        .forEach((name) => names.add(name));
+    });
+    return Array.from(names)
+      .sort((a, b) => a.localeCompare(b, lang))
+      .map((name) => ({ value: name, label: name }));
+  }, [assignedAssessments, lang]);
+
+  const conversionAssessmentFilterOptions = useMemo(() => {
+    const names = new Set<string>();
+    assignedAssessments.forEach((assessment) => {
+      const label = assessment.templateName || assessment.assessmentName || t("mySpace.scoreSheet.unavailableSheet");
+      names.add(label);
+    });
+    return Array.from(names)
+      .sort((a, b) => a.localeCompare(b, lang))
+      .map((name) => ({ value: name, label: name }));
+  }, [assignedAssessments, lang, t]);
+
   const handleExportGradeBook = async (book: StaffGradeBookRow) => {
     setExportingBookId(book.id);
     try {
@@ -287,9 +377,79 @@ export function StaffScoreSheet() {
     })),
   ];
 
+  const activeConversionFilterCount = [
+    conversionClassFilters.length > 0,
+    conversionTeacherFilters.length > 0,
+    conversionAssessmentFilters.length > 0,
+    conversionStatusFilters.length > 0,
+    conversionDeadlineStatusFilters.length > 0,
+    Boolean(conversionExamDateFrom || conversionExamDateTo),
+    Boolean(conversionDeadlineDateFrom || conversionDeadlineDateTo),
+  ].filter(Boolean).length;
+
+  const clearConversionFilters = () => {
+    setConversionSearchInput("");
+    setConversionSearchTerm("");
+    setConversionClassFilters([]);
+    setConversionTeacherFilters([]);
+    setConversionAssessmentFilters([]);
+    setConversionStatusFilters([]);
+    setConversionDeadlineStatusFilters([]);
+    setConversionExamDateFrom("");
+    setConversionExamDateTo("");
+    setConversionDeadlineDateFrom("");
+    setConversionDeadlineDateTo("");
+  };
+
+  const matchesConversionFilters = (assessment: StaffAssignedScoreSheetAssessment) => {
+    const statusKey = resolveScoreSheetAssessmentStatus(assessment, nowWallClockMs);
+    const deadlineStatusKey = resolveScoreSheetAssessmentDeadlineStatus(
+      assessment.scoreDeadlineAt,
+      nowWallClockMs,
+    );
+    const assessmentDate = assessment.examDate.substring(0, 10);
+    const deadlineDate = assessment.scoreDeadlineAt?.substring(0, 10) ?? "";
+    const assessmentLabel = assessment.templateName || assessment.assessmentName || t("mySpace.scoreSheet.unavailableSheet");
+    const teacherNames = assessment.teacherNames?.split(",").map((name) => name.trim()).filter(Boolean) ?? [];
+
+    if (conversionClassFilters.length > 0 && !conversionClassFilters.includes(assessment.classId)) return false;
+    if (
+      conversionTeacherFilters.length > 0
+      && !conversionTeacherFilters.some((teacher) => teacherNames.includes(teacher))
+    ) return false;
+    if (conversionAssessmentFilters.length > 0 && !conversionAssessmentFilters.includes(assessmentLabel)) return false;
+    if (conversionStatusFilters.length > 0 && (!statusKey || !conversionStatusFilters.includes(statusKey))) return false;
+    if (
+      conversionDeadlineStatusFilters.length > 0
+      && (!deadlineStatusKey || !conversionDeadlineStatusFilters.includes(deadlineStatusKey))
+    ) return false;
+    if (conversionExamDateFrom && assessmentDate < conversionExamDateFrom) return false;
+    if (conversionExamDateTo && assessmentDate > conversionExamDateTo) return false;
+    if (conversionDeadlineDateFrom && (!deadlineDate || deadlineDate < conversionDeadlineDateFrom)) return false;
+    if (conversionDeadlineDateTo && (!deadlineDate || deadlineDate > conversionDeadlineDateTo)) return false;
+
+    const searchTerm = conversionSearchTerm.trim().toLocaleLowerCase("vi");
+    if (
+      searchTerm
+      && ![
+        assessment.classCode,
+        assessment.className,
+        assessment.locationName,
+        assessment.teacherNames,
+        assessment.assessmentCode,
+        assessment.assessmentName,
+        assessment.templateName,
+      ].some((value) => value?.toLocaleLowerCase("vi").includes(searchTerm))
+    ) return false;
+
+    return true;
+  };
+
   const filteredTimelineEntries = timelineEntries.filter((entry) => {
+    if (activeTab === "conversion") {
+      return entry.kind === "conversion" && matchesConversionFilters(entry.assessment);
+    }
     if (activeTab === "regular" && entry.kind !== "grade-book") return false;
-    if (activeTab === "conversion" && entry.kind !== "conversion") return false;
 
     const classId = entry.kind === "grade-book" ? entry.gradeBook.classId : entry.assessment.classId;
     if (classFilters.length > 0 && !classFilters.includes(classId)) return false;
@@ -402,67 +562,303 @@ export function StaffScoreSheet() {
             </TabsList>
           </Tabs>
 
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="min-w-0 space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">
-                {t("mySpace.scoreSheet.filterClass")}
-              </label>
-              <SearchableMultiSelect
-                options={classFilterOptions}
-                value={classFilters}
-                onChange={setClassFilters}
-                placeholder={t("mySpace.scoreSheet.filterAllClasses")}
-                searchPlaceholder={t("mySpace.scoreSheet.filterSearchClasses")}
-                className="w-full bg-background"
-                data-testid="filter-my-space-score-sheet-class"
-              />
-            </div>
-            <div className="min-w-0 space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">
-                {t("mySpace.scoreSheet.filterScoreSheet")}
-              </label>
-              <SearchableMultiSelect
-                options={scoreSheetFilterOptions}
-                value={scoreSheetFilters}
-                onChange={setScoreSheetFilters}
-                placeholder={t("mySpace.scoreSheet.filterAllScoreSheets")}
-                searchPlaceholder={t("mySpace.scoreSheet.filterSearchScoreSheets")}
-                className="w-full bg-background"
-                data-testid="filter-my-space-score-sheet-template"
-              />
-            </div>
-            <div className="min-w-0 space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">
-                {t("mySpace.scoreSheet.filterStatus")}
-              </label>
-              <SearchableMultiSelect
-                options={statusFilterOptions}
-                value={statusFilters}
-                onChange={setStatusFilters}
-                placeholder={t("mySpace.scoreSheet.filterAllStatuses")}
-                searchPlaceholder={t("mySpace.scoreSheet.filterSearchStatuses")}
-                className="w-full bg-background"
-                data-testid="filter-my-space-score-sheet-status"
-              />
-            </div>
-          </div>
+          {activeTab === "conversion" ? (
+            <div className="space-y-3 rounded-xl border bg-card p-3 sm:p-4">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+                <form
+                  className="relative w-full xl:max-w-md"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    setConversionSearchTerm(conversionSearchInput.trim());
+                  }}
+                >
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    value={conversionSearchInput}
+                    onChange={(event) => setConversionSearchInput(event.target.value)}
+                    placeholder="Tìm lớp, giáo viên, bảng điểm..."
+                    aria-label="Tìm bảng điểm quy đổi"
+                    data-testid="search-my-space-score-conversion"
+                    className="h-9 w-full rounded-full border border-input bg-background pl-9 pr-9 text-sm text-foreground outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                  {conversionSearchInput && (
+                    <button
+                      type="button"
+                      aria-label="Xóa nội dung tìm kiếm"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      onClick={() => {
+                        setConversionSearchInput("");
+                        setConversionSearchTerm("");
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </form>
 
-          {(activeTab !== "all" || classFilters.length > 0 || scoreSheetFilters.length > 0 || statusFilters.length > 0) && (
-            <div className="flex justify-end">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 text-xs text-muted-foreground"
-                onClick={() => {
-                  setActiveTab("all");
-                  setClassFilters([]);
-                  setScoreSheetFilters([]);
-                  setStatusFilters([]);
-                }}
-              >
-                {t("mySpace.scoreSheet.filterClear")}
-              </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={conversionStatusFilters.length === 0 ? "default" : "outline"}
+                    className="h-8 rounded-full px-3"
+                    onClick={() => setConversionStatusFilters([])}
+                    data-testid="quick-filter-my-space-score-conversion-all"
+                  >
+                    Tất cả
+                  </Button>
+                  {([
+                    { value: "in_progress", label: "Đang thi" },
+                    { value: "completed", label: "Hoàn thành" },
+                    { value: "not_started", label: "Chưa thi" },
+                  ] as const).map(({ value, label }) => {
+                    const colors = ASSESSMENT_FILTER_COLORS[value];
+                    const active = conversionStatusFilters.length === 1
+                      && conversionStatusFilters[0] === value;
+                    return (
+                      <Button
+                        key={value}
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className={`h-8 rounded-full px-3 ${active ? colors.active : colors.idle}`}
+                        onClick={() => setConversionStatusFilters([value])}
+                        data-testid={`quick-filter-my-space-score-conversion-${value}`}
+                      >
+                        <span className={`mr-1.5 h-2 w-2 rounded-full ${colors.dot}`} />
+                        {label}
+                      </Button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center gap-2 xl:ml-auto">
+                  {(activeConversionFilterCount > 0 || conversionSearchTerm) && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-9 text-muted-foreground"
+                      onClick={clearConversionFilters}
+                      data-testid="clear-my-space-score-conversion-filters"
+                    >
+                      Xóa lọc
+                    </Button>
+                  )}
+                  <Dialog open={conversionFilterDialogOpen} onOpenChange={setConversionFilterDialogOpen}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 gap-2"
+                      data-testid="open-my-space-score-conversion-filters"
+                      onClick={() => setConversionFilterDialogOpen(true)}
+                    >
+                      <Filter className="h-4 w-4" />
+                      Bộ lọc
+                      {activeConversionFilterCount > 0 && (
+                        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
+                          {activeConversionFilterCount}
+                        </span>
+                      )}
+                    </Button>
+                    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+                      <DialogHeader>
+                        <DialogTitle>Bộ lọc bảng điểm quy đổi</DialogTitle>
+                        <DialogDescription>
+                          Chọn một hoặc nhiều điều kiện để lọc danh sách đang hiển thị.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="grid gap-4 py-2 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium">Lớp</label>
+                          <SearchableMultiSelect
+                            options={conversionClassFilterOptions}
+                            value={conversionClassFilters}
+                            onChange={setConversionClassFilters}
+                            placeholder="Chọn lớp"
+                            searchPlaceholder="Tìm lớp..."
+                            data-testid="filter-my-space-score-conversion-class"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium">Giáo viên</label>
+                          <SearchableMultiSelect
+                            options={conversionTeacherFilterOptions}
+                            value={conversionTeacherFilters}
+                            onChange={setConversionTeacherFilters}
+                            placeholder="Chọn giáo viên"
+                            searchPlaceholder="Tìm giáo viên..."
+                            data-testid="filter-my-space-score-conversion-teacher"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium">Bảng điểm</label>
+                          <SearchableMultiSelect
+                            options={conversionAssessmentFilterOptions}
+                            value={conversionAssessmentFilters}
+                            onChange={setConversionAssessmentFilters}
+                            placeholder="Chọn bảng điểm"
+                            searchPlaceholder="Tìm bảng điểm..."
+                            data-testid="filter-my-space-score-conversion-assessment"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium">Trạng thái</label>
+                          <SearchableMultiSelect
+                            options={Object.entries(ASSESSMENT_STATUS_PRESENTATION).map(([key, status]) => ({
+                              value: key,
+                              label: status.label,
+                            }))}
+                            value={conversionStatusFilters}
+                            onChange={(values) => setConversionStatusFilters(values as ScoreSheetAssessmentStatus[])}
+                            placeholder="Chọn trạng thái"
+                            searchPlaceholder="Tìm trạng thái..."
+                            data-testid="filter-my-space-score-conversion-status"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium">Ngày thi</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <label className="space-y-1 text-xs text-muted-foreground">
+                              <span>Từ</span>
+                              <input
+                                type="date"
+                                aria-label="Lọc ngày thi từ"
+                                value={conversionExamDateFrom}
+                                onChange={(event) => setConversionExamDateFrom(event.target.value)}
+                                className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                              />
+                            </label>
+                            <label className="space-y-1 text-xs text-muted-foreground">
+                              <span>Đến</span>
+                              <input
+                                type="date"
+                                aria-label="Lọc ngày thi đến"
+                                value={conversionExamDateTo}
+                                onChange={(event) => setConversionExamDateTo(event.target.value)}
+                                className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium">Hạn trả</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <label className="space-y-1 text-xs text-muted-foreground">
+                              <span>Từ</span>
+                              <input
+                                type="date"
+                                aria-label="Lọc hạn trả từ"
+                                value={conversionDeadlineDateFrom}
+                                onChange={(event) => setConversionDeadlineDateFrom(event.target.value)}
+                                className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                              />
+                            </label>
+                            <label className="space-y-1 text-xs text-muted-foreground">
+                              <span>Đến</span>
+                              <input
+                                type="date"
+                                aria-label="Lọc hạn trả đến"
+                                value={conversionDeadlineDateTo}
+                                onChange={(event) => setConversionDeadlineDateTo(event.target.value)}
+                                className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                        <div className="space-y-1.5 sm:col-span-2">
+                          <label className="text-sm font-medium">Tình trạng hạn trả</label>
+                          <SearchableMultiSelect
+                            options={Object.entries(ASSESSMENT_DEADLINE_FILTER_PRESENTATION).map(([key, status]) => ({
+                              value: key,
+                              label: status.label,
+                            }))}
+                            value={conversionDeadlineStatusFilters}
+                            onChange={(values) => setConversionDeadlineStatusFilters(values as ScoreSheetAssessmentDeadlineStatus[])}
+                            placeholder="Chọn tình trạng"
+                            searchPlaceholder="Tìm tình trạng..."
+                            data-testid="filter-my-space-score-conversion-deadline-status"
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button type="button" variant="outline" onClick={clearConversionFilters}>
+                          Xóa tất cả
+                        </Button>
+                        <Button type="button" onClick={() => setConversionFilterDialogOpen(false)}>
+                          Áp dụng
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </div>
             </div>
+          ) : (
+            <>
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="min-w-0 space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    {t("mySpace.scoreSheet.filterClass")}
+                  </label>
+                  <SearchableMultiSelect
+                    options={classFilterOptions}
+                    value={classFilters}
+                    onChange={setClassFilters}
+                    placeholder={t("mySpace.scoreSheet.filterAllClasses")}
+                    searchPlaceholder={t("mySpace.scoreSheet.filterSearchClasses")}
+                    className="w-full bg-background"
+                    data-testid="filter-my-space-score-sheet-class"
+                  />
+                </div>
+                <div className="min-w-0 space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    {t("mySpace.scoreSheet.filterScoreSheet")}
+                  </label>
+                  <SearchableMultiSelect
+                    options={scoreSheetFilterOptions}
+                    value={scoreSheetFilters}
+                    onChange={setScoreSheetFilters}
+                    placeholder={t("mySpace.scoreSheet.filterAllScoreSheets")}
+                    searchPlaceholder={t("mySpace.scoreSheet.filterSearchScoreSheets")}
+                    className="w-full bg-background"
+                    data-testid="filter-my-space-score-sheet-template"
+                  />
+                </div>
+                <div className="min-w-0 space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    {t("mySpace.scoreSheet.filterStatus")}
+                  </label>
+                  <SearchableMultiSelect
+                    options={statusFilterOptions}
+                    value={statusFilters}
+                    onChange={setStatusFilters}
+                    placeholder={t("mySpace.scoreSheet.filterAllStatuses")}
+                    searchPlaceholder={t("mySpace.scoreSheet.filterSearchStatuses")}
+                    className="w-full bg-background"
+                    data-testid="filter-my-space-score-sheet-status"
+                  />
+                </div>
+              </div>
+
+              {(activeTab !== "all" || classFilters.length > 0 || scoreSheetFilters.length > 0 || statusFilters.length > 0) && (
+                <div className="flex justify-end">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs text-muted-foreground"
+                    onClick={() => {
+                      setActiveTab("all");
+                      setClassFilters([]);
+                      setScoreSheetFilters([]);
+                      setStatusFilters([]);
+                    }}
+                  >
+                    {t("mySpace.scoreSheet.filterClear")}
+                  </Button>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -483,6 +879,10 @@ export function StaffScoreSheet() {
             variant="outline"
             size="sm"
             onClick={() => {
+              if (activeTab === "conversion") {
+                clearConversionFilters();
+                return;
+              }
               setActiveTab("all");
               setClassFilters([]);
               setScoreSheetFilters([]);
