@@ -1012,16 +1012,14 @@ export function StaffScoreSheet() {
                                     </div>
                                   )}
                                 </div>
-                                {statusKey !== "processing" && (
-                                  <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-bold">
-                                    {status && AssessmentStatusIcon ? (
-                                      <>
-                                        <AssessmentStatusIcon className={`h-3.5 w-3.5 shrink-0 ${status.className}`} />
-                                        <span className={status.className}>{status.label}</span>
-                                      </>
-                                    ) : null}
-                                  </span>
-                                )}
+                                <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-bold">
+                                  {statusKey !== "processing" && status && AssessmentStatusIcon ? (
+                                    <>
+                                      <AssessmentStatusIcon className={`h-3.5 w-3.5 shrink-0 ${status.className}`} />
+                                      <span className={status.className}>{status.label}</span>
+                                    </>
+                                  ) : null}
+                                </span>
                                 <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-bold">
                                   {deadlineStatus && DeadlineStatusIcon ? (
                                     <>
