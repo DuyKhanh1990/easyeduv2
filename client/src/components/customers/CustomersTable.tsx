@@ -454,7 +454,7 @@ export function CustomersTable({
               </span>
               {(scoreResult?.gradeBandLabel || passLabel) && (
                 <span
-                  className="font-['Roboto'] text-[10px] font-bold leading-tight whitespace-nowrap"
+                  className="font-['Roboto'] text-[12.5px] font-bold leading-tight whitespace-nowrap"
                   title={scoreTitle || "Bảng điểm gần nhất đã công bố"}
                   data-testid={`latest-score-result-${student.id}`}
                 >
