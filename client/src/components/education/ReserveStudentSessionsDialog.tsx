@@ -17,6 +17,8 @@ type ReserveStudentSessionsDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   studentSessionId: string;
+  studentId: string;
+  classId: string;
   studentName: string;
   studentCode?: string | null;
   defaultFromDate: string;
@@ -27,6 +29,8 @@ export function ReserveStudentSessionsDialog({
   open,
   onOpenChange,
   studentSessionId,
+  studentId,
+  classId,
   studentName,
   studentCode,
   defaultFromDate,
@@ -48,6 +52,9 @@ export function ReserveStudentSessionsDialog({
       return response.json() as Promise<{ updatedCount: number }>;
     },
     onSuccess: (result) => {
+      queryClient.invalidateQueries({
+        queryKey: [`/api/students/${studentId}/classes/${classId}/sessions`],
+      });
       queryClient.invalidateQueries({
         predicate: (query) => {
           const key = query.queryKey[0];

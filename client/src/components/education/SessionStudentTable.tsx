@@ -216,6 +216,8 @@ export function SessionStudentTable({
   } | null>(null);
   const [reserveTarget, setReserveTarget] = useState<{
     studentSessionId: string;
+    studentId: string;
+    classId: string;
     studentName: string;
     studentCode: string | null;
     defaultFromDate: string;
@@ -499,6 +501,8 @@ export function SessionStudentTable({
                               }
                               setReserveTarget({
                                 studentSessionId: ss.id,
+                                studentId: ss.studentId,
+                                classId: classData?.id ?? ss.classId ?? "",
                                 studentName: ss.student?.fullName || "Học viên",
                                 studentCode: ss.student?.code ?? null,
                                 defaultFromDate: dateValue,
@@ -666,6 +670,8 @@ export function SessionStudentTable({
           open={!!reserveTarget}
           onOpenChange={(open) => { if (!open) setReserveTarget(null); }}
           studentSessionId={reserveTarget.studentSessionId}
+          studentId={reserveTarget.studentId}
+          classId={reserveTarget.classId}
           studentName={reserveTarget.studentName}
           studentCode={reserveTarget.studentCode}
           defaultFromDate={reserveTarget.defaultFromDate}
