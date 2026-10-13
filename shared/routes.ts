@@ -545,6 +545,7 @@ export const api = {
     updateAttendance: { path: "/api/student-sessions/:id/attendance", method: "PATCH" },
     attendance: { path: "/api/student-sessions/attendance", method: "POST" },
     bulkAttendance: { path: "/api/student-sessions/bulk-attendance", method: "POST" },
+    reserveRange: { path: "/api/student-sessions/reserve-range", method: "POST" },
     tuitionPackage: { path: "/api/student-sessions/tuition-package", method: "POST" },
     review: { path: "/api/student-sessions/review", method: "POST" },
   },

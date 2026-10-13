@@ -67,7 +67,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { ArrowRightLeft, ChevronDown, ChevronLeft, ChevronRight, LogIn, MoreHorizontal, Plus, RefreshCw, Settings, Star, Trash2, Pencil } from "lucide-react";
+import { ArrowRightLeft, ChevronDown, ChevronLeft, ChevronRight, LogIn, MoreHorizontal, PauseCircle, Plus, RefreshCw, Settings, Star, Trash2, Pencil } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -78,6 +78,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { ChangeCycleDialog } from "./ChangeCycleDialog";
+import { ReserveStudentSessionsDialog } from "./ReserveStudentSessionsDialog";
 
 const WEEKDAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 
@@ -212,6 +213,12 @@ export function SessionStudentTable({
     fromSessionOrder: number;
     classSessionIndex: number;
     scheduledWeekdays: number[] | null;
+  } | null>(null);
+  const [reserveTarget, setReserveTarget] = useState<{
+    studentSessionId: string;
+    studentName: string;
+    studentCode: string | null;
+    defaultFromDate: string;
   } | null>(null);
 
   // ── Note dialog ────────────────────────────────────────────────────────────
@@ -456,6 +463,38 @@ export function SessionStudentTable({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-44">
+                        {canEdit && (
+                          <DropdownMenuItem
+                            className="gap-2 cursor-pointer"
+                            onSelect={() => {
+                              const currentSession = classSessions?.find(
+                                (cs) => cs.id === selectedClassSessionId
+                              );
+                              const selectedDate = currentSession?.sessionDate;
+                              const dateValue = selectedDate
+                                ? String(selectedDate).slice(0, 10)
+                                : "";
+                              if (!dateValue) {
+                                toast({
+                                  title: "Không thể bảo lưu",
+                                  description: "Không xác định được ngày của buổi học đang chọn.",
+                                  variant: "destructive",
+                                });
+                                return;
+                              }
+                              setReserveTarget({
+                                studentSessionId: ss.id,
+                                studentName: ss.student?.fullName || "Học viên",
+                                studentCode: ss.student?.code ?? null,
+                                defaultFromDate: dateValue,
+                              });
+                            }}
+                            data-testid={`menu-reserve-student-${ss.studentId}`}
+                          >
+                            <PauseCircle className="h-4 w-4 text-amber-500" />
+                            Bảo lưu
+                          </DropdownMenuItem>
+                        )}
                         {canEdit && classWeekdays.length > 0 && ss.studentClassId && (
                           <DropdownMenuItem
                             className="gap-2 cursor-pointer"
@@ -603,6 +642,17 @@ export function SessionStudentTable({
           classWeekdays={classWeekdays}
           classId={classData?.id ?? ""}
           selectedClassSessionId={selectedClassSessionId}
+        />
+      )}
+
+      {reserveTarget && (
+        <ReserveStudentSessionsDialog
+          open={!!reserveTarget}
+          onOpenChange={(open) => { if (!open) setReserveTarget(null); }}
+          studentSessionId={reserveTarget.studentSessionId}
+          studentName={reserveTarget.studentName}
+          studentCode={reserveTarget.studentCode}
+          defaultFromDate={reserveTarget.defaultFromDate}
         />
       )}
 

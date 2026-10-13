@@ -3790,6 +3790,127 @@ export function registerClassesRoutes(app: Express): void {
     }
   });
 
+  app.post(api.studentSessions.reserveRange.path, async (req, res) => {
+    try {
+      const { studentSessionId, dateFrom, dateTo, description } = req.body ?? {};
+      const isDate = (value: unknown): value is string =>
+        typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+      if (
+        typeof studentSessionId !== "string"
+        || !studentSessionId.trim()
+        || !isDate(dateFrom)
+        || !isDate(dateTo)
+        || dateTo < dateFrom
+        || (description !== undefined && typeof description !== "string")
+      ) {
+        return res.status(400).json({ message: "Thông tin bảo lưu không hợp lệ." });
+      }
+
+      const selectedResult = await db.execute(sql`
+        SELECT ss.student_id, ss.student_class_id, ss.class_id
+        FROM student_sessions ss
+        WHERE ss.id = ${studentSessionId}::uuid
+        LIMIT 1
+      `);
+      const selectedRow = (selectedResult.rows as any[])[0];
+      if (!selectedRow) return res.status(404).json({ message: "Không tìm thấy buổi học của học viên." });
+      if (!selectedRow.student_class_id) {
+        return res.status(409).json({ message: "Học viên chưa được gắn với một lượt đăng ký lớp." });
+      }
+
+      const targetsResult = await db.execute(sql`
+        SELECT
+          ss.id,
+          ss.class_session_id,
+          ss.attendance_status,
+          cs.session_index,
+          cs.session_date
+        FROM student_sessions ss
+        JOIN class_sessions cs ON cs.id = ss.class_session_id
+        WHERE ss.student_id = ${selectedRow.student_id}::uuid
+          AND ss.student_class_id = ${selectedRow.student_class_id}::uuid
+          AND ss.class_id = ${selectedRow.class_id}::uuid
+          AND cs.session_date BETWEEN ${dateFrom}::date AND ${dateTo}::date
+          AND COALESCE(cs.status, '') <> 'cancelled'
+        ORDER BY cs.session_date, cs.session_index
+      `);
+      const targetRows = targetsResult.rows as any[];
+      if (targetRows.length === 0) {
+        return res.status(400).json({ message: "Không có buổi học nào của học viên trong khoảng ngày đã chọn." });
+      }
+
+      const sessionIds = [...new Set(targetRows.map((row) => String(row.class_session_id)))];
+      const assignedSessionIds = await getStaffAssignedClassSessionIds(req, sessionIds);
+      if (sessionIds.some((id) => !assignedSessionIds.has(id))) {
+        if (!(await assertScheduleMutationPermission(req, res, "canEdit", [
+          { resource: "/attendance", action: "canCreate" },
+        ]))) return;
+      }
+
+      // Validate the full range before changing any attendance to avoid a
+      // partial update when one of its sessions is restricted.
+      for (const sessionId of sessionIds) {
+        await checkAttendanceLimitForSession(sessionId, req);
+      }
+
+      const userId = (req as any).user?.id ?? null;
+      const userFullName = await resolveStaffFullName(userId);
+      const note = typeof description === "string" && description.trim()
+        ? description.trim()
+        : undefined;
+      const changedRows: Array<{ id: string; oldStatus: string | null; sessionIndex: number; sessionDate: string }> = [];
+      for (const row of targetRows) {
+        const result = await storage.updateStudentAttendance(
+          String(row.id),
+          "paused",
+          note,
+          userId,
+          userFullName,
+        );
+        if (result.statusChanged) {
+          changedRows.push({
+            id: String(row.id),
+            oldStatus: row.attendance_status ?? "pending",
+            sessionIndex: Number(row.session_index),
+            sessionDate: String(row.session_date).slice(0, 10),
+          });
+          sendAttendanceNotificationWithLimit(String(row.id), "paused", userId).catch(console.error);
+        }
+      }
+
+      if (changedRows.length > 0 && userId) {
+        try {
+          const locationResult = await db.execute(sql`
+            SELECT location_id FROM classes WHERE id = ${selectedRow.class_id}::uuid LIMIT 1
+          `);
+          const studentResult = await db.execute(sql`
+            SELECT full_name, code FROM students WHERE id = ${selectedRow.student_id}::uuid LIMIT 1
+          `);
+          const locationRow = (locationResult.rows as any[])[0];
+          const studentRow = (studentResult.rows as any[])[0];
+          await createActivityLog({
+            userId,
+            locationId: locationRow?.location_id ?? null,
+            classId: selectedRow.class_id,
+            action: "Bảo lưu học viên",
+            oldContent: null,
+            newContent: JSON.stringify({
+              student: { name: studentRow?.full_name ?? "", code: studentRow?.code ?? "" },
+              sessions: changedRows,
+              description: note ?? "",
+            }),
+          });
+        } catch (logErr) {
+          console.error("[Attendance] Reserve range activity log error:", logErr);
+        }
+      }
+
+      res.json({ success: true, updatedCount: targetRows.length, changedCount: changedRows.length });
+    } catch (err: any) {
+      res.status(err.status ?? 400).json({ message: err.message || "Không thể bảo lưu học viên." });
+    }
+  });
+
   app.post(api.studentSessions.bulkAttendance.path, async (req, res) => {
     try {
       const { session_id, students: studentList } = req.body ?? {};
