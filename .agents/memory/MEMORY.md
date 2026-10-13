@@ -28,6 +28,7 @@
 - [CRM relationship filter scope](crm-relationship-filter-scope.md) — bộ lọc Mối quan hệ chỉ có tiêu đề nhóm và mục con; loại quan hệ rời khỏi danh sách chọn.
 - [Invoice editable dates](invoice-editable-dates.md) — ngày tạo và ngày thanh toán được sửa inline; ngày thanh toán không được trước ngày tạo và mọi thay đổi phải vào audit history.
 - [Invoice confirmed status](invoice-confirmed-status.md) — trạng thái confirmed hiển thị riêng nhưng dùng toàn bộ nghiệp vụ paid: tab, thu/chi, ví, đối soát, thông báo và hoa hồng.
+- [Paid invoice edit dialog lock](paid-invoice-edit-dialog-lock.md) — giữ dialog hóa đơn paid/confirmed mở ở chế độ khóa, hiện cảnh báo trong dialog và yêu cầu chuyển về chưa thanh toán trước.
 - [Deleted account login](deleted-account-login.md) — xoá hồ sơ phải vô hiệu hóa user liên kết; login cũng chặn user mồ côi còn sót lại để tránh đăng nhập bằng mật khẩu cũ.
 - [Commission board rules](commission-board-rules.md) — bảng tính từ cấu hình; ngày nghiệp vụ theo trạng thái, xếp chung các trạng thái và cộng dồn cấu hình trùng.
 - [Customer status card source](customer-status-card-source.md) — các thẻ trạng thái trên /customers lấy từ student_classes; không thay logic báo cáo, bộ lọc hoặc trạng thái từng dòng.

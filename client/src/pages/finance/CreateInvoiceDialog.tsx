@@ -402,16 +402,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     queryKey: ["/api/finance/invoices", invoiceId],
     enabled: open && Boolean(invoiceId),
   });
-
-  useEffect(() => {
-    if (!open || !isEdit || !editData || !isInvoicePaidLike(editData.status)) return;
-    toast({
-      title: "Không thể chỉnh sửa hóa đơn",
-      description: "Hóa đơn đã thanh toán/đã xác nhận. Hãy chuyển trạng thái về Chưa thanh toán trước khi sửa.",
-      variant: "destructive",
-    });
-    onClose();
-  }, [open, isEdit, editData?.id, editData?.status]);
+  const isPaidInvoiceLocked = isEdit && Boolean(editData && isInvoicePaidLike(editData.status));
 
   const { data: allCategoriesForEdit = [] } = useQuery<any[]>({ queryKey: ["/api/finance/transaction-categories"], enabled: open && Boolean(invoiceId) });
 
@@ -1582,6 +1573,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
           </DialogTitle>
         </DialogHeader>
 
+        <div className="relative flex flex-1 overflow-hidden">
         <div className="flex flex-1 overflow-hidden">
           {/* LEFT PANEL */}
           <div className="flex-1 overflow-y-auto px-6 py-4 border-r space-y-4 min-w-0">
@@ -2896,13 +2888,31 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
             </div>
           </div>
         </div>
+        </div>
+        {isPaidInvoiceLocked && (
+          <div
+            className="absolute inset-0 z-20 cursor-not-allowed bg-background/20"
+            aria-hidden="true"
+          />
+        )}
 
         {/* Footer actions */}
-        <div className="flex items-center justify-end gap-2 px-6 py-3 border-t bg-muted/20 flex-shrink-0">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 border-t bg-muted/20 flex-shrink-0">
+          {isPaidInvoiceLocked && (
+            <div
+              className="text-sm text-destructive font-medium"
+              role="alert"
+              data-testid="paid-invoice-edit-warning"
+            >
+              Hóa đơn đã thanh toán/đã xác nhận. Hãy chuyển trạng thái về Chưa thanh toán trước khi sửa.
+            </div>
+          )}
+          <div className="ml-auto flex items-center justify-end gap-2">
            <Button variant="outline" onClick={onClose} disabled={saveMutation.isPending} data-testid="button-cancel">{t("finance.cancel")}</Button>
-          <Button className="bg-purple-600 hover:bg-purple-700 gap-1" onClick={handleSave} disabled={saveMutation.isPending} data-testid="button-save-pay">
+          <Button className="bg-purple-600 hover:bg-purple-700 gap-1" onClick={handleSave} disabled={saveMutation.isPending || isPaidInvoiceLocked} data-testid="button-save-pay">
              {saveMutation.isPending ? t("finance.create.saving") : isEdit ? t("finance.create.updateReceipt") : t("finance.save")}
           </Button>
+          </div>
         </div>
       </DialogContent>
       </Dialog>
