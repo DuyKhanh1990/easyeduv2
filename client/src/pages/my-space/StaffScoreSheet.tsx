@@ -906,6 +906,7 @@ export function StaffScoreSheet() {
                     onChange={setRegularClassFilters}
                     placeholder={t("mySpace.scoreSheet.filterAllClasses")}
                     searchPlaceholder={t("mySpace.scoreSheet.filterSearchClasses")}
+                    compactSelectionLabel="lớp"
                     className="h-9 bg-background"
                     data-testid="filter-my-space-score-sheet-class"
                   />
@@ -918,6 +919,7 @@ export function StaffScoreSheet() {
                     onChange={setRegularScoreSheetFilters}
                     placeholder={t("mySpace.scoreSheet.filterAllScoreSheets")}
                     searchPlaceholder={t("mySpace.scoreSheet.filterSearchScoreSheets")}
+                    compactSelectionLabel="bảng điểm"
                     className="h-9 bg-background"
                     data-testid="filter-my-space-score-sheet-template"
                   />

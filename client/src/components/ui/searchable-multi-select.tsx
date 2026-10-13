@@ -21,6 +21,7 @@ interface SearchableMultiSelectProps {
   searchPlaceholder?: string;
   disabled?: boolean;
   className?: string;
+  compactSelectionLabel?: string;
   "data-testid"?: string;
 }
 
@@ -32,6 +33,7 @@ export function SearchableMultiSelect({
   searchPlaceholder = "Tìm kiếm...",
   disabled = false,
   className,
+  compactSelectionLabel,
   "data-testid": testId,
 }: SearchableMultiSelectProps) {
   const [open, setOpen] = useState(false);
@@ -88,9 +90,21 @@ export function SearchableMultiSelect({
             className
           )}
         >
-          <div className="flex flex-wrap gap-1 flex-1 min-w-0">
+          <div className={cn(
+            "flex flex-1 min-w-0 gap-1",
+            compactSelectionLabel ? "items-center overflow-hidden" : "flex-wrap",
+          )}>
             {selectedLabels.length === 0 ? (
               <span className="text-muted-foreground">{placeholder}</span>
+            ) : compactSelectionLabel ? (
+              <span
+                className="truncate"
+                title={selectedLabels.join(", ")}
+              >
+                {selectedLabels.length === 1
+                  ? selectedLabels[0]
+                  : `${selectedLabels.length} ${compactSelectionLabel} đã chọn`}
+              </span>
             ) : (
               selectedLabels.map((label, i) => (
                 <Badge
