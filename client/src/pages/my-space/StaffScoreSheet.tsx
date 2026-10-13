@@ -594,14 +594,14 @@ export function StaffScoreSheet() {
             value={activeTab}
             onValueChange={(value) => setActiveTab(value as StaffScoreSheetTab)}
           >
-            <TabsList className="grid h-auto w-full grid-cols-3 gap-1 bg-muted/60 p-1 sm:w-fit sm:min-w-[430px]">
-              <TabsTrigger value="all" className="min-h-9 whitespace-normal px-2 py-2 text-xs leading-tight data-[state=active]:bg-primary data-[state=active]:text-primary-foreground sm:text-sm">
+            <TabsList className="flex h-auto w-full flex-wrap items-center gap-2 bg-transparent p-0 sm:w-fit">
+              <TabsTrigger value="all" className="min-h-9 whitespace-normal rounded-md border border-input bg-background px-3 py-2 text-xs leading-tight text-foreground shadow-sm data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground sm:text-sm">
                 {t("mySpace.scoreSheet.tabAll")}
               </TabsTrigger>
-              <TabsTrigger value="regular" className="min-h-9 whitespace-normal px-2 py-2 text-xs leading-tight data-[state=active]:bg-primary data-[state=active]:text-primary-foreground sm:text-sm">
+              <TabsTrigger value="regular" className="min-h-9 whitespace-normal rounded-md border border-input bg-background px-3 py-2 text-xs leading-tight text-foreground shadow-sm data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground sm:text-sm">
                 {t("mySpace.scoreSheet.regularSheet")}
               </TabsTrigger>
-              <TabsTrigger value="conversion" className="min-h-9 whitespace-normal px-2 py-2 text-xs leading-tight data-[state=active]:bg-primary data-[state=active]:text-primary-foreground sm:text-sm">
+              <TabsTrigger value="conversion" className="min-h-9 whitespace-normal rounded-md border border-input bg-background px-3 py-2 text-xs leading-tight text-foreground shadow-sm data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground sm:text-sm">
                 {t("mySpace.scoreSheet.conversionSheet")}
               </TabsTrigger>
             </TabsList>
