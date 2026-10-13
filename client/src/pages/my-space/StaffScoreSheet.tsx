@@ -1006,20 +1006,22 @@ export function StaffScoreSheet() {
                                     {scoreProgressLabel}
                                   </span>
                                   {statusKey === "processing" && status && AssessmentStatusIcon && (
-                                    <span className="mt-1 inline-flex min-h-5 items-center gap-1">
+                                    <div className="mt-1 flex min-h-5 items-center gap-1">
                                       <AssessmentStatusIcon className={`h-3.5 w-3.5 shrink-0 ${status.className}`} />
                                       <span className={status.className}>{status.label}</span>
-                                    </span>
+                                    </div>
                                   )}
                                 </div>
-                                <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-bold">
-                                  {statusKey !== "processing" && status && AssessmentStatusIcon ? (
-                                    <>
-                                      <AssessmentStatusIcon className={`h-3.5 w-3.5 shrink-0 ${status.className}`} />
-                                      <span className={status.className}>{status.label}</span>
-                                    </>
-                                  ) : null}
-                                </span>
+                                {statusKey !== "processing" && (
+                                  <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-bold">
+                                    {status && AssessmentStatusIcon ? (
+                                      <>
+                                        <AssessmentStatusIcon className={`h-3.5 w-3.5 shrink-0 ${status.className}`} />
+                                        <span className={status.className}>{status.label}</span>
+                                      </>
+                                    ) : null}
+                                  </span>
+                                )}
                                 <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-bold">
                                   {deadlineStatus && DeadlineStatusIcon ? (
                                     <>
