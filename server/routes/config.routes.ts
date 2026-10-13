@@ -3805,6 +3805,7 @@ export function registerConfigRoutes(app: Express): void {
         const latestPublishedResults = new Map<string, {
           studentId: string;
           gradeBandLabel: string | null;
+          gradeBandColor: string | null;
           passStatus: "passed" | "failed" | null;
           examDate: string;
           assessmentName: string | null;
@@ -3819,6 +3820,7 @@ export function registerConfigRoutes(app: Express): void {
           latestPublishedResults.set(result.studentId, {
             studentId: result.studentId,
             gradeBandLabel: result.gradeBandLabel,
+            gradeBandColor: result.gradeBandColor,
             passStatus: result.passStatus,
             examDate: result.examDate,
             assessmentName: result.assessmentName,

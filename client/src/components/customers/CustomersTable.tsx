@@ -304,6 +304,7 @@ interface CustomersTableProps {
   learningStatuses?: Record<string, string>;
   latestScoreResults?: Record<string, {
     gradeBandLabel: string | null;
+    gradeBandColor: string | null;
     passStatus: "passed" | "failed" | null;
     examDate: string;
     assessmentName: string | null;
@@ -438,10 +439,9 @@ export function CustomersTable({
       case "code":
         {
           const scoreResult = latestScoreResults[student.id];
-          const resultParts = [
-            scoreResult?.gradeBandLabel,
-            scoreResult?.passStatus === "passed" ? "Đạt" : scoreResult?.passStatus === "failed" ? "Không đạt" : null,
-          ].filter((part): part is string => Boolean(part));
+          const passLabel = scoreResult?.passStatus === "passed"
+            ? "Đạt"
+            : scoreResult?.passStatus === "failed" ? "Không đạt" : null;
           const scoreTitle = scoreResult
             ? [scoreResult.assessmentName, scoreResult.examDate ? new Date(scoreResult.examDate).toLocaleDateString("vi-VN") : null]
                 .filter(Boolean)
@@ -452,13 +452,23 @@ export function CustomersTable({
               <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-sky-700 text-xs font-semibold tracking-wide whitespace-nowrap">
                 {student.code}
               </span>
-              {resultParts.length > 0 && (
+              {(scoreResult?.gradeBandLabel || passLabel) && (
                 <span
-                  className="font-['Roboto'] text-[10px] leading-tight text-slate-500 whitespace-nowrap"
+                  className="font-['Roboto'] text-[10px] font-bold leading-tight whitespace-nowrap"
                   title={scoreTitle || "Bảng điểm gần nhất đã công bố"}
                   data-testid={`latest-score-result-${student.id}`}
                 >
-                  {resultParts.join(" · ")}
+                  {scoreResult?.gradeBandLabel && (
+                    <span style={{ color: scoreResult.gradeBandColor ?? undefined }}>
+                      {scoreResult.gradeBandLabel}
+                    </span>
+                  )}
+                  {scoreResult?.gradeBandLabel && passLabel && <span className="text-slate-400"> · </span>}
+                  {passLabel && (
+                    <span className={scoreResult?.passStatus === "passed" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
+                      {passLabel}
+                    </span>
+                  )}
                 </span>
               )}
             </div>

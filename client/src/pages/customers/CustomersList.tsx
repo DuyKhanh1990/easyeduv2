@@ -211,6 +211,7 @@ export function CustomersList() {
   const { data: latestScoreResults = [] } = useQuery<Array<{
     studentId: string;
     gradeBandLabel: string | null;
+    gradeBandColor: string | null;
     passStatus: "passed" | "failed" | null;
     examDate: string;
     assessmentName: string | null;
