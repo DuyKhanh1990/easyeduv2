@@ -218,6 +218,10 @@ export function StaffScoreSheet() {
   const [conversionDeadlineDateFrom, setConversionDeadlineDateFrom] = useState("");
   const [conversionDeadlineDateTo, setConversionDeadlineDateTo] = useState("");
   const [conversionFilterDialogOpen, setConversionFilterDialogOpen] = useState(false);
+  const [regularSearchInput, setRegularSearchInput] = useState("");
+  const [regularClassFilters, setRegularClassFilters] = useState<string[]>([]);
+  const [regularScoreSheetFilters, setRegularScoreSheetFilters] = useState<string[]>([]);
+  const [regularPublicationFilter, setRegularPublicationFilter] = useState<"unpublished" | "published">("unpublished");
   const { toast } = useToast();
   const scoreSheetPermissions = myPermissions?.permissions["/my-space/score-sheet"];
   const canCreateGradeBook = myPermissions?.isSuperAdmin === true
@@ -270,6 +274,16 @@ export function StaffScoreSheet() {
   const classFilterOptions = Array.from(classOptionsById, ([value, label]) => ({ value, label }))
     .sort((a, b) => a.label.localeCompare(b.label, lang));
 
+  const regularClassOptionsById = new Map<string, string>();
+  gradeBooks.forEach((book) => {
+    regularClassOptionsById.set(
+      book.classId,
+      book.className !== book.classCode ? `${book.classCode} — ${book.className}` : book.classCode,
+    );
+  });
+  const regularClassFilterOptions = Array.from(regularClassOptionsById, ([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, lang));
+
   const scoreSheetOptionsById = new Map<string, string>();
   gradeBooks.forEach((book) => {
     scoreSheetOptionsById.set(
@@ -284,6 +298,16 @@ export function StaffScoreSheet() {
     );
   });
   const scoreSheetFilterOptions = Array.from(scoreSheetOptionsById, ([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, lang));
+
+  const regularScoreSheetOptionsById = new Map<string, string>();
+  gradeBooks.forEach((book) => {
+    regularScoreSheetOptionsById.set(
+      `regular:${book.scoreSheetId}`,
+      book.scoreSheetName || t("mySpace.scoreSheet.unavailableSheet"),
+    );
+  });
+  const regularScoreSheetFilterOptions = Array.from(regularScoreSheetOptionsById, ([value, label]) => ({ value, label }))
     .sort((a, b) => a.label.localeCompare(b.label, lang));
 
   const statusFilterOptions = [
@@ -449,7 +473,28 @@ export function StaffScoreSheet() {
     if (activeTab === "conversion") {
       return entry.kind === "conversion" && matchesConversionFilters(entry.assessment);
     }
-    if (activeTab === "regular" && entry.kind !== "grade-book") return false;
+    if (activeTab === "regular") {
+      if (entry.kind !== "grade-book") return false;
+      const book = entry.gradeBook;
+      if (book.published !== (regularPublicationFilter === "published")) return false;
+      if (regularClassFilters.length > 0 && !regularClassFilters.includes(book.classId)) return false;
+      if (
+        regularScoreSheetFilters.length > 0
+        && !regularScoreSheetFilters.includes(`regular:${book.scoreSheetId}`)
+      ) return false;
+      const searchTerm = regularSearchInput.trim().toLocaleLowerCase("vi");
+      if (
+        searchTerm
+        && ![
+          book.title,
+          book.classCode,
+          book.className,
+          book.locationName,
+          book.scoreSheetName,
+        ].some((value) => value?.toLocaleLowerCase("vi").includes(searchTerm))
+      ) return false;
+      return true;
+    }
 
     const classId = entry.kind === "grade-book" ? entry.gradeBook.classId : entry.assessment.classId;
     if (classFilters.length > 0 && !classFilters.includes(classId)) return false;
@@ -791,6 +836,91 @@ export function StaffScoreSheet() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                </div>
+              </div>
+            </div>
+          ) : activeTab === "regular" ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-3 sm:p-4 lg:flex-nowrap">
+              <form
+                className="relative min-w-[190px] flex-1 basis-[220px] xl:max-w-sm"
+                onSubmit={(event) => event.preventDefault()}
+              >
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  value={regularSearchInput}
+                  onChange={(event) => setRegularSearchInput(event.target.value)}
+                  placeholder="Tìm lớp, bảng điểm..."
+                  aria-label="Tìm bảng điểm thường"
+                  data-testid="search-my-space-regular-score-sheet"
+                  className="h-9 w-full rounded-full border border-input bg-background pl-9 pr-9 text-sm text-foreground outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                {regularSearchInput && (
+                  <button
+                    type="button"
+                    aria-label="Xóa nội dung tìm kiếm bảng điểm thường"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    onClick={() => setRegularSearchInput("")}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </form>
+
+              <div
+                role="tablist"
+                aria-label="Trạng thái công bố bảng điểm thường"
+                className="flex shrink-0 items-center gap-1.5"
+              >
+                <Button
+                  type="button"
+                  role="tab"
+                  aria-selected={regularPublicationFilter === "unpublished"}
+                  size="sm"
+                  variant={regularPublicationFilter === "unpublished" ? "default" : "outline"}
+                  className="h-9 whitespace-nowrap rounded-full px-3"
+                  onClick={() => setRegularPublicationFilter("unpublished")}
+                  data-testid="quick-filter-my-space-regular-unpublished"
+                >
+                  {t("mySpace.scoreSheet.unpublished")}
+                </Button>
+                <Button
+                  type="button"
+                  role="tab"
+                  aria-selected={regularPublicationFilter === "published"}
+                  size="sm"
+                  variant={regularPublicationFilter === "published" ? "default" : "outline"}
+                  className="h-9 whitespace-nowrap rounded-full px-3"
+                  onClick={() => setRegularPublicationFilter("published")}
+                  data-testid="quick-filter-my-space-regular-published"
+                >
+                  {t("mySpace.scoreSheet.published")}
+                </Button>
+              </div>
+
+              <div className="flex min-w-[290px] flex-[2] items-center gap-2">
+                <div className="min-w-0 flex-1 xl:w-40 xl:flex-none">
+                  <span className="sr-only">{t("mySpace.scoreSheet.filterClass")}</span>
+                  <SearchableMultiSelect
+                    options={regularClassFilterOptions}
+                    value={regularClassFilters}
+                    onChange={setRegularClassFilters}
+                    placeholder={t("mySpace.scoreSheet.filterAllClasses")}
+                    searchPlaceholder={t("mySpace.scoreSheet.filterSearchClasses")}
+                    className="h-9 bg-background"
+                    data-testid="filter-my-space-score-sheet-class"
+                  />
+                </div>
+                <div className="min-w-0 flex-1 xl:w-40 xl:flex-none">
+                  <span className="sr-only">{t("mySpace.scoreSheet.filterScoreSheet")}</span>
+                  <SearchableMultiSelect
+                    options={regularScoreSheetFilterOptions}
+                    value={regularScoreSheetFilters}
+                    onChange={setRegularScoreSheetFilters}
+                    placeholder={t("mySpace.scoreSheet.filterAllScoreSheets")}
+                    searchPlaceholder={t("mySpace.scoreSheet.filterSearchScoreSheets")}
+                    className="h-9 bg-background"
+                    data-testid="filter-my-space-score-sheet-template"
+                  />
                 </div>
               </div>
             </div>
