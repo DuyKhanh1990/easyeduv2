@@ -1355,6 +1355,12 @@ export function registerFinanceRoutes(app: Express): void {
       }
       const userId = (req as any).user?.id;
       const before = await storage.getInvoice(req.params.id);
+      const attemptedContentEdit = Object.keys(parsed.data).some((key) => key !== "status");
+      if (before && isPaidInvoiceStatus(before.status) && attemptedContentEdit) {
+        return res.status(409).json({
+          message: "Hóa đơn đã thanh toán/đã xác nhận không được chỉnh sửa. Hãy chuyển trạng thái về Chưa thanh toán trước.",
+        });
+      }
       if (parsed.data.status !== undefined) {
         if (!await canSetInvoiceStatus(req, parsed.data.status)) {
           return res.status(403).json({ message: "Bạn không có quyền chuyển hóa đơn sang trạng thái này." });

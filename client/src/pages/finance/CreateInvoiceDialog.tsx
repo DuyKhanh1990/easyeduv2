@@ -403,6 +403,16 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     enabled: open && Boolean(invoiceId),
   });
 
+  useEffect(() => {
+    if (!open || !isEdit || !editData || !isInvoicePaidLike(editData.status)) return;
+    toast({
+      title: "Không thể chỉnh sửa hóa đơn",
+      description: "Hóa đơn đã thanh toán/đã xác nhận. Hãy chuyển trạng thái về Chưa thanh toán trước khi sửa.",
+      variant: "destructive",
+    });
+    onClose();
+  }, [open, isEdit, editData?.id, editData?.status]);
+
   const { data: allCategoriesForEdit = [] } = useQuery<any[]>({ queryKey: ["/api/finance/transaction-categories"], enabled: open && Boolean(invoiceId) });
 
   useEffect(() => {
