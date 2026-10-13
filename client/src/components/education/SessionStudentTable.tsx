@@ -219,6 +219,7 @@ export function SessionStudentTable({
     studentName: string;
     studentCode: string | null;
     defaultFromDate: string;
+    maxDate: string;
   } | null>(null);
 
   // ── Note dialog ────────────────────────────────────────────────────────────
@@ -474,10 +475,24 @@ export function SessionStudentTable({
                               const dateValue = selectedDate
                                 ? String(selectedDate).slice(0, 10)
                                 : "";
+                              const maxDate = (classSessions ?? [])
+                                .filter((item) => item.status !== "cancelled" && item.sessionDate)
+                                .map((item) => String(item.sessionDate).slice(0, 10))
+                                .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))
+                                .sort()
+                                .at(-1) ?? "";
                               if (!dateValue) {
                                 toast({
                                   title: "Không thể bảo lưu",
                                   description: "Không xác định được ngày của buổi học đang chọn.",
+                                  variant: "destructive",
+                                });
+                                return;
+                              }
+                              if (!maxDate) {
+                                toast({
+                                  title: "Không thể bảo lưu",
+                                  description: "Không xác định được buổi cuối cùng trong lịch lớp.",
                                   variant: "destructive",
                                 });
                                 return;
@@ -487,6 +502,7 @@ export function SessionStudentTable({
                                 studentName: ss.student?.fullName || "Học viên",
                                 studentCode: ss.student?.code ?? null,
                                 defaultFromDate: dateValue,
+                                maxDate,
                               });
                             }}
                             data-testid={`menu-reserve-student-${ss.studentId}`}
@@ -653,6 +669,7 @@ export function SessionStudentTable({
           studentName={reserveTarget.studentName}
           studentCode={reserveTarget.studentCode}
           defaultFromDate={reserveTarget.defaultFromDate}
+          maxDate={reserveTarget.maxDate}
         />
       )}
 

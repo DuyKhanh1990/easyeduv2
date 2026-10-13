@@ -20,6 +20,7 @@ type ReserveStudentSessionsDialogProps = {
   studentName: string;
   studentCode?: string | null;
   defaultFromDate: string;
+  maxDate: string;
 };
 
 export function ReserveStudentSessionsDialog({
@@ -29,6 +30,7 @@ export function ReserveStudentSessionsDialog({
   studentName,
   studentCode,
   defaultFromDate,
+  maxDate,
 }: ReserveStudentSessionsDialogProps) {
   const { toast } = useToast();
   const [dateFrom, setDateFrom] = useState(defaultFromDate);
@@ -104,6 +106,7 @@ export function ReserveStudentSessionsDialog({
                 type="date"
                 value={dateTo}
                 min={dateFrom || undefined}
+                max={maxDate}
                 onChange={(event) => setDateTo(event.target.value)}
               />
             </label>

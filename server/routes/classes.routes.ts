@@ -3818,6 +3818,22 @@ export function registerClassesRoutes(app: Express): void {
         return res.status(409).json({ message: "Học viên chưa được gắn với một lượt đăng ký lớp." });
       }
 
+      const scheduleEndResult = await db.execute(sql`
+        SELECT MAX(session_date)::text AS last_session_date
+        FROM class_sessions
+        WHERE class_id = ${selectedRow.class_id}::uuid
+          AND COALESCE(status, '') <> 'cancelled'
+      `);
+      const lastSessionDate = (scheduleEndResult.rows as any[])[0]?.last_session_date;
+      if (!lastSessionDate) {
+        return res.status(409).json({ message: "Lớp chưa có lịch học để bảo lưu." });
+      }
+      if (dateTo > String(lastSessionDate).slice(0, 10)) {
+        return res.status(400).json({
+          message: `Ngày Đến không được sau buổi cuối cùng của lịch lớp (${String(lastSessionDate).slice(0, 10)}).`,
+        });
+      }
+
       const targetsResult = await db.execute(sql`
         SELECT
           ss.id,
