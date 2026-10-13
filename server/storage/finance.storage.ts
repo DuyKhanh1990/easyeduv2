@@ -2227,6 +2227,14 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
         .select()
         .from(invoicePaymentSchedule)
         .where(eq(invoicePaymentSchedule.invoiceId, id));
+      // An empty schedule from an edit surface can mean either that this
+      // invoice has no installments or that the client omitted its existing
+      // schedule. Preserve and reconcile persisted rows in the latter case.
+      if (paymentSchedule.length > 0 || existingSchedules.length > 0) {
+      const scheduleWasOmitted = paymentSchedule.length === 0 && existingSchedules.length > 0;
+      const scheduleInput = scheduleWasOmitted
+        ? existingSchedules.map((row) => ({ ...row, dueDate: row.dueDate }))
+        : paymentSchedule;
       const existingById = new Map(existingSchedules.map((row) => [row.id, row]));
       const existingByCode = new Map<string, (typeof existingSchedules)[number]>();
       for (const row of [...existingSchedules].sort(
@@ -2240,7 +2248,7 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
       const now = new Date();
       const defaultDueDate = getBusinessDateString(now);
 
-      const scheduleRows = paymentSchedule.map((s: any, idx: number) => {
+      const scheduleRows = scheduleInput.map((s: any, idx: number) => {
         // Some edit surfaces may send a temporary or stale schedule ID. The
         // installment code is stable within an invoice, so use it as a safe
         // fallback instead of inserting a duplicate paid installment.
@@ -2303,11 +2311,39 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
         }
       }
 
+      const invoiceGrandTotal = parseFloat(String(toUpdate.grandTotal ?? inv.grandTotal ?? "0")) || 0;
+      if (scheduleWasOmitted) {
+        const paidTotalCents = scheduleRows
+          .filter((row) => isPaidScheduleStatus(row.status))
+          .reduce((sum, row) => sum + Math.round((parseFloat(String(row.amount ?? "0")) || 0) * 100), 0);
+        const remainingCents = Math.round(invoiceGrandTotal * 100) - paidTotalCents;
+        const unpaidRows = scheduleRows.filter((row) => !isPaidScheduleStatus(row.status));
+        if (remainingCents < 0) {
+          throw new Error("Tổng hóa đơn không thể thấp hơn các đợt đã thanh toán");
+        }
+        if (remainingCents > 0 && unpaidRows.length === 0) {
+          throw new Error("Không thể thay đổi tổng hóa đơn vì không còn đợt chưa thanh toán để phân bổ");
+        }
+        const currentUnpaidCents = unpaidRows.reduce(
+          (sum, row) => sum + Math.round((parseFloat(String(row.amount ?? "0")) || 0) * 100),
+          0,
+        );
+        let allocatedCents = 0;
+        unpaidRows.forEach((row, index) => {
+          const nextAmountCents = index === unpaidRows.length - 1
+            ? remainingCents - allocatedCents
+            : currentUnpaidCents > 0
+              ? Math.round(remainingCents * Math.round((parseFloat(String(row.amount ?? "0")) || 0) * 100) / currentUnpaidCents)
+              : Math.floor(remainingCents / unpaidRows.length);
+          row.amount = (nextAmountCents / 100).toFixed(2);
+          allocatedCents += nextAmountCents;
+        });
+      }
+
       const finalAllocatedTotal = [
         ...scheduleRows,
         ...existingSchedules.filter(row => isPaidScheduleStatus(row.status) && !scheduleRows.some(next => next.id === row.id)),
       ].reduce((sum, row) => sum + (parseFloat(String(row.amount ?? "0")) || 0), 0);
-      const invoiceGrandTotal = parseFloat(String(toUpdate.grandTotal ?? inv.grandTotal ?? "0")) || 0;
       if (Math.abs(finalAllocatedTotal - invoiceGrandTotal) > 0.01) {
         throw new Error("Tổng các đợt thanh toán phải bằng Tổng tiền hóa đơn");
       }
@@ -2328,6 +2364,7 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
         } else {
           await tx.insert(invoicePaymentSchedule).values(row);
         }
+      }
       }
     }
 
