@@ -687,7 +687,7 @@ export function CustomersTable({
                   <TooltipProvider key={idx}>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <div className="grid grid-cols-[120px_82px_84px] items-center text-[12.5px] cursor-help hover:opacity-75 transition-opacity">
+                        <div className="grid grid-cols-[120px_96px_84px] gap-x-3 items-center text-[12.5px] cursor-help hover:opacity-75 transition-opacity">
                           <button
                             type="button"
                             className="min-w-0 truncate text-left font-semibold text-sky-600 whitespace-nowrap hover:text-sky-800 hover:underline"
