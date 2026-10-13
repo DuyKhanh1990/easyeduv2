@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Facebook, Pencil, Check } from "lucide-react";
+import { Facebook, Pencil, Check, ChevronDown } from "lucide-react";
 
 import { X, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -80,6 +80,7 @@ export function StudentDetailDialog({
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
   const [selectedClassIndex, setSelectedClassIndex] = useState(0);
+  const [classFeeAllocationExpanded, setClassFeeAllocationExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [scoreReviewSubTab, setScoreReviewSubTab] = useState<"score" | "review">("score");
   const [sessionsPage, setSessionsPage] = useState(1);
@@ -101,6 +102,10 @@ export function StudentDetailDialog({
       setQueryReady(false);
     }
   }, [open]);
+
+  useEffect(() => {
+    if (open) setClassFeeAllocationExpanded(false);
+  }, [open, student?.id]);
 
   // Facebook conversations linked to this student
   const { data: fbConversations = [] } = useQuery<any[]>({
@@ -692,66 +697,81 @@ export function StudentDetailDialog({
                     </div>
                     <div className="flex-1 overflow-y-auto flex flex-col bg-white">
                       <div className="shrink-0 border-b bg-slate-50 p-3">
-                        <div className="mb-2">
-                          <p className="text-sm font-semibold text-gray-800">Phân bổ học phí theo lớp</p>
-                          <p className="text-xs text-gray-500">
-                            Giá trị buổi học cộng theo đơn giá thực tế từng buổi. Đã phân bổ gồm tiền đã thu và tín dụng chuyển lớp; hóa đơn chưa thu không được tính là tiền đã nhận.
-                          </p>
-                        </div>
-                        <div className="overflow-x-auto">
-                          <table className="w-full min-w-max border-collapse text-sm">
-                            <thead>
-                              <tr className="border-b bg-white">
-                                <th scope="col" className="sticky left-0 z-10 min-w-36 bg-white p-2 text-left font-semibold text-gray-700">
-                                  Lớp
-                                </th>
-                                {classesData.map((item: any, index: number) => (
-                                  <th
-                                    key={item.class?.id || index}
-                                    scope="col"
-                                    className={`min-w-44 p-2 text-left font-semibold ${
-                                      index === selectedClassIndex ? "text-blue-700" : "text-gray-700"
-                                    }`}
-                                  >
-                                    {item.class?.name} ({item.class?.classCode})
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              <tr className="border-b">
-                                <th scope="row" className="sticky left-0 z-10 bg-slate-50 p-2 text-left font-medium text-gray-600">
-                                  Số buổi thuộc lớp
-                                </th>
-                                {classesData.map((item: any, index: number) => (
-                                  <td key={item.class?.id || index} className="p-2 text-gray-700">
-                                    {Number(item.totalSessions || 0)}
-                                  </td>
-                                ))}
-                              </tr>
-                              <tr className="border-b">
-                                <th scope="row" className="sticky left-0 z-10 bg-slate-50 p-2 text-left font-medium text-gray-600">
-                                  Giá trị các buổi
-                                </th>
-                                {classesData.map((item: any, index: number) => (
-                                  <td key={item.class?.id || index} className="p-2 font-medium text-gray-700">
-                                    {Number(item.sessionValueTotal || 0).toLocaleString("vi-VN")} VND
-                                  </td>
-                                ))}
-                              </tr>
-                              <tr>
-                                <th scope="row" className="sticky left-0 z-10 bg-slate-50 p-2 text-left font-medium text-gray-600">
-                                  Đã phân bổ
-                                </th>
-                                {classesData.map((item: any, index: number) => (
-                                  <td key={item.class?.id || index} className="p-2 font-semibold text-blue-700">
-                                    {Number(item.classFundedAmount ?? item.invoicePaidTotal ?? 0).toLocaleString("vi-VN")} VND
-                                  </td>
-                                ))}
-                              </tr>
-                            </tbody>
-                          </table>
-                        </div>
+                        <button
+                          type="button"
+                          className="flex w-full items-center justify-between gap-3 text-left"
+                          aria-expanded={classFeeAllocationExpanded}
+                          aria-controls="student-class-fee-allocation"
+                          onClick={() => setClassFeeAllocationExpanded((expanded) => !expanded)}
+                        >
+                          <span className="text-sm font-semibold text-gray-800">Phân bổ học phí theo lớp</span>
+                          <ChevronDown
+                            className={`h-4 w-4 shrink-0 text-gray-500 transition-transform ${
+                              classFeeAllocationExpanded ? "rotate-180" : ""
+                            }`}
+                          />
+                        </button>
+                        {classFeeAllocationExpanded && (
+                          <div id="student-class-fee-allocation" className="mt-2">
+                            <p className="mb-2 text-xs text-gray-500">
+                              Giá trị buổi học cộng theo đơn giá thực tế từng buổi. Đã phân bổ gồm tiền đã thu và tín dụng chuyển lớp; hóa đơn chưa thu không được tính là tiền đã nhận.
+                            </p>
+                            <div className="overflow-x-auto">
+                              <table className="w-full min-w-max border-collapse text-sm">
+                                <thead>
+                                  <tr className="border-b bg-white">
+                                    <th scope="col" className="sticky left-0 z-10 min-w-36 bg-white p-2 text-left font-semibold text-gray-700">
+                                      Lớp
+                                    </th>
+                                    {classesData.map((item: any, index: number) => (
+                                      <th
+                                        key={item.class?.id || index}
+                                        scope="col"
+                                        className={`min-w-44 p-2 text-left font-semibold ${
+                                          index === selectedClassIndex ? "text-blue-700" : "text-gray-700"
+                                        }`}
+                                      >
+                                        {item.class?.name} ({item.class?.classCode})
+                                      </th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  <tr className="border-b">
+                                    <th scope="row" className="sticky left-0 z-10 bg-slate-50 p-2 text-left font-medium text-gray-600">
+                                      Số buổi thuộc lớp
+                                    </th>
+                                    {classesData.map((item: any, index: number) => (
+                                      <td key={item.class?.id || index} className="p-2 text-gray-700">
+                                        {Number(item.totalSessions || 0)}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                  <tr className="border-b">
+                                    <th scope="row" className="sticky left-0 z-10 bg-slate-50 p-2 text-left font-medium text-gray-600">
+                                      Giá trị các buổi
+                                    </th>
+                                    {classesData.map((item: any, index: number) => (
+                                      <td key={item.class?.id || index} className="p-2 font-medium text-gray-700">
+                                        {Number(item.sessionValueTotal || 0).toLocaleString("vi-VN")} VND
+                                      </td>
+                                    ))}
+                                  </tr>
+                                  <tr>
+                                    <th scope="row" className="sticky left-0 z-10 bg-slate-50 p-2 text-left font-medium text-gray-600">
+                                      Đã phân bổ
+                                    </th>
+                                    {classesData.map((item: any, index: number) => (
+                                      <td key={item.class?.id || index} className="p-2 font-semibold text-blue-700">
+                                        {Number(item.classFundedAmount ?? item.invoicePaidTotal ?? 0).toLocaleString("vi-VN")} VND
+                                      </td>
+                                    ))}
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
                       </div>
                       {classesData[selectedClassIndex] && (
                         <div className="flex-1 flex flex-col">
