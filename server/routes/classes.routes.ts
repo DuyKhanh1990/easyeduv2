@@ -3792,12 +3792,16 @@ export function registerClassesRoutes(app: Express): void {
 
   app.post(api.studentSessions.reserveRange.path, async (req, res) => {
     try {
-      const { studentSessionId, dateFrom, dateTo, description } = req.body ?? {};
+      const { studentSessionId, studentSessionIds, dateFrom, dateTo, description } = req.body ?? {};
+      const requestedSessionIds = Array.isArray(studentSessionIds)
+        ? [...new Set(studentSessionIds)]
+        : [studentSessionId];
       const isDate = (value: unknown): value is string =>
         typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
       if (
-        typeof studentSessionId !== "string"
-        || !studentSessionId.trim()
+        requestedSessionIds.length === 0
+        || requestedSessionIds.length > 500
+        || requestedSessionIds.some((id) => typeof id !== "string" || !id.trim())
         || !isDate(dateFrom)
         || !isDate(dateTo)
         || dateTo < dateFrom
@@ -3807,15 +3811,22 @@ export function registerClassesRoutes(app: Express): void {
       }
 
       const selectedResult = await db.execute(sql`
-        SELECT ss.student_id, ss.student_class_id, ss.class_id
+        SELECT ss.id, ss.student_id, ss.student_class_id, ss.class_id, ss.class_session_id
         FROM student_sessions ss
-        WHERE ss.id = ${studentSessionId}::uuid
-        LIMIT 1
+        WHERE ss.id IN (${sql.join(requestedSessionIds.map((id: string) => sql`${id}::uuid`), sql`, `)})
       `);
-      const selectedRow = (selectedResult.rows as any[])[0];
-      if (!selectedRow) return res.status(404).json({ message: "Không tìm thấy buổi học của học viên." });
-      if (!selectedRow.student_class_id) {
+      const selectedRows = selectedResult.rows as any[];
+      if (selectedRows.length !== requestedSessionIds.length) {
+        return res.status(404).json({ message: "Không tìm thấy một hoặc nhiều buổi học đã chọn." });
+      }
+      if (selectedRows.some((row) => !row.student_class_id)) {
         return res.status(409).json({ message: "Học viên chưa được gắn với một lượt đăng ký lớp." });
+      }
+      const selectedRow = selectedRows[0];
+      if (selectedRows.some((row) =>
+        row.class_id !== selectedRow.class_id || row.class_session_id !== selectedRow.class_session_id
+      )) {
+        return res.status(400).json({ message: "Chỉ có thể bảo lưu học viên thuộc cùng buổi học và lớp." });
       }
 
       const scheduleEndResult = await db.execute(sql`
@@ -3834,17 +3845,18 @@ export function registerClassesRoutes(app: Express): void {
         });
       }
 
+      const studentClassIds = [...new Set(selectedRows.map((row) => String(row.student_class_id)))];
       const targetsResult = await db.execute(sql`
         SELECT
           ss.id,
+          ss.student_id,
           ss.class_session_id,
           ss.attendance_status,
           cs.session_index,
           cs.session_date
         FROM student_sessions ss
         JOIN class_sessions cs ON cs.id = ss.class_session_id
-        WHERE ss.student_id = ${selectedRow.student_id}::uuid
-          AND ss.student_class_id = ${selectedRow.student_class_id}::uuid
+        WHERE ss.student_class_id IN (${sql.join(studentClassIds.map((id) => sql`${id}::uuid`), sql`, `)})
           AND ss.class_id = ${selectedRow.class_id}::uuid
           AND cs.session_date BETWEEN ${dateFrom}::date AND ${dateTo}::date
           AND COALESCE(cs.status, '') <> 'cancelled'
@@ -3874,7 +3886,7 @@ export function registerClassesRoutes(app: Express): void {
       const note = typeof description === "string" && description.trim()
         ? description.trim()
         : undefined;
-      const changedRows: Array<{ id: string; oldStatus: string | null; sessionIndex: number; sessionDate: string }> = [];
+      const changedRows: Array<{ id: string; studentId: string; oldStatus: string | null; sessionIndex: number; sessionDate: string }> = [];
       for (const row of targetRows) {
         const result = await storage.updateStudentAttendance(
           String(row.id),
@@ -3886,6 +3898,7 @@ export function registerClassesRoutes(app: Express): void {
         if (result.statusChanged) {
           changedRows.push({
             id: String(row.id),
+            studentId: String(row.student_id),
             oldStatus: row.attendance_status ?? "pending",
             sessionIndex: Number(row.session_index),
             sessionDate: String(row.session_date).slice(0, 10),
@@ -3899,23 +3912,25 @@ export function registerClassesRoutes(app: Express): void {
           const locationResult = await db.execute(sql`
             SELECT location_id FROM classes WHERE id = ${selectedRow.class_id}::uuid LIMIT 1
           `);
-          const studentResult = await db.execute(sql`
-            SELECT full_name, code FROM students WHERE id = ${selectedRow.student_id}::uuid LIMIT 1
-          `);
           const locationRow = (locationResult.rows as any[])[0];
-          const studentRow = (studentResult.rows as any[])[0];
-          await createActivityLog({
-            userId,
-            locationId: locationRow?.location_id ?? null,
-            classId: selectedRow.class_id,
-            action: "Bảo lưu học viên",
-            oldContent: null,
-            newContent: JSON.stringify({
-              student: { name: studentRow?.full_name ?? "", code: studentRow?.code ?? "" },
-              sessions: changedRows,
-              description: note ?? "",
-            }),
-          });
+          for (const studentId of new Set(changedRows.map((row) => row.studentId))) {
+            const studentResult = await db.execute(sql`
+              SELECT full_name, code FROM students WHERE id = ${studentId}::uuid LIMIT 1
+            `);
+            const studentRow = (studentResult.rows as any[])[0];
+            await createActivityLog({
+              userId,
+              locationId: locationRow?.location_id ?? null,
+              classId: selectedRow.class_id,
+              action: "Bảo lưu học viên",
+              oldContent: null,
+              newContent: JSON.stringify({
+                student: { name: studentRow?.full_name ?? "", code: studentRow?.code ?? "" },
+                sessions: changedRows.filter((row) => row.studentId === studentId),
+                description: note ?? "",
+              }),
+            });
+          }
         } catch (logErr) {
           console.error("[Attendance] Reserve range activity log error:", logErr);
         }

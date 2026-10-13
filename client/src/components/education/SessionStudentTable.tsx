@@ -78,7 +78,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { ChangeCycleDialog } from "./ChangeCycleDialog";
-import { ReserveStudentSessionsDialog } from "./ReserveStudentSessionsDialog";
+import { ReserveStudentSessionsDialog, type ReserveStudentSessionsTarget } from "./ReserveStudentSessionsDialog";
 
 const WEEKDAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 
@@ -215,11 +215,7 @@ export function SessionStudentTable({
     scheduledWeekdays: number[] | null;
   } | null>(null);
   const [reserveTarget, setReserveTarget] = useState<{
-    studentSessionId: string;
-    studentId: string;
-    classId: string;
-    studentName: string;
-    studentCode: string | null;
+    students: ReserveStudentSessionsTarget[];
     defaultFromDate: string;
     maxDate: string;
   } | null>(null);
@@ -500,11 +496,13 @@ export function SessionStudentTable({
                                 return;
                               }
                               setReserveTarget({
-                                studentSessionId: ss.id,
-                                studentId: ss.studentId,
-                                classId: classData?.id ?? ss.classId ?? "",
-                                studentName: ss.student?.fullName || "Học viên",
-                                studentCode: ss.student?.code ?? null,
+                                students: [{
+                                  studentSessionId: ss.id,
+                                  studentId: ss.studentId,
+                                  classId: classData?.id ?? ss.classId ?? "",
+                                  studentName: ss.student?.fullName || "Học viên",
+                                  studentCode: ss.student?.code ?? null,
+                                }],
                                 defaultFromDate: dateValue,
                                 maxDate,
                               });
@@ -669,11 +667,7 @@ export function SessionStudentTable({
         <ReserveStudentSessionsDialog
           open={!!reserveTarget}
           onOpenChange={(open) => { if (!open) setReserveTarget(null); }}
-          studentSessionId={reserveTarget.studentSessionId}
-          studentId={reserveTarget.studentId}
-          classId={reserveTarget.classId}
-          studentName={reserveTarget.studentName}
-          studentCode={reserveTarget.studentCode}
+          students={reserveTarget.students}
           defaultFromDate={reserveTarget.defaultFromDate}
           maxDate={reserveTarget.maxDate}
         />

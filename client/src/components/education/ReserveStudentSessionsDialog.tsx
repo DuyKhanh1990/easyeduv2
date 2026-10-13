@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -13,14 +13,18 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-type ReserveStudentSessionsDialogProps = {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+export type ReserveStudentSessionsTarget = {
   studentSessionId: string;
   studentId: string;
   classId: string;
   studentName: string;
   studentCode?: string | null;
+};
+
+type ReserveStudentSessionsDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  students: ReserveStudentSessionsTarget[];
   defaultFromDate: string;
   maxDate: string;
 };
@@ -28,11 +32,7 @@ type ReserveStudentSessionsDialogProps = {
 export function ReserveStudentSessionsDialog({
   open,
   onOpenChange,
-  studentSessionId,
-  studentId,
-  classId,
-  studentName,
-  studentCode,
+  students,
   defaultFromDate,
   maxDate,
 }: ReserveStudentSessionsDialogProps) {
@@ -41,20 +41,29 @@ export function ReserveStudentSessionsDialog({
   const [dateTo, setDateTo] = useState(defaultFromDate);
   const [description, setDescription] = useState("");
 
+  useEffect(() => {
+    if (!open) return;
+    setDateFrom(defaultFromDate);
+    setDateTo(defaultFromDate);
+    setDescription("");
+  }, [open, defaultFromDate]);
+
   const reserveMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("POST", "/api/student-sessions/reserve-range", {
-        studentSessionId,
+        studentSessionIds: students.map((student) => student.studentSessionId),
         dateFrom,
         dateTo,
         description,
       });
-      return response.json() as Promise<{ updatedCount: number }>;
+      return response.json() as Promise<{ updatedCount: number; changedCount: number }>;
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({
-        queryKey: [`/api/students/${studentId}/classes/${classId}/sessions`],
-      });
+      for (const student of students) {
+        queryClient.invalidateQueries({
+          queryKey: [`/api/students/${student.studentId}/classes/${student.classId}/sessions`],
+        });
+      }
       queryClient.invalidateQueries({
         predicate: (query) => {
           const key = query.queryKey[0];
@@ -67,7 +76,7 @@ export function ReserveStudentSessionsDialog({
       });
       toast({
         title: "Đã bảo lưu",
-        description: `Đã cập nhật điểm danh bảo lưu cho ${result.updatedCount} buổi học.`,
+        description: `Đã cập nhật ${result.changedCount} buổi học cho ${students.length} học viên.`,
       });
       setDescription("");
       onOpenChange(false);
@@ -77,7 +86,7 @@ export function ReserveStudentSessionsDialog({
     },
   });
 
-  const invalidRange = !dateFrom || !dateTo || dateTo < dateFrom;
+  const invalidRange = students.length === 0 || !dateFrom || !dateTo || dateTo < dateFrom;
 
   return (
     <Dialog
@@ -88,14 +97,22 @@ export function ReserveStudentSessionsDialog({
     >
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
-          <DialogTitle>Bảo lưu học viên</DialogTitle>
+          <DialogTitle>{students.length > 1 ? "Bảo lưu nhiều học viên" : "Bảo lưu học viên"}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="rounded-md border bg-muted/30 p-3">
-            <div className="text-xs text-muted-foreground">Thông tin học viên</div>
-            <div className="mt-1 font-medium">{studentName}</div>
-            {studentCode && <div className="text-sm text-muted-foreground">{studentCode}</div>}
+            <div className="text-xs text-muted-foreground">
+              {students.length > 1 ? `Học viên được chọn (${students.length})` : "Thông tin học viên"}
+            </div>
+            <div className="mt-1 max-h-24 space-y-1 overflow-y-auto">
+              {students.map((student) => (
+                <div key={student.studentSessionId} className="font-medium">
+                  {student.studentName}
+                  {student.studentCode && <span className="ml-2 text-sm font-normal text-muted-foreground">{student.studentCode}</span>}
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -129,7 +146,7 @@ export function ReserveStudentSessionsDialog({
             />
           </label>
           <p className="text-xs text-muted-foreground">
-            Các buổi học của học viên trong khoảng ngày đã chọn sẽ được điểm danh là Bảo lưu.
+            Các buổi học của học viên được chọn trong khoảng ngày sẽ được điểm danh là Bảo lưu.
           </p>
         </div>
 

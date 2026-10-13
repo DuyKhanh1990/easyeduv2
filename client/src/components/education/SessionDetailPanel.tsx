@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { AddStudentToSessionDialog } from "./AddStudentToSessionDialog";
 import { SessionStudentTable } from "./SessionStudentTable";
 import { BulkChangeCycleDialog } from "./BulkChangeCycleDialog";
+import { ReserveStudentSessionsDialog, type ReserveStudentSessionsTarget } from "./ReserveStudentSessionsDialog";
 import type { ClassPermissions } from "@/pages/education/ClassDetail";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -161,6 +162,30 @@ export function SessionDetailPanel({
   } | null>(null);
 
   const [isBulkChangeCycleOpen, setIsBulkChangeCycleOpen] = useState(false);
+  const [isBulkReserveOpen, setIsBulkReserveOpen] = useState(false);
+  const selectedReserveStudents: ReserveStudentSessionsTarget[] = (currentSessionStudents ?? [])
+    .filter((student) =>
+      selectedStudentIds.includes(student.studentId)
+      && student.id
+      && student.studentId
+      && student.studentClassId
+    )
+    .map((student) => ({
+      studentSessionId: student.id,
+      studentId: student.studentId,
+      classId: classData?.id ?? student.classId ?? "",
+      studentName: student.student?.fullName || "Học viên",
+      studentCode: student.student?.code ?? null,
+    }));
+  const reserveFromDate = classSessions?.find((session) => session.id === selectedClassSessionId)?.sessionDate
+    ? String(classSessions.find((session) => session.id === selectedClassSessionId)!.sessionDate).slice(0, 10)
+    : "";
+  const reserveMaxDate = (classSessions ?? [])
+    .filter((session) => session.status !== "cancelled" && session.sessionDate)
+    .map((session) => String(session.sessionDate).slice(0, 10))
+    .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))
+    .sort()
+    .at(-1) ?? "";
 
   const [isEditingLink, setIsEditingLink] = useState(false);
   const [linkInputValue, setLinkInputValue] = useState("");
@@ -721,6 +746,27 @@ export function SessionDetailPanel({
                       Điểm danh hàng loạt
                     </Button>
                     )}
+                    {canEdit && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="justify-start text-xs h-8 text-amber-700 dark:text-amber-400"
+                      onClick={() => {
+                        if (selectedReserveStudents.length === 0 || !reserveFromDate || !reserveMaxDate) {
+                          toast({
+                            title: "Không thể bảo lưu",
+                            description: "Không xác định được học viên hoặc lịch của buổi học đang chọn.",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+                        setIsBulkReserveOpen(true);
+                        setIsActionMenuOpen(false);
+                      }}
+                    >
+                      Bảo lưu
+                    </Button>
+                    )}
                     {canEdit && (classData?.weekdays ?? []).length > 0 && (
                     <Button
                       variant="ghost"
@@ -908,12 +954,22 @@ export function SessionDetailPanel({
       classSessionIndex={currentSessionIndex}
     />
   ) : null;
+  const bulkReserveDialog = selectedReserveStudents.length > 0 && reserveFromDate && reserveMaxDate ? (
+    <ReserveStudentSessionsDialog
+      open={isBulkReserveOpen}
+      onOpenChange={setIsBulkReserveOpen}
+      students={selectedReserveStudents}
+      defaultFromDate={reserveFromDate}
+      maxDate={reserveMaxDate}
+    />
+  ) : null;
 
   if (mode === "students") {
     return (
       <>
         {studentListCard}
         {bulkChangeCycleDialog}
+        {bulkReserveDialog}
       </>
     );
   }
@@ -926,6 +982,7 @@ export function SessionDetailPanel({
       {studentListCard}
       {contentViewDialog}
       {bulkChangeCycleDialog}
+      {bulkReserveDialog}
     </>
   );
 }
