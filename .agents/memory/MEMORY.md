@@ -31,6 +31,7 @@
 - [Deleted account login](deleted-account-login.md) — xoá hồ sơ phải vô hiệu hóa user liên kết; login cũng chặn user mồ côi còn sót lại để tránh đăng nhập bằng mật khẩu cũ.
 - [Commission board rules](commission-board-rules.md) — bảng tính từ cấu hình; ngày nghiệp vụ theo trạng thái, xếp chung các trạng thái và cộng dồn cấu hình trùng.
 - [Customer status card source](customer-status-card-source.md) — các thẻ trạng thái trên /customers lấy từ student_classes; không thay logic báo cáo, bộ lọc hoặc trạng thái từng dòng.
+- [Customer latest score display](customer-latest-score-display.md) — kết quả bảng điểm gần nhất nằm nhỏ dưới mã học viên; trạng thái dưới tên dùng Roboto 11.5px.
 - [Holiday bulk all-scope rule](holiday-bulk-all-scope.md) — “Tất cả” phải loại trừ mọi buổi trong kỳ nghỉ, không lọc ngày quá khứ hay trạng thái lớp/buổi.
 - [Student renewal shift fallback](student-renewal-shift-fallback.md) — gia hạn phải lấy ca theo lịch hiện có khi lớp cũ/import thiếu shift_template_ids.
 - [Drizzle schema push prompt](drizzle-schema-push-prompt.md) — schema push có thể bị chặn bởi prompt data-loss không liên quan; không truncate dữ liệu để áp dụng thay đổi cộng thêm.

@@ -38,9 +38,9 @@ import {
   MY_SPACE_CALENDAR_RESOURCE,
   normalizeMySpaceCalendarPermissions,
 } from "@shared/my-space-calendar-permissions";
-import { eq, and, sql, notExists, inArray, ne, isNull } from "drizzle-orm";
+import { eq, and, or, sql, notExists, inArray, ne, isNull } from "drizzle-orm";
 import {
-  staff, staffAssignments, departments, users, roles, students, shiftTemplates, classes, studentClasses, centerConfig,
+  staff, staffAssignments, departments, users, roles, students, studentLocations, shiftTemplates, classes, studentClasses, centerConfig,
   studentSessions, scoreSheetAssessmentStudentAttempts,
   courses, courseFeePackages, coursePrograms, courseProgramContents, activityLogs,
 } from "@shared/schema";
@@ -3423,15 +3423,62 @@ export function registerConfigRoutes(app: Express): void {
 
   app.get("/api/score-sheet-assessments/assigned/students", async (req, res) => {
     try {
-      const permissions = await getScoreConversionPermissions(req);
-      if (
-        !permissions.canView
-        && !permissions.canViewAll
-        && !permissions.canCreate
-        && !permissions.canEdit
-        && !permissions.canDelete
-      ) {
-        return res.status(403).json({ message: "Bạn không có quyền xem danh sách học viên." });
+      const customerSummaryMode = req.query.customerSummary === "true";
+      let requestedStudentIds: string[] = [];
+      if (customerSummaryMode) {
+        const customerPermissions = req.isSuperAdmin
+          ? { canView: true, canViewAll: true }
+          : await storage.getEffectivePermissions(req.roleIds ?? [], "/customers");
+        if (!customerPermissions.canView && !customerPermissions.canViewAll) {
+          return res.status(403).json({ message: "Bạn không có quyền xem kết quả học viên." });
+        }
+        const submittedStudentIds = typeof req.query.ids === "string"
+          ? Array.from(new Set(req.query.ids.split(",").filter(Boolean)))
+          : [];
+        if (submittedStudentIds.length === 0) return res.json([]);
+        if (submittedStudentIds.length > 100) {
+          return res.status(400).json({ message: "Chỉ được yêu cầu tối đa 100 học viên mỗi lần." });
+        }
+        if (submittedStudentIds.some((id) => !z.string().uuid().safeParse(id).success)) {
+          return res.status(400).json({ message: "Mã học viên không hợp lệ." });
+        }
+        requestedStudentIds = submittedStudentIds;
+        if (!req.isSuperAdmin && (!req.allowedLocationIds || req.allowedLocationIds.length === 0)) {
+          return res.json([]);
+        }
+        const visibleStudentFilters = [inArray(students.id, requestedStudentIds)];
+        if (!req.isSuperAdmin) {
+          visibleStudentFilters.push(inArray(
+            students.id,
+            db.select({ studentId: studentLocations.studentId })
+              .from(studentLocations)
+              .where(inArray(studentLocations.locationId, req.allowedLocationIds)),
+          ));
+        }
+        if (!req.isSuperAdmin && !customerPermissions.canViewAll && req.staffId) {
+          visibleStudentFilters.push(or(
+            sql`${students.salesByIds} && ARRAY[${req.staffId}]::uuid[]`,
+            sql`${students.managedByIds} && ARRAY[${req.staffId}]::uuid[]`,
+            sql`${students.teacherIds} && ARRAY[${req.staffId}]::uuid[]`,
+          )!);
+        }
+        const visibleStudents = await db
+          .select({ id: students.id })
+          .from(students)
+          .where(and(...visibleStudentFilters));
+        requestedStudentIds = visibleStudents.map((student) => String(student.id));
+        if (requestedStudentIds.length === 0) return res.json([]);
+      } else {
+        const permissions = await getScoreConversionPermissions(req);
+        if (
+          !permissions.canView
+          && !permissions.canViewAll
+          && !permissions.canCreate
+          && !permissions.canEdit
+          && !permissions.canDelete
+        ) {
+          return res.status(403).json({ message: "Bạn không có quyền xem danh sách học viên." });
+        }
       }
 
       const [assessments, scoreSheetTemplates] = await Promise.all([
@@ -3486,9 +3533,12 @@ export function registerConfigRoutes(app: Express): void {
         && Boolean(assessment.templateSnapshot.scoreConversionTemplateId),
       );
       const manualAssessmentIds = manualAssessments.map((assessment) => assessment.id);
-      const manualStudentIds = Array.from(
+      const allManualStudentIds = Array.from(
         new Set(manualAssessments.flatMap((assessment) => assessment.manualStudentIds)),
       );
+      const manualStudentIds = customerSummaryMode
+        ? allManualStudentIds.filter((studentId) => requestedStudentIds.includes(studentId))
+        : allManualStudentIds;
 
       const excludedStudentIdsBySession = new Map<string, Set<string>>(
         conversionRows.map((row: any) => [
@@ -3506,7 +3556,12 @@ export function registerConfigRoutes(app: Express): void {
           })
           .from(studentSessions)
           .innerJoin(students, eq(students.id, studentSessions.studentId))
-          .where(inArray(studentSessions.classSessionId, conversionSessionIds))
+          .where(customerSummaryMode
+            ? and(
+                inArray(studentSessions.classSessionId, conversionSessionIds),
+                inArray(studentSessions.studentId, requestedStudentIds),
+              )
+            : inArray(studentSessions.classSessionId, conversionSessionIds))
         : [];
       const studentsBySession = new Map<string, Map<string, {
         studentId: string;
@@ -3544,6 +3599,9 @@ export function registerConfigRoutes(app: Express): void {
           .where(and(
             inArray(scoreSheetAssessmentStudentAttempts.classSessionId, conversionSessionIds),
             inArray(scoreSheetAssessmentStudentAttempts.assessmentId, conversionAssessmentIds),
+            ...(customerSummaryMode
+              ? [inArray(scoreSheetAssessmentStudentAttempts.studentId, requestedStudentIds)]
+              : []),
           ))
         : [];
       const attemptsBySessionStudent = new Map<string, Array<{
@@ -3615,6 +3673,10 @@ export function registerConfigRoutes(app: Express): void {
               individuallyPublished: attempts.some((attempt) =>
                 isScoreSheetAssessmentStudentPublished(attempt.result),
               ),
+              selectedAttemptIndividuallyPublished: Boolean(summary && attempts.some((attempt) =>
+                attempt.attemptNumber === summary.attemptNumber
+                && isScoreSheetAssessmentStudentPublished(attempt.result),
+              )),
               hasPublishableScore: Boolean(summary && (
                 summary.result.overallConvertedScore !== null
                 || summary.result.skills.some((skill) => skill.convertedScore !== null)
@@ -3650,6 +3712,9 @@ export function registerConfigRoutes(app: Express): void {
           .where(and(
             isNull(scoreSheetAssessmentStudentAttempts.classSessionId),
             inArray(scoreSheetAssessmentStudentAttempts.assessmentId, manualAssessmentIds),
+            ...(customerSummaryMode
+              ? [inArray(scoreSheetAssessmentStudentAttempts.studentId, requestedStudentIds)]
+              : []),
           ))
         : [];
       const manualAttemptsByAssessmentStudent = new Map<string, Array<{
@@ -3716,6 +3781,10 @@ export function registerConfigRoutes(app: Express): void {
             individuallyPublished: attempts.some((attempt) =>
               isScoreSheetAssessmentStudentPublished(attempt.result),
             ),
+            selectedAttemptIndividuallyPublished: Boolean(summary && attempts.some((attempt) =>
+              attempt.attemptNumber === summary.attemptNumber
+              && isScoreSheetAssessmentStudentPublished(attempt.result),
+            )),
             hasPublishableScore: Boolean(summary && (
               summary.result.overallConvertedScore !== null
               || summary.result.skills.some((skill) => skill.convertedScore !== null)
@@ -3729,9 +3798,35 @@ export function registerConfigRoutes(app: Express): void {
         });
       });
 
-      res.json([...mapped, ...manualMapped].sort((left, right) =>
+      const allResults = [...mapped, ...manualMapped].sort((left, right) =>
         String(right.examDate).localeCompare(String(left.examDate)),
-      ));
+      );
+      if (customerSummaryMode) {
+        const latestPublishedResults = new Map<string, {
+          studentId: string;
+          gradeBandLabel: string | null;
+          passStatus: "passed" | "failed" | null;
+          examDate: string;
+          assessmentName: string | null;
+        }>();
+        for (const result of allResults) {
+          if (
+            (!result.published && !result.selectedAttemptIndividuallyPublished)
+            || !result.hasPublishableScore
+            || (!result.gradeBandLabel && !result.passStatus)
+            || latestPublishedResults.has(result.studentId)
+          ) continue;
+          latestPublishedResults.set(result.studentId, {
+            studentId: result.studentId,
+            gradeBandLabel: result.gradeBandLabel,
+            passStatus: result.passStatus,
+            examDate: result.examDate,
+            assessmentName: result.assessmentName,
+          });
+        }
+        return res.json(Array.from(latestPublishedResults.values()));
+      }
+      res.json(allResults);
     } catch (err: any) {
       console.error("Assigned score conversion students error:", err);
       res.status(500).json({ message: err.message || "Lỗi khi tải danh sách học viên bảng điểm Quy đổi" });

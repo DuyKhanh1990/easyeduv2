@@ -302,6 +302,12 @@ interface CustomersTableProps {
   crmRelationships: any[] | undefined;
   parents?: ParentRecord[];
   learningStatuses?: Record<string, string>;
+  latestScoreResults?: Record<string, {
+    gradeBandLabel: string | null;
+    passStatus: "passed" | "failed" | null;
+    examDate: string;
+    assessmentName: string | null;
+  }>;
   studentTasksMap?: Record<string, any[]>;
   starBalancesMap?: Record<string, number>;
   endingSoonMap?: Record<string, { className: string; remainingSessions: number; endDate: string }[]>;
@@ -334,7 +340,7 @@ const LEARNING_STATUS_MAP: Record<string, { label: string; dot: string; badge: s
 
 export function CustomersTable({
   students, isLoading, visibleColumns, selectedIds, crmRelationships,
-  parents = [], learningStatuses = {}, studentTasksMap = {}, starBalancesMap = {}, endingSoonMap = {}, overdueInvoicesMap = {},
+  parents = [], learningStatuses = {}, latestScoreResults = {}, studentTasksMap = {}, starBalancesMap = {}, endingSoonMap = {}, overdueInvoicesMap = {},
   toggleSelectAll, toggleSelect, onEdit, onDelete, onCreateInvoice, onViewDetail,
   onViewClass, onChangePipeline, onChangeAccountStatus, onZaloChat, onFacebookChat, fbLinkedStudentIds,
   canEdit = true, canDelete = true,
@@ -430,11 +436,34 @@ export function CustomersTable({
         );
 
       case "code":
-        return (
-          <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-sky-700 text-xs font-semibold tracking-wide whitespace-nowrap">
-            {student.code}
-          </span>
-        );
+        {
+          const scoreResult = latestScoreResults[student.id];
+          const resultParts = [
+            scoreResult?.gradeBandLabel,
+            scoreResult?.passStatus === "passed" ? "Đạt" : scoreResult?.passStatus === "failed" ? "Không đạt" : null,
+          ].filter((part): part is string => Boolean(part));
+          const scoreTitle = scoreResult
+            ? [scoreResult.assessmentName, scoreResult.examDate ? new Date(scoreResult.examDate).toLocaleDateString("vi-VN") : null]
+                .filter(Boolean)
+                .join(" · ")
+            : "";
+          return (
+            <div className="flex flex-col items-start gap-0.5">
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-sky-700 text-xs font-semibold tracking-wide whitespace-nowrap">
+                {student.code}
+              </span>
+              {resultParts.length > 0 && (
+                <span
+                  className="font-['Roboto'] text-[10px] leading-tight text-slate-500 whitespace-nowrap"
+                  title={scoreTitle || "Bảng điểm gần nhất đã công bố"}
+                  data-testid={`latest-score-result-${student.id}`}
+                >
+                  {resultParts.join(" · ")}
+                </span>
+              )}
+            </div>
+          );
+        }
 
       case "fullName": {
         const stars = starBalancesMap[student.id];
@@ -458,7 +487,7 @@ export function CustomersTable({
               >
                 {name}
               </a>
-              <div className="flex items-center gap-1.5 flex-wrap">
+              <div className="customer-name-meta flex items-center gap-1.5 flex-wrap">
                 {stars != null && stars > 0 && (
                   <span className="flex items-center gap-0.5 text-xs text-amber-600 font-semibold leading-none">
                     {stars}<Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />

@@ -200,6 +200,38 @@ export function CustomersList() {
 
   const studentIds = students.map((s) => s.id);
 
+  const scoreResultStudentIds = useMemo(
+    () => Array.from(new Set(
+      students
+        .filter((student) => student.type !== "Phụ huynh")
+        .map((student) => student.id),
+    )).sort(),
+    [students],
+  );
+  const { data: latestScoreResults = [] } = useQuery<Array<{
+    studentId: string;
+    gradeBandLabel: string | null;
+    passStatus: "passed" | "failed" | null;
+    examDate: string;
+    assessmentName: string | null;
+  }>>({
+    queryKey: ["/api/score-sheet-assessments/assigned/students", "customer-summary", scoreResultStudentIds.join(",")],
+    enabled: scoreResultStudentIds.length > 0,
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/score-sheet-assessments/assigned/students?customerSummary=true&ids=${encodeURIComponent(scoreResultStudentIds.join(","))}`,
+        { credentials: "include" },
+      );
+      if (!response.ok) throw new Error("Không thể tải kết quả bảng điểm gần nhất.");
+      return response.json();
+    },
+    staleTime: 60_000,
+  });
+  const latestScoreResultsMap = useMemo(
+    () => Object.fromEntries(latestScoreResults.map((result) => [result.studentId, result])),
+    [latestScoreResults],
+  );
+
   const { data: starBalancesMap = {} } = useQuery<Record<string, number>>({
     queryKey: ["/api/students/star-balances", studentIds.join(",")],
     queryFn: async () => {
