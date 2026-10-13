@@ -994,7 +994,7 @@ export function StaffScoreSheet() {
                                   <Users className="h-3.5 w-3.5 shrink-0" />
                                   {assessment.studentCount ?? 0} {t("mySpace.scoreSheet.studentCount")}
                                 </span>
-                                <div className="col-span-2 inline-flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-bold lg:col-span-2">
+                                <div className="min-w-0 text-[11px] font-bold">
                                   <span
                                     className={`inline-flex min-h-5 items-center gap-1 ${
                                       allStudentsComplete
@@ -1005,14 +1005,21 @@ export function StaffScoreSheet() {
                                     <CircleDot className="h-3.5 w-3.5 shrink-0" />
                                     {scoreProgressLabel}
                                   </span>
-
-                                  {status && AssessmentStatusIcon ? (
-                                    <span className="inline-flex min-h-5 min-w-0 items-center gap-1">
+                                  {statusKey === "processing" && status && AssessmentStatusIcon && (
+                                    <span className="mt-1 inline-flex min-h-5 items-center gap-1">
                                       <AssessmentStatusIcon className={`h-3.5 w-3.5 shrink-0 ${status.className}`} />
                                       <span className={status.className}>{status.label}</span>
                                     </span>
-                                  ) : null}
+                                  )}
                                 </div>
+                                <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-bold">
+                                  {statusKey !== "processing" && status && AssessmentStatusIcon ? (
+                                    <>
+                                      <AssessmentStatusIcon className={`h-3.5 w-3.5 shrink-0 ${status.className}`} />
+                                      <span className={status.className}>{status.label}</span>
+                                    </>
+                                  ) : null}
+                                </span>
                                 <span className="inline-flex min-h-5 min-w-0 items-center gap-1 text-[11px] font-bold">
                                   {deadlineStatus && DeadlineStatusIcon ? (
                                     <>
