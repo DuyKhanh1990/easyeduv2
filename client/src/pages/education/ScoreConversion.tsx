@@ -372,6 +372,7 @@ export default function ScoreConversion() {
   const [classificationFilters, setClassificationFilters] = useState<string[]>([]);
   const [studentResultFilter, setStudentResultFilter] = useState<StudentResultFilter>("all");
   const [latestStudentResultOnly, setLatestStudentResultOnly] = useState(false);
+  const [activeStudentsOnly, setActiveStudentsOnly] = useState(false);
   const [statusFilters, setStatusFilters] = useState<ScoreSheetAssessmentStatus[]>([]);
   const [deadlineStatusFilters, setDeadlineStatusFilters] = useState<ScoreSheetAssessmentDeadlineStatus[]>([]);
   const [examDateFrom, setExamDateFrom] = useState("");
@@ -421,6 +422,33 @@ export default function ScoreConversion() {
       const response = await apiRequest("GET", ASSIGNED_SCORE_SHEET_STUDENTS_ENDPOINT);
       return response.json();
     },
+    refetchInterval: 60_000,
+  });
+  const scoreConversionStudentIds = useMemo(
+    () => Array.from(new Set((assignedScoreSheetStudentsQuery.data ?? []).map((student) => student.studentId))).sort(),
+    [assignedScoreSheetStudentsQuery.data],
+  );
+  const studentLearningStatusesQuery = useQuery<Record<string, string>>({
+    queryKey: ["/api/students/learning-statuses", "score-conversion", scoreConversionStudentIds.join(",")],
+    enabled: viewMode === "students" && scoreConversionStudentIds.length > 0,
+    queryFn: async () => {
+      const idBatches = Array.from(
+        { length: Math.ceil(scoreConversionStudentIds.length / 100) },
+        (_, index) => scoreConversionStudentIds.slice(index * 100, (index + 1) * 100),
+      );
+      const statusBatches = await Promise.all(idBatches.map(async (ids) => {
+        const response = await fetch(
+          `/api/students/learning-statuses?ids=${encodeURIComponent(ids.join(","))}`,
+          { credentials: "include" },
+        );
+        if (!response.ok) {
+          throw new Error("Không thể tải trạng thái học viên.");
+        }
+        return response.json() as Promise<Record<string, string>>;
+      }));
+      return Object.assign({}, ...statusBatches);
+    },
+    staleTime: 60_000,
     refetchInterval: 60_000,
   });
   const nowWallClockMs = getBangkokWallClockMs(new Date());
@@ -521,6 +549,10 @@ export default function ScoreConversion() {
     if (studentResultFilter === "passed" && student.passStatus !== "passed") return false;
     if (studentResultFilter === "failed" && student.passStatus !== "failed") return false;
     if (
+      activeStudentsOnly
+      && studentLearningStatusesQuery.data?.[student.studentId] !== "dang_hoc"
+    ) return false;
+    if (
       classificationFilters.length > 0
       && (!student.gradeBandLabel || !classificationFilters.includes(student.gradeBandLabel))
     ) return false;
@@ -579,6 +611,7 @@ export default function ScoreConversion() {
     setClassificationFilters([]);
     setStudentResultFilter("all");
     setLatestStudentResultOnly(false);
+    setActiveStudentsOnly(false);
     setStatusFilters([]);
     setAssessmentStatusFilter("all");
     setDeadlineStatusFilters([]);
@@ -1199,6 +1232,7 @@ export default function ScoreConversion() {
                           </button>
                         );
                       })}
+                      <span aria-hidden="true" className="select-none px-1 text-muted-foreground/70">|</span>
                       <button
                         type="button"
                         aria-pressed={latestStudentResultOnly}
@@ -1211,6 +1245,21 @@ export default function ScoreConversion() {
                         }`}
                       >
                         Bảng điểm gần nhất
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={activeStudentsOnly}
+                        aria-label="Chỉ hiển thị học viên đang học"
+                        data-testid="filter-score-conversion-student-active"
+                        disabled={studentLearningStatusesQuery.isLoading || studentLearningStatusesQuery.isError}
+                        onClick={() => setActiveStudentsOnly((current) => !current)}
+                        className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-3 text-[13px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                          activeStudentsOnly
+                            ? "border-emerald-600 bg-emerald-600 text-white"
+                            : "border-emerald-300 bg-background text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
+                        }`}
+                      >
+                        Đang học
                       </button>
                     </div>
                   )}

@@ -13,4 +13,4 @@ For the Customers page class badges, derive status from that student's valid ses
 
 **Why:** The user clarified that current active study overrides a pause, future lessons outrank an ended class, and a future class start must not end an existing pause early.
 
-**How to apply:** Resolve each student's state per class from valid student-session rows, use attendance status for paused intervals, and aggregate identically for Customers cards, filters, and roster column; the Dashboard summary still uses its selected-date-range rules.
+**How to apply:** Resolve each student's state per class from valid student-session rows, use attendance status for paused intervals, and aggregate identically for Customers cards, filters, and roster column. The score-conversion student view's “Đang học” filter must reuse this same aggregate status rather than infer activity from score records. The Dashboard summary still uses its selected-date-range rules.
