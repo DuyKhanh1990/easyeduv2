@@ -35,3 +35,17 @@ mtime_ms = 1789468283942
 storage_uri = "gcs://replit-rams-assets-sisko/rams/assets/repl:69862f0a-5b07-4700-aeaf-3fff688f1fc0/d0a9b3c5-ab3b-498d-a676-592b7455e299/300e277d-6165-4ee6-8e16-f36340852381"
 storage_version_token = "1789468300858443"
 content_type = "text/markdown"
+
+[[outputs]]
+id = "53DVsIYOUgwdRBz1cX9z0"
+uri = "file://generated-artifacts/score-sheet-columns-annotated.html"
+type = "html"
+title = "Ảnh đánh dấu các cột Bảng điểm"
+description = "Đã đánh dấu các cột 1–6; cột 4 là trạng thái bài, cột 5 là trạng thái hạn."
+logical_id = "1000aa0d-4554-4143-8f1d-dd92e7cdb832"
+content_hash = "sha256:92b50f86b9978004f71517b044da6f3ba05906e9e586ed48b95844b0f03adbc7"
+size = 163115
+mtime_ms = 1791869354390
+storage_uri = "gcs://replit-rams-assets-sisko/rams/assets/repl:69862f0a-5b07-4700-aeaf-3fff688f1fc0/1000aa0d-4554-4143-8f1d-dd92e7cdb832/56c67ab8-e9bf-4fd0-a008-b1f2fbcc2b3b"
+storage_version_token = "1791869365626248"
+content_type = "text/html"
