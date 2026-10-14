@@ -113,7 +113,7 @@ export function ScheduleDialog({
   locationId,
 }: ScheduleDialogProps) {
   const initStart = defaultStartDate ?? (classData?.startDate ? new Date(classData.startDate) : undefined);
-  const initEndType: "date" | "sessions" = defaultEndType ?? "date";
+  const initEndType: "date" | "sessions" = defaultEndType ?? "sessions";
   const initTotalSessions = defaultTotalSessions ?? 20;
 
   const [globalStart, setGlobalStart] = useState<Date | undefined>(initStart);
@@ -161,6 +161,14 @@ export function ScheduleDialog({
   const { data: pastSchedulePolicy } = usePastSchedulePolicy(isOpen);
   const canRunPast = pastSchedulePolicy?.canRunPast === true;
   const today = getCenterDateString();
+
+  useEffect(() => {
+    if (isOpen) return;
+    setGlobalEndType(initEndType);
+    setStudentConfigs((current) =>
+      current.map((config) => ({ ...config, endType: initEndType })),
+    );
+  }, [isOpen, initEndType]);
 
   // Internal list of students (starts from prop, grows as user adds more)
   const [internalStudents, setInternalStudents] = useState<any[]>(students);

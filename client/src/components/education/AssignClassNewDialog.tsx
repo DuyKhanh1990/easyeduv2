@@ -89,7 +89,7 @@ export function AssignClassNewDialog({
 
   // Schedule configuration states
   const [globalStart, setGlobalStart] = useState<Date | undefined>();
-  const [globalEndType, setGlobalEndType] = useState<"date" | "sessions">("date");
+  const [globalEndType, setGlobalEndType] = useState<"date" | "sessions">("sessions");
   const [globalEnd, setGlobalEnd] = useState<Date | undefined>();
   const [globalSessions, setGlobalSessions] = useState<number>(20);
   const [globalPackageId, setGlobalPackageId] = useState<string>("");
@@ -349,7 +349,7 @@ export function AssignClassNewDialog({
           startDate: classInfo?.startDate ? new Date(classInfo.startDate) : new Date(),
           shiftType: "all",
           selectedShifts: [],
-          endType: "date",
+          endType: "sessions",
           endDate: classInfo?.endDate ? new Date(classInfo.endDate) : new Date(),
           totalSessions: 20,
           packageId: classInfo?.course?.feePackages?.[0]?.id || "",
@@ -489,6 +489,7 @@ export function AssignClassNewDialog({
       setSelectedClassId("");
       setClassInfo(null);
       setExistingStudents([]);
+      setGlobalEndType("sessions");
     }
     onOpenChange(open);
   };

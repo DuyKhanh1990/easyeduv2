@@ -591,7 +591,7 @@ export function ScheduleTabContent({
             const sess = (freshSessions || classSessions)?.find((s: any) => s.id === selectedClassSessionId);
             return sess?.sessionDate ? new Date(sess.sessionDate) : undefined;
           })()}
-          defaultEndType="date"
+          defaultEndType="sessions"
           onConfirm={(configs) =>
             scheduleMutation.mutate({ configs }, {
               onSuccess: () => {
