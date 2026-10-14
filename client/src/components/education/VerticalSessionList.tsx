@@ -45,7 +45,7 @@ export function VerticalSessionList({
 
             let circleClass: string;
             if (isSelected)
-              circleClass = "bg-blue-600 text-white shadow-md shadow-blue-300 ring-2 ring-offset-1 ring-blue-400";
+              circleClass = "bg-blue-600 text-white shadow-md shadow-blue-300 ring-2 ring-offset-1 ring-violet-500";
             else if (isCancelled)
               circleClass = "bg-red-50 text-red-400 border border-red-200";
             else if (isToday)
