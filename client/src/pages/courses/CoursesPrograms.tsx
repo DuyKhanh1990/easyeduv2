@@ -3096,7 +3096,7 @@ function FeePackageDialog({
   });
 
   const dialogContent = (
-    <DialogContent className="sm:max-w-[500px]">
+    <DialogContent className="sm:max-w-[680px]">
       <DialogHeader>
         <DialogTitle className="text-xl font-display">{isEdit ? "Chỉnh sửa Gói học phí" : "Thêm mới Gói học phí"}</DialogTitle>
       </DialogHeader>
@@ -3116,51 +3116,6 @@ function FeePackageDialog({
             )}
           />
           <ActivityStatusField control={form.control} />
-          <FormField
-            control={form.control}
-            name="color"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Màu sắc <span className="font-normal text-muted-foreground">(không bắt buộc)</span></FormLabel>
-                <FormControl>
-                  <div className="flex flex-wrap items-center gap-3" role="group" aria-label="Chọn màu cho gói học phí">
-                    <button
-                      type="button"
-                      onClick={() => field.onChange(null)}
-                      aria-label="Không chọn màu"
-                      aria-pressed={!field.value}
-                      title="Không chọn màu"
-                      className={cn(
-                        "flex h-9 items-center gap-1.5 rounded-full border px-2 text-xs text-muted-foreground transition-colors hover:bg-muted",
-                        !field.value && "border-primary bg-primary/5 text-primary",
-                      )}
-                    >
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-current">
-                        <X className="h-3 w-3" />
-                      </span>
-                      Không chọn
-                    </button>
-                    {FEE_PACKAGE_COLORS.map((color) => (
-                      <button
-                        key={color}
-                        type="button"
-                        onClick={() => field.onChange(color)}
-                        aria-label={`Chọn màu ${color}`}
-                        aria-pressed={field.value === color}
-                        title={color}
-                        className={cn(
-                          "h-8 w-8 rounded-full border border-black/10 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
-                          field.value === color && "ring-2 ring-primary ring-offset-2",
-                        )}
-                        style={{ backgroundColor: color }}
-                      />
-                    ))}
-                  </div>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
           <div className="grid grid-cols-2 gap-4">
             <FormField
               control={form.control}
@@ -3231,6 +3186,51 @@ function FeePackageDialog({
               )}
             />
           </div>
+          <FormField
+            control={form.control}
+            name="color"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Màu sắc <span className="font-normal text-muted-foreground">(không bắt buộc)</span></FormLabel>
+                <FormControl>
+                  <div className="flex flex-nowrap items-center gap-2 overflow-x-auto py-1" role="group" aria-label="Chọn màu cho gói học phí">
+                    <button
+                      type="button"
+                      onClick={() => field.onChange(null)}
+                      aria-label="Không chọn màu"
+                      aria-pressed={!field.value}
+                      title="Không chọn màu"
+                      className={cn(
+                        "flex h-7 shrink-0 items-center gap-1 rounded-full border px-2 text-xs text-muted-foreground transition-colors hover:bg-muted",
+                        !field.value && "border-primary bg-primary/5 text-primary",
+                      )}
+                    >
+                      <span className="flex h-4 w-4 items-center justify-center rounded-full border border-dashed border-current">
+                        <X className="h-2.5 w-2.5" />
+                      </span>
+                      Không chọn
+                    </button>
+                    {FEE_PACKAGE_COLORS.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => field.onChange(color)}
+                        aria-label={`Chọn màu ${color}`}
+                        aria-pressed={field.value === color}
+                        title={color}
+                        className={cn(
+                          "h-5 w-5 shrink-0 rounded-full border border-black/10 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
+                          field.value === color && "ring-2 ring-primary ring-offset-2",
+                        )}
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <DialogFooter className="pt-4">
             <Button type="submit" className="w-full" disabled={mutation.isPending}>
               {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
