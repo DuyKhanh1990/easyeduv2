@@ -1,5 +1,4 @@
 export const ZBS_TEMPLATE_LIST_URL = "https://business.openapi.zalo.me/template/all";
-const ZBS_UID_TEMPLATE_CUTOFF = Date.UTC(2025, 11, 10);
 
 export interface ZbsTemplate {
   templateId: string;
@@ -7,14 +6,6 @@ export interface ZbsTemplate {
   createdTime?: number;
   status: string;
   templateQuality?: string;
-}
-
-function isLegacyUidUnsupportedTemplate(template: ZbsTemplate) {
-  if (template.createdTime === undefined) return false;
-  const createdAtMs = template.createdTime < 100_000_000_000
-    ? template.createdTime * 1000
-    : template.createdTime;
-  return createdAtMs < ZBS_UID_TEMPLATE_CUTOFF;
 }
 
 export interface ZbsTemplatePage {
@@ -42,6 +33,7 @@ export interface ZbsTemplateMappingRecord {
   templateId: string | null;
   templateName: string | null;
   templateStatus: string | null;
+  compatibilityStatus: string;
   isEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -51,6 +43,15 @@ export interface ZbsTemplateRepository {
   findOaConfig(id: string): Promise<ZbsOaRecord | null>;
   findNotificationType(code: string): Promise<boolean>;
   listMappings(zaloOaConfigId: string): Promise<ZbsTemplateMappingRecord[]>;
+  upsertMapping(input: {
+    zaloOaConfigId: string;
+    notificationType: string;
+    templateId: string;
+    templateName: string;
+    templateStatus: string;
+    compatibilityStatus: "compatibility_unverified";
+    isEnabled: false;
+  }): Promise<ZbsTemplateMappingRecord>;
 }
 
 export class ZbsTemplateManagementError extends Error {
@@ -181,7 +182,7 @@ export class ZbsTemplateManagementService {
     oaConfigId: string,
     scope: ZbsTemplateAccessScope,
     input: { notificationType: string; templateId: string },
-  ): Promise<never> {
+  ): Promise<ZbsTemplateMappingRecord> {
     const type = input.notificationType.trim();
     const templateId = input.templateId.trim();
     if (!type || type.length > 100 || !templateId || templateId.length > 100) {
@@ -204,27 +205,22 @@ export class ZbsTemplateManagementService {
       offset += page.data.length;
       if (page.data.length < 100 || (total !== null && offset >= total)) break;
     }
-    if (!template || template.status !== "ENABLE") {
+    if (!template) {
       throw new ZbsTemplateManagementError(
         422,
-        "ZBS_TEMPLATE_NOT_USABLE",
-        "Template không thuộc OA đã chọn hoặc chưa ở trạng thái ENABLE.",
+        "ZBS_TEMPLATE_NOT_IN_OA",
+        "template_id không có trong danh sách của OA đã chọn.",
       );
     }
-    if (isLegacyUidUnsupportedTemplate(template)) {
-      throw new ZbsTemplateManagementError(
-        422,
-        "ZBS_TEMPLATE_UID_UNSUPPORTED",
-        "Template được tạo trước ngày 10/12/2025 và không hỗ trợ gửi ZBS qua UID; hãy chọn template mới hơn.",
-      );
-    }
-    // The documented list response has no UID-compatibility or component-type field.
-    // Do not infer support from templateName or status; fail closed until verified metadata exists.
-    throw new ZbsTemplateManagementError(
-      422,
-      "ZBS_TEMPLATE_COMPATIBILITY_UNVERIFIED",
-      "Không thể lưu mapping: API danh sách Zalo không cung cấp loại template hoặc dữ liệu xác nhận hỗ trợ UID. Không thể xác minh OTP, Response hoặc Journey; cần nguồn dữ liệu chính thức có thông tin tương thích.",
-    );
+    return this.repository.upsertMapping({
+      zaloOaConfigId: oaConfigId,
+      notificationType: type,
+      templateId: template.templateId,
+      templateName: template.templateName,
+      templateStatus: template.status,
+      compatibilityStatus: "compatibility_unverified",
+      isEnabled: false,
+    });
   }
 
   private async resolveOaToken(

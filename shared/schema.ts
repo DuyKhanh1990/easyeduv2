@@ -2184,6 +2184,9 @@ export const zbsTemplateMappings = pgTable(
     templateId: varchar("template_id", { length: 100 }),
     templateName: varchar("template_name", { length: 255 }),
     templateStatus: varchar("template_status", { length: 32 }),
+    compatibilityStatus: varchar("compatibility_status", { length: 32 })
+      .notNull()
+      .default("compatibility_unverified"),
     isEnabled: boolean("is_enabled").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

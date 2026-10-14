@@ -51,6 +51,27 @@ const mappingRepository: ZbsTemplateRepository = {
       .where(eq(zbsTemplateMappings.zaloOaConfigId, oaConfigId))
       .orderBy(asc(zbsTemplateMappings.notificationType));
   },
+  async upsertMapping(input) {
+    const [row] = await db
+      .insert(zbsTemplateMappings)
+      .values(input)
+      .onConflictDoUpdate({
+        target: [
+          zbsTemplateMappings.zaloOaConfigId,
+          zbsTemplateMappings.notificationType,
+        ],
+        set: {
+          templateId: input.templateId,
+          templateName: input.templateName,
+          templateStatus: input.templateStatus,
+          compatibilityStatus: "compatibility_unverified",
+          isEnabled: false,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return row;
+  },
 };
 
 const zbsTemplateService = new ZbsTemplateManagementService(mappingRepository, decrypt);

@@ -17,12 +17,27 @@ const makeOa = (id: string, locationId = "location-a"): ZbsOaRecord => ({
 
 function makeRepository(oa: ZbsOaRecord | null = makeOa("oa-a")) {
   const listMappings = vi.fn(async () => []);
+  const upsertMapping = vi.fn(async (input: {
+    zaloOaConfigId: string;
+    notificationType: string;
+    templateId: string;
+    templateName: string;
+    templateStatus: string;
+    compatibilityStatus: "compatibility_unverified";
+    isEnabled: false;
+  }) => ({
+    id: `mapping-${input.zaloOaConfigId}-${input.notificationType}`,
+    ...input,
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+  }));
   const repository: ZbsTemplateRepository = {
     findOaConfig: vi.fn(async (id) => oa?.id === id ? oa : null),
     findNotificationType: vi.fn(async (code) => code === "invoice_created"),
     listMappings,
+    upsertMapping,
   };
-  return { repository, listMappings };
+  return { repository, listMappings, upsertMapping };
 }
 
 function successfulTemplateResponse(status = "ENABLE") {
@@ -54,7 +69,7 @@ describe("ZBS template management", () => {
 
   it("does not request templates for an OA outside the caller's locations or outside the current center", async () => {
     const fetcher = vi.fn(async () => successfulTemplateResponse());
-    const { repository } = makeRepository(makeOa("oa-a", "location-other"));
+    const { repository, upsertMapping } = makeRepository(makeOa("oa-a", "location-other"));
     const service = new ZbsTemplateManagementService(repository, (value) => value, fetcher);
 
     await expect(service.listTemplates("oa-a", {
@@ -72,11 +87,11 @@ describe("ZBS template management", () => {
       code: "OA_NOT_FOUND",
     });
     expect(fetcher).not.toHaveBeenCalled();
-    expect("upsertMapping" in repository).toBe(false);
+    expect(upsertMapping).not.toHaveBeenCalled();
   });
 
-  it("uses the selected OA token but refuses mapping when compatibility is not proven", async () => {
-    const { repository } = makeRepository(makeOa("oa-selected"));
+  it("maps only a template returned for the selected OA and saves it unverified and disabled", async () => {
+    const { repository, upsertMapping } = makeRepository(makeOa("oa-selected"));
     const fetcher = vi.fn(async (_url: string | URL, init?: RequestInit) => {
       expect(init?.method).toBe("GET");
       expect(new Headers(init?.headers).get("access_token")).toBe("fake-token-oa-selected");
@@ -88,16 +103,24 @@ describe("ZBS template management", () => {
       fetcher,
     );
 
-    await expect(service.saveMapping("oa-selected", {
+    const mapping = await service.saveMapping("oa-selected", {
       isSuperAdmin: true,
       allowedLocationIds: [],
-    }, { notificationType: "invoice_created", templateId: "98765" })).rejects.toMatchObject({
-      status: 422,
-      code: "ZBS_TEMPLATE_COMPATIBILITY_UNVERIFIED",
-    });
+    }, { notificationType: "invoice_created", templateId: "98765" });
 
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect("upsertMapping" in repository).toBe(false);
+    expect(upsertMapping).toHaveBeenCalledWith({
+      zaloOaConfigId: "oa-selected",
+      notificationType: "invoice_created",
+      templateId: "98765",
+      templateName: "Invoice notice",
+      templateStatus: "ENABLE",
+      compatibilityStatus: "compatibility_unverified",
+      isEnabled: false,
+    });
+    expect(mapping.zaloOaConfigId).toBe("oa-selected");
+    expect(mapping.compatibilityStatus).toBe("compatibility_unverified");
+    expect(mapping.isEnabled).toBe(false);
   });
 
   it("reads mappings only for the selected OA after checking its location scope", async () => {
@@ -114,12 +137,16 @@ describe("ZBS template management", () => {
     })).rejects.toMatchObject({ status: 403, code: "OA_LOCATION_FORBIDDEN" });
   });
 
-  it("reports unusable templates and never stores them", async () => {
-    const { repository } = makeRepository();
+  it("rejects template IDs missing from the selected OA list and never falls back", async () => {
+    const { repository, upsertMapping } = makeRepository();
     const service = new ZbsTemplateManagementService(
       repository,
       (value) => value,
-      vi.fn(async () => successfulTemplateResponse("DISABLE")),
+      vi.fn(async () => new Response(JSON.stringify({
+        error: 0,
+        data: [{ templateId: "another-template", templateName: "Other OA template", status: "ENABLE" }],
+        metadata: { total: 1 },
+      }), { status: 200 })),
     );
 
     await expect(service.saveMapping("oa-a", {
@@ -127,13 +154,13 @@ describe("ZBS template management", () => {
       allowedLocationIds: [],
     }, { notificationType: "invoice_created", templateId: "98765" })).rejects.toMatchObject({
       status: 422,
-      code: "ZBS_TEMPLATE_NOT_USABLE",
+      code: "ZBS_TEMPLATE_NOT_IN_OA",
     });
-    expect("upsertMapping" in repository).toBe(false);
+    expect(upsertMapping).not.toHaveBeenCalled();
   });
 
-  it("rejects legacy templates that are documented as unsupported for UID delivery", async () => {
-    const { repository } = makeRepository();
+  it("stores a legacy-listed template as unverified and disabled without claiming UID support", async () => {
+    const { repository, upsertMapping } = makeRepository();
     const service = new ZbsTemplateManagementService(
       repository,
       (value) => value,
@@ -143,20 +170,19 @@ describe("ZBS template management", () => {
         metadata: { total: 1 },
       }), { status: 200 })),
     );
-    await expect(service.saveMapping("oa-a", {
+    const mapping = await service.saveMapping("oa-a", {
       isSuperAdmin: true,
       allowedLocationIds: [],
-    }, { notificationType: "invoice_created", templateId: "98765" })).rejects.toMatchObject({
-      status: 422,
-      code: "ZBS_TEMPLATE_UID_UNSUPPORTED",
-    });
-    expect("upsertMapping" in repository).toBe(false);
+    }, { notificationType: "invoice_created", templateId: "98765" });
+    expect(mapping.compatibilityStatus).toBe("compatibility_unverified");
+    expect(mapping.isEnabled).toBe(false);
+    expect(upsertMapping).toHaveBeenCalledOnce();
   });
 
   it.each(["OTP", "Response", "Journey"])(
-    "fails closed for %s candidates because the list response cannot prove UID compatibility",
+    "stores %s candidates only with compatibility_unverified and disabled",
     async (candidateKind) => {
-      const { repository } = makeRepository();
+      const { repository, upsertMapping } = makeRepository();
       const service = new ZbsTemplateManagementService(
         repository,
         (value) => value,
@@ -173,18 +199,17 @@ describe("ZBS template management", () => {
         }), { status: 200 })),
       );
 
-      await expect(service.saveMapping("oa-a", {
+      const mapping = await service.saveMapping("oa-a", {
         isSuperAdmin: true,
         allowedLocationIds: [],
-      }, { notificationType: "invoice_created", templateId: "98765" })).rejects.toMatchObject({
-        status: 422,
-        code: "ZBS_TEMPLATE_COMPATIBILITY_UNVERIFIED",
-      });
-      expect("upsertMapping" in repository).toBe(false);
+      }, { notificationType: "invoice_created", templateId: "98765" });
+      expect(mapping.compatibilityStatus).toBe("compatibility_unverified");
+      expect(mapping.isEnabled).toBe(false);
+      expect(upsertMapping).toHaveBeenCalledOnce();
     },
   );
 
-  it("refuses mapping when the list has only documented fields and no compatibility evidence", async () => {
+  it("stores mapping as unverified when the list has no compatibility evidence", async () => {
     const { repository } = makeRepository();
     const service = new ZbsTemplateManagementService(
       repository,
@@ -196,14 +221,12 @@ describe("ZBS template management", () => {
       }), { status: 200 })),
     );
 
-    await expect(service.saveMapping("oa-a", {
+    const mapping = await service.saveMapping("oa-a", {
       isSuperAdmin: true,
       allowedLocationIds: [],
-    }, { notificationType: "invoice_created", templateId: "98765" })).rejects.toMatchObject({
-      status: 422,
-      code: "ZBS_TEMPLATE_COMPATIBILITY_UNVERIFIED",
-    });
-    expect("upsertMapping" in repository).toBe(false);
+    }, { notificationType: "invoice_created", templateId: "98765" });
+    expect(mapping.compatibilityStatus).toBe("compatibility_unverified");
+    expect(mapping.isEnabled).toBe(false);
   });
 
   it("returns clear errors for unreadable, invalid, and failed API tokens", async () => {
