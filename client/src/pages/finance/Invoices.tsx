@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useLocation, useParams } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
-import { fetchAllInvoicesForExport, getPreviousInvoicePeriodParams, useInvoices, useInvoiceSummary } from "@/hooks/use-invoices";
+import { buildSummaryQS, fetchAllInvoicesForExport, getPreviousInvoicePeriodParams, useInvoices, useInvoiceSummary } from "@/hooks/use-invoices";
 import { useInvoiceFilters, hasActiveFilters, DEFAULT_FILTERS } from "@/hooks/use-invoice-filters";
 import { useInvoiceColumns, ALL_COLUMNS } from "@/hooks/use-invoice-columns";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -1887,14 +1887,20 @@ export default function Invoices() {
   } = useInvoiceFilters(activeTab);
 
   const { invoices, total, rowPage, tabCounts, isLoading, isFetching: isInvoiceFetching, isError: isInvoiceQueryError, deleteMutation: deleteInvoiceMutation, updateStatusMutation } = useInvoices(queryParams);
+  const summaryQueryKey = buildSummaryQS(queryParams);
+  const [summaryReadyKey, setSummaryReadyKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isInvoiceFetching) setSummaryReadyKey(summaryQueryKey);
+  }, [isInvoiceFetching, summaryQueryKey]);
+  const canLoadSummary = summaryReadyKey === summaryQueryKey;
   const { summary: invoiceSummary, isLoading: isSummaryLoading } = useInvoiceSummary(
     queryParams,
-    { enabled: !isInvoiceFetching },
+    { enabled: canLoadSummary },
   );
   const previousQueryParams = getPreviousInvoicePeriodParams(queryParams);
   const { summary: previousSummary, isLoading: isPreviousSummaryLoading } = useInvoiceSummary(
     previousQueryParams ?? {},
-    { enabled: !!previousQueryParams && !isInvoiceFetching, staleTime: 30_000 },
+    { enabled: !!previousQueryParams && canLoadSummary, staleTime: 30_000 },
   );
   const filterInvoiceRowsForDisplay = (rows: InvoiceRow[]) => flattenInvoiceRows(rows).filter((invoice) => {
     if (activeTab === "unpaid") {

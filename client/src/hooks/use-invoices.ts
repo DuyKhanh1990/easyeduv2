@@ -124,7 +124,7 @@ export function getPreviousInvoicePeriodParams(
   };
 }
 
-function buildSummaryQS(params: InvoiceQueryParams): string {
+export function buildSummaryQS(params: InvoiceQueryParams): string {
   const p = new URLSearchParams();
   if (params.search)    p.set("search", params.search);
   if (params.dateFrom)  p.set("dateFrom", params.dateFrom);
