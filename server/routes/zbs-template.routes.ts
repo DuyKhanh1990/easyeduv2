@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { and, asc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import {
   centerConfig,
   locations,
@@ -50,40 +50,6 @@ const mappingRepository: ZbsTemplateRepository = {
       .from(zbsTemplateMappings)
       .where(eq(zbsTemplateMappings.zaloOaConfigId, oaConfigId))
       .orderBy(asc(zbsTemplateMappings.notificationType));
-  },
-  async findMapping(oaConfigId, notificationType) {
-    const [row] = await db
-      .select()
-      .from(zbsTemplateMappings)
-      .where(and(
-        eq(zbsTemplateMappings.zaloOaConfigId, oaConfigId),
-        eq(zbsTemplateMappings.notificationType, notificationType),
-      ))
-      .limit(1);
-    return row ?? null;
-  },
-  async upsertMapping(input) {
-    const [row] = await db
-      .insert(zbsTemplateMappings)
-      .values({
-        ...input,
-        isEnabled: false,
-      })
-      .onConflictDoUpdate({
-        target: [
-          zbsTemplateMappings.zaloOaConfigId,
-          zbsTemplateMappings.notificationType,
-        ],
-        set: {
-          templateId: input.templateId,
-          templateName: input.templateName,
-          templateStatus: input.templateStatus,
-          isEnabled: false,
-          updatedAt: new Date(),
-        },
-      })
-      .returning();
-    return row;
   },
 };
 

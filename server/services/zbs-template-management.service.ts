@@ -51,14 +51,6 @@ export interface ZbsTemplateRepository {
   findOaConfig(id: string): Promise<ZbsOaRecord | null>;
   findNotificationType(code: string): Promise<boolean>;
   listMappings(zaloOaConfigId: string): Promise<ZbsTemplateMappingRecord[]>;
-  findMapping(zaloOaConfigId: string, notificationType: string): Promise<ZbsTemplateMappingRecord | null>;
-  upsertMapping(input: {
-    zaloOaConfigId: string;
-    notificationType: string;
-    templateId: string;
-    templateName: string;
-    templateStatus: string;
-  }): Promise<ZbsTemplateMappingRecord>;
 }
 
 export class ZbsTemplateManagementError extends Error {
@@ -189,7 +181,7 @@ export class ZbsTemplateManagementService {
     oaConfigId: string,
     scope: ZbsTemplateAccessScope,
     input: { notificationType: string; templateId: string },
-  ): Promise<ZbsTemplateMappingRecord> {
+  ): Promise<never> {
     const type = input.notificationType.trim();
     const templateId = input.templateId.trim();
     if (!type || type.length > 100 || !templateId || templateId.length > 100) {
@@ -226,14 +218,13 @@ export class ZbsTemplateManagementService {
         "Template được tạo trước ngày 10/12/2025 và không hỗ trợ gửi ZBS qua UID; hãy chọn template mới hơn.",
       );
     }
-
-    return this.repository.upsertMapping({
-      zaloOaConfigId: oaConfigId,
-      notificationType: type,
-      templateId: template.templateId,
-      templateName: template.templateName,
-      templateStatus: template.status,
-    });
+    // The documented list response has no UID-compatibility or component-type field.
+    // Do not infer support from templateName or status; fail closed until verified metadata exists.
+    throw new ZbsTemplateManagementError(
+      422,
+      "ZBS_TEMPLATE_COMPATIBILITY_UNVERIFIED",
+      "Không thể lưu mapping: API danh sách Zalo không cung cấp loại template hoặc dữ liệu xác nhận hỗ trợ UID. Không thể xác minh OTP, Response hoặc Journey; cần nguồn dữ liệu chính thức có thông tin tương thích.",
+    );
   }
 
   private async resolveOaToken(
