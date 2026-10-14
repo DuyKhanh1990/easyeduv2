@@ -5,6 +5,14 @@ function dateKey(value: Date | string | null | undefined): string {
   return value instanceof Date ? format(value, "yyyy-MM-dd") : String(value).slice(0, 10);
 }
 
+export function isAfterClassEndDate(
+  date: Date,
+  classEndDate: Date | string | null | undefined,
+): boolean {
+  const endKey = dateKey(classEndDate);
+  return !!endKey && format(date, "yyyy-MM-dd") > endKey;
+}
+
 export function countRemainingClassSessions(
   sessions: any[] | undefined,
   startDate: Date | string | null | undefined,

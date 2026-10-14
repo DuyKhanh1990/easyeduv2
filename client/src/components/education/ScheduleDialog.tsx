@@ -39,7 +39,7 @@ import { Badge } from "@/components/ui/badge";
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { Label } from "@/components/ui/label";
 import { FinancePromotionDialog, type FinancePromotionType } from "@/pages/finance/components/FinancePromotionDialog";
-import { countRemainingClassSessions } from "@/lib/count-remaining-class-sessions";
+import { countRemainingClassSessions, isAfterClassEndDate } from "@/lib/count-remaining-class-sessions";
 
 interface ScheduleDialogProps {
   isOpen: boolean;
@@ -913,7 +913,10 @@ export function ScheduleDialog({
                         setGlobalStart(date);
                         setGlobalSessions(countRemainingClassSessions(effectiveSessions, date, classData?.endDate));
                       }}
-                      disabled={(date) => !canRunPast && isPastCenterDate(date, today)}
+                      disabled={(date) =>
+                        isAfterClassEndDate(date, classData?.endDate)
+                        || (!canRunPast && isPastCenterDate(date, today))
+                      }
                       initialFocus
                     />
                   </PopoverContent>
@@ -1220,7 +1223,10 @@ export function ScheduleDialog({
                               startDate: date,
                               totalSessions: getSuggestedSessionCount(config, date),
                             })}
-                            disabled={(date) => !canRunPast && isPastCenterDate(date, today)}
+                            disabled={(date) =>
+                              isAfterClassEndDate(date, classData?.endDate)
+                              || (!canRunPast && isPastCenterDate(date, today))
+                            }
                           />
                         </PopoverContent>
                       </Popover>

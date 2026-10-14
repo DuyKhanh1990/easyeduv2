@@ -37,7 +37,7 @@ import { useQuery, useQueries, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
 import { useAutoInvoicePolicy } from "@/hooks/use-auto-invoice-policy";
-import { countRemainingClassSessions } from "@/lib/count-remaining-class-sessions";
+import { countRemainingClassSessions, isAfterClassEndDate } from "@/lib/count-remaining-class-sessions";
 
 interface StudentEnrollmentInfo {
   studentId: string;
@@ -596,7 +596,10 @@ export function AssignClassNewDialog({
                           setGlobalStart(date);
                           setGlobalSessions(countRemainingClassSessions(classSessions, date, classInfo?.endDate));
                         }}
-                        disabled={(date) => !canRunPast && isPastCenterDate(date, today)}
+                        disabled={(date) =>
+                          isAfterClassEndDate(date, classInfo?.endDate)
+                          || (!canRunPast && isPastCenterDate(date, today))
+                        }
                         initialFocus
                       />
                     </PopoverContent>
@@ -879,7 +882,10 @@ export function AssignClassNewDialog({
                                 startDate: date,
                                 totalSessions: getSuggestedSessionCount(config, date),
                               })}
-                                  disabled={(date) => !canRunPast && isPastCenterDate(date, today)}
+                                  disabled={(date) =>
+                                    isAfterClassEndDate(date, classInfo?.endDate)
+                                    || (!canRunPast && isPastCenterDate(date, today))
+                                  }
                                 />
                               </PopoverContent>
                             </Popover>
