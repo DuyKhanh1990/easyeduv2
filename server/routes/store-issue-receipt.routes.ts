@@ -420,7 +420,10 @@ async function createIssueInvoice(params: {
     UPDATE invoices SET store_issue_receipt_id = ${params.receiptId} WHERE id = ${inv.id}
   `);
 
-  if (remaining > 0) {
+  // No schedule is needed while the whole invoice is still unpaid. Once a
+  // partial payment exists, record it as the first installment and keep the
+  // remaining balance as the next unpaid installment.
+  if (paid > 0 && remaining > 0) {
     const scheduleRows: any[] = [];
     if (paid > 0) {
       scheduleRows.push({

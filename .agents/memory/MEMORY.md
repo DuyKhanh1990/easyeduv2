@@ -111,6 +111,7 @@
 - [Vitest JSX runtime](vitest-jsx-runtime.md) — Node-based Vitest tests may require explicit React imports even when the app build succeeds.
 - [Tuition surcharge treatment](tuition-surcharge-treatment.md) — Some centers distinguish invoice surcharge from tuition and tuition-wallet value; apply policy by center.
 - [Store-receipt invoice dates](store-invoice-payment-date.md) — For paid warehouse receipts, payment is same-day; invoice creation date is an approved temporary backfill source.
+- [Store-issued invoice installments](store-issued-invoice-installments.md) — Auto-generated unpaid warehouse invoices have no installment until a partial payment is received.
 - [Shared production database](shared-production-database.md) — production and the Replit workspace share data, but not necessarily the same running code version.
 - [Zalo OA profile tier limits](zalo-oa-profile-tier-limit.md) — error `-224` blocks current profile lookup; legacy v2 `getprofile` is retired for business OAs.
 - [Invoice payment method wallet semantics](invoice-payment-method-wallet-semantics.md) — choosing Ví Đặt cọc records the method only; actual debit stays on the separate Đặt cọc field.
