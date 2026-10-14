@@ -5613,10 +5613,15 @@ export function registerClassesRoutes(app: Express): void {
         shiftEnd: baseShifts.endTime,
         shiftName: baseShifts.name,
         learningFormat: baseSessions.learningFormat,
-        classColor: baseClasses.color,
+        classColor: baseSql<string | null>`CASE
+          WHEN ${baseClasses.useFeePackageColor} AND ${courseFeePackages.color} IS NOT NULL
+          THEN ${courseFeePackages.color}
+          ELSE ${baseClasses.color}
+        END`,
       })
       .from(baseSessions)
       .innerJoin(baseClasses, baseEq(baseSessions.classId, baseClasses.id))
+      .leftJoin(courseFeePackages, baseEq(baseClasses.feePackageId, courseFeePackages.id))
       .innerJoin(locations, baseEq(baseClasses.locationId, locations.id))
       .innerJoin(baseShifts, baseEq(baseSessions.shiftTemplateId, baseShifts.id))
       .leftJoin(classrooms, baseEq(baseSessions.roomId, classrooms.id))
@@ -5845,7 +5850,11 @@ export function registerClassesRoutes(app: Express): void {
           classId: classes.id,
           classCode: classes.classCode,
           className: classes.name,
-          classColor: classes.color,
+          classColor: sql<string | null>`CASE
+            WHEN ${classes.useFeePackageColor} AND ${courseFeePackages.color} IS NOT NULL
+            THEN ${courseFeePackages.color}
+            ELSE ${classes.color}
+          END`,
           classTeacherIds: classes.teacherIds,
           locationId: classes.locationId,
           locationName: locations.name,
@@ -5870,6 +5879,7 @@ export function registerClassesRoutes(app: Express): void {
         })
         .from(freeClassRegistrations)
         .innerJoin(classes, eq(freeClassRegistrations.classId, classes.id))
+        .leftJoin(courseFeePackages, eq(classes.feePackageId, courseFeePackages.id))
         .innerJoin(locations, eq(classes.locationId, locations.id))
         .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
         .innerJoin(students, eq(freeClassRegistrations.studentId, students.id))
@@ -5899,7 +5909,11 @@ export function registerClassesRoutes(app: Express): void {
             classId: classes.id,
             classCode: classes.classCode,
             className: classes.name,
-            classColor: classes.color,
+            classColor: sql<string | null>`CASE
+              WHEN ${classes.useFeePackageColor} AND ${courseFeePackages.color} IS NOT NULL
+              THEN ${courseFeePackages.color}
+              ELSE ${classes.color}
+            END`,
             classTeacherIds: classes.teacherIds,
             locationId: classes.locationId,
             locationName: locations.name,
@@ -5924,6 +5938,7 @@ export function registerClassesRoutes(app: Express): void {
           })
           .from(studentClasses)
           .innerJoin(classes, eq(studentClasses.classId, classes.id))
+          .leftJoin(courseFeePackages, eq(classes.feePackageId, courseFeePackages.id))
           .innerJoin(locations, eq(classes.locationId, locations.id))
           .innerJoin(students, eq(studentClasses.studentId, students.id))
           .leftJoin(

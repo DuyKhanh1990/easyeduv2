@@ -61,6 +61,7 @@ import {
   freeClassRegistrations,
   freeClassDayAssignments,
   freeClassSessionContents,
+  courseFeePackages,
   studentClasses,
   systemSettings,
   scoreSheetAssessmentStudentAttempts,
@@ -1343,7 +1344,11 @@ export function registerMySpaceRoutes(app: Express): void {
           endTime: shiftTemplates.endTime,
           className: classes.name,
           classCode: classes.classCode,
-          classColor: classes.color,
+          classColor: sql<string | null>`CASE
+            WHEN ${classes.useFeePackageColor} AND ${courseFeePackages.color} IS NOT NULL
+            THEN ${courseFeePackages.color}
+            ELSE ${classes.color}
+          END`,
           onlineLink: classes.onlineLink,
           locationId: classes.locationId,
           teacherIds: classSessions.teacherIds,
@@ -1353,6 +1358,7 @@ export function registerMySpaceRoutes(app: Express): void {
         .from(studentSessions)
         .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
         .innerJoin(classes, eq(classSessions.classId, classes.id))
+        .leftJoin(courseFeePackages, eq(classes.feePackageId, courseFeePackages.id))
         .innerJoin(shiftTemplates, eq(classSessions.shiftTemplateId, shiftTemplates.id))
         .where(
           and(
@@ -1440,7 +1446,11 @@ export function registerMySpaceRoutes(app: Express): void {
           classId: classes.id,
           className: classes.name,
           classCode: classes.classCode,
-          classColor: classes.color,
+          classColor: sql<string | null>`CASE
+            WHEN ${classes.useFeePackageColor} AND ${courseFeePackages.color} IS NOT NULL
+            THEN ${courseFeePackages.color}
+            ELSE ${classes.color}
+          END`,
           learningFormat: classes.learningFormat,
           onlineLink: classes.onlineLink,
           locationId: classes.locationId,
@@ -1460,6 +1470,7 @@ export function registerMySpaceRoutes(app: Express): void {
         })
         .from(freeClassRegistrations)
         .innerJoin(classes, eq(freeClassRegistrations.classId, classes.id))
+        .leftJoin(courseFeePackages, eq(classes.feePackageId, courseFeePackages.id))
         .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
         .innerJoin(students, eq(freeClassRegistrations.studentId, students.id))
         .where(and(
@@ -1870,7 +1881,11 @@ export function registerMySpaceRoutes(app: Express): void {
             className: classes.name,
             classCode: classes.classCode,
             classTeacherIds: classes.teacherIds,
-            classColor: classes.color,
+            classColor: sql<string | null>`CASE
+              WHEN ${classes.useFeePackageColor} AND ${courseFeePackages.color} IS NOT NULL
+              THEN ${courseFeePackages.color}
+              ELSE ${classes.color}
+            END`,
             learningFormat: classes.learningFormat,
             onlineLink: classes.onlineLink,
             locationId: classes.locationId,
@@ -1890,6 +1905,7 @@ export function registerMySpaceRoutes(app: Express): void {
           })
           .from(freeClassRegistrations)
           .innerJoin(classes, eq(freeClassRegistrations.classId, classes.id))
+          .leftJoin(courseFeePackages, eq(classes.feePackageId, courseFeePackages.id))
           .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
           .innerJoin(students, eq(freeClassRegistrations.studentId, students.id))
           .leftJoin(locations, eq(classes.locationId, locations.id))
@@ -2309,13 +2325,18 @@ export function registerMySpaceRoutes(app: Express): void {
           COALESCE(tta.end_time::text, st.end_time) AS end_time,
           c.name AS class_name,
           c.class_code,
-          c.color AS class_color,
+          CASE
+            WHEN c.use_fee_package_color = TRUE AND cfp.color IS NOT NULL
+            THEN cfp.color
+            ELSE c.color
+          END AS class_color,
           c.online_link,
           c.location_id,
           ta.check_in_at,
           ta.check_out_at
         FROM class_sessions cs
         INNER JOIN classes c ON c.id = cs.class_id
+        LEFT JOIN course_fee_packages cfp ON cfp.id = c.fee_package_id
         INNER JOIN shift_templates st ON st.id = cs.shift_template_id
         LEFT JOIN teacher_attendance ta ON ta.class_session_id = cs.id AND ta.staff_id = ${staffRecord.id}::uuid
         LEFT JOIN class_session_teacher_assignments tta
@@ -2356,7 +2377,11 @@ export function registerMySpaceRoutes(app: Express): void {
           classId: classes.id,
           className: classes.name,
           classCode: classes.classCode,
-          classColor: classes.color,
+          classColor: sql<string | null>`CASE
+            WHEN ${classes.useFeePackageColor} AND ${courseFeePackages.color} IS NOT NULL
+            THEN ${courseFeePackages.color}
+            ELSE ${classes.color}
+          END`,
           learningFormat: classes.learningFormat,
           onlineLink: classes.onlineLink,
           locationId: classes.locationId,
@@ -2376,6 +2401,7 @@ export function registerMySpaceRoutes(app: Express): void {
         })
         .from(freeClassRegistrations)
         .innerJoin(classes, eq(freeClassRegistrations.classId, classes.id))
+        .leftJoin(courseFeePackages, eq(classes.feePackageId, courseFeePackages.id))
         .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
         .innerJoin(students, eq(freeClassRegistrations.studentId, students.id))
         .where(and(
@@ -2519,7 +2545,11 @@ export function registerMySpaceRoutes(app: Express): void {
             className: classes.name,
             classCode: classes.classCode,
             classTeacherIds: classes.teacherIds,
-            classColor: classes.color,
+            classColor: sql<string | null>`CASE
+              WHEN ${classes.useFeePackageColor} AND ${courseFeePackages.color} IS NOT NULL
+              THEN ${courseFeePackages.color}
+              ELSE ${classes.color}
+            END`,
             learningFormat: classes.learningFormat,
             onlineLink: classes.onlineLink,
             locationId: classes.locationId,
@@ -2538,6 +2568,7 @@ export function registerMySpaceRoutes(app: Express): void {
           })
           .from(freeClassRegistrations)
           .innerJoin(classes, eq(freeClassRegistrations.classId, classes.id))
+          .leftJoin(courseFeePackages, eq(classes.feePackageId, courseFeePackages.id))
           .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
           .innerJoin(students, eq(freeClassRegistrations.studentId, students.id))
           .leftJoin(locations, eq(classes.locationId, locations.id))

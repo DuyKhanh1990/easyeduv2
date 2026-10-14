@@ -66,6 +66,7 @@ const editSchema = z.object({
   evaluationCriteriaIds: z.array(z.string()).optional(),
   managerIds: z.array(z.string()).optional(),
   feePackageId: z.string().optional(),
+  useFeePackageColor: z.boolean().optional(),
   scoreSheetId: z.string().optional(),
   maxStudents: z.number().min(1),
   learningFormat: z.enum(["offline", "online"]),
@@ -150,6 +151,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
       classCode: "", name: "", locationId: "", programId: "", courseId: "",
       subjectId: "", evaluationCriteriaIds: [],
       managerIds: [], feePackageId: "", scoreSheetId: "",
+      useFeePackageColor: false,
       maxStudents: 20, learningFormat: "offline", onlineLink: "", status: "planning",
       description: "",
       startDate: "", endDate: "", weekdays: [],
@@ -164,6 +166,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
   const selectedProgramId = form.watch("programId");
   const selectedCourseIdForLookup = selectedCourseId;
   const selectedFeePackageId = form.watch("feePackageId");
+  const useFeePackageColor = form.watch("useFeePackageColor") === true;
   const selectedLearningFormat = form.watch("learningFormat");
   const selectedFreeClassMode = form.watch("freeClassMode");
   const selectedWeekdays = form.watch("weekdays") || [];
@@ -215,6 +218,11 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
     enabled: isOpen && !!effectiveCourseId,
     staleTime: 0,
   });
+  const selectedFeePackage = feePackages?.find((pkg: any) => String(pkg.id) === String(selectedFeePackageId));
+  const selectedFeePackageColor = selectedFeePackage?.color || null;
+  const calendarPreviewColor = useFeePackageColor && selectedFeePackageColor
+    ? selectedFeePackageColor
+    : selectedColor;
 
   const filteredShifts = Array.isArray(shifts)
     ? shifts.filter((s) => String(s.locationId) === String(effectiveLocationId))
@@ -335,6 +343,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
         evaluationCriteriaIds: Array.isArray(cls.evaluationCriteriaIds) ? cls.evaluationCriteriaIds.map(String) : [],
         managerIds: Array.isArray(cls.managerIds) ? cls.managerIds.map(String) : (cls.managerId ? [String(cls.managerId)] : []),
         feePackageId: String(cls.feePackageId || ""),
+        useFeePackageColor: cls.useFeePackageColor === true,
         scoreSheetId: String(cls.scoreSheetId || ""),
         maxStudents: cls.maxStudents || 20,
         learningFormat: cls.learningFormat || "offline",
@@ -513,6 +522,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
         feePackageId: valOrNull(data.feePackageId),
         scoreSheetId: valOrNull(data.scoreSheetId),
         color: selectedColor || null,
+        useFeePackageColor,
       };
       if (teacherAssignmentsDirty) {
         submitData.schedule_config = data.schedule_config || [];
@@ -576,6 +586,7 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
           : [...new Set((data.teachers_config || []).map((t: any) => t.teacher_id).filter(Boolean))],
         shiftTemplateIds: [...new Set((data.schedule_config || []).flatMap((c: any) => (c.shifts || []).map((s: any) => s.shift_template_id).filter(Boolean)))],
         color: selectedColor || null,
+        useFeePackageColor,
         schedule_config: data.schedule_config || [],
         teachers_config: isFreeClass
            ? (data.freeClassMode === "guided" ? (data.teacherIds || []) : []).map((teacher_id: string) => ({
@@ -734,7 +745,13 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                             <FormLabel>Gói học phí</FormLabel>
                             <Select
                               key={`fee-${feePackages?.length ?? 0}-${field.value}`}
-                              onValueChange={field.onChange}
+                              onValueChange={(value) => {
+                                field.onChange(value);
+                                const packageColor = feePackages?.find((pkg: any) => String(pkg.id) === String(value))?.color;
+                                if (!packageColor) {
+                                  form.setValue("useFeePackageColor", false, { shouldDirty: true });
+                                }
+                              }}
                               value={field.value || ""}
                               disabled={!selectedCourseId}
                             >
@@ -1494,15 +1511,42 @@ export function EditClassDialog({ classId, isOpen, onOpenChange, onSuccess }: Ed
                                 key={color}
                                 type="button"
                                 onClick={() => setSelectedColor(color)}
+                                disabled={useFeePackageColor && !!selectedFeePackageColor}
                                 className="w-7 h-7 rounded-full border-2 transition-all"
                                 style={{
                                   backgroundColor: color,
                                   borderColor: selectedColor === color ? "#1e293b" : "transparent",
                                   transform: selectedColor === color ? "scale(1.2)" : "scale(1)",
                                   boxShadow: selectedColor === color ? "0 0 0 2px white, 0 0 0 4px #1e293b" : "none",
+                                  opacity: useFeePackageColor && selectedFeePackageColor ? 0.45 : 1,
                                 }}
                               />
                             ))}
+                          </div>
+                          <label className="flex items-center gap-2 text-sm cursor-pointer">
+                            <Checkbox
+                              checked={useFeePackageColor}
+                              disabled={!selectedFeePackageColor && !useFeePackageColor}
+                              onCheckedChange={(checked) =>
+                                form.setValue("useFeePackageColor", checked === true, { shouldDirty: true })
+                              }
+                            />
+                            <span>Sử dụng màu theo Gói học phí</span>
+                          </label>
+                          {!selectedFeePackageColor && (
+                            <p className="text-xs text-muted-foreground">
+                              {!selectedFeePackageId
+                                ? "Chọn Gói học phí đã được đặt màu để bật tùy chọn này."
+                                : "Gói học phí hiện chưa có màu; lịch tạm dùng màu lớp đã chọn."}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <div className="w-5 h-5 rounded-full border" style={{ backgroundColor: calendarPreviewColor }} />
+                            <span>
+                              {useFeePackageColor && selectedFeePackageColor
+                                ? `Lịch sẽ dùng màu của Gói học phí${selectedFeePackage?.name ? ` "${selectedFeePackage.name}"` : ""}`
+                                : "Màu đã chọn sẽ hiển thị cho lớp này trong lịch học"}
+                            </span>
                           </div>
                         </div>
 

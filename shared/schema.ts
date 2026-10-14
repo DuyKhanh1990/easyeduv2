@@ -913,6 +913,7 @@ export const classes = pgTable("classes", {
   teacherIds: uuid("teacher_ids").array(),
   shiftTemplateIds: uuid("shift_template_ids").array(),
   feePackageId: uuid("fee_package_id").references(() => courseFeePackages.id),
+  useFeePackageColor: boolean("use_fee_package_color").notNull().default(false),
   weekdays: integer("weekdays").array(),
   scheduleConfig: jsonb("schedule_config_json"),
   teachersConfig: jsonb("teachers_config_json"),

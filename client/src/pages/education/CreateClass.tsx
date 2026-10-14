@@ -112,6 +112,7 @@ export function CreateClass() {
       courseId: "",
       managerIds: [] as string[],
       feePackageId: "",
+      useFeePackageColor: false,
       scoreSheetId: "",
       maxStudents: 20,
       learningFormat: "offline",
@@ -191,6 +192,12 @@ export function CreateClass() {
   const scheduleConfig: any[] = (form.watch("schedule_config") || []) as any[];
   const teachersConfig: any[] = (form.watch("teachers_config") || []) as any[];
   const selectedFeePackageId = form.watch("feePackageId");
+  const useFeePackageColor = form.watch("useFeePackageColor") === true;
+  const selectedFeePackage = feePackages?.find((pkg: any) => String(pkg.id) === String(selectedFeePackageId));
+  const selectedFeePackageColor = selectedFeePackage?.color || null;
+  const calendarPreviewColor = useFeePackageColor && selectedFeePackageColor
+    ? selectedFeePackageColor
+    : selectedColor;
   const watchedStartDate = form.watch("startDate");
   const watchedEndDate = form.watch("endDate");
 
@@ -429,6 +436,7 @@ export function CreateClass() {
         endType,
         sessionCount: endType === "sessions" ? Number(sessionCount) : undefined,
         color: selectedColor,
+        useFeePackageColor: useFeePackageColor && !!selectedFeePackageColor,
         skipHolidays,
         programId: valOrNull(data.programId),
         courseId: valOrNull(data.courseId),
@@ -647,7 +655,15 @@ export function CreateClass() {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Gói học phí {selectedCourseId ? <span className="text-destructive">*</span> : ""}</FormLabel>
-                              <Select onValueChange={field.onChange} value={field.value || ""} disabled={!selectedCourseId || isFetchingFeePackages}>
+                              <Select
+                                onValueChange={(value) => {
+                                  field.onChange(value);
+                                  const packageColor = feePackages?.find((pkg: any) => String(pkg.id) === String(value))?.color;
+                                  if (!packageColor) form.setValue("useFeePackageColor", false);
+                                }}
+                                value={field.value || ""}
+                                disabled={!selectedCourseId || isFetchingFeePackages}
+                              >
                                 <FormControl>
                                   <SelectTrigger><SelectValue placeholder={selectedCourseId ? "Chọn gói học phí" : "Chọn khóa học trước"} /></SelectTrigger>
                                 </FormControl>
@@ -1457,20 +1473,39 @@ export function CreateClass() {
                               key={color}
                               type="button"
                               onClick={() => setSelectedColor(color)}
+                              disabled={useFeePackageColor && !!selectedFeePackageColor}
                               className="w-8 h-8 rounded-full border-2 transition-all"
                               style={{
                                 backgroundColor: color,
                                 borderColor: selectedColor === color ? "#1e293b" : "transparent",
                                 transform: selectedColor === color ? "scale(1.2)" : "scale(1)",
                                 boxShadow: selectedColor === color ? "0 0 0 2px white, 0 0 0 4px #1e293b" : "none",
+                                opacity: useFeePackageColor && selectedFeePackageColor ? 0.45 : 1,
                               }}
                               data-testid={`color-swatch-${color}`}
                             />
                           ))}
                         </div>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <Checkbox
+                            checked={useFeePackageColor && !!selectedFeePackageColor}
+                            disabled={!selectedFeePackageColor}
+                            onCheckedChange={(checked) => form.setValue("useFeePackageColor", checked === true)}
+                          />
+                          <span>Sử dụng màu theo Gói học phí</span>
+                        </label>
+                        {!selectedFeePackageColor && (
+                          <p className="text-xs text-muted-foreground">
+                            Chọn Gói học phí đã được đặt màu để bật tùy chọn này.
+                          </p>
+                        )}
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <div className="w-5 h-5 rounded-full border" style={{ backgroundColor: selectedColor }} />
-                          <span>Màu đã chọn sẽ hiển thị cho lớp này trong lịch học</span>
+                          <div className="w-5 h-5 rounded-full border" style={{ backgroundColor: calendarPreviewColor }} />
+                          <span>
+                            {useFeePackageColor && selectedFeePackageColor
+                              ? `Lịch sẽ dùng màu của Gói học phí${selectedFeePackage?.name ? ` "${selectedFeePackage.name}"` : ""}`
+                              : "Màu đã chọn sẽ hiển thị cho lớp này trong lịch học"}
+                          </span>
                         </div>
                       </div>
                     </div>
