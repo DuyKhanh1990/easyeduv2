@@ -29,4 +29,31 @@ describe("rebalanceUnpaidInstallments", () => {
     ];
     expect(rebalanceUnpaidInstallments(current, -1_370_000)).toBe(current);
   });
+
+  it("keeps a discounted installment unchanged while reallocating to another unpaid installment", () => {
+    const current = [
+      { id: "paid", status: "paid", amount: 500, promotionAmount: 0 },
+      { id: "discounted", status: "unpaid", amount: 400, promotionAmount: 100 },
+      { id: "regular", status: "unpaid", amount: 500, promotionAmount: 0 },
+    ];
+
+    const next = rebalanceUnpaidInstallments(
+      current,
+      200,
+      row => row.promotionAmount <= 0,
+    );
+
+    expect(next.map(row => row.amount)).toEqual([500, 400, 700]);
+  });
+
+  it("does not move a discount onto another row when no regular unpaid installment is available", () => {
+    const current = [
+      { id: "paid", status: "paid", amount: 500, promotionAmount: 0 },
+      { id: "discounted", status: "unpaid", amount: 400, promotionAmount: 100 },
+    ];
+
+    expect(
+      rebalanceUnpaidInstallments(current, 200, row => row.promotionAmount <= 0),
+    ).toBe(current);
+  });
 });

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { rebalanceUnpaidInstallments } from "./paymentScheduleAllocation";
+import { summarizeSchedulePromotions } from "./schedulePromotionSummary";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -541,31 +542,42 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     }
 
     if (Array.isArray(inv.paymentSchedule) && inv.paymentSchedule.length > 0) {
-      setPaymentSchedule(inv.paymentSchedule.map((s: any, i: number) => ({
-        id: s.id ?? String(i + 1),
-        label: s.label ?? t("finance.installmentLabel", { number: i + 1 }),
-        code: s.code ?? "",
-        amount: parseFloat(s.amount) || 0,
-        baseAmount: s.baseAmount === null || s.baseAmount === undefined ? null : parseFloat(s.baseAmount) || 0,
-        promotionKeys: Array.isArray(s.promotionKeys) ? s.promotionKeys : [],
-        surchargeKeys: Array.isArray(s.surchargeKeys) ? s.surchargeKeys : [],
-        promotionRows: getInitialAdjustmentRows(
-          Array.isArray(s.promotionKeys) ? s.promotionKeys : [],
-          parseFloat(s.promotionAmount) || 0,
-          `schedule-promo-${s.id ?? i}`,
-        ),
-        surchargeRows: getInitialAdjustmentRows(
-          Array.isArray(s.surchargeKeys) ? s.surchargeKeys : [],
-          parseFloat(s.surchargeAmount) || 0,
-          `schedule-surcharge-${s.id ?? i}`,
-        ),
-        promotionAmount: parseFloat(s.promotionAmount) || 0,
-        surchargeAmount: parseFloat(s.surchargeAmount) || 0,
-        due: parseDateOnly(s.dueDate),
-        status: s.status ?? "unpaid",
-        paymentMethod: s.paymentMethod ?? "cash",
-        bank: s.bank ?? "",
-      })));
+      setPaymentSchedule(inv.paymentSchedule.map((s: any, i: number) => {
+        const status = s.status ?? "unpaid";
+        const baseAmount = s.baseAmount === null || s.baseAmount === undefined
+          ? null
+          : parseFloat(s.baseAmount) || 0;
+        const promotionAmount = parseFloat(s.promotionAmount) || 0;
+        const surchargeAmount = parseFloat(s.surchargeAmount) || 0;
+        const amount = !isInvoicePaidLike(status) && baseAmount !== null && promotionAmount > 0
+          ? Math.max(0, baseAmount - promotionAmount + surchargeAmount)
+          : parseFloat(s.amount) || 0;
+        return {
+          id: s.id ?? String(i + 1),
+          label: s.label ?? t("finance.installmentLabel", { number: i + 1 }),
+          code: s.code ?? "",
+          amount,
+          baseAmount,
+          promotionKeys: Array.isArray(s.promotionKeys) ? s.promotionKeys : [],
+          surchargeKeys: Array.isArray(s.surchargeKeys) ? s.surchargeKeys : [],
+          promotionRows: getInitialAdjustmentRows(
+            Array.isArray(s.promotionKeys) ? s.promotionKeys : [],
+            promotionAmount,
+            `schedule-promo-${s.id ?? i}`,
+          ),
+          surchargeRows: getInitialAdjustmentRows(
+            Array.isArray(s.surchargeKeys) ? s.surchargeKeys : [],
+            surchargeAmount,
+            `schedule-surcharge-${s.id ?? i}`,
+          ),
+          promotionAmount,
+          surchargeAmount,
+          due: parseDateOnly(s.dueDate),
+          status,
+          paymentMethod: s.paymentMethod ?? "cash",
+          bank: s.bank ?? "",
+        };
+      }));
     } else {
       setPaymentSchedule([]);
     }
@@ -898,9 +910,14 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   );
   const invoicePromoAmt = invoicePromotionResult.adjustmentAmount;
   const invoiceSurchargeAmt = invoiceSurchargeResult.adjustmentAmount;
-  const totalPromo     = itemPromo + invoicePromoAmt;
-  const totalSurcharge = itemSurcharge + invoiceSurchargeAmt;
-  const subTotal = invoiceSurchargeResult.finalAmount;
+  const scheduleAdjustments = summarizeSchedulePromotions(paymentSchedule);
+  const { hasPromotion: hasSchedulePromotion, promotionTotal: schedulePromotionTotal, surchargeTotal: scheduleSurchargeTotal } = scheduleAdjustments;
+  const totalPromo = itemPromo + invoicePromoAmt + schedulePromotionTotal;
+  const totalSurcharge = itemSurcharge + invoiceSurchargeAmt + scheduleSurchargeTotal;
+  const subTotal = Math.max(
+    0,
+    invoiceSurchargeResult.finalAmount - schedulePromotionTotal + scheduleSurchargeTotal,
+  );
   const calculatedFinalTotal = Math.max(0, subTotal - deduction);
   // The invoice fields are authoritative; payment installments only allocate
   // this total and must never change it.
@@ -938,10 +955,15 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       }
 
       if (Math.abs(difference) < 0.01) return prev;
-
-      return rebalanceUnpaidInstallments(prev, difference);
+      // Preserve child-discounted rows. Any unrelated invoice-total change can
+      // only be reallocated across unpaid rows without a child promotion.
+      return rebalanceUnpaidInstallments(
+        prev,
+        difference,
+        entry => !hasSchedulePromotion || (entry.promotionAmount ?? 0) <= 0,
+      );
     });
-  }, [directPaidAmount, finalTotal, open, scheduleAllocated]);
+  }, [directPaidAmount, finalTotal, hasSchedulePromotion, open, scheduleAllocated]);
 
   const addProduct = () => setProducts(prev => [...prev, { id: Date.now().toString(), packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: prev[0]?.categoryId ?? "" }]);
   const removeProduct = (id: string) => setProducts(prev => prev.filter(p => p.id !== id));
@@ -2463,6 +2485,49 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       )}
                     </div>
                     {renderInvoiceAdjustmentRows("promotion")}
+                    {schedulePromotionTotal > 0 && (
+                      <div
+                        className="mt-4 rounded-lg border bg-muted/20 p-3"
+                        data-testid="invoice-schedule-promotion-breakdown"
+                      >
+                        <p className="mb-2 text-sm font-semibold">
+                          {t("finance.create.installmentPromotionBreakdown")}
+                        </p>
+                        <div className="space-y-1.5">
+                          {paymentSchedule
+                            .filter(entry => (entry.promotionAmount ?? 0) > 0)
+                            .map(entry => {
+                              const promotionLabels = (entry.promotionKeys ?? [])
+                                .map(key => {
+                                  const option = promotionOptionsWithVouchers.find((candidate: any) => candidate.id === key);
+                                  return option ? formatPromotionLabel(option) : null;
+                                })
+                                .filter(Boolean);
+                              return (
+                                <div key={entry.id} className="flex justify-between gap-3 text-xs">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-muted-foreground">
+                                      {entry.label}{entry.code ? ` (${entry.code})` : ""}
+                                    </p>
+                                    {promotionLabels.length > 0 && (
+                                      <p className="truncate text-[10px] text-muted-foreground/80">
+                                        {promotionLabels.join(", ")}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <span className="shrink-0 font-medium text-green-600">
+                                    -{fmtMoney(entry.promotionAmount ?? 0)}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                        </div>
+                        <div className="mt-2 flex justify-between border-t pt-2 text-xs font-semibold">
+                          <span>{t("finance.create.totalPromotionIncludingInstallments")}</span>
+                          <span className="text-green-600">-{fmtMoney(totalPromo)}</span>
+                        </div>
+                      </div>
+                    )}
                   </DialogContent>
                 </Dialog>
 

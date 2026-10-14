@@ -10,15 +10,18 @@ const isSettled = (status: string) => status === "paid" || status === "confirmed
 export function rebalanceUnpaidInstallments<T extends InstallmentAllocation>(
   entries: T[],
   difference: number,
+  canAdjust: (entry: T) => boolean = () => true,
 ): T[] {
   if (Math.abs(difference) < 0.01) return entries;
 
-  const autoIndex = entries.findIndex(entry => entry.isAuto && !isSettled(entry.status));
+  const autoIndex = entries.findIndex(entry =>
+    entry.isAuto && !isSettled(entry.status) && canAdjust(entry),
+  );
   if (difference > 0) {
     let targetIndex = autoIndex;
     if (targetIndex < 0) {
       for (let index = entries.length - 1; index >= 0; index -= 1) {
-        if (!isSettled(entries[index].status)) {
+        if (!isSettled(entries[index].status) && canAdjust(entries[index])) {
           targetIndex = index;
           break;
         }
@@ -36,7 +39,9 @@ export function rebalanceUnpaidInstallments<T extends InstallmentAllocation>(
     ...(autoIndex >= 0 ? [autoIndex] : []),
     ...next
       .map((entry, index) => ({ entry, index }))
-      .filter(({ entry, index }) => !isSettled(entry.status) && index !== autoIndex)
+      .filter(({ entry, index }) =>
+        !isSettled(entry.status) && canAdjust(entry) && index !== autoIndex,
+      )
       .map(({ index }) => index)
       .reverse(),
   ];

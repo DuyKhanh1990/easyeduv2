@@ -108,6 +108,99 @@ async function loadScheduleAdjustmentOptions(tx: any, promotionKeys: string[], s
     .where(inArray(financePromotions.id, keys));
 }
 
+async function syncInvoiceScheduleAdjustmentTotalsTx(
+  tx: any,
+  invoiceId: string,
+  previousSchedulePromotionTotal: number,
+  previousScheduleSurchargeTotal: number,
+  userId?: string | null,
+) {
+  const [invoice] = await tx
+    .select({
+      totalAmount: invoices.totalAmount,
+      totalPromotion: invoices.totalPromotion,
+      totalSurcharge: invoices.totalSurcharge,
+      invoicePromotionAmount: invoices.invoicePromotionAmount,
+      invoiceSurchargeAmount: invoices.invoiceSurchargeAmount,
+      deduction: invoices.deduction,
+    })
+    .from(invoices)
+    .where(eq(invoices.id, invoiceId))
+    .limit(1);
+  if (!invoice) return null;
+
+  const [itemTotals] = await tx
+    .select({
+      promotion: sql<string>`COALESCE(SUM(${invoiceItems.promotionAmount}::numeric), 0)::text`,
+      surcharge: sql<string>`COALESCE(SUM(${invoiceItems.surchargeAmount}::numeric), 0)::text`,
+    })
+    .from(invoiceItems)
+    .where(eq(invoiceItems.invoiceId, invoiceId));
+  const schedules = await tx
+    .select({
+      promotionAmount: invoicePaymentSchedule.promotionAmount,
+      surchargeAmount: invoicePaymentSchedule.surchargeAmount,
+      status: invoicePaymentSchedule.status,
+      amount: invoicePaymentSchedule.amount,
+    })
+    .from(invoicePaymentSchedule)
+    .where(eq(invoicePaymentSchedule.invoiceId, invoiceId));
+
+  const schedulePromotionTotal = schedules.reduce(
+    (sum: number, schedule: any) => sum + (parseFloat(schedule.promotionAmount ?? "0") || 0),
+    0,
+  );
+  const scheduleSurchargeTotal = schedules.reduce(
+    (sum: number, schedule: any) => sum + (parseFloat(schedule.surchargeAmount ?? "0") || 0),
+    0,
+  );
+  const itemPromotionTotal = parseFloat(itemTotals?.promotion ?? "0") || 0;
+  const itemSurchargeTotal = parseFloat(itemTotals?.surcharge ?? "0") || 0;
+  const currentPromotionTotal = parseFloat(invoice.totalPromotion ?? "0") || 0;
+  const currentSurchargeTotal = parseFloat(invoice.totalSurcharge ?? "0") || 0;
+
+  // Older schedule adjustments were not included in the parent totals. Subtract
+  // the previous child aggregate only when determining the existing base, then
+  // add the new aggregate exactly once.
+  const basePromotionTotal = Math.max(
+    itemPromotionTotal + (parseFloat(invoice.invoicePromotionAmount ?? "0") || 0),
+    currentPromotionTotal - previousSchedulePromotionTotal,
+  );
+  const baseSurchargeTotal = Math.max(
+    itemSurchargeTotal + (parseFloat(invoice.invoiceSurchargeAmount ?? "0") || 0),
+    currentSurchargeTotal - previousScheduleSurchargeTotal,
+  );
+  const totalPromotion = basePromotionTotal + schedulePromotionTotal;
+  const totalSurcharge = baseSurchargeTotal + (
+    schedulePromotionTotal > 0 ? scheduleSurchargeTotal : 0
+  );
+  const grandTotal = Math.max(
+    0,
+    (parseFloat(invoice.totalAmount ?? "0") || 0)
+      - totalPromotion
+      + totalSurcharge
+      - (parseFloat(invoice.deduction ?? "0") || 0),
+  );
+  const paidAmount = schedules
+    .filter((schedule: any) => isPaidScheduleStatus(schedule.status))
+    .reduce((sum: number, schedule: any) => sum + (parseFloat(schedule.amount ?? "0") || 0), 0);
+  if (paidAmount > grandTotal + 0.01) {
+    throw new Error("Khuyến mãi riêng không thể làm tổng hóa đơn thấp hơn số đã thanh toán");
+  }
+
+  await tx
+    .update(invoices)
+    .set({
+      totalPromotion: totalPromotion.toFixed(2),
+      totalSurcharge: totalSurcharge.toFixed(2),
+      grandTotal: grandTotal.toFixed(2),
+      updatedAt: new Date(),
+      ...(userId !== undefined ? { updatedBy: userId } : {}),
+    })
+    .where(eq(invoices.id, invoiceId));
+  return { grandTotal, paidAmount };
+}
+
 async function syncInvoiceScheduleSummaryTx(tx: any, invoiceId: string, userId?: string | null) {
   const [invoice] = await tx
     .select({ grandTotal: invoices.grandTotal })
@@ -2557,6 +2650,21 @@ export async function updateInvoiceSchedule(scheduleId: string, data: {
       .from(invoicePaymentSchedule)
       .where(eq(invoicePaymentSchedule.id, scheduleId));
     if (!schedule) throw new Error("Không tìm thấy đợt thanh toán");
+    const previousSchedules = await tx
+      .select({
+        promotionAmount: invoicePaymentSchedule.promotionAmount,
+        surchargeAmount: invoicePaymentSchedule.surchargeAmount,
+      })
+      .from(invoicePaymentSchedule)
+      .where(eq(invoicePaymentSchedule.invoiceId, schedule.invoiceId));
+    const previousSchedulePromotionTotal = previousSchedules.reduce(
+      (sum: number, row: any) => sum + (parseFloat(row.promotionAmount ?? "0") || 0),
+      0,
+    );
+    const previousScheduleSurchargeTotal = previousSchedules.reduce(
+      (sum: number, row: any) => sum + (parseFloat(row.surchargeAmount ?? "0") || 0),
+      0,
+    );
 
     const hasExistingAdjustments =
       schedule.baseAmount !== null ||
@@ -2608,6 +2716,19 @@ export async function updateInvoiceSchedule(scheduleId: string, data: {
       .returning();
 
     if (changesAdjustment) {
+      const nextPromotionAmount = parseFloat(String(updateData.promotionAmount ?? schedule.promotionAmount ?? "0")) || 0;
+      const nextSchedulePromotionTotal = previousSchedulePromotionTotal
+        - (parseFloat(schedule.promotionAmount ?? "0") || 0)
+        + nextPromotionAmount;
+      if (previousSchedulePromotionTotal > 0 || nextSchedulePromotionTotal > 0) {
+        await syncInvoiceScheduleAdjustmentTotalsTx(
+          tx,
+          schedule.invoiceId,
+          previousSchedulePromotionTotal,
+          previousScheduleSurchargeTotal,
+          data.updatedBy,
+        );
+      }
       await syncInvoiceScheduleSummaryTx(tx, schedule.invoiceId, data.updatedBy);
     }
     return updated;
@@ -2824,6 +2945,14 @@ export async function deleteInvoiceSchedule(id: string): Promise<void> {
       .from(invoicePaymentSchedule)
       .where(eq(invoicePaymentSchedule.invoiceId, schedule.invoiceId))
       .orderBy(asc(invoicePaymentSchedule.sortOrder));
+    const previousSchedulePromotionTotal = all.reduce(
+      (sum, row) => sum + (parseFloat(row.promotionAmount ?? "0") || 0),
+      0,
+    );
+    const previousScheduleSurchargeTotal = all.reduce(
+      (sum, row) => sum + (parseFloat(row.surchargeAmount ?? "0") || 0),
+      0,
+    );
 
     if (all.length <= 1) throw new Error("Không thể xoá đợt duy nhất");
 
@@ -2860,7 +2989,15 @@ export async function deleteInvoiceSchedule(id: string): Promise<void> {
     }
 
     await tx.delete(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.id, id));
-    if (lastHasAdjustments) {
+    if (previousSchedulePromotionTotal > 0) {
+      await syncInvoiceScheduleAdjustmentTotalsTx(
+        tx,
+        schedule.invoiceId,
+        previousSchedulePromotionTotal,
+        previousScheduleSurchargeTotal,
+      );
+    }
+    if (lastHasAdjustments || previousSchedulePromotionTotal > 0) {
       await syncInvoiceScheduleSummaryTx(tx, schedule.invoiceId);
     }
   });
