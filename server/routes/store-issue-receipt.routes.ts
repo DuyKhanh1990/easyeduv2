@@ -4,11 +4,9 @@ import { sql } from "drizzle-orm";
 import { eq } from "drizzle-orm";
 import { getReservationConfig, logStockTransaction } from "./store-inventory.routes";
 import { createStoreIssueReceiptAuditLog } from "../storage/store-issue-receipt-audit-log.storage";
-import {
-  invoices,
-  invoiceItems,
-  invoicePaymentSchedule,
-} from "@shared/schema";
+import { storage } from "../storage";
+import { getNextLocationCode } from "../storage/finance.storage";
+import { invoices } from "@shared/schema";
 import { z } from "zod";
 import {
   resolveInvoiceRecipientUserIds,
@@ -358,100 +356,85 @@ async function createIssueInvoice(params: {
 
   const paid = Math.min(params.paidAmount, grandTotal);
   const remaining = Math.max(0, grandTotal - paid);
-  const invStatus = remaining <= 0 ? "paid" : paid > 0 ? "partial" : "unpaid";
-  const paymentAt = paid > 0 ? new Date() : null;
+  const invStatus = (grandTotal === 0 && lineSubtotal > 0) || (grandTotal > 0 && paid >= grandTotal)
+    ? "paid"
+    : paid > 0
+      ? "partial"
+      : "unpaid";
+  const paymentAt = invStatus === "paid" ? new Date() : null;
   const today = new Date().toISOString().split("T")[0];
   const dueDate = remaining > 0 ? (params.paymentDueDate?.trim() || today) : null;
 
-  const nextCodeRow = await db.execute(sql`
-    SELECT MAX(CAST(SUBSTRING(code FROM 3) AS INTEGER)) as max_num
-    FROM invoices WHERE code ~ '^PT[0-9]+$'
-  `);
-  const maxNum = (nextCodeRow.rows[0] as any)?.max_num ?? 0;
-  const nextCode = `PT${String((parseInt(String(maxNum)) || 0) + 1).padStart(2, "0")}`;
-
-  const [inv] = await db.insert(invoices).values({
-    code: nextCode,
+  const paymentSchedule = paid > 0 && remaining > 0
+    ? [
+        {
+          label: "ĐỢT 1",
+          amount: String(paid),
+          dueDate: today,
+          status: "paid",
+          paidAt: paymentAt,
+          paidBy: params.createdBy ?? null,
+          paymentMethod: params.paymentMethod,
+        },
+        {
+          label: "ĐỢT 2",
+          amount: String(remaining),
+          dueDate,
+          status: "unpaid",
+          paymentMethod: params.paymentMethod,
+        },
+      ]
+    : [];
+  const hasPaymentSchedule = paymentSchedule.length > 0;
+  const inv = await storage.createInvoice({
     type: "Thu",
     locationId: params.locationId ?? null,
     studentId: params.recipientId ?? null,
     subjectName,
     category: "Kho",
+    account: "111",
+    counterAccount: "511",
     description,
     totalAmount: String(subtotal),
     totalPromotion: String(totalPromotion),
     totalSurcharge: String(totalSurcharge),
-    invoicePromotionKeys: params.invoicePromotionKeys,
-    invoiceSurchargeKeys: params.invoiceSurchargeKeys,
+    invoicePromotionKeys: params.invoicePromotionKeys ?? [],
+    invoiceSurchargeKeys: params.invoiceSurchargeKeys ?? [],
     invoicePromotionAmount: String(discountAmt),
     invoiceSurchargeAmount: String(surchargeAmt),
     grandTotal: String(grandTotal),
+    deduction: "0",
     paidAmount: String(paid),
     remainingAmount: String(remaining),
     dueDate,
-    paymentMethod: remaining > 0 ? null : params.paymentMethod,
+    paymentMethod: hasPaymentSchedule ? null : params.paymentMethod,
     status: invStatus,
-    paidAt: paid > 0 && remaining <= 0 ? paymentAt : null,
-    paidBy: paid > 0 && remaining <= 0 ? params.createdBy ?? null : null,
+    paidAt: paymentAt,
+    paidBy: paymentAt ? params.createdBy ?? null : null,
     createdBy: params.createdBy ?? null,
     updatedBy: params.createdBy ?? null,
-  } as any).returning();
-
-  if (params.items.length > 0) {
-    await db.insert(invoiceItems).values(
-      params.items.map((item, idx) => ({
-        invoiceId: inv.id,
+    storeIssueReceiptId: params.receiptId,
+    items: params.items.map(item => ({
         packageName: item.productName,
         packageType: "Kho",
         unitPrice: String(item.salePrice),
         quantity: item.quantity,
-        promotionKeys: item.promotionKeys,
-        surchargeKeys: item.surchargeKeys,
+        promotionKeys: item.promotionKeys ?? [],
+        surchargeKeys: item.surchargeKeys ?? [],
         promotionAmount: String(item.promotionAmount || 0),
         surchargeAmount: String(item.surchargeAmount || 0),
         subtotal: String(item.lineTotal ?? item.quantity * item.salePrice),
         category: "Kho",
-        sortOrder: idx,
-      }))
-    );
-  }
-
+      })),
+    paymentSchedule,
+  });
   await db.execute(sql`
-    UPDATE invoices SET store_issue_receipt_id = ${params.receiptId} WHERE id = ${inv.id}
+    UPDATE store_issue_receipts SET invoice_id = ${inv.id} WHERE id = ${params.receiptId}
   `);
-
-  // No schedule is needed while the whole invoice is still unpaid. Once a
-  // partial payment exists, record it as the first installment and keep the
-  // remaining balance as the next unpaid installment.
-  if (paid > 0 && remaining > 0) {
-    const scheduleRows: any[] = [];
-    if (paid > 0) {
-      scheduleRows.push({
-        invoiceId: inv.id,
-        label: "ĐỢT 1",
-        code: `${nextCode}-1`,
-        amount: String(paid),
-        dueDate: today,
-        status: "paid",
-        paidAt: paymentAt,
-        createdBy: params.createdBy ?? null,
-        paidBy: params.createdBy ?? null,
-        sortOrder: 0,
-        paymentMethod: params.paymentMethod,
-      });
-    }
-    scheduleRows.push({
-      invoiceId: inv.id,
-      label: paid > 0 ? "ĐỢT 2" : "ĐỢT 1",
-      code: `${nextCode}-${paid > 0 ? 2 : 1}`,
-      amount: String(remaining),
-      dueDate,
-      status: "unpaid",
-      createdBy: params.createdBy ?? null,
-      sortOrder: paid > 0 ? 1 : 0,
-      paymentMethod: params.paymentMethod,
-    });
-    await db.insert(invoicePaymentSchedule).values(scheduleRows);
+  if (invStatus === "paid" && !hasPaymentSchedule) {
+    const settleCode = await getNextLocationCode(params.locationId, "KT");
+    await db.update(invoices).set({ settleCode }).where(eq(invoices.id, inv.id));
+    inv.settleCode = settleCode;
   }
 
   return {
