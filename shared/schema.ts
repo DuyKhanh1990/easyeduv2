@@ -2173,6 +2173,32 @@ export const insertZaloOaConfigSchema = createInsertSchema(zaloOaConfigs).omit({
 export type ZaloOaConfig = typeof zaloOaConfigs.$inferSelect;
 export type InsertZaloOaConfig = z.infer<typeof insertZaloOaConfigSchema>;
 
+export const zbsTemplateMappings = pgTable(
+  "zbs_template_mappings",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    zaloOaConfigId: uuid("zalo_oa_config_id")
+      .notNull()
+      .references(() => zaloOaConfigs.id, { onDelete: "cascade" }),
+    notificationType: varchar("notification_type", { length: 100 }).notNull(),
+    templateId: varchar("template_id", { length: 100 }),
+    templateName: varchar("template_name", { length: 255 }),
+    templateStatus: varchar("template_status", { length: 32 }),
+    isEnabled: boolean("is_enabled").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    oaNotificationTypeUnique: uniqueIndex("zbs_template_mappings_oa_type_uniq").on(
+      table.zaloOaConfigId,
+      table.notificationType,
+    ),
+  }),
+);
+
+export type ZbsTemplateMapping = typeof zbsTemplateMappings.$inferSelect;
+export type InsertZbsTemplateMapping = typeof zbsTemplateMappings.$inferInsert;
+
 // ==========================================
 // ZALO OA CONVERSATIONS (Hội thoại Zalo OA)
 // ==========================================
