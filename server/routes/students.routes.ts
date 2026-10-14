@@ -2,10 +2,12 @@ import type { Express } from "express";
 import { storage } from "../storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
+import ExcelJS from "exceljs";
 import { runSecurityTests } from "../middleware/security-test";
 import { cacheGet, cacheSet, cacheInvalidate } from "../lib/simple-cache";
 import { db } from "../db";
-import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, students, classes, attendanceFeeRules, users, staff, staffAssignments, locations, roles, departments, classGradeBooks, classGradeBookScores, scoreCategories, scoreSheetItems, sessionContents, studentSessionContents, classSessions, scoreSheetAssessmentStudentAttempts, systemSettings, studentRelationshipHistory, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools, crmCustomFields, crmRequiredFields, evaluationCriteria, evaluationSubCriteria, shiftTemplates } from "@shared/schema";
+import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, students, classes, attendanceFeeRules, users, staff, staffAssignments, locations, roles, departments, classGradeBooks, classGradeBookScores, scoreCategories, scoreSheetItems, sessionContents, studentSessionContents, classSessions, scoreSheetAssessmentStudentAttempts, systemSettings, studentRelationshipHistory, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools, crmCustomFields, crmRequiredFields, evaluationCriteria, evaluationSubCriteria, shiftTemplates, tasks } from "@shared/schema";
 import { eq, and, isNotNull, sql, inArray, desc, gte, lte, ne } from "drizzle-orm";
 import { resolveScoreSheetAssessmentDeadlineAt, scoreSheetAssessmentSchema } from "@shared/score-sheet-assessment";
 import {
@@ -22,6 +24,24 @@ import { codeStem, nextCodeForStem } from "../lib/role-code";
 
 const CRM_RESOURCE = "/customers";
 const CRM_CONFIG_BASE = "/customers/crm-config";
+const CUSTOMER_EXPORT_MAX_ROWS = 50_000;
+const CUSTOMER_EXPORT_BATCH_SIZE = 1_000;
+const CUSTOMER_EXPORT_COLUMNS = new Set([
+  "code", "fullName", "location", "school", "type", "phone", "dob", "email",
+  "parent1", "phone1", "parent2", "phone2", "parent3", "phone3", "parentAccounts",
+  "pipeline", "source", "reject", "sale", "manager", "teacher", "classes",
+  "accountStatus", "learningStatus", "address", "social", "zaloOA", "level", "note",
+  "createdAt", "creator", "updatedAt", "updater", "appointmentNearest", "appointment1",
+  "appointment2", "lastContact", "discussion",
+]);
+const customerExportTokens = new Map<string, {
+  userId: string;
+  mode: "all" | "selected";
+  studentIds: string[];
+  columns: { id: string; label: string }[];
+  createdAt: number;
+}>();
+let activeCustomerExports = 0;
 
 // Field display names for activity log
 const STUDENT_FIELD_LABELS: Record<string, string> = {
@@ -353,6 +373,227 @@ export function registerStudentsRoutes(app: Express): void {
       res.json(result);
     } catch (err) {
       res.status(500).json({ message: (err as any).message });
+    }
+  });
+
+  // Customer XLSX export: issue a short-lived, single-use download token first,
+  // then stream the workbook directly to the browser (no server-side file).
+  app.post("/api/students/export-token", async (req, res) => {
+    try {
+      const schema = z.object({
+        mode: z.enum(["all", "selected"]),
+        studentIds: z.array(z.string().uuid()).max(CUSTOMER_EXPORT_MAX_ROWS).optional(),
+        columns: z.array(z.object({ id: z.string().max(100), label: z.string().trim().min(1).max(150) })).max(100),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Thông tin xuất Excel không hợp lệ." });
+      const columns = parsed.data.columns.filter(({ id }) =>
+        id !== "selection" && id !== "actions" &&
+        (CUSTOMER_EXPORT_COLUMNS.has(id) || /^custom:[\w-]{1,80}$/.test(id))
+      );
+      if (!columns.length) return res.status(400).json({ message: "Hãy chọn ít nhất một cột dữ liệu để xuất." });
+      const studentIds = [...new Set(parsed.data.studentIds || [])];
+      if (parsed.data.mode === "selected" && !studentIds.length) {
+        return res.status(400).json({ message: "Chưa có khách hàng nào được chọn." });
+      }
+      if (parsed.data.mode === "all" && studentIds.length) {
+        return res.status(400).json({ message: "Danh sách xuất không hợp lệ." });
+      }
+      const permissions = await getCrmPermissions(req);
+      if (!permissions.canView && !permissions.canViewAll) {
+        return res.status(403).json({ message: "Bạn không có quyền xem danh sách khách hàng." });
+      }
+      const scope = {
+        allowedLocationIds: req.allowedLocationIds || [],
+        isSuperAdmin: !!req.isSuperAdmin,
+        viewScope: permissions.canViewAll ? "all" as const : "own" as const,
+        viewerStaffId: req.staffId ?? undefined,
+      };
+      const count = await storage.getStudents({
+        ...scope,
+        studentIds: parsed.data.mode === "selected" ? studentIds : undefined,
+        limit: 1,
+        offset: 0,
+      });
+      if (!count.total) return res.status(400).json({ message: "Không có khách hàng phù hợp để xuất." });
+      if (count.total > CUSTOMER_EXPORT_MAX_ROWS) {
+        return res.status(413).json({ message: `Danh sách vượt giới hạn ${CUSTOMER_EXPORT_MAX_ROWS.toLocaleString("vi-VN")} dòng.` });
+      }
+      for (const [key, value] of customerExportTokens) {
+        if (Date.now() - value.createdAt > 10 * 60_000) customerExportTokens.delete(key);
+      }
+      const token = randomUUID();
+      customerExportTokens.set(token, {
+        userId: String((req.user as any)?.id ?? req.staffId ?? ""),
+        mode: parsed.data.mode,
+        studentIds: parsed.data.mode === "selected" ? studentIds : [],
+        columns,
+        createdAt: Date.now(),
+      });
+      res.json({ token, total: count.total });
+    } catch (error: any) {
+      console.error("[customers-export] prepare failed:", error);
+      res.status(500).json({ message: "Không thể chuẩn bị file Excel." });
+    }
+  });
+
+  app.get("/api/students/export.xlsx", async (req, res) => {
+    const token = typeof req.query.token === "string" ? req.query.token : "";
+    const exportRequest = customerExportTokens.get(token);
+    if (!exportRequest || Date.now() - exportRequest.createdAt > 10 * 60_000) {
+      customerExportTokens.delete(token);
+      return res.status(410).json({ message: "Yêu cầu tải xuống đã hết hạn. Hãy thử lại." });
+    }
+    const userId = String((req.user as any)?.id ?? req.staffId ?? "");
+    if (!userId || userId !== exportRequest.userId) return res.status(403).json({ message: "Không có quyền tải file này." });
+    customerExportTokens.delete(token);
+    if (activeCustomerExports >= 1) return res.status(429).json({ message: "Đang có một lượt xuất danh sách khác. Vui lòng thử lại sau." });
+    activeCustomerExports++;
+    try {
+      const permissions = await getCrmPermissions(req);
+      if (!permissions.canView && !permissions.canViewAll) return res.status(403).json({ message: "Bạn không có quyền xem danh sách khách hàng." });
+      const scope = {
+        allowedLocationIds: req.allowedLocationIds || [],
+        isSuperAdmin: !!req.isSuperAdmin,
+        viewScope: permissions.canViewAll ? "all" as const : "own" as const,
+        viewerStaffId: req.staffId ?? undefined,
+      };
+      const count = await storage.getStudents({
+        ...scope,
+        studentIds: exportRequest.mode === "selected" ? exportRequest.studentIds : undefined,
+        limit: 1,
+        offset: 0,
+      });
+      if (!count.total || count.total > CUSTOMER_EXPORT_MAX_ROWS) {
+        return res.status(count.total ? 413 : 400).json({ message: "Danh sách không còn phù hợp để xuất. Hãy thử lại." });
+      }
+      res.statusCode = 200;
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="customers_${new Date().toISOString().slice(0, 10)}.xlsx"`);
+      res.setHeader("Cache-Control", "no-store");
+      res.flushHeaders();
+      const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: res, useStyles: false, useSharedStrings: false });
+      const worksheet = workbook.addWorksheet("Khach_hang");
+      worksheet.addRow(exportRequest.columns.map((column) => column.label)).commit();
+
+      const formatDate = (value: any, includeTime = false) => {
+        if (!value) return "";
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return "";
+        return includeTime
+          ? date.toLocaleString("vi-VN", { timeZone: "Asia/Bangkok" })
+          : date.toLocaleDateString("vi-VN", { timeZone: "Asia/Bangkok" });
+      };
+      const addBatch = async (batch: any[]) => {
+        if (!batch.length) return;
+        const ids = batch.map((student) => student.id);
+        const statuses = await getStudentsLearningStatuses(ids);
+        const parentIds = [...new Set(batch.flatMap((student) => student.parentIds || []))] as string[];
+        const parentRows = parentIds.length && exportRequest.columns.some((column) => column.id === "parentAccounts")
+          ? await storage.getStudents({ ...scope, studentIds: parentIds, limit: parentIds.length, offset: 0 })
+          : { students: [], total: 0 };
+        const parentMap = new Map(parentRows.students.map((parent: any) => [parent.id, parent]));
+        const taskRows = exportRequest.columns.some((column) => ["appointmentNearest", "appointment1", "appointment2", "lastContact"].includes(column.id))
+          ? await db.select().from(tasks).where(sql`${tasks.subjectIds} && ARRAY[${sql.join(ids.map((id: string) => sql`${id}::uuid`), sql`, `)}]::uuid[]`).orderBy(tasks.dueDate)
+          : [];
+        const taskMap = new Map<string, any[]>();
+        for (const task of taskRows) for (const id of task.subjectIds || []) {
+          if (!ids.includes(id)) continue;
+          const rows = taskMap.get(id) || [];
+          rows.push(task);
+          taskMap.set(id, rows);
+        }
+        const labels: Record<string, string> = {
+          dang_hoc: "Đang học", chua_co_lich: "Chưa có lịch", cho_lich: "Chờ lịch",
+          bao_luu: "Bảo lưu", da_nghi: "Đã nghỉ",
+        };
+        const taskText = (task: any) => task?.dueDate
+          ? `${formatDate(task.dueDate, true)}${task.title ? ` — ${task.title}` : ""}`
+          : "";
+        for (const student of batch) {
+          const studentTasks = taskMap.get(student.id) || [];
+          const now = Date.now();
+          const upcoming = studentTasks.filter((task) => task.dueDate && new Date(task.dueDate).getTime() >= now)
+            .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+          const past = studentTasks.filter((task) => task.dueDate && new Date(task.dueDate).getTime() < now)
+            .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
+          const values = exportRequest.columns.map(({ id }) => {
+            if (id.startsWith("custom:")) return student.customFields?.[id.slice(7)] ?? "";
+            switch (id) {
+              case "code": return student.code || "";
+              case "fullName": return student.fullName || "";
+              case "location": return (student.locations || []).map((row: any) => row.location?.name).filter(Boolean).join("; ") || student.location?.name || "";
+              case "school": return (student.schoolList || []).map((row: any) => row.name).filter(Boolean).join("; ");
+              case "type": return student.type || "Học viên";
+              case "phone": return student.phone || "";
+              case "dob": return formatDate(student.dateOfBirth);
+              case "email": return student.email || "";
+              case "parent1": return student.parentName || "";
+              case "phone1": return student.parentPhone || "";
+              case "parent2": return student.parentName2 || "";
+              case "phone2": return student.parentPhone2 || "";
+              case "parent3": return student.parentName3 || "";
+              case "phone3": return student.parentPhone3 || "";
+              case "parentAccounts": {
+                const linkedParents = (student.parentIds || []).map((id: string) => parentMap.get(id)).filter(Boolean) as any[];
+                return linkedParents.length
+                  ? linkedParents.map((parent) => `${parent.fullName} (${parent.code})`).join("; ")
+                  : student.parentIds?.length ? `${student.parentIds.length} PH` : "";
+              }
+              case "pipeline": return Array.isArray(student.pipelineStage) ? student.pipelineStage.join("; ") : student.pipelineStage || "";
+              case "source": return student.sourceList?.join("; ") || student.source || "";
+              case "reject": return student.rejectReason || "";
+              case "sale": return student.salesByList?.map((row: any) => row.fullName).filter(Boolean).join("; ") || "";
+              case "manager": return student.managedByList?.map((row: any) => row.fullName).filter(Boolean).join("; ") || "";
+              case "teacher": return student.teacherList?.map((row: any) => row.fullName).filter(Boolean).join("; ") || "";
+              case "classes": return (student.classDetails || []).map((row: any) => `${row.className}${row.studentStatus ? ` (${row.studentStatus})` : ""}`).join("; ");
+              case "accountStatus": return student.accountStatus || "Hoạt động";
+              case "learningStatus": return labels[(statuses as any)?.[student.id]] || (statuses as any)?.[student.id] || "";
+              case "address": return student.address || "";
+              case "social": return student.socialLink || "";
+              case "zaloOA": return student.zaloChannel?.zaloUserId || "";
+              case "level": return student.academicLevel || "";
+              case "note": return student.note || "";
+              case "createdAt": return formatDate(student.createdAt, true);
+              case "creator": return student.creator?.username || "";
+              case "updatedAt": return formatDate(student.updatedAt, true);
+              case "updater": return student.updater?.username || "";
+              case "appointmentNearest": return taskText(upcoming[0]);
+              case "appointment1": return taskText(upcoming[1]);
+              case "appointment2": return taskText(upcoming[2]);
+              case "lastContact": return taskText(past[0]);
+              case "discussion": return student.lastComment
+                ? `${student.lastComment.content || ""}${student.lastComment.authorName ? ` — ${student.lastComment.authorName}` : ""}${student.lastComment.createdAt ? ` — ${formatDate(student.lastComment.createdAt, true)}` : ""}`
+                : "";
+              default: return "";
+            }
+          });
+          worksheet.addRow(values).commit();
+        }
+      };
+
+      if (exportRequest.mode === "all") {
+        for (let offset = 0; offset < count.total; offset += CUSTOMER_EXPORT_BATCH_SIZE) {
+          if (req.aborted || res.destroyed) break;
+          const page = await storage.getStudents({ ...scope, limit: CUSTOMER_EXPORT_BATCH_SIZE, offset });
+          await addBatch(page.students);
+        }
+      } else {
+        for (let offset = 0; offset < exportRequest.studentIds.length; offset += CUSTOMER_EXPORT_BATCH_SIZE) {
+          if (req.aborted || res.destroyed) break;
+          const ids = exportRequest.studentIds.slice(offset, offset + CUSTOMER_EXPORT_BATCH_SIZE);
+          const page = await storage.getStudents({ ...scope, studentIds: ids, limit: ids.length, offset: 0 });
+          await addBatch(page.students);
+        }
+      }
+      worksheet.commit();
+      await workbook.commit();
+    } catch (error: any) {
+      console.error("[customers-export] stream failed:", error);
+      if (res.headersSent) res.destroy(error);
+      else res.status(500).json({ message: "Không thể tạo file Excel." });
+    } finally {
+      activeCustomerExports--;
     }
   });
 

@@ -330,6 +330,7 @@ export function CustomersList() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [isBulkWalletOpen, setIsBulkWalletOpen] = useState(false);
+  const [isPreparingCustomerExport, setIsPreparingCustomerExport] = useState(false);
 
   const { data: parentsData } = useStudents({ type: "Phụ huynh", limit: 1000, enabled: isAddOpen || isEditOpen });
 
@@ -628,6 +629,45 @@ export function CustomersList() {
     crmReasons: crmReasons || [],
     createStudent,
   });
+
+  const startCustomerExport = async (mode: "selected" | "all") => {
+    if (mode === "selected" && selectedIds.length === 0) return;
+    const exportColumns = visibleColumns
+      .filter((column) => column.id !== "selection" && column.id !== "actions")
+      .map(({ id, label }) => ({ id, label }));
+    if (!exportColumns.length) {
+      toast({ title: "Không thể xuất", description: "Hãy bật ít nhất một cột dữ liệu.", variant: "destructive" });
+      return;
+    }
+    setIsPreparingCustomerExport(true);
+    try {
+      const response = await fetch("/api/students/export-token", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode, studentIds: mode === "selected" ? selectedIds : [], columns: exportColumns }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "Không thể chuẩn bị file Excel.");
+      const link = document.createElement("a");
+      link.href = `/api/students/export.xlsx?token=${encodeURIComponent(result.token)}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      toast({
+        title: "Đang tạo file Excel",
+        description: `Đang chuẩn bị ${Number(result.total).toLocaleString("vi-VN")} dòng để tải xuống.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Không thể xuất danh sách",
+        description: error?.message || "Vui lòng thử lại.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPreparingCustomerExport(false);
+    }
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -1046,9 +1086,29 @@ export function CustomersList() {
                 </Button>
               )}
               {crmPerms.canEdit && (
-                <Button variant="outline" size="sm" onClick={excel.exportToExcel} className="h-8 px-3 rounded-xl text-xs gap-1.5 bg-white border-slate-200 hover:bg-slate-50 shadow-sm">
-                  <Download className="w-3.5 h-3.5 text-slate-500" /><span>{t("customers.download")}</span>
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" disabled={isPreparingCustomerExport} className="h-8 px-3 rounded-xl text-xs gap-1.5 bg-white border-slate-200 hover:bg-slate-50 shadow-sm">
+                      <Download className="w-3.5 h-3.5 text-slate-500" />
+                      <span>{isPreparingCustomerExport ? "Đang chuẩn bị..." : t("customers.download")}</span>
+                      <ChevronDown className="w-3 h-3 text-slate-400" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-60">
+                    <DropdownMenuItem
+                      disabled={selectedIds.length === 0 || isPreparingCustomerExport}
+                      onSelect={() => void startCustomerExport("selected")}
+                    >
+                      Tải danh sách đã chọn{selectedIds.length ? ` (${selectedIds.length})` : ""}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={isPreparingCustomerExport}
+                      onSelect={() => void startCustomerExport("all")}
+                    >
+                      Tải toàn bộ danh sách
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
               {crmPerms.canEdit && (
                 <Popover>

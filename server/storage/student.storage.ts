@@ -165,6 +165,7 @@ export async function getStudents(params: {
   allowedLocationIds: string[];
   isSuperAdmin: boolean;
   locationId?: string;
+  studentIds?: string[];
   offset?: number;
   limit?: number;
   searchTerm?: string;
@@ -197,7 +198,7 @@ export async function getStudents(params: {
 }): Promise<{ students: StudentResponse[]; total: number }> {
   const {
     allowedLocationIds, isSuperAdmin,
-    locationId, offset, limit, searchTerm, type, pipelineStage, relationshipIds, pipelineGroupId, parentRelationshipId,
+    locationId, studentIds: filterStudentIds, offset, limit, searchTerm, type, pipelineStage, relationshipIds, pipelineGroupId, parentRelationshipId,
     sources, rejectReasons, salesIds, managerIds, teacherIds, classIds, schoolIds, birthYear,
     startDate, endDate, updatedFrom, updatedTo,
     accountStatuses, learningStatuses, customerLearningStatus, birthdayFrom, birthdayTo, classTabId, classTab,
@@ -208,6 +209,10 @@ export async function getStudents(params: {
 
   if (!isSuperAdmin) {
     whereClause = sql`${whereClause} AND EXISTS (SELECT 1 FROM student_locations WHERE student_locations.student_id = students.id AND student_locations.location_id = ANY(ARRAY[${sql.raw(allowedLocationIds.map(id => `'${id}'`).join(','))}]::uuid[]))`;
+  }
+  if (filterStudentIds?.length) {
+    const studentIdArray = sql.join(filterStudentIds.map((id) => sql`${id}::uuid`), sql`, `);
+    whereClause = sql`${whereClause} AND ${students.id} IN (${studentIdArray})`;
   }
 
   // Apply view scope: 'own' = only data the viewer is assigned to
