@@ -190,7 +190,7 @@ export function useInvoices(queryParams: InvoiceQueryParams = {}) {
   const qs = buildQS(queryParams);
   const queryKey = [BASE_KEY, qs];
 
-  const { data, isLoading, isError } = useQuery<InvoiceListResponse>({
+  const { data, isLoading, isFetching, isError } = useQuery<InvoiceListResponse>({
     queryKey,
     queryFn: () => fetchInvoices(queryParams),
     staleTime: 0,
@@ -218,6 +218,7 @@ export function useInvoices(queryParams: InvoiceQueryParams = {}) {
     tabCounts:           data?.tabCounts  ?? { all: 0, unpaid: 0, partial: 0, paid: 0, confirmed: 0, debt: 0 },
     rowPage:             data?.rowPage,
     isLoading,
+    isFetching,
     isError,
     deleteMutation,
     updateStatusMutation,

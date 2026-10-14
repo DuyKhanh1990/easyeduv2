@@ -1886,12 +1886,15 @@ export default function Invoices() {
     queryParams,
   } = useInvoiceFilters(activeTab);
 
-  const { invoices, total, rowPage, tabCounts, isLoading, isError: isInvoiceQueryError, deleteMutation: deleteInvoiceMutation, updateStatusMutation } = useInvoices(queryParams);
-  const { summary: invoiceSummary, isLoading: isSummaryLoading } = useInvoiceSummary(queryParams);
+  const { invoices, total, rowPage, tabCounts, isLoading, isFetching: isInvoiceFetching, isError: isInvoiceQueryError, deleteMutation: deleteInvoiceMutation, updateStatusMutation } = useInvoices(queryParams);
+  const { summary: invoiceSummary, isLoading: isSummaryLoading } = useInvoiceSummary(
+    queryParams,
+    { enabled: !isInvoiceFetching },
+  );
   const previousQueryParams = getPreviousInvoicePeriodParams(queryParams);
   const { summary: previousSummary, isLoading: isPreviousSummaryLoading } = useInvoiceSummary(
     previousQueryParams ?? {},
-    { enabled: !!previousQueryParams, staleTime: 30_000 },
+    { enabled: !!previousQueryParams && !isInvoiceFetching, staleTime: 30_000 },
   );
   const filterInvoiceRowsForDisplay = (rows: InvoiceRow[]) => flattenInvoiceRows(rows).filter((invoice) => {
     if (activeTab === "unpaid") {
