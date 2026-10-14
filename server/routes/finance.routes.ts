@@ -252,7 +252,7 @@ async function syncSchedulePaymentSideEffects(
   }
 }
 
-const invoiceItemBodySchema = insertInvoiceItemSchema.omit({ invoiceId: true }).partial({ invoiceId: true }).extend({
+const invoiceItemBodySchema = insertInvoiceItemSchema.omit({ invoiceId: true }).extend({
   storeProductId: z.string().uuid().optional().nullable(),
   storeProductCode: z.string().optional().nullable(),
   warehouseId: z.string().uuid().optional().nullable(),
@@ -262,7 +262,6 @@ const invoiceItemBodySchema = insertInvoiceItemSchema.omit({ invoiceId: true }).
 });
 const invoiceScheduleBodySchema = insertInvoicePaymentScheduleSchema
   .omit({ invoiceId: true })
-  .partial({ invoiceId: true })
   .extend({
     // Date inputs in the web UI submit YYYY-MM-DD strings; normalize them
     // before validating/inserting the schedule row.
