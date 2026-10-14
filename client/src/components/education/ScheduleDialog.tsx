@@ -39,6 +39,7 @@ import { Badge } from "@/components/ui/badge";
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { Label } from "@/components/ui/label";
 import { FinancePromotionDialog, type FinancePromotionType } from "@/pages/finance/components/FinancePromotionDialog";
+import { countRemainingClassSessions } from "@/lib/count-remaining-class-sessions";
 
 interface ScheduleDialogProps {
   isOpen: boolean;
@@ -114,7 +115,11 @@ export function ScheduleDialog({
 }: ScheduleDialogProps) {
   const initStart = defaultStartDate ?? (classData?.startDate ? new Date(classData.startDate) : undefined);
   const initEndType: "date" | "sessions" = defaultEndType ?? "sessions";
-  const initTotalSessions = defaultTotalSessions ?? 20;
+  const initTotalSessions = defaultTotalSessions ?? countRemainingClassSessions(
+    classSessions,
+    initStart ?? new Date(),
+    classData?.endDate,
+  );
 
   const [globalStart, setGlobalStart] = useState<Date | undefined>(initStart);
   const [globalEndType, setGlobalEndType] = useState<"date" | "sessions">(initEndType);
@@ -165,10 +170,22 @@ export function ScheduleDialog({
   useEffect(() => {
     if (isOpen) return;
     setGlobalEndType(initEndType);
-    setStudentConfigs((current) =>
-      current.map((config) => ({ ...config, endType: initEndType })),
-    );
-  }, [isOpen, initEndType]);
+    setGlobalSessions(countRemainingClassSessions(
+      classSessions,
+      globalStart ?? new Date(),
+      classData?.endDate,
+    ));
+    setStudentConfigs((current) => current.map((config) => ({
+      ...config,
+      endType: initEndType,
+      totalSessions: countRemainingClassSessions(
+        classSessions,
+        config.startDate,
+        classData?.endDate,
+        config.shiftType === "specific" ? config.selectedShifts : undefined,
+      ),
+    })));
+  }, [isOpen, initEndType, classSessions, classData?.endDate, globalStart]);
 
   // Internal list of students (starts from prop, grows as user adds more)
   const [internalStudents, setInternalStudents] = useState<any[]>(students);
@@ -703,7 +720,7 @@ export function ScheduleDialog({
 
   const getPreviewSessions = (config: any) => {
     if (!effectiveSessions) return [];
-    let filtered = effectiveSessions;
+    let filtered = effectiveSessions.filter((session: any) => session.status !== "cancelled");
     if (config.shiftType === "specific" && config.selectedShifts.length > 0) {
       const keySet = new Set(config.selectedShifts);
       filtered = effectiveSessions.filter((s: any) => {
@@ -717,7 +734,9 @@ export function ScheduleDialog({
       .filter((s: any) => {
         const sessionDate = new Date(s.sessionDate);
         sessionDate.setHours(0, 0, 0, 0);
-        return sessionDate >= start;
+        const classEnd = classData?.endDate ? new Date(classData.endDate) : null;
+        if (classEnd) classEnd.setHours(23, 59, 59, 999);
+        return sessionDate >= start && (!classEnd || sessionDate <= classEnd);
       })
       .sort((a: any, b: any) => new Date(a.sessionDate).getTime() - new Date(b.sessionDate).getTime());
     if (config.endType === "date") {
@@ -735,6 +754,23 @@ export function ScheduleDialog({
     }
     return sessions;
   };
+
+  const getSuggestedSessionCount = (config: any, startDate = config.startDate) =>
+    countRemainingClassSessions(
+      effectiveSessions,
+      startDate,
+      classData?.endDate,
+      config.shiftType === "specific" ? config.selectedShifts : undefined,
+    );
+
+  useEffect(() => {
+    if (!hasNoSessions || !effectiveSessions.length) return;
+    setStudentConfigs((current) => current.map((config) => ({
+      ...config,
+      totalSessions: getSuggestedSessionCount(config),
+    })));
+    setGlobalSessions(countRemainingClassSessions(effectiveSessions, globalStart ?? new Date(), classData?.endDate));
+  }, [hasNoSessions, effectiveSessions, classData?.endDate]);
 
   // ── Weekday toggle for class schedule config ──────────────────────────────
   const toggleSchedWeekday = (wd: number) => {
@@ -869,7 +905,17 @@ export function ScheduleDialog({
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0">
-                    <CalendarComponent mode="single" selected={globalStart} onSelect={setGlobalStart} disabled={(date) => !canRunPast && isPastCenterDate(date, today)} initialFocus />
+                    <CalendarComponent
+                      mode="single"
+                      selected={globalStart}
+                      onSelect={(date) => {
+                        if (!date) return;
+                        setGlobalStart(date);
+                        setGlobalSessions(countRemainingClassSessions(effectiveSessions, date, classData?.endDate));
+                      }}
+                      disabled={(date) => !canRunPast && isPastCenterDate(date, today)}
+                      initialFocus
+                    />
                   </PopoverContent>
                 </Popover>
               </div>
@@ -1132,7 +1178,10 @@ export function ScheduleDialog({
               {studentConfigs.map((config, idx) => {
                 const preview = getPreviewSessions(config);
                 const pkg = getPackage(config.packageId);
-                const invoicePreview = calcInvoicePreview(config, preview.length);
+                  const plannedSessionCount = config.endType === "sessions"
+                    ? Math.max(config.totalSessions, preview.length)
+                    : preview.length;
+                  const invoicePreview = calcInvoicePreview(config, plannedSessionCount);
                 const promoAmt = invoicePreview.promo;
                 const surchargeAmt = invoicePreview.surcharge;
                 const baseFee = invoicePreview.base;
@@ -1167,7 +1216,10 @@ export function ScheduleDialog({
                           <CalendarComponent
                             mode="single"
                             selected={config.startDate}
-                            onSelect={(date) => date && updateStudentConfig(idx, { startDate: date })}
+                            onSelect={(date) => date && updateStudentConfig(idx, {
+                              startDate: date,
+                              totalSessions: getSuggestedSessionCount(config, date),
+                            })}
                             disabled={(date) => !canRunPast && isPastCenterDate(date, today)}
                           />
                         </PopoverContent>
@@ -1176,7 +1228,10 @@ export function ScheduleDialog({
                     <TableCell>
                       <Select
                         value={config.shiftType}
-                        onValueChange={(v) => updateStudentConfig(idx, { shiftType: v })}
+                        onValueChange={(v) => updateStudentConfig(idx, {
+                          shiftType: v,
+                          totalSessions: getSuggestedSessionCount({ ...config, shiftType: v }),
+                        })}
                       >
                         <SelectTrigger className="h-8 w-full rounded-none border-0 border-b border-slate-300 bg-transparent px-1 text-xs shadow-none hover:border-primary focus:ring-0 [&>span]:line-clamp-none [&>span]:whitespace-nowrap">
                           <SelectValue placeholder="Chọn ca" />
@@ -1213,7 +1268,10 @@ export function ScheduleDialog({
                                       const next = checked
                                         ? [...config.selectedShifts, s.compositeKey]
                                         : config.selectedShifts.filter((k: string) => k !== s.compositeKey);
-                                      updateStudentConfig(idx, { selectedShifts: next });
+                                      updateStudentConfig(idx, {
+                                        selectedShifts: next,
+                                        totalSessions: getSuggestedSessionCount({ ...config, selectedShifts: next }),
+                                      });
                                     }}
                                   />
                                   <span className="min-w-0 text-[11px]">
@@ -1402,7 +1460,7 @@ export function ScheduleDialog({
                                 <span className="text-muted-foreground">
                                   Gói: <span className="font-medium text-foreground">{pkg?.name}</span>
                                   {pkg?.type === "buổi" && (
-                                    <span className="ml-1 text-muted-foreground">({preview.length} buổi × {fmtMoney(parseFloat(pkg?.fee || "0"))}đ)</span>
+                                    <span className="ml-1 text-muted-foreground">({plannedSessionCount} buổi × {fmtMoney(parseFloat(pkg?.fee || "0"))}đ)</span>
                                   )}
                                 </span>
                                 <span className="text-muted-foreground">
@@ -1486,7 +1544,10 @@ export function ScheduleDialog({
               .filter((option: any) => option.isActive !== false);
             const selectedKeys = isPromotion ? config?.promotionKeys || [] : config?.surchargeKeys || [];
             const preview = config ? getPreviewSessions(config) : [];
-            const baseAmount = config ? calcInvoicePreview(config, preview.length).base : 0;
+            const plannedSessionCount = config && config.endType === "sessions"
+              ? Math.max(config.totalSessions, preview.length)
+              : preview.length;
+            const baseAmount = config ? calcInvoicePreview(config, plannedSessionCount).base : 0;
             const total = config
               ? isPromotion
                 ? getTotalPromoAmount(config, baseAmount)

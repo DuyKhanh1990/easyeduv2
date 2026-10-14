@@ -37,6 +37,7 @@ import { useQuery, useQueries, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
 import { useAutoInvoicePolicy } from "@/hooks/use-auto-invoice-policy";
+import { countRemainingClassSessions } from "@/lib/count-remaining-class-sessions";
 
 interface StudentEnrollmentInfo {
   studentId: string;
@@ -91,7 +92,7 @@ export function AssignClassNewDialog({
   const [globalStart, setGlobalStart] = useState<Date | undefined>();
   const [globalEndType, setGlobalEndType] = useState<"date" | "sessions">("sessions");
   const [globalEnd, setGlobalEnd] = useState<Date | undefined>();
-  const [globalSessions, setGlobalSessions] = useState<number>(20);
+  const [globalSessions, setGlobalSessions] = useState<number>(0);
   const [globalPackageId, setGlobalPackageId] = useState<string>("");
   const [globalAutoInvoice, setGlobalAutoInvoice] = useState<boolean>(true);
   const [studentConfigs, setStudentConfigs] = useState<any[]>([]);
@@ -330,28 +331,31 @@ export function AssignClassNewDialog({
 
       setAssignedStudentIds(newStudentIds);
 
+      let classScheduleSessions: any[] = [];
       try {
         const res = await fetch(`/api/classes/${selectedClassId}/sessions`, { credentials: "include" });
         if (res.ok) {
           const sessions = await res.json();
-          setClassSessions(sessions || []);
+          classScheduleSessions = sessions || [];
+          setClassSessions(classScheduleSessions);
         }
       } catch (err) {
         console.error("Failed to fetch sessions:", err);
       }
 
       const newStudentObjs = students.filter((s) => newStudentIds.includes(s.id));
+      const defaultStartDate = classInfo?.startDate ? new Date(classInfo.startDate) : new Date();
       setStudentConfigs(
         newStudentObjs.map((s) => ({
           studentId: s.id,
           fullName: s.fullName,
           code: s.fullName,
-          startDate: classInfo?.startDate ? new Date(classInfo.startDate) : new Date(),
+          startDate: defaultStartDate,
           shiftType: "all",
           selectedShifts: [],
           endType: "sessions",
           endDate: classInfo?.endDate ? new Date(classInfo.endDate) : new Date(),
-          totalSessions: 20,
+          totalSessions: countRemainingClassSessions(classScheduleSessions, defaultStartDate, classInfo?.endDate),
           packageId: classInfo?.course?.feePackages?.[0]?.id || "",
           autoInvoice: defaultAutoInvoice,
           promotionKeys: [],
@@ -360,7 +364,8 @@ export function AssignClassNewDialog({
         }))
       );
 
-      setGlobalStart(classInfo?.startDate ? new Date(classInfo.startDate) : new Date());
+      setGlobalStart(defaultStartDate);
+      setGlobalSessions(countRemainingClassSessions(classScheduleSessions, defaultStartDate, classInfo?.endDate));
       setGlobalEnd(classInfo?.endDate ? new Date(classInfo.endDate) : new Date());
       setGlobalPackageId(classInfo?.course?.feePackages?.[0]?.id || "");
       setGlobalAutoInvoice(defaultAutoInvoice);
@@ -403,7 +408,7 @@ export function AssignClassNewDialog({
   const getPreviewSessions = (config: any) => {
     if (!classSessions) return [];
 
-    let filtered = classSessions;
+    let filtered = classSessions.filter((session: any) => session.status !== "cancelled");
     if (config.shiftType === "specific" && config.selectedShifts.length > 0) {
       const keySet = new Set<string>(config.selectedShifts);
       filtered = classSessions.filter((s: any) => {
@@ -419,7 +424,9 @@ export function AssignClassNewDialog({
       .filter((s: any) => {
         const sessionDate = new Date(s.sessionDate);
         sessionDate.setHours(0, 0, 0, 0);
-        return sessionDate >= start;
+        const classEnd = classInfo?.endDate ? new Date(classInfo.endDate) : null;
+        if (classEnd) classEnd.setHours(23, 59, 59, 999);
+        return sessionDate >= start && (!classEnd || sessionDate <= classEnd);
       })
       .sort((a: any, b: any) => new Date(a.sessionDate).getTime() - new Date(b.sessionDate).getTime());
 
@@ -433,6 +440,14 @@ export function AssignClassNewDialog({
 
     return sessions;
   };
+
+  const getSuggestedSessionCount = (config: any, startDate = config.startDate) =>
+    countRemainingClassSessions(
+      classSessions,
+      startDate,
+      classInfo?.endDate,
+      config.shiftType === "specific" ? config.selectedShifts : undefined,
+    );
 
   const formatWeekday = (wd: number) => {
     const days = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
@@ -573,7 +588,17 @@ export function AssignClassNewDialog({
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
-                      <CalendarComponent mode="single" selected={globalStart} onSelect={setGlobalStart} disabled={(date) => !canRunPast && isPastCenterDate(date, today)} initialFocus />
+                      <CalendarComponent
+                        mode="single"
+                        selected={globalStart}
+                        onSelect={(date) => {
+                          if (!date) return;
+                          setGlobalStart(date);
+                          setGlobalSessions(countRemainingClassSessions(classSessions, date, classInfo?.endDate));
+                        }}
+                        disabled={(date) => !canRunPast && isPastCenterDate(date, today)}
+                        initialFocus
+                      />
                     </PopoverContent>
                   </Popover>
                 </div>
@@ -813,7 +838,10 @@ export function AssignClassNewDialog({
                   {studentConfigs.map((config, idx) => {
                     const preview = getPreviewSessions(config);
                     const pkg = getPackage(config.packageId);
-                    const invoicePreview = calcInvoicePreview(config, preview.length);
+                    const plannedSessionCount = config.endType === "sessions"
+                      ? Math.max(config.totalSessions, preview.length)
+                      : preview.length;
+                    const invoicePreview = calcInvoicePreview(config, plannedSessionCount);
                     const promoAmt = invoicePreview.promo;
                     const surchargeAmt = invoicePreview.surcharge;
                     const baseFee = invoicePreview.base;
@@ -847,7 +875,10 @@ export function AssignClassNewDialog({
                                 <CalendarComponent
                                   mode="single"
                                   selected={config.startDate}
-                                  onSelect={(date) => date && updateStudentConfig(idx, { startDate: date })}
+                              onSelect={(date) => date && updateStudentConfig(idx, {
+                                startDate: date,
+                                totalSessions: getSuggestedSessionCount(config, date),
+                              })}
                                   disabled={(date) => !canRunPast && isPastCenterDate(date, today)}
                                 />
                               </PopoverContent>
@@ -856,7 +887,10 @@ export function AssignClassNewDialog({
                           <TableCell>
                             <Select
                               value={config.shiftType}
-                              onValueChange={(v) => updateStudentConfig(idx, { shiftType: v })}
+                              onValueChange={(v) => updateStudentConfig(idx, {
+                                shiftType: v,
+                                totalSessions: getSuggestedSessionCount({ ...config, shiftType: v }),
+                              })}
                             >
                               <SelectTrigger className="h-8 w-full rounded-none border-0 border-b border-slate-300 bg-transparent px-1 text-xs shadow-none hover:border-primary focus:ring-0 [&>span]:line-clamp-none [&>span]:whitespace-nowrap">
                                 <SelectValue placeholder="Chọn ca" />
@@ -893,7 +927,10 @@ export function AssignClassNewDialog({
                                       const next = checked
                                         ? [...config.selectedShifts, s.compositeKey]
                                         : config.selectedShifts.filter((k: string) => k !== s.compositeKey);
-                                      updateStudentConfig(idx, { selectedShifts: next });
+                                      updateStudentConfig(idx, {
+                                        selectedShifts: next,
+                                        totalSessions: getSuggestedSessionCount({ ...config, selectedShifts: next }),
+                                      });
                                     }}
                                   />
                                   <span className="min-w-0 text-[11px]">
@@ -1087,7 +1124,7 @@ export function AssignClassNewDialog({
                               <PopoverTrigger asChild>
                                 <Button variant="ghost" size="sm" className="h-8 text-xs px-1">
                                   <Info className="h-3 w-3 mr-1" />
-                                  {preview.length} buổi
+                                  {plannedSessionCount} buổi
                                 </Button>
                               </PopoverTrigger>
                               <PopoverContent className="w-[300px] p-0">
@@ -1132,7 +1169,7 @@ export function AssignClassNewDialog({
                                       <span className="text-muted-foreground">
                                         Gói: <span className="font-medium text-foreground">{pkg?.name}</span>
                                         {pkg?.type === "buổi" && (
-                                          <span className="ml-1 text-muted-foreground">({preview.length} buổi × {fmtMoney(parseFloat(pkg?.fee || "0"))}đ)</span>
+                                          <span className="ml-1 text-muted-foreground">({plannedSessionCount} buổi × {fmtMoney(parseFloat(pkg?.fee || "0"))}đ)</span>
                                         )}
                                       </span>
                                       <span className="text-muted-foreground">
