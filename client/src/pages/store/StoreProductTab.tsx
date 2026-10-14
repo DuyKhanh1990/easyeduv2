@@ -30,6 +30,7 @@ type Product = {
   imageUrl: string | null;
   hasVariants: boolean | null;
   status: string;
+  hasInventoryHistory: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -286,13 +287,17 @@ export function StoreProductTab() {
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => openEdit(p)}
-                        className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                        disabled={p.hasInventoryHistory}
+                        title={p.hasInventoryHistory ? "Đã có phiếu nhập/xuất hoặc tồn kho; không thể sửa. Hãy tạo mã sản phẩm mới nếu cần." : "Sửa sản phẩm"}
+                        className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                       >
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => setDeleteItem(p)}
-                        className="p-1.5 rounded-md hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
+                        disabled={p.hasInventoryHistory}
+                        title={p.hasInventoryHistory ? "Đã có phiếu nhập/xuất hoặc tồn kho; không thể xóa." : "Xóa sản phẩm"}
+                        className="p-1.5 rounded-md hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600 disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>

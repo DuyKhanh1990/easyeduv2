@@ -13,6 +13,28 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 
+async function hasProductInventoryHistory(productId: string, productCode: string): Promise<boolean> {
+  const result = await db.execute(sql`
+    SELECT (
+      EXISTS (SELECT 1 FROM store_stock_transactions WHERE product_id = ${productId}::uuid)
+      OR EXISTS (SELECT 1 FROM store_inventory WHERE product_id = ${productId}::uuid AND quantity <> 0)
+      OR EXISTS (
+        SELECT 1 FROM store_receipt_items
+        WHERE product_id = ${productId}::uuid OR product_code = ${productCode}
+      )
+      OR EXISTS (
+        SELECT 1 FROM store_issue_receipt_items
+        WHERE product_id = ${productId}::uuid OR product_code = ${productCode}
+      )
+      OR EXISTS (
+        SELECT 1 FROM store_transfer_items
+        WHERE product_id = ${productId}::uuid OR product_code = ${productCode}
+      )
+    ) AS has_history
+  `);
+  return Boolean((result.rows[0] as any)?.has_history);
+}
+
 async function ensureStoreTables() {
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS store_warehouses (
@@ -458,7 +480,32 @@ export async function registerStoreRoutes(app: Express) {
 
       const [countRows, rows] = await Promise.all([
         db.execute(sql`SELECT COUNT(*)::int AS total FROM store_products WHERE ${whereSQL}`),
-        db.execute(sql`SELECT * FROM store_products WHERE ${whereSQL} ORDER BY created_at ASC LIMIT ${pageSize} OFFSET ${offset}`),
+        db.execute(sql`
+          SELECT store_products.*,
+            (
+              EXISTS (SELECT 1 FROM store_stock_transactions t WHERE t.product_id = store_products.id)
+              OR EXISTS (
+                SELECT 1 FROM store_inventory i
+                WHERE i.product_id = store_products.id AND i.quantity <> 0
+              )
+              OR EXISTS (
+                SELECT 1 FROM store_receipt_items ri
+                WHERE ri.product_id = store_products.id OR ri.product_code = store_products.code
+              )
+              OR EXISTS (
+                SELECT 1 FROM store_issue_receipt_items ii
+                WHERE ii.product_id = store_products.id OR ii.product_code = store_products.code
+              )
+              OR EXISTS (
+                SELECT 1 FROM store_transfer_items ti
+                WHERE ti.product_id = store_products.id OR ti.product_code = store_products.code
+              )
+            ) AS has_inventory_history
+          FROM store_products
+          WHERE ${whereSQL}
+          ORDER BY created_at ASC
+          LIMIT ${pageSize} OFFSET ${offset}
+        `),
       ]);
 
       const total = (countRows.rows[0] as any)?.total ?? 0;
@@ -476,6 +523,7 @@ export async function registerStoreRoutes(app: Express) {
         imageUrl: r.image_url,
         hasVariants: r.has_variants,
         status: r.status,
+        hasInventoryHistory: Boolean(r.has_inventory_history),
         createdAt: r.created_at,
         updatedAt: r.updated_at,
       }));
@@ -508,6 +556,17 @@ export async function registerStoreRoutes(app: Express) {
     try {
       const parsed = productCreateSchema.partial().safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0].message });
+      const [existing] = await db
+        .select({ id: storeProducts.id, code: storeProducts.code })
+        .from(storeProducts)
+        .where(eq(storeProducts.id, req.params.id))
+        .limit(1);
+      if (!existing) return res.status(404).json({ message: "Không tìm thấy sản phẩm" });
+      if (await hasProductInventoryHistory(existing.id, existing.code)) {
+        return res.status(409).json({
+          message: "Sản phẩm đã có phiếu hoặc phát sinh tồn kho, không thể sửa. Nếu cần mã mới, hãy tạo sản phẩm mới.",
+        });
+      }
       const data: any = { ...parsed.data, updatedAt: new Date() };
       if (parsed.data.costPrice != null) data.costPrice = String(parsed.data.costPrice);
       if (parsed.data.salePrice != null) data.salePrice = String(parsed.data.salePrice);
@@ -523,6 +582,17 @@ export async function registerStoreRoutes(app: Express) {
 
   app.delete("/api/store/products/:id", async (req, res) => {
     try {
+      const [existing] = await db
+        .select({ id: storeProducts.id, code: storeProducts.code })
+        .from(storeProducts)
+        .where(eq(storeProducts.id, req.params.id))
+        .limit(1);
+      if (!existing) return res.status(404).json({ message: "Không tìm thấy sản phẩm" });
+      if (await hasProductInventoryHistory(existing.id, existing.code)) {
+        return res.status(409).json({
+          message: "Sản phẩm đã có phiếu hoặc phát sinh tồn kho, không thể xoá.",
+        });
+      }
       await db.delete(storeProducts).where(eq(storeProducts.id, req.params.id));
       res.json({ message: "Đã xoá sản phẩm" });
     } catch (err) {
