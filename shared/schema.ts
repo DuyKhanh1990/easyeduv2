@@ -892,6 +892,7 @@ export const courseFeePackages = pgTable("course_fee_packages", {
   fee: decimal("fee", { precision: 15, scale: 2 }).notNull(),
   sessions: decimal("sessions", { precision: 10, scale: 2 }).notNull(),
   totalAmount: decimal("total_amount", { precision: 15, scale: 2 }).notNull(),
+  color: varchar("color", { length: 7 }),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -1240,6 +1241,7 @@ export const insertCourseFeePackageSchema = createInsertSchema(courseFeePackages
   fee: z.coerce.string(),
   sessions: z.coerce.string(),
   totalAmount: z.coerce.string(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
 }).omit({ id: true, createdAt: true, updatedAt: true });
 export type CourseFeePackage = typeof courseFeePackages.$inferSelect;
 export type InsertCourseFeePackage = z.infer<typeof insertCourseFeePackageSchema>;

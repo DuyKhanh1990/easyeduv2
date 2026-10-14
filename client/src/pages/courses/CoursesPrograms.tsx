@@ -2985,6 +2985,24 @@ function CourseDialog({ locations, editCourse, open: openProp, onOpenChange }: {
   );
 }
 
+const FEE_PACKAGE_COLORS = [
+  "#F0444E",
+  "#F87914",
+  "#E8AD08",
+  "#20BE68",
+  "#10B8AA",
+  "#347DE9",
+  "#595AE8",
+  "#8751EA",
+  "#DE3994",
+  "#687789",
+  "#08A6E3",
+  "#00B28A",
+  "#EB9A02",
+  "#A54BEA",
+  "#08A8BB",
+];
+
 function FeePackageDialog({
   courseId,
   courseIsActive = true,
@@ -3015,6 +3033,7 @@ function FeePackageDialog({
       fee: Number(editPackage?.fee) || 0,
       sessions: Number(editPackage?.sessions) || 0,
       totalAmount: Number(editPackage?.totalAmount) || 0,
+      color: editPackage?.color ?? null,
       isActive: editPackage?.isActive ?? true,
     }
   });
@@ -3028,6 +3047,7 @@ function FeePackageDialog({
         fee: Number(editPackage?.fee) || 0,
         sessions: Number(editPackage?.sessions) || 0,
         totalAmount: Number(editPackage?.totalAmount) || 0,
+        color: editPackage?.color ?? null,
         isActive: editPackage?.isActive !== false,
       });
     }
@@ -3081,7 +3101,7 @@ function FeePackageDialog({
         <DialogTitle className="text-xl font-display">{isEdit ? "Chỉnh sửa Gói học phí" : "Thêm mới Gói học phí"}</DialogTitle>
       </DialogHeader>
       <Form {...form}>
-        <form onSubmit={form.handleSubmit((data) => mutation.mutate(data))} className="space-y-4 py-4">
+        <form onSubmit={form.handleSubmit((data) => mutation.mutate({ ...data, color: data.color || null }))} className="space-y-4 py-4">
           <FormField
             control={form.control}
             name="name"
@@ -3096,6 +3116,51 @@ function FeePackageDialog({
             )}
           />
           <ActivityStatusField control={form.control} />
+          <FormField
+            control={form.control}
+            name="color"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Màu sắc <span className="font-normal text-muted-foreground">(không bắt buộc)</span></FormLabel>
+                <FormControl>
+                  <div className="flex flex-wrap items-center gap-3" role="group" aria-label="Chọn màu cho gói học phí">
+                    <button
+                      type="button"
+                      onClick={() => field.onChange(null)}
+                      aria-label="Không chọn màu"
+                      aria-pressed={!field.value}
+                      title="Không chọn màu"
+                      className={cn(
+                        "flex h-9 items-center gap-1.5 rounded-full border px-2 text-xs text-muted-foreground transition-colors hover:bg-muted",
+                        !field.value && "border-primary bg-primary/5 text-primary",
+                      )}
+                    >
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-current">
+                        <X className="h-3 w-3" />
+                      </span>
+                      Không chọn
+                    </button>
+                    {FEE_PACKAGE_COLORS.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => field.onChange(color)}
+                        aria-label={`Chọn màu ${color}`}
+                        aria-pressed={field.value === color}
+                        title={color}
+                        className={cn(
+                          "h-8 w-8 rounded-full border border-black/10 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
+                          field.value === color && "ring-2 ring-primary ring-offset-2",
+                        )}
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <div className="grid grid-cols-2 gap-4">
             <FormField
               control={form.control}

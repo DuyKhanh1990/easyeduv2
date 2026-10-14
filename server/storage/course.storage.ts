@@ -162,6 +162,7 @@ export async function getAllFeePackages(
       fee: courseFeePackages.fee,
       sessions: courseFeePackages.sessions,
       totalAmount: courseFeePackages.totalAmount,
+      color: courseFeePackages.color,
       isActive: courseFeePackages.isActive,
       courseName: sql<string>`courses.name`,
       courseLocationId: courses.locationId,
