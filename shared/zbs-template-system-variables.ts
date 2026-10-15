@@ -7,6 +7,14 @@ export const ZBS_TEMPLATE_SYSTEM_VARIABLES = [
     description: "Tên đầy đủ của học viên.",
   },
   {
+    key: "center_logo",
+    label: "Logo trung tâm",
+    source: "center.logoUrl",
+    format: "imageUrl",
+    example: "Logo của trung tâm hiện tại",
+    description: "Tự lấy logo từ cơ sở chính của trung tâm đang dùng mẫu.",
+  },
+  {
     key: "parent_name",
     label: "Tên phụ huynh",
     source: "student.parentName",
@@ -64,6 +72,7 @@ export const ZBS_TEMPLATE_SYSTEM_VARIABLES = [
 
 export const ZBS_TEMPLATE_SYSTEM_VARIABLE_SOURCES = [
   "student.fullName",
+  "center.logoUrl",
   "student.parentName",
   "invoice.code",
   "invoice.dueDate",
@@ -76,4 +85,5 @@ export const ZBS_TEMPLATE_SYSTEM_VARIABLE_FORMATS = [
   "monthName",
   "currencyVnd",
   "dateVi",
+  "imageUrl",
 ] as const;

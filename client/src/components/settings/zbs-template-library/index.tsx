@@ -14,6 +14,7 @@ import {
   Link2,
   LoaderCircle,
   Plus,
+  QrCode,
   RefreshCw,
   Save,
   ShieldAlert,
@@ -33,25 +34,28 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ZBS_TEMPLATE_SYSTEM_VARIABLES } from "@shared/zbs-template-system-variables";
+import { QRCodeSVG } from "qrcode.react";
 import "./zbs-template-library.css";
 
 type TextBlock = { type: "text"; text: string };
 type ImageBlock = {
   type: "image";
-  source: "url" | "asset";
+  source: "url" | "asset" | "systemVariable";
   url?: string;
   assetId?: string;
+  variableKey?: "center_logo";
   alt?: string;
   compatibilityStatus: "unverified";
 };
 type ButtonBlock = { type: "button"; label: string; url: string; compatibilityStatus: "unverified" };
-type LibraryComponent = TextBlock | ImageBlock | ButtonBlock;
+type QrBlock = { type: "qr"; value: string; caption?: string; compatibilityStatus: "unverified" };
+type LibraryComponent = TextBlock | ImageBlock | ButtonBlock | QrBlock;
 type Variable = {
   key: string;
   example: string;
   description?: string;
   systemField?: string;
-  format?: "monthName" | "currencyVnd" | "dateVi";
+  format?: "monthName" | "currencyVnd" | "dateVi" | "imageUrl";
 };
 type TemplateRecord = {
   id: string;
@@ -79,6 +83,16 @@ const emptyForm = (): TemplateInput => ({
   variables: [],
 });
 
+const systemVariablesFor = (keys: string[]): Variable[] => ZBS_TEMPLATE_SYSTEM_VARIABLES
+  .filter((variable) => keys.includes(variable.key))
+  .map((variable) => ({
+    key: variable.key,
+    example: variable.example,
+    description: variable.description,
+    systemField: variable.source,
+    ...("format" in variable ? { format: variable.format } : {}),
+  }));
+
 const tuitionNoticeSample: TemplateInput = {
   code: "TUITION_DUE_MONTHLY",
   name: "Thông báo học phí tháng",
@@ -87,9 +101,9 @@ const tuitionNoticeSample: TemplateInput = {
   components: [
     {
       type: "image",
-      source: "url",
-      url: "https://example.invalid/replace-with-tuition-banner.png",
-      alt: "Ảnh minh họa học phí — thay bằng ảnh của trung tâm",
+      source: "systemVariable",
+      variableKey: "center_logo",
+      alt: "Logo trung tâm",
       compatibilityStatus: "unverified",
     },
     {
@@ -109,15 +123,34 @@ const tuitionNoticeSample: TemplateInput = {
       compatibilityStatus: "unverified",
     },
   ],
-  variables: ZBS_TEMPLATE_SYSTEM_VARIABLES
-    .filter((variable) => ["student_name", "billing_month", "tuition_amount", "paid_amount", "remaining_amount", "due_date"].includes(variable.key))
-    .map((variable) => ({
-      key: variable.key,
-      example: variable.example,
-      description: variable.description,
-      systemField: variable.source,
-      ...("format" in variable ? { format: variable.format } : {}),
-    })),
+  variables: systemVariablesFor(["center_logo", "student_name", "billing_month", "tuition_amount", "paid_amount", "remaining_amount", "due_date"]),
+};
+
+const qrPaymentSample: TemplateInput = {
+  code: "PAYMENT_QR_NOTICE",
+  name: "Thông báo thanh toán kèm mã QR",
+  notificationType: "tuition_due",
+  title: "Thông tin thanh toán",
+  components: [
+    { type: "image", source: "systemVariable", variableKey: "center_logo", alt: "Logo trung tâm", compatibilityStatus: "unverified" },
+    { type: "text", text: "Kính gửi Quý khách {{student_name}},\n\nMã hóa đơn: {{invoice_code}}\nSố tiền: {{remaining_amount}}\n\nVui lòng quét mã QR bên dưới để thanh toán." },
+    { type: "qr", value: "", caption: "Quét mã để thanh toán", compatibilityStatus: "unverified" },
+  ],
+  variables: systemVariablesFor(["center_logo", "student_name", "invoice_code", "remaining_amount"]),
+};
+
+const ticketSample: TemplateInput = {
+  code: "TRAVEL_TICKET_NOTICE",
+  name: "Thông tin vé xe",
+  notificationType: "travel_ticket",
+  title: "Thông tin vé xe khách",
+  components: [
+    { type: "image", source: "systemVariable", variableKey: "center_logo", alt: "Logo trung tâm", compatibilityStatus: "unverified" },
+    { type: "text", text: "Quý khách vui lòng có mặt tại điểm đi trước 30 phút.\n\nMã đặt chỗ: [Nhập mã đặt chỗ]\n\nĐiểm đi: [Nhập điểm đi]\nThời gian: [Nhập thời gian]\nĐiểm đến: [Nhập điểm đến]\n\nChúc Quý khách có chuyến đi vui vẻ." },
+    { type: "button", label: "Xem vé", url: "https://example.invalid/replace-with-ticket-link", compatibilityStatus: "unverified" },
+    { type: "button", label: "Mua thêm vé", url: "https://example.invalid/replace-with-booking-link", compatibilityStatus: "unverified" },
+  ],
+  variables: systemVariablesFor(["center_logo"]),
 };
 
 async function getJson<T>(url: string): Promise<T> {
@@ -201,6 +234,12 @@ export function ZbsTemplateLibrary() {
   const [variableInsertionTarget, setVariableInsertionTarget] = useState<{ componentIndex: number; start: number; end: number } | null>(null);
   const textAreaRefs = useRef<Record<number, HTMLTextAreaElement | null>>({});
 
+  const mainLocationQuery = useQuery({
+    queryKey: ["/api/public/main-location"],
+    queryFn: () => getJson<{ logoUrl?: string | null } | null>("/api/public/main-location"),
+  });
+  const centerLogoUrl = mainLocationQuery.data?.logoUrl ?? "";
+
   const listQuery = useQuery({
     queryKey: [endpoint],
     queryFn: () => getJson<TemplateRecord[]>(endpoint),
@@ -280,7 +319,17 @@ export function ZbsTemplateLibrary() {
   const startTuitionSample = () => {
     startNew();
     setForm(structuredClone(tuitionNoticeSample));
-    setNotice("Đã nạp mẫu thông báo học phí. Thay các URL example.invalid bằng tài nguyên thật trước khi dùng.");
+    setNotice("Đã nạp khung học phí với logo trung tâm. Thay URL example.invalid trong các nút bằng liên kết thật trước khi sử dụng.");
+  };
+  const startQrPaymentSample = () => {
+    startNew();
+    setForm(structuredClone(qrPaymentSample));
+    setNotice("Đã nạp khung thanh toán QR. Nhập nội dung QR để xem mã trong bản xem trước.");
+  };
+  const startTicketSample = () => {
+    startNew();
+    setForm(structuredClone(ticketSample));
+    setNotice("Đã nạp khung thông tin vé xe. Thay các URL example.invalid bằng liên kết thật trước khi lưu.");
   };
   const selectRecord = (record: TemplateRecord) => {
     setCreating(false);
@@ -338,7 +387,9 @@ export function ZbsTemplateLibrary() {
       ? { type, text: "" }
       : type === "image"
         ? { type, source: "url", url: "", alt: "", compatibilityStatus: "unverified" }
-        : { type, label: "", url: "", compatibilityStatus: "unverified" };
+        : type === "button"
+          ? { type, label: "", url: "", compatibilityStatus: "unverified" }
+          : { type, value: "", caption: "", compatibilityStatus: "unverified" };
     updateField("components", [...form.components, block]);
   };
   return (
@@ -358,6 +409,12 @@ export function ZbsTemplateLibrary() {
           {canWrite && <div className="flex shrink-0 flex-wrap gap-2">
             <Button variant="outline" onClick={startTuitionSample} className="border-[#a9c0b1] text-[#315f4e] hover:bg-white">
               <FilePlus2 className="mr-2 h-4 w-4" /> Mẫu học phí
+            </Button>
+            <Button variant="outline" onClick={startQrPaymentSample} className="border-[#a9c0b1] text-[#315f4e] hover:bg-white">
+              <QrCode className="mr-2 h-4 w-4" /> Mẫu thanh toán QR
+            </Button>
+            <Button variant="outline" onClick={startTicketSample} className="border-[#a9c0b1] text-[#315f4e] hover:bg-white">
+              <FilePlus2 className="mr-2 h-4 w-4" /> Mẫu vé xe
             </Button>
             <Button onClick={startNew} className="bg-[#315f4e] text-white hover:bg-[#264d3e]">
               <FilePlus2 className="mr-2 h-4 w-4" /> Tạo mẫu mới
@@ -478,19 +535,20 @@ export function ZbsTemplateLibrary() {
                         {!isArchived && <div className="flex flex-wrap gap-1.5">
                           <Button type="button" variant="outline" size="sm" onClick={() => addComponent("text")} className="h-8 border-[#d5e0d7] text-[#426353]"><Text className="mr-1.5 h-3.5 w-3.5" />Văn bản</Button>
                           <Button type="button" variant="outline" size="sm" onClick={() => addComponent("image")} className="h-8 border-[#d5e0d7] text-[#426353]"><Image className="mr-1.5 h-3.5 w-3.5" />Ảnh</Button>
+                          <Button type="button" variant="outline" size="sm" onClick={() => addComponent("qr")} className="h-8 border-[#d5e0d7] text-[#426353]"><QrCode className="mr-1.5 h-3.5 w-3.5" />Mã QR</Button>
                           <Button type="button" variant="outline" size="sm" onClick={() => addComponent("button")} className="h-8 border-[#d5e0d7] text-[#426353]"><Link2 className="mr-1.5 h-3.5 w-3.5" />Nút</Button>
                         </div>}
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-3 px-4 py-4 sm:px-5">
                       <div className="flex items-start gap-2 rounded-md border border-[#eadfca] bg-[#fffaf0] px-3 py-2 text-[11px] leading-5 text-[#725e3f]"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />Ảnh và nút chỉ là cấu trúc dữ liệu nháp chưa xác minh; không đồng nghĩa Zalo hỗ trợ chúng cho mọi loại mẫu.</div>
-                      {form.components.length === 0 && <div className="rounded-lg border border-dashed border-[#d4ded8] bg-[#fafbf8] px-4 py-7 text-center text-xs leading-5 text-[#829087]">Chưa có khối nội dung. Thêm văn bản, ảnh hoặc nút để dựng bản nháp.</div>}
+                      {form.components.length === 0 && <div className="rounded-lg border border-dashed border-[#d4ded8] bg-[#fafbf8] px-4 py-7 text-center text-xs leading-5 text-[#829087]">Chưa có khối nội dung. Thêm văn bản, ảnh, mã QR hoặc nút để dựng bản nháp.</div>}
                       {form.components.map((component, index) => (
                         <div key={`${component.type}-${index}`} className="rounded-lg border border-[#e0e7e1] bg-[#fbfcf9] p-3 sm:p-4">
                           <div className="mb-3 flex items-center justify-between">
                             <div className="flex items-center gap-2 text-xs font-semibold text-[#476153]">
-                              {component.type === "text" ? <Text className="h-3.5 w-3.5" /> : component.type === "image" ? <Image className="h-3.5 w-3.5" /> : <Link2 className="h-3.5 w-3.5" />}
-                              {component.type === "text" ? "Khối văn bản" : component.type === "image" ? "Khối ảnh · chưa xác minh" : "Khối nút · chưa xác minh"}
+                              {component.type === "text" ? <Text className="h-3.5 w-3.5" /> : component.type === "image" ? <Image className="h-3.5 w-3.5" /> : component.type === "qr" ? <QrCode className="h-3.5 w-3.5" /> : <Link2 className="h-3.5 w-3.5" />}
+                              {component.type === "text" ? "Khối văn bản" : component.type === "image" ? "Khối ảnh · chưa xác minh" : component.type === "qr" ? "Mã QR · chưa xác minh" : "Khối nút · chưa xác minh"}
                             </div>
                             <div className="flex items-center gap-1">
                               {component.type === "text" && !isArchived && <Button type="button" variant="outline" size="sm" onMouseDown={(event) => event.preventDefault()} onClick={() => openVariablePicker(index)} className="h-7 border-[#d5e0d7] px-2 text-[11px] text-[#426353]"><Braces className="mr-1.5 h-3.5 w-3.5" />Chèn biến</Button>}
@@ -500,8 +558,8 @@ export function ZbsTemplateLibrary() {
                           {component.type === "text" && <Textarea ref={(element) => { textAreaRefs.current[index] = element; }} disabled={isArchived} value={component.text} onChange={(event) => updateComponent(index, { ...component, text: event.target.value })} placeholder="Nhập nội dung. Đặt con trỏ tại vị trí cần chèn biến rồi chọn “Chèn biến”." className="zl-textarea min-h-24 border-[#d8e1da] bg-white text-sm leading-6" />}
                           {component.type === "image" && (
                             <div className="grid gap-3 sm:grid-cols-2">
-                              <div className="space-y-1.5"><Label className="text-xs">Nguồn nội bộ</Label><select disabled={isArchived} value={component.source} onChange={(event) => updateComponent(index, { ...component, source: event.target.value as "url" | "asset", url: "", assetId: "" })} className="h-10 w-full rounded-md border border-[#d8e1da] bg-white px-3 text-sm"><option value="url">URL</option><option value="asset">Mã tài nguyên</option></select></div>
-                              <div className="space-y-1.5"><Label className="text-xs">{component.source === "url" ? "URL ảnh" : "Mã tài nguyên"}</Label><Input disabled={isArchived} value={component.source === "url" ? component.url ?? "" : component.assetId ?? ""} onChange={(event) => updateComponent(index, component.source === "url" ? { ...component, url: event.target.value } : { ...component, assetId: event.target.value })} placeholder={component.source === "url" ? "https://…" : "asset-id"} className="border-[#d8e1da] bg-white" /></div>
+                              <div className="space-y-1.5"><Label className="text-xs">Nguồn ảnh</Label><select disabled={isArchived} value={component.source} onChange={(event) => { const source = event.target.value as ImageBlock["source"]; updateComponent(index, { ...component, source, url: "", assetId: "", variableKey: source === "systemVariable" ? "center_logo" : undefined }); }} className="h-10 w-full rounded-md border border-[#d8e1da] bg-white px-3 text-sm"><option value="url">URL ảnh</option><option value="asset">Mã tài nguyên</option><option value="systemVariable">Logo trung tâm tự động</option></select></div>
+                              <div className="space-y-1.5"><Label className="text-xs">{component.source === "url" ? "URL ảnh" : component.source === "asset" ? "Mã tài nguyên" : "Biến hệ thống"}</Label>{component.source === "systemVariable" ? <div className="flex h-10 items-center rounded-md border border-[#d8e1da] bg-[#f4f7f3] px-3 text-sm text-[#496555]">{"{{center_logo}}"} · lấy từ cơ sở chính</div> : <Input disabled={isArchived} value={component.source === "url" ? component.url ?? "" : component.assetId ?? ""} onChange={(event) => updateComponent(index, component.source === "url" ? { ...component, url: event.target.value } : { ...component, assetId: event.target.value })} placeholder={component.source === "url" ? "https://…" : "asset-id"} className="border-[#d8e1da] bg-white" />}</div>
                               <div className="space-y-1.5 sm:col-span-2"><Label className="text-xs">Mô tả thay thế</Label><Input disabled={isArchived} value={component.alt ?? ""} onChange={(event) => updateComponent(index, { ...component, alt: event.target.value })} placeholder="Mô tả ngắn cho ảnh" className="border-[#d8e1da] bg-white" /></div>
                               <p className="sm:col-span-2 text-[10px] text-[#8a785a]">compatibilityStatus: unverified</p>
                             </div>
@@ -511,6 +569,13 @@ export function ZbsTemplateLibrary() {
                               <div className="space-y-1.5"><Label className="text-xs">Nhãn nút</Label><Input disabled={isArchived} value={component.label} onChange={(event) => updateComponent(index, { ...component, label: event.target.value })} placeholder="Ví dụ: Xem chi tiết" className="border-[#d8e1da] bg-white" /></div>
                               <div className="space-y-1.5"><Label className="text-xs">URL đích</Label><Input disabled={isArchived} value={component.url} onChange={(event) => updateComponent(index, { ...component, url: event.target.value })} placeholder="https://…" className="border-[#d8e1da] bg-white" /></div>
                               <p className="sm:col-span-2 text-[10px] text-[#8a785a]">compatibilityStatus: unverified</p>
+                            </div>
+                          )}
+                          {component.type === "qr" && (
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <div className="space-y-1.5 sm:col-span-2"><Label className="text-xs">Nội dung để mã hóa thành QR</Label><Textarea disabled={isArchived} value={component.value} onChange={(event) => updateComponent(index, { ...component, value: event.target.value })} placeholder="Dán nội dung thanh toán hoặc URL để tạo mã QR xem trước" className="min-h-20 border-[#d8e1da] bg-white text-sm" /></div>
+                              <div className="space-y-1.5 sm:col-span-2"><Label className="text-xs">Chú thích</Label><Input disabled={isArchived} value={component.caption ?? ""} onChange={(event) => updateComponent(index, { ...component, caption: event.target.value })} placeholder="Ví dụ: Quét mã để thanh toán" className="border-[#d8e1da] bg-white" /></div>
+                              <p className="sm:col-span-2 text-[10px] text-[#8a785a]">QR được dựng cục bộ để xem trước; chưa xác minh cách gửi khối QR qua ZBS.</p>
                             </div>
                           )}
                         </div>
@@ -532,7 +597,14 @@ export function ZbsTemplateLibrary() {
                             {form.components.map((component, index) => component.type === "text" ? (
                               <p key={index} className="whitespace-pre-wrap text-sm leading-6 text-[#4c5a50]">{substitute(component.text, form.variables) || <span className="italic text-[#a4aaa1]">Văn bản trống</span>}</p>
                             ) : component.type === "image" ? (
-                              <div key={index} className="flex min-h-24 items-center justify-center rounded-lg border border-dashed border-[#d6ddd5] bg-[#f5f7f3] px-3 text-center text-xs text-[#7c897f]"><Image className="mr-2 h-4 w-4" />Ảnh · cấu trúc nháp chưa xác minh{component.alt ? ` · ${component.alt}` : ""}</div>
+                              component.source === "systemVariable" && centerLogoUrl
+                                ? <div key={index} className="flex justify-center"><img src={centerLogoUrl} alt={component.alt || "Logo trung tâm"} className="max-h-16 max-w-40 object-contain" /></div>
+                                : <div key={index} className="flex min-h-16 items-center justify-center rounded-lg border border-dashed border-[#d6ddd5] bg-[#f5f7f3] px-3 text-center text-xs text-[#7c897f]"><Image className="mr-2 h-4 w-4" />{component.source === "systemVariable" ? "Logo cơ sở chính chưa được cấu hình" : `Ảnh · cấu trúc nháp chưa xác minh${component.alt ? ` · ${component.alt}` : ""}`}</div>
+                            ) : component.type === "qr" ? (
+                              <div key={index} className="flex flex-col items-center gap-2 rounded-xl border border-[#e0e4dc] bg-[#f8f7f2] p-4">
+                                {component.value.trim() ? <div className="rounded-lg bg-white p-2"><QRCodeSVG value={component.value} size={164} level="M" includeMargin /></div> : <div className="flex h-44 w-44 items-center justify-center rounded-lg border border-dashed border-[#cdd8cf] bg-white text-center text-xs text-[#7c897f]"><QrCode className="mr-2 h-5 w-5" />Nhập nội dung QR để xem mã</div>}
+                                {component.caption && <p className="text-center text-xs text-[#53685b]">{component.caption}</p>}
+                              </div>
                             ) : (
                               <div key={index} className="rounded-md border border-[#e5e9e2] bg-[#f7f9f5] px-3 py-2 text-center text-xs font-semibold text-[#476b56]">{component.label || "Nút chưa đặt tên"} <span className="font-normal text-[#89958d]">· chưa xác minh</span></div>
                             ))}
@@ -574,7 +646,7 @@ export function ZbsTemplateLibrary() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            {ZBS_TEMPLATE_SYSTEM_VARIABLES.map((variable) => (
+            {ZBS_TEMPLATE_SYSTEM_VARIABLES.filter((variable) => variable.key !== "center_logo").map((variable) => (
               <button
                 key={variable.key}
                 type="button"

@@ -80,6 +80,26 @@ describe("ZBS internal template library", () => {
     ]));
     expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "paid_amount"))
       .toMatchObject({ source: "invoice.paidAmount", format: "currencyVnd" });
+    expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "center_logo"))
+      .toMatchObject({ source: "center.logoUrl", format: "imageUrl" });
+  });
+
+  it("accepts a center-logo image block and a QR payload block", () => {
+    const parsed = zbsLibraryInputSchema.parse({
+      ...validInput,
+      components: [
+        { type: "image", source: "systemVariable", variableKey: "center_logo", alt: "Logo trung tâm" },
+        { type: "qr", value: "payment-payload", caption: "Quét mã để thanh toán" },
+      ],
+      variables: [{
+        key: "center_logo",
+        example: "Logo trung tâm",
+        systemField: "center.logoUrl",
+        format: "imageUrl",
+      }],
+    });
+    expect(parsed.components[0]).toMatchObject({ type: "image", source: "systemVariable", variableKey: "center_logo" });
+    expect(parsed.components[1]).toMatchObject({ type: "qr", value: "payment-payload", compatibilityStatus: "unverified" });
   });
 
   it("rejects duplicate variable keys and incomplete image resources", () => {

@@ -8,9 +8,10 @@ export const zbsLibraryComponentSchema = z.union([
   z.object({ type: z.literal("text"), text: z.string().max(5000) }),
   z.object({
     type: z.literal("image"),
-    source: z.enum(["url", "asset"]),
+    source: z.enum(["url", "asset", "systemVariable"]),
     url: z.string().max(2000).optional(),
     assetId: z.string().max(200).optional(),
+    variableKey: z.literal("center_logo").optional(),
     alt: z.string().max(500).optional(),
     compatibilityStatus: z.literal("unverified").default("unverified"),
   }),
@@ -18,6 +19,12 @@ export const zbsLibraryComponentSchema = z.union([
     type: z.literal("button"),
     label: z.string().min(1).max(100),
     url: z.string().url().max(2000),
+    compatibilityStatus: z.literal("unverified").default("unverified"),
+  }),
+  z.object({
+    type: z.literal("qr"),
+    value: z.string().max(4000).default(""),
+    caption: z.string().max(255).optional(),
     compatibilityStatus: z.literal("unverified").default("unverified"),
   }),
 ]);
@@ -43,6 +50,9 @@ export const zbsLibraryInputSchema = z.object({
     }
     if (component.type === "image" && component.source === "asset" && !component.assetId?.trim()) {
       ctx.addIssue({ code: "custom", message: "Ảnh dạng tài nguyên cần có assetId.", path: ["components", index, "assetId"] });
+    }
+    if (component.type === "image" && component.source === "systemVariable" && component.variableKey !== "center_logo") {
+      ctx.addIssue({ code: "custom", message: "Logo hệ thống cần dùng biến center_logo.", path: ["components", index, "variableKey"] });
     }
   });
   value.variables.forEach((variable, index) => {
