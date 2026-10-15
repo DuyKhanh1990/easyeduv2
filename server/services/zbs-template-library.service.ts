@@ -27,6 +27,17 @@ export const zbsLibraryComponentSchema = z.union([
     caption: z.string().max(255).optional(),
     compatibilityStatus: z.literal("unverified").default("unverified"),
   }),
+  z.object({
+    type: z.literal("ticket"),
+    notice: z.string().max(500).default(""),
+    bookingCode: z.string().max(100).default(""),
+    departureLocation: z.string().max(255).default(""),
+    departureTime: z.string().max(32).default(""),
+    departureDate: z.string().max(64).default(""),
+    arrivalLocation: z.string().max(255).default(""),
+    arrivalTime: z.string().max(32).default(""),
+    arrivalDate: z.string().max(64).default(""),
+  }),
 ]);
 
 export const zbsLibraryInputSchema = z.object({
