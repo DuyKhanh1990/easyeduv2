@@ -1,0 +1,36 @@
+.zbs-library {
+  --zl-ink: #263d35;
+  --zl-muted: #708079;
+  --zl-line: #dbe4dd;
+  --zl-paper: #fbfcf8;
+  --zl-wash: #f1f5ef;
+  --zl-green: #315f4e;
+  --zl-amber: #946333;
+  color: var(--zl-ink);
+}
+
+.zbs-library .zl-mono {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.zbs-library .zl-textarea {
+  resize: vertical;
+}
+
+.zbs-library .zl-scrollbar {
+  scrollbar-color: #c8d5cc transparent;
+  scrollbar-width: thin;
+}
+
+.zbs-library .zl-enter {
+  animation: zl-enter 240ms ease-out both;
+}
+
+@keyframes zl-enter {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zbs-library .zl-enter { animation: none; }
+}

@@ -2758,6 +2758,55 @@ export const centerConfig = pgTable("center_config", {
 
 export type CenterConfig = typeof centerConfig.$inferSelect;
 
+export type ZbsLibraryTextComponent = { type: "text"; text: string };
+export type ZbsLibraryImageComponent = {
+  type: "image";
+  source: "url" | "asset";
+  url?: string;
+  assetId?: string;
+  alt?: string;
+  compatibilityStatus: "unverified";
+};
+export type ZbsLibraryButtonComponent = {
+  type: "button";
+  label: string;
+  url: string;
+  compatibilityStatus: "unverified";
+};
+export type ZbsLibraryComponent =
+  | ZbsLibraryTextComponent
+  | ZbsLibraryImageComponent
+  | ZbsLibraryButtonComponent;
+export type ZbsLibraryVariable = { key: string; example: string; description?: string };
+
+export const zbsTemplateLibrary = pgTable(
+  "zbs_template_library",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    centerId: uuid("center_id").notNull().references(() => centerConfig.id, { onDelete: "cascade" }),
+    code: varchar("code", { length: 100 }).notNull(),
+    name: varchar("name", { length: 255 }).notNull(),
+    notificationType: varchar("notification_type", { length: 100 }).notNull(),
+    title: varchar("title", { length: 255 }).notNull().default(""),
+    components: jsonb("components").$type<ZbsLibraryComponent[]>().notNull().default(sql`'[]'::jsonb`),
+    variables: jsonb("variables").$type<ZbsLibraryVariable[]>().notNull().default(sql`'[]'::jsonb`),
+    version: integer("version").notNull().default(1),
+    status: varchar("status", { length: 20 }).notNull().default("draft"),
+    compatibilityStatus: varchar("compatibility_status", { length: 32 }).notNull().default("unverified"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    centerCodeUnique: uniqueIndex("zbs_template_library_center_code_uniq").on(table.centerId, table.code),
+    centerStatusIdx: index("zbs_template_library_center_status_idx").on(table.centerId, table.status),
+  }),
+);
+
+export type ZbsTemplateLibraryRecord = typeof zbsTemplateLibrary.$inferSelect;
+export type InsertZbsTemplateLibrary = typeof zbsTemplateLibrary.$inferInsert;
+
 // ==========================================
 // SESSION (Express session store)
 // ==========================================

@@ -12,6 +12,7 @@ import { initializeWsHub } from "./lib/ws-hub";
 import { captureError } from "./lib/monitoring";
 import { registerNotificationRoutes } from "./routes/notification.routes";
 import { registerZbsTemplateRoutes } from "./routes/zbs-template.routes";
+import { registerZbsTemplateLibraryRoutes } from "./routes/zbs-template-library.routes";
 
 import { registerConfigRoutes } from "./routes/config.routes";
 import { registerStudentsRoutes } from "./routes/students.routes";
@@ -420,6 +421,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerTaskRoutes(app);
   registerNotificationRoutes(app);
   registerZbsTemplateRoutes(app);
+  registerZbsTemplateLibraryRoutes(app);
   registerDatabaseBackupRoutes(app);
   registerAdminHubRoutes(app);
   registerMobileRoutes(app);
