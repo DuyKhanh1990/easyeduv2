@@ -2793,7 +2793,7 @@ export type ZbsLibraryVariable = {
   key: string;
   example: string;
   description?: string;
-  systemField?: "student.fullName" | "center.logoUrl" | "student.parentName" | "invoice.code" | "invoice.dueDate" | "invoice.grandTotal" | "invoice.paidAmount" | "invoice.remainingAmount" | "payment.amount" | "payment.bankName" | "payment.bankCode" | "payment.accountNumber" | "payment.accountName";
+  systemField?: "student.fullName" | "center.logoUrl" | "student.parentName" | "invoice.code" | "invoice.dueDate" | "invoice.grandTotal" | "invoice.paidAmount" | "invoice.remainingAmount" | "invoice.appliedBankAccount.bankName" | "invoice.appliedBankAccount.bankAccount" | "invoice.appliedBankAccount.accountHolder";
   format?: "monthName" | "currencyVnd" | "dateVi" | "imageUrl";
 };
 

@@ -9,7 +9,7 @@ Keep starter draft frames as editable text in ordinary text blocks. A generic te
 
 Text blocks also support inline bold, italic, and text color in the internal editor and preview. Keep the text editable and do not imply those styles are supported by ZBS sending until verified.
 
-Payment templates use the exact angle-bracket placeholders `<amount>`, `<bank_name>`, `<bank_code>`, `<account_number>`, and `<account_name>`. The amount is the invoice balance due; bank fields come from the configured receiving account, with the bank code derived from the bank name.
+Payment templates use the exact angle-bracket placeholders `<amount>`, `<bank_name>`, `<bank_code>`, `<account_number>`, and `<account_name>`. Map the amount to `invoice.remainingAmount`; bank values follow the invoice's applied bank account and the first configured location bank as fallback. Derive the VietQR code with the system bank-name mapper.
 
 **Why:** The user wants reusable message content they can edit freely, not fixed fields or a locked design for one message type.
 

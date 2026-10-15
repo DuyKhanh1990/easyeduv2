@@ -84,9 +84,9 @@ describe("ZBS internal template library", () => {
       "due_date",
     ]));
     expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "amount"))
-      .toMatchObject({ token: "<amount>", source: "payment.amount", format: "currencyVnd" });
+      .toMatchObject({ token: "<amount>", source: "invoice.remainingAmount", format: "currencyVnd" });
     expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "bank_code"))
-      .toMatchObject({ token: "<bank_code>", source: "payment.bankCode" });
+      .toMatchObject({ token: "<bank_code>", source: "invoice.appliedBankAccount.bankName" });
     expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "paid_amount"))
       .toMatchObject({ source: "invoice.paidAmount", format: "currencyVnd" });
     expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "center_logo"))
