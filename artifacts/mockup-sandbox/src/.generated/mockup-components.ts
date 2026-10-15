@@ -10,5 +10,6 @@ export const modules: ModuleMap = {
   "./components/mockups/score-conversion-layout/ScoreConversionSectionEditor.tsx": () => import("../components/mockups/score-conversion-layout/ScoreConversionSectionEditor.tsx"),
   "./components/mockups/score-conversion-layout/StudentScoreSheetDialog.tsx": () => import("../components/mockups/score-conversion-layout/StudentScoreSheetDialog.tsx"),
   "./components/mockups/student-score-sheet-cards/Aligned.tsx": () => import("../components/mockups/student-score-sheet-cards/Aligned.tsx"),
-  "./components/mockups/student-score-sheet-cards/Current.tsx": () => import("../components/mockups/student-score-sheet-cards/Current.tsx")
+  "./components/mockups/student-score-sheet-cards/Current.tsx": () => import("../components/mockups/student-score-sheet-cards/Current.tsx"),
+  "./components/mockups/zbs-payment-template/Current.tsx": () => import("../components/mockups/zbs-payment-template/Current.tsx")
 };
