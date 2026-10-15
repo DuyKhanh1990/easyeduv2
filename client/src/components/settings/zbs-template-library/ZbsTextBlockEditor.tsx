@@ -5,6 +5,24 @@ import { TextStyle } from "@tiptap/extension-text-style";
 import { Color } from "@tiptap/extension-color";
 import { Bold, Italic, Palette } from "lucide-react";
 
+const RichTextStyle = TextStyle.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      fontSize: {
+        default: null,
+        parseHTML: (element) => (element as HTMLElement).style.fontSize || null,
+        renderHTML: (attributes) => attributes.fontSize ? { style: `font-size: ${attributes.fontSize}` } : {},
+      },
+      fontFamily: {
+        default: null,
+        parseHTML: (element) => (element as HTMLElement).style.fontFamily || null,
+        renderHTML: (attributes) => attributes.fontFamily ? { style: `font-family: ${attributes.fontFamily}` } : {},
+      },
+    };
+  },
+});
+
 export function toRichTextHtml(value: string) {
   if (!value) return "";
   if (/^\s*<(p|br|strong|em|span)\b/i.test(value)) return value;
@@ -40,7 +58,7 @@ export function ZbsTextBlockEditor({
         blockquote: false,
         horizontalRule: false,
       }),
-      TextStyle,
+      RichTextStyle,
       Color,
     ],
     content: toRichTextHtml(value),
@@ -108,6 +126,34 @@ export function ZbsTextBlockEditor({
         >
           <Italic className="h-4 w-4" />
         </button>
+        <select
+          aria-label="Cỡ chữ"
+          title="Cỡ chữ"
+          disabled={disabled}
+          defaultValue=""
+          onChange={(event) => {
+            if (event.target.value) editor.chain().focus().setMark("textStyle", { fontSize: event.target.value }).run();
+          }}
+          className="h-7 rounded border border-[#d8e1da] bg-white px-1.5 text-[11px] text-[#52665a] disabled:opacity-50"
+        >
+          <option value="" disabled>Cỡ chữ</option>
+          {["12px", "14px", "16px", "18px", "20px", "24px"].map((size) => <option key={size} value={size}>{size}</option>)}
+        </select>
+        <select
+          aria-label="Phông chữ"
+          title="Phông chữ"
+          disabled={disabled}
+          defaultValue=""
+          onChange={(event) => {
+            if (event.target.value) editor.chain().focus().setMark("textStyle", { fontFamily: event.target.value }).run();
+          }}
+          className="h-7 max-w-32 rounded border border-[#d8e1da] bg-white px-1.5 text-[11px] text-[#52665a] disabled:opacity-50"
+        >
+          <option value="" disabled>Phông chữ</option>
+          <option value="Arial, sans-serif">Arial</option>
+          <option value="Roboto, sans-serif">Roboto</option>
+          <option value="Georgia, serif">Georgia</option>
+        </select>
         <span className="mx-1 h-4 w-px bg-[#dce5de]" />
         <label className="flex cursor-pointer items-center gap-1 rounded px-1.5 py-1 text-xs text-[#60736a] hover:bg-[#e9f0eb]">
           <Palette className="h-4 w-4" />

@@ -193,6 +193,13 @@ function dateLabel(value: string) {
 }
 
 function asInput(record: TemplateRecord): TemplateInput {
+  const savedVariables = record.variables ?? [];
+  const variables = record.code === "PAYMENT_QR_NOTICE"
+    ? [
+        ...savedVariables,
+        ...qrPaymentSample.variables.filter((variable) => !savedVariables.some((saved) => saved.key === variable.key)),
+      ]
+    : savedVariables;
   return {
     code: record.code,
     name: record.name,
@@ -203,7 +210,7 @@ function asInput(record: TemplateRecord): TemplateInput {
       if (component.type === "qr") return { ...component, value: normalizeTemplateVariableSyntax(component.value) };
       return component;
     }),
-    variables: record.variables ?? [],
+    variables,
   };
 }
 
@@ -527,8 +534,8 @@ export function ZbsTemplateLibrary() {
                         <div className="flex items-start gap-2.5">
                           <span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg bg-[#e5efe9] text-[#41675b]"><Braces className="h-4 w-4" /></span>
                           <div>
-                            <CardTitle className="text-sm text-[#263e36]">{creating ? "Soạn mẫu mới" : form.name || "Mẫu chưa đặt tên"}</CardTitle>
-                            <p className="mt-1 text-xs text-[#7b8881]">{creating ? "Bản nháp mới · trung tâm hiện tại" : `Cập nhật ${dateLabel(selected?.updatedAt ?? "")}`}</p>
+                            <CardTitle className="text-sm text-[#263e36]">Thông tin mẫu</CardTitle>
+                            <p className="mt-1 text-xs text-[#7b8881]">{creating ? "Mẫu mới · bản nháp nội bộ" : `${form.name || "Mẫu chưa đặt tên"} · cập nhật ${dateLabel(selected?.updatedAt ?? "")}`}</p>
                           </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
@@ -551,19 +558,18 @@ export function ZbsTemplateLibrary() {
                   <Card className="border-[#d9e2dd] shadow-[0_2px_12px_rgba(30,58,47,0.035)]">
                     <CardHeader className="border-b border-[#e8eeeb] px-4 py-3 sm:px-5">
                       <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div><CardTitle className="text-sm text-[#263e36]">Cấu trúc nội dung</CardTitle><p className="mt-1 text-xs text-[#78877f]">Khối nội bộ để biên soạn · chưa xác minh tương thích ZBS</p></div>
-                        {!isArchived && <div className="flex flex-wrap gap-1.5">
-                          <Button type="button" variant="outline" size="sm" onClick={() => addComponent("text")} className="h-8 border-[#d5e0d7] text-[#426353]"><Text className="mr-1.5 h-3.5 w-3.5" />Văn bản</Button>
-                          <Button type="button" variant="outline" size="sm" onClick={() => addComponent("image")} className="h-8 border-[#d5e0d7] text-[#426353]"><Image className="mr-1.5 h-3.5 w-3.5" />Ảnh</Button>
-                          <Button type="button" variant="outline" size="sm" onClick={() => addComponent("qr")} className="h-8 border-[#d5e0d7] text-[#426353]"><QrCode className="mr-1.5 h-3.5 w-3.5" />Mã QR</Button>
-                          <Button type="button" variant="outline" size="sm" onClick={() => addComponent("button")} className="h-8 border-[#d5e0d7] text-[#426353]"><Link2 className="mr-1.5 h-3.5 w-3.5" />Nút</Button>
-                        </div>}
+                        <div><CardTitle className="text-sm text-[#263e36]">Nội dung</CardTitle><p className="mt-1 text-xs text-[#78877f]">Văn bản, biến, ảnh và QR · bản nháp nội bộ</p></div>
+                        <div className="flex flex-wrap gap-1.5">
+                          <Button type="button" variant="outline" size="sm" disabled={isArchived} onClick={() => addComponent("text")} className="h-8 border-[#d5e0d7] text-[#426353]"><Text className="mr-1.5 h-3.5 w-3.5" />Văn bản</Button>
+                          <Button type="button" variant="outline" size="sm" disabled={isArchived} onClick={() => addComponent("image")} className="h-8 border-[#d5e0d7] text-[#426353]"><Image className="mr-1.5 h-3.5 w-3.5" />Ảnh</Button>
+                          <Button type="button" variant="outline" size="sm" disabled={isArchived} onClick={() => addComponent("qr")} className="h-8 border-[#d5e0d7] text-[#426353]"><QrCode className="mr-1.5 h-3.5 w-3.5" />Mã QR</Button>
+                        </div>
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-3 px-4 py-4 sm:px-5">
                       <div className="flex items-start gap-2 rounded-md border border-[#eadfca] bg-[#fffaf0] px-3 py-2 text-[11px] leading-5 text-[#725e3f]"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />Ảnh và nút chỉ là cấu trúc dữ liệu nháp chưa xác minh; không đồng nghĩa Zalo hỗ trợ chúng cho mọi loại mẫu.</div>
-                      {form.components.length === 0 && <div className="rounded-lg border border-dashed border-[#d4ded8] bg-[#fafbf8] px-4 py-7 text-center text-xs leading-5 text-[#829087]">Chưa có khối nội dung. Thêm văn bản, ảnh, mã QR hoặc nút để dựng bản nháp.</div>}
-                      {form.components.map((component, index) => (
+                      {form.components.every((component) => component.type === "button") && <div className="rounded-lg border border-dashed border-[#d4ded8] bg-[#fafbf8] px-4 py-7 text-center text-xs leading-5 text-[#829087]">Chưa có nội dung. Thêm văn bản, ảnh hoặc mã QR để dựng bản nháp.</div>}
+                      {form.components.map((component, index) => component.type === "button" ? null : (
                         <div key={`${component.type}-${index}`} className="rounded-lg border border-[#e0e7e1] bg-[#fbfcf9] p-3 sm:p-4">
                           <div className="mb-3 flex items-center justify-between">
                             <div className="flex items-center gap-2 text-xs font-semibold text-[#476153]">
@@ -605,13 +611,6 @@ export function ZbsTemplateLibrary() {
                               <p className="sm:col-span-2 text-[10px] text-[#8a785a]">compatibilityStatus: unverified</p>
                             </div>
                           )}
-                          {component.type === "button" && (
-                            <div className="grid gap-3 sm:grid-cols-2">
-                              <div className="space-y-1.5"><Label className="text-xs">Nhãn nút</Label><Input disabled={isArchived} value={component.label} onChange={(event) => updateComponent(index, { ...component, label: event.target.value })} placeholder="Ví dụ: Xem chi tiết" className="border-[#d8e1da] bg-white" /></div>
-                              <div className="space-y-1.5"><Label className="text-xs">URL đích</Label><Input disabled={isArchived} value={component.url} onChange={(event) => updateComponent(index, { ...component, url: event.target.value })} placeholder="https://…" className="border-[#d8e1da] bg-white" /></div>
-                              <p className="sm:col-span-2 text-[10px] text-[#8a785a]">compatibilityStatus: unverified</p>
-                            </div>
-                          )}
                           {component.type === "qr" && (
                             <div className="grid gap-3 sm:grid-cols-2">
                               <div className="space-y-1.5 sm:col-span-2"><Label className="text-xs">Nội dung để mã hóa thành QR</Label><Textarea disabled={isArchived} value={component.value} onChange={(event) => updateComponent(index, { ...component, value: normalizeTemplateVariableSyntax(event.target.value) })} placeholder="Dán nội dung thanh toán hoặc URL để tạo mã QR xem trước" className="min-h-20 border-[#d8e1da] bg-white text-sm" /></div>
@@ -621,40 +620,59 @@ export function ZbsTemplateLibrary() {
                           )}
                         </div>
                       ))}
+                      <div className="overflow-hidden rounded-lg border border-[#d9e2dd] bg-white">
+                        <div className="border-b border-[#e8eeeb] bg-[#f8faf7] px-4 py-3">
+                          <div className="flex items-center gap-2"><Eye className="h-4 w-4 text-[#527365]" /><div><h3 className="text-sm font-semibold text-[#263e36]">Xem trước nội dung</h3><p className="mt-1 text-xs text-[#78877f]">Ví dụ nội bộ · chưa xác minh tương thích</p></div></div>
+                        </div>
+                        <div className="p-4">
+                          <div className="mx-auto max-w-md rounded-xl border border-[#e0e4dc] bg-[#fffefa] p-4 shadow-[0_3px_12px_rgba(34,54,43,0.05)]">
+                            <div className="mb-3 flex items-center justify-between border-b border-[#edf0e9] pb-2 text-[10px] uppercase tracking-[0.13em] text-[#89938a]"><span>Preview · nội bộ</span><span>Không gửi</span></div>
+                            {form.title && <h4 className="mb-3 text-sm font-semibold text-[#304b3e]">{substitute(form.title, form.variables)}</h4>}
+                            {form.components.every((component) => component.type === "button") && !form.title && <p className="text-xs italic text-[#929a91]">Nội dung xem trước sẽ xuất hiện tại đây.</p>}
+                            <div className="space-y-3">
+                              {form.components.map((component, index) => component.type === "button" ? null : component.type === "text" ? (
+                                component.style === "blueCard"
+                                  ? <div key={index} className="rounded-lg border border-[#d6e7f1] bg-[#eff8fc] p-3 text-sm leading-6 text-[#4c5a50]"><div className="zbs-rich-preview" dangerouslySetInnerHTML={{ __html: richTextPreviewHtml(component.text, form.variables) }} /></div>
+                                  : <div key={index} className="zbs-rich-preview text-sm leading-6 text-[#4c5a50]" dangerouslySetInnerHTML={{ __html: richTextPreviewHtml(component.text, form.variables) }} />
+                              ) : component.type === "image" ? (
+                                component.source === "systemVariable" && centerLogoUrl
+                                  ? <div key={index} className="flex justify-center"><img src={centerLogoUrl} alt={component.alt || "Logo trung tâm"} className="max-h-16 max-w-40 object-contain" /></div>
+                                  : component.source === "url" && component.url
+                                    ? <div key={index} className="flex justify-center"><img src={component.url} alt={component.alt || "Ảnh mẫu"} className="max-h-48 max-w-full rounded object-contain" /></div>
+                                  : <div key={index} className="flex min-h-16 items-center justify-center rounded-lg border border-dashed border-[#d6ddd5] bg-[#f5f7f3] px-3 text-center text-xs text-[#7c897f]"><Image className="mr-2 h-4 w-4" />Ảnh · cấu trúc nháp chưa xác minh</div>
+                              ) : (
+                                <div key={index} className="flex flex-col items-center gap-2 rounded-xl border border-[#e0e4dc] bg-[#f8f7f2] p-4">
+                                  {component.value.trim() ? <div className="rounded-lg bg-white p-2"><QRCodeSVG value={component.value} size={164} level="M" includeMargin /></div> : <div className="flex h-44 w-44 items-center justify-center rounded-lg border border-dashed border-[#cdd8cf] bg-white text-center text-xs text-[#7c897f]"><QrCode className="mr-2 h-5 w-5" />Nhập nội dung QR để xem mã</div>}
+                                  {component.caption && <p className="text-center text-xs text-[#53685b]">{component.caption}</p>}
+                                </div>
+                              ))}
+                            </div>
+                            {form.components.filter((component) => component.type === "button").map((button, index) => button.type === "button" ? (
+                              <div key={`preview-button-${index}`} className="mt-3 rounded-md bg-[#315f4e] px-3 py-2 text-center text-xs font-semibold text-white">{button.label || "Nút chưa đặt tên"}</div>
+                            ) : null)}
+                            <p className="mt-4 border-t border-[#edf0e9] pt-2 text-[10px] leading-4 text-[#9a8b6d]">Mô phỏng dữ liệu nội bộ, không phải bản render hoặc xác nhận từ Zalo.</p>
+                          </div>
+                        </div>
+                      </div>
                     </CardContent>
                   </Card>
 
-                  <Card className="overflow-hidden border-[#d9e2dd] shadow-[0_2px_12px_rgba(30,58,47,0.035)]">
-                    <CardHeader className="border-b border-[#e8eeeb] bg-[#f8faf7] px-4 py-3 sm:px-5">
-                      <div className="flex items-center gap-2"><Eye className="h-4 w-4 text-[#527365]" /><div><CardTitle className="text-sm text-[#263e36]">Bản xem trước nội bộ</CardTitle><p className="mt-1 text-xs text-[#78877f]">Mô phỏng nội dung với ví dụ · chưa xác minh tương thích</p></div></div>
-                    </CardHeader>
-                    <CardContent className="p-4 sm:p-5">
-                      <div className="mx-auto max-w-xl rounded-xl border border-[#e4e8df] bg-[#f4f3ec] p-4 sm:p-6">
-                        <div className="mx-auto max-w-md rounded-xl border border-[#e0e4dc] bg-[#fffefa] p-4 shadow-[0_3px_12px_rgba(34,54,43,0.05)]">
-                          <div className="mb-3 flex items-center justify-between border-b border-[#edf0e9] pb-2 text-[10px] uppercase tracking-[0.13em] text-[#89938a]"><span>Preview · nội bộ</span><span>Không gửi</span></div>
-                          {form.title && <h4 className="mb-3 text-sm font-semibold text-[#304b3e]">{substitute(form.title, form.variables)}</h4>}
-                          {form.components.length === 0 && !form.title && <p className="text-xs italic text-[#929a91]">Nội dung xem trước sẽ xuất hiện tại đây.</p>}
-                          <div className="space-y-3">
-                            {form.components.map((component, index) => component.type === "text" ? (
-                              component.style === "blueCard"
-                                ? <div key={index} className="rounded-lg border border-[#d6e7f1] bg-[#eff8fc] p-3 text-sm leading-6 text-[#4c5a50]"><div className="zbs-rich-preview" dangerouslySetInnerHTML={{ __html: richTextPreviewHtml(component.text, form.variables) }} /></div>
-                                : <div key={index} className="zbs-rich-preview text-sm leading-6 text-[#4c5a50]" dangerouslySetInnerHTML={{ __html: richTextPreviewHtml(component.text, form.variables) }} />
-                            ) : component.type === "image" ? (
-                              component.source === "systemVariable" && centerLogoUrl
-                                ? <div key={index} className="flex justify-center"><img src={centerLogoUrl} alt={component.alt || "Logo trung tâm"} className="max-h-16 max-w-40 object-contain" /></div>
-                                : <div key={index} className="flex min-h-16 items-center justify-center rounded-lg border border-dashed border-[#d6ddd5] bg-[#f5f7f3] px-3 text-center text-xs text-[#7c897f]"><Image className="mr-2 h-4 w-4" />{component.source === "systemVariable" ? "Logo cơ sở chính chưa được cấu hình" : `Ảnh · cấu trúc nháp chưa xác minh${component.alt ? ` · ${component.alt}` : ""}`}</div>
-                            ) : component.type === "qr" ? (
-                              <div key={index} className="flex flex-col items-center gap-2 rounded-xl border border-[#e0e4dc] bg-[#f8f7f2] p-4">
-                                {component.value.trim() ? <div className="rounded-lg bg-white p-2"><QRCodeSVG value={component.value} size={164} level="M" includeMargin /></div> : <div className="flex h-44 w-44 items-center justify-center rounded-lg border border-dashed border-[#cdd8cf] bg-white text-center text-xs text-[#7c897f]"><QrCode className="mr-2 h-5 w-5" />Nhập nội dung QR để xem mã</div>}
-                                {component.caption && <p className="text-center text-xs text-[#53685b]">{component.caption}</p>}
-                              </div>
-                            ) : (
-                              <div key={index} className="rounded-md border border-[#e5e9e2] bg-[#f7f9f5] px-3 py-2 text-center text-xs font-semibold text-[#476b56]">{component.label || "Nút chưa đặt tên"} <span className="font-normal text-[#89958d]">· chưa xác minh</span></div>
-                            ))}
-                          </div>
-                          <p className="mt-4 border-t border-[#edf0e9] pt-2 text-[10px] leading-4 text-[#9a8b6d]">Mô phỏng dữ liệu nội bộ, không phải bản render hoặc xác nhận từ Zalo.</p>
-                        </div>
+                  <Card className="border-[#d9e2dd] shadow-[0_2px_12px_rgba(30,58,47,0.035)]">
+                    <CardHeader className="border-b border-[#e8eeeb] px-4 py-3 sm:px-5">
+                      <div className="flex items-center justify-between gap-3">
+                        <div><CardTitle className="text-sm text-[#263e36]">Gán nút</CardTitle><p className="mt-1 text-xs text-[#78877f]">Nhãn và liên kết đích của từng nút</p></div>
+                        {!isArchived && <Button type="button" variant="outline" size="sm" onClick={() => addComponent("button")} className="h-8 border-[#d5e0d7] text-[#426353]"><Link2 className="mr-1.5 h-3.5 w-3.5" />Thêm nút</Button>}
                       </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3 px-4 py-4 sm:px-5">
+                      {form.components.map((component, index) => component.type !== "button" ? null : (
+                        <div key={`button-${index}`} className="grid gap-3 rounded-lg border border-[#e0e7e1] bg-[#fbfcf9] p-3 sm:grid-cols-[1fr_1.4fr_auto]">
+                          <div className="space-y-1.5"><Label className="text-xs">Nhãn nút</Label><Input disabled={isArchived} value={component.label} onChange={(event) => updateComponent(index, { ...component, label: event.target.value })} placeholder="Ví dụ: Xem chi tiết" /></div>
+                          <div className="space-y-1.5"><Label className="text-xs">URL đích</Label><Input disabled={isArchived} value={component.url} onChange={(event) => updateComponent(index, { ...component, url: event.target.value })} placeholder="https://…" /></div>
+                          {!isArchived && <Button type="button" variant="ghost" size="icon" aria-label="Xóa nút" onClick={() => updateField("components", form.components.filter((_, position) => position !== index))} className="mt-5 text-[#9b6257]"><Trash2 className="h-4 w-4" /></Button>}
+                        </div>
+                      ))}
+                      {form.components.every((component) => component.type !== "button") && <p className="rounded-lg border border-dashed border-[#d4ded8] px-4 py-6 text-center text-xs text-[#829087]">Chưa có nút. Thêm nút để gán nhãn và liên kết.</p>}
                     </CardContent>
                   </Card>
 
