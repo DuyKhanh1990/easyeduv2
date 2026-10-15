@@ -2758,12 +2758,17 @@ export const centerConfig = pgTable("center_config", {
 
 export type CenterConfig = typeof centerConfig.$inferSelect;
 
-export type ZbsLibraryTextComponent = { type: "text"; text: string };
+export type ZbsLibraryTextComponent = {
+  type: "text";
+  text: string;
+  style?: "plain" | "blueCard";
+};
 export type ZbsLibraryImageComponent = {
   type: "image";
-  source: "url" | "asset";
+  source: "url" | "asset" | "systemVariable";
   url?: string;
   assetId?: string;
+  variableKey?: "center_logo";
   alt?: string;
   compatibilityStatus: "unverified";
 };
@@ -2773,11 +2778,24 @@ export type ZbsLibraryButtonComponent = {
   url: string;
   compatibilityStatus: "unverified";
 };
+export type ZbsLibraryQrComponent = {
+  type: "qr";
+  value: string;
+  caption?: string;
+  compatibilityStatus: "unverified";
+};
 export type ZbsLibraryComponent =
   | ZbsLibraryTextComponent
   | ZbsLibraryImageComponent
-  | ZbsLibraryButtonComponent;
-export type ZbsLibraryVariable = { key: string; example: string; description?: string };
+  | ZbsLibraryButtonComponent
+  | ZbsLibraryQrComponent;
+export type ZbsLibraryVariable = {
+  key: string;
+  example: string;
+  description?: string;
+  systemField?: "student.fullName" | "center.logoUrl" | "student.parentName" | "invoice.code" | "invoice.dueDate" | "invoice.grandTotal" | "invoice.paidAmount" | "invoice.remainingAmount";
+  format?: "monthName" | "currencyVnd" | "dateVi" | "imageUrl";
+};
 
 export const zbsTemplateLibrary = pgTable(
   "zbs_template_library",

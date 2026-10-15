@@ -17,6 +17,23 @@
   resize: vertical;
 }
 
+.zbs-library .zbs-text-editor-prose {
+  min-height: 6rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+  outline: none;
+}
+
+.zbs-library .zbs-text-editor-prose p {
+  margin: 0;
+}
+
+.zbs-library .zbs-text-editor-content.is-disabled .zbs-text-editor-prose {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 .zbs-library .zl-scrollbar {
   scrollbar-color: #c8d5cc transparent;
   scrollbar-width: thin;

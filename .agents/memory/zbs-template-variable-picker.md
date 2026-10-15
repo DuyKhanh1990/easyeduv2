@@ -7,6 +7,8 @@ In the ZBS template editor, users only write text and insert predefined system v
 
 Keep starter draft frames as editable text in ordinary text blocks. A generic text block may use a selectable pale-blue card background for framing selected content; do not create fixed ticket fields or a ticket-specific preview layout. QR remains a separate QR block and the center logo remains an image system source. Do not claim that QR or image blocks are supported by ZBS sending until verified.
 
+Text blocks also support inline bold, italic, and text color in the internal editor and preview. Keep the text editable and do not imply those styles are supported by ZBS sending until verified.
+
 **Why:** The user wants reusable message content they can edit freely, not fixed fields or a locked design for one message type.
 
-**How to apply:** Keep variable metadata internal. Insert text tokens at the cursor, keep ticket copy editable in text blocks, use the generic blue-card style for the data section, resolve center logo from the main location, and render QR from its separate block in local preview only.
+**How to apply:** Keep variable metadata internal. Insert text tokens at the cursor, keep ticket copy editable in text blocks, support inline bold/italic/color plus the generic blue-card block style, resolve center logo from the main location, and render QR from its separate block in local preview only.

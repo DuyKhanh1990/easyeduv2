@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { Editor } from "@tiptap/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
@@ -35,6 +36,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ZBS_TEMPLATE_SYSTEM_VARIABLES } from "@shared/zbs-template-system-variables";
 import { QRCodeSVG } from "qrcode.react";
+import { ZbsTextBlockEditor } from "./ZbsTextBlockEditor";
+import { richTextPreviewHtml } from "./zbs-rich-text";
 import "./zbs-template-library.css";
 
 type TextBlock = { type: "text"; text: string; style?: "plain" | "blueCard" };
@@ -239,8 +242,8 @@ export function ZbsTemplateLibrary() {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const [variablePickerOpen, setVariablePickerOpen] = useState(false);
-  const [variableInsertionTarget, setVariableInsertionTarget] = useState<{ componentIndex: number; start: number; end: number } | null>(null);
-  const textAreaRefs = useRef<Record<number, HTMLTextAreaElement | null>>({});
+  const [variableInsertionTarget, setVariableInsertionTarget] = useState<{ componentIndex: number } | null>(null);
+  const textEditorsRef = useRef(new Map<number, Editor>());
 
   const mainLocationQuery = useQuery({
     queryKey: ["/api/public/main-location"],
@@ -350,24 +353,26 @@ export function ZbsTemplateLibrary() {
     setNotice("");
   };
   const updateComponent = (index: number, updated: LibraryComponent) => {
-    updateField("components", form.components.map((component, position) => position === index ? updated : component));
+    setForm((current) => ({
+      ...current,
+      components: current.components.map((component, position) => position === index ? updated : component),
+    }));
+    setNotice("");
   };
   const openVariablePicker = (componentIndex: number) => {
-    const textarea = textAreaRefs.current[componentIndex];
-    const start = textarea?.selectionStart ?? (form.components[componentIndex]?.type === "text" ? form.components[componentIndex].text.length : 0);
-    const end = textarea?.selectionEnd ?? start;
-    setVariableInsertionTarget({ componentIndex, start, end });
+    setVariableInsertionTarget({ componentIndex });
     setVariablePickerOpen(true);
   };
   const insertSystemVariable = (preset: typeof ZBS_TEMPLATE_SYSTEM_VARIABLES[number]) => {
     if (!variableInsertionTarget) return;
-    const { componentIndex, start, end } = variableInsertionTarget;
+    const { componentIndex } = variableInsertionTarget;
     const component = form.components[componentIndex];
     if (!component || component.type !== "text") return;
 
     const token = `{{${preset.key}}}`;
-    const updatedText = `${component.text.slice(0, start)}${token}${component.text.slice(end)}`;
-    updateComponent(componentIndex, { ...component, text: updatedText });
+    const editor = textEditorsRef.current.get(componentIndex);
+    if (!editor) return;
+    editor.chain().focus().insertContent(token).run();
 
     const variable: Variable = {
       key: preset.key,
@@ -383,12 +388,6 @@ export function ZbsTemplateLibrary() {
 
     setVariablePickerOpen(false);
     setNotice("");
-    const caretPosition = start + token.length;
-    requestAnimationFrame(() => {
-      const textarea = textAreaRefs.current[componentIndex];
-      textarea?.focus();
-      textarea?.setSelectionRange(caretPosition, caretPosition);
-    });
   };
   const addComponent = (type: LibraryComponent["type"]) => {
     const block: LibraryComponent = type === "text"
@@ -574,7 +573,15 @@ export function ZbsTemplateLibrary() {
                                   </select>
                                 </label>
                               </div>
-                              <Textarea ref={(element) => { textAreaRefs.current[index] = element; }} disabled={isArchived} value={component.text} onChange={(event) => updateComponent(index, { ...component, text: event.target.value })} placeholder="Nhập nội dung. Đặt con trỏ tại vị trí cần chèn biến rồi chọn “Chèn biến”." className="zl-textarea min-h-24 border-[#d8e1da] bg-white text-sm leading-6" />
+                              <ZbsTextBlockEditor
+                                value={component.text}
+                                disabled={isArchived}
+                                onChange={(text) => updateComponent(index, { ...component, text })}
+                                onEditorReady={(editor) => {
+                                  if (editor) textEditorsRef.current.set(index, editor);
+                                  else textEditorsRef.current.delete(index);
+                                }}
+                              />
                             </div>
                           )}
                           {component.type === "image" && (
@@ -617,8 +624,8 @@ export function ZbsTemplateLibrary() {
                           <div className="space-y-3">
                             {form.components.map((component, index) => component.type === "text" ? (
                               component.style === "blueCard"
-                                ? <div key={index} className="rounded-lg border border-[#d6e7f1] bg-[#eff8fc] p-3"><p className="whitespace-pre-wrap text-sm leading-6 text-[#4c5a50]">{substitute(component.text, form.variables) || <span className="italic text-[#a4aaa1]">Văn bản trống</span>}</p></div>
-                                : <p key={index} className="whitespace-pre-wrap text-sm leading-6 text-[#4c5a50]">{substitute(component.text, form.variables) || <span className="italic text-[#a4aaa1]">Văn bản trống</span>}</p>
+                                ? <div key={index} className="rounded-lg border border-[#d6e7f1] bg-[#eff8fc] p-3 text-sm leading-6 text-[#4c5a50]"><div className="zbs-rich-preview" dangerouslySetInnerHTML={{ __html: richTextPreviewHtml(component.text, form.variables) }} /></div>
+                                : <div key={index} className="zbs-rich-preview text-sm leading-6 text-[#4c5a50]" dangerouslySetInnerHTML={{ __html: richTextPreviewHtml(component.text, form.variables) }} />
                             ) : component.type === "image" ? (
                               component.source === "systemVariable" && centerLogoUrl
                                 ? <div key={index} className="flex justify-center"><img src={centerLogoUrl} alt={component.alt || "Logo trung tâm"} className="max-h-16 max-w-40 object-contain" /></div>

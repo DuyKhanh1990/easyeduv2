@@ -7,7 +7,7 @@ import {
 export const zbsLibraryComponentSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("text"),
-    text: z.string().max(5000),
+    text: z.string().max(15000),
     style: z.enum(["plain", "blueCard"]).optional(),
   }),
   z.object({
