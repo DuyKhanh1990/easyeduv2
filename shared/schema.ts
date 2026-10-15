@@ -2,6 +2,7 @@ import { pgTable, text, varchar, timestamp, boolean, uuid, decimal, date, intege
 import { relations, sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import type { ZbsTemplateSystemVariableFormat, ZbsTemplateSystemVariableSource } from "./zbs-template-system-variables";
 
 // ==========================================
 // STUDENT CLASSES (Enrollment)
@@ -2793,8 +2794,8 @@ export type ZbsLibraryVariable = {
   key: string;
   example: string;
   description?: string;
-  systemField?: "student.fullName" | "center.logoUrl" | "student.parentName" | "invoice.code" | "invoice.dueDate" | "invoice.grandTotal" | "invoice.paidAmount" | "invoice.remainingAmount" | "invoice.appliedBankAccount.bankName" | "invoice.appliedBankAccount.bankAccount" | "invoice.appliedBankAccount.accountHolder";
-  format?: "monthName" | "currencyVnd" | "dateVi" | "imageUrl";
+  systemField?: ZbsTemplateSystemVariableSource;
+  format?: ZbsTemplateSystemVariableFormat;
 };
 
 export const zbsTemplateLibrary = pgTable(

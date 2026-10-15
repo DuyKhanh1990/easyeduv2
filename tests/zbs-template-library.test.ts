@@ -90,7 +90,19 @@ describe("ZBS internal template library", () => {
     expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "paid_amount"))
       .toMatchObject({ source: "invoice.paidAmount", format: "currencyVnd" });
     expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "center_logo"))
-      .toMatchObject({ source: "center.logoUrl", format: "imageUrl" });
+      .toMatchObject({ source: "location.main.logoUrl", format: "imageUrl" });
+  });
+
+  it("includes center, class, schedule, teacher and notification payload variables", () => {
+    const byKey = new Map(ZBS_TEMPLATE_SYSTEM_VARIABLES.map((variable) => [variable.key, variable]));
+    expect(byKey.get("center_name")).toMatchObject({ source: "location.main.name", group: "Trung tâm & cơ sở" });
+    expect(byKey.get("center_address")).toMatchObject({ source: "location.main.address" });
+    expect(byKey.get("center_phone")).toMatchObject({ source: "location.main.phone" });
+    expect(byKey.get("class_code")).toMatchObject({ source: "class.classCode" });
+    expect(byKey.get("session_time")).toMatchObject({ source: "classSession.shiftTemplate" });
+    expect(byKey.get("teacher_name")).toMatchObject({ source: "classSession.teacherIds.staff.fullName" });
+    expect(byKey.get("new_time")).toMatchObject({ source: "notification.newTime" });
+    expect(byKey.get("content_list")).toMatchObject({ source: "notification.contentList" });
   });
 
   it("accepts a center-logo image block and a QR payload block", () => {

@@ -707,20 +707,27 @@ export function ZbsTemplateLibrary() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            {ZBS_TEMPLATE_SYSTEM_VARIABLES.filter((variable) => variable.key !== "center_logo").map((variable) => (
-              <button
-                key={variable.key}
-                type="button"
-                onClick={() => insertSystemVariable(variable)}
-                className="w-full rounded-lg border border-[#dfe7e1] bg-white p-3 text-left transition-colors hover:border-[#9db9a8] hover:bg-[#f5f9f5] focus:outline-none focus:ring-2 focus:ring-[#8eae9b]"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm font-semibold text-[#304b3e]">{variable.label}</span>
-                  <code className="zl-mono rounded bg-[#edf3ee] px-2 py-1 text-xs text-[#426353]">{`{{${variable.key}}}`}</code>
+            {Array.from(new Set(ZBS_TEMPLATE_SYSTEM_VARIABLES.map((variable) => variable.group))).map((group) => (
+              <section key={group} className="space-y-2">
+                <h3 className="sticky top-0 z-[1] bg-[#fffefa] py-1 text-xs font-semibold uppercase tracking-wide text-[#527365]">{group}</h3>
+                <div className="space-y-2">
+                  {ZBS_TEMPLATE_SYSTEM_VARIABLES.filter((variable) => variable.group === group && variable.key !== "center_logo").map((variable) => (
+                    <button
+                      key={variable.key}
+                      type="button"
+                      onClick={() => insertSystemVariable(variable)}
+                      className="w-full rounded-lg border border-[#dfe7e1] bg-white p-3 text-left transition-colors hover:border-[#9db9a8] hover:bg-[#f5f9f5] focus:outline-none focus:ring-2 focus:ring-[#8eae9b]"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-sm font-semibold text-[#304b3e]">{variable.label}</span>
+                        <code className="zl-mono rounded bg-[#edf3ee] px-2 py-1 text-xs text-[#426353]">{`{{${variable.key}}}`}</code>
+                      </div>
+                      <p className="mt-1.5 text-xs leading-5 text-[#68776e]">{variable.description}</p>
+                      <p className="mt-1 text-xs text-[#526a5c]">Nguồn: <code>{variable.source}</code> · Ví dụ: <strong>{variable.example}</strong></p>
+                    </button>
+                  ))}
                 </div>
-                <p className="mt-1.5 text-xs leading-5 text-[#68776e]">{variable.description}</p>
-                <p className="mt-1 text-xs text-[#526a5c]">Ví dụ: <strong>{variable.example}</strong></p>
-              </button>
+              </section>
             ))}
           </div>
         </DialogContent>
