@@ -6,6 +6,7 @@ import {
   prepareZbsLibraryDraft,
   zbsLibraryInputSchema,
 } from "../server/services/zbs-template-library.service";
+import { ZBS_TEMPLATE_SYSTEM_VARIABLES } from "../shared/zbs-template-system-variables";
 
 const validInput = {
   code: "TUITION_NOTICE",
@@ -18,7 +19,7 @@ const validInput = {
     { type: "button" as const, label: "Xem chi tiết", url: "https://example.test/invoice" },
   ],
   variables: [
-    { key: "student_name", example: "Minh Anh" },
+    { key: "student_name", example: "Minh Anh", systemField: "student.fullName" },
     { key: "due_date", example: "30/10/2026" },
     { key: "amount", example: "500.000đ" },
   ],
@@ -65,6 +66,20 @@ describe("ZBS internal template library", () => {
     });
     expect(draft.components).toHaveLength(3);
     expect(draft.components[1]).toMatchObject({ type: "image", source: "url" });
+    expect(draft.variables[0]).toMatchObject({ key: "student_name", systemField: "student.fullName" });
+  });
+
+  it("offers ready-made student and invoice variables with explicit data sources", () => {
+    expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.map((variable) => variable.key)).toEqual(expect.arrayContaining([
+      "student_name",
+      "billing_month",
+      "tuition_amount",
+      "paid_amount",
+      "remaining_amount",
+      "due_date",
+    ]));
+    expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "paid_amount"))
+      .toMatchObject({ source: "invoice.paidAmount", format: "currencyVnd" });
   });
 
   it("rejects duplicate variable keys and incomplete image resources", () => {
@@ -76,6 +91,10 @@ describe("ZBS internal template library", () => {
       ...validInput,
       components: [{ type: "image", source: "asset" }],
     })).toThrow(/assetId/);
+    expect(() => zbsLibraryInputSchema.parse({
+      ...validInput,
+      variables: [{ key: "custom", example: "x", systemField: "student.password" }],
+    })).toThrow();
   });
 
   it("renders preview values without changing unresolved placeholders", () => {

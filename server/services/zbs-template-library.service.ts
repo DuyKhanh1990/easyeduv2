@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  ZBS_TEMPLATE_SYSTEM_VARIABLE_FORMATS,
+  ZBS_TEMPLATE_SYSTEM_VARIABLE_SOURCES,
+} from "@shared/zbs-template-system-variables";
 
 export const zbsLibraryComponentSchema = z.union([
   z.object({ type: z.literal("text"), text: z.string().max(5000) }),
@@ -28,6 +32,8 @@ export const zbsLibraryInputSchema = z.object({
     key: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]*$/).max(64),
     example: z.string().max(1000),
     description: z.string().max(255).optional(),
+    systemField: z.enum(ZBS_TEMPLATE_SYSTEM_VARIABLE_SOURCES).optional(),
+    format: z.enum(ZBS_TEMPLATE_SYSTEM_VARIABLE_FORMATS).optional(),
   })).max(100).default([]),
 }).superRefine((value, ctx) => {
   const keys = new Set<string>();

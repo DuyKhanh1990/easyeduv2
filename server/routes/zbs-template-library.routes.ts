@@ -50,6 +50,12 @@ function reportError(res: Response, error: unknown) {
   if (error instanceof ZbsLibraryError) {
     return res.status(error.status).json({ code: error.code, message: error.message });
   }
+  if ((error as any)?.code === "42P01" && String((error as any)?.message ?? "").includes("zbs_template_library")) {
+    return res.status(503).json({
+      code: "LIBRARY_MIGRATION_REQUIRED",
+      message: "Thư viện mẫu ZBS chưa có bảng dữ liệu. Cần áp dụng migration riêng trước khi tải hoặc lưu mẫu.",
+    });
+  }
   if (error instanceof z.ZodError) {
     return res.status(400).json({ code: "INVALID_TEMPLATE", message: error.issues[0]?.message ?? "Dữ liệu mẫu không hợp lệ." });
   }

@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { ZBS_TEMPLATE_SYSTEM_VARIABLES } from "@shared/zbs-template-system-variables";
 import "./zbs-template-library.css";
 
 type TextBlock = { type: "text"; text: string };
@@ -44,7 +45,13 @@ type ImageBlock = {
 };
 type ButtonBlock = { type: "button"; label: string; url: string; compatibilityStatus: "unverified" };
 type LibraryComponent = TextBlock | ImageBlock | ButtonBlock;
-type Variable = { key: string; example: string; description?: string };
+type Variable = {
+  key: string;
+  example: string;
+  description?: string;
+  systemField?: string;
+  format?: "monthName" | "currencyVnd" | "dateVi";
+};
 type TemplateRecord = {
   id: string;
   code: string;
@@ -62,6 +69,11 @@ type TemplateRecord = {
 type TemplateInput = Pick<TemplateRecord, "code" | "name" | "notificationType" | "title" | "components" | "variables">;
 
 const endpoint = "/api/settings/zbs-template-library";
+const systemFormatLabels: Record<NonNullable<Variable["format"]>, string> = {
+  monthName: "tháng",
+  currencyVnd: "tiền Việt Nam đồng",
+  dateVi: "ngày/tháng/năm",
+};
 const emptyForm = (): TemplateInput => ({
   code: "",
   name: "",
@@ -70,6 +82,47 @@ const emptyForm = (): TemplateInput => ({
   components: [],
   variables: [],
 });
+
+const tuitionNoticeSample: TemplateInput = {
+  code: "TUITION_DUE_MONTHLY",
+  name: "Thông báo học phí tháng",
+  notificationType: "tuition_due",
+  title: "Thông báo học phí tháng {{billing_month}}",
+  components: [
+    {
+      type: "image",
+      source: "url",
+      url: "https://example.invalid/replace-with-tuition-banner.png",
+      alt: "Ảnh minh họa học phí — thay bằng ảnh của trung tâm",
+      compatibilityStatus: "unverified",
+    },
+    {
+      type: "text",
+      text: "Kính gửi Quý phụ huynh học sinh {{student_name}},\n\n• Học phí: {{tuition_amount}}\n• Đã thanh toán: {{paid_amount}}\n• Còn phải đóng: {{remaining_amount}}\n• Hạn thanh toán: {{due_date}}\n\nKính mong Quý phụ huynh hoàn tất thanh toán đúng hạn.",
+    },
+    {
+      type: "button",
+      label: "Thanh toán học phí",
+      url: "https://example.invalid/replace-with-payment-link",
+      compatibilityStatus: "unverified",
+    },
+    {
+      type: "button",
+      label: "Liên hệ trung tâm",
+      url: "https://example.invalid/replace-with-contact-link",
+      compatibilityStatus: "unverified",
+    },
+  ],
+  variables: ZBS_TEMPLATE_SYSTEM_VARIABLES
+    .filter((variable) => ["student_name", "billing_month", "tuition_amount", "paid_amount", "remaining_amount", "due_date"].includes(variable.key))
+    .map((variable) => ({
+      key: variable.key,
+      example: variable.example,
+      description: variable.description,
+      systemField: variable.source,
+      ...("format" in variable ? { format: variable.format } : {}),
+    })),
+};
 
 async function getJson<T>(url: string): Promise<T> {
   const response = await apiRequest("GET", url);
@@ -148,6 +201,7 @@ export function ZbsTemplateLibrary() {
   const [duplicateCode, setDuplicateCode] = useState("");
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [notice, setNotice] = useState("");
+  const [systemVariableChoice, setSystemVariableChoice] = useState("");
 
   const listQuery = useQuery({
     queryKey: [endpoint],
@@ -224,6 +278,12 @@ export function ZbsTemplateLibrary() {
     saveMutation.reset();
     duplicateMutation.reset();
     archiveMutation.reset();
+    setSystemVariableChoice("");
+  };
+  const startTuitionSample = () => {
+    startNew();
+    setForm(structuredClone(tuitionNoticeSample));
+    setNotice("Đã nạp mẫu thông báo học phí. Thay các URL example.invalid bằng tài nguyên thật trước khi dùng.");
   };
   const selectRecord = (record: TemplateRecord) => {
     setCreating(false);
@@ -247,7 +307,15 @@ export function ZbsTemplateLibrary() {
     updateField("components", [...form.components, block]);
   };
   const updateVariable = (index: number, patch: Partial<Variable>) => {
-    updateField("variables", form.variables.map((variable, position) => position === index ? { ...variable, ...patch } : variable));
+    updateField("variables", form.variables.map((variable, position) => {
+      if (position !== index) return variable;
+      const changedKey = patch.key !== undefined && patch.key !== variable.key;
+      return {
+        ...variable,
+        ...(changedKey ? { systemField: undefined, format: undefined } : {}),
+        ...patch,
+      };
+    }));
   };
 
   return (
@@ -264,9 +332,14 @@ export function ZbsTemplateLibrary() {
               Không gian soạn thảo theo trung tâm để lưu, xem trước và sao chép nội dung nháp. Tách biệt hoàn toàn với ánh xạ mẫu ZBS.
             </p>
           </div>
-          {canWrite && <Button onClick={startNew} className="shrink-0 bg-[#315f4e] text-white hover:bg-[#264d3e]">
-            <FilePlus2 className="mr-2 h-4 w-4" /> Tạo mẫu mới
-          </Button>}
+          {canWrite && <div className="flex shrink-0 flex-wrap gap-2">
+            <Button variant="outline" onClick={startTuitionSample} className="border-[#a9c0b1] text-[#315f4e] hover:bg-white">
+              <FilePlus2 className="mr-2 h-4 w-4" /> Mẫu học phí
+            </Button>
+            <Button onClick={startNew} className="bg-[#315f4e] text-white hover:bg-[#264d3e]">
+              <FilePlus2 className="mr-2 h-4 w-4" /> Tạo mẫu mới
+            </Button>
+          </div>}
         </div>
       </header>
 
@@ -422,15 +495,42 @@ export function ZbsTemplateLibrary() {
                   <Card className="border-[#d9e2dd] shadow-[0_2px_12px_rgba(30,58,47,0.035)]">
                     <CardHeader className="border-b border-[#e8eeeb] px-4 py-3 sm:px-5">
                       <div className="flex items-center justify-between gap-3">
-                        <div><CardTitle className="text-sm text-[#263e36]">Biến & ví dụ</CardTitle><p className="mt-1 text-xs text-[#78877f]">Bản xem trước thay biến bằng giá trị ví dụ bên dưới.</p></div>
+                        <div><CardTitle className="text-sm text-[#263e36]">Biến & ví dụ</CardTitle><p className="mt-1 text-xs text-[#78877f]">Chọn biến có sẵn hoặc tự khai báo. Bản xem trước dùng giá trị ví dụ.</p></div>
                         {!isArchived && <Button type="button" variant="outline" size="sm" onClick={() => updateField("variables", [...form.variables, { key: "", example: "", description: "" }])} className="h-8 border-[#d5e0d7] text-[#426353]"><Plus className="mr-1.5 h-3.5 w-3.5" />Thêm biến</Button>}
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-2 px-4 py-4 sm:px-5">
+                      {!isArchived && <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                        <select
+                          aria-label="Chọn biến hệ thống"
+                          value={systemVariableChoice}
+                          onChange={(event) => {
+                            const preset = ZBS_TEMPLATE_SYSTEM_VARIABLES.find((item) => item.key === event.target.value);
+                            setSystemVariableChoice("");
+                            if (!preset) return;
+                            if (form.variables.some((item) => item.key === preset.key)) {
+                              setNotice(`Biến ${preset.key} đã có trong mẫu.`);
+                              return;
+                            }
+                            updateField("variables", [...form.variables, {
+                              key: preset.key,
+                              example: preset.example,
+                              description: preset.description,
+                              systemField: preset.source,
+                              ...("format" in preset ? { format: preset.format } : {}),
+                            }]);
+                          }}
+                          className="h-9 rounded-md border border-[#d8e1da] bg-white px-3 text-xs text-[#40564a]"
+                        >
+                          <option value="">Chọn biến hệ thống để thêm…</option>
+                          {ZBS_TEMPLATE_SYSTEM_VARIABLES.map((variable) => <option key={variable.key} value={variable.key}>{variable.label} · {`{{${variable.key}}}`}</option>)}
+                        </select>
+                        <span className="self-center text-[10px] text-[#829087]">Nguồn dự kiến, chưa tự điền khi gửi</span>
+                      </div>}
                       {form.variables.length === 0 && <p className="rounded-md bg-[#f7f9f6] px-3 py-3 text-xs text-[#849088]">Chưa khai báo biến. Dùng định dạng <code className="zl-mono text-[#547061]">{"{{ten_bien}}"}</code> trong văn bản.</p>}
                       {form.variables.map((variable, index) => (
                         <div key={index} className="grid gap-2 rounded-lg border border-[#e4e9e4] bg-[#fbfcf9] p-3 sm:grid-cols-[1fr_1fr_1.2fr_auto] sm:items-end">
-                          <div className="space-y-1"><Label className="text-[10px] uppercase tracking-wider text-[#829087]">Khóa</Label><Input disabled={isArchived} value={variable.key} onChange={(event) => updateVariable(index, { key: event.target.value })} placeholder="ten_hoc_vien" className="zl-mono h-9 border-[#d8e1da] bg-white text-xs" /></div>
+                          <div className="space-y-1"><Label className="text-[10px] uppercase tracking-wider text-[#829087]">Khóa</Label><Input disabled={isArchived} value={variable.key} onChange={(event) => updateVariable(index, { key: event.target.value })} placeholder="ten_hoc_vien" className="zl-mono h-9 border-[#d8e1da] bg-white text-xs" />{variable.systemField && <p className="text-[10px] text-[#557064]">Nguồn: {variable.systemField}{variable.format ? ` · định dạng ${systemFormatLabels[variable.format]}` : ""}</p>}</div>
                           <div className="space-y-1"><Label className="text-[10px] uppercase tracking-wider text-[#829087]">Ví dụ</Label><Input disabled={isArchived} value={variable.example} onChange={(event) => updateVariable(index, { example: event.target.value })} placeholder="Minh Anh" className="h-9 border-[#d8e1da] bg-white text-xs" /></div>
                           <div className="space-y-1"><Label className="text-[10px] uppercase tracking-wider text-[#829087]">Mô tả (không bắt buộc)</Label><Input disabled={isArchived} value={variable.description ?? ""} onChange={(event) => updateVariable(index, { description: event.target.value })} placeholder="Tên học viên" className="h-9 border-[#d8e1da] bg-white text-xs" /></div>
                           {!isArchived && <Button type="button" variant="ghost" size="icon" aria-label="Xóa biến" onClick={() => updateField("variables", form.variables.filter((_, position) => position !== index))} className="h-9 w-9 text-[#9b6257]"><X className="h-4 w-4" /></Button>}
