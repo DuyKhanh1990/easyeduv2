@@ -62,7 +62,7 @@ export const ZBS_TEMPLATE_SYSTEM_VARIABLES = [
   },
   {
     key: "amount",
-    token: "<amount>",
+    token: "{{amount}}",
     label: "Số tiền thanh toán",
     source: "invoice.remainingAmount",
     format: "currencyVnd",
@@ -71,7 +71,7 @@ export const ZBS_TEMPLATE_SYSTEM_VARIABLES = [
   },
   {
     key: "bank_name",
-    token: "<bank_name>",
+    token: "{{bank_name}}",
     label: "Tên ngân hàng nhận",
     source: "invoice.appliedBankAccount.bankName",
     example: "Vietcombank",
@@ -79,7 +79,7 @@ export const ZBS_TEMPLATE_SYSTEM_VARIABLES = [
   },
   {
     key: "bank_code",
-    token: "<bank_code>",
+    token: "{{bank_code}}",
     label: "Mã ngân hàng",
     source: "invoice.appliedBankAccount.bankName",
     example: "VCB",
@@ -87,7 +87,7 @@ export const ZBS_TEMPLATE_SYSTEM_VARIABLES = [
   },
   {
     key: "account_number",
-    token: "<account_number>",
+    token: "{{account_number}}",
     label: "Số tài khoản nhận",
     source: "invoice.appliedBankAccount.bankAccount",
     example: "0123456789",
@@ -95,7 +95,7 @@ export const ZBS_TEMPLATE_SYSTEM_VARIABLES = [
   },
   {
     key: "account_name",
-    token: "<account_name>",
+    token: "{{account_name}}",
     label: "Tên chủ tài khoản",
     source: "invoice.appliedBankAccount.accountHolder",
     example: "NGUYEN VAN A",

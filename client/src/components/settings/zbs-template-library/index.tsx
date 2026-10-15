@@ -96,6 +96,14 @@ const systemVariablesFor = (keys: string[]): Variable[] => ZBS_TEMPLATE_SYSTEM_V
     ...("format" in variable ? { format: variable.format } : {}),
   }));
 
+function normalizeTemplateVariableSyntax(value: string) {
+  const normalizeToken = (token: string, key: string) =>
+    ZBS_TEMPLATE_SYSTEM_VARIABLES.some((variable) => variable.key === key) ? `{{${key}}}` : token;
+  return value
+    .replace(/<([a-zA-Z][a-zA-Z0-9_]*)>/g, normalizeToken)
+    .replace(/&lt;([a-zA-Z][a-zA-Z0-9_]*)&gt;/g, normalizeToken);
+}
+
 const tuitionNoticeSample: TemplateInput = {
   code: "TUITION_DUE_MONTHLY",
   name: "Thông báo học phí tháng",
@@ -136,7 +144,7 @@ const qrPaymentSample: TemplateInput = {
   title: "Thông tin thanh toán",
   components: [
     { type: "image", source: "systemVariable", variableKey: "center_logo", alt: "Logo trung tâm", compatibilityStatus: "unverified" },
-    { type: "text", text: "Kính gửi Quý khách {{student_name}},\n\nMã hóa đơn: {{invoice_code}}\nSố tiền thanh toán: <amount>\nTên ngân hàng nhận: <bank_name> hoặc Mã ngân hàng <bank_code>\nSố tài khoản: <account_number>\nTên chủ tài khoản: <account_name>\n\nVui lòng quét mã QR bên dưới để thanh toán." },
+    { type: "text", text: "Kính gửi Quý khách {{student_name}},\n\nMã hóa đơn: {{invoice_code}}\nSố tiền thanh toán: {{amount}}\nTên ngân hàng nhận: {{bank_name}} hoặc Mã ngân hàng {{bank_code}}\nSố tài khoản: {{account_number}}\nTên chủ tài khoản: {{account_name}}\n\nVui lòng quét mã QR bên dưới để thanh toán." },
     { type: "qr", value: "", caption: "Quét mã để thanh toán", compatibilityStatus: "unverified" },
   ],
   variables: systemVariablesFor(["center_logo", "student_name", "invoice_code", "amount", "bank_name", "bank_code", "account_number", "account_name"]),
@@ -189,8 +197,12 @@ function asInput(record: TemplateRecord): TemplateInput {
     code: record.code,
     name: record.name,
     notificationType: record.notificationType,
-    title: record.title ?? "",
-    components: record.components ?? [],
+    title: normalizeTemplateVariableSyntax(record.title ?? ""),
+    components: (record.components ?? []).map((component) => {
+      if (component.type === "text") return { ...component, text: normalizeTemplateVariableSyntax(component.text) };
+      if (component.type === "qr") return { ...component, value: normalizeTemplateVariableSyntax(component.value) };
+      return component;
+    }),
     variables: record.variables ?? [],
   };
 }
@@ -602,7 +614,7 @@ export function ZbsTemplateLibrary() {
                           )}
                           {component.type === "qr" && (
                             <div className="grid gap-3 sm:grid-cols-2">
-                              <div className="space-y-1.5 sm:col-span-2"><Label className="text-xs">Nội dung để mã hóa thành QR</Label><Textarea disabled={isArchived} value={component.value} onChange={(event) => updateComponent(index, { ...component, value: event.target.value })} placeholder="Dán nội dung thanh toán hoặc URL để tạo mã QR xem trước" className="min-h-20 border-[#d8e1da] bg-white text-sm" /></div>
+                              <div className="space-y-1.5 sm:col-span-2"><Label className="text-xs">Nội dung để mã hóa thành QR</Label><Textarea disabled={isArchived} value={component.value} onChange={(event) => updateComponent(index, { ...component, value: normalizeTemplateVariableSyntax(event.target.value) })} placeholder="Dán nội dung thanh toán hoặc URL để tạo mã QR xem trước" className="min-h-20 border-[#d8e1da] bg-white text-sm" /></div>
                               <div className="space-y-1.5 sm:col-span-2"><Label className="text-xs">Chú thích</Label><Input disabled={isArchived} value={component.caption ?? ""} onChange={(event) => updateComponent(index, { ...component, caption: event.target.value })} placeholder="Ví dụ: Quét mã để thanh toán" className="border-[#d8e1da] bg-white" /></div>
                               <p className="sm:col-span-2 text-[10px] text-[#8a785a]">QR được dựng cục bộ để xem trước; chưa xác minh cách gửi khối QR qua ZBS.</p>
                             </div>

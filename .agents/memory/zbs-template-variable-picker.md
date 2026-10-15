@@ -9,8 +9,8 @@ Keep starter draft frames as editable text in ordinary text blocks. A generic te
 
 Text blocks also support inline bold, italic, and text color in the internal editor and preview. Keep the text editable and do not imply those styles are supported by ZBS sending until verified.
 
-Payment templates use the exact angle-bracket placeholders `<amount>`, `<bank_name>`, `<bank_code>`, `<account_number>`, and `<account_name>`. Map the amount to `invoice.remainingAmount`; bank values follow the invoice's applied bank account and the first configured location bank as fallback. Derive the VietQR code with the system bank-name mapper.
+Payment templates use the system's double-curly placeholder syntax: `{{amount}}`, `{{bank_name}}`, `{{bank_code}}`, `{{account_number}}`, and `{{account_name}}`. Map the amount to `invoice.remainingAmount`; bank values follow the invoice's applied bank account and the first configured location bank as fallback. Derive the VietQR code with the system bank-name mapper.
 
 **Why:** The user wants reusable message content they can edit freely, not fixed fields or a locked design for one message type.
 
-**How to apply:** Keep variable metadata internal. Insert text tokens at the cursor, keep ticket copy editable in text blocks, support inline bold/italic/color plus the generic blue-card block style, use exact payment placeholders and their configured data sources, resolve center logo from the main location, and render QR from its separate block in local preview only.
+**How to apply:** Keep variable metadata internal. Insert text tokens at the cursor using `{{key}}`, keep ticket copy editable in text blocks, support inline bold/italic/color plus the generic blue-card block style, use exact payment placeholders and their configured data sources, resolve center logo from the main location, and render QR from its separate block in local preview only.

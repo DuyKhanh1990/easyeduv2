@@ -84,9 +84,9 @@ describe("ZBS internal template library", () => {
       "due_date",
     ]));
     expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "amount"))
-      .toMatchObject({ token: "<amount>", source: "invoice.remainingAmount", format: "currencyVnd" });
+      .toMatchObject({ token: "{{amount}}", source: "invoice.remainingAmount", format: "currencyVnd" });
     expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "bank_code"))
-      .toMatchObject({ token: "<bank_code>", source: "invoice.appliedBankAccount.bankName" });
+      .toMatchObject({ token: "{{bank_code}}", source: "invoice.appliedBankAccount.bankName" });
     expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "paid_amount"))
       .toMatchObject({ source: "invoice.paidAmount", format: "currencyVnd" });
     expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "center_logo"))
@@ -158,7 +158,7 @@ describe("ZBS internal template library", () => {
 
   it("renders preview values without changing unresolved placeholders", () => {
     expect(interpolateZbsLibraryPreview(
-      "Xin chào {{student_name}}, thanh toán <amount>, ngân hàng <bank_name>, {{unknown}}",
+      "Xin chào {{student_name}}, thanh toán {{amount}}, ngân hàng {{bank_name}}, {{unknown}}",
       [
         { key: "student_name", example: "Minh Anh" },
         { key: "amount", example: "1.000.000đ" },
