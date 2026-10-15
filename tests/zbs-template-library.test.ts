@@ -76,8 +76,17 @@ describe("ZBS internal template library", () => {
       "tuition_amount",
       "paid_amount",
       "remaining_amount",
+      "amount",
+      "bank_name",
+      "bank_code",
+      "account_number",
+      "account_name",
       "due_date",
     ]));
+    expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "amount"))
+      .toMatchObject({ token: "<amount>", source: "payment.amount", format: "currencyVnd" });
+    expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "bank_code"))
+      .toMatchObject({ token: "<bank_code>", source: "payment.bankCode" });
     expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "paid_amount"))
       .toMatchObject({ source: "invoice.paidAmount", format: "currencyVnd" });
     expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "center_logo"))
@@ -149,8 +158,12 @@ describe("ZBS internal template library", () => {
 
   it("renders preview values without changing unresolved placeholders", () => {
     expect(interpolateZbsLibraryPreview(
-      "Xin chào {{student_name}}, {{unknown}}",
-      [{ key: "student_name", example: "Minh Anh" }],
-    )).toBe("Xin chào Minh Anh, {{unknown}}");
+      "Xin chào {{student_name}}, thanh toán <amount>, ngân hàng <bank_name>, {{unknown}}",
+      [
+        { key: "student_name", example: "Minh Anh" },
+        { key: "amount", example: "1.000.000đ" },
+        { key: "bank_name", example: "Vietcombank" },
+      ],
+    )).toBe("Xin chào Minh Anh, thanh toán 1.000.000đ, ngân hàng Vietcombank, {{unknown}}");
   });
 });

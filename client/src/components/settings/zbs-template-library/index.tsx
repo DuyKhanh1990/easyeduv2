@@ -136,10 +136,10 @@ const qrPaymentSample: TemplateInput = {
   title: "Thông tin thanh toán",
   components: [
     { type: "image", source: "systemVariable", variableKey: "center_logo", alt: "Logo trung tâm", compatibilityStatus: "unverified" },
-    { type: "text", text: "Kính gửi Quý khách {{student_name}},\n\nMã hóa đơn: {{invoice_code}}\nSố tiền: {{remaining_amount}}\n\nVui lòng quét mã QR bên dưới để thanh toán." },
+    { type: "text", text: "Kính gửi Quý khách {{student_name}},\n\nMã hóa đơn: {{invoice_code}}\nSố tiền thanh toán: <amount>\nTên ngân hàng nhận: <bank_name> hoặc Mã ngân hàng <bank_code>\nSố tài khoản: <account_number>\nTên chủ tài khoản: <account_name>\n\nVui lòng quét mã QR bên dưới để thanh toán." },
     { type: "qr", value: "", caption: "Quét mã để thanh toán", compatibilityStatus: "unverified" },
   ],
-  variables: systemVariablesFor(["center_logo", "student_name", "invoice_code", "remaining_amount"]),
+  variables: systemVariablesFor(["center_logo", "student_name", "invoice_code", "amount", "bank_name", "bank_code", "account_number", "account_name"]),
 };
 
 const ticketSample: TemplateInput = {
@@ -196,7 +196,8 @@ function asInput(record: TemplateRecord): TemplateInput {
 }
 
 function substitute(text: string, variables: Variable[]) {
-  return text.replace(/\{\{\s*([a-zA-Z][a-zA-Z0-9_]*)\s*\}\}/g, (match, key: string) => {
+  return text.replace(/\{\{\s*([a-zA-Z][a-zA-Z0-9_]*)\s*\}\}|<([a-zA-Z][a-zA-Z0-9_]*)>/g, (match, doubleBraceKey: string | undefined, angleKey: string | undefined) => {
+    const key = doubleBraceKey ?? angleKey ?? "";
     const variable = variables.find((item) => item.key === key);
     return variable ? variable.example || `[${key}]` : match;
   });
@@ -369,10 +370,10 @@ export function ZbsTemplateLibrary() {
     const component = form.components[componentIndex];
     if (!component || component.type !== "text") return;
 
-    const token = `{{${preset.key}}}`;
+    const token = "token" in preset ? preset.token : `{{${preset.key}}}`;
     const editor = textEditorsRef.current.get(componentIndex);
     if (!editor) return;
-    editor.chain().focus().insertContent(token).run();
+    editor.chain().focus().insertContent({ type: "text", text: token }).run();
 
     const variable: Variable = {
       key: preset.key,

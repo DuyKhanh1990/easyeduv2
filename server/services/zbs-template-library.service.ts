@@ -108,8 +108,10 @@ export interface ZbsLibraryRepository {
 
 export function interpolateZbsLibraryPreview(text: string, variables: ZbsLibraryInput["variables"]) {
   const values = new Map(variables.map((variable) => [variable.key, variable.example]));
-  return text.replace(/\{\{\s*([a-zA-Z][a-zA-Z0-9_]*)\s*\}\}/g, (match, key: string) =>
-    values.has(key) ? values.get(key)! : match,
+  return text.replace(/\{\{\s*([a-zA-Z][a-zA-Z0-9_]*)\s*\}\}|<([a-zA-Z][a-zA-Z0-9_]*)>/g, (match, doubleBraceKey: string | undefined, angleKey: string | undefined) => {
+    const key = doubleBraceKey ?? angleKey ?? "";
+    return values.has(key) ? values.get(key)! : match;
+  },
   );
 }
 
