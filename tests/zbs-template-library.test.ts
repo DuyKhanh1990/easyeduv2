@@ -102,24 +102,6 @@ describe("ZBS internal template library", () => {
     expect(parsed.components[1]).toMatchObject({ type: "qr", value: "payment-payload", compatibilityStatus: "unverified" });
   });
 
-  it("keeps the ticket frame's route fields as editable structured data", () => {
-    const parsed = zbsLibraryInputSchema.parse({
-      ...validInput,
-      components: [{
-        type: "ticket",
-        notice: "Có mặt trước 30 phút",
-        bookingCode: "3798080800",
-        departureLocation: "TP.HCM",
-        departureTime: "09:00",
-        departureDate: "01/01/2026",
-        arrivalLocation: "Đà Lạt",
-        arrivalTime: "10:00",
-        arrivalDate: "01/01/2026",
-      }],
-    });
-    expect(parsed.components[0]).toMatchObject({ type: "ticket", bookingCode: "3798080800", arrivalLocation: "Đà Lạt" });
-  });
-
   it("rejects duplicate variable keys and incomplete image resources", () => {
     expect(() => zbsLibraryInputSchema.parse({
       ...validInput,

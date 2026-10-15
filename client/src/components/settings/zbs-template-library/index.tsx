@@ -49,18 +49,7 @@ type ImageBlock = {
 };
 type ButtonBlock = { type: "button"; label: string; url: string; compatibilityStatus: "unverified" };
 type QrBlock = { type: "qr"; value: string; caption?: string; compatibilityStatus: "unverified" };
-type TicketBlock = {
-  type: "ticket";
-  notice: string;
-  bookingCode: string;
-  departureLocation: string;
-  departureTime: string;
-  departureDate: string;
-  arrivalLocation: string;
-  arrivalTime: string;
-  arrivalDate: string;
-};
-type LibraryComponent = TextBlock | ImageBlock | ButtonBlock | QrBlock | TicketBlock;
+type LibraryComponent = TextBlock | ImageBlock | ButtonBlock | QrBlock;
 type Variable = {
   key: string;
   example: string;
@@ -154,19 +143,12 @@ const ticketSample: TemplateInput = {
   code: "TRAVEL_TICKET_NOTICE",
   name: "Thông tin vé xe",
   notificationType: "travel_ticket",
-  title: "Thông tin vé xe khách",
+  title: "",
   components: [
     { type: "image", source: "systemVariable", variableKey: "center_logo", alt: "Logo trung tâm", compatibilityStatus: "unverified" },
     {
-      type: "ticket",
-      notice: "Quý khách vui lòng có mặt tại điểm đi trước 30 phút.",
-      bookingCode: "3798080800",
-      departureLocation: "Z06 VNG Campus, TP.HCM",
-      departureTime: "09:00",
-      departureDate: "Thứ 2, 01/01/2026",
-      arrivalLocation: "Điểm đến",
-      arrivalTime: "10:00",
-      arrivalDate: "Thứ 3, 01/01/2026",
+      type: "text",
+      text: "(Tin nhắn mẫu) THÔNG TIN VÉ XE KHÁCH\n\nQuý khách vui lòng có mặt tại điểm đi trước 30 phút.\n\nĐiểm đón\nZ06 VNG Campus, TP.HCM\n\nThời gian\n9:00, 1/1/2026\n\nMã đặt chỗ\n3798080800\n\nĐiểm đi                                      Điểm đến\n09:00             ···············             10:00\nThứ 2, 01/01/2026                   Thứ 3, 01/01/2026",
     },
     { type: "button", label: "Xem vé", url: "https://example.invalid/replace-with-ticket-link", compatibilityStatus: "unverified" },
     { type: "button", label: "Mua thêm vé", url: "https://example.invalid/replace-with-booking-link", compatibilityStatus: "unverified" },
@@ -326,8 +308,6 @@ export function ZbsTemplateLibrary() {
 
   const records = (listQuery.data ?? []).filter((record) => filter === "archived" ? record.status === "archived" : record.status !== "archived");
   const isArchived = selected?.status === "archived";
-  const ticketBlock = form.components.find((component): component is TicketBlock => component.type === "ticket");
-  const ticketButtons = form.components.filter((component): component is ButtonBlock => component.type === "button");
   const canSave = canWrite && Boolean(form.code.trim() && form.name.trim() && form.notificationType.trim()) && !saveMutation.isPending && !isArchived;
 
   const startNew = () => {
@@ -412,9 +392,7 @@ export function ZbsTemplateLibrary() {
         ? { type, source: "url", url: "", alt: "", compatibilityStatus: "unverified" }
       : type === "button"
           ? { type, label: "", url: "", compatibilityStatus: "unverified" }
-          : type === "qr"
-            ? { type, value: "", caption: "", compatibilityStatus: "unverified" }
-            : { type, notice: "", bookingCode: "", departureLocation: "", departureTime: "", departureDate: "", arrivalLocation: "", arrivalTime: "", arrivalDate: "" };
+          : { type, value: "", caption: "", compatibilityStatus: "unverified" };
     updateField("components", [...form.components, block]);
   };
   return (
@@ -561,7 +539,6 @@ export function ZbsTemplateLibrary() {
                           <Button type="button" variant="outline" size="sm" onClick={() => addComponent("text")} className="h-8 border-[#d5e0d7] text-[#426353]"><Text className="mr-1.5 h-3.5 w-3.5" />Văn bản</Button>
                           <Button type="button" variant="outline" size="sm" onClick={() => addComponent("image")} className="h-8 border-[#d5e0d7] text-[#426353]"><Image className="mr-1.5 h-3.5 w-3.5" />Ảnh</Button>
                           <Button type="button" variant="outline" size="sm" onClick={() => addComponent("qr")} className="h-8 border-[#d5e0d7] text-[#426353]"><QrCode className="mr-1.5 h-3.5 w-3.5" />Mã QR</Button>
-                          <Button type="button" variant="outline" size="sm" onClick={() => addComponent("ticket")} className="h-8 border-[#d5e0d7] text-[#426353]"><Text className="mr-1.5 h-3.5 w-3.5" />Khung vé</Button>
                           <Button type="button" variant="outline" size="sm" onClick={() => addComponent("button")} className="h-8 border-[#d5e0d7] text-[#426353]"><Link2 className="mr-1.5 h-3.5 w-3.5" />Nút</Button>
                         </div>}
                       </div>
@@ -573,8 +550,8 @@ export function ZbsTemplateLibrary() {
                         <div key={`${component.type}-${index}`} className="rounded-lg border border-[#e0e7e1] bg-[#fbfcf9] p-3 sm:p-4">
                           <div className="mb-3 flex items-center justify-between">
                             <div className="flex items-center gap-2 text-xs font-semibold text-[#476153]">
-                              {component.type === "text" ? <Text className="h-3.5 w-3.5" /> : component.type === "image" ? <Image className="h-3.5 w-3.5" /> : component.type === "qr" ? <QrCode className="h-3.5 w-3.5" /> : component.type === "ticket" ? <Text className="h-3.5 w-3.5" /> : <Link2 className="h-3.5 w-3.5" />}
-                              {component.type === "text" ? "Khối văn bản" : component.type === "image" ? "Khối ảnh · chưa xác minh" : component.type === "qr" ? "Mã QR · chưa xác minh" : component.type === "ticket" ? "Khung vé xe" : "Khối nút · chưa xác minh"}
+                              {component.type === "text" ? <Text className="h-3.5 w-3.5" /> : component.type === "image" ? <Image className="h-3.5 w-3.5" /> : component.type === "qr" ? <QrCode className="h-3.5 w-3.5" /> : <Link2 className="h-3.5 w-3.5" />}
+                              {component.type === "text" ? "Khối văn bản" : component.type === "image" ? "Khối ảnh · chưa xác minh" : component.type === "qr" ? "Mã QR · chưa xác minh" : "Khối nút · chưa xác minh"}
                             </div>
                             <div className="flex items-center gap-1">
                               {component.type === "text" && !isArchived && <Button type="button" variant="outline" size="sm" onMouseDown={(event) => event.preventDefault()} onClick={() => openVariablePicker(index)} className="h-7 border-[#d5e0d7] px-2 text-[11px] text-[#426353]"><Braces className="mr-1.5 h-3.5 w-3.5" />Chèn biến</Button>}
@@ -604,18 +581,6 @@ export function ZbsTemplateLibrary() {
                               <p className="sm:col-span-2 text-[10px] text-[#8a785a]">QR được dựng cục bộ để xem trước; chưa xác minh cách gửi khối QR qua ZBS.</p>
                             </div>
                           )}
-                          {component.type === "ticket" && (
-                            <div className="grid gap-3 sm:grid-cols-2">
-                              <div className="space-y-1.5 sm:col-span-2"><Label className="text-xs">Lời nhắc</Label><Input disabled={isArchived} value={component.notice} onChange={(event) => updateComponent(index, { ...component, notice: event.target.value })} className="border-[#d8e1da] bg-white" /></div>
-                              <div className="space-y-1.5 sm:col-span-2"><Label className="text-xs">Mã đặt chỗ</Label><Input disabled={isArchived} value={component.bookingCode} onChange={(event) => updateComponent(index, { ...component, bookingCode: event.target.value })} className="border-[#d8e1da] bg-white" /></div>
-                              <div className="space-y-1.5"><Label className="text-xs">Điểm đi</Label><Input disabled={isArchived} value={component.departureLocation} onChange={(event) => updateComponent(index, { ...component, departureLocation: event.target.value })} className="border-[#d8e1da] bg-white" /></div>
-                              <div className="space-y-1.5"><Label className="text-xs">Điểm đến</Label><Input disabled={isArchived} value={component.arrivalLocation} onChange={(event) => updateComponent(index, { ...component, arrivalLocation: event.target.value })} className="border-[#d8e1da] bg-white" /></div>
-                              <div className="space-y-1.5"><Label className="text-xs">Giờ đi</Label><Input disabled={isArchived} value={component.departureTime} onChange={(event) => updateComponent(index, { ...component, departureTime: event.target.value })} className="border-[#d8e1da] bg-white" /></div>
-                              <div className="space-y-1.5"><Label className="text-xs">Ngày đi</Label><Input disabled={isArchived} value={component.departureDate} onChange={(event) => updateComponent(index, { ...component, departureDate: event.target.value })} className="border-[#d8e1da] bg-white" /></div>
-                              <div className="space-y-1.5"><Label className="text-xs">Giờ đến</Label><Input disabled={isArchived} value={component.arrivalTime} onChange={(event) => updateComponent(index, { ...component, arrivalTime: event.target.value })} className="border-[#d8e1da] bg-white" /></div>
-                              <div className="space-y-1.5"><Label className="text-xs">Ngày đến</Label><Input disabled={isArchived} value={component.arrivalDate} onChange={(event) => updateComponent(index, { ...component, arrivalDate: event.target.value })} className="border-[#d8e1da] bg-white" /></div>
-                            </div>
-                          )}
                         </div>
                       ))}
                     </CardContent>
@@ -626,37 +591,6 @@ export function ZbsTemplateLibrary() {
                       <div className="flex items-center gap-2"><Eye className="h-4 w-4 text-[#527365]" /><div><CardTitle className="text-sm text-[#263e36]">Bản xem trước nội bộ</CardTitle><p className="mt-1 text-xs text-[#78877f]">Mô phỏng nội dung với ví dụ · chưa xác minh tương thích</p></div></div>
                     </CardHeader>
                     <CardContent className="p-4 sm:p-5">
-                      {ticketBlock ? (
-                        <div className="mx-auto max-w-xl rounded-xl bg-[#e8eef5] p-3 sm:p-5">
-                          <div className="mx-auto max-w-[420px] rounded-xl border border-[#e1e8ee] bg-white p-4 shadow-sm sm:p-5">
-                            <div className="mb-4 flex min-h-10 items-center">
-                              {centerLogoUrl ? <img src={centerLogoUrl} alt="Logo trung tâm" className="max-h-10 max-w-36 object-contain object-left" /> : <span className="text-sm font-bold text-[#315f8c]">Logo trung tâm</span>}
-                            </div>
-                            <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#69737d]">(Tin nhắn mẫu) {form.title || "THÔNG TIN VÉ XE KHÁCH"}</p>
-                            <p className="mb-4 text-xs leading-5 text-[#5b626a]">{ticketBlock.notice}</p>
-                            <div className="rounded-lg border border-[#d6e7f1] bg-[#eff8fc] p-3">
-                              <p className="text-[10px] text-[#77848c]">Mã đặt chỗ</p>
-                              <p className="border-b border-dashed border-[#d3e3ec] pb-3 text-sm font-bold text-[#27343e]">{ticketBlock.bookingCode || "—"}</p>
-                              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 pt-3">
-                                <div>
-                                  <p className="text-xs font-semibold text-[#28343d]">{ticketBlock.departureLocation || "Điểm đi"}</p>
-                                  <p className="mt-2 text-sm font-bold text-[#28343d]">{ticketBlock.departureTime || "--:--"}</p>
-                                  <p className="mt-1 text-[10px] text-[#727d85]">{ticketBlock.departureDate || "Ngày đi"}</p>
-                                </div>
-                                <span aria-hidden="true" className="text-sm text-[#6d9ab8]">···➜</span>
-                                <div className="text-right">
-                                  <p className="text-xs font-semibold text-[#28343d]">{ticketBlock.arrivalLocation || "Điểm đến"}</p>
-                                  <p className="mt-2 text-sm font-bold text-[#28343d]">{ticketBlock.arrivalTime || "--:--"}</p>
-                                  <p className="mt-1 text-[10px] text-[#727d85]">{ticketBlock.arrivalDate || "Ngày đến"}</p>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="mt-3 space-y-2">
-                              {ticketButtons.map((button, index) => <div key={`${button.label}-${index}`} className={`rounded-md px-3 py-2 text-center text-xs font-semibold ${index === 0 ? "bg-[#0866ed] text-white" : "bg-[#f2f3f5] text-[#37414a]"}`}>{button.label || "Nút"}<span className="sr-only"> · liên kết xem trước</span></div>)}
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
                       <div className="mx-auto max-w-xl rounded-xl border border-[#e4e8df] bg-[#f4f3ec] p-4 sm:p-6">
                         <div className="mx-auto max-w-md rounded-xl border border-[#e0e4dc] bg-[#fffefa] p-4 shadow-[0_3px_12px_rgba(34,54,43,0.05)]">
                           <div className="mb-3 flex items-center justify-between border-b border-[#edf0e9] pb-2 text-[10px] uppercase tracking-[0.13em] text-[#89938a]"><span>Preview · nội bộ</span><span>Không gửi</span></div>
@@ -681,7 +615,6 @@ export function ZbsTemplateLibrary() {
                           <p className="mt-4 border-t border-[#edf0e9] pt-2 text-[10px] leading-4 text-[#9a8b6d]">Mô phỏng dữ liệu nội bộ, không phải bản render hoặc xác nhận từ Zalo.</p>
                         </div>
                       </div>
-                      )}
                     </CardContent>
                   </Card>
 
