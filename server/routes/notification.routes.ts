@@ -1,13 +1,13 @@
 import type { Express, Request, Response } from "express";
 import { db } from "../storage/base";
-import { notifications, students, notificationTemplates, centerNotificationTemplates, centerNotificationSettings, centerConfig } from "@shared/schema";
+import { notifications, students, notificationTemplates, centerNotificationSettings, centerConfig } from "@shared/schema";
 import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { pool } from "../db";
 import { notificationService } from "../application/notification/services/NotificationService";
 import { notificationRepository } from "../infrastructure/notification/repositories/NotificationRepository";
 import { sendNotification } from "../lib/notification";
 
-async function ensureZnsSettingsTables() {
+async function ensureNotificationTables() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS notification_templates (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -84,19 +84,6 @@ async function ensureZnsSettingsTables() {
     $$;
   `);
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS center_notification_templates (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      center_id uuid NOT NULL,
-      location_id uuid,
-      template_code varchar(100) NOT NULL,
-      zns_template_id varchar(100),
-      is_enabled boolean NOT NULL DEFAULT true,
-      created_at timestamp DEFAULT now(),
-      updated_at timestamp DEFAULT now(),
-      UNIQUE (center_id, template_code)
-    );
-  `);
-  await pool.query(`
     INSERT INTO notification_templates (code, name, channel, variables) VALUES
       ('attendance_reminder', 'Nhắc lịch học', 'zalo', '["studentName","className","time","teacher","centerName"]'),
       ('class_changed', 'Đổi lịch học', 'zalo', '["studentName","className","newTime"]'),
@@ -147,17 +134,15 @@ async function getRelevantUserIds(userId: string): Promise<string[]> {
 }
 
 export function registerNotificationRoutes(app: Express) {
-  ensureZnsSettingsTables().catch(err => console.error("[ZNS] migration error:", err));
+  ensureNotificationTables().catch(err => console.error("[Notification] initialization error:", err));
 
-  // ─── GET /api/notification/zns-settings ──────────────────────────────────────
-  app.get("/api/notification/zns-settings", async (req: Request, res: Response) => {
+  // ─── GET /api/notification/settings ─────────────────────────────────────────
+  app.get("/api/notification/settings", async (_req: Request, res: Response) => {
     try {
       const [center] = await db.select().from(centerConfig).limit(1);
       if (!center) return res.json({
         attendanceEnabled: true, classChangedEnabled: true,
         tuitionEnabled: true, attendanceResultEnabled: true,
-        zaloEnabled: false, smsEnabled: false, emailEnabled: false,
-        channelPriority: "AUTO",
       });
       const [settings] = await db.select().from(centerNotificationSettings)
         .where(eq(centerNotificationSettings.centerId, center.id)).limit(1);
@@ -169,10 +154,6 @@ export function registerNotificationRoutes(app: Express) {
           classChangedEnabled: created.classChangedEnabled,
           tuitionEnabled: created.tuitionEnabled,
           attendanceResultEnabled: created.attendanceResultEnabled,
-          zaloEnabled: created.zaloEnabled,
-          smsEnabled: created.smsEnabled,
-          emailEnabled: created.emailEnabled,
-          channelPriority: created.channelPriority ?? "AUTO",
         });
       }
       return res.json({
@@ -180,36 +161,27 @@ export function registerNotificationRoutes(app: Express) {
         classChangedEnabled: settings.classChangedEnabled,
         tuitionEnabled: settings.tuitionEnabled,
         attendanceResultEnabled: settings.attendanceResultEnabled,
-        zaloEnabled: settings.zaloEnabled,
-        smsEnabled: settings.smsEnabled,
-        emailEnabled: settings.emailEnabled,
-        channelPriority: settings.channelPriority ?? "AUTO",
       });
     } catch (err: any) {
-      console.error("[ZNS] GET settings error:", err);
+      console.error("[Notification] GET settings error:", err);
       return res.status(500).json({ error: err.message });
     }
   });
 
-  // ─── PUT /api/notification/zns-settings ──────────────────────────────────────
-  app.put("/api/notification/zns-settings", async (req: Request, res: Response) => {
+  // ─── PUT /api/notification/settings ─────────────────────────────────────────
+  app.put("/api/notification/settings", async (req: Request, res: Response) => {
     try {
       const [center] = await db.select().from(centerConfig).limit(1);
       if (!center) return res.status(400).json({ error: "Không tìm thấy cấu hình trung tâm" });
       const {
         attendanceEnabled, classChangedEnabled, tuitionEnabled,
-        attendanceResultEnabled, zaloEnabled, smsEnabled, emailEnabled,
-        channelPriority,
+        attendanceResultEnabled,
       } = req.body;
       const vals = {
         attendanceEnabled: attendanceEnabled ?? true,
         classChangedEnabled: classChangedEnabled ?? true,
         tuitionEnabled: tuitionEnabled ?? true,
         attendanceResultEnabled: attendanceResultEnabled ?? true,
-        zaloEnabled: zaloEnabled ?? false,
-        smsEnabled: smsEnabled ?? false,
-        emailEnabled: emailEnabled ?? false,
-        channelPriority: channelPriority ?? "AUTO",
       };
       const [existing] = await db.select().from(centerNotificationSettings)
         .where(eq(centerNotificationSettings.centerId, center.id)).limit(1);
@@ -221,7 +193,7 @@ export function registerNotificationRoutes(app: Express) {
       }
       return res.json({ ok: true });
     } catch (err: any) {
-      console.error("[ZNS] PUT settings error:", err);
+      console.error("[Notification] PUT settings error:", err);
       return res.status(500).json({ error: err.message });
     }
   });
@@ -273,71 +245,7 @@ export function registerNotificationRoutes(app: Express) {
       const rows = await db.select().from(notificationTemplates).orderBy(notificationTemplates.code);
       return res.json(rows);
     } catch (err: any) {
-      console.error("[ZNS] GET templates error:", err);
-      return res.status(500).json({ error: err.message });
-    }
-  });
-
-  // ─── GET /api/notification/center-templates ───────────────────────────────────
-  // Lấy tất cả cấu hình ZNS template của trung tâm hiện tại
-  app.get("/api/notification/center-templates", async (req: Request, res: Response) => {
-    try {
-      const [center] = await db.select().from(centerConfig).limit(1);
-      if (!center) return res.json([]);
-      const rows = await db
-        .select()
-        .from(centerNotificationTemplates)
-        .where(eq(centerNotificationTemplates.centerId, center.id))
-        .orderBy(centerNotificationTemplates.templateCode);
-      return res.json(rows);
-    } catch (err: any) {
-      console.error("[ZNS] GET center-templates error:", err);
-      return res.status(500).json({ error: err.message });
-    }
-  });
-
-  // ─── PUT /api/notification/center-templates/:code ─────────────────────────────
-  // Upsert cấu hình ZNS template cho trung tâm (znsTemplateId, locationId, isEnabled)
-  app.put("/api/notification/center-templates/:code", async (req: Request, res: Response) => {
-    try {
-      const { code } = req.params;
-      const { znsTemplateId, locationId, isEnabled } = req.body;
-      const [center] = await db.select().from(centerConfig).limit(1);
-      if (!center) return res.status(400).json({ error: "Không tìm thấy cấu hình trung tâm" });
-
-      const [existing] = await db
-        .select({ id: centerNotificationTemplates.id })
-        .from(centerNotificationTemplates)
-        .where(
-          and(
-            eq(centerNotificationTemplates.centerId, center.id),
-            eq(centerNotificationTemplates.templateCode, code)
-          )
-        )
-        .limit(1);
-
-      const vals = {
-        znsTemplateId: znsTemplateId ?? null,
-        locationId: locationId ?? null,
-        isEnabled: isEnabled ?? true,
-        updatedAt: new Date(),
-      };
-
-      if (existing) {
-        await db
-          .update(centerNotificationTemplates)
-          .set(vals)
-          .where(eq(centerNotificationTemplates.id, existing.id));
-      } else {
-        await db.insert(centerNotificationTemplates).values({
-          centerId: center.id,
-          templateCode: code,
-          ...vals,
-        });
-      }
-      return res.json({ ok: true });
-    } catch (err: any) {
-      console.error("[ZNS] PUT center-templates error:", err);
+      console.error("[Notification] GET templates error:", err);
       return res.status(500).json({ error: err.message });
     }
   });
@@ -473,7 +381,7 @@ export function registerNotificationRoutes(app: Express) {
   });
 
   // ─── POST /api/notifications/send — CRM entry point ─────────────────────────
-  // Nhận studentId + template, tự động lookup centerId và routing OA/ZNS
+  // Nhận studentId + template, tự động lookup centerId và gửi qua OA
   app.post("/api/notifications/send", async (req: Request, res: Response) => {
     try {
       const { studentId, template, data } = req.body;

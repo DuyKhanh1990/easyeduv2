@@ -2,7 +2,7 @@
  * Debt Reminder Service
  * Chạy mỗi phút, gửi thông báo công nợ:
  *  - Chuông nội bộ (bell icon) + Expo Push (điện thoại)  → qua sendNotification()
- *  - Zalo OA / ZNS                                        → qua notificationService.send()
+ *  - Zalo OA                                              → qua notificationService.send()
  *
  * ── Logic cửa sổ ngày ────────────────────────────────────────────────────────
  *  Trước hạn  (before): window = [dueDate - days, dueDate - 1]
@@ -246,7 +246,7 @@ async function fireReminder(
     );
   }
 
-  // 2️⃣ Zalo OA / ZNS
+  // 2️⃣ Zalo OA
   await notificationService
     .send({
       centerId,

@@ -1,9 +1,8 @@
 import { db } from "../../../storage/base";
-import { notificationTemplates, centerNotificationSettings, centerConfig } from "@shared/schema";
+import { notificationTemplates } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { channelResolver } from "./ChannelResolver";
 import { notificationRepository } from "../../../infrastructure/notification/repositories/NotificationRepository";
-import { znsChannel } from "../../../infrastructure/notification/channels/ZNSChannel";
 import { oaChannel } from "../../../infrastructure/notification/channels/OAChannel";
 import { NotificationChannel } from "../../../domain/notification/types/NotificationChannel";
 import type { SendNotificationDto } from "../dto/SendNotificationDto";
@@ -17,17 +16,7 @@ export class NotificationService {
       .limit(1)
       .then((r) => r[0] ?? null);
 
-    const [center] = await db.select().from(centerConfig).limit(1);
-    const settings = center
-      ? await db
-          .select()
-          .from(centerNotificationSettings)
-          .where(eq(centerNotificationSettings.centerId, center.id))
-          .limit(1)
-          .then((r) => r[0] ?? null)
-      : null;
-
-    // Lookup kênh Zalo của học viên để routing channel
+    // Lookup OA recipient state; all outbound automation stays on the OA channel.
     const studentChannel = await notificationRepository.getStudentChannel(
       dto.studentId,
       dto.centerId
@@ -37,7 +26,6 @@ export class NotificationService {
       zaloUserId: studentChannel?.zaloUserId ?? null,
       isFollowed: studentChannel?.isFollowed ?? false,
       hasInteracted: studentChannel?.hasInteracted ?? false,
-      channelPriority: settings?.channelPriority ?? "AUTO",
     });
 
     console.log("[NotificationService] send", {
@@ -70,21 +58,6 @@ export class NotificationService {
         });
       } catch (err: any) {
         console.error("[NotificationService] OA send failed", {
-          logId,
-          error: err.message,
-        });
-      }
-    } else if (channel === NotificationChannel.ZNS) {
-      try {
-        await znsChannel.send({
-          logId,
-          studentId: dto.studentId,
-          centerId: dto.centerId,
-          type: dto.type,
-          data: dto.data,
-        });
-      } catch (err: any) {
-        console.error("[NotificationService] ZNS send failed", {
           logId,
           error: err.message,
         });

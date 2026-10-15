@@ -4187,7 +4187,7 @@ function ZaloOAConfig() {
   const { data: locations } = useLocations();
   return (
     <div className="space-y-6">
-      <ZNSConfig />
+      <NotificationConfig />
       <ZbsTemplateMapping
         locations={(locations ?? []).map((location) => ({ id: location.id, name: location.name }))}
       />
@@ -4196,31 +4196,23 @@ function ZaloOAConfig() {
   );
 }
 
-type ZNSSettingsDto = {
+type NotificationSettingsDto = {
   attendanceEnabled: boolean;
   classChangedEnabled: boolean;
   tuitionEnabled: boolean;
   attendanceResultEnabled: boolean;
-  zaloEnabled: boolean;
-  smsEnabled: boolean;
-  emailEnabled: boolean;
-  channelPriority: "AUTO" | "OA" | "ZNS";
 };
 
-function ZNSConfig() {
+function NotificationConfig() {
   const { toast } = useToast();
-  const { data, isLoading, refetch } = useQuery<ZNSSettingsDto>({
-    queryKey: ["/api/notification/zns-settings"],
+  const { data, isLoading, refetch } = useQuery<NotificationSettingsDto>({
+    queryKey: ["/api/notification/settings"],
   });
-  const [form, setForm] = useState<ZNSSettingsDto>({
+  const [form, setForm] = useState<NotificationSettingsDto>({
     attendanceEnabled: true,
     classChangedEnabled: true,
     tuitionEnabled: true,
     attendanceResultEnabled: true,
-    zaloEnabled: false,
-    smsEnabled: false,
-    emailEnabled: false,
-    channelPriority: "AUTO",
   });
   const [saving, setSaving] = useState(false);
 
@@ -4228,14 +4220,14 @@ function ZNSConfig() {
     if (data) setForm(data);
   }, [data]);
 
-  const toggle = (key: keyof ZNSSettingsDto) =>
+  const toggle = (key: keyof NotificationSettingsDto) =>
     setForm(f => ({ ...f, [key]: !f[key] }));
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await apiRequest("PUT", "/api/notification/zns-settings", form);
-      toast({ title: "Đã lưu cấu hình thông báo ZNS." });
+      await apiRequest("PUT", "/api/notification/settings", form);
+      toast({ title: "Đã lưu cấu hình thông báo." });
       refetch();
     } catch (err: any) {
       toast({ title: "Lỗi", description: err.message, variant: "destructive" });
@@ -4259,12 +4251,6 @@ function ZNSConfig() {
     { key: "attendanceResultEnabled" as const, label: "Kết quả điểm danh", desc: "Thông báo trạng thái điểm danh sau buổi học" },
   ];
 
-  const channelItems = [
-    { key: "zaloEnabled" as const, label: "Zalo ZNS", desc: "Gửi qua Zalo Notification Service" },
-    { key: "smsEnabled" as const, label: "SMS", desc: "Gửi qua tin nhắn SMS (chưa hỗ trợ)" },
-    { key: "emailEnabled" as const, label: "Email", desc: "Gửi qua email (chưa hỗ trợ)" },
-  ];
-
   return (
     <div className="space-y-4">
       <Card>
@@ -4283,58 +4269,6 @@ function ZNSConfig() {
                 onCheckedChange={() => toggle(item.key)}
               />
             </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="py-3">
-          <CardTitle className="text-sm">Kênh gửi</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {channelItems.map(item => (
-            <div key={item.key} className="flex items-center justify-between gap-4 py-1">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">{item.label}</p>
-                <p className="text-xs text-muted-foreground">{item.desc}</p>
-              </div>
-              <Switch
-                checked={!!form[item.key]}
-                onCheckedChange={() => toggle(item.key)}
-                disabled={item.key !== "zaloEnabled"}
-              />
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="py-3">
-          <CardTitle className="text-sm">Ưu tiên kênh gửi</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {([
-            { value: "AUTO", label: "Tự động", desc: "Hệ thống tự chọn kênh phù hợp" },
-            { value: "OA", label: "Luôn OA", desc: "Ưu tiên gửi qua Zalo Official Account" },
-            { value: "ZNS", label: "Luôn ZNS", desc: "Ưu tiên gửi qua Zalo Notification Service" },
-          ] as const).map(opt => (
-            <label
-              key={opt.value}
-              className="flex items-center gap-3 cursor-pointer rounded-md px-2 py-1.5 hover:bg-accent"
-            >
-              <input
-                type="radio"
-                name="channelPriority"
-                value={opt.value}
-                checked={form.channelPriority === opt.value}
-                onChange={() => setForm(f => ({ ...f, channelPriority: opt.value }))}
-                className="accent-primary"
-              />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">{opt.label}</p>
-                <p className="text-xs text-muted-foreground">{opt.desc}</p>
-              </div>
-            </label>
           ))}
         </CardContent>
       </Card>

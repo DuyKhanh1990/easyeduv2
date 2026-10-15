@@ -166,7 +166,7 @@ describe("ZBS template management", () => {
       (value) => value,
       vi.fn(async () => new Response(JSON.stringify({
         error: 0,
-        data: [{ templateId: 98765, templateName: "Old ZNS template", createdTime: 0, status: "ENABLE" }],
+        data: [{ templateId: 98765, templateName: "Template chưa xác minh", createdTime: 0, status: "ENABLE" }],
         metadata: { total: 1 },
       }), { status: 200 })),
     );

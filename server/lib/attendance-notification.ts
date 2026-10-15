@@ -204,8 +204,8 @@ export async function sendAttendanceNotification(
             },
           });
         }
-      } catch (znsErr) {
-        console.error("[AttendanceNotification] Notification engine error:", znsErr);
+      } catch (notificationError) {
+        console.error("[AttendanceNotification] Notification engine error:", notificationError);
       }
     }
   } catch (err) {
@@ -373,7 +373,7 @@ export async function sendContentNotification(
           });
         }
 
-        // Notification Engine (ZNS)
+        // Notification Engine (Zalo OA)
         if (center?.id) {
           await notificationService.send({
             centerId: center.id,

@@ -6650,7 +6650,7 @@ export function registerClassesRoutes(app: Express): void {
               console.error("[UpdateSession] Student bell notification error:", studentNotiErr);
             }
 
-            // Notification Engine — schedule_update_session (kênh Zalo OA/ZNS, chỉ gửi khi ngày/ca thay đổi)
+            // Notification Engine — schedule_update_session (Zalo OA, chỉ gửi khi ngày/ca thay đổi)
             const _dateChanged =
               req.body.sessionDate && req.body.sessionDate !== existingSession.sessionDate;
             const _shiftChanged =

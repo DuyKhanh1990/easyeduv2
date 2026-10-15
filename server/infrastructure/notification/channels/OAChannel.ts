@@ -174,7 +174,7 @@ export class OAChannel implements INotificationChannel {
       if (!accessToken) {
         console.warn(`[OAChannel] Bỏ qua: không có Zalo OA nào đang kết nối`);
         await notificationRepository.updateLogStatus(logId, "SKIPPED", {
-          reason: "zns_disabled",
+          reason: "oa_not_connected",
           errorMessage: "Không có Zalo OA nào đang kết nối",
         });
         return;

@@ -5,19 +5,11 @@ export class ChannelResolver {
     zaloUserId?: string | null;
     isFollowed?: boolean;
     hasInteracted?: boolean;
-    channelPriority?: string;
   }): Promise<NotificationChannel> {
-    const priority = opts?.channelPriority ?? "AUTO";
-
-    if (priority === "ZNS") return NotificationChannel.ZNS;
-    if (priority === "OA") return NotificationChannel.OA;
-
-    // AUTO: ưu tiên OA nếu student đã follow, fallback ZNS
-    if (opts?.zaloUserId && opts?.isFollowed) {
-      return NotificationChannel.OA;
-    }
-
-    return NotificationChannel.ZNS;
+    // OAChannel remains the single outbound channel and safely skips recipients
+    // who are not eligible (for example, a student who has not followed the OA).
+    void opts;
+    return NotificationChannel.OA;
   }
 }
 

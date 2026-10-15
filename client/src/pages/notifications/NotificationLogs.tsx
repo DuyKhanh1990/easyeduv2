@@ -79,12 +79,15 @@ const STATUS_LABELS: Record<string, string> = {
 const REASON_LABELS: Record<string, string> = {
   missing_template: "Chưa cấu hình template",
   missing_phone: "Thiếu số điện thoại",
+  oa_not_connected: "Zalo OA chưa kết nối",
+  // Keep legacy label so archived ZNS log rows remain readable.
   zns_disabled: "Zalo OA chưa kết nối",
   zalo_api_error: "Lỗi Zalo API",
   student_not_followed: "Học viên chưa follow OA",
 };
 
 const CHANNEL_COLORS: Record<string, string> = {
+  // Historical records may still contain ZNS.
   ZNS: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
   OA: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
   SMS: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300",
