@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ZBS_TEMPLATE_SYSTEM_VARIABLES } from "@shared/zbs-template-system-variables";
 import "./zbs-template-library.css";
 
@@ -69,11 +70,6 @@ type TemplateRecord = {
 type TemplateInput = Pick<TemplateRecord, "code" | "name" | "notificationType" | "title" | "components" | "variables">;
 
 const endpoint = "/api/settings/zbs-template-library";
-const systemFormatLabels: Record<NonNullable<Variable["format"]>, string> = {
-  monthName: "tháng",
-  currencyVnd: "tiền Việt Nam đồng",
-  dateVi: "ngày/tháng/năm",
-};
 const emptyForm = (): TemplateInput => ({
   code: "",
   name: "",
@@ -201,7 +197,9 @@ export function ZbsTemplateLibrary() {
   const [duplicateCode, setDuplicateCode] = useState("");
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [notice, setNotice] = useState("");
-  const [systemVariableChoice, setSystemVariableChoice] = useState("");
+  const [variablePickerOpen, setVariablePickerOpen] = useState(false);
+  const [variableInsertionTarget, setVariableInsertionTarget] = useState<{ componentIndex: number; start: number; end: number } | null>(null);
+  const textAreaRefs = useRef<Record<number, HTMLTextAreaElement | null>>({});
 
   const listQuery = useQuery({
     queryKey: [endpoint],
@@ -278,7 +276,6 @@ export function ZbsTemplateLibrary() {
     saveMutation.reset();
     duplicateMutation.reset();
     archiveMutation.reset();
-    setSystemVariableChoice("");
   };
   const startTuitionSample = () => {
     startNew();
@@ -298,6 +295,44 @@ export function ZbsTemplateLibrary() {
   const updateComponent = (index: number, updated: LibraryComponent) => {
     updateField("components", form.components.map((component, position) => position === index ? updated : component));
   };
+  const openVariablePicker = (componentIndex: number) => {
+    const textarea = textAreaRefs.current[componentIndex];
+    const start = textarea?.selectionStart ?? (form.components[componentIndex]?.type === "text" ? form.components[componentIndex].text.length : 0);
+    const end = textarea?.selectionEnd ?? start;
+    setVariableInsertionTarget({ componentIndex, start, end });
+    setVariablePickerOpen(true);
+  };
+  const insertSystemVariable = (preset: typeof ZBS_TEMPLATE_SYSTEM_VARIABLES[number]) => {
+    if (!variableInsertionTarget) return;
+    const { componentIndex, start, end } = variableInsertionTarget;
+    const component = form.components[componentIndex];
+    if (!component || component.type !== "text") return;
+
+    const token = `{{${preset.key}}}`;
+    const updatedText = `${component.text.slice(0, start)}${token}${component.text.slice(end)}`;
+    updateComponent(componentIndex, { ...component, text: updatedText });
+
+    const variable: Variable = {
+      key: preset.key,
+      example: preset.example,
+      description: preset.description,
+      systemField: preset.source,
+      ...("format" in preset ? { format: preset.format } : {}),
+    };
+    const existingIndex = form.variables.findIndex((item) => item.key === preset.key);
+    updateField("variables", existingIndex < 0
+      ? [...form.variables, variable]
+      : form.variables.map((item, index) => index === existingIndex ? variable : item));
+
+    setVariablePickerOpen(false);
+    setNotice("");
+    const caretPosition = start + token.length;
+    requestAnimationFrame(() => {
+      const textarea = textAreaRefs.current[componentIndex];
+      textarea?.focus();
+      textarea?.setSelectionRange(caretPosition, caretPosition);
+    });
+  };
   const addComponent = (type: LibraryComponent["type"]) => {
     const block: LibraryComponent = type === "text"
       ? { type, text: "" }
@@ -306,18 +341,6 @@ export function ZbsTemplateLibrary() {
         : { type, label: "", url: "", compatibilityStatus: "unverified" };
     updateField("components", [...form.components, block]);
   };
-  const updateVariable = (index: number, patch: Partial<Variable>) => {
-    updateField("variables", form.variables.map((variable, position) => {
-      if (position !== index) return variable;
-      const changedKey = patch.key !== undefined && patch.key !== variable.key;
-      return {
-        ...variable,
-        ...(changedKey ? { systemField: undefined, format: undefined } : {}),
-        ...patch,
-      };
-    }));
-  };
-
   return (
     <section className="zbs-library space-y-5" aria-label="Thư viện mẫu ZBS nội bộ">
       <header className="relative overflow-hidden rounded-xl border border-[#c9d8d0] bg-[#edf4ef] px-5 py-5 sm:px-6">
@@ -469,9 +492,12 @@ export function ZbsTemplateLibrary() {
                               {component.type === "text" ? <Text className="h-3.5 w-3.5" /> : component.type === "image" ? <Image className="h-3.5 w-3.5" /> : <Link2 className="h-3.5 w-3.5" />}
                               {component.type === "text" ? "Khối văn bản" : component.type === "image" ? "Khối ảnh · chưa xác minh" : "Khối nút · chưa xác minh"}
                             </div>
-                            {!isArchived && <Button type="button" variant="ghost" size="icon" aria-label="Xóa khối" onClick={() => updateField("components", form.components.filter((_, position) => position !== index))} className="h-7 w-7 text-[#9b6257] hover:bg-[#fff0ed] hover:text-[#8b4439]"><Trash2 className="h-3.5 w-3.5" /></Button>}
+                            <div className="flex items-center gap-1">
+                              {component.type === "text" && !isArchived && <Button type="button" variant="outline" size="sm" onMouseDown={(event) => event.preventDefault()} onClick={() => openVariablePicker(index)} className="h-7 border-[#d5e0d7] px-2 text-[11px] text-[#426353]"><Braces className="mr-1.5 h-3.5 w-3.5" />Chèn biến</Button>}
+                              {!isArchived && <Button type="button" variant="ghost" size="icon" aria-label="Xóa khối" onClick={() => updateField("components", form.components.filter((_, position) => position !== index))} className="h-7 w-7 text-[#9b6257] hover:bg-[#fff0ed] hover:text-[#8b4439]"><Trash2 className="h-3.5 w-3.5" /></Button>}
+                            </div>
                           </div>
-                          {component.type === "text" && <Textarea disabled={isArchived} value={component.text} onChange={(event) => updateComponent(index, { ...component, text: event.target.value })} placeholder="Nội dung văn bản. Dùng {{ten_bien}} để chèn biến." className="zl-textarea min-h-24 border-[#d8e1da] bg-white text-sm leading-6" />}
+                          {component.type === "text" && <Textarea ref={(element) => { textAreaRefs.current[index] = element; }} disabled={isArchived} value={component.text} onChange={(event) => updateComponent(index, { ...component, text: event.target.value })} placeholder="Nhập nội dung. Đặt con trỏ tại vị trí cần chèn biến rồi chọn “Chèn biến”." className="zl-textarea min-h-24 border-[#d8e1da] bg-white text-sm leading-6" />}
                           {component.type === "image" && (
                             <div className="grid gap-3 sm:grid-cols-2">
                               <div className="space-y-1.5"><Label className="text-xs">Nguồn nội bộ</Label><select disabled={isArchived} value={component.source} onChange={(event) => updateComponent(index, { ...component, source: event.target.value as "url" | "asset", url: "", assetId: "" })} className="h-10 w-full rounded-md border border-[#d8e1da] bg-white px-3 text-sm"><option value="url">URL</option><option value="asset">Mã tài nguyên</option></select></div>
@@ -487,53 +513,6 @@ export function ZbsTemplateLibrary() {
                               <p className="sm:col-span-2 text-[10px] text-[#8a785a]">compatibilityStatus: unverified</p>
                             </div>
                           )}
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-
-                  <Card className="border-[#d9e2dd] shadow-[0_2px_12px_rgba(30,58,47,0.035)]">
-                    <CardHeader className="border-b border-[#e8eeeb] px-4 py-3 sm:px-5">
-                      <div className="flex items-center justify-between gap-3">
-                        <div><CardTitle className="text-sm text-[#263e36]">Biến & ví dụ</CardTitle><p className="mt-1 text-xs text-[#78877f]">Chọn biến có sẵn hoặc tự khai báo. Bản xem trước dùng giá trị ví dụ.</p></div>
-                        {!isArchived && <Button type="button" variant="outline" size="sm" onClick={() => updateField("variables", [...form.variables, { key: "", example: "", description: "" }])} className="h-8 border-[#d5e0d7] text-[#426353]"><Plus className="mr-1.5 h-3.5 w-3.5" />Thêm biến</Button>}
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-2 px-4 py-4 sm:px-5">
-                      {!isArchived && <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                        <select
-                          aria-label="Chọn biến hệ thống"
-                          value={systemVariableChoice}
-                          onChange={(event) => {
-                            const preset = ZBS_TEMPLATE_SYSTEM_VARIABLES.find((item) => item.key === event.target.value);
-                            setSystemVariableChoice("");
-                            if (!preset) return;
-                            if (form.variables.some((item) => item.key === preset.key)) {
-                              setNotice(`Biến ${preset.key} đã có trong mẫu.`);
-                              return;
-                            }
-                            updateField("variables", [...form.variables, {
-                              key: preset.key,
-                              example: preset.example,
-                              description: preset.description,
-                              systemField: preset.source,
-                              ...("format" in preset ? { format: preset.format } : {}),
-                            }]);
-                          }}
-                          className="h-9 rounded-md border border-[#d8e1da] bg-white px-3 text-xs text-[#40564a]"
-                        >
-                          <option value="">Chọn biến hệ thống để thêm…</option>
-                          {ZBS_TEMPLATE_SYSTEM_VARIABLES.map((variable) => <option key={variable.key} value={variable.key}>{variable.label} · {`{{${variable.key}}}`}</option>)}
-                        </select>
-                        <span className="self-center text-[10px] text-[#829087]">Nguồn dự kiến, chưa tự điền khi gửi</span>
-                      </div>}
-                      {form.variables.length === 0 && <p className="rounded-md bg-[#f7f9f6] px-3 py-3 text-xs text-[#849088]">Chưa khai báo biến. Dùng định dạng <code className="zl-mono text-[#547061]">{"{{ten_bien}}"}</code> trong văn bản.</p>}
-                      {form.variables.map((variable, index) => (
-                        <div key={index} className="grid gap-2 rounded-lg border border-[#e4e9e4] bg-[#fbfcf9] p-3 sm:grid-cols-[1fr_1fr_1.2fr_auto] sm:items-end">
-                          <div className="space-y-1"><Label className="text-[10px] uppercase tracking-wider text-[#829087]">Khóa</Label><Input disabled={isArchived} value={variable.key} onChange={(event) => updateVariable(index, { key: event.target.value })} placeholder="ten_hoc_vien" className="zl-mono h-9 border-[#d8e1da] bg-white text-xs" />{variable.systemField && <p className="text-[10px] text-[#557064]">Nguồn: {variable.systemField}{variable.format ? ` · định dạng ${systemFormatLabels[variable.format]}` : ""}</p>}</div>
-                          <div className="space-y-1"><Label className="text-[10px] uppercase tracking-wider text-[#829087]">Ví dụ</Label><Input disabled={isArchived} value={variable.example} onChange={(event) => updateVariable(index, { example: event.target.value })} placeholder="Minh Anh" className="h-9 border-[#d8e1da] bg-white text-xs" /></div>
-                          <div className="space-y-1"><Label className="text-[10px] uppercase tracking-wider text-[#829087]">Mô tả (không bắt buộc)</Label><Input disabled={isArchived} value={variable.description ?? ""} onChange={(event) => updateVariable(index, { description: event.target.value })} placeholder="Tên học viên" className="h-9 border-[#d8e1da] bg-white text-xs" /></div>
-                          {!isArchived && <Button type="button" variant="ghost" size="icon" aria-label="Xóa biến" onClick={() => updateField("variables", form.variables.filter((_, position) => position !== index))} className="h-9 w-9 text-[#9b6257]"><X className="h-4 w-4" /></Button>}
                         </div>
                       ))}
                     </CardContent>
@@ -585,6 +564,34 @@ export function ZbsTemplateLibrary() {
           )}
         </div>
       </div>
+
+      <Dialog open={variablePickerOpen} onOpenChange={setVariablePickerOpen}>
+        <DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto border-[#d9e2dd] bg-[#fffefa]">
+          <DialogHeader>
+            <DialogTitle className="text-[#263e36]">Chọn biến hệ thống</DialogTitle>
+            <DialogDescription>
+              Chọn một biến để chèn vào vị trí con trỏ trong khối văn bản. Mỗi biến có sẵn ví dụ và mô tả.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            {ZBS_TEMPLATE_SYSTEM_VARIABLES.map((variable) => (
+              <button
+                key={variable.key}
+                type="button"
+                onClick={() => insertSystemVariable(variable)}
+                className="w-full rounded-lg border border-[#dfe7e1] bg-white p-3 text-left transition-colors hover:border-[#9db9a8] hover:bg-[#f5f9f5] focus:outline-none focus:ring-2 focus:ring-[#8eae9b]"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-[#304b3e]">{variable.label}</span>
+                  <code className="zl-mono rounded bg-[#edf3ee] px-2 py-1 text-xs text-[#426353]">{`{{${variable.key}}}`}</code>
+                </div>
+                <p className="mt-1.5 text-xs leading-5 text-[#68776e]">{variable.description}</p>
+                <p className="mt-1 text-xs text-[#526a5c]">Ví dụ: <strong>{variable.example}</strong></p>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {duplicateOpen && selected && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#18342b]/35 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDuplicateOpen(false); }}>
