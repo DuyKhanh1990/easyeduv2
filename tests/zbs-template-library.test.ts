@@ -102,6 +102,24 @@ describe("ZBS internal template library", () => {
     expect(parsed.components[1]).toMatchObject({ type: "qr", value: "payment-payload", compatibilityStatus: "unverified" });
   });
 
+  it("keeps blue-card styling optional on editable text blocks", () => {
+    const parsed = zbsLibraryInputSchema.parse({
+      ...validInput,
+      components: [{ type: "text", text: "Editable trip information", style: "blueCard" }],
+    });
+    expect(parsed.components[0]).toMatchObject({
+      type: "text",
+      text: "Editable trip information",
+      style: "blueCard",
+    });
+    const plainText = zbsLibraryInputSchema.parse({
+      ...validInput,
+      components: [{ type: "text", text: "Ordinary editable text" }],
+    }).components[0];
+    expect(plainText).toMatchObject({ type: "text", text: "Ordinary editable text" });
+    expect(plainText).not.toHaveProperty("style");
+  });
+
   it("rejects duplicate variable keys and incomplete image resources", () => {
     expect(() => zbsLibraryInputSchema.parse({
       ...validInput,

@@ -37,7 +37,7 @@ import { ZBS_TEMPLATE_SYSTEM_VARIABLES } from "@shared/zbs-template-system-varia
 import { QRCodeSVG } from "qrcode.react";
 import "./zbs-template-library.css";
 
-type TextBlock = { type: "text"; text: string };
+type TextBlock = { type: "text"; text: string; style?: "plain" | "blueCard" };
 type ImageBlock = {
   type: "image";
   source: "url" | "asset" | "systemVariable";
@@ -148,7 +148,12 @@ const ticketSample: TemplateInput = {
     { type: "image", source: "systemVariable", variableKey: "center_logo", alt: "Logo trung tâm", compatibilityStatus: "unverified" },
     {
       type: "text",
-      text: "(Tin nhắn mẫu) THÔNG TIN VÉ XE KHÁCH\n\nQuý khách vui lòng có mặt tại điểm đi trước 30 phút.\n\nĐiểm đón\nZ06 VNG Campus, TP.HCM\n\nThời gian\n9:00, 1/1/2026\n\nMã đặt chỗ\n3798080800\n\nĐiểm đi                                      Điểm đến\n09:00             ···············             10:00\nThứ 2, 01/01/2026                   Thứ 3, 01/01/2026",
+      text: "(Tin nhắn mẫu) THÔNG TIN VÉ XE KHÁCH\n\nQuý khách vui lòng có mặt tại điểm đi trước 30 phút.",
+    },
+    {
+      type: "text",
+      style: "blueCard",
+      text: "Điểm đón\nZ06 VNG Campus, TP.HCM\n\nThời gian\n9:00, 1/1/2026\n\nMã đặt chỗ\n3798080800\n\nĐiểm đi                                      Điểm đến\n09:00             ···············             10:00\nThứ 2, 01/01/2026                   Thứ 3, 01/01/2026",
     },
     { type: "button", label: "Xem vé", url: "https://example.invalid/replace-with-ticket-link", compatibilityStatus: "unverified" },
     { type: "button", label: "Mua thêm vé", url: "https://example.invalid/replace-with-booking-link", compatibilityStatus: "unverified" },
@@ -558,7 +563,20 @@ export function ZbsTemplateLibrary() {
                               {!isArchived && <Button type="button" variant="ghost" size="icon" aria-label="Xóa khối" onClick={() => updateField("components", form.components.filter((_, position) => position !== index))} className="h-7 w-7 text-[#9b6257] hover:bg-[#fff0ed] hover:text-[#8b4439]"><Trash2 className="h-3.5 w-3.5" /></Button>}
                             </div>
                           </div>
-                          {component.type === "text" && <Textarea ref={(element) => { textAreaRefs.current[index] = element; }} disabled={isArchived} value={component.text} onChange={(event) => updateComponent(index, { ...component, text: event.target.value })} placeholder="Nhập nội dung. Đặt con trỏ tại vị trí cần chèn biến rồi chọn “Chèn biến”." className="zl-textarea min-h-24 border-[#d8e1da] bg-white text-sm leading-6" />}
+                          {component.type === "text" && (
+                            <div className="space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <label className="flex items-center gap-2 text-[11px] text-[#718078]">
+                                  Kiểu hiển thị
+                                  <select disabled={isArchived} aria-label="Kiểu hiển thị khối văn bản" value={component.style ?? "plain"} onChange={(event) => updateComponent(index, { ...component, style: event.target.value as TextBlock["style"] })} className="h-7 rounded-md border border-[#d8e1da] bg-white px-2 text-[11px] text-[#40564a]">
+                                    <option value="plain">Văn bản thường</option>
+                                    <option value="blueCard">Khung xanh nhạt</option>
+                                  </select>
+                                </label>
+                              </div>
+                              <Textarea ref={(element) => { textAreaRefs.current[index] = element; }} disabled={isArchived} value={component.text} onChange={(event) => updateComponent(index, { ...component, text: event.target.value })} placeholder="Nhập nội dung. Đặt con trỏ tại vị trí cần chèn biến rồi chọn “Chèn biến”." className="zl-textarea min-h-24 border-[#d8e1da] bg-white text-sm leading-6" />
+                            </div>
+                          )}
                           {component.type === "image" && (
                             <div className="grid gap-3 sm:grid-cols-2">
                               <div className="space-y-1.5"><Label className="text-xs">Nguồn ảnh</Label><select disabled={isArchived} value={component.source} onChange={(event) => { const source = event.target.value as ImageBlock["source"]; updateComponent(index, { ...component, source, url: "", assetId: "", variableKey: source === "systemVariable" ? "center_logo" : undefined }); }} className="h-10 w-full rounded-md border border-[#d8e1da] bg-white px-3 text-sm"><option value="url">URL ảnh</option><option value="asset">Mã tài nguyên</option><option value="systemVariable">Logo trung tâm tự động</option></select></div>
@@ -598,7 +616,9 @@ export function ZbsTemplateLibrary() {
                           {form.components.length === 0 && !form.title && <p className="text-xs italic text-[#929a91]">Nội dung xem trước sẽ xuất hiện tại đây.</p>}
                           <div className="space-y-3">
                             {form.components.map((component, index) => component.type === "text" ? (
-                              <p key={index} className="whitespace-pre-wrap text-sm leading-6 text-[#4c5a50]">{substitute(component.text, form.variables) || <span className="italic text-[#a4aaa1]">Văn bản trống</span>}</p>
+                              component.style === "blueCard"
+                                ? <div key={index} className="rounded-lg border border-[#d6e7f1] bg-[#eff8fc] p-3"><p className="whitespace-pre-wrap text-sm leading-6 text-[#4c5a50]">{substitute(component.text, form.variables) || <span className="italic text-[#a4aaa1]">Văn bản trống</span>}</p></div>
+                                : <p key={index} className="whitespace-pre-wrap text-sm leading-6 text-[#4c5a50]">{substitute(component.text, form.variables) || <span className="italic text-[#a4aaa1]">Văn bản trống</span>}</p>
                             ) : component.type === "image" ? (
                               component.source === "systemVariable" && centerLogoUrl
                                 ? <div key={index} className="flex justify-center"><img src={centerLogoUrl} alt={component.alt || "Logo trung tâm"} className="max-h-16 max-w-40 object-contain" /></div>

@@ -5,7 +5,11 @@ import {
 } from "@shared/zbs-template-system-variables";
 
 export const zbsLibraryComponentSchema = z.union([
-  z.object({ type: z.literal("text"), text: z.string().max(5000) }),
+  z.object({
+    type: z.literal("text"),
+    text: z.string().max(5000),
+    style: z.enum(["plain", "blueCard"]).optional(),
+  }),
   z.object({
     type: z.literal("image"),
     source: z.enum(["url", "asset", "systemVariable"]),
