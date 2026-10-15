@@ -4,7 +4,7 @@ import {
   ZBS_TEMPLATE_SYSTEM_VARIABLE_SOURCES,
 } from "@shared/zbs-template-system-variables";
 
-export const zbsLibraryComponentSchema = z.union([
+export const zbsLibraryComponentSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("text"),
     text: z.string().max(5000),
@@ -21,8 +21,11 @@ export const zbsLibraryComponentSchema = z.union([
   }),
   z.object({
     type: z.literal("button"),
-    label: z.string().min(1).max(100),
-    url: z.string().url().max(2000),
+    label: z.string().trim().max(100).default(""),
+    url: z.string().trim().max(2000).default("").refine(
+      (value) => !value || z.string().url().safeParse(value).success,
+      "URL nút phải là đường dẫn hợp lệ hoặc để trống khi đang soạn bản nháp.",
+    ),
     compatibilityStatus: z.literal("unverified").default("unverified"),
   }),
   z.object({

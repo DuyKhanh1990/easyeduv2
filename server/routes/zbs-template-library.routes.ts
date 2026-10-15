@@ -57,7 +57,13 @@ function reportError(res: Response, error: unknown) {
     });
   }
   if (error instanceof z.ZodError) {
-    return res.status(400).json({ code: "INVALID_TEMPLATE", message: error.issues[0]?.message ?? "Dữ liệu mẫu không hợp lệ." });
+    const issue = error.issues[0];
+    const field = issue?.path.map(String).join(".");
+    const message = issue?.message ?? "Dữ liệu mẫu không hợp lệ.";
+    return res.status(400).json({
+      code: "INVALID_TEMPLATE",
+      message: field ? `${field}: ${message}` : message,
+    });
   }
   if ((error as any)?.code === "23505") {
     return res.status(409).json({ code: "TEMPLATE_CODE_TAKEN", message: "Mã mẫu đã được sử dụng trong trung tâm này." });

@@ -120,6 +120,18 @@ describe("ZBS internal template library", () => {
     expect(plainText).not.toHaveProperty("style");
   });
 
+  it("allows incomplete buttons in a draft but rejects malformed non-empty URLs", () => {
+    const draft = zbsLibraryInputSchema.parse({
+      ...validInput,
+      components: [{ type: "button", label: "Xem vé", url: "" }],
+    });
+    expect(draft.components[0]).toMatchObject({ type: "button", label: "Xem vé", url: "" });
+    expect(() => zbsLibraryInputSchema.parse({
+      ...validInput,
+      components: [{ type: "button", label: "Xem vé", url: "not a URL" }],
+    })).toThrow(/URL nút phải là đường dẫn hợp lệ/);
+  });
+
   it("rejects duplicate variable keys and incomplete image resources", () => {
     expect(() => zbsLibraryInputSchema.parse({
       ...validInput,
