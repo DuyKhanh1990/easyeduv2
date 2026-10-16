@@ -13,6 +13,7 @@ import { captureError } from "./lib/monitoring";
 import { registerNotificationRoutes } from "./routes/notification.routes";
 import { registerZbsTemplateRoutes } from "./routes/zbs-template.routes";
 import { registerZbsTemplateLibraryRoutes } from "./routes/zbs-template-library.routes";
+import { registerPaymentSchedulePreviewRoutes } from "./routes/payment-schedule-preview.routes";
 
 import { registerConfigRoutes } from "./routes/config.routes";
 import { registerStudentsRoutes } from "./routes/students.routes";
@@ -345,6 +346,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Protect all API routes after auth
   // Chấp nhận cả session cookie (req.isAuthenticated) và JWT (req.user set bởi jwtAuthMiddleware)
   app.use("/api", (req, res, next) => {
+    if (req.path === "/public/payment-schedule-preview" && req.method === "GET") return next();
     if (req.path.startsWith("/auth")) return next();
     if (req.path.startsWith("/mobile/auth")) return next();
     if (req.path === "/customer-guide" && req.method === "GET") return next();
@@ -365,6 +367,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   // Apply location access control to all non-auth API routes
   app.use("/api", (req, res, next) => {
+    if (req.path === "/public/payment-schedule-preview" && req.method === "GET") return next();
     if (req.path.startsWith("/auth")) return next();
     if (req.path.startsWith("/mobile/auth")) return next();
     if (req.path === "/customer-guide" && req.method === "GET") return next();
@@ -383,6 +386,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // Public shortlink redirect — không cần auth
+  registerPaymentSchedulePreviewRoutes(app);
   registerShortLinkRoutes(app);
 
   // Serve uploaded files

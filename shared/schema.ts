@@ -2759,6 +2759,25 @@ export const centerConfig = pgTable("center_config", {
 
 export type CenterConfig = typeof centerConfig.$inferSelect;
 
+export const paymentSchedulePreviewGrants = pgTable(
+  "payment_schedule_preview_grants",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    centerId: uuid("center_id").notNull().references(() => centerConfig.id, { onDelete: "cascade" }),
+    paymentScheduleId: uuid("payment_schedule_id").notNull().references(() => invoicePaymentSchedule.id, { onDelete: "cascade" }),
+    tokenHash: varchar("token_hash", { length: 64 }).notNull().unique(),
+    expiresAt: timestamp("expires_at").notNull(),
+    revokedAt: timestamp("revoked_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    scheduleIdx: index("payment_schedule_preview_grants_schedule_idx").on(table.centerId, table.paymentScheduleId),
+    expiryIdx: index("payment_schedule_preview_grants_expiry_idx").on(table.expiresAt),
+  }),
+);
+
+export type PaymentSchedulePreviewGrant = typeof paymentSchedulePreviewGrants.$inferSelect;
+
 export type ZbsLibraryTextComponent = {
   type: "text";
   text: string;
