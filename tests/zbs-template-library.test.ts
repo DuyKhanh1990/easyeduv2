@@ -12,9 +12,9 @@ const validInput = {
   code: "TUITION_NOTICE",
   name: "Nhắc học phí",
   notificationType: "tuition_due",
-  title: "Xin chào {{student_name}}",
+  title: "Xin chào <student_name>",
   components: [
-    { type: "text" as const, text: "Hạn đóng {{due_date}}, số tiền {{amount}}" },
+    { type: "text" as const, text: "Hạn đóng <due_date>, số tiền <amount>" },
     { type: "image" as const, source: "url" as const, url: "https://example.test/banner.png" },
     { type: "button" as const, label: "Xem chi tiết", url: "https://example.test/invoice" },
   ],
@@ -82,11 +82,14 @@ describe("ZBS internal template library", () => {
       "account_number",
       "account_name",
       "due_date",
+      "invoice_note",
     ]));
     expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "amount"))
-      .toMatchObject({ token: "{{amount}}", source: "invoice.remainingAmount", format: "currencyVnd" });
+      .toMatchObject({ token: "<amount>", source: "invoice.remainingAmount", format: "currencyVnd" });
     expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "bank_code"))
-      .toMatchObject({ token: "{{bank_code}}", source: "invoice.appliedBankAccount.bankName" });
+      .toMatchObject({ token: "<bank_code>", source: "invoice.appliedBankAccount.bankName" });
+    expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "invoice_note"))
+      .toMatchObject({ source: "invoice.note", label: "Ghi chú hóa đơn" });
     expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "paid_amount"))
       .toMatchObject({ source: "invoice.paidAmount", format: "currencyVnd" });
     expect(ZBS_TEMPLATE_SYSTEM_VARIABLES.find((variable) => variable.key === "center_logo"))
@@ -170,12 +173,12 @@ describe("ZBS internal template library", () => {
 
   it("renders preview values without changing unresolved placeholders", () => {
     expect(interpolateZbsLibraryPreview(
-      "Xin chào {{student_name}}, thanh toán {{amount}}, ngân hàng {{bank_name}}, {{unknown}}",
+      "Xin chào <student_name>, thanh toán <amount>, ngân hàng <bank_name>, <unknown>",
       [
         { key: "student_name", example: "Minh Anh" },
         { key: "amount", example: "1.000.000đ" },
         { key: "bank_name", example: "Vietcombank" },
       ],
-    )).toBe("Xin chào Minh Anh, thanh toán 1.000.000đ, ngân hàng Vietcombank, {{unknown}}");
+    )).toBe("Xin chào Minh Anh, thanh toán 1.000.000đ, ngân hàng Vietcombank, <unknown>");
   });
 });
