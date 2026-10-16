@@ -142,10 +142,46 @@ const qrPaymentSample: TemplateInput = {
   title: "Thông tin thanh toán",
   components: [
     { type: "image", source: "systemVariable", variableKey: "center_logo", alt: "Logo trung tâm", compatibilityStatus: "unverified" },
-    { type: "text", text: "Kính gửi Quý khách <student_name>,\n\nMã hóa đơn: <invoice_code>\nSố tiền thanh toán: <amount>\nTên ngân hàng nhận: <bank_name> hoặc Mã ngân hàng <bank_code>\nSố tài khoản: <account_number>\nTên chủ tài khoản: <account_name>\nGhi chú: <invoice_note>\n\nVui lòng quét mã QR bên dưới để thanh toán." },
+    { type: "text", text: "Kính gửi Quý khách <student_name>,\n\nMã hóa đơn: <invoice_code>\nSố tiền thanh toán: <remaining_amount>\nTên ngân hàng nhận: <bank_name> hoặc Mã ngân hàng <bank_code>\nSố tài khoản: <account_number>\nTên chủ tài khoản: <account_name>\nGhi chú: <invoice_note>\n\nVui lòng quét mã QR bên dưới để thanh toán." },
     { type: "qr", value: "", caption: "Quét mã để thanh toán", compatibilityStatus: "unverified" },
   ],
-  variables: systemVariablesFor(["center_logo", "student_name", "invoice_code", "amount", "bank_name", "bank_code", "account_number", "account_name", "invoice_note"]),
+  variables: systemVariablesFor(["center_logo", "student_name", "invoice_code", "remaining_amount", "bank_name", "bank_code", "account_number", "account_name", "invoice_note"]),
+};
+
+const debtReminderBeforeSample: TemplateInput = {
+  code: "DEBT_REMINDER_BEFORE",
+  name: "Nhắc hóa đơn sắp đến hạn",
+  notificationType: "debt_reminder_before",
+  title: "Hoá đơn sắp đến hạn",
+  components: [{
+    type: "text",
+    text: "Hoá đơn <invoice_code>: <amount>. <days_label> đến hạn thanh toán <deadline>\n<invoice_description>",
+  }],
+  variables: systemVariablesFor(["invoice_code", "amount", "deadline", "days_label", "invoice_description"]),
+};
+
+const debtReminderDueTodaySample: TemplateInput = {
+  code: "DEBT_REMINDER_DUE_TODAY",
+  name: "Nhắc hóa đơn đến hạn hôm nay",
+  notificationType: "debt_reminder_before",
+  title: "Hoá đơn sắp đến hạn",
+  components: [{
+    type: "text",
+    text: "Hoá đơn <invoice_code>: <amount>. Hôm nay là hạn thanh toán <deadline>\n<invoice_description>",
+  }],
+  variables: systemVariablesFor(["invoice_code", "amount", "deadline", "invoice_description"]),
+};
+
+const debtReminderOverdueSample: TemplateInput = {
+  code: "DEBT_REMINDER_OVERDUE",
+  name: "Nhắc hóa đơn quá hạn",
+  notificationType: "debt_reminder_after",
+  title: "Hoá đơn quá hạn",
+  components: [{
+    type: "text",
+    text: "Hoá đơn <invoice_code>: <amount>. Hạn thanh toán <deadline> đã <days_label>\n<invoice_description>",
+  }],
+  variables: systemVariablesFor(["invoice_code", "amount", "deadline", "days_label", "invoice_description"]),
 };
 
 const ticketSample: TemplateInput = {
@@ -360,6 +396,11 @@ export function ZbsTemplateLibrary() {
     setForm(structuredClone(ticketSample));
     setNotice("Đã nạp khung thông tin vé xe. Thay các URL example.invalid bằng liên kết thật trước khi lưu.");
   };
+  const startDebtReminderSample = (sample: TemplateInput) => {
+    startNew();
+    setForm(structuredClone(sample));
+    setNotice("Đã nạp khung nhắc công nợ. Kiểm tra lại nội dung và các biến trước khi lưu bản nháp.");
+  };
   const selectRecord = (record: TemplateRecord) => {
     setCreating(false);
     setSelectedId(record.id);
@@ -440,6 +481,15 @@ export function ZbsTemplateLibrary() {
             </Button>
             <Button variant="outline" onClick={startTicketSample} className="border-[#a9c0b1] text-[#315f4e] hover:bg-white">
               <FilePlus2 className="mr-2 h-4 w-4" /> Mẫu vé xe
+            </Button>
+            <Button variant="outline" onClick={() => startDebtReminderSample(debtReminderBeforeSample)} className="border-[#a9c0b1] text-[#315f4e] hover:bg-white">
+              <FilePlus2 className="mr-2 h-4 w-4" /> Nhắc sắp đến hạn
+            </Button>
+            <Button variant="outline" onClick={() => startDebtReminderSample(debtReminderDueTodaySample)} className="border-[#a9c0b1] text-[#315f4e] hover:bg-white">
+              <FilePlus2 className="mr-2 h-4 w-4" /> Đến hạn hôm nay
+            </Button>
+            <Button variant="outline" onClick={() => startDebtReminderSample(debtReminderOverdueSample)} className="border-[#a9c0b1] text-[#315f4e] hover:bg-white">
+              <FilePlus2 className="mr-2 h-4 w-4" /> Nhắc quá hạn
             </Button>
             <Button onClick={startNew} className="bg-[#315f4e] text-white hover:bg-[#264d3e]">
               <FilePlus2 className="mr-2 h-4 w-4" /> Tạo mẫu mới
