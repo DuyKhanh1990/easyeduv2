@@ -20,6 +20,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -72,6 +73,18 @@ type ZbsMapping = {
   isEnabled: boolean;
   createdAt: string;
   updatedAt: string;
+};
+
+type ZbsPayloadPreview = {
+  invoice: {
+    invoiceCode: string | null;
+    installmentCode: string | null;
+    category: string | null;
+    installmentAmount: number;
+    invoiceRemainingAmount: number;
+  };
+  templateData: Record<string, string | number>;
+  sent: false;
 };
 
 async function getJson<T>(url: string): Promise<T> {
@@ -142,6 +155,7 @@ export function ZbsTemplateMapping({ locations }: { locations: ZbsAuthorizedLoca
   const [oaConfigId, setOaConfigId] = useState("");
   const [notificationType, setNotificationType] = useState("");
   const [templateId, setTemplateId] = useState("");
+  const [installmentCode, setInstallmentCode] = useState("");
   const [savedNotice, setSavedNotice] = useState("");
   const providerPermission = permissions?.permissions["/settings#providers"];
   const canRead = !!permissions
@@ -211,6 +225,17 @@ export function ZbsTemplateMapping({ locations }: { locations: ZbsAuthorizedLoca
     },
   });
 
+  const payloadPreviewMutation = useMutation({
+    mutationFn: async (input: { installmentCode: string }) => {
+      const response = await apiRequest(
+        "POST",
+        `${oaQueryBase}/payload-preview`,
+        input,
+      );
+      return response.json() as Promise<ZbsPayloadPreview>;
+    },
+  });
+
   const mappingByType = useMemo(
     () => new Map((mappingsQuery.data ?? []).map((mapping) => [mapping.notificationType, mapping])),
     [mappingsQuery.data],
@@ -232,7 +257,9 @@ export function ZbsTemplateMapping({ locations }: { locations: ZbsAuthorizedLoca
     setOaConfigId("");
     setNotificationType("");
     setTemplateId("");
+    setInstallmentCode("");
     setSavedNotice("");
+    payloadPreviewMutation.reset();
   };
 
   const changeOa = (nextOaConfigId: string) => {
@@ -240,6 +267,7 @@ export function ZbsTemplateMapping({ locations }: { locations: ZbsAuthorizedLoca
     setNotificationType("");
     setTemplateId("");
     setSavedNotice("");
+    payloadPreviewMutation.reset();
   };
 
   return (
@@ -555,6 +583,68 @@ export function ZbsTemplateMapping({ locations }: { locations: ZbsAuthorizedLoca
               </CardContent>
             </Card>
           </div>
+
+          <Card className="border-[#d9e2dd] shadow-[0_2px_12px_rgba(30,58,47,0.035)]">
+            <CardHeader className="border-b border-[#e8eeeb] px-4 py-3 sm:px-5">
+              <CardTitle className="text-sm text-[#263e36]">Xem trước payload — không gửi tin</CardTitle>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                Nhập mã đợt thanh toán để kiểm tra các giá trị lấy từ hóa đơn. Tính năng này chỉ đọc dữ liệu và dựng JSON; không gọi API gửi Zalo.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4 px-4 py-4 sm:px-5">
+              <form
+                className="flex flex-col gap-2 sm:flex-row"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  payloadPreviewMutation.mutate({ installmentCode: installmentCode.trim() });
+                }}
+              >
+                <Input
+                  value={installmentCode}
+                  onChange={(event) => {
+                    setInstallmentCode(event.target.value);
+                    payloadPreviewMutation.reset();
+                  }}
+                  placeholder="Ví dụ: PT-106-2"
+                  aria-label="Mã đợt thanh toán cần xem trước"
+                  className="h-10 border-[#d2ddd7] bg-white sm:max-w-sm"
+                  maxLength={100}
+                />
+                <Button
+                  type="submit"
+                  variant="outline"
+                  disabled={!installmentCode.trim() || payloadPreviewMutation.isPending}
+                  className="h-10 border-[#bfd1c7] text-[#315f4e] hover:bg-[#eff5f1]"
+                >
+                  {payloadPreviewMutation.isPending ? "Đang dựng payload…" : "Xem payload"}
+                </Button>
+              </form>
+              {payloadPreviewMutation.error && (
+                <ErrorPanel
+                  error={payloadPreviewMutation.error}
+                  onRetry={() => payloadPreviewMutation.mutate({ installmentCode: installmentCode.trim() })}
+                  title="Không thể dựng payload"
+                />
+              )}
+              {payloadPreviewMutation.data && (
+                <div className="space-y-3 rounded-lg border border-[#c8dfd0] bg-[#f4faf6] p-3">
+                  <p className="text-xs leading-5 text-[#38644b]">
+                    Hóa đơn {payloadPreviewMutation.data.invoice.invoiceCode ?? "—"} · đợt{" "}
+                    {payloadPreviewMutation.data.invoice.installmentCode ?? "—"} ·{" "}
+                    {payloadPreviewMutation.data.invoice.category ?? "—"}.
+                    {" "}Số tiền đợt:{" "}
+                    {new Intl.NumberFormat("vi-VN").format(payloadPreviewMutation.data.invoice.installmentAmount)}đ;
+                    {" "}còn lại trên hóa đơn:{" "}
+                    {new Intl.NumberFormat("vi-VN").format(payloadPreviewMutation.data.invoice.invoiceRemainingAmount)}đ.
+                    {" "}Chưa gửi.
+                  </p>
+                  <pre className="max-h-72 overflow-auto rounded-md bg-[#203c34] p-3 text-xs leading-5 text-[#edf4f0]">
+                    {JSON.stringify(payloadPreviewMutation.data.templateData, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <Card className="border-[#d9e2dd] shadow-[0_2px_12px_rgba(30,58,47,0.035)]">
             <CardHeader className="border-b border-[#e8eeeb] px-4 py-3 sm:px-5">

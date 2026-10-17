@@ -1,15 +1,23 @@
 import type { Express, Request, Response } from "express";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import {
   centerConfig,
+  invoicePaymentSchedule,
+  invoices,
   locations,
   notificationTemplates,
+  students,
   zaloOaConfigs,
   zbsTemplateMappings,
 } from "@shared/schema";
+import {
+  INVOICE_VISIBILITY_PERMISSIONS,
+  invoiceStatusMatchesVisibilityPermission,
+} from "@shared/invoice-visibility-permissions";
 import { db } from "../storage/base";
 import { getEffectivePermissions } from "../storage/permissions.storage";
 import { decrypt } from "../lib/encryption";
+import { buildZbsPaymentTemplateData } from "../services/zbs-payment-template-payload";
 import {
   hasZbsTemplateSettingsPermission,
   ZbsTemplateManagementError,
@@ -107,6 +115,21 @@ function getScope(req: Request) {
   };
 }
 
+async function canViewInvoiceForPreview(req: Request, type: string, status: string) {
+  if (isPrivileged(req)) return true;
+  const applicable = INVOICE_VISIBILITY_PERMISSIONS.filter(
+    (permission) =>
+      permission.type === type &&
+      invoiceStatusMatchesVisibilityPermission(status, permission.status),
+  );
+  const permissions = await Promise.all(
+    applicable.map((permission) =>
+      getEffectivePermissions(req.roleIds ?? [], permission.resource),
+    ),
+  );
+  return permissions.some((permission) => permission.canView);
+}
+
 function parsePagination(req: Request) {
   const offset = Number(req.query.offset ?? 0);
   const limit = Number(req.query.limit ?? 100);
@@ -168,6 +191,125 @@ export function registerZbsTemplateRoutes(app: Express) {
         { notificationType: req.params.notificationType, templateId },
       );
       return res.json(mapping);
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
+  app.post("/api/notification/zbs/oa/:oaConfigId/payload-preview", async (req, res) => {
+    try {
+      if (!(await authorizeZbsSettings(req, res, false))) return;
+      const installmentCode =
+        typeof req.body?.installmentCode === "string"
+          ? req.body.installmentCode.trim()
+          : "";
+      if (!installmentCode || installmentCode.length > 100) {
+        return res.status(400).json({
+          code: "INVALID_INSTALLMENT_CODE",
+          message: "Nhập mã hóa đơn hoặc mã đợt thanh toán hợp lệ.",
+        });
+      }
+
+      const oaConfig = await mappingRepository.findOaConfig(req.params.oaConfigId);
+      if (!oaConfig?.locationId) {
+        return res.status(404).json({
+          code: "OA_NOT_FOUND",
+          message: "Không tìm thấy OA trong trung tâm hiện tại.",
+        });
+      }
+      if (
+        !isPrivileged(req) &&
+        !getScope(req).allowedLocationIds.includes(oaConfig.locationId)
+      ) {
+        return res.status(403).json({
+          code: "OA_LOCATION_FORBIDDEN",
+          message: "Bạn không có quyền truy cập OA thuộc cơ sở này.",
+        });
+      }
+
+      const [row] = await db
+        .select({
+          invoiceCode: invoices.code,
+          installmentCode: invoicePaymentSchedule.code,
+          invoiceType: invoices.type,
+          category: invoices.category,
+          invoiceStatus: invoices.status,
+          installmentStatus: invoicePaymentSchedule.status,
+          invoiceRemainingAmount: invoices.remainingAmount,
+          installmentAmount: invoicePaymentSchedule.amount,
+          invoiceNote: invoices.note,
+          invoiceDescription: invoices.description,
+          studentName: students.fullName,
+          locationId: invoices.locationId,
+        })
+        .from(invoicePaymentSchedule)
+        .innerJoin(invoices, eq(invoicePaymentSchedule.invoiceId, invoices.id))
+        .leftJoin(students, eq(invoices.studentId, students.id))
+        .where(
+          and(
+            eq(invoicePaymentSchedule.code, installmentCode),
+            eq(invoices.locationId, oaConfig.locationId),
+          ),
+        )
+        .limit(1);
+
+      if (!row) {
+        return res.status(404).json({
+          code: "INSTALLMENT_NOT_FOUND",
+          message: "Không tìm thấy mã đợt tại cơ sở của OA đã chọn.",
+        });
+      }
+      if (
+        !isPrivileged(req) &&
+        !getScope(req).allowedLocationIds.includes(row.locationId ?? "")
+      ) {
+        return res.status(404).json({
+          code: "INSTALLMENT_NOT_FOUND",
+          message: "Không tìm thấy mã đợt tại cơ sở của OA đã chọn.",
+        });
+      }
+      if (
+        !(await canViewInvoiceForPreview(req, row.invoiceType, row.invoiceStatus))
+      ) {
+        return res.status(404).json({
+          code: "INSTALLMENT_NOT_FOUND",
+          message: "Không tìm thấy mã đợt tại cơ sở của OA đã chọn.",
+        });
+      }
+      if (
+        row.invoiceType !== "Thu" ||
+        row.installmentStatus !== "unpaid" ||
+        !["unpaid", "partial"].includes(row.invoiceStatus) ||
+        !row.studentName
+      ) {
+        return res.status(422).json({
+          code: "INSTALLMENT_NOT_PAYABLE",
+          message: "Chỉ xem trước được đợt thu chưa thanh toán có học viên.",
+        });
+      }
+
+      const templateData = buildZbsPaymentTemplateData({
+        invoiceCode: row.invoiceCode,
+        installmentCode: row.installmentCode,
+        studentName: row.studentName,
+        category: row.category,
+        remainingAmount: row.invoiceRemainingAmount,
+        installmentAmount: row.installmentAmount,
+        note: row.invoiceNote,
+        description: row.invoiceDescription,
+      });
+
+      return res.json({
+        invoice: {
+          invoiceCode: row.invoiceCode,
+          installmentCode: row.installmentCode,
+          category: row.category,
+          installmentAmount: Number(row.installmentAmount),
+          invoiceRemainingAmount: Number(row.invoiceRemainingAmount),
+        },
+        templateData,
+        sent: false,
+      });
     } catch (error) {
       return sendError(res, error);
     }
