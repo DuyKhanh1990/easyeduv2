@@ -4,6 +4,15 @@ export type DatedStudentResult = {
   sessionIndex: number | null;
 };
 
+export type StudentPassStatus = "passed" | "failed";
+
+export function matchesStudentPassStatus(
+  passStatus: StudentPassStatus | null,
+  filters: readonly StudentPassStatus[],
+): boolean {
+  return filters.length === 0 || (passStatus !== null && filters.includes(passStatus));
+}
+
 export function keepLatestResultPerStudent<T extends DatedStudentResult>(results: T[]): T[] {
   const latestByStudent = new Map<string, T>();
 

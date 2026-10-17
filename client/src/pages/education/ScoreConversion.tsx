@@ -71,7 +71,11 @@ import {
 } from "@/components/education/StaffScoreSheetAssessmentStudentsDialog";
 import { StaffScoreSheetAssessmentScoreDialog } from "@/components/education/StaffScoreSheetAssessmentScoreDialog";
 import { SCORE_CONVERSION_TYPES } from "./score-conversion/score-conversion-presets";
-import { keepLatestResultPerStudent } from "./score-conversion/student-results";
+import {
+  keepLatestResultPerStudent,
+  matchesStudentPassStatus,
+  type StudentPassStatus,
+} from "./score-conversion/student-results";
 
 const TEMPLATE_ENDPOINT = "/api/score-conversion-templates";
 const TEMPLATE_QUERY_KEY = [TEMPLATE_ENDPOINT];
@@ -93,7 +97,6 @@ type PendingTemplateDelete =
   | { kind: "scoreSheet"; id: string; name: string };
 
 type ScoreConversionViewMode = "assessments" | "students";
-type StudentResultFilter = "all" | "passed" | "failed";
 const SCORE_CONVERSION_VIEW_MODE_STORAGE_KEY = "score-conversion-view-mode";
 
 function readSavedScoreConversionViewMode(): ScoreConversionViewMode {
@@ -370,9 +373,9 @@ export default function ScoreConversion() {
   const [teacherFilters, setTeacherFilters] = useState<string[]>([]);
   const [assessmentFilters, setAssessmentFilters] = useState<string[]>([]);
   const [classificationFilters, setClassificationFilters] = useState<string[]>([]);
-  const [studentResultFilter, setStudentResultFilter] = useState<StudentResultFilter>("all");
-  const [latestStudentResultOnly, setLatestStudentResultOnly] = useState(false);
-  const [activeStudentsOnly, setActiveStudentsOnly] = useState(false);
+  const [studentPassStatusFilters, setStudentPassStatusFilters] = useState<StudentPassStatus[]>([]);
+  const [latestStudentResultOnly, setLatestStudentResultOnly] = useState(true);
+  const [activeStudentsOnly, setActiveStudentsOnly] = useState(true);
   const [statusFilters, setStatusFilters] = useState<ScoreSheetAssessmentStatus[]>([]);
   const [deadlineStatusFilters, setDeadlineStatusFilters] = useState<ScoreSheetAssessmentDeadlineStatus[]>([]);
   const [examDateFrom, setExamDateFrom] = useState("");
@@ -546,8 +549,6 @@ export default function ScoreConversion() {
   const studentSearchTerm = assessmentSearchTerm.trim().toLocaleLowerCase("vi");
   const matchingStudentResults = (assignedScoreSheetStudentsQuery.data ?? []).filter((student) => {
     if (!eligibleAssessmentSessionIds.has(student.sessionId)) return false;
-    if (studentResultFilter === "passed" && student.passStatus !== "passed") return false;
-    if (studentResultFilter === "failed" && student.passStatus !== "failed") return false;
     if (
       activeStudentsOnly
       && studentLearningStatusesQuery.data?.[student.studentId] !== "dang_hoc"
@@ -572,9 +573,12 @@ export default function ScoreConversion() {
     ) return false;
     return true;
   });
-  const filteredStudentResults = latestStudentResultOnly
+  const latestStudentResults = latestStudentResultOnly
     ? keepLatestResultPerStudent(matchingStudentResults)
     : matchingStudentResults;
+  const filteredStudentResults = latestStudentResults.filter((student) =>
+    matchesStudentPassStatus(student.passStatus, studentPassStatusFilters),
+  );
   const studentResultsByDate = filteredStudentResults.reduce<
     Record<string, Record<string, { assessment: ScoreConversionStudentResult; students: ScoreConversionStudentResult[] }>>
   >((grouped, student) => {
@@ -599,6 +603,7 @@ export default function ScoreConversion() {
     teacherFilters.length > 0,
     assessmentFilters.length > 0,
     classificationFilters.length > 0,
+    studentPassStatusFilters.length > 0,
     statusFilters.length > 0,
     deadlineStatusFilters.length > 0,
     Boolean(examDateFrom || examDateTo),
@@ -609,9 +614,9 @@ export default function ScoreConversion() {
     setTeacherFilters([]);
     setAssessmentFilters([]);
     setClassificationFilters([]);
-    setStudentResultFilter("all");
-    setLatestStudentResultOnly(false);
-    setActiveStudentsOnly(false);
+    setStudentPassStatusFilters([]);
+    setLatestStudentResultOnly(true);
+    setActiveStudentsOnly(true);
     setStatusFilters([]);
     setAssessmentStatusFilter("all");
     setDeadlineStatusFilters([]);
@@ -1205,34 +1210,19 @@ export default function ScoreConversion() {
                     </div>
                   ) : (
                     <div className="flex min-w-0 items-center gap-2 overflow-x-auto py-0.5 sm:flex-wrap">
-                      {([
-                        { value: "all", label: "Tất cả" },
-                        { value: "passed", label: "Đạt" },
-                        { value: "failed", label: "Không đạt" },
-                      ] as const).map((filter) => {
-                        const isSelected = studentResultFilter === filter.value;
-                        return (
-                          <button
-                            key={filter.value}
-                            type="button"
-                            aria-pressed={isSelected}
-                            data-testid={`filter-score-conversion-student-${filter.value}`}
-                            onClick={() => setStudentResultFilter(filter.value)}
-                            className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-3 text-[13px] font-semibold transition-colors ${
-                              isSelected
-                                ? filter.value === "failed"
-                                  ? "border-red-600 bg-red-600 text-white"
-                                  : filter.value === "passed"
-                                    ? "border-emerald-600 bg-emerald-600 text-white"
-                                    : "border-blue-600 bg-blue-600 text-white"
-                                : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
-                            }`}
-                          >
-                            {filter.label}
-                          </button>
-                        );
-                      })}
-                      <span aria-hidden="true" className="select-none px-1 text-muted-foreground/70">|</span>
+                      <button
+                        type="button"
+                        aria-pressed={studentPassStatusFilters.length === 0}
+                        data-testid="filter-score-conversion-student-all"
+                        onClick={() => setStudentPassStatusFilters([])}
+                        className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-3 text-[13px] font-semibold transition-colors ${
+                          studentPassStatusFilters.length === 0
+                            ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                            : "border-blue-300 bg-background text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                        }`}
+                      >
+                        Tất cả
+                      </button>
                       <button
                         type="button"
                         aria-pressed={latestStudentResultOnly}
@@ -1251,7 +1241,7 @@ export default function ScoreConversion() {
                         aria-pressed={activeStudentsOnly}
                         aria-label="Chỉ hiển thị học viên đang học"
                         data-testid="filter-score-conversion-student-active"
-                        disabled={studentLearningStatusesQuery.isLoading || studentLearningStatusesQuery.isError}
+                        disabled={studentLearningStatusesQuery.isLoading}
                         onClick={() => setActiveStudentsOnly((current) => !current)}
                         className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-3 text-[13px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                           activeStudentsOnly
@@ -1417,17 +1407,33 @@ export default function ScoreConversion() {
                             />
                           </div>
                           {viewMode === "students" && (
-                            <div className="space-y-1.5 sm:col-span-2">
-                              <label className="text-sm font-medium">Phân loại</label>
-                              <SearchableMultiSelect
-                                options={classificationFilterOptions}
-                                value={classificationFilters}
-                                onChange={setClassificationFilters}
-                                placeholder="Chọn phân loại"
-                                searchPlaceholder="Tìm phân loại..."
-                                data-testid="filter-score-conversion-classification"
-                              />
-                            </div>
+                            <>
+                              <div className="space-y-1.5">
+                                <label className="text-sm font-medium">Kết quả</label>
+                                <SearchableMultiSelect
+                                  options={[
+                                    { value: "passed", label: "Đạt" },
+                                    { value: "failed", label: "Không đạt" },
+                                  ]}
+                                  value={studentPassStatusFilters}
+                                  onChange={(values) => setStudentPassStatusFilters(values as StudentPassStatus[])}
+                                  placeholder="Tất cả kết quả"
+                                  searchPlaceholder="Tìm kết quả..."
+                                  data-testid="filter-score-conversion-result"
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <label className="text-sm font-medium">Phân loại</label>
+                                <SearchableMultiSelect
+                                  options={classificationFilterOptions}
+                                  value={classificationFilters}
+                                  onChange={setClassificationFilters}
+                                  placeholder="Chọn phân loại"
+                                  searchPlaceholder="Tìm phân loại..."
+                                  data-testid="filter-score-conversion-classification"
+                                />
+                              </div>
+                            </>
                           )}
                         </div>
                         <DialogFooter>

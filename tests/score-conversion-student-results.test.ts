@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { keepLatestResultPerStudent } from "../client/src/pages/education/score-conversion/student-results";
+import {
+  keepLatestResultPerStudent,
+  matchesStudentPassStatus,
+} from "../client/src/pages/education/score-conversion/student-results";
+
+describe("matchesStudentPassStatus", () => {
+  it("keeps all results, including unclassified results, when no outcome filter is selected", () => {
+    expect(matchesStudentPassStatus(null, [])).toBe(true);
+    expect(matchesStudentPassStatus("passed", [])).toBe(true);
+    expect(matchesStudentPassStatus("failed", [])).toBe(true);
+  });
+
+  it("applies one or more supplemental outcome filters", () => {
+    expect(matchesStudentPassStatus("passed", ["passed"])).toBe(true);
+    expect(matchesStudentPassStatus("failed", ["passed"])).toBe(false);
+    expect(matchesStudentPassStatus("failed", ["passed", "failed"])).toBe(true);
+    expect(matchesStudentPassStatus(null, ["passed", "failed"])).toBe(false);
+  });
+});
 
 describe("keepLatestResultPerStudent", () => {
   it("keeps each student's latest exam date within the supplied filtered results", () => {
