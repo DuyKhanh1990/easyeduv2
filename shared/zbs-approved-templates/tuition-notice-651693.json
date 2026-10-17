@@ -1,0 +1,254 @@
+{
+  "recordType": "zbs-approved-template-source",
+  "capture": {
+    "source": "User-provided ZBS F12 response",
+    "capturedAt": "2026-10-17",
+    "approvalLabelFromZbsUi": "Đã duyệt",
+    "note": "Preserves the source template response fields needed for the canonical template definition. The temporary OA avatar URL is intentionally omitted."
+  },
+  "template": {
+    "uidPrice": "210",
+    "conditionActive": "",
+    "note": "Mẫu tin nhắn tự động gửi thông báo học phí kèm mã VietQR chuyển khoản cho học viên/phụ huynh của trung tâm đào tạo",
+    "brandTemplateId": 651693,
+    "section": {
+      "extendFooters": null,
+      "footer": {
+        "components": [
+          {
+            "BUTTON": {
+              "buttons": [
+                {
+                  "templateType": null,
+                  "actionType": "5",
+                  "data": null,
+                  "price": null,
+                  "isPrimary": null,
+                  "buttonId": "999999900000200000",
+                  "tag": 11,
+                  "isSecondary": null,
+                  "text": "Chuyển khoản ngay",
+                  "type": 11
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "header": {
+        "components": [
+          {
+            "LOGO": {
+              "urlDark": "https://stc-oa.zdn.vn/uploads/2026/10/16/1f3b95f2a21f19666cedbc1bd67314f5.png",
+              "urlLight": "https://stc-oa.zdn.vn/uploads/2026/10/16/f437c0d35e6c53299084bc14be10e182.png"
+            }
+          }
+        ]
+      },
+      "type": "NORMAL",
+      "body": {
+        "components": [
+          {
+            "TITLE": {
+              "value": "THÔNG TIN THANH TOÁN HỌC PHÍ"
+            }
+          },
+          {
+            "PARAGRAPH": {
+              "border": false,
+              "copy": false,
+              "value": "Kính gửi Quý Phụ huynh/Học viên,"
+            }
+          },
+          {
+            "PARAGRAPH": {
+              "border": false,
+              "copy": false,
+              "value": "Thông tin thanh toán hoá đơn học phí như sau :"
+            }
+          },
+          {
+            "TABLE": {
+              "rows": [
+                {
+                  "copy": false,
+                  "type": null,
+                  "value": "<student_name>",
+                  "key": "Khách hàng"
+                },
+                {
+                  "copy": false,
+                  "type": null,
+                  "value": "<invoice_code>",
+                  "key": "Mã hoá đơn"
+                },
+                {
+                  "copy": false,
+                  "type": null,
+                  "value": "<remaining_amount>",
+                  "key": "Số tiền"
+                },
+                {
+                  "copy": false,
+                  "type": null,
+                  "value": "<invoice_note>",
+                  "key": "Nội dung"
+                }
+              ]
+            }
+          },
+          {
+            "PARAGRAPH": {
+              "border": false,
+              "copy": false,
+              "value": "Quý Phụ huynh/ Học viên vui lòng chuyển khoản Học phí theo thông tin bên dưới."
+            }
+          },
+          {
+            "PARAGRAPH": {
+              "border": false,
+              "copy": false,
+              "value": "Trân trọng cảm ơn!"
+            }
+          },
+          {
+            "PAYMENT": {
+              "editFlag": null,
+              "bankCode": "970436",
+              "amount": "<transfer_amount>",
+              "accountName": "CONG TY CP EMSO VIET NAM",
+              "description": "",
+              "bankName": "Ngân hàng TMCP Ngoại Thương Việt Nam (Vietcombank)",
+              "accountNumber": "0021000449070",
+              "c2cForce": null
+            }
+          }
+        ]
+      },
+      "params": [
+        {
+          "znsType": "8",
+          "paramType": 14,
+          "isRequired": true,
+          "name": "transfer_amount",
+          "limit": null,
+          "type": null,
+          "sampleValue": "1.000.000",
+          "rawZnsTypeValue": null,
+          "znsAliasParam": null
+        },
+        {
+          "znsType": "1",
+          "paramType": 1,
+          "isRequired": true,
+          "name": "student_name",
+          "limit": null,
+          "type": null,
+          "sampleValue": "Nguyễn Văn A",
+          "rawZnsTypeValue": null,
+          "znsAliasParam": null
+        },
+        {
+          "znsType": "12",
+          "paramType": 5,
+          "isRequired": true,
+          "name": "invoice_code",
+          "limit": null,
+          "type": null,
+          "sampleValue": "PT-01",
+          "rawZnsTypeValue": null,
+          "znsAliasParam": null
+        },
+        {
+          "znsType": "18",
+          "paramType": 10,
+          "isRequired": true,
+          "name": "remaining_amount",
+          "limit": null,
+          "type": null,
+          "sampleValue": "1.000.000 vnđ",
+          "rawZnsTypeValue": null,
+          "znsAliasParam": null
+        },
+        {
+          "znsType": "17",
+          "paramType": 9,
+          "isRequired": true,
+          "name": "invoice_note",
+          "limit": null,
+          "type": null,
+          "sampleValue": "Học phí lớp ABC từ ngày 1/1/2026 - 31/12/2026, Gói học phí 123, Khuyến mãi 10%",
+          "rawZnsTypeValue": null,
+          "znsAliasParam": null
+        }
+      ]
+    },
+    "requiredOptIn": false,
+    "type": 8,
+    "amountQuota": "0",
+    "content": "",
+    "timeout": "7200",
+    "createdAt": 1792055763,
+    "appId": "QBUYB9G",
+    "notifyMessage": "THÔNG TIN THANH TOÁN HỌC PHÍ\nKính gửi Quý Phụ huynh/Học viên,",
+    "oaName": "EasyEdu Nền tảng quản trị Giáo Dục",
+    "id": "7442751869508470464",
+    "unitPrice": "300",
+    "technicalParams": [
+      {
+        "znsType": 8,
+        "zteType": "CURRENCY",
+        "dataType": "currency",
+        "name": "transfer_amount",
+        "sampleValue": "1.000.000",
+        "maxLength": 12
+      },
+      {
+        "znsType": 1,
+        "zteType": "STRING",
+        "dataType": "string",
+        "name": "student_name",
+        "sampleValue": "Nguyễn Văn A",
+        "maxLength": 30
+      },
+      {
+        "znsType": 12,
+        "zteType": "STRING",
+        "dataType": "string",
+        "name": "invoice_code",
+        "sampleValue": "PT-01",
+        "maxLength": 30
+      },
+      {
+        "znsType": 18,
+        "zteType": "NUMBER",
+        "dataType": "number",
+        "name": "remaining_amount",
+        "sampleValue": "1.000.000 vnđ",
+        "maxLength": 20
+      },
+      {
+        "znsType": 17,
+        "zteType": "STRING",
+        "dataType": "string",
+        "name": "invoice_note",
+        "sampleValue": "Học phí lớp ABC từ ngày 1/1/2026 - 31/12/2026, Gói học phí 123, Khuyến mãi 10%",
+        "maxLength": 200
+      }
+    ],
+    "productId": "6608933403432731322",
+    "src": 0,
+    "appName": "EasyeduV2",
+    "znsSendReason": "sử dụng dịch vụ",
+    "disableReasons": null,
+    "version": "1.10-25",
+    "reasonTag": 1,
+    "journeyTemplate": false,
+    "rejectedReason": [],
+    "sampleCode": "{\"invoice_code\":\"invoice_code\",\"invoice_note\":\"invoice_note\",\"student_name\":\"student_name\",\"transfer_amount\":15000,\"remaining_amount\":100}",
+    "name": "THÔNG BÁO HỌC PHÍ",
+    "oaId": "J4U6Z6VNDE",
+    "oaIdLong": "4218032672170377502",
+    "status": 4
+  }
+}
