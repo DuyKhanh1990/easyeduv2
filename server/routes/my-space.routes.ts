@@ -12,6 +12,7 @@ import {
   parseScoreConversionTemplatesJson,
   scoreConversionTemplateSchema,
 } from "@shared/score-conversion";
+import { isCurriculumContentType } from "@shared/my-space-calendar-content";
 import {
   calculateScoreSheetAssessmentAttemptResult,
   selectScoreSheetAssessmentAttemptSummary,
@@ -1958,8 +1959,12 @@ export function registerMySpaceRoutes(app: Express): void {
           reviewData: freeRow.reviewPublished ? parseReviewData(freeRow.reviewData) : [],
           reviewPublished: freeRow.reviewPublished ?? false,
           evaluationCriteriaIds: freeRow.evaluationCriteriaIds ?? [],
-          generalContents: freeContents.general.map(mapFreeContentForCalendar),
-          personalContents: freeContents.personal.map((content) => ({
+           generalContents: freeContents.general
+             .filter((content) => !isCurriculumContentType(content.contentType))
+             .map(mapFreeContentForCalendar),
+           personalContents: freeContents.personal
+             .filter((content) => !isCurriculumContentType(content.contentType))
+             .map((content) => ({
             ...mapFreeContentForCalendar(content),
             customTitle: null,
             customDescription: null,
@@ -2088,7 +2093,7 @@ export function registerMySpaceRoutes(app: Express): void {
           attendanceNote: null,
           reviewData: [],
           reviewPublished: false,
-          generalContents,
+          generalContents: generalContents.filter((content) => !isCurriculumContentType(content.type)),
           personalContents: [],
           userType: "student",
           studentName: ctx.isParent ? (linkedStudent?.fullName ?? null) : null,
@@ -2132,8 +2137,8 @@ export function registerMySpaceRoutes(app: Express): void {
         attendanceNote: row.attendanceNote,
         reviewData: row.reviewPublished ? parseReviewData(row.reviewData) : [],
         reviewPublished: row.reviewPublished ?? false,
-        generalContents: contents.general,
-        personalContents: contents.personal,
+        generalContents: contents.general.filter((content) => !isCurriculumContentType(content.type)),
+        personalContents: contents.personal.filter((content) => !isCurriculumContentType(content.type)),
         userType: "student",
         studentName: ctx.isParent ? (linkedStudent?.fullName ?? null) : null,
         studentCode: ctx.isParent ? (linkedStudent?.code ?? null) : null,

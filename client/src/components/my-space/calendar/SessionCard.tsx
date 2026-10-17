@@ -11,6 +11,7 @@ import { getAttendanceStatus } from "@/lib/attendance-status";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/hooks/use-language";
+import { isCurriculumContentType } from "@shared/my-space-calendar-content";
 
 const CONTENT_TYPE_LABELS: Record<string, string> = {
   lesson: "Bài học",
@@ -398,17 +399,19 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
   const hasOnlineLink = !!session.onlineLink;
   const isOnline = session.learningFormat === "online" || hasOnlineLink;
 
-  const generalLessons = session.generalContents.filter((c) => c.type === "lesson" || c.type === "Bài học");
-  const generalHomework = session.generalContents.filter((c) => c.type === "homework" || c.type === "Bài tập về nhà");
-  const generalOther = session.generalContents.filter((c) => !["lesson", "Bài học", "homework", "Bài tập về nhà"].includes(c.type));
+  const visibleGeneralContents = session.generalContents.filter((item) => !isCurriculumContentType(item.type));
+  const visiblePersonalContents = session.personalContents.filter((item) => !isCurriculumContentType(item.type));
+  const generalLessons = visibleGeneralContents.filter((c) => c.type === "lesson" || c.type === "Bài học");
+  const generalHomework = visibleGeneralContents.filter((c) => c.type === "homework" || c.type === "Bài tập về nhà");
+  const generalOther = visibleGeneralContents.filter((c) => !["lesson", "Bài học", "homework", "Bài tập về nhà"].includes(c.type));
 
-  const personalLessons = session.personalContents.filter((c) => c.type === "lesson" || c.type === "Bài học");
-  const personalHomework = session.personalContents.filter((c) => c.type === "homework" || c.type === "Bài tập về nhà");
-  const personalOther = session.personalContents.filter((c) => !["lesson", "Bài học", "homework", "Bài tập về nhà"].includes(c.type));
+  const personalLessons = visiblePersonalContents.filter((c) => c.type === "lesson" || c.type === "Bài học");
+  const personalHomework = visiblePersonalContents.filter((c) => c.type === "homework" || c.type === "Bài tập về nhà");
+  const personalOther = visiblePersonalContents.filter((c) => !["lesson", "Bài học", "homework", "Bài tập về nhà"].includes(c.type));
 
   const safeReviewData: TeacherReview[] = Array.isArray(session.reviewData) ? session.reviewData : [];
-  const hasPersonalContent = session.personalContents.length > 0;
-  const hasGeneralContent = session.generalContents.length > 0;
+  const hasPersonalContent = visiblePersonalContents.length > 0;
+  const hasGeneralContent = visibleGeneralContents.length > 0;
   const hasReview = session.reviewPublished && safeReviewData.length > 0;
 
   const displayDate = new Date(sessionDate + "T00:00:00").toLocaleDateString("vi-VN", {
