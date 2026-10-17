@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Braces,
   Check,
+  ChevronDown,
   CircleAlert,
   Copy,
   Eye,
@@ -34,6 +35,14 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ZBS_TEMPLATE_SYSTEM_VARIABLES } from "@shared/zbs-template-system-variables";
 import { QRCodeSVG } from "qrcode.react";
 import { ZbsTextBlockEditor } from "./ZbsTextBlockEditor";
@@ -462,8 +471,8 @@ export function ZbsTemplateLibrary() {
     <section className="zbs-library space-y-5" aria-label="Thư viện mẫu ZBS nội bộ">
       <header className="relative overflow-hidden rounded-xl border border-[#c9d8d0] bg-[#edf4ef] px-5 py-5 sm:px-6">
         <div className="absolute -right-10 -top-16 h-44 w-44 rounded-full border-[22px] border-[#dce9e0]" aria-hidden="true" />
-        <div className="relative flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-          <div className="max-w-3xl">
+        <div className="relative flex min-w-0 flex-col gap-4">
+          <div className="min-w-0 max-w-3xl">
             <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-[#527268]">
               <span className="h-1.5 w-1.5 rounded-full bg-[#b5783e]" /> EasyEdu / Zalo Business Solution
             </div>
@@ -472,25 +481,26 @@ export function ZbsTemplateLibrary() {
               Không gian soạn thảo theo trung tâm để lưu, xem trước và sao chép nội dung nháp. Tách biệt hoàn toàn với ánh xạ mẫu ZBS.
             </p>
           </div>
-          {canWrite && <div className="flex shrink-0 flex-wrap gap-2">
-            <Button variant="outline" onClick={startTuitionSample} className="border-[#a9c0b1] text-[#315f4e] hover:bg-white">
-              <FilePlus2 className="mr-2 h-4 w-4" /> Mẫu học phí
-            </Button>
-            <Button variant="outline" onClick={startQrPaymentSample} className="border-[#a9c0b1] text-[#315f4e] hover:bg-white">
-              <QrCode className="mr-2 h-4 w-4" /> Mẫu thanh toán QR
-            </Button>
-            <Button variant="outline" onClick={startTicketSample} className="border-[#a9c0b1] text-[#315f4e] hover:bg-white">
-              <FilePlus2 className="mr-2 h-4 w-4" /> Mẫu vé xe
-            </Button>
-            <Button variant="outline" onClick={() => startDebtReminderSample(debtReminderBeforeSample)} className="border-[#a9c0b1] text-[#315f4e] hover:bg-white">
-              <FilePlus2 className="mr-2 h-4 w-4" /> Nhắc sắp đến hạn
-            </Button>
-            <Button variant="outline" onClick={() => startDebtReminderSample(debtReminderDueTodaySample)} className="border-[#a9c0b1] text-[#315f4e] hover:bg-white">
-              <FilePlus2 className="mr-2 h-4 w-4" /> Đến hạn hôm nay
-            </Button>
-            <Button variant="outline" onClick={() => startDebtReminderSample(debtReminderOverdueSample)} className="border-[#a9c0b1] text-[#315f4e] hover:bg-white">
-              <FilePlus2 className="mr-2 h-4 w-4" /> Nhắc quá hạn
-            </Button>
+          {canWrite && <div className="flex flex-wrap items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="border-[#a9c0b1] text-[#315f4e] hover:bg-white">
+                  <FilePlus2 className="mr-2 h-4 w-4" />
+                  Mẫu ZBS
+                  <ChevronDown className="ml-2 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-72 border-[#d9e2dd] bg-[#fffefa]">
+                <DropdownMenuLabel className="text-xs text-[#718078]">Chọn mẫu có sẵn</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={startTuitionSample}>Thông báo học phí tháng</DropdownMenuItem>
+                <DropdownMenuItem onSelect={startQrPaymentSample}>Thông báo thanh toán kèm mã QR</DropdownMenuItem>
+                <DropdownMenuItem onSelect={startTicketSample}>Thông tin vé xe</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => startDebtReminderSample(debtReminderBeforeSample)}>Nhắc hóa đơn sắp đến hạn</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => startDebtReminderSample(debtReminderDueTodaySample)}>Nhắc hóa đơn đến hạn hôm nay</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => startDebtReminderSample(debtReminderOverdueSample)}>Nhắc hóa đơn quá hạn</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button onClick={startNew} className="bg-[#315f4e] text-white hover:bg-[#264d3e]">
               <FilePlus2 className="mr-2 h-4 w-4" /> Tạo mẫu mới
             </Button>
