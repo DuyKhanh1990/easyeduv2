@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { centerConfig, zbsTemplateLibrary } from "@shared/schema";
 import { z } from "zod";
+import approvedTuitionNotice from "../../shared/zbs-approved-templates/tuition-notice-651693.json";
 import { db } from "../storage/base";
 import { getEffectivePermissions } from "../storage/permissions.storage";
 import {
@@ -73,6 +74,13 @@ function reportError(res: Response, error: unknown) {
 }
 
 export function registerZbsTemplateLibraryRoutes(app: Express) {
+  app.get("/api/settings/zbs-template-library/approved-sources", async (req, res) => {
+    try {
+      if (!(await permission(req, res, "read"))) return;
+      return res.json([approvedTuitionNotice]);
+    } catch (error) { return reportError(res, error); }
+  });
+
   app.get("/api/settings/zbs-template-library", async (req, res) => {
     try {
       if (!(await permission(req, res, "read"))) return;

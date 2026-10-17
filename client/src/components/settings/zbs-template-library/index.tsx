@@ -46,6 +46,7 @@ import {
 import { ZBS_TEMPLATE_SYSTEM_VARIABLES } from "@shared/zbs-template-system-variables";
 import { QRCodeSVG } from "qrcode.react";
 import { ZbsTextBlockEditor } from "./ZbsTextBlockEditor";
+import { ApprovedZbsTemplateCard, type ApprovedZbsTemplateSource } from "./ApprovedZbsTemplateCard";
 import { richTextPreviewHtml } from "./zbs-rich-text";
 import "./zbs-template-library.css";
 
@@ -319,6 +320,11 @@ export function ZbsTemplateLibrary() {
     queryFn: () => getJson<TemplateRecord[]>(endpoint),
     enabled: canRead,
   });
+  const approvedSourcesQuery = useQuery({
+    queryKey: [endpoint, "approved-sources"],
+    queryFn: () => getJson<ApprovedZbsTemplateSource[]>(`${endpoint}/approved-sources`),
+    enabled: canRead,
+  });
   const detailQuery = useQuery({
     queryKey: [endpoint, selectedId],
     queryFn: () => getJson<TemplateRecord>(`${endpoint}/${encodeURIComponent(selectedId!)}`),
@@ -518,6 +524,11 @@ export function ZbsTemplateLibrary() {
           Bản xem trước và cấu trúc ảnh/nút là <strong>chưa xác minh</strong>, không khẳng định Zalo hỗ trợ cho mọi mẫu. Khu vực này không gọi Zalo, không gửi tin và không thay đổi ánh xạ hay NotificationService.
         </AlertDescription>
       </Alert>
+
+      {canRead && approvedSourcesQuery.data?.map((source) => (
+        <ApprovedZbsTemplateCard key={source.template.brandTemplateId} source={source} />
+      ))}
+      {canRead && approvedSourcesQuery.error && <ErrorNotice error={approvedSourcesQuery.error} title="Không thể tải mẫu chuẩn" />}
 
       {notice && <div role="status" className="flex items-start gap-2 rounded-lg border border-[#c8dfd0] bg-[#eff8f2] px-3 py-2.5 text-xs leading-5 text-[#38644b]"><Check className="mt-0.5 h-4 w-4 shrink-0" />{notice}</div>}
 
