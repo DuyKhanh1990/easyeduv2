@@ -1,5 +1,6 @@
-import { Fragment, useState } from "react";
-import { RichContentRenderer } from "@/components/ui/rich-content-renderer";
+import { Fragment, useEffect, useState } from "react";
+import { RichContentRenderer, stripHtml } from "@/components/ui/rich-content-renderer";
+import { RichEditor } from "@/components/ui/rich-editor";
 import { format } from "date-fns";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AddStudentToSessionDialog } from "./AddStudentToSessionDialog";
@@ -219,6 +220,27 @@ export function SessionDetailPanel({
   }
 
   const session = classSessions?.find((s) => s.id === selectedClassSessionId);
+  const [sessionNoteDraft, setSessionNoteDraft] = useState("");
+  const [isEditingSessionNote, setIsEditingSessionNote] = useState(false);
+
+  useEffect(() => {
+    setSessionNoteDraft(session?.sessionNote ?? "");
+    setIsEditingSessionNote(false);
+  }, [selectedClassSessionId, session?.sessionNote]);
+
+  const updateSessionNoteMutation = useMutation({
+    mutationFn: () => apiRequest("PATCH", `/api/class-sessions/${selectedClassSessionId}/session-note`, {
+      sessionNote: stripHtml(sessionNoteDraft) ? sessionNoteDraft : null,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${classData?.id}/sessions`] });
+      setIsEditingSessionNote(false);
+      toast({ title: "Đã lưu ghi chú buổi học" });
+    },
+    onError: () => {
+      toast({ title: "Lỗi", description: "Không thể lưu ghi chú buổi học", variant: "destructive" });
+    },
+  });
 
   const { data: classrooms } = useQuery<any[]>({
     queryKey: ["/api/classrooms", { locationId: classData?.locationId }],
@@ -597,6 +619,63 @@ export function SessionDetailPanel({
               ) : (
                 <p className="text-xs text-slate-700 italic">Chưa có nội dung</p>
               )}
+        <div className="mt-3 border-t border-slate-200 pt-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-[10px] text-slate-800 uppercase font-bold tracking-wider">Ghi chú buổi học</p>
+            {canEdit && !isEditingSessionNote && (
+              <button
+                type="button"
+                data-testid="btn-edit-session-note"
+                className="text-slate-400 hover:text-indigo-600 transition-colors"
+                onClick={() => setIsEditingSessionNote(true)}
+                aria-label="Sửa ghi chú buổi học"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          {isEditingSessionNote && canEdit ? (
+            <div className="space-y-2">
+              <RichEditor
+                value={sessionNoteDraft}
+                onChange={setSessionNoteDraft}
+                placeholder="Nhập ghi chú cho buổi học này..."
+                minHeight="120px"
+                enableTable={false}
+              />
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSessionNoteDraft(session?.sessionNote ?? "");
+                    setIsEditingSessionNote(false);
+                  }}
+                  disabled={updateSessionNoteMutation.isPending}
+                >
+                  Hủy
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => updateSessionNoteMutation.mutate()}
+                  disabled={updateSessionNoteMutation.isPending}
+                  data-testid="btn-save-session-note"
+                >
+                  {updateSessionNoteMutation.isPending ? "Đang lưu..." : "Lưu ghi chú"}
+                </Button>
+              </div>
+            </div>
+          ) : session?.sessionNote && stripHtml(session.sessionNote) ? (
+            <RichContentRenderer
+              text={session.sessionNote}
+              className="prose prose-sm max-w-none text-slate-700 prose-p:my-1 prose-p:leading-relaxed"
+            />
+          ) : (
+            <p className="text-xs text-slate-500 italic">Chưa có ghi chú buổi học</p>
+          )}
+        </div>
       </div>
     </div>
   );

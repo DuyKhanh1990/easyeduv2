@@ -124,4 +124,5 @@
 - [ZBS template library and approved catalog](zbs-template-library.md) — keep drafts separate; store canonical approved definitions centrally, with IDs/mappings per OA for later provisioning.
 - [ZBS variable picker](zbs-template-variable-picker.md) — users insert predefined system variables from a picker in each text block; do not offer manual variable creation.
 - [ZBS transfer template payload](zbs-transfer-template-payload.md) — installment requests use schedule code/amount; warehouse invoice notes fall back to description, and Zalo transfer_amount is numeric.
+- [Class session rich-text note](class-session-rich-note.md) — each scheduled session has its own rich-formatted “Ghi chú buổi học” field, separate from class-wide notes and ordinary content.
 - [My Space student calendar curriculum visibility](my-space-student-calendar-curriculum.md) — hide Giáo trình/curriculum content for students and parents without changing staff calendar visibility.

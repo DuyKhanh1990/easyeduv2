@@ -2854,7 +2854,11 @@ export function registerClassesRoutes(app: Express): void {
     const classId = String(req.params.id);
     if (!(await assertClassReadable(req, res, classId, true))) return;
     const sessions = await storage.getClassSessions(classId);
-    res.json(sessions);
+    const user = req.user as { username?: string } | undefined;
+    const canSeeSessionNotes = Boolean(req.staffId || req.isSuperAdmin || user?.username === "admin");
+    res.json(canSeeSessionNotes
+      ? sessions
+      : sessions.map(({ sessionNote: _sessionNote, ...session }) => session));
   });
 
   app.get(api.classes.studentSessions.path, async (req, res) => {
@@ -8568,6 +8572,29 @@ export function registerClassesRoutes(app: Express): void {
       });
     } catch (err: any) {
       res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/class-sessions/:classSessionId/session-note", async (req, res) => {
+    try {
+      if (!(await assertScheduleMutationPermission(req, res, "canEdit"))) return;
+      const { classSessionId } = req.params;
+      const sessionNote = req.body?.sessionNote;
+      if (sessionNote !== null && typeof sessionNote !== "string") {
+        return res.status(400).json({ message: "Ghi chú buổi học không hợp lệ" });
+      }
+      if (typeof sessionNote === "string" && sessionNote.length > 50000) {
+        return res.status(400).json({ message: "Ghi chú buổi học vượt quá giới hạn cho phép" });
+      }
+
+      const [updated] = await db.update(classSessions)
+        .set({ sessionNote, updatedAt: new Date() })
+        .where(eq(classSessions.id, classSessionId))
+        .returning({ id: classSessions.id, sessionNote: classSessions.sessionNote });
+      if (!updated) return res.status(404).json({ message: "Không tìm thấy buổi học" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Không thể lưu ghi chú buổi học" });
     }
   });
 

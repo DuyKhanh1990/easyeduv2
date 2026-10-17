@@ -957,6 +957,7 @@ export const classSessions = pgTable("class_sessions", {
   learningFormat: varchar("learning_format", { length: 50 }).notNull().default("offline"), // online, offline
   status: varchar("status", { length: 50 }).notNull().default("scheduled"), // scheduled, cancelled, completed
   cancelReason: text("cancel_reason"),
+  sessionNote: text("session_note"),
   cancelledAt: timestamp("cancelled_at"),
   cancelledBy: uuid("cancelled_by").references(() => users.id),
   sessionIndex: integer("session_index"),
