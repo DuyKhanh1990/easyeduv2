@@ -1251,6 +1251,37 @@ export default function ScoreConversion() {
                       >
                         Đang học
                       </button>
+                      <span aria-hidden="true" className="select-none px-1 text-muted-foreground/70">|</span>
+                      {([
+                        { value: "passed", label: "Đạt" },
+                        { value: "failed", label: "Không đạt" },
+                      ] as const).map((filter) => {
+                        const isSelected = studentPassStatusFilters.includes(filter.value);
+                        return (
+                          <button
+                            key={filter.value}
+                            type="button"
+                            aria-pressed={isSelected}
+                            data-testid={`filter-score-conversion-student-${filter.value}`}
+                            onClick={() => setStudentPassStatusFilters((current) =>
+                              isSelected
+                                ? current.filter((value) => value !== filter.value)
+                                : [...current, filter.value],
+                            )}
+                            className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-3 text-[13px] font-semibold transition-colors ${
+                              isSelected
+                                ? filter.value === "passed"
+                                  ? "border-emerald-600 bg-emerald-600 text-white"
+                                  : "border-red-600 bg-red-600 text-white"
+                                : filter.value === "passed"
+                                  ? "border-emerald-300 bg-background text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
+                                  : "border-red-300 bg-background text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40"
+                            }`}
+                          >
+                            {filter.label}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
 
@@ -1407,33 +1438,17 @@ export default function ScoreConversion() {
                             />
                           </div>
                           {viewMode === "students" && (
-                            <>
-                              <div className="space-y-1.5">
-                                <label className="text-sm font-medium">Kết quả</label>
-                                <SearchableMultiSelect
-                                  options={[
-                                    { value: "passed", label: "Đạt" },
-                                    { value: "failed", label: "Không đạt" },
-                                  ]}
-                                  value={studentPassStatusFilters}
-                                  onChange={(values) => setStudentPassStatusFilters(values as StudentPassStatus[])}
-                                  placeholder="Tất cả kết quả"
-                                  searchPlaceholder="Tìm kết quả..."
-                                  data-testid="filter-score-conversion-result"
-                                />
-                              </div>
-                              <div className="space-y-1.5">
-                                <label className="text-sm font-medium">Phân loại</label>
-                                <SearchableMultiSelect
-                                  options={classificationFilterOptions}
-                                  value={classificationFilters}
-                                  onChange={setClassificationFilters}
-                                  placeholder="Chọn phân loại"
-                                  searchPlaceholder="Tìm phân loại..."
-                                  data-testid="filter-score-conversion-classification"
-                                />
-                              </div>
-                            </>
+                            <div className="space-y-1.5 sm:col-span-2">
+                              <label className="text-sm font-medium">Phân loại</label>
+                              <SearchableMultiSelect
+                                options={classificationFilterOptions}
+                                value={classificationFilters}
+                                onChange={setClassificationFilters}
+                                placeholder="Chọn phân loại"
+                                searchPlaceholder="Tìm phân loại..."
+                                data-testid="filter-score-conversion-classification"
+                              />
+                            </div>
                           )}
                         </div>
                         <DialogFooter>
