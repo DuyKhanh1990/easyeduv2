@@ -74,6 +74,7 @@ import { updateStudentAttendance } from "../storage/attendance.storage";
 import { getTeacherIdsForTimeRange } from "@shared/teacher-time-assignments";
 import { canViewClass } from "../lib/class-access";
 import { manualStudentIdInFilter } from "../lib/manual-score-sheet-sql";
+import { canStaffViewAssignedScoreSheetAssessment } from "../services/my-space-score-sheet-access";
 import { canScheduleWrite } from "@shared/schedule-access";
 import { isStaffAssignedToEffectiveFreeClassStudent } from "@shared/my-space-calendar-permissions";
 import { hasMySpaceAssignmentsWritePermission } from "../lib/my-space-assignments-permissions";
@@ -4894,6 +4895,16 @@ export function registerMySpaceRoutes(app: Express): void {
           cs.score_sheet_assessment_published AS published,
           cs.session_index,
           cs.session_date,
+          (
+            ${staffRecord.id} = ANY(COALESCE(cs.teacher_ids, ARRAY[]::uuid[]))
+            OR EXISTS (
+              SELECT 1
+              FROM class_session_teacher_assignments csta
+              WHERE csta.class_session_id = cs.id
+                AND csta.teacher_id = ${staffRecord.id}
+            )
+          ) AS is_session_teacher,
+          ${staffRecord.id} = ANY(COALESCE(c.manager_ids, ARRAY[]::uuid[])) AS is_class_manager,
           st.start_time AS session_start_time,
           c.class_code,
           c.name AS class_name,
@@ -4987,7 +4998,7 @@ export function registerMySpaceRoutes(app: Express): void {
         attemptsBySession.set(sessionId, sessionStudents);
       }
 
-      const mapped = result.rows.map((row: any) => {
+      const mapped = result.rows.flatMap((row: any) => {
         const assessment = assessmentsById.get(row.assessment_id);
         const currentTemplate = assessment
           ? currentTemplatesById.get(assessment.scoreSheetTemplateId)
@@ -5009,6 +5020,12 @@ export function registerMySpaceRoutes(app: Express): void {
         const individuallyPublishedStudentCount = studentAttempts.filter((attempts) =>
           attempts.some((attempt) => isScoreSheetAssessmentStudentPublished(attempt.result)),
         ).length;
+        const hasConversion = !!assessment?.templateSnapshot.scoreConversionTemplateId;
+        if (!canStaffViewAssignedScoreSheetAssessment({
+          hasConversion,
+          isSessionTeacher: row.is_session_teacher === true,
+          isClassManager: row.is_class_manager === true,
+        })) return [];
         return {
           sessionId: row.session_id,
           classId: row.class_id,
@@ -5040,7 +5057,7 @@ export function registerMySpaceRoutes(app: Express): void {
             : null,
           attemptCount: assessment?.attemptCount ?? 1,
           scoringPolicy: assessment?.scoringPolicy ?? "latest",
-          hasConversion: !!assessment?.templateSnapshot.scoreConversionTemplateId,
+          hasConversion,
         };
       });
 
