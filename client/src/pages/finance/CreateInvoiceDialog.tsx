@@ -2375,7 +2375,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                 </DialogContent>
                               </Dialog>
                           </td>
-                          <td className="p-2 text-right font-semibold text-xs">{fmtMoney(subtotal)}</td>
+                          <td className="p-2">
+                            <div className="flex h-8 items-center justify-end text-right text-xs font-semibold">
+                              {fmtMoney(subtotal)}
+                            </div>
+                          </td>
                           <td className="p-2 align-top">
                             <Select
                               value={String(p.vatRate)}
@@ -2394,7 +2398,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               {t("finance.taxAmount")}: {fmtMoney(vatAmount)}
                             </p>
                           </td>
-                          <td className="p-2 text-right font-semibold text-xs">{fmtMoney(subtotal + vatAmount)}</td>
+                          <td className="p-2">
+                            <div className="flex h-8 items-center justify-end text-right text-xs font-semibold">
+                              {fmtMoney(subtotal + vatAmount)}
+                            </div>
+                          </td>
                           <td className="p-2 text-center">
                             <button
                               onClick={() => removeProduct(p.id)}
@@ -2685,6 +2693,12 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     {renderInvoiceAdjustmentRows("surcharge")}
                   </DialogContent>
                 </Dialog>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>{t("finance.create.totalVat")}:</span>
+                  <span className="font-medium text-foreground">
+                    {totalVat > 0 ? `+${fmtMoney(totalVat)}` : "0 ₫"}
+                  </span>
+                </div>
                 <div className="flex justify-between font-semibold pt-1 border-t">
                    <span>{t("finance.create.totalAmount")}:</span>
                   <span>{fmtMoney(subTotal)}</span>
