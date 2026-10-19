@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { eq } from "drizzle-orm";
-import { getReservationConfig, logStockTransaction } from "./store-inventory.routes";
+import { getAvailableStock, getReservationConfig, logStockTransaction } from "./store-inventory.routes";
 import {
   buildStockQuantityMaps,
   buildWarehouseStockMovements,
@@ -231,9 +231,6 @@ async function validateAndDecreaseInventory(
 ): Promise<string[]> {
   const errors: string[] = [];
   const sid = sessionId && sessionId.trim() ? sessionId.trim() : "__none__";
-  const rid = receiptId && receiptId.trim() ? receiptId.trim() : null;
-  const { draftMinutes } = await getReservationConfig();
-  const draftCutoff = new Date(Date.now() - draftMinutes * 60 * 1000).toISOString();
   const aggregated = new Map<string, { productName: string; quantity: number }>();
   for (const item of items) {
     if (!item.productId) continue;
@@ -244,35 +241,12 @@ async function validateAndDecreaseInventory(
     });
   }
   for (const [productId, item] of aggregated) {
-    const invRow = await db.execute(sql`
-      SELECT GREATEST(0,
-        COALESCE((
-          SELECT SUM(t.quantity_delta)
-          FROM store_stock_transactions t
-          WHERE t.product_id = ${productId} AND t.warehouse_id = ${warehouseId}
-        ), 0)
-        - COALESCE((
-          SELECT SUM(r.quantity)
-          FROM store_inventory_reservations r
-          WHERE r.product_id = ${productId}
-            AND r.warehouse_id = ${warehouseId}
-            AND r.expires_at > NOW()
-            AND r.session_id != ${sid}
-        ), 0)
-        - COALESCE((
-          SELECT SUM(ii.quantity)
-          FROM store_issue_receipt_items ii
-          JOIN store_issue_receipts ir ON ir.id = ii.receipt_id
-          WHERE ii.product_id = ${productId}
-            AND ir.warehouse_id = ${warehouseId}
-            AND ir.status = 'draft'
-            AND ir.updated_at > ${draftCutoff}
-            ${rid ? sql`AND ir.id != ${rid}::uuid` : sql``}
-        ), 0)
-      ) AS available
-    `);
-    const row = invRow.rows[0] as any;
-    const available = parseInt(String(row?.available ?? 0));
+    const available = await getAvailableStock({
+      productId,
+      warehouseId,
+      sessionId: sid,
+      receiptId,
+    });
     if (available < item.quantity) {
       errors.push(`• ${item.productName}: khả dụng ${available}, yêu cầu xuất ${item.quantity}`);
     }
@@ -1228,17 +1202,17 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
         const errors: string[] = [];
         for (const movement of movements) {
           if (movement.quantityDelta >= 0) continue;
-          const invRow = await db.execute(sql`
-            SELECT GREATEST(0, COALESCE(SUM(quantity_delta), 0))::int AS quantity
-            FROM store_stock_transactions
-            WHERE product_id = ${movement.productId} AND warehouse_id = ${movement.warehouseId}
-          `);
-          const currentStock = parseInt(String((invRow.rows[0] as any)?.quantity ?? 0));
-          if (currentStock + movement.quantityDelta < 0) {
+          const available = await getAvailableStock({
+            productId: movement.productId,
+            warehouseId: movement.warehouseId,
+            sessionId: receiptData.sessionId,
+            receiptId: req.params.id,
+          });
+          if (available < -movement.quantityDelta) {
             const name = oldQtyMap[movement.productId]?.name ??
               items.find(i => i.productId === movement.productId)?.productName ??
               movement.productId;
-            errors.push(`• ${name}: tồn hiện tại tại kho cần xuất ${currentStock}, không đủ số lượng`);
+            errors.push(`• ${name}: khả dụng tại kho cần xuất ${available}, không đủ số lượng tăng thêm ${-movement.quantityDelta}`);
           }
         }
 

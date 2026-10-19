@@ -129,6 +129,46 @@ export async function getReservationConfig(): Promise<{ sessionMinutes: number; 
   }
 }
 
+export async function getAvailableStock(params: {
+  productId: string;
+  warehouseId: string;
+  sessionId?: string | null;
+  receiptId?: string | null;
+}): Promise<number> {
+  await cleanupExpiredReservations();
+  const { draftMinutes } = await getReservationConfig();
+  const draftCutoff = new Date(Date.now() - draftMinutes * 60 * 1000).toISOString();
+  const sessionId = params.sessionId?.trim() || "__none__";
+  const result = await db.execute(sql`
+    SELECT GREATEST(0,
+      COALESCE((
+        SELECT SUM(t.quantity_delta)
+        FROM store_stock_transactions t
+        WHERE t.product_id = ${params.productId} AND t.warehouse_id = ${params.warehouseId}
+      ), 0)
+      - COALESCE((
+        SELECT SUM(r.quantity)
+        FROM store_inventory_reservations r
+        WHERE r.product_id = ${params.productId}
+          AND r.warehouse_id = ${params.warehouseId}
+          AND r.expires_at > NOW()
+          AND r.session_id != ${sessionId}
+      ), 0)
+      - COALESCE((
+        SELECT SUM(ii.quantity)
+        FROM store_issue_receipt_items ii
+        JOIN store_issue_receipts ir ON ir.id = ii.receipt_id
+        WHERE ii.product_id = ${params.productId}
+          AND ir.warehouse_id = ${params.warehouseId}
+          AND ir.status = 'draft'
+          AND ir.updated_at > ${draftCutoff}
+          ${params.receiptId ? sql`AND ir.id != ${params.receiptId}::uuid` : sql``}
+      ), 0)
+    ) AS available
+  `);
+  return Math.max(0, Number((result.rows[0] as any)?.available ?? 0));
+}
+
 // ── LOG STOCK TRANSACTION ───────────────────────────────────────────────────────
 export async function logStockTransaction(params: {
   productId: string;
@@ -342,10 +382,17 @@ export async function registerStoreInventoryRoutes(app: Express) {
     if (!req.user) return res.status(401).json({ message: "Unauthorized" });
     await cleanupExpiredReservations();
     const { sessionId, productId, warehouseId, quantity } = req.body;
-    if (!sessionId || !productId || !warehouseId || typeof quantity !== "number") {
+    if (!sessionId || !productId || !warehouseId || !Number.isInteger(quantity) || quantity <= 0) {
       return res.status(400).json({ message: "Thiếu thông tin giữ chỗ" });
     }
     try {
+      const available = await getAvailableStock({ productId, warehouseId, sessionId });
+      if (quantity > available) {
+        return res.status(409).json({
+          message: `Số lượng khả dụng là ${available}, không thể giữ chỗ ${quantity}`,
+          available,
+        });
+      }
       const cfg = await getReservationConfig();
       const expiresAt = new Date(Date.now() + cfg.sessionMinutes * 60 * 1000).toISOString();
       await db.execute(sql`

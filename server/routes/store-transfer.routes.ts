@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { invoices, invoiceItems } from "@shared/schema";
 import { getNextLocationCode } from "../storage/finance.storage";
 import { z } from "zod";
+import { getAvailableStock } from "./store-inventory.routes";
 
 function formatInvoiceDate(value: string | Date | null | undefined): string {
   if (!value) return "";
@@ -750,14 +751,12 @@ export async function registerStoreTransferRoutes(app: Express) {
       // Kiểm tra tồn kho nguồn (dùng store_stock_transactions để nhất quán với màn hình tồn kho)
       const errors: string[] = [];
       for (const item of aggregateTransferItems(items)) {
-        const stockRow = await db.execute(sql`
-          SELECT COALESCE(SUM(quantity_delta), 0)::int AS actual_stock
-          FROM store_stock_transactions
-          WHERE product_id = ${item.product_id} AND warehouse_id = ${transfer.from_warehouse_id}
-        `);
-        const currentStock = Math.max(0, parseInt(String((stockRow.rows[0] as any)?.actual_stock ?? 0)));
-        if (currentStock < item.quantity) {
-          errors.push(`${item.product_name}:\n  Tồn hiện tại: ${currentStock}\n  Số lượng yêu cầu chuyển: ${item.quantity}`);
+        const available = await getAvailableStock({
+          productId: item.product_id,
+          warehouseId: transfer.from_warehouse_id,
+        });
+        if (available < item.quantity) {
+          errors.push(`${item.product_name}:\n  Khả dụng: ${available}\n  Số lượng yêu cầu chuyển: ${item.quantity}`);
         }
       }
       if (errors.length > 0) {
@@ -906,14 +905,12 @@ export async function registerStoreTransferRoutes(app: Express) {
       // Kiểm tra tồn kho nguồn (dùng store_stock_transactions để nhất quán với màn hình tồn kho)
       const errors: string[] = [];
       for (const item of aggregateTransferItems(items)) {
-        const stockRow = await db.execute(sql`
-          SELECT COALESCE(SUM(quantity_delta), 0)::int AS actual_stock
-          FROM store_stock_transactions
-          WHERE product_id = ${item.product_id} AND warehouse_id = ${transfer.from_warehouse_id}
-        `);
-        const currentStock = Math.max(0, parseInt(String((stockRow.rows[0] as any)?.actual_stock ?? 0)));
-        if (currentStock < item.quantity) {
-          errors.push(`${item.product_name}:\n  Tồn hiện tại: ${currentStock}\n  Số lượng yêu cầu: ${item.quantity}`);
+        const available = await getAvailableStock({
+          productId: item.product_id,
+          warehouseId: transfer.from_warehouse_id,
+        });
+        if (available < item.quantity) {
+          errors.push(`${item.product_name}:\n  Khả dụng: ${available}\n  Số lượng yêu cầu: ${item.quantity}`);
         }
       }
       if (errors.length > 0) {

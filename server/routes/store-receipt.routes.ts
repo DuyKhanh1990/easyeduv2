@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { db, pool } from "../db";
 import { sql } from "drizzle-orm";
 import { eq, asc, desc, ilike, or } from "drizzle-orm";
-import { logStockTransaction } from "./store-inventory.routes";
+import { getAvailableStock, logStockTransaction } from "./store-inventory.routes";
 import {
   buildStockQuantityMaps,
   buildWarehouseStockMovements,
@@ -701,15 +701,13 @@ export async function registerStoreReceiptRoutes(app: Express) {
         const errors: string[] = [];
         for (const movement of movements) {
           if (movement.quantityDelta >= 0) continue;
-          const invRow = await db.execute(sql`
-            SELECT GREATEST(0, COALESCE(SUM(quantity_delta), 0))::int AS quantity
-            FROM store_stock_transactions
-            WHERE product_id = ${movement.productId} AND warehouse_id = ${movement.warehouseId}
-          `);
-          const currentStock = parseInt(String((invRow.rows[0] as any)?.quantity ?? 0));
-          if (currentStock + movement.quantityDelta < 0) {
+          const available = await getAvailableStock({
+            productId: movement.productId,
+            warehouseId: movement.warehouseId,
+          });
+          if (available < -movement.quantityDelta) {
             const name = oldQtyMap[movement.productId]?.name ?? movement.productId;
-            errors.push(`• ${name}: tồn kho tại kho cần trừ không đủ (${currentStock})`);
+            errors.push(`• ${name}: khả dụng tại kho cần trừ ${available}, không đủ lượng cần giảm ${-movement.quantityDelta}`);
           }
         }
 
@@ -1009,18 +1007,19 @@ export async function registerStoreReceiptRoutes(app: Express) {
         // Kiểm tra từng sản phẩm: tồn hiện tại + (-số nhập) >= 0
         const oldItems = await db.select().from(storeReceiptItems).where(eq(storeReceiptItems.receiptId, req.params.id));
         const errors: string[] = [];
+        const cancelQuantities = new Map<string, { name: string; quantity: number }>();
         for (const item of oldItems) {
           if (!item.productId) continue;
-          const invRow = await db.execute(sql`
-            SELECT GREATEST(0, COALESCE(SUM(quantity_delta), 0))::int AS quantity
-            FROM store_stock_transactions
-            WHERE product_id = ${item.productId} AND warehouse_id = ${existing.warehouseId}
-          `);
-          const currentStock = parseInt(String((invRow.rows[0] as any)?.quantity ?? 0));
-          const delta = -item.quantity;
-          if (currentStock + delta < 0) {
-            const usedQty = item.quantity - currentStock;
-            errors.push(`• ${item.productName}: tồn hiện tại ${currentStock}, số lượng nhập ${item.quantity}, đã phát sinh ${usedQty} xuất/bán`);
+          const previous = cancelQuantities.get(item.productId);
+          cancelQuantities.set(item.productId, {
+            name: previous?.name ?? item.productName,
+            quantity: (previous?.quantity ?? 0) + item.quantity,
+          });
+        }
+        for (const [productId, item] of cancelQuantities) {
+          const available = await getAvailableStock({ productId, warehouseId: existing.warehouseId! });
+          if (available < item.quantity) {
+            errors.push(`• ${item.name}: khả dụng ${available}, không đủ để hủy lượng nhập ${item.quantity}`);
           }
         }
 
