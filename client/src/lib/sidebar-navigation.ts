@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { SiMessenger, SiZalo, SiFacebook } from "react-icons/si";
 import {
+  INVOICE_PAID_DATE_EDIT_PERMISSION,
   INVOICE_STATUS_ACTION_PERMISSIONS,
   INVOICE_VISIBILITY_PERMISSIONS,
 } from "@shared/invoice-visibility-permissions";
@@ -281,6 +282,11 @@ export const navigation: NavEntry[] = [
             permissionKeys: ["canView"] as ("canView" | "canViewAll")[],
             section: "Quyền chuyển trạng thái",
           })),
+          {
+            ...INVOICE_PAID_DATE_EDIT_PERMISSION,
+            permissionKeys: ["canView"] as ("canView" | "canViewAll")[],
+            section: "Quyền sửa ngày hóa đơn đã thanh toán/đã xác nhận",
+          },
         ],
       },
       { name: "Công nợ", href: "/invoices/debt", icon: FileText, permissionHref: "/invoices" },

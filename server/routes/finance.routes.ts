@@ -24,6 +24,7 @@ import { eq, asc, sql, and, isNotNull, gte, lte, inArray } from "drizzle-orm";
 import { ensureVirtualAccount } from "../services/bidv/bidv-virtual-account.service";
 import { resolveInvoiceRecipientUserIds, sendInvoiceCreatedNotification, sendInvoicePaidNotification } from "../lib/invoice-notification";
 import {
+  INVOICE_PAID_DATE_EDIT_PERMISSION,
   INVOICE_VISIBILITY_PERMISSIONS,
   getInvoiceStatusActionPermission,
   invoiceStatusMatchesVisibilityPermission,
@@ -323,6 +324,15 @@ async function getInvoicePermissions(req: any) {
     return { canView: true, canViewAll: true, canCreate: true, canEdit: true, canDelete: true };
   }
   return storage.getEffectivePermissions(req.roleIds || [], INVOICE_RESOURCE);
+}
+
+async function canEditPaidInvoiceDates(req: any): Promise<boolean> {
+  if (req.isSuperAdmin) return true;
+  const permission = await storage.getEffectivePermissions(
+    req.roleIds || [],
+    INVOICE_PAID_DATE_EDIT_PERMISSION.resource,
+  );
+  return permission.canView;
 }
 
 async function getInvoiceVisibilityScopes(req: any): Promise<InvoiceVisibilityPermission[]> {
@@ -1356,13 +1366,19 @@ export function registerFinanceRoutes(app: Express): void {
       const before = await storage.getInvoice(req.params.id);
       const paidInvoicePatchKeys = Object.keys(parsed.data);
       const isPaidInvoice = Boolean(before && isPaidInvoiceStatus(before.status));
+      const isPaidDateOnlyUpdate = isPaidInvoice
+        && paidInvoicePatchKeys.length > 0
+        && paidInvoicePatchKeys.every(key => key === "createdAt" || key === "paidAt");
+      if (isPaidDateOnlyUpdate && !(await canEditPaidInvoiceDates(req))) {
+        return res.status(403).json({ message: "Bạn không có quyền sửa ngày của hóa đơn đã thanh toán/đã xác nhận." });
+      }
       const isPaidNoteOnlyUpdate = isPaidInvoice
         && paidInvoicePatchKeys.length === 1
         && paidInvoicePatchKeys[0] === "note";
       const isPaidStatusOnlyUpdate = isPaidInvoice
         && paidInvoicePatchKeys.length === 1
         && paidInvoicePatchKeys[0] === "status";
-      if (isPaidInvoice && !isPaidNoteOnlyUpdate && !isPaidStatusOnlyUpdate) {
+      if (isPaidInvoice && !isPaidNoteOnlyUpdate && !isPaidStatusOnlyUpdate && !isPaidDateOnlyUpdate) {
         return res.status(409).json({
           message: "Hóa đơn đã thanh toán/đã xác nhận chỉ được sửa ghi chú hoặc trạng thái. Hãy chuyển trạng thái về Chưa thanh toán trước khi sửa nội dung khác.",
         });
@@ -1438,7 +1454,7 @@ export function registerFinanceRoutes(app: Express): void {
       const prospectiveInvoice = before
         ? { ...before, ...patchData, paymentSchedule: patchData.paymentSchedule ?? before.paymentSchedule }
         : null;
-      if (prospectiveInvoice && isTuitionRefundInvoice(prospectiveInvoice)) {
+      if (!isPaidDateOnlyUpdate && prospectiveInvoice && isTuitionRefundInvoice(prospectiveInvoice)) {
         const grandTotal = parseFloat(prospectiveInvoice.grandTotal ?? "0") || 0;
         const paidAmount = (prospectiveInvoice.paymentSchedule ?? []).length > 0
           ? getPaidScheduleAmount(prospectiveInvoice.paymentSchedule, grandTotal)
@@ -1449,15 +1465,15 @@ export function registerFinanceRoutes(app: Express): void {
       }
 
       const data = await storage.updateInvoice(req.params.id, patchData);
-      if (data.studentId && data.classId && data.category === "Học phí") {
+      if (!isPaidDateOnlyUpdate && data.studentId && data.classId && data.category === "Học phí") {
         await distributeInvoiceFeeToSessions(data.id, data.studentId, data.classId);
       }
       const beforeSchedules = before?.paymentSchedule ?? [];
       const afterSchedules = data.paymentSchedule ?? [];
-      if (afterSchedules.length > 0) {
+      if (afterSchedules.length > 0 && !isPaidDateOnlyUpdate) {
         await syncSchedulePaymentSideEffects(data, beforeSchedules, afterSchedules, userId);
       }
-      if (isTuitionRefundInvoice(data)) {
+      if (!isPaidDateOnlyUpdate && isTuitionRefundInvoice(data)) {
         const grandTotal = parseFloat(data.grandTotal ?? "0") || 0;
         const paidAmount = (data.paymentSchedule ?? []).length > 0
           ? getPaidScheduleAmount(data.paymentSchedule, grandTotal)
@@ -1465,7 +1481,7 @@ export function registerFinanceRoutes(app: Express): void {
           ? grandTotal
           : 0;
         await syncTuitionRefundWallet(data, paidAmount, userId);
-      } else if (isTuitionRefundInvoice(before)) {
+      } else if (!isPaidDateOnlyUpdate && isTuitionRefundInvoice(before)) {
         // If an already-paid refund invoice is changed to another category/type,
         // remove the old invoice-scoped tuition debit through the immutable ledger.
         await syncTuitionRefundWallet(before, 0, userId);
@@ -1831,6 +1847,11 @@ export function registerFinanceRoutes(app: Express): void {
       if (!before) {
         return res.status(404).json({ message: "Không tìm thấy đợt thanh toán" });
       }
+      const isPaidScheduleDateUpdate = isPaidInvoiceStatus(before.status)
+        && (parsed.data.createdAt !== undefined || parsed.data.paidAt !== undefined);
+      if (isPaidScheduleDateUpdate && !(await canEditPaidInvoiceDates(req))) {
+        return res.status(403).json({ message: "Bạn không có quyền sửa ngày của đợt thanh toán đã thanh toán/đã xác nhận." });
+      }
 
       const effectiveCreatedAt = invoiceBusinessDateOnly(
         parsed.data.createdAt ?? before.createdAt,
@@ -1874,7 +1895,7 @@ export function registerFinanceRoutes(app: Express): void {
       const userId = (req as any).user?.id ?? null;
       data.updatedBy = userId;
 
-      if (before.invoiceId) {
+      if (before.invoiceId && !isPaidScheduleDateUpdate) {
         const invoice = await storage.getInvoice(before.invoiceId);
         if (isTuitionRefundInvoice(invoice)) {
           const schedules = await db

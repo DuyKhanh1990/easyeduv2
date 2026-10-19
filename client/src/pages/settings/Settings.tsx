@@ -49,6 +49,7 @@ import { Switch } from "@/components/ui/switch";
 import { navigation } from "@/lib/sidebar-navigation";
 import { getSubFeaturePermissionResource, EDUCATION_OTHER_CONFIG_RESOURCE } from "@shared/permission-resources";
 import {
+  INVOICE_PAID_DATE_EDIT_PERMISSION,
   INVOICE_STATUS_ACTION_PERMISSIONS,
   INVOICE_VISIBILITY_PERMISSIONS,
 } from "@shared/invoice-visibility-permissions";
@@ -2133,7 +2134,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
           ? { canView: true, canViewAll: false, canCreate: perms.canCreate, canEdit: perms.canEdit, canDelete: false }
           : resource === MY_SPACE_ASSIGNMENTS_RESOURCE
           ? { canView: true, canViewAll: false, canCreate: perms.canCreate, canEdit: perms.canEdit, canDelete: false }
-          : [...INVOICE_VISIBILITY_PERMISSIONS, ...INVOICE_STATUS_ACTION_PERMISSIONS].some(scope => scope.resource === resource)
+          : [...INVOICE_VISIBILITY_PERMISSIONS, ...INVOICE_STATUS_ACTION_PERMISSIONS, INVOICE_PAID_DATE_EDIT_PERMISSION].some(scope => scope.resource === resource)
           ? { canView: perms.canView, canViewAll: false, canCreate: false, canEdit: false, canDelete: false }
           : VIEW_ONLY_RESOURCES.has(resource)
           ? { canView: perms.canView, canViewAll: false, canCreate: false, canEdit: false, canDelete: false }

@@ -13,6 +13,12 @@ export const INVOICE_STATUS_ACTION_PERMISSIONS = [
   { value: "status-unpaid", resource: "/invoices#status/unpaid", targetStatus: "unpaid", name: "Chuyển sang Chưa thanh toán" },
 ] as const;
 
+export const INVOICE_PAID_DATE_EDIT_PERMISSION = {
+  value: "edit-paid-dates",
+  resource: "/invoices#edit-paid-dates",
+  name: "Sửa ngày tạo/Ngày thanh toán hóa đơn Đã thanh toán/Đã xác nhận",
+} as const;
+
 export type InvoiceVisibilityPermission = typeof INVOICE_VISIBILITY_PERMISSIONS[number];
 export type InvoiceVisibilityStatus = InvoiceVisibilityPermission["status"];
 export type InvoiceVisibilityType = InvoiceVisibilityPermission["type"];

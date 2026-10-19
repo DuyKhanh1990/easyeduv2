@@ -67,7 +67,10 @@ import { HistoryDialog } from "@/components/common/HistoryDialog";
 import { useLocations } from "@/hooks/use-locations";
 import type { SortKey } from "@/hooks/use-invoice-filters";
 import { useLanguage } from "@/hooks/use-language";
-import { INVOICE_STATUS_ACTION_PERMISSIONS } from "@shared/invoice-visibility-permissions";
+import {
+  INVOICE_PAID_DATE_EDIT_PERMISSION,
+  INVOICE_STATUS_ACTION_PERMISSIONS,
+} from "@shared/invoice-visibility-permissions";
 
 type TabKey = "all" | "unpaid" | "paid" | "confirmed" | "debt" | "history" | "print-template";
 type DebtCondition = "all" | "overdue" | "today" | "soon" | "upcoming" | "no-due-date";
@@ -344,12 +347,14 @@ function EditableInvoiceDateCell({
   invoice,
   field,
   canEdit,
+  canEditPaidDates,
   isSelected,
   isOdd,
 }: {
   invoice: InvoiceRow;
   field: "createdAt" | "paidAt";
   canEdit: boolean;
+  canEditPaidDates: boolean;
   isSelected?: boolean;
   isOdd?: boolean;
 }) {
@@ -418,7 +423,7 @@ function EditableInvoiceDateCell({
     }
   };
 
-  if (!canEdit) {
+  if (!canEdit || (isInvoicePaidLike(invoice.status) && !canEditPaidDates)) {
     return (
       <td key={field} className={`p-3 whitespace-nowrap text-xs text-muted-foreground ${background}`}>
         {value ? fmtDate(value) : "—"}
@@ -727,6 +732,7 @@ function renderInvoiceCell(
     isPending: boolean;
   },
   canEdit: boolean,
+  canEditPaidDates: boolean,
   allowedStatusTargets: readonly string[],
   isSelected?: boolean,
   isOdd?: boolean,
@@ -937,11 +943,11 @@ function renderInvoiceCell(
     case "creator":
       return <td key="creator" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{inv.creatorName || "—"}</td>;
     case "createdAt":
-      return <EditableInvoiceDateCell invoice={inv} field="createdAt" canEdit={canEdit} isSelected={isSelected} isOdd={isOdd} />;
+      return <EditableInvoiceDateCell invoice={inv} field="createdAt" canEdit={canEdit} canEditPaidDates={canEditPaidDates} isSelected={isSelected} isOdd={isOdd} />;
     case "paidBy":
       return <td key="paidBy" className="p-3 whitespace-nowrap text-muted-foreground text-xs">{inv.paidByName || "—"}</td>;
     case "paidAt":
-      return <EditableInvoiceDateCell invoice={inv} field="paidAt" canEdit={canEdit} isSelected={isSelected} isOdd={isOdd} />;
+      return <EditableInvoiceDateCell invoice={inv} field="paidAt" canEdit={canEdit} canEditPaidDates={canEditPaidDates} isSelected={isSelected} isOdd={isOdd} />;
     case "paymentMethod": {
       const method = inv.paymentMethod?.trim();
       const label = method === "cash"
@@ -1866,6 +1872,10 @@ export default function Invoices() {
     if (!p) return { canCreate: false, canEdit: false, canDelete: false };
     return { canCreate: p.canCreate, canEdit: p.canEdit, canDelete: p.canDelete };
   })();
+  const canEditPaidDates = Boolean(
+    myPerms?.isSuperAdmin ||
+    myPerms?.permissions[INVOICE_PAID_DATE_EDIT_PERMISSION.resource]?.canView
+  );
   const allowedStatusTargets = myPerms?.isSuperAdmin
     ? INVOICE_STATUS_ACTION_PERMISSIONS.map(permission => permission.targetStatus)
     : INVOICE_STATUS_ACTION_PERMISSIONS
@@ -2698,6 +2708,7 @@ export default function Invoices() {
                       updateStatusMutation,
                       updateScheduleStatusMutation,
                       invPerm.canEdit,
+                      canEditPaidDates,
                       allowedStatusTargets,
                       isSelected,
                       idx % 2 === 1,
