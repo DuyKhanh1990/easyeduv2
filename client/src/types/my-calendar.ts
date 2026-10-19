@@ -107,6 +107,7 @@ export interface MyCalendarSession extends MyCalendarSessionLight {
   reviewPublished: boolean;
   generalContents: SessionContentItem[];
   personalContents: PersonalContentItem[];
+  sessionNote?: string | null;
   userType: "student" | "staff";
   enrolledCount?: number;
   attendancePendingCount?: number;

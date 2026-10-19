@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   BookOpen,
@@ -14,9 +14,12 @@ import {
   LogOut,
   ClipboardPlus,
   LibraryBig,
+  Maximize2,
 } from "lucide-react";
 import { MyCalendarSession, MyCalendarSessionLight, OnlineRuleConfig } from "@/types/my-calendar";
 import { cn } from "@/lib/utils";
+import { RichContentRenderer, stripHtml } from "@/components/ui/rich-content-renderer";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SessionContentDialog, ContentViewDialog } from "@/components/education/SessionContentDialog";
 import { LibraryContentDialog } from "@/components/courses/LibraryContentDialog";
 import {
@@ -343,6 +346,10 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
   const [libraryDialogOpen, setLibraryDialogOpen] = useState(false);
   const [viewingContentId, setViewingContentId] = useState<string | null>(null);
   const [viewingFallbackContent, setViewingFallbackContent] = useState<{ title: string; type: string; content?: string | null } | null>(null);
+  const [isSessionNoteDialogOpen, setIsSessionNoteDialogOpen] = useState(false);
+  const [isSessionNotePreviewOverflowing, setIsSessionNotePreviewOverflowing] = useState(false);
+  const sessionNotePreviewRef = useRef<HTMLDivElement | null>(null);
+  const sessionNoteContentRef = useRef<HTMLDivElement | null>(null);
 
   const { data: myPermissions } = useQuery<any>({ queryKey: ["/api/my-permissions"] });
   const canEditCalendarContent =
@@ -373,6 +380,29 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
   const pendingCount = detail?.attendancePendingCount ?? 0;
   const reviewedCount = detail?.reviewedCount ?? 0;
   const generalContents = detail?.generalContents ?? [];
+
+  useEffect(() => {
+    const preview = sessionNotePreviewRef.current;
+    if (!preview || !detail?.sessionNote || !stripHtml(detail.sessionNote)) {
+      setIsSessionNotePreviewOverflowing(false);
+      return;
+    }
+
+    const measureOverflow = () => {
+      setIsSessionNotePreviewOverflowing(preview.scrollHeight > preview.clientHeight + 1);
+    };
+    measureOverflow();
+    const observer = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(measureOverflow)
+      : null;
+    if (sessionNoteContentRef.current) observer?.observe(sessionNoteContentRef.current);
+    window.addEventListener("resize", measureOverflow);
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measureOverflow);
+    };
+  }, [detail?.sessionNote]);
 
   // ── Test session card layout ───────────────────────────────────────────────
   if (isTestSession) {
@@ -721,6 +751,43 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
         </div>
       )}
 
+      {!isLoading && !isError && detail?.sessionNote && stripHtml(detail.sessionNote) && (
+        <div className="border-t border-border/50 pt-3 space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Ghi chú buổi học
+            </p>
+            {isSessionNotePreviewOverflowing && (
+              <button
+                type="button"
+                className="shrink-0 text-muted-foreground transition-colors hover:text-primary"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setIsSessionNoteDialogOpen(true);
+                }}
+                aria-label="Xem đầy đủ ghi chú buổi học"
+                title="Xem đầy đủ"
+                data-testid={`btn-expand-staff-session-note-${session.classSessionId}`}
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          <div
+            ref={sessionNotePreviewRef}
+            className="max-h-32 overflow-hidden"
+            data-testid={`staff-session-note-preview-${session.classSessionId}`}
+          >
+            <div ref={sessionNoteContentRef}>
+              <RichContentRenderer
+                text={detail.sessionNote}
+                className="prose prose-sm max-w-none text-foreground/80 prose-p:my-1 prose-p:leading-relaxed"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Attendance + Review row */}
       {!isLoading && !isError && (
         <div className="flex flex-wrap items-start justify-between gap-3 border-t border-border/50 pt-3 sm:items-center">
@@ -764,6 +831,22 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
         contentId={viewingContentId}
         fallbackContent={viewingFallbackContent}
       />
+
+      <Dialog open={isSessionNoteDialogOpen} onOpenChange={setIsSessionNoteDialogOpen}>
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-4xl max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
+            <DialogTitle>Ghi chú buổi học</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-2 pr-2">
+            {detail?.sessionNote && (
+              <RichContentRenderer
+                text={detail.sessionNote}
+                className="prose prose-sm max-w-none text-foreground/80 prose-p:my-1 prose-p:leading-relaxed"
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
