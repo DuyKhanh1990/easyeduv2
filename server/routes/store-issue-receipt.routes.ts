@@ -3,6 +3,7 @@ import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { eq } from "drizzle-orm";
 import { getReservationConfig, logStockTransaction } from "./store-inventory.routes";
+import { buildStockQuantityMaps } from "../lib/store-stock-quantity-maps";
 import { createStoreIssueReceiptAuditLog } from "../storage/store-issue-receipt-audit-log.storage";
 import { storage } from "../storage";
 import { getNextLocationCode } from "../storage/finance.storage";
@@ -1193,18 +1194,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
       // ─────────────────────────────────────────────────────────────────────
 
       if (existing.status === "completed" && existing.warehouse_id) {
-        const oldQtyMap: Record<string, { qty: number; name: string }> = {};
-        for (const item of oldItems) {
-          if (!item.product_id) continue;
-          if (!oldQtyMap[item.product_id]) oldQtyMap[item.product_id] = { qty: 0, name: item.product_name };
-          oldQtyMap[item.product_id].qty += item.quantity;
-        }
-
-        const newQtyMap: Record<string, number> = {};
-        for (const item of items) {
-          if (!item.productId) continue;
-          newQtyMap[item.productId] = (newQtyMap[item.productId] || 0) + item.quantity;
-        }
+        const { oldQtyMap, newQtyMap } = buildStockQuantityMaps(oldItems, items);
 
         const errors: string[] = [];
         for (const [productId, { qty: oldQty, name }] of Object.entries(oldQtyMap)) {

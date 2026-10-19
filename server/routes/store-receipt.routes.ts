@@ -3,6 +3,7 @@ import { db, pool } from "../db";
 import { sql } from "drizzle-orm";
 import { eq, asc, desc, ilike, or } from "drizzle-orm";
 import { logStockTransaction } from "./store-inventory.routes";
+import { buildStockQuantityMaps } from "../lib/store-stock-quantity-maps";
 import {
   storeReceipts,
   storeReceiptItems,
@@ -675,19 +676,7 @@ export async function registerStoreReceiptRoutes(app: Express) {
 
       if (existing.status === "completed" && existing.warehouseId) {
         // Build old qty map (aggregate by productId)
-        const oldQtyMap: Record<string, { qty: number; name: string }> = {};
-        for (const item of oldItems) {
-          if (!item.productId) continue;
-          if (!oldQtyMap[item.productId]) oldQtyMap[item.productId] = { qty: 0, name: item.productName };
-          oldQtyMap[item.productId].qty += item.quantity;
-        }
-
-        // Build new qty map
-        const newQtyMap: Record<string, number> = {};
-        for (const item of items) {
-          if (!item.productId) continue;
-          newQtyMap[item.productId] = (newQtyMap[item.productId] || 0) + item.quantity;
-        }
+        const { oldQtyMap, newQtyMap } = buildStockQuantityMaps(oldItems, items);
 
         // Validate: products with reduced qty must have enough inventory
         const errors: string[] = [];

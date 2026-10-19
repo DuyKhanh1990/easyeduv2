@@ -74,7 +74,6 @@ async function ensureInventoryExtTables() {
       AND NOT EXISTS (
         SELECT 1 FROM store_stock_transactions t
         WHERE t.receipt_id = sr.id AND t.product_id = ri.product_id
-          AND t.type = 'import'
       )
   `);
 
@@ -93,7 +92,6 @@ async function ensureInventoryExtTables() {
       AND NOT EXISTS (
         SELECT 1 FROM store_stock_transactions t
         WHERE t.receipt_id = ir.id AND t.product_id = ii.product_id
-          AND t.type = 'export'
       )
   `);
 
