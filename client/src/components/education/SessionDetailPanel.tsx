@@ -229,16 +229,32 @@ export function SessionDetailPanel({
   }, [selectedClassSessionId, session?.sessionNote]);
 
   const updateSessionNoteMutation = useMutation({
-    mutationFn: () => apiRequest("PATCH", `/api/class-sessions/${selectedClassSessionId}/session-note`, {
-      sessionNote: stripHtml(sessionNoteDraft) ? sessionNoteDraft : null,
-    }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/classes/${classData?.id}/sessions`] });
+    mutationFn: async (sessionNote: string | null) => {
+      const response = await apiRequest(
+        "PATCH",
+        `/api/class-sessions/${selectedClassSessionId}/session-note`,
+        { sessionNote },
+      );
+      return response.json() as Promise<{ sessionNote: string | null }>;
+    },
+    onSuccess: async (savedSession) => {
+      const queryKey = [`/api/classes/${classData?.id}/sessions`];
+      queryClient.setQueryData<any[]>(queryKey, (sessions) =>
+        sessions?.map((item) => item.id === selectedClassSessionId
+          ? { ...item, sessionNote: savedSession.sessionNote }
+          : item),
+      );
+      await queryClient.invalidateQueries({ queryKey });
+      setSessionNoteDraft(savedSession.sessionNote ?? "");
       setIsEditingSessionNote(false);
       toast({ title: "Đã lưu ghi chú buổi học" });
     },
-    onError: () => {
-      toast({ title: "Lỗi", description: "Không thể lưu ghi chú buổi học", variant: "destructive" });
+    onError: (error) => {
+      toast({
+        title: "Không thể lưu ghi chú buổi học",
+        description: error instanceof Error ? error.message : "Vui lòng thử lại.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -659,7 +675,10 @@ export function SessionDetailPanel({
                 <Button
                   type="button"
                   size="sm"
-                  onClick={() => updateSessionNoteMutation.mutate()}
+                  onClick={() => {
+                    const note = stripHtml(sessionNoteDraft) ? sessionNoteDraft : null;
+                    updateSessionNoteMutation.mutate(note);
+                  }}
                   disabled={updateSessionNoteMutation.isPending}
                   data-testid="btn-save-session-note"
                 >
