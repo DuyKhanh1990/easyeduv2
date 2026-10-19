@@ -354,22 +354,42 @@ export async function registerStoreInventoryRoutes(app: Express) {
     const { productId } = req.params;
     const { warehouseId } = req.query as { warehouseId?: string };
     try {
-      const rows = await db.execute(sql`
-        SELECT
-          t.created_at    AS time,
-          t.receipt_code,
-          t.type,
-          t.quantity_delta,
-          t.status,
-          t.description,
-          t.created_by_name AS created_by
-        FROM store_stock_transactions t
-        WHERE t.product_id = ${productId}
-          AND ${warehouseId ? sql`t.warehouse_id = ${warehouseId}` : sql`TRUE`}
-        ORDER BY t.created_at DESC
-        LIMIT 200
-      `);
-      res.json(rows.rows);
+      const [rows, summary] = await Promise.all([
+        db.execute(sql`
+          SELECT
+            t.created_at    AS time,
+            t.receipt_code,
+            t.type,
+            t.quantity_delta,
+            t.status,
+            t.description,
+            t.created_by_name AS created_by
+          FROM store_stock_transactions t
+          WHERE t.product_id = ${productId}
+            AND ${warehouseId ? sql`t.warehouse_id = ${warehouseId}` : sql`TRUE`}
+          ORDER BY t.created_at DESC
+          LIMIT 200
+        `),
+        db.execute(sql`
+          SELECT
+            COALESCE(SUM(quantity_delta) FILTER (WHERE type = 'import'), 0)::int AS import_qty,
+            COALESCE(SUM(quantity_delta) FILTER (WHERE type = 'export'), 0)::int AS export_qty,
+            COALESCE(SUM(quantity_delta) FILTER (WHERE type = 'transfer_in'), 0)::int AS transfer_in_qty,
+            COALESCE(SUM(quantity_delta) FILTER (WHERE type = 'transfer_out'), 0)::int AS transfer_out_qty,
+            COALESCE(SUM(quantity_delta) FILTER (
+              WHERE type IN ('edit_import', 'edit_export', 'cancel_import', 'cancel_export')
+                AND quantity_delta > 0
+            ), 0)::int AS adjustment_in_qty,
+            COALESCE(SUM(quantity_delta) FILTER (
+              WHERE type IN ('edit_import', 'edit_export', 'cancel_import', 'cancel_export')
+                AND quantity_delta < 0
+            ), 0)::int AS adjustment_out_qty
+          FROM store_stock_transactions
+          WHERE product_id = ${productId}
+            AND ${warehouseId ? sql`warehouse_id = ${warehouseId}` : sql`TRUE`}
+        `),
+      ]);
+      res.json({ history: rows.rows, summary: summary.rows[0] });
     } catch (err) {
       console.error("[Inventory] GET history error:", err);
       res.status(500).json({ message: "Lỗi khi lấy lịch sử tồn kho" });

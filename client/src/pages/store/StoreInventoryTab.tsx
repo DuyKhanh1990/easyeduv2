@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Input } from "@/components/ui/input";
@@ -36,6 +37,18 @@ type HistoryRow = {
   created_by: string | null;
 };
 
+type InventoryHistoryResponse = {
+  history: HistoryRow[];
+  summary: {
+    import_qty: number;
+    export_qty: number;
+    transfer_in_qty: number;
+    transfer_out_qty: number;
+    adjustment_in_qty: number;
+    adjustment_out_qty: number;
+  };
+};
+
 type Warehouse = { id: string; name: string };
 
 type DetailPopupProps = {
@@ -71,6 +84,8 @@ function txTypeLabel(type: string) {
     case "edit_export": return "Sửa xuất kho";
     case "cancel_import": return "Hủy nhập kho";
     case "cancel_export": return "Hủy xuất kho";
+    case "transfer_in": return "Chuyển kho vào";
+    case "transfer_out": return "Chuyển kho ra";
     default: return type;
   }
 }
@@ -83,20 +98,35 @@ function txTypeBadgeClass(type: string) {
     case "edit_export": return "bg-blue-50 text-blue-700 border-blue-200";
     case "cancel_import": return "bg-red-50 text-red-700 border-red-200";
     case "cancel_export": return "bg-red-50 text-red-700 border-red-200";
+    case "transfer_in": return "bg-indigo-50 text-indigo-700 border-indigo-200";
+    case "transfer_out": return "bg-indigo-50 text-indigo-700 border-indigo-200";
     default: return "bg-gray-100 text-gray-600 border-gray-200";
   }
+}
+
+function formatSigned(value: number) {
+  return value > 0 ? `+${value}` : String(value);
 }
 
 function DetailPopup({ row, onClose }: DetailPopupProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  const { data: history = [], isLoading } = useQuery<HistoryRow[]>({
-    queryKey: ["/api/store/inventory", row.productId, "history", row.warehouseId],
+  const { data, isLoading } = useQuery<InventoryHistoryResponse>({
+    queryKey: ["/api/store/inventory", row.productId, "history", row.warehouseId, "summary"],
     queryFn: () =>
       apiRequest("GET", `/api/store/inventory/${row.productId}/history?warehouseId=${row.warehouseId}`)
         .then(r => r.json()),
     staleTime: 15000,
   });
+  const history = data?.history ?? [];
+  const summary = data?.summary;
+  const importQty = Number(summary?.import_qty ?? 0);
+  const exportQty = Number(summary?.export_qty ?? 0);
+  const transferInQty = Number(summary?.transfer_in_qty ?? 0);
+  const transferOutQty = Number(summary?.transfer_out_qty ?? 0);
+  const adjustmentInQty = Number(summary?.adjustment_in_qty ?? 0);
+  const adjustmentOutQty = Number(summary?.adjustment_out_qty ?? 0);
+  const transferVolume = Math.abs(transferInQty) + Math.abs(transferOutQty);
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -112,7 +142,7 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
       onClick={e => { if (e.target === overlayRef.current) onClose(); }}
     >
-      <div className="bg-white rounded-2xl shadow-2xl w-[95vw] h-[95vh] flex flex-col">
+      <div className="bg-white rounded-2xl shadow-2xl w-[99vw] h-[92vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center gap-2 px-6 py-4 border-b border-border">
           <Clock className="w-5 h-5 text-muted-foreground flex-shrink-0" />
@@ -129,21 +159,35 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
         </div>
 
         {/* Stat cards */}
-        <div className="px-6 pt-4 pb-2 grid grid-cols-5 gap-3">
-          <StatCard label="TỔNG NHẬP" value={row.totalImport} colorClass="bg-emerald-50 text-emerald-700 border-emerald-100" />
-          <StatCard label="ĐÃ XUẤT" value={row.totalExport} colorClass="bg-gray-50 text-gray-700 border-gray-100" />
+        <div className="px-6 pt-4 pb-2 grid grid-cols-2 md:grid-cols-4 gap-3 shrink-0">
+          <StatCard label="NHẬP" value={formatSigned(importQty)} colorClass="bg-emerald-50 text-emerald-700 border-emerald-100" />
+          <StatCard label="XUẤT" value={formatSigned(exportQty)} colorClass="bg-gray-50 text-gray-700 border-gray-100" />
+          <StatCard
+            label="CHUYỂN KHO"
+            value={transferVolume}
+            detail={
+              <span className="flex w-full justify-center gap-3 text-xs font-medium">
+                <span>Vào <span className="tabular-nums">{formatSigned(transferInQty)}</span></span>
+                <span>Ra <span className="tabular-nums">{formatSigned(transferOutQty)}</span></span>
+              </span>
+            }
+            colorClass="bg-indigo-50 text-indigo-700 border-indigo-100"
+          />
+          <StatCard label="ĐIỀU CHỈNH TĂNG" value={formatSigned(adjustmentInQty)} colorClass="bg-teal-50 text-teal-700 border-teal-100" />
+          <StatCard label="ĐIỀU CHỈNH GIẢM" value={formatSigned(adjustmentOutQty)} colorClass="bg-rose-50 text-rose-700 border-rose-100" />
           <StatCard label="TỒN KHO" value={row.actualStock} colorClass="bg-blue-50 text-blue-700 border-blue-100" />
           <StatCard label="GIỮ CHỖ" value={row.reservedQty} colorClass="bg-amber-50 text-amber-600 border-amber-100" />
           <StatCard label="KHẢ DỤNG" value={row.availableQty} colorClass="bg-indigo-50 text-indigo-700 border-indigo-100" />
         </div>
 
         {/* History */}
-        <div className="flex-1 overflow-y-auto px-6 pb-6">
+        <div className="flex-1 min-h-0 overflow-auto px-6 pb-6">
           <p className="text-xs font-bold tracking-wide text-muted-foreground uppercase mb-3 mt-2">
             Lịch sử biến động kho
           </p>
 
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-sm">
             <thead>
               <tr className="text-xs text-muted-foreground font-medium">
                 <th className="text-left pb-2 font-medium">Thời gian</th>
@@ -207,17 +251,19 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function StatCard({ label, value, colorClass }: { label: string; value: number; colorClass: string }) {
+function StatCard({ label, value, detail, colorClass }: { label: string; value: number | string; detail?: ReactNode; colorClass: string }) {
   return (
-    <div className={cn("rounded-xl border p-3 flex flex-col items-center gap-1", colorClass)}>
+    <div className={cn("rounded-xl border p-3 flex flex-col items-center gap-1 min-w-0", colorClass)}>
       <span className="text-[10px] font-bold tracking-wide uppercase opacity-70">{label}</span>
       <span className="text-2xl font-bold tabular-nums">{value}</span>
+      {detail}
     </div>
   );
 }
