@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { RichContentRenderer, stripHtml } from "@/components/ui/rich-content-renderer";
 import { RichEditor } from "@/components/ui/rich-editor";
 import { format } from "date-fns";
@@ -221,10 +221,13 @@ export function SessionDetailPanel({
 
   const session = classSessions?.find((s) => s.id === selectedClassSessionId);
   const [sessionNoteDraft, setSessionNoteDraft] = useState("");
+  const sessionNoteDraftRef = useRef("");
   const [isEditingSessionNote, setIsEditingSessionNote] = useState(false);
 
   useEffect(() => {
-    setSessionNoteDraft(session?.sessionNote ?? "");
+    const savedNote = session?.sessionNote ?? "";
+    sessionNoteDraftRef.current = savedNote;
+    setSessionNoteDraft(savedNote);
     setIsEditingSessionNote(false);
   }, [selectedClassSessionId, session?.sessionNote]);
 
@@ -245,7 +248,9 @@ export function SessionDetailPanel({
           : item),
       );
       await queryClient.invalidateQueries({ queryKey });
-      setSessionNoteDraft(savedSession.sessionNote ?? "");
+      const savedNote = savedSession.sessionNote ?? "";
+      sessionNoteDraftRef.current = savedNote;
+      setSessionNoteDraft(savedNote);
       setIsEditingSessionNote(false);
       toast({ title: "Đã lưu ghi chú buổi học" });
     },
@@ -654,7 +659,10 @@ export function SessionDetailPanel({
             <div className="space-y-2">
               <RichEditor
                 value={sessionNoteDraft}
-                onChange={setSessionNoteDraft}
+                onChange={(value) => {
+                  sessionNoteDraftRef.current = value;
+                  setSessionNoteDraft(value);
+                }}
                 placeholder="Nhập ghi chú cho buổi học này..."
                 minHeight="120px"
                 enableTable={false}
@@ -665,7 +673,9 @@ export function SessionDetailPanel({
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    setSessionNoteDraft(session?.sessionNote ?? "");
+                    const savedNote = session?.sessionNote ?? "";
+                    sessionNoteDraftRef.current = savedNote;
+                    setSessionNoteDraft(savedNote);
                     setIsEditingSessionNote(false);
                   }}
                   disabled={updateSessionNoteMutation.isPending}
@@ -676,7 +686,8 @@ export function SessionDetailPanel({
                   type="button"
                   size="sm"
                   onClick={() => {
-                    const note = stripHtml(sessionNoteDraft) ? sessionNoteDraft : null;
+                    const latestDraft = sessionNoteDraftRef.current;
+                    const note = stripHtml(latestDraft) ? latestDraft : null;
                     if (!note && !stripHtml(session?.sessionNote ?? "")) {
                       toast({
                         title: "Chưa có nội dung ghi chú",
