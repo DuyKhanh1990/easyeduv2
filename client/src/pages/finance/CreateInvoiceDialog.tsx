@@ -30,6 +30,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { fmtMoney, getTodayVietnamDate, isInvoicePaidLike } from "@/types/invoice-types";
 import { isLegacyAutoInvoiceDepositDoubleCount } from "@shared/invoice-deposit-accounting";
+import { calculateInvoiceVatAmount, INVOICE_VAT_RATES } from "@shared/invoice-vat";
 import { FinancePromotionDialog, type FinancePromotionType } from "./components/FinancePromotionDialog";
 import { INVOICE_ACCOUNT_OPTIONS } from "./invoiceAccountOptions";
 import { useLanguage } from "@/hooks/use-language";
@@ -41,6 +42,7 @@ interface Product {
   name: string;
   unitPrice: number;
   quantity: number;
+  vatRate: number;
   promotionKeys: string[];
   surchargeKeys: string[];
   manualPromotionRows: ManualAdjustment[];
@@ -346,7 +348,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const [preloadedStudent, setPreloadedStudent] = useState<{ id: string; fullName: string; code: string } | null>(null);
   const [studentPickerOpen, setStudentPickerOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([
-    { id: "1", packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: "" },
+    { id: "1", packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, vatRate: 0, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: "" },
   ]);
   const [openPromoId, setOpenPromoId] = useState<string | null>(null);
   const [openSurchargeId, setOpenSurchargeId] = useState<string | null>(null);
@@ -423,7 +425,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         setSelectedStaffId(null);
         setSubjectName("");
         setStudentSearch("");
-        setProducts([{ id: "1", packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: "" }]);
+        setProducts([{ id: "1", packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, vatRate: 0, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: "" }]);
         setInvoicePromoKeys([]);
         setInvoiceSurchargeKeys([]);
         setInvoicePromotionRows([]);
@@ -526,6 +528,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
           name: item.packageName ?? "",
           unitPrice: parseFloat(item.unitPrice) || 0,
           quantity: item.quantity ?? 1,
+          vatRate: Number(item.vatRate) || 0,
           promotionKeys: item.promotionKeys ?? [],
           surchargeKeys: item.surchargeKeys ?? [],
           manualPromotionRows: (item.promotionKeys?.length ?? 0) === 0 && parseFloat(item.promotionAmount) > 0
@@ -538,7 +541,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         };
       }));
     } else {
-      setProducts([{ id: "1", packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: fallbackCatId }]);
+      setProducts([{ id: "1", packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, vatRate: 0, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: fallbackCatId }]);
     }
 
     if (Array.isArray(inv.paymentSchedule) && inv.paymentSchedule.length > 0) {
@@ -882,15 +885,18 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       surchargeOptions,
       "surcharge",
     );
+    const vatAmount = calculateInvoiceVatAmount(surchargeResult.finalAmount, product.vatRate);
     return {
       productId: product.id,
       base,
       promoAmount: promotionResult.adjustmentAmount,
       surchargeAmount: surchargeResult.adjustmentAmount,
       finalAmount: surchargeResult.finalAmount,
+      vatAmount,
     };
   });
   const totalAmount = productAdjustmentTotals.reduce((sum, item) => sum + item.base, 0);
+  const totalVat = productAdjustmentTotals.reduce((sum, item) => sum + item.vatAmount, 0);
   const itemPromo = productAdjustmentTotals.reduce((sum, item) => sum + item.promoAmount, 0);
   const itemSurcharge = productAdjustmentTotals.reduce((sum, item) => sum + item.surchargeAmount, 0);
   const lineSubtotal = productAdjustmentTotals.reduce((sum, item) => sum + item.finalAmount, 0);
@@ -914,10 +920,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const { hasPromotion: hasSchedulePromotion, promotionTotal: schedulePromotionTotal, surchargeTotal: scheduleSurchargeTotal } = scheduleAdjustments;
   const totalPromo = itemPromo + invoicePromoAmt + schedulePromotionTotal;
   const totalSurcharge = itemSurcharge + invoiceSurchargeAmt + scheduleSurchargeTotal;
-  const subTotal = Math.max(
+  const subTotalBeforeVat = Math.max(
     0,
     invoiceSurchargeResult.finalAmount - schedulePromotionTotal + scheduleSurchargeTotal,
   );
+  const subTotal = subTotalBeforeVat + totalVat;
   const calculatedFinalTotal = Math.max(0, subTotal - deduction);
   // The invoice fields are authoritative; payment installments only allocate
   // this total and must never change it.
@@ -965,7 +972,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     });
   }, [directPaidAmount, finalTotal, hasSchedulePromotion, open, scheduleAllocated]);
 
-  const addProduct = () => setProducts(prev => [...prev, { id: Date.now().toString(), packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: prev[0]?.categoryId ?? "" }]);
+  const addProduct = () => setProducts(prev => [...prev, { id: Date.now().toString(), packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, vatRate: 0, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: prev[0]?.categoryId ?? "" }]);
   const removeProduct = (id: string) => setProducts(prev => prev.filter(p => p.id !== id));
   const ensureAdjustmentRows = (
     keys: string[],
@@ -1359,6 +1366,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       const promoAmt = promotionResult.adjustmentAmount;
       const surchargeAmt = surchargeResult.adjustmentAmount;
       const itemCat = allCategories.find((c: any) => c.id === p.categoryId);
+      const vatRate = p.vatRate ?? 0;
+      const vatAmount = calculateInvoiceVatAmount(surchargeResult.finalAmount, vatRate);
       return {
         packageName: p.name,
         packageId: p.packageId,
@@ -1370,6 +1379,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         promotionAmount: String(promoAmt),
         surchargeAmount: String(surchargeAmt),
         subtotal: String(surchargeResult.finalAmount),
+        vatRate,
+        vatAmount: String(vatAmount),
         category: itemCat?.name ?? "",
         storeProductId: p.storeProductId ?? null,
         storeProductCode: p.storeProductCode ?? null,
@@ -1782,16 +1793,18 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                 </Button>
               </div>
 
-              <div className="rounded-lg border overflow-hidden">
-                <table className="w-full text-xs table-fixed">
+              <div className="rounded-lg border overflow-x-auto">
+                <table className="w-full min-w-[1120px] text-xs table-fixed">
                   <colgroup>
-                    <col style={{ width: "17%" }} />
-                    <col style={{ width: "22%" }} />
-                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "15%" }} />
+                    <col style={{ width: "20%" }} />
+                    <col style={{ width: "10%" }} />
+                    <col style={{ width: "6%" }} />
+                    <col style={{ width: "10%" }} />
+                    <col style={{ width: "10%" }} />
+                    <col style={{ width: "9%" }} />
                     <col style={{ width: "8%" }} />
-                    <col style={{ width: "13%" }} />
-                    <col style={{ width: "13%" }} />
-                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "9%" }} />
                     <col style={{ width: "3%" }} />
                   </colgroup>
                   <thead className="bg-muted/60">
@@ -1803,6 +1816,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       <th className="p-2 text-right font-semibold text-muted-foreground">{t("finance.promotion")}</th>
                       <th className="p-2 text-right font-semibold text-muted-foreground">{t("finance.surcharge")}</th>
                       <th className="p-2 text-right font-semibold text-muted-foreground">{t("finance.lineTotal")}</th>
+                      <th className="p-2 text-center font-semibold text-muted-foreground">{t("finance.vat")}</th>
+                      <th className="p-2 text-right font-semibold text-muted-foreground">{t("finance.totalAfterVat")}</th>
                       <th />
                     </tr>
                   </thead>
@@ -1828,6 +1843,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       const promoAmt = promotionResult.adjustmentAmount;
                       const surchargeAmt = surchargeResult.adjustmentAmount;
                       const subtotal = surchargeResult.finalAmount;
+                      const vatAmount = calculateInvoiceVatAmount(subtotal, p.vatRate);
                       return (
                         <tr key={p.id} className={`border-b last:border-0 ${idx % 2 === 1 ? "bg-muted/20" : ""}`}>
                           <td className="p-2">
@@ -2286,6 +2302,25 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               </Dialog>
                           </td>
                           <td className="p-2 text-right font-semibold text-xs">{fmtMoney(subtotal)}</td>
+                          <td className="p-1.5">
+                            <Select
+                              value={String(p.vatRate)}
+                              onValueChange={value => setProducts(prev => prev.map(x => x.id === p.id ? { ...x, vatRate: Number(value) } : x))}
+                            >
+                              <SelectTrigger className="h-8 px-1.5 text-[11px]" data-testid={`select-vat-rate-${p.id}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {INVOICE_VAT_RATES.map(rate => (
+                                  <SelectItem key={rate} value={String(rate)}>{rate}%</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="mt-0.5 whitespace-nowrap text-[9px] leading-tight text-muted-foreground">
+                              {t("finance.taxAmount")}: {fmtMoney(vatAmount)}
+                            </p>
+                          </td>
+                          <td className="p-2 text-right font-semibold text-xs">{fmtMoney(subtotal + vatAmount)}</td>
                           <td className="p-2 text-center">
                             <button
                               onClick={() => removeProduct(p.id)}

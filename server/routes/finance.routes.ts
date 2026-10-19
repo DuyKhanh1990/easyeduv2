@@ -30,6 +30,7 @@ import {
   invoiceStatusMatchesVisibilityPermission,
   type InvoiceVisibilityPermission,
 } from "@shared/invoice-visibility-permissions";
+import { isInvoiceVatRate } from "@shared/invoice-vat";
 
 async function generateNextSettleCode(locationId?: string | null): Promise<string> {
   return getNextLocationCode(locationId, "KT");
@@ -254,6 +255,8 @@ async function syncSchedulePaymentSideEffects(
 }
 
 const invoiceItemBodySchema = insertInvoiceItemSchema.omit({ invoiceId: true }).extend({
+  vatRate: z.coerce.number().int().refine(isInvoiceVatRate, "Tỷ lệ VAT không hợp lệ.").optional(),
+  vatAmount: z.coerce.string().optional(),
   storeProductId: z.string().uuid().optional().nullable(),
   storeProductCode: z.string().optional().nullable(),
   warehouseId: z.string().uuid().optional().nullable(),

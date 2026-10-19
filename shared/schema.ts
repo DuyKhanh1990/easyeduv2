@@ -238,6 +238,8 @@ export const invoiceItems = pgTable("invoice_items", {
   promotionAmount: decimal("promotion_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   surchargeAmount: decimal("surcharge_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   subtotal: decimal("subtotal", { precision: 15, scale: 2 }).notNull().default("0"),
+  vatRate: integer("vat_rate").notNull().default(0),
+  vatAmount: decimal("vat_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   sortOrder: integer("sort_order").default(0),
   category: varchar("category", { length: 100 }),               // Danh mục (per item)
   createdAt: timestamp("created_at").defaultNow().notNull(),

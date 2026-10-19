@@ -16,6 +16,18 @@ import type {
   InvoicePrintTemplateRow, InsertInvoicePrintTemplate,
 } from "@shared/schema";
 import type { InvoiceVisibilityPermission } from "@shared/invoice-visibility-permissions";
+import { calculateInvoiceVatAmount, isInvoiceVatRate } from "@shared/invoice-vat";
+
+function normalizeInvoiceVatItem(item: any) {
+  const vatRate = Number(item.vatRate ?? 0);
+  if (!isInvoiceVatRate(vatRate)) throw new Error("Tỷ lệ VAT không hợp lệ.");
+  const subtotal = Number.parseFloat(String(item.subtotal ?? "0")) || 0;
+  return {
+    ...item,
+    vatRate,
+    vatAmount: calculateInvoiceVatAmount(subtotal, vatRate).toFixed(2),
+  };
+}
 
 function getBusinessDateString(date = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -2076,7 +2088,9 @@ export async function getNextInvoiceCode(type: string, locationId?: string | nul
 }
 
 export async function createInvoice(data: any): Promise<any> {
-  const { items = [], paymentSchedule = [], ...invoiceData } = data;
+  const { items: rawItems = [], paymentSchedule = [], ...invoiceData } = data;
+  const items = rawItems.map(normalizeInvoiceVatItem);
+  const totalVat = items.reduce((sum: number, item: any) => sum + (Number.parseFloat(item.vatAmount) || 0), 0);
   const hasInvoiceAmounts = ["totalAmount", "totalPromotion", "totalSurcharge", "deduction"]
     .some((key) => invoiceData[key] !== undefined && invoiceData[key] !== null);
   const calculatedGrandTotal = Math.max(
@@ -2084,6 +2098,7 @@ export async function createInvoice(data: any): Promise<any> {
     (parseFloat(invoiceData.totalAmount ?? "0") || 0)
       - (parseFloat(invoiceData.totalPromotion ?? "0") || 0)
       + (parseFloat(invoiceData.totalSurcharge ?? "0") || 0)
+      + totalVat
       - (parseFloat(invoiceData.deduction ?? "0") || 0),
   );
   if (hasInvoiceAmounts) invoiceData.grandTotal = calculatedGrandTotal.toFixed(2);
@@ -2143,6 +2158,8 @@ export async function createInvoice(data: any): Promise<any> {
             promotionAmount: item.promotionAmount?.toString() ?? "0",
             surchargeAmount: item.surchargeAmount?.toString() ?? "0",
             subtotal: item.subtotal?.toString() ?? "0",
+            vatRate: item.vatRate,
+            vatAmount: item.vatAmount,
             category: item.category || null,
             sortOrder: idx,
           }))
@@ -2292,7 +2309,8 @@ async function consumeFinanceVouchers(
 }
 
 export async function updateInvoice(id: string, data: any): Promise<any> {
-  const { items, paymentSchedule, ...invoiceData } = data;
+  const { items: rawItems, paymentSchedule, ...invoiceData } = data;
+  const items = Array.isArray(rawItems) ? rawItems.map(normalizeInvoiceVatItem) : rawItems;
   const toUpdate: any = { ...invoiceData, updatedAt: new Date() };
   if (toUpdate.totalAmount !== undefined) toUpdate.totalAmount = toUpdate.totalAmount.toString();
   if (toUpdate.totalPromotion !== undefined) toUpdate.totalPromotion = toUpdate.totalPromotion.toString();
@@ -2311,11 +2329,19 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
       .limit(1);
     if (!currentInvoice) throw new Error("Không tìm thấy hóa đơn");
 
+    const itemVatAmounts = Array.isArray(items)
+      ? items.map((item: any) => item.vatAmount)
+      : await tx.select({ vatAmount: invoiceItems.vatAmount }).from(invoiceItems).where(eq(invoiceItems.invoiceId, id));
+    const totalVat = itemVatAmounts.reduce(
+      (sum: number, amount: any) => sum + (Number.parseFloat(String(amount ?? "0")) || 0),
+      0,
+    );
     const calculatedGrandTotal = Math.max(
       0,
       (parseFloat(String(toUpdate.totalAmount ?? currentInvoice.totalAmount ?? "0")) || 0)
         - (parseFloat(String(toUpdate.totalPromotion ?? currentInvoice.totalPromotion ?? "0")) || 0)
         + (parseFloat(String(toUpdate.totalSurcharge ?? currentInvoice.totalSurcharge ?? "0")) || 0)
+        + totalVat
         - (parseFloat(String(toUpdate.deduction ?? currentInvoice.deduction ?? "0")) || 0),
     );
     toUpdate.grandTotal = calculatedGrandTotal.toFixed(2);
@@ -2337,6 +2363,8 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
             promotionAmount: item.promotionAmount?.toString() ?? "0",
             surchargeAmount: item.surchargeAmount?.toString() ?? "0",
             subtotal: item.subtotal?.toString() ?? "0",
+            vatRate: item.vatRate,
+            vatAmount: item.vatAmount,
             category: item.category || null,
             sortOrder: idx,
           }))

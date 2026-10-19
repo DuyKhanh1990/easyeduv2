@@ -127,3 +127,4 @@
 - [ZBS transfer template payload](zbs-transfer-template-payload.md) — installment requests use schedule code/amount; warehouse invoice notes fall back to description, and Zalo transfer_amount is numeric.
 - [Class session rich-text note](class-session-rich-note.md) — each scheduled session has its own rich-formatted “Ghi chú buổi học” field, separate from class-wide notes and ordinary content.
 - [My Space student calendar curriculum visibility](my-space-student-calendar-curriculum.md) — hide Giáo trình/curriculum content for students and parents without changing staff calendar visibility.
+- [Invoice line VAT](invoice-line-vat.md) — per-line VAT is 0/5/8/10%, displayed as a tax amount, added to invoice total; legacy lines stay at 0%.
