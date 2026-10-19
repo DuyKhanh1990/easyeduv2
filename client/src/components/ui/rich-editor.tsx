@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import type { MutableRefObject } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import { Extension, Node, mergeAttributes, type Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
@@ -301,6 +302,7 @@ function TableToolbarButton({
 export interface RichEditorProps {
   value: string;
   onChange: (val: string) => void;
+  editorRef?: MutableRefObject<{ getHTML: () => string } | null>;
   placeholder?: string;
   minHeight?: string;
   /** Giới hạn chiều cao vùng soạn thảo — khi vượt quá sẽ scroll nội bộ thay vì đẩy dialog ra ngoài */
@@ -309,7 +311,7 @@ export interface RichEditorProps {
   enableTable?: boolean;
 }
 
-export function RichEditor({ value, onChange, placeholder, minHeight = "72px", maxHeight, enableTable = true }: RichEditorProps) {
+export function RichEditor({ value, onChange, editorRef, placeholder, minHeight = "72px", maxHeight, enableTable = true }: RichEditorProps) {
   const { toast } = useToast();
   const [isUploading, setIsUploading] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
@@ -395,6 +397,14 @@ export function RichEditor({ value, onChange, placeholder, minHeight = "72px", m
       },
     },
   });
+
+  useEffect(() => {
+    if (!editorRef) return;
+    editorRef.current = editor;
+    return () => {
+      if (editorRef.current === editor) editorRef.current = null;
+    };
+  }, [editor, editorRef]);
 
   useEffect(() => {
     if (!editor) return;

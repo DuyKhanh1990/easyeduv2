@@ -222,6 +222,7 @@ export function SessionDetailPanel({
   const session = classSessions?.find((s) => s.id === selectedClassSessionId);
   const [sessionNoteDraft, setSessionNoteDraft] = useState("");
   const sessionNoteDraftRef = useRef("");
+  const sessionNoteEditorRef = useRef<{ getHTML: () => string } | null>(null);
   const [isEditingSessionNote, setIsEditingSessionNote] = useState(false);
 
   useEffect(() => {
@@ -659,6 +660,7 @@ export function SessionDetailPanel({
             <div className="space-y-2">
               <RichEditor
                 value={sessionNoteDraft}
+                editorRef={sessionNoteEditorRef}
                 onChange={(value) => {
                   sessionNoteDraftRef.current = value;
                   setSessionNoteDraft(value);
@@ -686,7 +688,8 @@ export function SessionDetailPanel({
                   type="button"
                   size="sm"
                   onClick={() => {
-                    const latestDraft = sessionNoteDraftRef.current;
+                    const latestDraft = sessionNoteEditorRef.current?.getHTML()
+                      ?? sessionNoteDraftRef.current;
                     const note = stripHtml(latestDraft) ? latestDraft : null;
                     if (!note && !stripHtml(session?.sessionNote ?? "")) {
                       toast({
