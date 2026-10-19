@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildStockQuantityMaps } from "../server/lib/store-stock-quantity-maps";
+import {
+  buildStockQuantityMaps,
+  buildWarehouseStockMovements,
+} from "../server/lib/store-stock-quantity-maps";
 
 describe("buildStockQuantityMaps", () => {
   it("produces no stock movement when a receipt quantity is unchanged", () => {
@@ -48,5 +51,49 @@ describe("buildStockQuantityMaps", () => {
 
     expect((newQtyMap.old ?? 0) - oldQtyMap.old.qty).toBe(-5);
     expect(newQtyMap.new - (oldQtyMap.new?.qty ?? 0)).toBe(7);
+  });
+
+  it("records only the import difference in the same warehouse", () => {
+    const { oldQtyMap, newQtyMap } = buildStockQuantityMaps(
+      [{ productId: "ta", productCode: "TA", quantity: 46 }],
+      [{ productId: "ta", productCode: "TA", quantity: 50 }],
+    );
+
+    expect(buildWarehouseStockMovements(oldQtyMap, newQtyMap, "wh-a", "wh-a", 1)).toEqual([
+      { productId: "ta", warehouseId: "wh-a", quantityDelta: 4 },
+    ]);
+  });
+
+  it("creates no warehouse movement when the quantity is unchanged", () => {
+    const { oldQtyMap, newQtyMap } = buildStockQuantityMaps(
+      [{ productId: "ta", productCode: "TA", quantity: 46 }],
+      [{ productId: "ta", productCode: "TA", quantity: 46 }],
+    );
+
+    expect(buildWarehouseStockMovements(oldQtyMap, newQtyMap, "wh-a", "wh-a", 1)).toEqual([]);
+  });
+
+  it("reverses old warehouse and posts new warehouse quantities when moving a receipt", () => {
+    const { oldQtyMap, newQtyMap } = buildStockQuantityMaps(
+      [{ productId: "ta", productCode: "TA", quantity: 46 }],
+      [{ productId: "ta", productCode: "TA", quantity: 50 }],
+    );
+
+    expect(buildWarehouseStockMovements(oldQtyMap, newQtyMap, "wh-a", "wh-b", 1)).toEqual([
+      { productId: "ta", warehouseId: "wh-a", quantityDelta: -46 },
+      { productId: "ta", warehouseId: "wh-b", quantityDelta: 50 },
+    ]);
+  });
+
+  it("reverses an issue from its old warehouse and deducts it from the new one", () => {
+    const { oldQtyMap, newQtyMap } = buildStockQuantityMaps(
+      [{ productId: "ta", productCode: "TA", quantity: 10 }],
+      [{ productId: "ta", productCode: "TA", quantity: 12 }],
+    );
+
+    expect(buildWarehouseStockMovements(oldQtyMap, newQtyMap, "wh-a", "wh-b", -1)).toEqual([
+      { productId: "ta", warehouseId: "wh-a", quantityDelta: 10 },
+      { productId: "ta", warehouseId: "wh-b", quantityDelta: -12 },
+    ]);
   });
 });

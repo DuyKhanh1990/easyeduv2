@@ -3,7 +3,11 @@ import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { eq } from "drizzle-orm";
 import { getReservationConfig, logStockTransaction } from "./store-inventory.routes";
-import { buildStockQuantityMaps, StockQuantityMappingError } from "../lib/store-stock-quantity-maps";
+import {
+  buildStockQuantityMaps,
+  buildWarehouseStockMovements,
+  StockQuantityMappingError,
+} from "../lib/store-stock-quantity-maps";
 import { createStoreIssueReceiptAuditLog } from "../storage/store-issue-receipt-audit-log.storage";
 import { storage } from "../storage";
 import { getNextLocationCode } from "../storage/finance.storage";
@@ -230,19 +234,27 @@ async function validateAndDecreaseInventory(
   const rid = receiptId && receiptId.trim() ? receiptId.trim() : null;
   const { draftMinutes } = await getReservationConfig();
   const draftCutoff = new Date(Date.now() - draftMinutes * 60 * 1000).toISOString();
+  const aggregated = new Map<string, { productName: string; quantity: number }>();
   for (const item of items) {
     if (!item.productId) continue;
+    const existing = aggregated.get(item.productId);
+    aggregated.set(item.productId, {
+      productName: existing?.productName ?? item.productName,
+      quantity: (existing?.quantity ?? 0) + item.quantity,
+    });
+  }
+  for (const [productId, item] of aggregated) {
     const invRow = await db.execute(sql`
       SELECT GREATEST(0,
         COALESCE((
           SELECT SUM(t.quantity_delta)
           FROM store_stock_transactions t
-          WHERE t.product_id = ${item.productId} AND t.warehouse_id = ${warehouseId}
+          WHERE t.product_id = ${productId} AND t.warehouse_id = ${warehouseId}
         ), 0)
         - COALESCE((
           SELECT SUM(r.quantity)
           FROM store_inventory_reservations r
-          WHERE r.product_id = ${item.productId}
+          WHERE r.product_id = ${productId}
             AND r.warehouse_id = ${warehouseId}
             AND r.expires_at > NOW()
             AND r.session_id != ${sid}
@@ -251,7 +263,7 @@ async function validateAndDecreaseInventory(
           SELECT SUM(ii.quantity)
           FROM store_issue_receipt_items ii
           JOIN store_issue_receipts ir ON ir.id = ii.receipt_id
-          WHERE ii.product_id = ${item.productId}
+          WHERE ii.product_id = ${productId}
             AND ir.warehouse_id = ${warehouseId}
             AND ir.status = 'draft'
             AND ir.updated_at > ${draftCutoff}
@@ -958,6 +970,9 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
       const parsed = issueCreateSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0].message });
       const { items, sessionId, ...receiptData } = parsed.data;
+      if (receiptData.status === "completed" && !receiptData.warehouseId) {
+        return res.status(400).json({ message: "Phiếu xuất đã hoàn tất phải chọn kho" });
+      }
 
       if (receiptData.status === "completed" && receiptData.warehouseId && items.length > 0) {
         const errors = await validateAndDecreaseInventory(receiptData.warehouseId, items, sessionId);
@@ -1143,6 +1158,12 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
       if (existing.status === "cancelled") {
         return res.status(400).json({ message: "Không thể sửa phiếu đã bị hủy" });
       }
+      if (receiptData.status === "completed" && !(receiptData.warehouseId ?? existing.warehouse_id)) {
+        return res.status(400).json({ message: "Phiếu xuất đã hoàn tất phải chọn kho" });
+      }
+      if (existing.status === "completed" && receiptData.status === "draft") {
+        return res.status(409).json({ message: "Không thể chuyển phiếu đã hoàn tất về trạng thái nháp" });
+      }
 
       // Kiểm tra hóa đơn liên kết có đang ở trạng thái đã/một phần thanh toán không
       const linkedInvCheck = await db.execute(sql`
@@ -1195,37 +1216,29 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
 
       if (existing.status === "completed" && existing.warehouse_id) {
         const { oldQtyMap, newQtyMap } = buildStockQuantityMaps(oldItems, items);
+        const targetWarehouseId = receiptData.warehouseId ?? existing.warehouse_id;
+        const movements = buildWarehouseStockMovements(
+          oldQtyMap,
+          newQtyMap,
+          existing.warehouse_id,
+          targetWarehouseId,
+          -1,
+        );
 
         const errors: string[] = [];
-        for (const [productId, { qty: oldQty, name }] of Object.entries(oldQtyMap)) {
-          const newQty = newQtyMap[productId] || 0;
-          const delta = newQty - oldQty;
-          if (delta > 0) {
-            const invRow = await db.execute(sql`
-              SELECT GREATEST(0, COALESCE(SUM(quantity_delta), 0))::int AS quantity
-              FROM store_stock_transactions
-              WHERE product_id = ${productId} AND warehouse_id = ${existing.warehouse_id}
-            `);
-            const currentStock = parseInt(String((invRow.rows[0] as any)?.quantity ?? 0));
-            if (currentStock < delta) {
-              errors.push(`• ${name}: tồn hiện tại ${currentStock}, cần thêm ${delta}`);
-            }
-          }
-        }
-
-        for (const [productId, newQty] of Object.entries(newQtyMap)) {
-          if (!oldQtyMap[productId]) {
-            const invRow = await db.execute(sql`
-              SELECT GREATEST(0, COALESCE(SUM(quantity_delta), 0))::int AS quantity
-              FROM store_stock_transactions
-              WHERE product_id = ${productId} AND warehouse_id = ${existing.warehouse_id}
-            `);
-            const currentStock = parseInt(String((invRow.rows[0] as any)?.quantity ?? 0));
-            const matchItem = items.find(i => i.productId === productId);
-            const name = matchItem?.productName ?? "Sản phẩm";
-            if (currentStock < newQty) {
-              errors.push(`• ${name}: tồn hiện tại ${currentStock}, yêu cầu xuất ${newQty}`);
-            }
+        for (const movement of movements) {
+          if (movement.quantityDelta >= 0) continue;
+          const invRow = await db.execute(sql`
+            SELECT GREATEST(0, COALESCE(SUM(quantity_delta), 0))::int AS quantity
+            FROM store_stock_transactions
+            WHERE product_id = ${movement.productId} AND warehouse_id = ${movement.warehouseId}
+          `);
+          const currentStock = parseInt(String((invRow.rows[0] as any)?.quantity ?? 0));
+          if (currentStock + movement.quantityDelta < 0) {
+            const name = oldQtyMap[movement.productId]?.name ??
+              items.find(i => i.productId === movement.productId)?.productName ??
+              movement.productId;
+            errors.push(`• ${name}: tồn hiện tại tại kho cần xuất ${currentStock}, không đủ số lượng`);
           }
         }
 
@@ -1235,32 +1248,28 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
           });
         }
 
-        const allProductIds = new Set([...Object.keys(oldQtyMap), ...Object.keys(newQtyMap)]);
         const editUser = req.user as any;
-        for (const productId of allProductIds) {
-          const oldQty = oldQtyMap[productId]?.qty || 0;
-          const newQty = newQtyMap[productId] || 0;
-          const delta = newQty - oldQty;
-          if (delta !== 0) {
-            await db.execute(sql`
-              INSERT INTO store_inventory (product_id, warehouse_id, quantity, updated_at)
-              VALUES (${productId}, ${existing.warehouse_id}, 0, NOW())
-              ON CONFLICT (product_id, warehouse_id)
-              DO UPDATE SET quantity = GREATEST(0, store_inventory.quantity - ${delta}), updated_at = NOW()
-            `);
-            const existingCode = existing.code || req.params.id;
-            await logStockTransaction({
-              productId,
-              warehouseId: existing.warehouse_id,
-              receiptId: req.params.id,
-              receiptCode: existingCode,
-              type: "edit_export",
-              quantityDelta: -delta,
-              description: `Sửa ${existingCode}: Xuất cũ: ${oldQty} → Xuất mới: ${newQty}`,
-              createdBy: editUser.id,
-              createdByName: editUser.fullName || editUser.username,
-            });
-          }
+        const existingCode = existing.code || req.params.id;
+        for (const movement of movements) {
+          await db.execute(sql`
+            INSERT INTO store_inventory (product_id, warehouse_id, quantity, updated_at)
+            VALUES (${movement.productId}, ${movement.warehouseId}, ${Math.max(0, movement.quantityDelta)}, NOW())
+            ON CONFLICT (product_id, warehouse_id)
+            DO UPDATE SET quantity = GREATEST(0, store_inventory.quantity + ${movement.quantityDelta}), updated_at = NOW()
+          `);
+          const oldQty = oldQtyMap[movement.productId]?.qty ?? 0;
+          const newQty = newQtyMap[movement.productId] ?? 0;
+          await logStockTransaction({
+            productId: movement.productId,
+            warehouseId: movement.warehouseId,
+            receiptId: req.params.id,
+            receiptCode: existingCode,
+            type: "edit_export",
+            quantityDelta: movement.quantityDelta,
+            description: `Sửa ${existingCode}: Xuất cũ ${oldQty} → mới ${newQty}${existing.warehouse_id !== targetWarehouseId ? `; chuyển kho ${existing.warehouse_id} → ${targetWarehouseId}` : ""}`,
+            createdBy: editUser.id,
+            createdByName: editUser.fullName || editUser.username,
+          });
         }
       } else if (existing.status === "draft" && receiptData.status === "completed" && receiptData.warehouseId) {
         const errors = await validateAndDecreaseInventory(receiptData.warehouseId, items, null, req.params.id);
@@ -1289,7 +1298,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
           code = ${receiptData.code},
           name = ${receiptData.name},
           location_id = ${receiptData.locationId ?? null},
-          warehouse_id = ${receiptData.warehouseId ?? null},
+          warehouse_id = ${receiptData.warehouseId ?? existing.warehouse_id},
           date = ${receiptData.date},
           recipient_name = ${receiptData.recipientName ?? null},
           note = ${receiptData.note ?? null},

@@ -12,6 +12,20 @@ function formatInvoiceDate(value: string | Date | null | undefined): string {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value);
 }
 
+function aggregateTransferItems(items: any[]): Array<{ product_id: string; product_name: string; quantity: number }> {
+  const grouped = new Map<string, { product_id: string; product_name: string; quantity: number }>();
+  for (const item of items) {
+    const productId = String(item.product_id);
+    const current = grouped.get(productId);
+    grouped.set(productId, {
+      product_id: productId,
+      product_name: current?.product_name ?? item.product_name,
+      quantity: (current?.quantity ?? 0) + Number(item.quantity),
+    });
+  }
+  return [...grouped.values()];
+}
+
 async function ensureTransferAuditLogTable() {
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS store_transfer_audit_logs (
@@ -735,7 +749,7 @@ export async function registerStoreTransferRoutes(app: Express) {
 
       // Kiểm tra tồn kho nguồn (dùng store_stock_transactions để nhất quán với màn hình tồn kho)
       const errors: string[] = [];
-      for (const item of items) {
+      for (const item of aggregateTransferItems(items)) {
         const stockRow = await db.execute(sql`
           SELECT COALESCE(SUM(quantity_delta), 0)::int AS actual_stock
           FROM store_stock_transactions
@@ -891,7 +905,7 @@ export async function registerStoreTransferRoutes(app: Express) {
 
       // Kiểm tra tồn kho nguồn (dùng store_stock_transactions để nhất quán với màn hình tồn kho)
       const errors: string[] = [];
-      for (const item of items) {
+      for (const item of aggregateTransferItems(items)) {
         const stockRow = await db.execute(sql`
           SELECT COALESCE(SUM(quantity_delta), 0)::int AS actual_stock
           FROM store_stock_transactions
