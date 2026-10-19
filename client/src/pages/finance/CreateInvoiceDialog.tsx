@@ -2040,6 +2040,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                 />
                               );
                             })()}
+                            {isKhoa && (
+                              <p className="mt-0.5 whitespace-nowrap text-[9px] leading-tight text-amber-600">
+                                {t("finance.create.coursePackageNote")}
+                              </p>
+                            )}
                           </td>
                           <td className="p-2">
                             <Input
@@ -2075,8 +2080,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               }
                             }}>
                               <DialogTrigger asChild>
-                                <button className="w-full h-8 flex items-center justify-between px-1 rounded-none border-0 border-b border-border bg-transparent hover:border-purple-400 transition-colors text-[10px]">
-                                  <span className={promoAmt > 0 ? "text-green-600 font-semibold" : "text-muted-foreground"}>
+                                <button className="w-full h-8 flex items-center justify-end gap-1 px-1 rounded-none border-0 border-b border-border bg-transparent hover:border-purple-400 transition-colors text-[10px]">
+                                  <span className={`flex-1 text-right ${promoAmt > 0 ? "text-green-600 font-semibold" : "text-muted-foreground"}`}>
                                     {promoAmt > 0 ? `-${fmtMoney(promoAmt)}` : t("finance.create.choose")}
                                   </span>
                                   <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
@@ -2234,8 +2239,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               }
                             }}>
                               <DialogTrigger asChild>
-                                <button className="w-full h-8 flex items-center justify-between px-1 rounded-none border-0 border-b border-border bg-transparent hover:border-purple-400 transition-colors text-[10px]">
-                                  <span className={surchargeAmt > 0 ? "text-orange-600 font-semibold" : "text-muted-foreground"}>
+                                <button className="w-full h-8 flex items-center justify-end gap-1 px-1 rounded-none border-0 border-b border-border bg-transparent hover:border-purple-400 transition-colors text-[10px]">
+                                  <span className={`flex-1 text-right ${surchargeAmt > 0 ? "text-orange-600 font-semibold" : "text-muted-foreground"}`}>
                                     {surchargeAmt > 0 ? `+${fmtMoney(surchargeAmt)}` : t("finance.create.choose")}
                                   </span>
                                   <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
@@ -2376,7 +2381,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               value={String(p.vatRate)}
                               onValueChange={value => setProducts(prev => prev.map(x => x.id === p.id ? { ...x, vatRate: Number(value) } : x))}
                             >
-                              <SelectTrigger className="h-8 rounded-none border-0 border-b border-border bg-transparent px-1.5 text-[11px] shadow-none focus:ring-0" data-testid={`select-vat-rate-${p.id}`}>
+                              <SelectTrigger className="h-8 justify-end rounded-none border-0 border-b border-border bg-transparent px-1.5 text-right text-[11px] shadow-none focus:ring-0" data-testid={`select-vat-rate-${p.id}`}>
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -2385,7 +2390,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                 ))}
                               </SelectContent>
                             </Select>
-                            <p className="mt-0.5 whitespace-nowrap text-[9px] leading-tight text-muted-foreground">
+                            <p className="mt-0.5 whitespace-nowrap text-right text-[9px] leading-tight text-muted-foreground">
                               {t("finance.taxAmount")}: {fmtMoney(vatAmount)}
                             </p>
                           </td>
@@ -2400,15 +2405,6 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                             </button>
                           </td>
                         </tr>
-                        {isKhoa && (
-                          <tr className="border-b last:border-0">
-                            <td colSpan={9} className="px-3 pb-2">
-                              <p className="whitespace-nowrap text-[9px] leading-tight text-amber-600">
-                                {t("finance.create.coursePackageNote")}
-                              </p>
-                            </td>
-                          </tr>
-                        )}
                         </Fragment>
                       );
                         })}
