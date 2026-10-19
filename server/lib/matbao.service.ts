@@ -31,7 +31,7 @@ export interface MatBaoInvoiceItem {
   taxRate?: number;
   /** Khuyến mãi áp dụng riêng cho dòng này (sẽ chèn ngay dưới sản phẩm với tChat:2) */
   promotions?: MatBaoAdjustment[];
-  /** Phụ thu áp dụng riêng cho dòng này (sẽ chèn ngay dưới sản phẩm với tChat:3) */
+  /** Phụ thu áp dụng riêng cho dòng này */
   surcharges?: MatBaoAdjustment[];
 }
 
@@ -44,7 +44,7 @@ export interface MatBaoInvoicePayload {
   items: MatBaoInvoiceItem[];
   /** Khuyến mãi áp dụng cho toàn hoá đơn (đẩy xuống cuối với tChat:2) */
   invoicePromotions?: MatBaoAdjustment[];
-  /** Phụ thu áp dụng cho toàn hoá đơn (đẩy xuống cuối với tChat:3) */
+  /** Phụ thu áp dụng cho toàn hoá đơn */
   invoiceSurcharges?: MatBaoAdjustment[];
 }
 
@@ -194,6 +194,8 @@ class MatBaoService {
       TgTien: number;
     };
     const lines: Line[] = [];
+    const fees: Array<{ TLPhi: string; TPhi: number }> = [];
+    let feeTax = 0;
     let stt = 0;
 
     const pushAdjustment = (
@@ -204,6 +206,14 @@ class MatBaoService {
       taxRate: number,
     ) => {
       if (!amount || amount <= 0) return;
+      // Experiment for drafts: send surcharges through the API's fee list.
+      // Keep signed invoices on the existing DSHHDVu/TChat=3 path until this is verified.
+      if (tChat === 3 && !isPublish) {
+        const feeAmount = Math.round(amount);
+        fees.push({ TLPhi: label, TPhi: feeAmount });
+        feeTax += Math.round((feeAmount * taxRate) / 100);
+        return;
+      }
       // tChat=2 (Khuyến mãi) phải gửi giá trị ÂM để mẫu PDF của Mắt Bão tự trừ ở dòng "Cộng tiền hàng".
       // tChat=3 (Phụ thu/Chiết khấu) gửi giá trị dương (cộng vào tổng).
       const sign = tChat === 2 ? -1 : 1;
@@ -268,8 +278,8 @@ class MatBaoService {
 
     // Dấu đã được nhúng vào ThTien/TThue của từng dòng (tChat=2 mang giá trị âm),
     // nên tổng chỉ cần cộng trực tiếp.
-    const TgThTien = lines.reduce((s, x) => s + x.ThTien, 0);
-    const TgTThue = lines.reduce((s, x) => s + x.TThue, 0);
+    const TgThTien = lines.reduce((s, x) => s + x.ThTien, 0) + fees.reduce((s, x) => s + x.TPhi, 0);
+    const TgTThue = lines.reduce((s, x) => s + x.TThue, 0) + feeTax;
     const TgTTTBSo = TgThTien + TgTThue;
     const items = lines;
 
@@ -293,6 +303,7 @@ class MatBaoService {
       NMua_DCTDTu: inv.email || "",
       NMua_HVTNMHang: inv.studentName,
       DSHHDVu: items,
+      ...(fees.length > 0 ? { DSLPhi: fees } : {}),
       TgThTien,
       TgTThue,
       TTCKTMai: 0,
