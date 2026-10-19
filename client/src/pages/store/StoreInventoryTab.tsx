@@ -159,14 +159,15 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
         </div>
 
         {/* Stat cards */}
-        <div className="px-6 pt-4 pb-2 grid grid-cols-2 md:grid-cols-4 gap-3 shrink-0">
+        <div className="px-6 pt-3 pb-2 shrink-0 overflow-x-auto">
+          <div className="grid grid-cols-8 min-w-[900px] gap-2">
           <StatCard label="NHẬP" value={formatSigned(importQty)} colorClass="bg-emerald-50 text-emerald-700 border-emerald-100" />
           <StatCard label="XUẤT" value={formatSigned(exportQty)} colorClass="bg-gray-50 text-gray-700 border-gray-100" />
           <StatCard
             label="CHUYỂN KHO"
             value={transferVolume}
             detail={
-              <span className="flex w-full justify-center gap-3 text-xs font-medium">
+              <span className="flex w-full justify-center gap-2 whitespace-nowrap text-[10px] font-medium">
                 <span>Vào <span className="tabular-nums">{formatSigned(transferInQty)}</span></span>
                 <span>Ra <span className="tabular-nums">{formatSigned(transferOutQty)}</span></span>
               </span>
@@ -178,6 +179,7 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
           <StatCard label="TỒN KHO" value={row.actualStock} colorClass="bg-blue-50 text-blue-700 border-blue-100" />
           <StatCard label="GIỮ CHỖ" value={row.reservedQty} colorClass="bg-amber-50 text-amber-600 border-amber-100" />
           <StatCard label="KHẢ DỤNG" value={row.availableQty} colorClass="bg-indigo-50 text-indigo-700 border-indigo-100" />
+          </div>
         </div>
 
         {/* History */}
@@ -260,9 +262,9 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
 
 function StatCard({ label, value, detail, colorClass }: { label: string; value: number | string; detail?: ReactNode; colorClass: string }) {
   return (
-    <div className={cn("rounded-xl border p-3 flex flex-col items-center gap-1 min-w-0", colorClass)}>
-      <span className="text-[10px] font-bold tracking-wide uppercase opacity-70">{label}</span>
-      <span className="text-2xl font-bold tabular-nums">{value}</span>
+    <div className={cn("rounded-lg border p-2 flex flex-col items-center gap-0.5 min-w-0", colorClass)}>
+      <span className="text-[9px] font-bold tracking-wide uppercase opacity-70 whitespace-nowrap">{label}</span>
+      <span className="text-xl font-bold tabular-nums">{value}</span>
       {detail}
     </div>
   );
