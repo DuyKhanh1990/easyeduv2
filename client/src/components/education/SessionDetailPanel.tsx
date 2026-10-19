@@ -677,6 +677,14 @@ export function SessionDetailPanel({
                   size="sm"
                   onClick={() => {
                     const note = stripHtml(sessionNoteDraft) ? sessionNoteDraft : null;
+                    if (!note && !stripHtml(session?.sessionNote ?? "")) {
+                      toast({
+                        title: "Chưa có nội dung ghi chú",
+                        description: "Hãy nhập ghi chú trước khi lưu.",
+                        variant: "destructive",
+                      });
+                      return;
+                    }
                     updateSessionNoteMutation.mutate(note);
                   }}
                   disabled={updateSessionNoteMutation.isPending}

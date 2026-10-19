@@ -8587,6 +8587,19 @@ export function registerClassesRoutes(app: Express): void {
         return res.status(400).json({ message: "Ghi chú buổi học vượt quá giới hạn cho phép" });
       }
 
+      const [existing] = await db.select({
+        id: classSessions.id,
+        sessionNote: classSessions.sessionNote,
+      }).from(classSessions).where(eq(classSessions.id, classSessionId)).limit(1);
+      if (!existing) return res.status(404).json({ message: "Không tìm thấy buổi học" });
+
+      const noteText = typeof sessionNote === "string"
+        ? sessionNote.replace(/<[^>]*>/g, " ").replace(/&nbsp;|&#160;/gi, " ").trim()
+        : "";
+      if (!noteText && !existing.sessionNote?.trim()) {
+        return res.status(400).json({ message: "Hãy nhập ghi chú trước khi lưu" });
+      }
+
       const [updated] = await db.update(classSessions)
         .set({ sessionNote, updatedAt: new Date() })
         .where(eq(classSessions.id, classSessionId))
