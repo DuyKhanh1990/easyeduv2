@@ -37,6 +37,7 @@ import {
   Check,
   X,
   DoorOpen,
+  Maximize2,
 } from "lucide-react";
 
 interface SessionDetailPanelProps {
@@ -223,6 +224,10 @@ export function SessionDetailPanel({
   const [sessionNoteDraft, setSessionNoteDraft] = useState("");
   const sessionNoteDraftRef = useRef("");
   const sessionNoteEditorRef = useRef<{ getHTML: () => string } | null>(null);
+  const sessionNotePreviewRef = useRef<HTMLDivElement | null>(null);
+  const sessionNoteContentRef = useRef<HTMLDivElement | null>(null);
+  const [isSessionNotePreviewOverflowing, setIsSessionNotePreviewOverflowing] = useState(false);
+  const [isSessionNoteDialogOpen, setIsSessionNoteDialogOpen] = useState(false);
   const [isEditingSessionNote, setIsEditingSessionNote] = useState(false);
 
   useEffect(() => {
@@ -231,6 +236,30 @@ export function SessionDetailPanel({
     setSessionNoteDraft(savedNote);
     setIsEditingSessionNote(false);
   }, [selectedClassSessionId, session?.sessionNote]);
+
+  useEffect(() => {
+    const preview = sessionNotePreviewRef.current;
+    if (!preview || isEditingSessionNote) {
+      setIsSessionNotePreviewOverflowing(false);
+      return;
+    }
+
+    const measureOverflow = () => {
+      setIsSessionNotePreviewOverflowing(preview.scrollHeight > preview.clientHeight + 1);
+    };
+
+    measureOverflow();
+    const observer = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(measureOverflow)
+      : null;
+    if (sessionNoteContentRef.current) observer?.observe(sessionNoteContentRef.current);
+    window.addEventListener("resize", measureOverflow);
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measureOverflow);
+    };
+  }, [session?.sessionNote, isEditingSessionNote]);
 
   const updateSessionNoteMutation = useMutation({
     mutationFn: async (sessionNote: string | null) => {
@@ -644,17 +673,31 @@ export function SessionDetailPanel({
         <div className="mt-3 border-t border-slate-200 pt-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <p className="text-[10px] text-slate-800 uppercase font-bold tracking-wider">Ghi chú buổi học</p>
-            {canEdit && !isEditingSessionNote && (
-              <button
-                type="button"
-                data-testid="btn-edit-session-note"
-                className="text-slate-400 hover:text-indigo-600 transition-colors"
-                onClick={() => setIsEditingSessionNote(true)}
-                aria-label="Sửa ghi chú buổi học"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {canEdit && !isEditingSessionNote && (
+                <button
+                  type="button"
+                  data-testid="btn-edit-session-note"
+                  className="text-slate-400 hover:text-indigo-600 transition-colors"
+                  onClick={() => setIsEditingSessionNote(true)}
+                  aria-label="Sửa ghi chú buổi học"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {!isEditingSessionNote && isSessionNotePreviewOverflowing && (
+                <button
+                  type="button"
+                  data-testid="btn-expand-session-note"
+                  className="text-slate-400 hover:text-indigo-600 transition-colors"
+                  onClick={() => setIsSessionNoteDialogOpen(true)}
+                  aria-label="Xem đầy đủ ghi chú buổi học"
+                  title="Xem đầy đủ"
+                >
+                  <Maximize2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
           </div>
           {isEditingSessionNote && canEdit ? (
             <div className="space-y-2">
@@ -709,10 +752,18 @@ export function SessionDetailPanel({
               </div>
             </div>
           ) : session?.sessionNote && stripHtml(session.sessionNote) ? (
-            <RichContentRenderer
-              text={session.sessionNote}
-              className="prose prose-sm max-w-none text-slate-700 prose-p:my-1 prose-p:leading-relaxed"
-            />
+            <div
+              ref={sessionNotePreviewRef}
+              className="max-h-32 overflow-hidden"
+              data-testid="session-note-preview"
+            >
+              <div ref={sessionNoteContentRef}>
+                <RichContentRenderer
+                  text={session.sessionNote}
+                  className="prose prose-sm max-w-none text-slate-700 prose-p:my-1 prose-p:leading-relaxed"
+                />
+              </div>
+            </div>
           ) : (
             <p className="text-xs text-slate-500 italic">Chưa có ghi chú buổi học</p>
           )}
@@ -1016,11 +1067,34 @@ export function SessionDetailPanel({
     </Dialog>
   );
 
+  const sessionNoteViewDialog = (
+    <Dialog open={isSessionNoteDialogOpen} onOpenChange={setIsSessionNoteDialogOpen}>
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-4xl max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden">
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="text-base font-bold">
+            Ghi chú buổi học — Buổi {sessionIndex}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-2 pr-2">
+          {session?.sessionNote && stripHtml(session.sessionNote) ? (
+            <RichContentRenderer
+              text={session.sessionNote}
+              className="prose prose-sm max-w-none text-slate-700 prose-p:my-1 prose-p:leading-relaxed"
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground italic">Không có nội dung ghi chú</p>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+
   if (mode === "info") {
     return (
       <>
         {infoCard}
         {contentViewDialog}
+        {sessionNoteViewDialog}
       </>
     );
   }
@@ -1101,6 +1175,7 @@ export function SessionDetailPanel({
       </div>
       {studentListCard}
       {contentViewDialog}
+      {sessionNoteViewDialog}
       {bulkChangeCycleDialog}
       {bulkReserveDialog}
     </>
