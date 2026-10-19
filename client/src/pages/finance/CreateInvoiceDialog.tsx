@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { Fragment, useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { rebalanceUnpaidInstallments } from "./paymentScheduleAllocation";
@@ -347,6 +347,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const [studentSearch, setStudentSearch] = useState<string>("");
   const [preloadedStudent, setPreloadedStudent] = useState<{ id: string; fullName: string; code: string } | null>(null);
   const [studentPickerOpen, setStudentPickerOpen] = useState(false);
+  const [addProductPopoverOpen, setAddProductPopoverOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([
     { id: "1", packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, vatRate: 0, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: "" },
   ]);
@@ -842,6 +843,16 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const categories = allCategories.filter(c =>
     c.isActive !== false && c.type === (invoiceType === "income" ? "income" : "expense")
   );
+  const productGroups = (() => {
+    const groups = new Map<string, { categoryId: string; rows: { product: Product; index: number }[] }>();
+    products.forEach((product, index) => {
+      const categoryId = product.categoryId ?? "";
+      const group = groups.get(categoryId) ?? { categoryId, rows: [] };
+      group.rows.push({ product, index });
+      groups.set(categoryId, group);
+    });
+    return Array.from(groups.values());
+  })();
   const isHocPhi = products.some(p => {
     const cat = allCategories.find(c => c.id === p.categoryId);
     return cat?.name?.toLowerCase().includes("học phí");
@@ -972,7 +983,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     });
   }, [directPaidAmount, finalTotal, hasSchedulePromotion, open, scheduleAllocated]);
 
-  const addProduct = () => setProducts(prev => [...prev, { id: Date.now().toString(), packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, vatRate: 0, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: prev[0]?.categoryId ?? "" }]);
+  const addProduct = (categoryId?: string) => setProducts(prev => [...prev, { id: Date.now().toString(), packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, vatRate: 0, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: categoryId ?? prev[0]?.categoryId ?? "" }]);
   const removeProduct = (id: string) => setProducts(prev => prev.filter(p => p.id !== id));
   const ensureAdjustmentRows = (
     keys: string[],
@@ -1788,28 +1799,48 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-semibold">{t("finance.create.products")}</span>
-                <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" onClick={addProduct} data-testid="button-add-product">
-                  <Plus className="h-3.5 w-3.5" /> {t("finance.addProduct")}
-                </Button>
+                <Popover open={addProductPopoverOpen} onOpenChange={setAddProductPopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" data-testid="button-add-product">
+                      <Plus className="h-3.5 w-3.5" /> {t("finance.addProduct")}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-64 p-2">
+                    <p className="mb-2 px-2 text-xs font-medium text-muted-foreground">{t("finance.create.category")}</p>
+                    <div className="max-h-56 space-y-1 overflow-y-auto">
+                      {categories.map((category: any) => (
+                        <button
+                          key={category.id}
+                          type="button"
+                          className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+                          onClick={() => {
+                            addProduct(category.id);
+                            setAddProductPopoverOpen(false);
+                          }}
+                        >
+                          {category.name}
+                        </button>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
 
               <div className="rounded-lg border overflow-x-auto">
-                <table className="w-full min-w-[1120px] text-xs table-fixed">
+                <table className="w-full min-w-[1040px] text-xs table-fixed">
                   <colgroup>
-                    <col style={{ width: "15%" }} />
-                    <col style={{ width: "20%" }} />
-                    <col style={{ width: "10%" }} />
+                    <col style={{ width: "25%" }} />
+                    <col style={{ width: "12%" }} />
                     <col style={{ width: "6%" }} />
+                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "12%" }} />
                     <col style={{ width: "10%" }} />
                     <col style={{ width: "10%" }} />
-                    <col style={{ width: "9%" }} />
-                    <col style={{ width: "8%" }} />
-                    <col style={{ width: "9%" }} />
+                    <col style={{ width: "10%" }} />
                     <col style={{ width: "3%" }} />
                   </colgroup>
                   <thead className="bg-muted/60">
                     <tr className="border-b">
-                      <th className="p-2 text-left font-semibold text-muted-foreground">{t("finance.create.category")}</th>
                       <th className="p-2 text-left font-semibold text-muted-foreground">{t("finance.create.packageName")}</th>
                       <th className="p-2 text-right font-semibold text-muted-foreground">{t("finance.unitPrice")}</th>
                       <th className="p-2 text-center font-semibold text-muted-foreground">{t("finance.create.quantity")}</th>
@@ -1822,7 +1853,49 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     </tr>
                   </thead>
                   <tbody>
-                    {products.map((p, idx) => {
+                    {productGroups.map(group => (
+                      <Fragment key={`category-${group.categoryId || "unassigned"}`}>
+                        <tr className="border-b bg-violet-50/80 dark:bg-violet-950/30">
+                          <td colSpan={9} className="px-3 py-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <SearchableSelect
+                                value={group.categoryId}
+                                onChange={value => {
+                                  setProducts(prev => prev.map(product => product.categoryId === group.categoryId ? {
+                                    ...product,
+                                    categoryId: value,
+                                    packageId: null,
+                                    packageType: null,
+                                    name: "",
+                                    storeProductId: null,
+                                    storeProductCode: null,
+                                    warehouseId: null,
+                                    warehouseName: null,
+                                    stockAvailable: undefined,
+                                  } : product));
+                                  setDeduction(0);
+                                }}
+                                placeholder={t("finance.create.choose")}
+                                searchPlaceholder={t("finance.searchCategory")}
+                                options={categories.map((category: any) => ({ value: category.id, label: category.name }))}
+                                className="h-8 w-56 border-violet-200 bg-white text-[11px] font-semibold uppercase text-violet-700 dark:bg-background dark:text-violet-300"
+                                contentClassName="min-w-[220px]"
+                                data-testid={`select-group-category-${group.categoryId || "unassigned"}`}
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 shrink-0 gap-1 border-violet-200 bg-white text-[11px] text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-background dark:text-violet-300"
+                                onClick={() => group.categoryId && addProduct(group.categoryId)}
+                                disabled={!group.categoryId}
+                                data-testid={`button-add-product-to-category-${group.categoryId || "unassigned"}`}
+                              >
+                                <Plus className="h-3 w-3" /> {t("finance.addProduct")}
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                        {group.rows.map(({ product: p, index: idx }) => {
                       const isKhoa = p.packageType === "khoá";
                       const isProductHocPhi = allCategories.find((c: any) => c.id === p.categoryId)?.name?.toLowerCase().includes("học phí");
                       const base = calcBase(p);
@@ -1846,27 +1919,6 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       const vatAmount = calculateInvoiceVatAmount(subtotal, p.vatRate);
                       return (
                         <tr key={p.id} className={`border-b last:border-0 ${idx % 2 === 1 ? "bg-muted/20" : ""}`}>
-                          <td className="p-2">
-                            <SearchableSelect
-                              value={p.categoryId}
-                              onChange={v => {
-                                setProducts(prev => prev.map(x => x.id === p.id ? {
-                                  ...x, categoryId: v, packageId: null, packageType: null, name: "",
-                                  storeProductId: null, storeProductCode: null, warehouseId: null, warehouseName: null, stockAvailable: undefined,
-                                } : x));
-                                setDeduction(0);
-                              }}
-                              placeholder={t("finance.create.choose")}
-                               searchPlaceholder={t("finance.searchCategory")}
-                              options={categories.map((cat: any) => ({
-                                value: cat.id,
-                                label: cat.name,
-                              }))}
-                              className="h-8 text-[11px]"
-                              contentClassName="min-w-[220px]"
-                              data-testid={`select-item-category-${p.id}`}
-                            />
-                          </td>
                           <td className="p-2">
                             {(() => {
                               const catName = allCategories.find((c: any) => c.id === p.categoryId)?.name ?? "";
@@ -2332,7 +2384,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                           </td>
                         </tr>
                       );
-                    })}
+                        })}
+                      </Fragment>
+                    ))}
                   </tbody>
                 </table>
               </div>
