@@ -3,7 +3,7 @@ import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { eq } from "drizzle-orm";
 import { getReservationConfig, logStockTransaction } from "./store-inventory.routes";
-import { buildStockQuantityMaps } from "../lib/store-stock-quantity-maps";
+import { buildStockQuantityMaps, StockQuantityMappingError } from "../lib/store-stock-quantity-maps";
 import { createStoreIssueReceiptAuditLog } from "../storage/store-issue-receipt-audit-log.storage";
 import { storage } from "../storage";
 import { getNextLocationCode } from "../storage/finance.storage";
@@ -1479,6 +1479,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
       res.json(updatedRow.rows[0]);
     } catch (err: any) {
       if (err?.code === "23505") return res.status(409).json({ message: "Mã phiếu đã tồn tại" });
+      if (err instanceof StockQuantityMappingError) return res.status(409).json({ message: err.message });
       console.error("[IssueReceipt] PATCH error:", err);
       res.status(500).json({ message: "Lỗi khi cập nhật phiếu xuất kho" });
     }

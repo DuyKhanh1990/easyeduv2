@@ -37,7 +37,7 @@ describe("buildStockQuantityMaps", () => {
         { productId: "ta-a", productCode: "TA", quantity: 30, colorId: "red" },
         { productId: "ta-b", productCode: "TA", quantity: 16, colorId: "blue" },
       ],
-    )).toThrow("Cannot safely match legacy stock item TA to one product");
+    )).toThrow("Không thể xác định duy nhất sản phẩm cũ TA");
   });
 
   it("tracks removal of one product and addition of another separately", () => {

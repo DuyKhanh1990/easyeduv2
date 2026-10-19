@@ -21,6 +21,13 @@ export type StockQuantityMap = {
   newQtyMap: Record<string, number>;
 };
 
+export class StockQuantityMappingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StockQuantityMappingError";
+  }
+}
+
 function readField(
   item: StockItemLike,
   camelKey: keyof StockItemLike,
@@ -97,7 +104,9 @@ export function buildStockQuantityMaps(
           .filter((id): id is string => Boolean(id)),
       );
       if (matchingIds && matchingIds.size > 1) {
-        throw new Error(`Cannot safely match legacy stock item ${code ?? "unknown"} to one product`);
+        throw new StockQuantityMappingError(
+          `Không thể xác định duy nhất sản phẩm cũ ${code ?? "không rõ mã"}; vui lòng kiểm tra dòng phiếu trước khi lưu.`,
+        );
       }
       productId = matchingIds?.values().next().value ?? null;
     }

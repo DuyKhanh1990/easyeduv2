@@ -3,7 +3,7 @@ import { db, pool } from "../db";
 import { sql } from "drizzle-orm";
 import { eq, asc, desc, ilike, or } from "drizzle-orm";
 import { logStockTransaction } from "./store-inventory.routes";
-import { buildStockQuantityMaps } from "../lib/store-stock-quantity-maps";
+import { buildStockQuantityMaps, StockQuantityMappingError } from "../lib/store-stock-quantity-maps";
 import {
   storeReceipts,
   storeReceiptItems,
@@ -907,6 +907,7 @@ export async function registerStoreReceiptRoutes(app: Express) {
       res.json(receipt);
     } catch (err: any) {
       if (err?.code === "23505") return res.status(409).json({ message: "Mã phiếu đã tồn tại" });
+      if (err instanceof StockQuantityMappingError) return res.status(409).json({ message: err.message });
       console.error("[Receipt] PATCH error:", err);
       res.status(500).json({ message: "Lỗi khi cập nhật phiếu nhập kho" });
     }
