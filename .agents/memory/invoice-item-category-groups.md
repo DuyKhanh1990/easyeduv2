@@ -3,7 +3,9 @@ name: Invoice item category groups
 description: Presentation-only grouping of invoice item rows by transaction category in the create/edit dialog.
 ---
 
-Show each distinct category as one header row and place its product rows beneath it. A plus on a category header adds a row to that category; adding from the main button selects a category and joins its existing group rather than creating a duplicate header. Keep each product's category ID on its item, and do not reorder the underlying item array merely to render groups. Existing invoices should group from their saved item categories without any data migration or automatic rewrite.
+Show each distinct category as one header row and place its product rows beneath it. The green plus next to a category lets the user choose another category; if it already exists, reuse that group, otherwise create a group with a blank item. The product plus adds a row to that category. Keep each product's category ID on its item, and do not reorder the underlying item array merely to render groups. Existing invoices should group from their saved item categories without any data migration or automatic rewrite.
+
+Use underline-style controls in product rows rather than rounded input boxes.
 
 **Why:** The user explicitly scoped this to a UI change and asked that invoice behavior and existing records remain unchanged.
 

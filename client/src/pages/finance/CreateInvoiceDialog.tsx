@@ -348,6 +348,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const [preloadedStudent, setPreloadedStudent] = useState<{ id: string; fullName: string; code: string } | null>(null);
   const [studentPickerOpen, setStudentPickerOpen] = useState(false);
   const [addProductPopoverOpen, setAddProductPopoverOpen] = useState(false);
+  const [categoryPickerOpenId, setCategoryPickerOpenId] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([
     { id: "1", packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, vatRate: 0, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: "" },
   ]);
@@ -844,11 +845,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     c.isActive !== false && c.type === (invoiceType === "income" ? "income" : "expense")
   );
   const productGroups = (() => {
-    const groups = new Map<string, { categoryId: string; rows: { product: Product; index: number }[] }>();
-    products.forEach((product, index) => {
+    const groups = new Map<string, { categoryId: string; rows: Product[] }>();
+    products.forEach(product => {
       const categoryId = product.categoryId ?? "";
       const group = groups.get(categoryId) ?? { categoryId, rows: [] };
-      group.rows.push({ product, index });
+      group.rows.push(product);
       groups.set(categoryId, group);
     });
     return Array.from(groups.values());
@@ -1858,6 +1859,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         <tr className="border-b bg-violet-50/80 dark:bg-violet-950/30">
                           <td colSpan={9} className="px-3 py-2">
                             <div className="flex items-center justify-between gap-3">
+                              <div className="flex min-w-0 items-center gap-1">
                               <SearchableSelect
                                 value={group.categoryId}
                                 onChange={value => {
@@ -1878,10 +1880,53 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                 placeholder={t("finance.create.choose")}
                                 searchPlaceholder={t("finance.searchCategory")}
                                 options={categories.map((category: any) => ({ value: category.id, label: category.name }))}
-                                className="h-8 w-56 border-violet-200 bg-white text-[11px] font-semibold uppercase text-violet-700 dark:bg-background dark:text-violet-300"
+                                className="h-8 w-56 rounded-none border-0 bg-transparent px-1 text-[11px] font-bold uppercase text-violet-700 shadow-none focus-visible:ring-0 dark:text-violet-300"
                                 contentClassName="min-w-[220px]"
                                 data-testid={`select-group-category-${group.categoryId || "unassigned"}`}
                               />
+                              <Popover
+                                open={categoryPickerOpenId === (group.categoryId || "unassigned")}
+                                onOpenChange={isOpen => setCategoryPickerOpenId(isOpen ? (group.categoryId || "unassigned") : null)}
+                              >
+                                <PopoverTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-7 w-7 shrink-0 text-green-600 hover:bg-green-50 hover:text-green-700 dark:hover:bg-green-950"
+                                    title={t("finance.create.addCategory")}
+                                    aria-label={t("finance.create.addCategory")}
+                                    data-testid={`button-add-category-${group.categoryId || "unassigned"}`}
+                                  >
+                                    <Plus className="h-4 w-4" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent align="start" className="w-64 p-2">
+                                  <p className="mb-2 px-2 text-xs font-medium text-muted-foreground">{t("finance.create.category")}</p>
+                                  <div className="max-h-56 space-y-1 overflow-y-auto">
+                                    {categories.map((category: any) => (
+                                      <button
+                                        key={category.id}
+                                        type="button"
+                                        className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+                                        onClick={() => {
+                                          if (!group.categoryId) {
+                                            setProducts(prev => prev.map(product => product.categoryId === group.categoryId
+                                              ? { ...product, categoryId: category.id }
+                                              : product));
+                                          } else {
+                                            addProduct(category.id);
+                                          }
+                                          setCategoryPickerOpenId(null);
+                                        }}
+                                      >
+                                        {category.name}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                              </div>
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -1895,7 +1940,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                             </div>
                           </td>
                         </tr>
-                        {group.rows.map(({ product: p, index: idx }) => {
+                        {group.rows.map(p => {
                       const isKhoa = p.packageType === "khoá";
                       const isProductHocPhi = allCategories.find((c: any) => c.id === p.categoryId)?.name?.toLowerCase().includes("học phí");
                       const base = calcBase(p);
@@ -1918,7 +1963,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       const subtotal = surchargeResult.finalAmount;
                       const vatAmount = calculateInvoiceVatAmount(subtotal, p.vatRate);
                       return (
-                        <tr key={p.id} className={`border-b last:border-0 ${idx % 2 === 1 ? "bg-muted/20" : ""}`}>
+                        <tr key={p.id} className="border-b last:border-0">
                           <td className="p-2">
                             {(() => {
                               const catName = allCategories.find((c: any) => c.id === p.categoryId)?.name ?? "";
@@ -1947,7 +1992,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                      placeholder={t("finance.create.choosePackage")}
                                      searchPlaceholder={t("finance.searchCourse")}
                                     options={packageOptions}
-                                    className="h-8 text-xs"
+                                    className="h-8 rounded-none border-0 border-b border-border bg-transparent px-1 text-xs shadow-none focus-visible:ring-0"
                                     contentClassName="min-w-[280px]"
                                     data-testid={`select-fee-package-${p.id}`}
                                   />
@@ -1957,7 +2002,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                 return (
                                   <Popover open={khoPickerOpen === p.id} onOpenChange={v => { setKhoPickerOpen(v ? p.id : null); if (!v) setKhoSearch(""); }}>
                                     <PopoverTrigger asChild>
-                                      <button className="w-full h-8 flex items-center justify-between px-2 rounded-md border bg-background hover:border-purple-400 transition-colors text-[11px] text-left">
+                                      <button className="w-full h-8 flex items-center justify-between px-1 rounded-none border-0 border-b border-border bg-transparent hover:border-purple-400 transition-colors text-[11px] text-left">
                                         <span className={p.name ? "text-foreground truncate" : "text-muted-foreground"}>
                                           {p.name || t("finance.chooseInventoryProduct")}
                                         </span>
@@ -2013,7 +2058,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               }
                               return (
                                 <Input
-                                  className="h-8 text-xs"
+                                  className="h-8 rounded-none border-0 border-b border-border bg-transparent px-1 text-xs shadow-none focus-visible:ring-0"
                                    placeholder={t("finance.create.serviceName")}
                                   value={p.name}
                                   onChange={e => setProducts(prev => prev.map(x => x.id === p.id ? { ...x, name: e.target.value } : x))}
@@ -2028,7 +2073,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               readOnly={isKhoa}
                               onChange={e => !isKhoa && setProducts(prev => prev.map(x => x.id === p.id ? { ...x, unitPrice: Number(e.target.value) } : x))}
                               onFocus={e => e.target.select()}
-                              className={`h-8 text-[11px] text-right px-1.5 ${isKhoa ? "bg-muted/40 cursor-not-allowed opacity-70" : ""}`}
+                              className={`h-8 rounded-none border-0 border-b border-border bg-transparent text-[11px] text-right px-1.5 shadow-none focus-visible:ring-0 ${isKhoa ? "bg-muted/40 cursor-not-allowed opacity-70" : ""}`}
                                title={isKhoa ? t("finance.fixedCoursePrice") : undefined}
                             />
                           </td>
@@ -2039,7 +2084,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               value={p.quantity}
                               onChange={e => setProducts(prev => prev.map(x => x.id === p.id ? { ...x, quantity: Number(e.target.value) } : x))}
                               onFocus={e => e.target.select()}
-                              className="h-8 text-[11px] text-center px-1"
+                              className="h-8 rounded-none border-0 border-b border-border bg-transparent text-[11px] text-center px-1 shadow-none focus-visible:ring-0"
                             />
                             {isKhoa && (
                               <p className="text-[9px] text-amber-600 mt-0.5 leading-tight">{t("finance.create.coursePackageNote")}</p>
@@ -2058,7 +2103,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               }
                             }}>
                               <DialogTrigger asChild>
-                                <button className="w-full h-8 flex items-center justify-between px-2 rounded-md border bg-background hover:border-purple-400 transition-colors text-[11px]">
+                                <button className="w-full h-8 flex items-center justify-between px-1 rounded-none border-0 border-b border-border bg-transparent hover:border-purple-400 transition-colors text-[11px]">
                                   <span className={promoAmt > 0 ? "text-green-600 font-semibold" : "text-muted-foreground"}>
                                     {promoAmt > 0 ? `-${fmtMoney(promoAmt)}` : t("finance.create.choose")}
                                   </span>
@@ -2217,7 +2262,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               }
                             }}>
                               <DialogTrigger asChild>
-                                <button className="w-full h-8 flex items-center justify-between px-2 rounded-md border bg-background hover:border-purple-400 transition-colors text-[11px]">
+                                <button className="w-full h-8 flex items-center justify-between px-1 rounded-none border-0 border-b border-border bg-transparent hover:border-purple-400 transition-colors text-[11px]">
                                   <span className={surchargeAmt > 0 ? "text-orange-600 font-semibold" : "text-muted-foreground"}>
                                     {surchargeAmt > 0 ? `+${fmtMoney(surchargeAmt)}` : t("finance.create.choose")}
                                   </span>
@@ -2359,7 +2404,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               value={String(p.vatRate)}
                               onValueChange={value => setProducts(prev => prev.map(x => x.id === p.id ? { ...x, vatRate: Number(value) } : x))}
                             >
-                              <SelectTrigger className="h-8 px-1.5 text-[11px]" data-testid={`select-vat-rate-${p.id}`}>
+                              <SelectTrigger className="h-8 rounded-none border-0 border-b border-border bg-transparent px-1.5 text-[11px] shadow-none focus:ring-0" data-testid={`select-vat-rate-${p.id}`}>
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
