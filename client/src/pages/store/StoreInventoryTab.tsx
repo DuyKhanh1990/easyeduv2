@@ -126,7 +126,7 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
   const transferOutQty = Number(summary?.transfer_out_qty ?? 0);
   const adjustmentInQty = Number(summary?.adjustment_in_qty ?? 0);
   const adjustmentOutQty = Number(summary?.adjustment_out_qty ?? 0);
-  const transferVolume = Math.abs(transferInQty) + Math.abs(transferOutQty);
+  const transferNet = transferInQty + transferOutQty;
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -165,7 +165,7 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
           <StatCard label="XUẤT" value={formatSigned(exportQty)} colorClass="bg-gray-50 text-gray-700 border-gray-100" />
           <StatCard
             label="CHUYỂN KHO"
-            value={transferVolume}
+            value={formatSigned(transferNet)}
             detail={
               <span className="flex w-full justify-center gap-2 whitespace-nowrap text-[10px] font-medium">
                 <span>Vào <span className="tabular-nums">{formatSigned(transferInQty)}</span></span>
