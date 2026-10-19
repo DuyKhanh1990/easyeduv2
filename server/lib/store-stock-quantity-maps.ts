@@ -21,6 +21,12 @@ export type StockQuantityMap = {
   newQtyMap: Record<string, number>;
 };
 
+export type WarehouseStockMovement = {
+  productId: string;
+  warehouseId: string;
+  quantityDelta: number;
+};
+
 export class StockQuantityMappingError extends Error {
   constructor(message: string) {
     super(message);
@@ -121,4 +127,32 @@ export function buildStockQuantityMaps(
   }
 
   return { oldQtyMap, newQtyMap };
+}
+
+export function buildWarehouseStockMovements(
+  oldQtyMap: StockQuantityMap["oldQtyMap"],
+  newQtyMap: StockQuantityMap["newQtyMap"],
+  oldWarehouseId: string,
+  newWarehouseId: string,
+  stockDirection: 1 | -1,
+): WarehouseStockMovement[] {
+  const movements: WarehouseStockMovement[] = [];
+  const productIds = new Set([...Object.keys(oldQtyMap), ...Object.keys(newQtyMap)]);
+
+  for (const productId of productIds) {
+    const oldQty = oldQtyMap[productId]?.qty ?? 0;
+    const newQty = newQtyMap[productId] ?? 0;
+    if (oldWarehouseId === newWarehouseId) {
+      const quantityDelta = (newQty - oldQty) * stockDirection;
+      if (quantityDelta !== 0) movements.push({ productId, warehouseId: oldWarehouseId, quantityDelta });
+      continue;
+    }
+
+    const oldWarehouseDelta = -oldQty * stockDirection;
+    const newWarehouseDelta = newQty * stockDirection;
+    if (oldWarehouseDelta !== 0) movements.push({ productId, warehouseId: oldWarehouseId, quantityDelta: oldWarehouseDelta });
+    if (newWarehouseDelta !== 0) movements.push({ productId, warehouseId: newWarehouseId, quantityDelta: newWarehouseDelta });
+  }
+
+  return movements;
 }
