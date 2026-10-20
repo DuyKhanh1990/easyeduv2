@@ -348,6 +348,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const [preloadedStudent, setPreloadedStudent] = useState<{ id: string; fullName: string; code: string } | null>(null);
   const [studentPickerOpen, setStudentPickerOpen] = useState(false);
   const [categoryPickerOpenId, setCategoryPickerOpenId] = useState<string | null>(null);
+  const [isSurchargeGroupVisible, setIsSurchargeGroupVisible] = useState(false);
+  const [surchargeSourcePickerOpen, setSurchargeSourcePickerOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([
     { id: "1", packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, vatRate: 0, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: "" },
   ]);
@@ -427,6 +429,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         setSubjectName("");
         setStudentSearch("");
         setProducts([{ id: "1", packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, vatRate: 0, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: "" }]);
+        setIsSurchargeGroupVisible(false);
+        setSurchargeSourcePickerOpen(false);
         setInvoicePromoKeys([]);
         setInvoiceSurchargeKeys([]);
         setInvoicePromotionRows([]);
@@ -1002,6 +1006,78 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     if (rows.length > 0 || keyRows.length > 0) return [...rows, ...keyRows];
     return [{ id: `${prefix}-blank`, valueType: "amount", value: 0 }];
   };
+  const addSurchargeForProduct = (productId: string) => {
+    setProducts(prev => prev.map(product => {
+      if (product.id !== productId) return product;
+      const rows = ensureAdjustmentRows(
+        product.surchargeKeys,
+        product.manualSurchargeRows,
+        `manual-surcharge-${product.id}`,
+      );
+      const hasEmptyRow = rows.some(row => !row.optionKey && row.value === 0);
+      return {
+        ...product,
+        manualSurchargeRows: hasEmptyRow
+          ? rows
+          : [...rows, {
+              id: `surcharge-${product.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              valueType: "amount",
+              value: 0,
+            }],
+      };
+    }));
+    setIsSurchargeGroupVisible(true);
+    setSurchargeSourcePickerOpen(false);
+    setSurchargeSearch("");
+    setOpenSurchargeId(productId);
+  };
+  const surchargeDisplayRows = products.flatMap(product => {
+    const promotionResult = applySequentialAdjustments(
+      calcBase(product),
+      product.promotionKeys,
+      product.manualPromotionRows,
+      promotionOptionsWithVouchers,
+      "promotion",
+    );
+    const rows = product.manualSurchargeRows.length > 0 || product.surchargeKeys.length > 0
+      ? ensureAdjustmentRows(product.surchargeKeys, product.manualSurchargeRows, `display-surcharge-${product.id}`)
+      : [];
+    return rows.map((row, index) => {
+      const previousRows = rows.slice(0, index);
+      const throughCurrentRows = rows.slice(0, index + 1);
+      const previousKeys = previousRows.map(item => item.optionKey).filter((key): key is string => Boolean(key));
+      const throughCurrentKeys = throughCurrentRows.map(item => item.optionKey).filter((key): key is string => Boolean(key));
+      const before = applySequentialAdjustments(
+        promotionResult.finalAmount,
+        previousKeys,
+        previousRows,
+        surchargeOptions,
+        "surcharge",
+      ).adjustmentAmount;
+      const throughCurrent = applySequentialAdjustments(
+        promotionResult.finalAmount,
+        throughCurrentKeys,
+        throughCurrentRows,
+        surchargeOptions,
+        "surcharge",
+      ).adjustmentAmount;
+      const beforeVat = calculateInvoiceVatAmount(promotionResult.finalAmount + before, product.vatRate);
+      const afterVat = calculateInvoiceVatAmount(promotionResult.finalAmount + throughCurrent, product.vatRate);
+      return {
+        id: `${product.id}-${row.id}`,
+        productId: product.id,
+        productName: product.name,
+        name: row.optionKey
+          ? surchargeOptions.find((option: any) => option.id === row.optionKey)?.name ?? t("finance.surcharge")
+          : t("finance.surcharge"),
+        amount: Math.max(0, throughCurrent - before),
+        vatRate: product.vatRate,
+        vatAmount: Math.max(0, afterVat - beforeVat),
+        hasValue: Boolean(row.optionKey) || row.value > 0,
+      };
+    }).filter(row => row.amount > 0 || row.hasValue);
+  });
+  const showSurchargeGroup = isSurchargeGroupVisible || surchargeDisplayRows.length > 0;
   const selectProductAdjustmentOption = (
     productId: string,
     kind: "promotion" | "surcharge",
@@ -1895,6 +1971,22 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                         {category.name}
                                       </button>
                                     ))}
+                                    {!showSurchargeGroup && (
+                                      <>
+                                        <div className="my-1 border-t" />
+                                        <button
+                                          type="button"
+                                          className="w-full rounded px-2 py-1.5 text-left text-xs font-medium text-orange-700 hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/30"
+                                          onClick={() => {
+                                            setIsSurchargeGroupVisible(true);
+                                            setCategoryPickerOpenId(null);
+                                          }}
+                                          data-testid="button-add-surcharge-category"
+                                        >
+                                          {t("finance.surcharge")}
+                                        </button>
+                                      </>
+                                    )}
                                   </div>
                                 </PopoverContent>
                               </Popover>
@@ -2410,12 +2502,103 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         })}
                       </Fragment>
                     ))}
+                    {showSurchargeGroup && (
+                      <Fragment key="category-surcharge">
+                        <tr className="border-b bg-violet-50/80 dark:bg-violet-950/30">
+                          <td colSpan={8} className="px-3 py-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex min-w-0 items-center gap-1">
+                                <span className="w-56 px-1 text-[11px] font-bold uppercase text-violet-700 dark:text-violet-300">
+                                  {t("finance.surcharge")}
+                                </span>
+                                <Popover open={surchargeSourcePickerOpen} onOpenChange={setSurchargeSourcePickerOpen}>
+                                  <PopoverTrigger asChild>
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-7 w-7 shrink-0 text-green-600 hover:bg-green-50 hover:text-green-700 dark:hover:bg-green-950"
+                                      title={t("finance.add")}
+                                      aria-label={t("finance.add")}
+                                      data-testid="button-add-surcharge-row"
+                                    >
+                                      <Plus className="h-4 w-4" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent align="start" className="w-72 p-2">
+                                    <p className="mb-2 px-2 text-xs font-medium text-muted-foreground">{t("finance.surcharge")}</p>
+                                    <div className="max-h-56 space-y-1 overflow-y-auto">
+                                      {products.map(product => (
+                                        <button
+                                          key={product.id}
+                                          type="button"
+                                          className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+                                          onClick={() => addSurchargeForProduct(product.id)}
+                                        >
+                                          <span className="block truncate font-medium">{product.name || t("finance.create.packageName")}</span>
+                                          <span className="block text-[10px] text-muted-foreground">{t("finance.vat")} {product.vatRate}%</span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="text-xs font-semibold text-orange-600">+{fmtMoney(itemSurcharge)}</span>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 shrink-0 gap-1 border-violet-200 bg-white text-[11px] text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-background dark:text-violet-300"
+                                  onClick={() => setSurchargeSourcePickerOpen(true)}
+                                  data-testid="button-add-surcharge-to-group"
+                                >
+                                  <Plus className="h-3 w-3" /> {t("finance.add")} {t("finance.surcharge").toLowerCase()}
+                                </Button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                        {surchargeDisplayRows.length === 0 ? (
+                          <tr className="border-b">
+                            <td colSpan={8} className="p-3 text-xs text-muted-foreground">{t("finance.create.noSurcharge")}</td>
+                          </tr>
+                        ) : surchargeDisplayRows.map(row => (
+                          <tr key={`surcharge-${row.id}`} className="border-b last:border-0">
+                            <td className="p-2">
+                              <span className="text-xs font-medium">{row.name}</span>
+                              <p className="mt-0.5 text-[10px] text-muted-foreground">{row.productName || t("finance.create.packageName")}</p>
+                            </td>
+                            <td className="p-2 text-right">{fmtMoney(row.amount)}</td>
+                            <td className="p-2 text-center">1</td>
+                            <td className="p-2 text-right text-muted-foreground">—</td>
+                            <td className="p-2 text-right font-semibold">{fmtMoney(row.amount)}</td>
+                            <td className="p-2 text-center">
+                              {row.vatRate}%
+                              <p className="mt-0.5 whitespace-nowrap text-[9px] text-muted-foreground">{t("finance.taxAmount")}: {fmtMoney(row.vatAmount)}</p>
+                            </td>
+                            <td className="p-2 text-right font-semibold">{fmtMoney(row.amount + row.vatAmount)}</td>
+                            <td className="p-1 text-center">
+                              <button
+                                type="button"
+                                className="text-muted-foreground hover:text-violet-600"
+                                onClick={() => setOpenSurchargeId(row.productId)}
+                                aria-label={t("finance.create.chooseSurcharge")}
+                                data-testid={`button-edit-surcharge-${row.productId}`}
+                              >
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </Fragment>
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
 
-            <div>
+            <div className="hidden">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <span className="text-sm font-semibold">{t("finance.surcharge")}</span>
                 <span className="text-sm font-semibold text-orange-600">+{fmtMoney(itemSurcharge)}</span>
