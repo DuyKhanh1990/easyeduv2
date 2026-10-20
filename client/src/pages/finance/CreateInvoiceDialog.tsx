@@ -352,6 +352,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const [preloadedStudent, setPreloadedStudent] = useState<{ id: string; fullName: string; code: string } | null>(null);
   const [studentPickerOpen, setStudentPickerOpen] = useState(false);
   const [categoryPickerOpenId, setCategoryPickerOpenId] = useState<string | null>(null);
+  const [productPickerCategoryId, setProductPickerCategoryId] = useState<string | null>(null);
+  const [productPickerSearch, setProductPickerSearch] = useState("");
   const [isSurchargeGroupVisible, setIsSurchargeGroupVisible] = useState(false);
   const [surchargeSourcePickerOpen, setSurchargeSourcePickerOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([
@@ -881,7 +883,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     })));
   };
 
-  const { data: khoProducts = [] } = useQuery<any[]>({
+  const { data: khoProducts = [], isFetching: isFetchingKhoProducts } = useQuery<any[]>({
     queryKey: ["/api/store/issue-inventory/search", "byLocation", locationId, khoSearch],
     queryFn: () => {
       const params = new URLSearchParams({ locationId });
@@ -1462,6 +1464,86 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         ? suggestedQuantity
         : x.quantity,
     } : x));
+  };
+
+  const closeProductPicker = () => {
+    setProductPickerCategoryId(null);
+    setProductPickerSearch("");
+    setSurchargeSearch("");
+    setKhoSearch("");
+    setKhoPickerOpen(null);
+  };
+  const addSelectedFeePackage = (pkg: any, categoryId: string) => {
+    const isCoursePackage = pkg.type === "khoá";
+    const suggestedQuantity = Number(pkg.sessions);
+    setProducts(prev => [...prev, {
+      id: `fee-${Date.now()}`,
+      packageId: pkg.id,
+      packageType: pkg.type ?? null,
+      name: pkg.name,
+      unitPrice: parseFloat(pkg.totalAmount || pkg.fee || "0"),
+      quantity: isCoursePackage && Number.isFinite(suggestedQuantity) && suggestedQuantity > 0 ? suggestedQuantity : 1,
+      vatRate: 0,
+      promotionKeys: [],
+      surchargeKeys: [],
+      manualPromotionRows: [],
+      manualSurchargeRows: [],
+      categoryId,
+    }]);
+    closeProductPicker();
+  };
+  const addSelectedInventoryProduct = (product: any, categoryId: string) => {
+    setProducts(prev => [...prev, {
+      id: `inventory-${Date.now()}`,
+      packageId: null,
+      packageType: null,
+      name: product.name,
+      unitPrice: parseFloat(product.sale_price) || 0,
+      quantity: 1,
+      vatRate: 0,
+      promotionKeys: [],
+      surchargeKeys: [],
+      manualPromotionRows: [],
+      manualSurchargeRows: [],
+      categoryId,
+      storeProductId: product.id,
+      storeProductCode: product.code,
+      warehouseId: product.warehouse_id,
+      warehouseName: product.warehouse_name ?? null,
+      stockAvailable: parseInt(String(product.stock)) || 0,
+    }]);
+    closeProductPicker();
+  };
+  const addSelectedSurcharge = (option: any) => {
+    const value = Math.max(0, parseFloat(option.valueAmount || "0") || 0);
+    const basis = products
+      .filter(product => product.categoryId !== SURCHARGE_CATEGORY_ID)
+      .reduce((sum, product) => {
+        const promotion = applySequentialAdjustments(
+          calcBase(product),
+          product.promotionKeys,
+          product.manualPromotionRows,
+          promotionOptionsWithVouchers,
+          "promotion",
+        );
+        return sum + promotion.finalAmount;
+      }, 0);
+    const amount = option.valueType === "percent" ? Math.round(basis * value / 100) : value;
+    setProducts(prev => [...prev, {
+      id: `surcharge-${Date.now()}`,
+      packageId: null,
+      packageType: null,
+      name: option.name,
+      unitPrice: amount,
+      quantity: 1,
+      vatRate: 0,
+      promotionKeys: [],
+      surchargeKeys: [],
+      manualPromotionRows: [],
+      manualSurchargeRows: [],
+      categoryId: SURCHARGE_CATEGORY_ID,
+    }]);
+    closeProductPicker();
   };
 
   const handleSave = () => {
@@ -2081,12 +2163,135 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                 size="sm"
                                 variant="outline"
                                 className="h-7 shrink-0 gap-1 border-violet-200 bg-white text-[11px] text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-background dark:text-violet-300"
-                                onClick={() => group.categoryId && addProduct(group.categoryId)}
+                                onClick={() => {
+                                  if (!group.categoryId) return;
+                                  const categoryName = String(allCategories.find((category: any) => category.id === group.categoryId)?.name ?? "").toLowerCase();
+                                  if (
+                                    group.categoryId === SURCHARGE_CATEGORY_ID ||
+                                    categoryName.includes("học phí") ||
+                                    categoryName.includes("kho")
+                                  ) {
+                                    setProductPickerCategoryId(group.categoryId);
+                                    setProductPickerSearch("");
+                                    setSurchargeSearch("");
+                                    if (categoryName.includes("kho")) {
+                                      setKhoSearch("");
+                                      setKhoPickerOpen(`category-picker:${group.categoryId}`);
+                                    }
+                                  } else {
+                                    addProduct(group.categoryId);
+                                  }
+                                }}
                                 disabled={!group.categoryId}
                                 data-testid={`button-add-product-to-category-${group.categoryId || "unassigned"}`}
                               >
-                                <Plus className="h-3 w-3" /> {t("finance.add")} {group.categoryId === SURCHARGE_CATEGORY_ID ? t("finance.surcharge").toLowerCase() : t("finance.create.product").toLowerCase()}
+                                <Plus className="h-3 w-3" /> {group.categoryId === SURCHARGE_CATEGORY_ID ? `${t("finance.add")} ${t("finance.surcharge").toLowerCase()}` : t("finance.addProduct")}
                               </Button>
+                              <Dialog
+                                open={productPickerCategoryId === group.categoryId}
+                                onOpenChange={isOpen => {
+                                  if (!isOpen) closeProductPicker();
+                                }}
+                              >
+                                <DialogContent className="max-w-md">
+                                  <DialogHeader>
+                                    <DialogTitle>
+                                      {group.categoryId === SURCHARGE_CATEGORY_ID
+                                        ? t("finance.create.chooseSurcharge")
+                                        : allCategories.find((category: any) => category.id === group.categoryId)?.name?.toLowerCase().includes("học phí")
+                                          ? t("finance.create.choosePackage")
+                                          : t("finance.create.searchInventory")}
+                                    </DialogTitle>
+                                  </DialogHeader>
+                                  {group.categoryId === SURCHARGE_CATEGORY_ID ? (
+                                    <>
+                                      <Input
+                                        value={surchargeSearch}
+                                        onChange={event => setSurchargeSearch(event.target.value)}
+                                        placeholder={t("finance.create.searchSurcharge")}
+                                        className="h-9"
+                                        autoFocus
+                                      />
+                                      <div className="max-h-72 space-y-1 overflow-y-auto">
+                                        {filteredSurchargeOptions.length === 0 ? (
+                                          <p className="py-4 text-center text-xs text-muted-foreground">{t("finance.create.noSurcharge")}</p>
+                                        ) : filteredSurchargeOptions.map((option: any) => (
+                                          <button
+                                            key={option.id}
+                                            type="button"
+                                            className="w-full rounded px-3 py-2 text-left text-sm hover:bg-muted"
+                                            onClick={() => addSelectedSurcharge(option)}
+                                          >
+                                            <span className="block font-medium">{option.name}</span>
+                                            <span className="block text-xs text-muted-foreground">
+                                              {option.valueType === "percent"
+                                                ? `${parseFloat(option.valueAmount || "0") || 0}%`
+                                                : fmtMoney(parseFloat(option.valueAmount || "0") || 0)}
+                                            </span>
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </>
+                                  ) : allCategories.find((category: any) => category.id === group.categoryId)?.name?.toLowerCase().includes("học phí") ? (
+                                    <>
+                                      <Input
+                                        value={productPickerSearch}
+                                        onChange={event => setProductPickerSearch(event.target.value)}
+                                        placeholder={t("finance.searchCourse")}
+                                        className="h-9"
+                                        autoFocus
+                                      />
+                                      <div className="max-h-72 space-y-1 overflow-y-auto">
+                                        {feePackages
+                                          .filter((pkg: any) => !productPickerSearch || normalizeSearchText(`${pkg.name} ${pkg.courseName}`).includes(normalizeSearchText(productPickerSearch)))
+                                          .map((pkg: any) => (
+                                            <button
+                                              key={pkg.id}
+                                              type="button"
+                                              className="w-full rounded px-3 py-2 text-left text-sm hover:bg-muted"
+                                              onClick={() => addSelectedFeePackage(pkg, group.categoryId)}
+                                            >
+                                              <span className="block font-medium">{pkg.name}</span>
+                                              <span className="block text-xs text-muted-foreground">
+                                                {pkg.courseName ? `${pkg.courseName} · ` : ""}{fmtMoney(parseFloat(pkg.totalAmount || pkg.fee || "0") || 0)}
+                                              </span>
+                                            </button>
+                                          ))}
+                                        {feePackages.length === 0 && <p className="py-4 text-center text-xs text-muted-foreground">{t("finance.create.noProducts")}</p>}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Input
+                                        value={khoSearch}
+                                        onChange={event => setKhoSearch(event.target.value)}
+                                        placeholder={t("finance.create.searchInventory")}
+                                        className="h-9"
+                                        autoFocus
+                                      />
+                                      <div className="max-h-72 space-y-1 overflow-y-auto">
+                                        {!locationId ? (
+                                          <p className="py-4 text-center text-xs text-muted-foreground">{t("finance.create.chooseBranchFirst")}</p>
+                                        ) : isFetchingKhoProducts && khoProducts.length === 0 ? (
+                                          <p className="py-4 text-center text-xs text-muted-foreground">{t("finance.loading")}</p>
+                                        ) : khoProducts.length === 0 ? (
+                                          <p className="py-4 text-center text-xs text-muted-foreground">{t("finance.create.noProducts")}</p>
+                                        ) : khoProducts.map((product: any) => (
+                                          <button
+                                            key={`${product.id}-${product.warehouse_id}`}
+                                            type="button"
+                                            className="w-full rounded px-3 py-2 text-left text-sm hover:bg-muted"
+                                            onClick={() => addSelectedInventoryProduct(product, group.categoryId)}
+                                          >
+                                            <span className="block font-medium">{product.name} <span className="text-muted-foreground">({product.code})</span></span>
+                                            <span className="block text-xs text-muted-foreground">{product.warehouse_name || t("finance.stock")} · {fmtMoney(parseFloat(product.sale_price) || 0)}</span>
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </>
+                                  )}
+                                </DialogContent>
+                              </Dialog>
                             </div>
                           </td>
                         </tr>
