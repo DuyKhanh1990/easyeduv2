@@ -325,7 +325,7 @@ async function createIssueInvoice(params: {
     productName: string;
     salePrice: number;
     promotionKeys: string[];
-      manualPromotionRows: { id: string; optionKey?: string; name?: string; valueType: "amount" | "percent"; value: number }[];
+    manualPromotionRows: { id: string; optionKey?: string; name?: string; valueType: "amount" | "percent"; value: number }[];
     surchargeKeys: string[];
     promotionAmount: number;
     surchargeAmount: number;
