@@ -923,9 +923,13 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
     ...selectedPromoKeys.map(key => promotionOptions.find(option => option.id === key || option.code === key)?.name ?? ""),
   ].filter(Boolean))).join(", ");
 
-  const discountAmt = hasSidebarPromotion
-    ? adjustmentTotal(subtotal, selectedPromoKeys, sidebarPromotionRows, promotionOptions, "promotion")
-    : (form.discountType === "VND" ? form.discount : subtotal * form.discount / 100);
+  const discountAmt = invoicePromotionVatLocked
+    ? 0
+    : hasSidebarPromotion
+      ? adjustmentTotal(subtotal, selectedPromoKeys, sidebarPromotionRows, promotionOptions, "promotion")
+      : isEdit
+        ? (form.discountType === "VND" ? form.discount : subtotal * form.discount / 100)
+        : 0;
   const invoicePromotionVatAmount = !invoicePromotionName || invoicePromotionVatRate === null
     ? 0
     : calculateInvoicePromotionVat(discountAmt, invoicePromotionVatItems);
@@ -970,10 +974,6 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
       toast({ variant: "destructive", title: `Học viên không đủ sao. Cần ${totalStarsNeeded} ⭐, hiện có ${starBalance?.available ?? 0} ⭐` });
       return;
     }
-    if (invoicePromotionVatMixed && discountAmt > 0) {
-      toast({ variant: "destructive", title: "VAT hàng hóa không đồng nhất. Hãy chuyển khuyến mãi toàn đơn sang khuyến mãi từng dòng." });
-      return;
-    }
     if (discountAmt > 0 && !invoicePromotionName && !isEdit) {
       toast({ variant: "destructive", title: "Vui lòng nhập tên cho khuyến mãi nhập tay để ghi lên hóa đơn." });
       return;
@@ -985,10 +985,10 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
         discountType: "VND",
         surcharge: surchargeAmt,
         surchargeType: "VND",
-        promotionKeys: selectedPromoKeys,
-        invoicePromotionName: invoicePromotionName || null,
+        promotionKeys: invoicePromotionVatLocked ? [] : selectedPromoKeys,
+        invoicePromotionName: invoicePromotionVatLocked ? null : invoicePromotionName || null,
         surchargeKeys: selectedSurchargeKeys,
-        manualPromotionRows: sidebarPromotionRows,
+        manualPromotionRows: invoicePromotionVatLocked ? [] : sidebarPromotionRows,
         manualSurchargeRows: sidebarSurchargeRows,
         surchargeVatAmount: totalSurchargeVat,
         surchargeInvoiceLines: surchargeBreakdown.lines,
@@ -1514,14 +1514,18 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                       <ChevronDown className="h-3 w-3" />
                     </span>
                     <span className={discountAmt > 0 ? "text-emerald-600 tabular-nums" : "text-muted-foreground"}>
-                      {discountAmt > 0 ? `- ${fmtVND(discountAmt)}` : "Chọn khuyến mãi..."}
+                      {invoicePromotionVatMixed
+                        ? `0 đ`
+                        : discountAmt > 0
+                          ? `- ${fmtVND(discountAmt)}`
+                          : "Chọn khuyến mãi..."}
                     </span>
                   </button>
                 )}
               />
               {invoicePromotionVatMixed && (
                 <p className="text-[10px] text-muted-foreground">
-                  VAT hàng hóa không đồng nhất. Hãy áp dụng khuyến mãi ở từng dòng.
+                  Khuyến mãi toàn đơn = 0 do VAT hàng hóa không đồng nhất. Hãy áp dụng khuyến mãi ở từng dòng.
                 </p>
               )}
               {!hasInvoicePromotionVatItems && (
