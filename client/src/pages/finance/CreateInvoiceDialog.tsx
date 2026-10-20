@@ -1,6 +1,7 @@
 import { Fragment, useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { cn } from "@/lib/utils";
 import { rebalanceUnpaidInstallments } from "./paymentScheduleAllocation";
 import { summarizeSchedulePromotions } from "./schedulePromotionSummary";
 import { useToast } from "@/hooks/use-toast";
