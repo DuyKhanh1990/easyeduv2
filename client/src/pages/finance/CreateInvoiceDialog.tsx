@@ -132,7 +132,7 @@ const applySequentialAdjustments = (
   orderedRows.forEach(row => {
     if (row.optionKey && !appliedOptionKeys.has(row.optionKey)) {
       appliedOptionKeys.add(row.optionKey);
-      const option = options.find((o: any) => o.id === row.optionKey);
+       const option = options.find((o: any) => o.id === row.optionKey || o.code === row.optionKey);
       if (option) {
         applyValue(option.valueType === "percent" ? "percent" : "amount", parseFloat(option.valueAmount || "0"));
       }
@@ -1637,12 +1637,12 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     if (incompleteSurcharge) { toast({ title: t("finance.create.nameRequiredError"), variant: "destructive" }); return; }
     const originalInvoicePromotionAmount = parseFloat(editData?.invoicePromotionAmount ?? "0") || 0;
     const isAddingUnnamedInvoicePromotion = invoicePromoAmt > originalInvoicePromotionAmount + 0.01
-      && !invoicePromotionName.trim();
+      && !resolvedInvoicePromotionName.trim();
     if (isAddingUnnamedInvoicePromotion) {
       toast({ title: t("finance.create.promotionNameRequired"), variant: "destructive" });
       return;
     }
-    if (invoicePromotionVatMixed && invoicePromoAmt > 0 && invoicePromotionName.trim()) {
+    if (invoicePromotionVatMixed && invoicePromoAmt > 0 && resolvedInvoicePromotionName.trim()) {
       toast({ title: t("finance.create.invoicePromotionMixedVat"), variant: "destructive" });
       return;
     }
@@ -1786,7 +1786,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       totalPromotion: String(totalPromo),
       totalSurcharge: String(totalSurcharge),
       invoicePromotionKeys: invoicePromoKeys,
-      invoicePromotionName: invoicePromotionName.trim() || null,
+      invoicePromotionName: resolvedInvoicePromotionName.trim() || null,
       invoiceSurchargeKeys: invoiceSurchargeKeys,
       invoicePromotionAmount: String(invoicePromoAmt),
       invoiceSurchargeAmount: String(invoiceSurchargeAmt),

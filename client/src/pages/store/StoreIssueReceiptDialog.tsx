@@ -268,7 +268,7 @@ function IssueAdjustmentDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent
-        className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
+        className="w-[min(94vw,52rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
         overlayClassName="bg-black/30 backdrop-blur-[1px]"
       >
         <DialogTitle className="text-xl font-semibold">{title}</DialogTitle>
@@ -361,7 +361,7 @@ function IssueAdjustmentDialog({
                       : `${kind === "promotion" ? "-" : "+"} ${fmtVND(parseFloat(selected.valueAmount ?? "0") || 0)}`}
                   </p>
                 )}
-                <div className="flex gap-2">
+                <div className={cn("flex gap-2", kind === "promotion" && "flex-wrap sm:flex-nowrap")}>
                   <Select value={row.valueType} onValueChange={value => onUpdateRow(row.id, { valueType: value as "amount" | "percent" })}>
                     <SelectTrigger className="h-9 w-36 text-sm"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -382,6 +382,16 @@ function IssueAdjustmentDialog({
                       {row.valueType === "percent" ? "%" : "đ"}
                     </span>
                   </div>
+                  {kind === "promotion" && (
+                    <Input
+                      value={row.name ?? ""}
+                      onChange={event => onUpdateRow(row.id, { name: event.target.value })}
+                      placeholder="Nhập tên khuyến mãi..."
+                      aria-label="Tên khuyến mãi nhập tay"
+                      maxLength={120}
+                      className="h-9 min-w-0 flex-1 text-sm"
+                    />
+                  )}
                   {kind === "surcharge" && (
                     <Select
                       value={String(row.vatRate ?? 0)}
@@ -397,19 +407,19 @@ function IssueAdjustmentDialog({
                     </Select>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-36 shrink-0 text-xs text-muted-foreground">
-                    {kind === "promotion" ? "Tên khuyến mãi" : "Tên phụ thu"}
-                  </span>
-                  <Input
-                    value={row.name ?? ""}
-                    onChange={event => onUpdateRow(row.id, { name: event.target.value })}
-                    placeholder={kind === "promotion" ? "Nhập tên khuyến mãi..." : "Nhập tên phụ thu..."}
-                    aria-label={kind === "promotion" ? "Tên khuyến mãi nhập tay" : "Tên phụ thu nhập tay"}
-                    maxLength={120}
-                    className="h-9 text-sm"
-                  />
-                </div>
+                {kind === "surcharge" && (
+                  <div className="flex items-center gap-2">
+                    <span className="w-36 shrink-0 text-xs text-muted-foreground">Tên phụ thu</span>
+                    <Input
+                      value={row.name ?? ""}
+                      onChange={event => onUpdateRow(row.id, { name: event.target.value })}
+                      placeholder="Nhập tên phụ thu..."
+                      aria-label="Tên phụ thu nhập tay"
+                      maxLength={120}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                )}
               </div>
             );
           })}
