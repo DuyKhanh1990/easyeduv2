@@ -2284,7 +2284,10 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                             onClick={() => addSelectedInventoryProduct(product, group.categoryId)}
                                           >
                                             <span className="block font-medium">{product.name} <span className="text-muted-foreground">({product.code})</span></span>
-                                            <span className="block text-xs text-muted-foreground">{product.warehouse_name || t("finance.stock")} · {fmtMoney(parseFloat(product.sale_price) || 0)}</span>
+                                             <span className="mt-0.5 flex justify-between text-xs text-muted-foreground">
+                                               <span className="truncate">{product.warehouse_name || "Kho"}</span>
+                                               <span className="ml-2 flex-shrink-0">{t("finance.stock")}: {product.stock} | {fmtMoney(parseFloat(product.sale_price) || 0)}</span>
+                                             </span>
                                           </button>
                                         ))}
                                       </div>
