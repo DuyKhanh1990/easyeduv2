@@ -2688,7 +2688,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                              </div>
                                            </PopoverContent>
                                          </Popover>
-                                         <div className="flex items-center gap-1.5">
+                                          <div className="flex flex-wrap items-center gap-1.5 sm:flex-nowrap">
                                            <select
                                              value={row.valueType}
                                              onChange={e => updateManualAdjustmentRow(p.id, "promotion", row.id, { valueType: e.target.value as ManualAdjustment["valueType"] })}
@@ -2710,6 +2710,15 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                                {row.valueType === "percent" ? "%" : "₫"}
                                              </span>
                                            </div>
+                                            <Input
+                                              value={row.name ?? ""}
+                                              onChange={e => updateManualAdjustmentRow(p.id, "promotion", row.id, { name: e.target.value })}
+                                              placeholder="Nhập tên khuyến mãi..."
+                                              aria-label="Tên khuyến mãi nhập tay"
+                                              maxLength={120}
+                                              className="h-8 min-w-0 flex-1 text-xs"
+                                              data-testid={`input-product-promotion-name-${row.id}`}
+                                            />
                                            <button
                                              type="button"
                                              className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
@@ -2829,7 +2838,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                               </div>
                                             </PopoverContent>
                                           </Popover>
-                                          <div className="flex flex-wrap items-center gap-1.5 sm:flex-nowrap">
+                                          <div className="flex items-center gap-1.5">
                                             <select
                                               value={row.valueType}
                                               onChange={e => updateManualAdjustmentRow(p.id, "surcharge", row.id, { valueType: e.target.value as ManualAdjustment["valueType"] })}
@@ -2851,15 +2860,6 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                                 {row.valueType === "percent" ? "%" : "₫"}
                                               </span>
                                             </div>
-                                            <Input
-                                              value={row.name ?? ""}
-                                              onChange={e => updateManualAdjustmentRow(p.id, "promotion", row.id, { name: e.target.value })}
-                                              placeholder="Nhập tên khuyến mãi..."
-                                              aria-label="Tên khuyến mãi nhập tay"
-                                              maxLength={120}
-                                              className="h-8 min-w-0 flex-1 text-xs"
-                                              data-testid={`input-product-promotion-name-${row.id}`}
-                                            />
                                             <button
                                               type="button"
                                               className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
