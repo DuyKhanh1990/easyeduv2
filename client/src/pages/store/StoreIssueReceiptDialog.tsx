@@ -82,9 +82,63 @@ type ManualAdjustment = {
   optionKey?: string;
   valueType: "amount" | "percent";
   value: number;
+  optionVatRate?: number;
+  vatRate?: number;
 };
 
 type AdjustmentKind = "promotion" | "surcharge";
+
+type SurchargeInvoiceLine = { name: string; amount: number; vatRate: number };
+
+function getSurchargeBreakdown(
+  base: number,
+  keys: string[],
+  rows: ManualAdjustment[],
+  options: FinancePromotion[],
+) {
+  const representedKeys = new Set(rows.map(row => row.optionKey).filter(Boolean));
+  const orderedRows = [
+    ...rows,
+    ...keys.filter(key => !representedKeys.has(key)).map((optionKey, index) => ({
+      id: `legacy-surcharge-${index}-${optionKey}`,
+      optionKey,
+      valueType: "amount" as const,
+      value: 0,
+    })),
+  ];
+  let current = Math.max(0, base);
+  let amount = 0;
+  let vatAmount = 0;
+  const applied = new Set<string>();
+  const lines: SurchargeInvoiceLine[] = [];
+  const addLine = (name: string, lineAmount: number, rate: number) => {
+    const safeAmount = Math.max(0, lineAmount);
+    const vatRate = INVOICE_VAT_RATES.includes(rate as (typeof INVOICE_VAT_RATES)[number]) ? rate : 0;
+    if (safeAmount <= 0) return;
+    lines.push({ name, amount: safeAmount, vatRate });
+    amount += safeAmount;
+    vatAmount += calculateInvoiceVatAmount(safeAmount, vatRate);
+  };
+
+  for (const row of orderedRows) {
+    if (row.optionKey && !applied.has(row.optionKey)) {
+      const option = options.find(item => item.id === row.optionKey || item.code === row.optionKey);
+      if (option) {
+        const value = parseFloat(option.valueAmount ?? "0") || 0;
+        const optionAmount = option.valueType === "percent" ? current * value / 100 : value;
+        addLine(option.name, optionAmount, Number(row.optionVatRate ?? 0));
+        current += optionAmount;
+        applied.add(row.optionKey);
+      }
+    }
+    const value = Math.max(0, Number(row.value) || 0);
+    const manualAmount = row.valueType === "percent" ? current * value / 100 : value;
+    addLine("Phụ thu nhập tay", manualAmount, Number(row.vatRate ?? 0));
+    current += manualAmount;
+  }
+
+  return { amount, vatAmount, lines };
+}
 
 function adjustmentTotal(
   base: number,
