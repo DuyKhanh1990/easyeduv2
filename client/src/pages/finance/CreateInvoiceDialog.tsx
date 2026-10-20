@@ -2509,8 +2509,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                 <span className="w-56 px-1 text-[11px] font-bold uppercase text-violet-700 dark:text-violet-300">
                                   {t("finance.surcharge")}
                                 </span>
-                                <Dialog open={surchargeSourcePickerOpen} onOpenChange={setSurchargeSourcePickerOpen}>
-                                  <DialogTrigger asChild>
+                                <Popover
+                                  open={categoryPickerOpenId === "__surcharge__"}
+                                  onOpenChange={isOpen => setCategoryPickerOpenId(isOpen ? "__surcharge__" : null)}
+                                >
+                                  <PopoverTrigger asChild>
                                     <Button
                                       type="button"
                                       size="icon"
@@ -2521,6 +2524,52 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                       data-testid="button-add-surcharge-row"
                                     >
                                       <Plus className="h-4 w-4" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent align="start" className="w-64 p-2">
+                                    <p className="mb-2 px-2 text-xs font-medium text-muted-foreground">{t("finance.create.category")}</p>
+                                    <div className="max-h-56 space-y-1 overflow-y-auto">
+                                      {categories.map((category: any) => (
+                                        <button
+                                          key={category.id}
+                                          type="button"
+                                          className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+                                          onClick={() => {
+                                            addProduct(category.id);
+                                            setCategoryPickerOpenId(null);
+                                          }}
+                                        >
+                                          {category.name}
+                                        </button>
+                                      ))}
+                                      <div className="my-1 border-t" />
+                                      <button
+                                        type="button"
+                                        className="w-full rounded px-2 py-1.5 text-left text-xs font-medium text-orange-700 hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/30"
+                                        onClick={() => {
+                                          setIsSurchargeGroupVisible(true);
+                                          setCategoryPickerOpenId(null);
+                                        }}
+                                        data-testid="button-add-surcharge-category-from-surcharge-group"
+                                      >
+                                        {t("finance.surcharge")}
+                                      </button>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="text-xs font-semibold text-orange-600">+{fmtMoney(itemSurcharge)}</span>
+                                <Dialog open={surchargeSourcePickerOpen} onOpenChange={setSurchargeSourcePickerOpen}>
+                                  <DialogTrigger asChild>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 shrink-0 gap-1 border-violet-200 bg-white text-[11px] text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-background dark:text-violet-300"
+                                      data-testid="button-add-surcharge-to-group"
+                                    >
+                                      <Plus className="h-3 w-3" /> {t("finance.add")} {t("finance.surcharge").toLowerCase()}
                                     </Button>
                                   </DialogTrigger>
                                   <DialogContent className="max-w-md">
@@ -2542,19 +2591,6 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                     </div>
                                   </DialogContent>
                                 </Dialog>
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <span className="text-xs font-semibold text-orange-600">+{fmtMoney(itemSurcharge)}</span>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 shrink-0 gap-1 border-violet-200 bg-white text-[11px] text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-background dark:text-violet-300"
-                                  onClick={() => setSurchargeSourcePickerOpen(true)}
-                                  data-testid="button-add-surcharge-to-group"
-                                >
-                                  <Plus className="h-3 w-3" /> {t("finance.add")} {t("finance.surcharge").toLowerCase()}
-                                </Button>
                               </div>
                             </div>
                           </td>
