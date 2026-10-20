@@ -12,6 +12,41 @@ export type TeacherTimeAssignment = {
 
 export type TeacherTimeInterval = Pick<TeacherTimeAssignment, "teacherId" | "startTime" | "endTime">;
 
+export function reconcileTeacherTimeAssignments(
+  teacherIds: string[],
+  existingAssignments: TeacherTimeAssignment[],
+  shiftStartTime: string | null | undefined,
+  shiftEndTime: string | null | undefined,
+  scheduleKey = "teacher-change",
+): TeacherTimeAssignment[] {
+  const selectedTeacherIds = [...new Set(teacherIds.filter((teacherId) => typeof teacherId === "string" && teacherId.trim()))];
+  if (selectedTeacherIds.length === 0) return [];
+
+  const defaultStart = String(shiftStartTime ?? "").slice(0, 5);
+  const defaultEnd = String(shiftEndTime ?? "").slice(0, 5);
+  if (!defaultStart || !defaultEnd) {
+    throw new Error("Ca học cần có giờ bắt đầu và kết thúc trước khi phân công giờ cho giáo viên");
+  }
+
+  const existingByTeacher = new Map(
+    existingAssignments.map((assignment) => [assignment.teacherId, assignment]),
+  );
+  return selectedTeacherIds.map((teacherId) => {
+    const existing = existingByTeacher.get(teacherId);
+    const startTime = String(existing?.startTime ?? defaultStart).slice(0, 5);
+    const endTime = String(existing?.endTime ?? defaultEnd).slice(0, 5);
+    if (!isTeacherTimeRangeWithinShift(startTime, endTime, defaultStart, defaultEnd)) {
+      throw new Error(`Giờ phân công của giáo viên phải nằm trong ca chung ${defaultStart}–${defaultEnd}`);
+    }
+    return {
+      teacherId,
+      startTime,
+      endTime,
+      scheduleKey: existing?.scheduleKey || scheduleKey,
+    };
+  });
+}
+
 export type ShiftTimeLookup = Map<string, {
   startTime: string | null | undefined;
   endTime: string | null | undefined;

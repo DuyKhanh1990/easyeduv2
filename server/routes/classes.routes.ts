@@ -5667,7 +5667,18 @@ export function registerClassesRoutes(app: Express): void {
         string,
         Array<{ teacherId: string; startTime: string; endTime: string }>
       >();
+      const currentTeacherIdsBySession = new Map(
+        sessions.map((session) => [
+          session.id,
+          new Set(session.teacherIds ?? []),
+        ]),
+      );
       for (const assignment of teacherTimeAssignmentRows) {
+        // The session roster is authoritative. Ignore orphaned time-assignment
+        // rows left behind by older teacher-change operations.
+        if (!currentTeacherIdsBySession.get(assignment.classSessionId)?.has(assignment.teacherId)) {
+          continue;
+        }
         const assignments = teacherTimeAssignmentsBySession.get(assignment.classSessionId) ?? [];
         assignments.push({
           teacherId: assignment.teacherId,
@@ -5693,10 +5704,7 @@ export function registerClassesRoutes(app: Express): void {
       const teacherIdsBySession = new Map<string, string[]>();
       const configuredRoleByClassTeacher = new Map<string, string>();
       for (const session of responseSessions) {
-        const teacherIds = [...new Set([
-          ...(session.teacherIds ?? []),
-          ...(teacherTimeAssignmentsBySession.get(session.id) ?? []).map((assignment) => assignment.teacherId),
-        ])];
+        const teacherIds = [...new Set(session.teacherIds ?? [])];
         teacherIdsBySession.set(session.id, teacherIds);
         const classTeacherConfigs = Array.isArray(session.teachersConfig) ? session.teachersConfig : [];
         for (const config of classTeacherConfigs) {

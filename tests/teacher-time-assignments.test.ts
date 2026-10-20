@@ -3,6 +3,7 @@ import {
   getAssignedTeacherTimeRange,
   getTeacherIdsForTimeRange,
   isTeacherTimeRangeWithinShift,
+  reconcileTeacherTimeAssignments,
 } from "../shared/teacher-time-assignments";
 
 describe("getTeacherIdsForTimeRange", () => {
@@ -61,5 +62,31 @@ describe("isTeacherTimeRangeWithinShift", () => {
     expect(isTeacherTimeRangeWithinShift("09:00", "10:01", "08:00", "10:00")).toBe(false);
     expect(isTeacherTimeRangeWithinShift("09:00", "09:00", "08:00", "10:00")).toBe(false);
     expect(isTeacherTimeRangeWithinShift("not-time", "10:00", "08:00", "10:00")).toBe(false);
+  });
+});
+
+describe("reconcileTeacherTimeAssignments", () => {
+  it("keeps selected teachers' custom intervals and removes teachers no longer selected", () => {
+    expect(reconcileTeacherTimeAssignments(
+      ["teacher-a", "teacher-c"],
+      [
+        { teacherId: "teacher-a", startTime: "08:30", endTime: "09:30", scheduleKey: "custom-a" },
+        { teacherId: "teacher-b", startTime: "09:00", endTime: "10:00", scheduleKey: "old-b" },
+      ],
+      "08:00",
+      "10:00",
+    )).toEqual([
+      { teacherId: "teacher-a", startTime: "08:30", endTime: "09:30", scheduleKey: "custom-a" },
+      { teacherId: "teacher-c", startTime: "08:00", endTime: "10:00", scheduleKey: "teacher-change" },
+    ]);
+  });
+
+  it("clears all time assignments when the selected teacher list is empty", () => {
+    expect(reconcileTeacherTimeAssignments(
+      [],
+      [{ teacherId: "teacher-a", startTime: "08:00", endTime: "10:00", scheduleKey: "old" }],
+      "08:00",
+      "10:00",
+    )).toEqual([]);
   });
 });

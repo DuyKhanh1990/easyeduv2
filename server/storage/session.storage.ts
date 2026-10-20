@@ -13,7 +13,10 @@ import {
 } from "./base";
 
 import { attendanceFeeRules, studentWalletTransactions } from "@shared/schema";
-import { isTeacherTimeRangeWithinShift } from "@shared/teacher-time-assignments";
+import {
+  isTeacherTimeRangeWithinShift,
+  reconcileTeacherTimeAssignments,
+} from "@shared/teacher-time-assignments";
 
 import type {
   ClassSession,
@@ -4264,12 +4267,43 @@ export async function changeTeacher(params: {
     const sessionsToUpdate = await tx.select({
       id: classSessions.id,
       teacherRoleIds: classSessions.teacherRoleIds,
+      shiftStartTime: shiftTemplates.startTime,
+      shiftEndTime: shiftTemplates.endTime,
     })
       .from(classSessions)
+      .leftJoin(shiftTemplates, eq(classSessions.shiftTemplateId, shiftTemplates.id))
       .where(and(
         eq(classSessions.classId, classId),
         sql`${classSessions.sessionDate} BETWEEN ${fromDate} AND ${toDate}`,
       ));
+
+    const sessionIds = sessionsToUpdate.map((session) => session.id);
+    const existingTimeAssignments = sessionIds.length > 0
+      ? await tx.select()
+          .from(classSessionTeacherAssignments)
+          .where(inArray(classSessionTeacherAssignments.classSessionId, sessionIds))
+      : [];
+    const assignmentsBySession = new Map<string, typeof existingTimeAssignments>();
+    for (const assignment of existingTimeAssignments) {
+      const sessionAssignments = assignmentsBySession.get(assignment.classSessionId) ?? [];
+      sessionAssignments.push(assignment);
+      assignmentsBySession.set(assignment.classSessionId, sessionAssignments);
+    }
+
+    const nextTimeAssignments = sessionsToUpdate.flatMap((session) =>
+      reconcileTeacherTimeAssignments(
+        newTeacherIds,
+        assignmentsBySession.get(session.id) ?? [],
+        session.shiftStartTime,
+        session.shiftEndTime,
+      ).map((assignment) => ({
+        classSessionId: session.id,
+        teacherId: assignment.teacherId,
+        startTime: assignment.startTime,
+        endTime: assignment.endTime,
+        scheduleKey: assignment.scheduleKey,
+      })),
+    );
 
     for (const session of sessionsToUpdate) {
       await tx.update(classSessions)
@@ -4283,6 +4317,14 @@ export async function changeTeacher(params: {
           updatedAt: new Date(),
         })
         .where(eq(classSessions.id, session.id));
+    }
+
+    if (sessionIds.length > 0) {
+      await tx.delete(classSessionTeacherAssignments)
+        .where(inArray(classSessionTeacherAssignments.classSessionId, sessionIds));
+      if (nextTimeAssignments.length > 0) {
+        await tx.insert(classSessionTeacherAssignments).values(nextTimeAssignments);
+      }
     }
 
     await tx.update(classes)
