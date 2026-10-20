@@ -26,6 +26,7 @@ import {
   studentSessionClassRangeJoinCondition,
 } from "../lib/student-session-schedule-range";
 import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
+import { calculateInvoiceVatAmount, isInvoiceVatRate } from "@shared/invoice-vat";
 import {
   buildClassTransferFallbackInvoiceAllocations,
   calculateClassTransferSourceCredit,
@@ -1098,6 +1099,7 @@ export async function extendStudentSessions(data: {
     surchargeAmount?: number;
     promotionKeys?: string[];
     surchargeKeys?: string[];
+    vatRate?: number;
     unitPrice?: number;
     quantity?: number;
     description?: string;
@@ -1117,6 +1119,7 @@ export async function extendStudentSessions(data: {
     surchargeAmount: number;
     promotionKeys: string[];
     surchargeKeys: string[];
+    vatRate: number;
     unitPrice: number;
     quantity: number;
     description: string;
@@ -1131,6 +1134,7 @@ export async function extendStudentSessions(data: {
       surchargeAmount: ps.surchargeAmount ?? 0,
       promotionKeys: ps.promotionKeys ?? [],
       surchargeKeys: ps.surchargeKeys ?? [],
+      vatRate: Number(ps.vatRate ?? 0),
       unitPrice: ps.unitPrice ?? 0,
       quantity: ps.quantity ?? 1,
       description: ps.description ?? "",
@@ -1538,7 +1542,11 @@ export async function extendStudentSessions(data: {
       const inv = perStudentInvoice[studentId];
       const shouldCreateInvoice = inv ? inv.autoInvoice : data.autoInvoice;
       if (shouldCreateInvoice) {
-        const grandTotal = inv?.grandTotal ?? 0;
+        const beforeVat = Math.max(0, inv?.grandTotal ?? 0);
+        const vatRate = inv?.vatRate ?? 0;
+        if (!isInvoiceVatRate(vatRate)) throw new Error("Tỷ lệ VAT không hợp lệ.");
+        const vatAmount = calculateInvoiceVatAmount(beforeVat, vatRate);
+        const grandTotal = beforeVat + vatAmount;
         const totalAmt = inv?.totalAmount ?? grandTotal;
         const promoAmt = inv?.promotionAmount ?? 0;
         const surchAmt = inv?.surchargeAmount ?? 0;
@@ -1612,7 +1620,9 @@ export async function extendStudentSessions(data: {
             surchargeKeys: inv?.surchargeKeys ?? [],
             promotionAmount: promoAmt.toFixed(2),
             surchargeAmount: surchAmt.toFixed(2),
-            subtotal: grandTotal.toFixed(2),
+            subtotal: beforeVat.toFixed(2),
+            vatRate,
+            vatAmount: vatAmount.toFixed(2),
             sortOrder: 0,
           });
           createdInvoiceNotifications.push({

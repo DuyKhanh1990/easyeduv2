@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { VoucherHint } from "@/components/finance/VoucherHint";
 import { apiRequest } from "@/lib/queryClient";
 import { useAutoInvoicePolicy } from "@/hooks/use-auto-invoice-policy";
+import { calculateInvoiceVatAmount, INVOICE_VAT_RATES } from "@shared/invoice-vat";
 import {
   Dialog,
   DialogContent,
@@ -166,6 +167,7 @@ export function ExtensionDialog({
   const [studentPkgIds, setStudentPkgIds] = useState<Record<string, string>>({});
   const [studentDiscountIds, setStudentDiscountIds] = useState<Record<string, string[]>>({});
   const [studentSurchargeIds, setStudentSurchargeIds] = useState<Record<string, string[]>>({});
+  const [studentVatRates, setStudentVatRates] = useState<Record<string, number>>({});
   const [studentAutoInvoice, setStudentAutoInvoice] = useState<Record<string, boolean>>({});
   const [allAutoInvoice, setAllAutoInvoice] = useState(true);
   const [openPromoStudentId, setOpenPromoStudentId] = useState<string | null>(null);
@@ -223,6 +225,7 @@ export function ExtensionDialog({
       setAllAutoInvoice(defaultAutoInvoice);
       setStudentDiscountIds({});
       setStudentSurchargeIds({});
+      setStudentVatRates(Object.fromEntries(selectedStudents.map((student) => [student.id, 0])));
     }
   }, [isOpen, selectedStudents, classData, defaultAutoInvoice]);
 
@@ -456,7 +459,10 @@ export function ExtensionDialog({
         ? base * parseFloat(opt.valueAmount) / 100
         : parseFloat(opt.valueAmount) || 0);
     }, 0);
-    return { base, discAmt, surchAmt, total: base - discAmt + surchAmt };
+    const beforeVat = Math.max(0, base - discAmt + surchAmt);
+    const vatRate = studentVatRates[s.id] ?? 0;
+    const vatAmount = calculateInvoiceVatAmount(beforeVat, vatRate);
+    return { base, discAmt, surchAmt, beforeVat, vatRate, vatAmount, total: beforeVat + vatAmount };
   };
 
   const allPkgs: any[] = feePackages || classData?.course?.feePackages || [];
@@ -783,6 +789,7 @@ export function ExtensionDialog({
                     <th className="px-3 py-2.5 text-center font-semibold whitespace-nowrap w-16">SL</th>
                     <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap w-28">Khuyến mãi</th>
                     <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap w-28">Phụ thu</th>
+                    <th className="px-3 py-2.5 text-center font-semibold whitespace-nowrap w-24">VAT</th>
                     <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap w-28">Tổng tiền</th>
                     <th className="px-3 py-2.5 text-center font-semibold whitespace-nowrap w-32">Hoá đơn tự động</th>
                   </tr>
@@ -963,6 +970,28 @@ export function ExtensionDialog({
                           </Popover>
                         </td>
 
+                        {/* VAT */}
+                        <td className="px-3 py-2">
+                          <Select
+                            value={String(amounts.vatRate)}
+                            onValueChange={(value) =>
+                              setStudentVatRates((previous) => ({ ...previous, [s.id]: Number(value) }))
+                            }
+                          >
+                            <SelectTrigger className="h-7 px-1.5 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {INVOICE_VAT_RATES.map((rate) => (
+                                <SelectItem key={rate} value={String(rate)}>{rate}%</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <div className="mt-0.5 text-center text-[10px] text-muted-foreground">
+                            VAT: {fmtMoney(amounts.vatAmount)}đ
+                          </div>
+                        </td>
+
                         {/* Tổng tiền */}
                         <td className="px-3 py-2 text-right tabular-nums font-semibold">
                           {amounts.total > 0 ? `${fmtMoney(amounts.total)}đ` : "—"}
@@ -1016,7 +1045,8 @@ export function ExtensionDialog({
                     promotionKeys: studentDiscountIds[s.id] ?? [],
                     surchargeKeys: studentSurchargeIds[s.id] ?? [],
                     autoInvoice: autoInv,
-                    grandTotal: amounts.total,
+                    vatRate: amounts.vatRate,
+                    grandTotal: amounts.beforeVat,
                     totalAmount: amounts.base,
                     promotionAmount: amounts.discAmt,
                     surchargeAmount: amounts.surchAmt,
