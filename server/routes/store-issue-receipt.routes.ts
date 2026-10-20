@@ -148,6 +148,8 @@ const issueItemSchema = z.object({
     optionKey: z.string().optional(),
     valueType: z.enum(["amount", "percent"]),
     value: z.number().min(0),
+    optionVatRate: z.number().int().refine(isInvoiceVatRate).default(0),
+    vatRate: z.number().int().refine(isInvoiceVatRate).default(0),
   })).default([]),
 });
 
@@ -177,6 +179,13 @@ const issueCreateSchema = z.object({
     optionKey: z.string().optional(),
     valueType: z.enum(["amount", "percent"]),
     value: z.number().min(0),
+    optionVatRate: z.number().int().refine(isInvoiceVatRate).default(0),
+    vatRate: z.number().int().refine(isInvoiceVatRate).default(0),
+  })).default([]),
+  surchargeInvoiceLines: z.array(z.object({
+    name: z.string().min(1),
+    amount: z.number().min(0),
+    vatRate: z.number().int().refine(isInvoiceVatRate),
   })).default([]),
   hasInvoice: z.boolean().default(false),
   invoiceNote: z.string().optional().nullable(),
@@ -300,6 +309,7 @@ async function createIssueInvoice(params: {
   surchargeType: "VND" | "%";
   invoicePromotionKeys: string[];
   invoiceSurchargeKeys: string[];
+  surchargeInvoiceLines: { name: string; amount: number; vatRate: number }[];
   paidAmount: number;
   paymentMethod: "cash" | "transfer";
   paymentDueDate: string | null | undefined;
@@ -347,7 +357,18 @@ async function createIssueInvoice(params: {
   const itemSurchargeAmt = params.items.reduce((s, i) => s + (i.surchargeAmount || 0), 0);
   const discountAmt = params.discountType === "VND" ? params.discount : lineSubtotal * params.discount / 100;
   const surchargeAmt = params.surchargeType === "VND" ? params.surcharge : lineSubtotal * params.surcharge / 100;
-  const grandTotal = Math.max(0, lineSubtotal - discountAmt + surchargeAmt + totalVat);
+  const surchargeInvoiceLines = params.surchargeInvoiceLines.length > 0
+    ? params.surchargeInvoiceLines
+    : surchargeAmt > 0 ? [{ name: "Phụ thu xuất kho", amount: surchargeAmt, vatRate: 0 }] : [];
+  const surchargeLinesTotal = surchargeInvoiceLines.reduce((sum, line) => sum + line.amount, 0);
+  if (surchargeInvoiceLines.length > 0 && Math.abs(surchargeLinesTotal - surchargeAmt) > 0.01) {
+    throw new Error("Tổng các dòng phụ thu không khớp với tổng phụ thu phiếu xuất kho.");
+  }
+  const surchargeVatAmount = surchargeInvoiceLines.reduce(
+    (sum, line) => sum + calculateInvoiceVatAmount(line.amount, line.vatRate),
+    0,
+  );
+  const grandTotal = Math.max(0, lineSubtotal - discountAmt + surchargeAmt + totalVat + surchargeVatAmount);
   const totalPromotion = itemPromotionAmt + discountAmt;
   const totalSurcharge = itemSurchargeAmt + surchargeAmt;
 
@@ -425,19 +446,19 @@ async function createIssueInvoice(params: {
         vatRate: itemAmounts[index].vatRate,
         category: "Kho",
       })),
-      ...(surchargeAmt > 0 ? [{
-        packageName: "Phụ thu xuất kho",
+      ...surchargeInvoiceLines.map(line => ({
+        packageName: line.name,
         packageType: null,
-        unitPrice: String(surchargeAmt),
+        unitPrice: String(line.amount),
         quantity: 1,
         promotionKeys: [],
         surchargeKeys: [],
         promotionAmount: "0",
         surchargeAmount: "0",
-        subtotal: String(surchargeAmt),
-        vatRate: 0,
+        subtotal: String(line.amount),
+        vatRate: line.vatRate,
         category: "Phụ thu",
-      }] : []),
+      })),
     ],
     paymentSchedule,
   });
@@ -1105,6 +1126,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
           surchargeType: receiptData.surchargeType,
           invoicePromotionKeys: receiptData.promotionKeys ?? [],
           invoiceSurchargeKeys: receiptData.surchargeKeys ?? [],
+          surchargeInvoiceLines: receiptData.surchargeInvoiceLines ?? [],
           paidAmount: receiptData.paidAmount,
           paymentMethod: receiptData.paymentMethod,
           paymentDueDate: receiptData.paymentDueDate,
@@ -1458,6 +1480,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
             surchargeType: receiptData.surchargeType,
             invoicePromotionKeys: receiptData.promotionKeys ?? [],
             invoiceSurchargeKeys: receiptData.surchargeKeys ?? [],
+            surchargeInvoiceLines: receiptData.surchargeInvoiceLines ?? [],
             paidAmount: receiptData.paidAmount,
             paymentMethod: receiptData.paymentMethod,
             paymentDueDate: receiptData.paymentDueDate,

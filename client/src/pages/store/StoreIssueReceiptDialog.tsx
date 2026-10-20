@@ -57,6 +57,8 @@ export type IssueReceiptFormData = {
   surchargeKeys?: string[];
   manualPromotionRows?: ManualAdjustment[];
   manualSurchargeRows?: ManualAdjustment[];
+  surchargeVatAmount?: number;
+  surchargeInvoiceLines?: SurchargeInvoiceLine[];
   hasInvoice: boolean;
   invoiceNote: string;
   paidAmount: number;
@@ -104,6 +106,8 @@ function getSurchargeBreakdown(
       optionKey,
       valueType: "amount" as const,
       value: 0,
+      optionVatRate: 0,
+      vatRate: 0,
     })),
   ];
   let current = Math.max(0, base);
@@ -241,6 +245,9 @@ function IssueAdjustmentDialog({
   const [openPickerId, setOpenPickerId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const total = adjustmentTotal(baseAmount, [], rows, options, kind);
+  const taxTotal = kind === "surcharge"
+    ? getSurchargeBreakdown(baseAmount, [], rows, options).vatAmount
+    : 0;
   const color = kind === "promotion" ? "text-emerald-600" : "text-orange-600";
   const filteredOptions = options.filter(option => {
     const needle = search.trim().toLowerCase();
@@ -318,6 +325,20 @@ function IssueAdjustmentDialog({
                       </div>
                     </PopoverContent>
                   </Popover>
+                  {kind === "surcharge" && (
+                    <Select
+                      value={String(row.optionVatRate ?? 0)}
+                      onValueChange={value => onUpdateRow(row.id, { optionVatRate: Number(value) })}
+                    >
+                      <SelectTrigger className="h-9 w-[5rem] px-1.5 text-[10px]" aria-label="VAT phụ thu đã chọn">
+                        <span className="text-muted-foreground">VAT</span>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {INVOICE_VAT_RATES.map(rate => <SelectItem key={rate} value={String(rate)}>{rate}%</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )}
                   <button type="button" onClick={() => onRemoveRow(row.id)} className="p-2 text-muted-foreground hover:text-destructive">
                     <X className="h-4 w-4" />
                   </button>
@@ -350,6 +371,20 @@ function IssueAdjustmentDialog({
                       {row.valueType === "percent" ? "%" : "đ"}
                     </span>
                   </div>
+                  {kind === "surcharge" && (
+                    <Select
+                      value={String(row.vatRate ?? 0)}
+                      onValueChange={value => onUpdateRow(row.id, { vatRate: Number(value) })}
+                    >
+                      <SelectTrigger className="h-9 w-[5rem] px-1.5 text-[10px]" aria-label="VAT phụ thu nhập tay">
+                        <span className="text-muted-foreground">VAT</span>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {INVOICE_VAT_RATES.map(rate => <SelectItem key={rate} value={String(rate)}>{rate}%</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
               </div>
             );
@@ -362,6 +397,12 @@ function IssueAdjustmentDialog({
           <span>Tổng {kind === "promotion" ? "khuyến mãi" : "phụ thu"}</span>
           <span className={color}>{kind === "promotion" ? "-" : "+"}{fmtVND(total)}</span>
         </div>
+        {kind === "surcharge" && (
+          <div className="mt-2 flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">VAT phụ thu</span>
+            <span>{fmtVND(taxTotal)}</span>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -765,6 +806,8 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
             optionKey,
             valueType: "amount" as const,
             value: 0,
+            optionVatRate: 0,
+            vatRate: 0,
           }))
         : [{ id: `sidebar-${kind}-blank`, valueType: "amount" as const, value: 0 }]);
   }
@@ -794,6 +837,8 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
         id: `sidebar-${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         valueType: "amount",
         value: 0,
+        optionVatRate: 0,
+        vatRate: 0,
       },
     ]);
   }
@@ -828,11 +873,17 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
     ? adjustmentTotal(subtotal, selectedPromoKeys, sidebarPromotionRows, promotionOptions, "promotion")
     : (form.discountType === "VND" ? form.discount : subtotal * form.discount / 100);
 
-  const surchargeAmt = hasSidebarSurcharge
-    ? adjustmentTotal(Math.max(0, subtotal - discountAmt), selectedSurchargeKeys, sidebarSurchargeRows, surchargeOptions, "surcharge")
-    : (form.surchargeType === "VND" ? form.surcharge : subtotal * form.surcharge / 100);
+  const surchargeBreakdown = hasSidebarSurcharge
+    ? getSurchargeBreakdown(Math.max(0, subtotal - discountAmt), selectedSurchargeKeys, sidebarSurchargeRows, surchargeOptions)
+    : {
+        amount: form.surchargeType === "VND" ? form.surcharge : subtotal * form.surcharge / 100,
+        vatAmount: 0,
+        lines: [] as SurchargeInvoiceLine[],
+      };
+  const surchargeAmt = surchargeBreakdown.amount;
+  const totalSurchargeVat = surchargeBreakdown.vatAmount;
 
-  const total = Math.max(0, subtotal - discountAmt + surchargeAmt + totalVat);
+  const total = Math.max(0, subtotal - discountAmt + surchargeAmt + totalVat + totalSurchargeVat);
 
   function handlePromoToggle(code: string, options: FinancePromotion[], base: number) {
     setSelectedPromoKeys(prev => {
@@ -872,6 +923,8 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
         surchargeKeys: selectedSurchargeKeys,
         manualPromotionRows: sidebarPromotionRows,
         manualSurchargeRows: sidebarSurchargeRows,
+        surchargeVatAmount: totalSurchargeVat,
+        surchargeInvoiceLines: surchargeBreakdown.lines,
         paymentMethod: form.paymentMethod,
         paymentDueDate: total > form.paidAmount ? form.paymentDueDate : "",
         items: form.items.map(item => {
@@ -1424,7 +1477,7 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
               />
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">Tổng VAT</span>
-                <span className="tabular-nums">{fmtVND(totalVat)}</span>
+                <span className="tabular-nums">{fmtVND(totalVat + totalSurchargeVat)}</span>
               </div>
               <div className="flex items-center justify-between text-sm font-bold border-t border-border pt-2">
                 <span>TỔNG TIỀN:</span>
