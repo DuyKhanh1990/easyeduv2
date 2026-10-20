@@ -61,6 +61,7 @@ interface Product {
 type ManualAdjustment = {
   id: string;
   optionKey?: string;
+  name?: string;
   valueType: "amount" | "percent";
   value: number;
 };
@@ -517,9 +518,15 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     const loadedInvoiceSurchargeAmount = parseFloat(inv.invoiceSurchargeAmount) || 0;
     setInvoicePromotionRows(
       loadedPromoKeys.length > 0
-        ? loadedPromoKeys.map((key: string, index: number) => ({ id: `invoice-promo-${index}-${key}`, optionKey: key, valueType: "amount", value: 0 }))
+        ? loadedPromoKeys.map((key: string, index: number) => ({
+            id: `invoice-promo-${index}-${key}`,
+            optionKey: key,
+            name: index === 0 ? String(inv.invoicePromotionName ?? "") : "",
+            valueType: "amount",
+            value: 0,
+          }))
         : loadedInvoicePromoAmount > 0
-          ? [{ id: "invoice-promo-manual", valueType: "amount", value: loadedInvoicePromoAmount }]
+          ? [{ id: "invoice-promo-manual", name: String(inv.invoicePromotionName ?? ""), valueType: "amount", value: loadedInvoicePromoAmount }]
           : [],
     );
     setInvoiceSurchargeRows(
@@ -1023,7 +1030,13 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     "surcharge",
   );
   const invoicePromoAmt = invoicePromotionResult.adjustmentAmount;
-  const invoicePromotionVatAmount = invoicePromotionName.trim()
+  const resolvedInvoicePromotionName = Array.from(new Set(
+    invoicePromotionRows.map(row => {
+      const option = promotionOptionsWithVouchers.find((candidate: any) => candidate.id === row.optionKey || candidate.code === row.optionKey);
+      return row.name?.trim() || (option ? formatPromotionLabel(option) : "");
+    }).filter(Boolean),
+  )).join(", ") || invoicePromotionName.trim();
+  const invoicePromotionVatAmount = resolvedInvoicePromotionName
     ? calculateInvoicePromotionVat(invoicePromoAmt, invoicePromotionEligibleItems)
     : 0;
   const totalVat = Math.max(0, itemVatTotal - invoicePromotionVatAmount);
@@ -1244,6 +1257,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     const update = (rows: ManualAdjustment[]) => rows.map(row => row.id === rowId ? { ...row, ...patch } : row);
     if (kind === "promotion") setInvoicePromotionRows(update);
     else setInvoiceSurchargeRows(update);
+    if (kind === "promotion" && patch.name !== undefined) setInvoicePromotionName(patch.name);
   };
   const selectInvoiceAdjustmentOption = (
     kind: "promotion" | "surcharge",
@@ -1251,12 +1265,16 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     optionKey: string,
   ) => {
     const currentRows = kind === "promotion" ? invoicePromotionRows : invoiceSurchargeRows;
-    const nextRows = currentRows.map(row => row.id === rowId ? { ...row, optionKey } : row);
+    const option = kind === "promotion"
+      ? promotionOptionsWithVouchers.find((candidate: any) => candidate.id === optionKey || candidate.code === optionKey)
+      : surchargeOptions.find((candidate: any) => candidate.id === optionKey || candidate.code === optionKey);
+    const nextRows = currentRows.map(row => row.id === rowId
+      ? { ...row, optionKey, ...(kind === "promotion" && option ? { name: formatPromotionLabel(option) } : {}) }
+      : row);
     const selectedKeys = Array.from(new Set(nextRows.map(row => row.optionKey).filter((key): key is string => Boolean(key))));
     if (kind === "promotion") {
       setInvoicePromotionRows(nextRows);
       setInvoicePromoKeys(selectedKeys);
-      const option = promotionOptionsWithVouchers.find((candidate: any) => candidate.id === optionKey);
       if (option) setInvoicePromotionName(formatPromotionLabel(option));
     } else {
       setInvoiceSurchargeRows(nextRows);
@@ -1270,6 +1288,10 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     if (kind === "promotion") {
       setInvoicePromotionRows(nextRows);
       setInvoicePromoKeys(selectedKeys);
+      setInvoicePromotionName(nextRows.map(row => {
+        const option = promotionOptionsWithVouchers.find((candidate: any) => candidate.id === row.optionKey || candidate.code === row.optionKey);
+        return row.name?.trim() || (option ? formatPromotionLabel(option) : "");
+      }).filter(Boolean).join(", "));
     } else {
       setInvoiceSurchargeRows(nextRows);
       setInvoiceSurchargeKeys(selectedKeys);
@@ -1797,9 +1819,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     return (
       <div className="mt-3 space-y-4">
         {rows.map(row => {
-          const selectedOption = options.find((o: any) => o.id === row.optionKey);
+          const selectedOption = options.find((o: any) => o.id === row.optionKey || o.code === row.optionKey);
           return (
-            <div key={row.id} className="space-y-2 rounded-lg border border-muted p-2">
+              <div key={row.id} className="space-y-2 rounded-lg border border-muted p-2">
               <Popover open={openPicker === row.id} onOpenChange={v => {
                 setOpenPicker(v ? row.id : null);
                 if (v) setSearch("");
@@ -1868,11 +1890,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                 </PopoverContent>
               </Popover>
 
-              <div className="flex items-center gap-1.5">
+              <div className={cn("flex items-center gap-1.5", isPromotion && "flex-wrap sm:flex-nowrap")}>
                 <select
                   value={row.valueType}
                   onChange={e => updateInvoiceAdjustmentRow(kind, row.id, { valueType: e.target.value as ManualAdjustment["valueType"] })}
-                  className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
+                  className="h-8 w-28 shrink-0 rounded-md border bg-background px-2 text-xs"
                 >
                   <option value="amount">{t("finance.create.amountType")}</option>
                   <option value="percent">{t("finance.create.percentType")}</option>
@@ -1890,6 +1912,17 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     {row.valueType === "percent" ? "%" : "₫"}
                   </span>
                 </div>
+                {isPromotion && (
+                  <Input
+                    value={row.name ?? ""}
+                    onChange={event => updateInvoiceAdjustmentRow(kind, row.id, { name: event.target.value })}
+                    placeholder={t("finance.create.promotionName")}
+                    aria-label={t("finance.create.promotionName")}
+                    maxLength={120}
+                    className="h-8 min-w-0 flex-1 text-xs"
+                    data-testid={`input-invoice-promotion-name-${row.id}`}
+                  />
+                )}
                 <button
                   type="button"
                   className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
@@ -3289,7 +3322,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     </button>
                   </DialogTrigger>
                   <DialogContent
-                    className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
+                    className="w-[min(94vw,52rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
                     overlayClassName="bg-black/30 backdrop-blur-[1px]"
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -3305,13 +3338,6 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         </button>
                       )}
                     </div>
-                    <Input
-                      value={invoicePromotionName}
-                      onChange={event => setInvoicePromotionName(event.target.value)}
-                      placeholder={t("finance.create.promotionName")}
-                      className="mt-3"
-                      data-testid="input-invoice-promotion-name"
-                    />
                     {renderInvoiceAdjustmentRows("promotion")}
                     {schedulePromotionTotal > 0 && (
                       <div
