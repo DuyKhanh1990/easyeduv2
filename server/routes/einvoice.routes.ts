@@ -197,22 +197,39 @@ export function registerEInvoiceRoutes(app: Express) {
       };
 
       const matbaoItems = items.length > 0
-        ? items.map(it => {
+        ? items.flatMap(it => {
             const price = parseFloat(it.unitPrice ?? "0");
             const qty = it.quantity ?? 1;
             const base = price * qty;
             const isSurchargeLine = String(it.category ?? "").toLowerCase() === "phụ thu";
-            return {
+            const taxRate = it.packageType === "buổi" || isSurchargeLine ? Number(it.vatRate ?? 0) : 0;
+            const legacySurchargeAmount = Math.max(0, parseFloat(it.surchargeAmount ?? "0") || 0);
+            const legacySurcharges = legacySurchargeAmount > 0
+              ? distributeAdjustments(it.surchargeKeys, "surcharge", legacySurchargeAmount, base)
+              : [];
+            const surchargeLines = legacySurchargeAmount > 0
+              ? (legacySurcharges.length > 0
+                  ? legacySurcharges
+                  : [{ name: "Phụ thu", amount: Math.round(legacySurchargeAmount) }]
+                ).map(surcharge => ({
+                  name: surcharge.name,
+                  price: surcharge.amount,
+                  quantity: 1,
+                  unit: "Khoản",
+                  taxRate,
+                }))
+              : [];
+            const itemLine = {
               name: it.packageName,
               price,
               quantity: qty,
               unit: isSurchargeLine ? "Khoản" : it.packageType === "buổi" ? "Buổi" : "Khóa",
               // Course-package quantity semantics are still under review; only
               // per-session rows and independent surcharge rows receive VAT.
-              taxRate: it.packageType === "buổi" || isSurchargeLine ? Number(it.vatRate ?? 0) : 0,
+              taxRate,
               promotions: distributeAdjustments(it.promotionKeys, "promotion", parseFloat(it.promotionAmount ?? "0"), base),
-              surcharges: distributeAdjustments(it.surchargeKeys, "surcharge", parseFloat(it.surchargeAmount ?? "0"), base),
             };
+            return [itemLine, ...surchargeLines];
           })
         : [{
             name: inv.category || inv.description || "Học phí",
