@@ -43,6 +43,8 @@ interface Product {
   unitPrice: number;
   quantity: number;
   vatRate: number;
+  vatAmountOverride?: number;
+  legacySurchargeKeys?: string[];
   promotionKeys: string[];
   surchargeKeys: string[];
   manualPromotionRows: ManualAdjustment[];
@@ -523,12 +525,14 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     );
 
     if (Array.isArray(inv.items) && inv.items.length > 0) {
-      setProducts(inv.items.map((item: any, i: number) => {
+      setProducts(inv.items.flatMap((item: any, i: number) => {
         const itemCat = item.category
           ? (allCategoriesForEdit.find((c: any) => c.name === item.category && c.type === invTypeForCat)
             ?? allCategoriesForEdit.find((c: any) => c.name === item.category))
           : null;
-        return {
+        const isExistingSurchargeLine = item.category === t("finance.surcharge") || item.category === "Phụ thu";
+        const legacySurchargeKeys = Array.isArray(item.surchargeKeys) ? item.surchargeKeys : [];
+        const baseProduct: Product = {
           id: item.id ?? String(i + 1),
           packageId: item.packageId ?? null,
           packageType: item.packageType ?? null,
@@ -537,15 +541,58 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
           quantity: item.quantity ?? 1,
           vatRate: Number(item.vatRate) || 0,
           promotionKeys: item.promotionKeys ?? [],
-          surchargeKeys: item.surchargeKeys ?? [],
+          surchargeKeys: [],
           manualPromotionRows: (item.promotionKeys?.length ?? 0) === 0 && parseFloat(item.promotionAmount) > 0
             ? [{ id: `manual-promo-${item.id ?? i}`, valueType: "amount", value: parseFloat(item.promotionAmount) }]
             : [],
-          manualSurchargeRows: (item.surchargeKeys?.length ?? 0) === 0 && parseFloat(item.surchargeAmount) > 0
-            ? [{ id: `manual-surcharge-${item.id ?? i}`, valueType: "amount", value: parseFloat(item.surchargeAmount) }]
-            : [],
-          categoryId: itemCat?.id ?? fallbackCatId,
+          manualSurchargeRows: [],
+          categoryId: isExistingSurchargeLine ? SURCHARGE_CATEGORY_ID : itemCat?.id ?? fallbackCatId,
         };
+        if (isExistingSurchargeLine) return [baseProduct];
+
+        const storedSurchargeAmount = Math.max(0, parseFloat(item.surchargeAmount) || 0);
+        const oldPromotionBase = calcBase(baseProduct);
+        const oldPromotion = applySequentialAdjustments(
+          oldPromotionBase,
+          baseProduct.promotionKeys,
+          getInitialAdjustmentRows(baseProduct.promotionKeys, parseFloat(item.promotionAmount) || 0, `legacy-promo-${i}`),
+          promotionOptions,
+          "promotion",
+        );
+        const recalculatedSurcharge = applySequentialAdjustments(
+          oldPromotion.finalAmount,
+          legacySurchargeKeys,
+          getInitialAdjustmentRows(legacySurchargeKeys, storedSurchargeAmount, `legacy-surcharge-${i}`),
+          surchargeOptions,
+          "surcharge",
+        ).adjustmentAmount;
+        const surchargeAmount = storedSurchargeAmount || recalculatedSurcharge;
+        if (surchargeAmount <= 0) return [baseProduct];
+
+        const originalVatAmount = Math.max(0, parseFloat(item.vatAmount) || 0);
+        const baseVatAmount = calculateInvoiceVatAmount(oldPromotion.finalAmount, baseProduct.vatRate);
+        const feeVatAmount = Math.max(0, originalVatAmount - baseVatAmount);
+        const surchargeName = legacySurchargeKeys
+          .map((key: string) => surchargeOptions.find((option: any) => option.id === key)?.name)
+          .filter(Boolean)
+          .join(", ") || t("finance.surcharge");
+        const feeLine: Product = {
+          id: `legacy-surcharge-${item.id ?? i}`,
+          packageId: null,
+          packageType: null,
+          name: surchargeName,
+          unitPrice: surchargeAmount,
+          quantity: 1,
+          vatRate: baseProduct.vatRate,
+          vatAmountOverride: originalVatAmount > 0 ? feeVatAmount : undefined,
+          legacySurchargeKeys,
+          promotionKeys: [],
+          surchargeKeys: [],
+          manualPromotionRows: [],
+          manualSurchargeRows: [],
+          categoryId: SURCHARGE_CATEGORY_ID,
+        };
+        return [baseProduct, feeLine];
       }));
     } else {
       setProducts([{ id: "1", packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, vatRate: 0, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: fallbackCatId }]);
@@ -676,6 +723,22 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     queryFn: () => apiRequest("GET", "/api/finance/promotions?type=surcharge").then(r => r.json()),
     enabled: open,
   });
+  useEffect(() => {
+    if (!open || surchargeOptions.length === 0) return;
+    setProducts(prev => {
+      let changed = false;
+      const next = prev.map(product => {
+        if (product.categoryId !== SURCHARGE_CATEGORY_ID || !product.legacySurchargeKeys?.length) return product;
+        const names = product.legacySurchargeKeys
+          .map(key => surchargeOptions.find((option: any) => option.id === key)?.name)
+          .filter(Boolean);
+        if (names.length === 0) return product;
+        changed = true;
+        return { ...product, name: names.join(", "), legacySurchargeKeys: undefined };
+      });
+      return changed ? next : prev;
+    });
+  }, [open, surchargeOptions]);
 
   const normalizedPromotionSearch = promotionSearch.trim().toLowerCase();
   const normalizedSurchargeSearch = surchargeSearch.trim().toLowerCase();
@@ -902,7 +965,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       surchargeOptions,
       "surcharge",
     );
-    const vatAmount = calculateInvoiceVatAmount(surchargeResult.finalAmount, product.vatRate);
+    const vatAmount = product.vatAmountOverride !== undefined && promotionResult.adjustmentAmount === 0
+      ? product.vatAmountOverride
+      : calculateInvoiceVatAmount(surchargeResult.finalAmount, product.vatRate);
     return {
       productId: product.id,
       base,
@@ -912,10 +977,16 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       vatAmount,
     };
   });
-  const totalAmount = productAdjustmentTotals.reduce((sum, item) => sum + item.base, 0);
+  const totalAmount = productAdjustmentTotals.reduce((sum, item) => {
+    const product = products.find(p => p.id === item.productId);
+    return sum + (product?.categoryId === SURCHARGE_CATEGORY_ID ? 0 : item.base);
+  }, 0);
   const totalVat = productAdjustmentTotals.reduce((sum, item) => sum + item.vatAmount, 0);
   const itemPromo = productAdjustmentTotals.reduce((sum, item) => sum + item.promoAmount, 0);
-  const itemSurcharge = productAdjustmentTotals.reduce((sum, item) => sum + item.surchargeAmount, 0);
+  const itemSurcharge = productAdjustmentTotals.reduce((sum, item) => {
+    const product = products.find(p => p.id === item.productId);
+    return sum + item.surchargeAmount + (product?.categoryId === SURCHARGE_CATEGORY_ID ? item.base : 0);
+  }, 0);
   const lineSubtotal = productAdjustmentTotals.reduce((sum, item) => sum + item.finalAmount, 0);
   const invoicePromotionResult = applySequentialAdjustments(
     lineSubtotal,
@@ -1434,7 +1505,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       }
     }
 
-    const firstCat = allCategories.find((c: any) => c.id === products[0]?.categoryId);
+    const firstNonSurchargeProduct = products.find(product => product.categoryId !== SURCHARGE_CATEGORY_ID);
+    const firstCat = allCategories.find((c: any) => c.id === firstNonSurchargeProduct?.categoryId);
 
     const items = products.map(p => {
       const base = calcBase(p);
@@ -1456,7 +1528,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       const surchargeAmt = surchargeResult.adjustmentAmount;
       const itemCat = allCategories.find((c: any) => c.id === p.categoryId);
       const vatRate = p.vatRate ?? 0;
-      const vatAmount = calculateInvoiceVatAmount(surchargeResult.finalAmount, vatRate);
+      const vatAmount = p.vatAmountOverride !== undefined && promotionResult.adjustmentAmount === 0
+        ? p.vatAmountOverride
+        : calculateInvoiceVatAmount(surchargeResult.finalAmount, vatRate);
       return {
         packageName: p.name,
         packageId: p.packageId,
@@ -1470,7 +1544,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         subtotal: String(surchargeResult.finalAmount),
         vatRate,
         vatAmount: String(vatAmount),
-        category: itemCat?.name ?? "",
+        category: p.categoryId === SURCHARGE_CATEGORY_ID ? t("finance.surcharge") : itemCat?.name ?? "",
         storeProductId: p.storeProductId ?? null,
         storeProductCode: p.storeProductCode ?? null,
         warehouseId: p.warehouseId ?? null,
@@ -1526,7 +1600,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     saveMutation.mutate({
       type: invoiceType === "income" ? "Thu" : "Chi",
       locationId,
-      category: firstCat?.name ?? "",
+      category: firstCat?.name ?? (products.some(product => product.categoryId === SURCHARGE_CATEGORY_ID) ? t("finance.surcharge") : ""),
       classId: classId || null,
       studentId: studentId || null,
       subjectName: studentId ? null : subjectName.trim(),
@@ -1910,30 +1984,36 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                            <td colSpan={8} className="px-3 py-2">
                             <div className="flex items-center justify-between gap-3">
                               <div className="flex min-w-0 items-center gap-1">
-                              <SearchableSelect
-                                value={group.categoryId}
-                                onChange={value => {
-                                  setProducts(prev => prev.map(product => product.categoryId === group.categoryId ? {
-                                    ...product,
-                                    categoryId: value,
-                                    packageId: null,
-                                    packageType: null,
-                                    name: "",
-                                    storeProductId: null,
-                                    storeProductCode: null,
-                                    warehouseId: null,
-                                    warehouseName: null,
-                                    stockAvailable: undefined,
-                                  } : product));
-                                  setDeduction(0);
-                                }}
-                                placeholder={t("finance.create.choose")}
-                                searchPlaceholder={t("finance.searchCategory")}
-                                options={categories.map((category: any) => ({ value: category.id, label: category.name }))}
-                                className="h-8 w-56 rounded-none border-0 bg-transparent px-1 text-[11px] font-bold uppercase text-violet-700 shadow-none focus-visible:ring-0 dark:text-violet-300"
-                                contentClassName="min-w-[220px]"
-                                data-testid={`select-group-category-${group.categoryId || "unassigned"}`}
-                              />
+                              {group.categoryId === SURCHARGE_CATEGORY_ID ? (
+                                <span className="w-56 px-1 text-[11px] font-bold uppercase text-violet-700 dark:text-violet-300">
+                                  {t("finance.surcharge")}
+                                </span>
+                              ) : (
+                                <SearchableSelect
+                                  value={group.categoryId}
+                                  onChange={value => {
+                                    setProducts(prev => prev.map(product => product.categoryId === group.categoryId ? {
+                                      ...product,
+                                      categoryId: value,
+                                      packageId: null,
+                                      packageType: null,
+                                      name: "",
+                                      storeProductId: null,
+                                      storeProductCode: null,
+                                      warehouseId: null,
+                                      warehouseName: null,
+                                      stockAvailable: undefined,
+                                    } : product));
+                                    setDeduction(0);
+                                  }}
+                                  placeholder={t("finance.create.choose")}
+                                  searchPlaceholder={t("finance.searchCategory")}
+                                  options={categories.map((category: any) => ({ value: category.id, label: category.name }))}
+                                  className="h-8 w-56 rounded-none border-0 bg-transparent px-1 text-[11px] font-bold uppercase text-violet-700 shadow-none focus-visible:ring-0 dark:text-violet-300"
+                                  contentClassName="min-w-[220px]"
+                                  data-testid={`select-group-category-${group.categoryId || "unassigned"}`}
+                                />
+                              )}
                               <Popover
                                 open={categoryPickerOpenId === (group.categoryId || "unassigned")}
                                 onOpenChange={isOpen => setCategoryPickerOpenId(isOpen ? (group.categoryId || "unassigned") : null)}
@@ -1979,7 +2059,13 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                         type="button"
                                         className="w-full rounded px-2 py-1.5 text-left text-xs font-medium text-orange-700 hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/30"
                                         onClick={() => {
-                                          setIsSurchargeGroupVisible(true);
+                                          if (!group.categoryId) {
+                                            setProducts(prev => prev.map(product => product.categoryId === group.categoryId
+                                              ? { ...product, categoryId: SURCHARGE_CATEGORY_ID }
+                                              : product));
+                                          } else {
+                                            addProduct(SURCHARGE_CATEGORY_ID);
+                                          }
                                           setCategoryPickerOpenId(null);
                                         }}
                                         data-testid="button-add-surcharge-category"
@@ -1999,7 +2085,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                 disabled={!group.categoryId}
                                 data-testid={`button-add-product-to-category-${group.categoryId || "unassigned"}`}
                               >
-                                <Plus className="h-3 w-3" /> {t("finance.addProduct")}
+                                <Plus className="h-3 w-3" /> {t("finance.add")} {group.categoryId === SURCHARGE_CATEGORY_ID ? t("finance.surcharge").toLowerCase() : t("finance.create.product").toLowerCase()}
                               </Button>
                             </div>
                           </td>
@@ -2027,7 +2113,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                        // Keep the surcharge in the existing calculations, but display it
                        // separately below so the product row itself remains clear.
                        const subtotal = promotionResult.finalAmount;
-                       const vatAmount = calculateInvoiceVatAmount(subtotal, p.vatRate);
+                       const vatAmount = p.vatAmountOverride !== undefined && promoAmt === 0
+                         ? p.vatAmountOverride
+                         : calculateInvoiceVatAmount(subtotal, p.vatRate);
                       return (
                         <Fragment key={p.id}>
                         <tr className="border-b last:border-0">
@@ -2143,7 +2231,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               type="number"
                               value={p.unitPrice}
                               readOnly={isKhoa}
-                              onChange={e => !isKhoa && setProducts(prev => prev.map(x => x.id === p.id ? { ...x, unitPrice: Number(e.target.value) } : x))}
+                              onChange={e => !isKhoa && setProducts(prev => prev.map(x => x.id === p.id ? { ...x, unitPrice: Number(e.target.value), vatAmountOverride: undefined } : x))}
                               onFocus={e => e.target.select()}
                               className={`h-8 rounded-none border-0 border-b border-border bg-transparent text-[11px] text-right px-1.5 shadow-none focus-visible:ring-0 ${isKhoa ? "bg-muted/40 cursor-not-allowed opacity-70" : ""}`}
                                title={isKhoa ? t("finance.fixedCoursePrice") : undefined}
@@ -2154,7 +2242,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               type="number"
                               min={1}
                               value={p.quantity}
-                              onChange={e => setProducts(prev => prev.map(x => x.id === p.id ? { ...x, quantity: Number(e.target.value) } : x))}
+                              onChange={e => setProducts(prev => prev.map(x => x.id === p.id ? { ...x, quantity: Number(e.target.value), vatAmountOverride: undefined } : x))}
                               onFocus={e => e.target.select()}
                               className="h-8 rounded-none border-0 border-b border-border bg-transparent text-[11px] text-center px-1 shadow-none focus-visible:ring-0"
                             />
@@ -2467,7 +2555,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                           <td className="p-2 align-top">
                             <Select
                               value={String(p.vatRate)}
-                              onValueChange={value => setProducts(prev => prev.map(x => x.id === p.id ? { ...x, vatRate: Number(value) } : x))}
+                              onValueChange={value => setProducts(prev => prev.map(x => x.id === p.id ? { ...x, vatRate: Number(value), vatAmountOverride: undefined } : x))}
                             >
                               <SelectTrigger className="h-8 justify-end rounded-none border-0 border-b border-border bg-transparent px-1.5 text-right text-[11px] shadow-none focus:ring-0" data-testid={`select-vat-rate-${p.id}`}>
                                 <SelectValue />
@@ -2502,7 +2590,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         })}
                       </Fragment>
                     ))}
-                    {showSurchargeGroup && (
+                    {false && showSurchargeGroup && (
                       <Fragment key="category-surcharge">
                         <tr className="border-b bg-violet-50/80 dark:bg-violet-950/30">
                           <td colSpan={8} className="px-3 py-2">

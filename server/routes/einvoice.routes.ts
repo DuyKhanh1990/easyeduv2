@@ -201,14 +201,15 @@ export function registerEInvoiceRoutes(app: Express) {
             const price = parseFloat(it.unitPrice ?? "0");
             const qty = it.quantity ?? 1;
             const base = price * qty;
+            const isSurchargeLine = String(it.category ?? "").toLowerCase() === "phụ thu";
             return {
               name: it.packageName,
               price,
               quantity: qty,
-              unit: it.packageType === "buổi" ? "Buổi" : "Khóa",
+              unit: isSurchargeLine ? "Khoản" : it.packageType === "buổi" ? "Buổi" : "Khóa",
               // Course-package quantity semantics are still under review; only
-              // per-session rows currently receive VAT in the MatBao payload.
-              taxRate: it.packageType === "buổi" ? Number(it.vatRate ?? 0) : 0,
+              // per-session rows and independent surcharge rows receive VAT.
+              taxRate: it.packageType === "buổi" || isSurchargeLine ? Number(it.vatRate ?? 0) : 0,
               promotions: distributeAdjustments(it.promotionKeys, "promotion", parseFloat(it.promotionAmount ?? "0"), base),
               surcharges: distributeAdjustments(it.surchargeKeys, "surcharge", parseFloat(it.surchargeAmount ?? "0"), base),
             };
