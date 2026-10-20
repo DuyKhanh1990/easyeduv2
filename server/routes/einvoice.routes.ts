@@ -4,6 +4,7 @@ import { db, eq, inArray } from "../storage/base";
 import { invoices, invoiceItems, students } from "../storage/base";
 import { financePromotions, invoicePaymentSchedule } from "@shared/schema";
 import { matbao, type MatBaoAdjustment } from "../lib/matbao.service";
+import { getUniformInvoicePromotionVatRate } from "@shared/invoice-promotion-vat";
 
 const signSchema = z.object({
   invoiceIds: z.array(z.string().uuid()).min(1),
@@ -240,12 +241,27 @@ export function registerEInvoiceRoutes(app: Express) {
           }];
 
       const invAny: any = inv;
-      const invoicePromotions = distributeAdjustments(
-        invAny.invoicePromotionKeys,
-        "promotion",
-        parseFloat(invAny.invoicePromotionAmount ?? "0"),
-        parseFloat(inv.totalAmount ?? "0"),
-      );
+      const invoicePromotionAmount = parseFloat(invAny.invoicePromotionAmount ?? "0");
+      const invoicePromotionVatRate = getUniformInvoicePromotionVatRate(items.map((item: any) => ({
+        category: item.category,
+        vatRate: item.vatRate,
+        subtotal: item.subtotal,
+      })));
+      const invoicePromotions: MatBaoAdjustment[] = invoicePromotionAmount > 0
+        ? invAny.invoicePromotionName
+          ? [{
+              name: String(invAny.invoicePromotionName),
+              amount: Math.round(invoicePromotionAmount),
+              taxRate: invoicePromotionVatRate ?? 0,
+              tChat: 3,
+            }]
+          : distributeAdjustments(
+              invAny.invoicePromotionKeys,
+              "promotion",
+              invoicePromotionAmount,
+              parseFloat(inv.totalAmount ?? "0"),
+            )
+        : [];
       const invoiceSurcharges = distributeAdjustments(
         invAny.invoiceSurchargeKeys,
         "surcharge",

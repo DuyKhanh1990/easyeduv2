@@ -21,6 +21,8 @@ export interface MatBaoAdjustment {
   name: string;
   /** Số tiền dương; tChat sẽ quyết định cộng/trừ */
   amount: number;
+  taxRate?: number;
+  tChat?: 2 | 3;
 }
 
 export interface MatBaoInvoiceItem {
@@ -208,7 +210,7 @@ class MatBaoService {
       if (!amount || amount <= 0) return;
       // Experiment for drafts: send surcharges through the API's fee list.
       // Keep signed invoices on the existing DSHHDVu/TChat=3 path until this is verified.
-      if (tChat === 3 && !isPublish) {
+      if (tChat === 3 && prefix === "+" && !isPublish) {
         const feeAmount = Math.round(amount);
         fees.push({ TLPhi: label, TPhi: feeAmount });
         feeTax += Math.round((feeAmount * taxRate) / 100);
@@ -216,7 +218,7 @@ class MatBaoService {
       }
       // tChat=2 (Khuyến mãi) phải gửi giá trị ÂM để mẫu PDF của Mắt Bão tự trừ ở dòng "Cộng tiền hàng".
       // tChat=3 (Phụ thu/Chiết khấu) gửi giá trị dương (cộng vào tổng).
-      const sign = tChat === 2 ? -1 : 1;
+      const sign = prefix === "-" ? -1 : 1;
       const ThTien = Math.round(amount) * sign;
       const TThue = Math.round((Math.abs(ThTien) * taxRate) / 100) * sign;
       stt += 1;
@@ -270,7 +272,7 @@ class MatBaoService {
 
     // KM / Phụ thu áp dụng cho toàn hoá đơn → đẩy xuống cuối
     for (const p of inv.invoicePromotions ?? []) {
-      pushAdjustment(2, "-", `Giảm giá tổng: ${p.name}`, p.amount, 0);
+      pushAdjustment(p.tChat ?? 2, "-", p.name, p.amount, p.taxRate ?? 0);
     }
     for (const s of inv.invoiceSurcharges ?? []) {
       pushAdjustment(3, "+", `Phụ thu: ${s.name}`, s.amount, 0);

@@ -194,6 +194,7 @@ export const invoices = pgTable("invoices", {
   // KM / Phụ thu áp dụng cho TOÀN hoá đơn (ngoài phần đã gắn theo từng item)
   invoicePromotionKeys: text("invoice_promotion_keys").array().default(sql`'{}'::text[]`),
   invoiceSurchargeKeys: text("invoice_surcharge_keys").array().default(sql`'{}'::text[]`),
+  invoicePromotionName: text("invoice_promotion_name"),
   invoicePromotionAmount: decimal("invoice_promotion_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   invoiceSurchargeAmount: decimal("invoice_surcharge_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   // Hoá đơn điện tử (Mắt Bão)

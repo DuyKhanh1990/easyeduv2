@@ -17,6 +17,7 @@ import type {
 } from "@shared/schema";
 import type { InvoiceVisibilityPermission } from "@shared/invoice-visibility-permissions";
 import { calculateInvoiceVatAmount, isInvoiceVatRate } from "@shared/invoice-vat";
+import { calculateInvoicePromotionVat, getUniformInvoicePromotionVatRate } from "@shared/invoice-promotion-vat";
 
 function normalizeInvoiceVatItem(item: any) {
   const vatRate = Number(item.vatRate ?? 0);
@@ -2090,7 +2091,15 @@ export async function getNextInvoiceCode(type: string, locationId?: string | nul
 export async function createInvoice(data: any): Promise<any> {
   const { items: rawItems = [], paymentSchedule = [], ...invoiceData } = data;
   const items = rawItems.map(normalizeInvoiceVatItem);
-  const totalVat = items.reduce((sum: number, item: any) => sum + (Number.parseFloat(item.vatAmount) || 0), 0);
+  const totalVatBeforeInvoicePromotion = items.reduce((sum: number, item: any) => sum + (Number.parseFloat(item.vatAmount) || 0), 0);
+  const invoicePromotionVat = invoiceData.invoicePromotionName
+    ? calculateInvoicePromotionVat(Number(invoiceData.invoicePromotionAmount ?? 0), items)
+    : 0;
+  if (invoiceData.invoicePromotionName && Number(invoiceData.invoicePromotionAmount ?? 0) > 0
+    && getUniformInvoicePromotionVatRate(items) === null) {
+    throw new Error("Khuyến mãi toàn đơn chỉ áp dụng khi các dòng hàng hóa/dịch vụ có cùng VAT.");
+  }
+  const totalVat = Math.max(0, totalVatBeforeInvoicePromotion - invoicePromotionVat);
   const hasInvoiceAmounts = ["totalAmount", "totalPromotion", "totalSurcharge", "deduction"]
     .some((key) => invoiceData[key] !== undefined && invoiceData[key] !== null);
   const calculatedGrandTotal = Math.max(
@@ -2330,12 +2339,29 @@ export async function updateInvoice(id: string, data: any): Promise<any> {
     if (!currentInvoice) throw new Error("Không tìm thấy hóa đơn");
 
     const itemVatAmounts = Array.isArray(items)
-      ? items.map((item: any) => item.vatAmount)
-      : await tx.select({ vatAmount: invoiceItems.vatAmount }).from(invoiceItems).where(eq(invoiceItems.invoiceId, id));
-    const totalVat = itemVatAmounts.reduce(
-      (sum: number, amount: any) => sum + (Number.parseFloat(String(amount ?? "0")) || 0),
+      ? items
+      : await tx.select({
+          vatAmount: invoiceItems.vatAmount,
+          category: invoiceItems.category,
+          vatRate: invoiceItems.vatRate,
+          subtotal: invoiceItems.subtotal,
+        }).from(invoiceItems).where(eq(invoiceItems.invoiceId, id));
+    const totalVatBeforeInvoicePromotion = itemVatAmounts.reduce(
+      (sum: number, item: any) => sum + (Number.parseFloat(String(item.vatAmount ?? "0")) || 0),
       0,
     );
+    const effectiveInvoicePromotionName = toUpdate.invoicePromotionName !== undefined
+      ? toUpdate.invoicePromotionName
+      : currentInvoice.invoicePromotionName;
+    const effectiveInvoicePromotionAmount = toUpdate.invoicePromotionAmount ?? currentInvoice.invoicePromotionAmount;
+    const invoicePromotionVat = effectiveInvoicePromotionName
+      ? calculateInvoicePromotionVat(Number(effectiveInvoicePromotionAmount ?? 0), itemVatAmounts)
+      : 0;
+    if (effectiveInvoicePromotionName && Number(effectiveInvoicePromotionAmount ?? 0) > 0
+      && getUniformInvoicePromotionVatRate(itemVatAmounts) === null) {
+      throw new Error("Khuyến mãi toàn đơn chỉ áp dụng khi các dòng hàng hóa/dịch vụ có cùng VAT.");
+    }
+    const totalVat = Math.max(0, totalVatBeforeInvoicePromotion - invoicePromotionVat);
     const calculatedGrandTotal = Math.max(
       0,
       (parseFloat(String(toUpdate.totalAmount ?? currentInvoice.totalAmount ?? "0")) || 0)

@@ -31,6 +31,7 @@ import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { fmtMoney, getTodayVietnamDate, isInvoicePaidLike } from "@/types/invoice-types";
 import { isLegacyAutoInvoiceDepositDoubleCount } from "@shared/invoice-deposit-accounting";
 import { calculateInvoiceVatAmount, INVOICE_VAT_RATES } from "@shared/invoice-vat";
+import { calculateInvoicePromotionVat, getUniformInvoicePromotionVatRate } from "@shared/invoice-promotion-vat";
 import { FinancePromotionDialog, type FinancePromotionType } from "./components/FinancePromotionDialog";
 import { INVOICE_ACCOUNT_OPTIONS } from "./invoiceAccountOptions";
 import { useLanguage } from "@/hooks/use-language";
@@ -369,6 +370,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const [khoPickerOpen, setKhoPickerOpen] = useState<string | null>(null);
   const [khoSearch, setKhoSearch] = useState<string>("");
   const [invoicePromoKeys, setInvoicePromoKeys] = useState<string[]>([]);
+  const [invoicePromotionName, setInvoicePromotionName] = useState("");
   const [invoiceSurchargeKeys, setInvoiceSurchargeKeys] = useState<string[]>([]);
   const [invoicePromotionRows, setInvoicePromotionRows] = useState<ManualAdjustment[]>([]);
   const [invoiceSurchargeRows, setInvoiceSurchargeRows] = useState<ManualAdjustment[]>([]);
@@ -438,6 +440,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         setIsSurchargeGroupVisible(false);
         setSurchargeSourcePickerOpen(false);
         setInvoicePromoKeys([]);
+        setInvoicePromotionName("");
         setInvoiceSurchargeKeys([]);
         setInvoicePromotionRows([]);
         setInvoiceSurchargeRows([]);
@@ -508,6 +511,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     const loadedPromoKeys = Array.isArray(inv.invoicePromotionKeys) ? inv.invoicePromotionKeys : [];
     const loadedSurchargeKeys = Array.isArray(inv.invoiceSurchargeKeys) ? inv.invoiceSurchargeKeys : [];
     setInvoicePromoKeys(loadedPromoKeys);
+    setInvoicePromotionName(String(inv.invoicePromotionName ?? ""));
     setInvoiceSurchargeKeys(loadedSurchargeKeys);
     const loadedInvoicePromoAmount = parseFloat(inv.invoicePromotionAmount) || 0;
     const loadedInvoiceSurchargeAmount = parseFloat(inv.invoiceSurchargeAmount) || 0;
@@ -983,13 +987,27 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     const product = products.find(p => p.id === item.productId);
     return sum + (product?.categoryId === SURCHARGE_CATEGORY_ID ? 0 : item.base);
   }, 0);
-  const totalVat = productAdjustmentTotals.reduce((sum, item) => sum + item.vatAmount, 0);
+  const itemVatTotal = productAdjustmentTotals.reduce((sum, item) => sum + item.vatAmount, 0);
   const itemPromo = productAdjustmentTotals.reduce((sum, item) => sum + item.promoAmount, 0);
   const itemSurcharge = productAdjustmentTotals.reduce((sum, item) => {
     const product = products.find(p => p.id === item.productId);
     return sum + item.surchargeAmount + (product?.categoryId === SURCHARGE_CATEGORY_ID ? item.base : 0);
   }, 0);
   const lineSubtotal = productAdjustmentTotals.reduce((sum, item) => sum + item.finalAmount, 0);
+  const invoicePromotionEligibleItems = products
+    .filter(product => product.categoryId !== SURCHARGE_CATEGORY_ID)
+    .map(product => {
+      const total = productAdjustmentTotals.find(item => item.productId === product.id);
+      return {
+        category: allCategories.find((category: any) => category.id === product.categoryId)?.name ?? "",
+        vatRate: product.vatRate,
+        subtotal: total?.finalAmount ?? 0,
+      };
+    });
+  const invoicePromotionVatRate = getUniformInvoicePromotionVatRate(invoicePromotionEligibleItems);
+  const hasInvoicePromotionEligibleItems = invoicePromotionEligibleItems.some(item => item.subtotal > 0);
+  const invoicePromotionVatMixed = hasInvoicePromotionEligibleItems && invoicePromotionVatRate === null;
+  const invoicePromotionVatLocked = !hasInvoicePromotionEligibleItems || invoicePromotionVatMixed;
   const invoicePromotionResult = applySequentialAdjustments(
     lineSubtotal,
     invoicePromoKeys,
@@ -1005,6 +1023,10 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     "surcharge",
   );
   const invoicePromoAmt = invoicePromotionResult.adjustmentAmount;
+  const invoicePromotionVatAmount = invoicePromotionName.trim()
+    ? calculateInvoicePromotionVat(invoicePromoAmt, invoicePromotionEligibleItems)
+    : 0;
+  const totalVat = Math.max(0, itemVatTotal - invoicePromotionVatAmount);
   const invoiceSurchargeAmt = invoiceSurchargeResult.adjustmentAmount;
   const scheduleAdjustments = summarizeSchedulePromotions(paymentSchedule);
   const { hasPromotion: hasSchedulePromotion, promotionTotal: schedulePromotionTotal, surchargeTotal: scheduleSurchargeTotal } = scheduleAdjustments;
@@ -1234,6 +1256,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     if (kind === "promotion") {
       setInvoicePromotionRows(nextRows);
       setInvoicePromoKeys(selectedKeys);
+      const option = promotionOptionsWithVouchers.find((candidate: any) => candidate.id === optionKey);
+      if (option) setInvoicePromotionName(formatPromotionLabel(option));
     } else {
       setInvoiceSurchargeRows(nextRows);
       setInvoiceSurchargeKeys(selectedKeys);
@@ -1589,6 +1613,17 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       (!product.name.trim() || product.unitPrice <= 0),
     );
     if (incompleteSurcharge) { toast({ title: t("finance.create.nameRequiredError"), variant: "destructive" }); return; }
+    const originalInvoicePromotionAmount = parseFloat(editData?.invoicePromotionAmount ?? "0") || 0;
+    const isAddingUnnamedInvoicePromotion = invoicePromoAmt > originalInvoicePromotionAmount + 0.01
+      && !invoicePromotionName.trim();
+    if (isAddingUnnamedInvoicePromotion) {
+      toast({ title: t("finance.create.promotionNameRequired"), variant: "destructive" });
+      return;
+    }
+    if (invoicePromotionVatMixed && invoicePromoAmt > 0 && invoicePromotionName.trim()) {
+      toast({ title: t("finance.create.invoicePromotionMixedVat"), variant: "destructive" });
+      return;
+    }
     if (directPaidAmount > finalTotal + 0.01) {
       toast({
         title: t("finance.create.paidAmountExceedsTotal"),
@@ -1729,6 +1764,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       totalPromotion: String(totalPromo),
       totalSurcharge: String(totalSurcharge),
       invoicePromotionKeys: invoicePromoKeys,
+      invoicePromotionName: invoicePromotionName.trim() || null,
       invoiceSurchargeKeys: invoiceSurchargeKeys,
       invoicePromotionAmount: String(invoicePromoAmt),
       invoiceSurchargeAmount: String(invoiceSurchargeAmt),
@@ -3231,7 +3267,13 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                   <DialogTrigger asChild>
                     <button
                       type="button"
+                      disabled={invoicePromotionVatLocked}
                       className="w-full flex justify-between items-center text-green-600 hover:bg-green-50 rounded px-1 -mx-1 py-0.5 transition-colors"
+                      title={invoicePromotionVatMixed
+                        ? t("finance.create.invoicePromotionMixedVat")
+                        : !hasInvoicePromotionEligibleItems
+                          ? t("finance.create.invoicePromotionNeedsItem")
+                          : undefined}
                       data-testid="button-invoice-promo"
                     >
                       <span className="flex items-center gap-1">
@@ -3263,6 +3305,13 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         </button>
                       )}
                     </div>
+                    <Input
+                      value={invoicePromotionName}
+                      onChange={event => setInvoicePromotionName(event.target.value)}
+                      placeholder={t("finance.create.promotionName")}
+                      className="mt-3"
+                      data-testid="input-invoice-promotion-name"
+                    />
                     {renderInvoiceAdjustmentRows("promotion")}
                     {schedulePromotionTotal > 0 && (
                       <div
@@ -3309,6 +3358,15 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     )}
                   </DialogContent>
                 </Dialog>
+                {invoicePromotionVatMixed ? (
+                  <p className="text-[10px] text-muted-foreground" data-testid="invoice-promotion-mixed-vat-hint">
+                    {t("finance.create.invoicePromotionMixedVat")}
+                  </p>
+                ) : !hasInvoicePromotionEligibleItems ? (
+                  <p className="text-[10px] text-muted-foreground" data-testid="invoice-promotion-needs-item-hint">
+                    {t("finance.create.invoicePromotionNeedsItem")}
+                  </p>
+                ) : null}
 
                 <div
                   className="w-full flex justify-between items-center text-orange-500 rounded px-1 -mx-1 py-0.5"
