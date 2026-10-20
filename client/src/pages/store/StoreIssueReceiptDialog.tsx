@@ -82,6 +82,7 @@ type FinancePromotion = {
 type ManualAdjustment = {
   id: string;
   optionKey?: string;
+  name?: string;
   valueType: "amount" | "percent";
   value: number;
   optionVatRate?: number;
@@ -104,6 +105,7 @@ function getSurchargeBreakdown(
     ...keys.filter(key => !representedKeys.has(key)).map((optionKey, index) => ({
       id: `legacy-surcharge-${index}-${optionKey}`,
       optionKey,
+      name: "",
       valueType: "amount" as const,
       value: 0,
       optionVatRate: 0,
@@ -137,7 +139,7 @@ function getSurchargeBreakdown(
     }
     const value = Math.max(0, Number(row.value) || 0);
     const manualAmount = row.valueType === "percent" ? current * value / 100 : value;
-    addLine("Phụ thu nhập tay", manualAmount, Number(row.vatRate ?? 0));
+    addLine(row.name?.trim() || "Phụ thu nhập tay", manualAmount, Number(row.vatRate ?? 0));
     current += manualAmount;
   }
 
@@ -385,6 +387,19 @@ function IssueAdjustmentDialog({
                       </SelectContent>
                     </Select>
                   )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-36 shrink-0 text-xs text-muted-foreground">
+                    {kind === "promotion" ? "Tên khuyến mãi" : "Tên phụ thu"}
+                  </span>
+                  <Input
+                    value={row.name ?? ""}
+                    onChange={event => onUpdateRow(row.id, { name: event.target.value })}
+                    placeholder={kind === "promotion" ? "Nhập tên khuyến mãi..." : "Nhập tên phụ thu..."}
+                    aria-label={kind === "promotion" ? "Tên khuyến mãi nhập tay" : "Tên phụ thu nhập tay"}
+                    maxLength={120}
+                    className="h-9 text-sm"
+                  />
                 </div>
               </div>
             );

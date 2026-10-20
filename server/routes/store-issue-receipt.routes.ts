@@ -140,12 +140,14 @@ const issueItemSchema = z.object({
   manualPromotionRows: z.array(z.object({
     id: z.string(),
     optionKey: z.string().optional(),
+    name: z.string().trim().max(120).default(""),
     valueType: z.enum(["amount", "percent"]),
     value: z.number().min(0),
   })).default([]),
   manualSurchargeRows: z.array(z.object({
     id: z.string(),
     optionKey: z.string().optional(),
+    name: z.string().trim().max(120).default(""),
     valueType: z.enum(["amount", "percent"]),
     value: z.number().min(0),
     optionVatRate: z.number().int().refine(isInvoiceVatRate).default(0),
@@ -171,12 +173,14 @@ const issueCreateSchema = z.object({
   manualPromotionRows: z.array(z.object({
     id: z.string(),
     optionKey: z.string().optional(),
+    name: z.string().trim().max(120).default(""),
     valueType: z.enum(["amount", "percent"]),
     value: z.number().min(0),
   })).default([]),
   manualSurchargeRows: z.array(z.object({
     id: z.string(),
     optionKey: z.string().optional(),
+    name: z.string().trim().max(120).default(""),
     valueType: z.enum(["amount", "percent"]),
     value: z.number().min(0),
     optionVatRate: z.number().int().refine(isInvoiceVatRate).default(0),
