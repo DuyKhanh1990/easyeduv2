@@ -2937,6 +2937,7 @@ export const storeIssueReceiptItems = pgTable("store_issue_receipt_items", {
   manualSurchargeRows: jsonb("manual_surcharge_rows").default(sql`'[]'::jsonb`),
   promotionAmount: numeric("promotion_amount").default("0"),
   surchargeAmount: numeric("surcharge_amount").default("0"),
+  vatRate: integer("vat_rate").notNull().default(0),
   lineTotal: numeric("line_total").default("0"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });

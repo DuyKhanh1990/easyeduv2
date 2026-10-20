@@ -12,6 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { X, Search, Trash2, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { calculateInvoiceVatAmount, INVOICE_VAT_RATES } from "@shared/invoice-vat";
 
 type Location = { id: string; name: string };
 type Warehouse = { id: string; name: string; locationId: string | null };
@@ -26,6 +27,7 @@ export type IssueReceiptItem = {
   unitId: string;
   unitName: string;
   salePrice: number;
+  vatRate?: number;
   stockBefore: number;
   priceType: "money" | "star";
   starPrice: number;
@@ -141,11 +143,17 @@ function getItemAmounts(
     surchargeOptions,
     "surcharge",
   );
+  const beforeVat = afterPromotion + surchargeAmount;
+  const vatRate = (item.priceType ?? "money") === "star" ? 0 : Number(item.vatRate ?? 0);
+  const vatAmount = calculateInvoiceVatAmount(beforeVat, vatRate);
   return {
     base,
     promotionAmount,
     surchargeAmount,
-    lineTotal: afterPromotion + surchargeAmount,
+    beforeVat,
+    vatRate,
+    vatAmount,
+    lineTotal: beforeVat + vatAmount,
   };
 }
 
@@ -373,6 +381,7 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
     status: initialData?.status ?? "completed",
     items: (initialData?.items ?? []).map(item => ({
       ...item,
+      vatRate: Number(item.vatRate) || 0,
       promotionKeys: item.promotionKeys ?? [],
       surchargeKeys: item.surchargeKeys ?? [],
       manualPromotionRows: item.manualPromotionRows ?? [],
@@ -591,6 +600,7 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
         unitId: p.unit_id ?? "",
         unitName: p.unit_name ?? "",
         salePrice: parseFloat(p.sale_price ?? "0") || 0,
+        vatRate: 0,
         stockBefore: p.stock,
         priceType: "money" as const,
         starPrice: (p as any).star_price ?? 0,
@@ -740,7 +750,11 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
 
   const subtotal = form.items.reduce((sum, item) => {
     if ((item.priceType ?? "money") !== "money") return sum;
-    return sum + getItemAmounts(item, promotionOptions, surchargeOptions).lineTotal;
+    return sum + getItemAmounts(item, promotionOptions, surchargeOptions).beforeVat;
+  }, 0);
+  const totalVat = form.items.reduce((sum, item) => {
+    if ((item.priceType ?? "money") !== "money") return sum;
+    return sum + getItemAmounts(item, promotionOptions, surchargeOptions).vatAmount;
   }, 0);
 
   function calcPromoAmt(keys: string[], options: FinancePromotion[], base: number): number {
@@ -764,7 +778,7 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
     ? adjustmentTotal(Math.max(0, subtotal - discountAmt), selectedSurchargeKeys, sidebarSurchargeRows, surchargeOptions, "surcharge")
     : (form.surchargeType === "VND" ? form.surcharge : subtotal * form.surcharge / 100);
 
-  const total = Math.max(0, subtotal - discountAmt + surchargeAmt);
+  const total = Math.max(0, subtotal - discountAmt + surchargeAmt + totalVat);
 
   function handlePromoToggle(code: string, options: FinancePromotion[], base: number) {
     setSelectedPromoKeys(prev => {
@@ -812,6 +826,7 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
             ...item,
             promotionAmount: amounts.promotionAmount,
             surchargeAmount: amounts.surchargeAmount,
+            vatRate: amounts.vatRate,
             lineTotal: amounts.lineTotal,
           };
         }),
@@ -935,14 +950,15 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
               <div className="border border-border rounded-xl overflow-hidden">
                 <table className="w-full text-xs border-separate border-spacing-0">
                   <colgroup>
-                    <col style={{ width: "30%" }} />
+                    <col style={{ width: "27%" }} />
+                    <col style={{ width: "8%" }} />
                     <col style={{ width: "11%" }} />
-                    <col style={{ width: "13%" }} />
-                    <col style={{ width: "9%" }} />
+                    <col style={{ width: "7%" }} />
+                    <col style={{ width: "11%" }} />
                     <col style={{ width: "12%" }} />
                     <col style={{ width: "12%" }} />
                     <col style={{ width: "9%" }} />
-                    <col style={{ width: "4%" }} />
+                    {!isEdit && <col style={{ width: "3%" }} />}
                   </colgroup>
                   <thead>
                     <tr className="bg-muted/50">
@@ -951,7 +967,8 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                       <th className="text-right px-3 py-2 font-semibold text-muted-foreground">Đơn giá</th>
                       <th className="text-center px-3 py-2 font-semibold text-muted-foreground">Số lượng</th>
                       <th className="text-center px-3 py-2 font-semibold text-muted-foreground">Khuyến mãi</th>
-                      <th className="text-center px-3 py-2 font-semibold text-muted-foreground">Phụ thu</th>
+                      <th className="text-right px-3 py-2 font-semibold text-muted-foreground">Trước VAT</th>
+                      <th className="text-center px-3 py-2 font-semibold text-muted-foreground">VAT</th>
                       <th className="text-right px-3 py-2 font-semibold text-muted-foreground">Thành tiền</th>
                       {!isEdit && <th></th>}
                     </tr>
@@ -959,7 +976,7 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                   <tbody>
                     {form.items.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="text-center py-8 text-muted-foreground text-xs">
+                        <td colSpan={isEdit ? 8 : 9} className="text-center py-8 text-muted-foreground text-xs">
                           Chưa có sản phẩm. Tìm kiếm sản phẩm phía trên để thêm vào.
                         </td>
                       </tr>
@@ -1057,40 +1074,32 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                             )}
                           />
                         </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums font-medium text-xs">
+                          {fmtVND(getItemAmounts(item, promotionOptions, surchargeOptions).beforeVat)}
+                        </td>
                         <td className="px-2 py-1.5">
-                          <IssueAdjustmentDialog
-                            open={itemAdjustmentOpen?.itemKey === item._key && itemAdjustmentOpen.kind === "surcharge"}
-                            onOpenChange={value => {
-                              if (value) openItemAdjustment(item._key, "surcharge");
-                              else setItemAdjustmentOpen(null);
-                            }}
-                            title="Chọn phụ thu"
-                            kind="surcharge"
-                            rows={item.manualSurchargeRows ?? []}
-                            options={surchargeOptions}
-                            baseAmount={item.quantity * ((item.priceType ?? "money") === "star" ? 0 : item.salePrice)}
-                            onSelectOption={(rowId, optionKey) => selectItemAdjustmentOption(item._key, "surcharge", rowId, optionKey)}
-                            onUpdateRow={(rowId, patch) => updateItemAdjustment(item._key, "surcharge", rowId, patch)}
-                            onAddRow={() => addItemAdjustmentRow(item._key, "surcharge")}
-                            onRemoveRow={rowId => removeItemAdjustmentRow(item._key, "surcharge", rowId)}
-                            trigger={(
-                              <button
-                                type="button"
-                                className="w-full min-h-7 rounded-md border border-input bg-background px-2 text-[10px] text-left text-muted-foreground hover:border-purple-400 transition-colors"
-                                title="Chọn phụ thu cho sản phẩm này"
+                          {item.priceType === "star" ? (
+                            <span className="block text-center text-muted-foreground">—</span>
+                          ) : (
+                            <div className="min-w-20">
+                              <Select
+                                value={String(item.vatRate ?? 0)}
+                                onValueChange={value => updateItem(item._key, "vatRate", Number(value))}
                               >
-                                {(() => {
-                                  const amounts = getItemAmounts(item, promotionOptions, surchargeOptions);
-                                  const hasValue = amounts.surchargeAmount > 0;
-                                  return (
-                                    <span className={hasValue ? "font-semibold text-orange-600" : "text-muted-foreground"}>
-                                      {hasValue ? `+${fmtVND(amounts.surchargeAmount)}` : "Chọn..."}
-                                    </span>
-                                  );
-                                })()}
-                              </button>
-                            )}
-                          />
+                                <SelectTrigger className="h-7 text-[10px] px-1.5">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {INVOICE_VAT_RATES.map(rate => (
+                                    <SelectItem key={rate} value={String(rate)}>{rate}%</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <span className="mt-0.5 block text-center text-[9px] text-muted-foreground">
+                                Thuế {fmtVND(getItemAmounts(item, promotionOptions, surchargeOptions).vatAmount)}
+                              </span>
+                            </div>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 text-right tabular-nums font-medium text-xs">
                           {(item.priceType ?? "money") === "money"
@@ -1296,7 +1305,7 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
             {/* Summary */}
             <div className="mt-auto border-t border-border pt-4 space-y-2">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Thành tiền</span>
+                <span className="text-muted-foreground">Trước VAT</span>
                 <span className="font-medium tabular-nums">{fmtVND(subtotal)}</span>
               </div>
               <IssueAdjustmentDialog
@@ -1359,6 +1368,10 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                   </button>
                 )}
               />
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">Tổng VAT</span>
+                <span className="tabular-nums">{fmtVND(totalVat)}</span>
+              </div>
               <div className="flex items-center justify-between text-sm font-bold border-t border-border pt-2">
                 <span>TỔNG TIỀN:</span>
                 <span className="text-orange-600 tabular-nums">{fmtVND(total)}</span>

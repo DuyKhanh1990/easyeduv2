@@ -266,7 +266,7 @@ export function StoreIssueReceiptTab() {
       paymentDueDate: data.paymentDueDate || null,
       status,
       sessionId: data.sessionId ?? null,
-      totalAmount: data.items.reduce((sum, i) => (i as any).priceType === "star" ? sum : sum + Number(i.quantity) * Number(i.salePrice), 0),
+       totalAmount: Math.max(0, data.items.reduce((sum, i) => (i as any).priceType === "star" ? sum : sum + Number(i.lineTotal ?? Number(i.quantity) * Number(i.salePrice)), 0) - Number(data.discount || 0) + Number(data.surcharge || 0)),
       items: data.items.map(({ _key, ...rest }) => ({
         ...rest,
         quantity: Number(rest.quantity) || 1,
@@ -276,6 +276,7 @@ export function StoreIssueReceiptTab() {
         unitId: toNullOrUUID(rest.unitId),
         promotionAmount: Number(rest.promotionAmount) || 0,
         surchargeAmount: Number(rest.surchargeAmount) || 0,
+         vatRate: Number(rest.vatRate) || 0,
         lineTotal: Number(rest.lineTotal) || 0,
       })),
     };
@@ -327,6 +328,7 @@ export function StoreIssueReceiptTab() {
           unitId: item.unitId ?? "",
           unitName: item.unitName ?? "",
           salePrice: parseFloat(item.salePrice ?? "0"),
+          vatRate: Number(item.vatRate) || 0,
           stockBefore: item.currentStock ?? 0,
           priceType: item.priceType ?? "money",
           starPrice: item.starPrice ?? 0,

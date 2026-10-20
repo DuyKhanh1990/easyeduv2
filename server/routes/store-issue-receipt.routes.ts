@@ -17,6 +17,7 @@ import {
   resolveInvoiceRecipientUserIds,
   sendInvoiceCreatedNotification,
 } from "../lib/invoice-notification";
+import { calculateInvoiceVatAmount, isInvoiceVatRate } from "@shared/invoice-vat";
 
 function formatInvoiceDate(value: string | Date | null | undefined): string {
   if (!value) return "";
@@ -129,6 +130,7 @@ const issueItemSchema = z.object({
   stockBefore: z.number().int().min(0).default(0),
   promotionAmount: z.number().min(0).default(0),
   surchargeAmount: z.number().min(0).default(0),
+  vatRate: z.number().int().refine(isInvoiceVatRate, "Tỷ lệ VAT không hợp lệ").default(0),
   lineTotal: z.number().min(0).default(0),
   priceType: z.enum(["money", "star"]).default("money"),
   starPrice: z.number().int().min(0).default(0),
@@ -309,6 +311,7 @@ async function createIssueInvoice(params: {
     surchargeKeys: string[];
     promotionAmount: number;
     surchargeAmount: number;
+    vatRate: number;
     lineTotal: number;
   }[];
   createdBy: string | null | undefined;
@@ -332,12 +335,19 @@ async function createIssueInvoice(params: {
     : autoDescription;
 
   const subtotal = params.items.reduce((s, i) => s + i.quantity * i.salePrice, 0);
-  const lineSubtotal = params.items.reduce((s, i) => s + (i.lineTotal ?? i.quantity * i.salePrice), 0);
+  const itemAmounts = params.items.map(item => {
+    const beforeVat = Math.max(0, item.quantity * item.salePrice - item.promotionAmount + item.surchargeAmount);
+    const vatRate = Number(item.vatRate ?? 0);
+    if (!isInvoiceVatRate(vatRate)) throw new Error("Tỷ lệ VAT không hợp lệ.");
+    return { beforeVat, vatRate, vatAmount: calculateInvoiceVatAmount(beforeVat, vatRate) };
+  });
+  const lineSubtotal = itemAmounts.reduce((sum, item) => sum + item.beforeVat, 0);
+  const totalVat = itemAmounts.reduce((sum, item) => sum + item.vatAmount, 0);
   const itemPromotionAmt = params.items.reduce((s, i) => s + (i.promotionAmount || 0), 0);
   const itemSurchargeAmt = params.items.reduce((s, i) => s + (i.surchargeAmount || 0), 0);
   const discountAmt = params.discountType === "VND" ? params.discount : lineSubtotal * params.discount / 100;
   const surchargeAmt = params.surchargeType === "VND" ? params.surcharge : lineSubtotal * params.surcharge / 100;
-  const grandTotal = Math.max(0, lineSubtotal - discountAmt + surchargeAmt);
+  const grandTotal = Math.max(0, lineSubtotal - discountAmt + surchargeAmt + totalVat);
   const totalPromotion = itemPromotionAmt + discountAmt;
   const totalSurcharge = itemSurchargeAmt + surchargeAmt;
 
@@ -386,9 +396,9 @@ async function createIssueInvoice(params: {
     totalPromotion: String(totalPromotion),
     totalSurcharge: String(totalSurcharge),
     invoicePromotionKeys: params.invoicePromotionKeys ?? [],
-    invoiceSurchargeKeys: params.invoiceSurchargeKeys ?? [],
+    invoiceSurchargeKeys: [],
     invoicePromotionAmount: String(discountAmt),
-    invoiceSurchargeAmount: String(surchargeAmt),
+    invoiceSurchargeAmount: "0",
     grandTotal: String(grandTotal),
     deduction: "0",
     paidAmount: String(paid),
@@ -401,7 +411,8 @@ async function createIssueInvoice(params: {
     createdBy: params.createdBy ?? null,
     updatedBy: params.createdBy ?? null,
     storeIssueReceiptId: params.receiptId,
-    items: params.items.map(item => ({
+    items: [
+      ...params.items.map((item, index) => ({
         packageName: item.productName,
         packageType: "Kho",
         unitPrice: String(item.salePrice),
@@ -410,9 +421,24 @@ async function createIssueInvoice(params: {
         surchargeKeys: item.surchargeKeys ?? [],
         promotionAmount: String(item.promotionAmount || 0),
         surchargeAmount: String(item.surchargeAmount || 0),
-        subtotal: String(item.lineTotal ?? item.quantity * item.salePrice),
+        subtotal: String(itemAmounts[index].beforeVat),
+        vatRate: itemAmounts[index].vatRate,
         category: "Kho",
       })),
+      ...(surchargeAmt > 0 ? [{
+        packageName: "Phụ thu xuất kho",
+        packageType: null,
+        unitPrice: String(surchargeAmt),
+        quantity: 1,
+        promotionKeys: [],
+        surchargeKeys: [],
+        promotionAmount: "0",
+        surchargeAmount: "0",
+        subtotal: String(surchargeAmt),
+        vatRate: 0,
+        category: "Phụ thu",
+      }] : []),
+    ],
     paymentSchedule,
   });
   await db.execute(sql`
@@ -916,6 +942,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
           unitId: i.unit_id,
           unitName: i.unit_name || i.unit_name_ref,
           salePrice: i.sale_price,
+          vatRate: i.vat_rate ?? 0,
           stockBefore: i.stock_before,
           promotionAmount: i.promotion_amount ?? 0,
           surchargeAmount: i.surcharge_amount ?? 0,
@@ -1010,7 +1037,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
               quantity, unit_id, unit_name, sale_price, stock_before,
               price_type, star_price, total_stars,
               promotion_keys, surcharge_keys, manual_promotion_rows, manual_surcharge_rows,
-              promotion_amount, surcharge_amount, line_total
+              promotion_amount, surcharge_amount, vat_rate, line_total
             ) VALUES (
               ${r.id}, ${item.productId ?? null}, ${item.productCode}, ${item.productName},
               ${item.quantity}, ${item.unitId ?? null}, ${item.unitName ?? null},
@@ -1021,7 +1048,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
               ${JSON.stringify(item.surchargeKeys ?? [])}::jsonb,
               ${JSON.stringify(item.manualPromotionRows ?? [])}::jsonb,
               ${JSON.stringify(item.manualSurchargeRows ?? [])}::jsonb,
-              ${item.promotionAmount ?? 0}, ${item.surchargeAmount ?? 0}, ${item.lineTotal ?? 0}
+              ${item.promotionAmount ?? 0}, ${item.surchargeAmount ?? 0}, ${item.vatRate ?? 0}, ${item.lineTotal ?? 0}
             )
           `);
         }
@@ -1089,6 +1116,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
             surchargeKeys: i.surchargeKeys ?? [],
             promotionAmount: i.priceType === "star" ? 0 : i.promotionAmount ?? 0,
             surchargeAmount: i.priceType === "star" ? 0 : i.surchargeAmount ?? 0,
+            vatRate: i.priceType === "star" ? 0 : i.vatRate ?? 0,
             lineTotal: i.priceType === "star" ? 0 : i.lineTotal ?? i.quantity * i.salePrice,
           })),
           createdBy: user.id,
@@ -1303,7 +1331,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
             quantity, unit_id, unit_name, sale_price, stock_before,
             price_type, star_price, total_stars,
             promotion_keys, surcharge_keys, manual_promotion_rows, manual_surcharge_rows,
-            promotion_amount, surcharge_amount, line_total
+            promotion_amount, surcharge_amount, vat_rate, line_total
           ) VALUES (
             ${req.params.id}, ${item.productId ?? null}, ${item.productCode}, ${item.productName},
             ${item.quantity}, ${item.unitId ?? null}, ${item.unitName ?? null},
@@ -1314,7 +1342,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
             ${JSON.stringify(item.surchargeKeys ?? [])}::jsonb,
             ${JSON.stringify(item.manualPromotionRows ?? [])}::jsonb,
             ${JSON.stringify(item.manualSurchargeRows ?? [])}::jsonb,
-            ${item.promotionAmount ?? 0}, ${item.surchargeAmount ?? 0}, ${item.lineTotal ?? 0}
+            ${item.promotionAmount ?? 0}, ${item.surchargeAmount ?? 0}, ${item.vatRate ?? 0}, ${item.lineTotal ?? 0}
           )
         `);
       }
@@ -1441,6 +1469,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
               surchargeKeys: i.surchargeKeys ?? [],
               promotionAmount: i.priceType === "star" ? 0 : i.promotionAmount ?? 0,
               surchargeAmount: i.priceType === "star" ? 0 : i.surchargeAmount ?? 0,
+              vatRate: i.priceType === "star" ? 0 : i.vatRate ?? 0,
               lineTotal: i.priceType === "star" ? 0 : i.lineTotal ?? i.quantity * i.salePrice,
             })),
             createdBy: user.id,

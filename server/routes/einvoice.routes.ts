@@ -202,7 +202,9 @@ export function registerEInvoiceRoutes(app: Express) {
             const qty = it.quantity ?? 1;
             const base = price * qty;
             const isSurchargeLine = String(it.category ?? "").toLowerCase() === "phụ thu";
-            const taxRate = it.packageType === "buổi" || isSurchargeLine ? Number(it.vatRate ?? 0) : 0;
+            const taxRate = it.packageType === "buổi" || it.packageType === "Kho" || isSurchargeLine
+              ? Number(it.vatRate ?? 0)
+              : 0;
             const legacySurchargeAmount = Math.max(0, parseFloat(it.surchargeAmount ?? "0") || 0);
             const legacySurcharges = legacySurchargeAmount > 0
               ? distributeAdjustments(it.surchargeKeys, "surcharge", legacySurchargeAmount, base)
@@ -224,8 +226,7 @@ export function registerEInvoiceRoutes(app: Express) {
               price,
               quantity: qty,
               unit: isSurchargeLine ? "Khoản" : it.packageType === "buổi" ? "Buổi" : "Khóa",
-              // Course-package quantity semantics are still under review; only
-              // per-session rows and independent surcharge rows receive VAT.
+              // Course-package quantity semantics are still under review.
               taxRate,
               promotions: distributeAdjustments(it.promotionKeys, "promotion", parseFloat(it.promotionAmount ?? "0"), base),
             };
