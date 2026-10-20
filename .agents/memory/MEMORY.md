@@ -129,3 +129,4 @@
 - [My Space student calendar curriculum visibility](my-space-student-calendar-curriculum.md) — hide Giáo trình/curriculum content for students and parents without changing staff calendar visibility.
 - [Invoice line VAT](invoice-line-vat.md) — per-line VAT is 0/5/8/10%, displayed as a tax amount, added to invoice total; legacy lines stay at 0%.
 - [Invoice item category groups](invoice-item-category-groups.md) — category headers are a UI grouping only; preserve each item's category and source order when saving.
+- [Invoice-wide promotion VAT](invoice-global-promotion-vat.md) — keep invoice-wide discounts VAT-aware: one discount tax line per rate group; never assign one arbitrary rate across mixed-rate items.
