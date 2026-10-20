@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { FinancePromotionDialog, type FinancePromotionType } from "@/pages/finance/components/FinancePromotionDialog";
+import { calculateInvoiceVatAmount, INVOICE_VAT_RATES } from "@shared/invoice-vat";
 
 const fmtMoney = (value: number) => Math.round(value).toLocaleString("vi-VN");
 type AdjustmentKind = "promotion" | "surcharge";
@@ -85,6 +86,7 @@ export function FreeScheduleDialog({
       autoInvoice: false,
       promotionKeys: [],
       surchargeKeys: [],
+      vatRate: 0,
     })));
   }, [isOpen, students, classData, defaultStart, defaultEnd]);
 
@@ -103,7 +105,7 @@ export function FreeScheduleDialog({
   };
   const getInvoicePreview = (config: any) => {
     const pkg = getPackage(config.packageId);
-    if (!pkg) return { base: 0, promo: 0, surcharge: 0, grand: 0 };
+    if (!pkg) return { base: 0, promo: 0, surcharge: 0, vat: 0, grand: 0 };
     const base = pkg.type === "buổi"
       ? Number(config.totalSessions || 0) * Number(pkg.fee || 0)
       : Number(pkg.totalAmount || 0);
@@ -113,7 +115,9 @@ export function FreeScheduleDialog({
     const surcharge = surchargeOptions
       .filter((option: any) => (config.surchargeKeys || []).includes(option.id))
       .reduce((sum: number, option: any) => sum + getAdjustmentAmount(option, base), 0);
-    return { base, promo, surcharge, grand: Math.max(0, base - promo + surcharge) };
+    const beforeVat = Math.max(0, base - promo + surcharge);
+    const vat = calculateInvoiceVatAmount(beforeVat, Number(config.vatRate ?? 0));
+    return { base, promo, surcharge, vat, grand: beforeVat + vat };
   };
   const toggleAdjustment = (index: number, kind: AdjustmentKind, id: string) => {
     const field = kind === "promotion" ? "promotionKeys" : "surchargeKeys";
@@ -206,7 +210,7 @@ export function FreeScheduleDialog({
         </DialogHeader>
         <ScrollArea className="max-h-[min(65vh,620px)] rounded-md border">
           <div className="min-w-[1400px]">
-            <div className="grid grid-cols-[minmax(180px,1.3fr)_145px_145px_110px_minmax(190px,1fr)_180px_180px_110px] gap-3 border-b bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-600">
+            <div className="grid grid-cols-[minmax(180px,1.3fr)_145px_145px_110px_minmax(190px,1fr)_180px_180px_90px_110px] gap-3 border-b bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-600">
               <span>Học viên</span>
               <span>Ngày bắt đầu</span>
               <span>Ngày giới hạn</span>
@@ -214,6 +218,7 @@ export function FreeScheduleDialog({
               <span>Gói học phí</span>
               <span>Khuyến mãi</span>
               <span>Phụ thu</span>
+              <span>VAT</span>
               <span className="text-center">Hóa đơn tự động</span>
             </div>
             <div className="divide-y">
@@ -248,7 +253,7 @@ export function FreeScheduleDialog({
                   );
                 };
                 return (
-                  <div key={config.studentId} className="grid grid-cols-[minmax(180px,1.3fr)_145px_145px_110px_minmax(190px,1fr)_180px_180px_110px] items-start gap-3 px-4 py-3">
+                  <div key={config.studentId} className="grid grid-cols-[minmax(180px,1.3fr)_145px_145px_110px_minmax(190px,1fr)_180px_180px_90px_110px] items-start gap-3 px-4 py-3">
                     <div className="min-w-0">
                       <div className="truncate text-sm font-semibold text-slate-800">{config.fullName}</div>
                       <div className="mt-0.5 text-xs text-muted-foreground">{config.code || "Chưa có mã"}</div>
@@ -304,6 +309,22 @@ export function FreeScheduleDialog({
                     </div>
                     <div>{renderAdjustmentButton("promotion")}</div>
                     <div>{renderAdjustmentButton("surcharge")}</div>
+                    <div>
+                      <Label className="sr-only">VAT cho {config.fullName}</Label>
+                      <Select
+                        value={String(config.vatRate ?? 0)}
+                        onValueChange={(value) => updateConfig(index, { vatRate: Number(value) })}
+                      >
+                        <SelectTrigger className="h-8 px-1.5 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {INVOICE_VAT_RATES.map((rate) => (
+                            <SelectItem key={rate} value={String(rate)}>{rate}%</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="flex justify-center pt-1">
                       <Switch
                         checked={!!config.autoInvoice}
@@ -312,7 +333,7 @@ export function FreeScheduleDialog({
                       />
                     </div>
                     {config.autoInvoice && (
-                      <div className="col-span-8 flex flex-wrap items-center gap-x-4 gap-y-1 border-t pt-2 text-[11px]">
+                      <div className="col-span-9 flex flex-wrap items-center gap-x-4 gap-y-1 border-t pt-2 text-[11px]">
                         {!config.packageId ? (
                           <span className="text-destructive">Cần chọn gói học phí để lập hóa đơn</span>
                         ) : (
@@ -332,6 +353,7 @@ export function FreeScheduleDialog({
                             {invoicePreview.surcharge > 0 && (
                               <span className="text-orange-600">Phụ thu: <span className="font-medium">+{fmtMoney(invoicePreview.surcharge)} đ</span></span>
                             )}
+                            <span className="text-slate-600">VAT ({Number(config.vatRate ?? 0)}%): <span className="font-medium">{fmtMoney(invoicePreview.vat)} đ</span></span>
                             <span className="font-semibold text-primary">Tổng: {fmtMoney(invoicePreview.grand)} đ</span>
                           </>
                         )}
