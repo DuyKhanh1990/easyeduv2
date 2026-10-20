@@ -1016,13 +1016,22 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const hasInvoicePromotionEligibleItems = invoicePromotionEligibleItems.some(item => item.subtotal > 0);
   const invoicePromotionVatMixed = hasInvoicePromotionEligibleItems && invoicePromotionVatRate === null;
   const invoicePromotionVatLocked = !hasInvoicePromotionEligibleItems || invoicePromotionVatMixed;
-  const invoicePromotionResult = applySequentialAdjustments(
+  useEffect(() => {
+    if (!invoicePromotionVatMixed) return;
+    setInvoicePromoKeys([]);
+    setInvoicePromotionRows([]);
+    setInvoicePromotionName("");
+  }, [invoicePromotionVatMixed]);
+  const calculatedInvoicePromotionResult = applySequentialAdjustments(
     lineSubtotal,
     invoicePromoKeys,
     invoicePromotionRows,
     promotionOptionsWithVouchers,
     "promotion",
   );
+  const invoicePromotionResult = invoicePromotionVatLocked
+    ? { adjustmentAmount: 0, finalAmount: lineSubtotal }
+    : calculatedInvoicePromotionResult;
   const invoiceSurchargeResult = applySequentialAdjustments(
     invoicePromotionResult.finalAmount,
     invoiceSurchargeKeys,
@@ -1786,8 +1795,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       totalAmount: String(totalAmount),
       totalPromotion: String(totalPromo),
       totalSurcharge: String(totalSurcharge),
-      invoicePromotionKeys: invoicePromoKeys,
-      invoicePromotionName: resolvedInvoicePromotionName.trim() || null,
+      invoicePromotionKeys: invoicePromotionVatLocked ? [] : invoicePromoKeys,
+      invoicePromotionName: invoicePromotionVatLocked ? null : resolvedInvoicePromotionName.trim() || null,
       invoiceSurchargeKeys: invoiceSurchargeKeys,
       invoicePromotionAmount: String(invoicePromoAmt),
       invoiceSurchargeAmount: String(invoiceSurchargeAmt),
