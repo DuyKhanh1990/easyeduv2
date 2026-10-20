@@ -235,6 +235,7 @@ export const invoiceItems = pgTable("invoice_items", {
   unitPrice: decimal("unit_price", { precision: 15, scale: 2 }).notNull().default("0"),
   quantity: integer("quantity").notNull().default(1),
   promotionKeys: text("promotion_keys").array().default(sql`'{}'::text[]`), // Khuyến mãi đã chọn
+  manualPromotionRows: jsonb("manual_promotion_rows").notNull().default(sql`'[]'::jsonb`),
   surchargeKeys: text("surcharge_keys").array().default(sql`'{}'::text[]`), // Phụ thu đã chọn
   promotionAmount: decimal("promotion_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   surchargeAmount: decimal("surcharge_amount", { precision: 15, scale: 2 }).notNull().default("0"),

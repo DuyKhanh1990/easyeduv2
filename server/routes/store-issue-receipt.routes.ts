@@ -325,6 +325,7 @@ async function createIssueInvoice(params: {
     productName: string;
     salePrice: number;
     promotionKeys: string[];
+      manualPromotionRows: { id: string; optionKey?: string; name?: string; valueType: "amount" | "percent"; value: number }[];
     surchargeKeys: string[];
     promotionAmount: number;
     surchargeAmount: number;
@@ -460,6 +461,7 @@ async function createIssueInvoice(params: {
         unitPrice: String(item.salePrice),
         quantity: item.quantity,
         promotionKeys: item.promotionKeys ?? [],
+        manualPromotionRows: item.manualPromotionRows ?? [],
         surchargeKeys: item.surchargeKeys ?? [],
         promotionAmount: String(item.promotionAmount || 0),
         surchargeAmount: String(item.surchargeAmount || 0),
@@ -1157,6 +1159,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
             productName: i.productName,
             salePrice: i.priceType === "star" ? 0 : i.salePrice,
             promotionKeys: i.promotionKeys ?? [],
+            manualPromotionRows: i.manualPromotionRows ?? [],
             surchargeKeys: i.surchargeKeys ?? [],
             promotionAmount: i.priceType === "star" ? 0 : i.promotionAmount ?? 0,
             surchargeAmount: i.priceType === "star" ? 0 : i.surchargeAmount ?? 0,
@@ -1512,6 +1515,7 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
               productName: i.productName,
               salePrice: i.priceType === "star" ? 0 : i.salePrice,
               promotionKeys: i.promotionKeys ?? [],
+              manualPromotionRows: i.manualPromotionRows ?? [],
               surchargeKeys: i.surchargeKeys ?? [],
               promotionAmount: i.priceType === "star" ? 0 : i.promotionAmount ?? 0,
               surchargeAmount: i.priceType === "star" ? 0 : i.surchargeAmount ?? 0,

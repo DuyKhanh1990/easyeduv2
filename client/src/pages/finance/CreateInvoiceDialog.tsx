@@ -556,9 +556,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
           vatRate: Number(item.vatRate) || 0,
           promotionKeys: item.promotionKeys ?? [],
           surchargeKeys: [],
-          manualPromotionRows: (item.promotionKeys?.length ?? 0) === 0 && parseFloat(item.promotionAmount) > 0
-            ? [{ id: `manual-promo-${item.id ?? i}`, valueType: "amount", value: parseFloat(item.promotionAmount) }]
-            : [],
+          manualPromotionRows: Array.isArray(item.manualPromotionRows) && item.manualPromotionRows.length > 0
+            ? item.manualPromotionRows
+            : (item.promotionKeys?.length ?? 0) === 0 && parseFloat(item.promotionAmount) > 0
+              ? [{ id: `manual-promo-${item.id ?? i}`, valueType: "amount", value: parseFloat(item.promotionAmount) }]
+              : [],
           manualSurchargeRows: [],
           categoryId: isExistingSurchargeLine ? SURCHARGE_CATEGORY_ID : itemCat?.id ?? fallbackCatId,
         };
@@ -1724,6 +1726,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         unitPrice: String(p.unitPrice),
         quantity: p.quantity,
         promotionKeys: p.promotionKeys,
+        manualPromotionRows: p.manualPromotionRows,
         surchargeKeys: p.surchargeKeys,
         promotionAmount: String(promoAmt),
         surchargeAmount: String(surchargeAmt),
@@ -2600,8 +2603,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                  {t("finance.create.availableVoucher")}
                                </span>
                              )}
-                                <DialogContent
-                                  className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
+                                 <DialogContent
+                                   className="w-[min(94vw,52rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
                                   overlayClassName="bg-black/30 backdrop-blur-[1px]"
                                 >
                                  <div className="flex items-center justify-between gap-2 mb-2">
@@ -2826,7 +2829,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                               </div>
                                             </PopoverContent>
                                           </Popover>
-                                          <div className="flex items-center gap-1.5">
+                                          <div className="flex flex-wrap items-center gap-1.5 sm:flex-nowrap">
                                             <select
                                               value={row.valueType}
                                               onChange={e => updateManualAdjustmentRow(p.id, "surcharge", row.id, { valueType: e.target.value as ManualAdjustment["valueType"] })}
@@ -2848,6 +2851,15 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                                 {row.valueType === "percent" ? "%" : "₫"}
                                               </span>
                                             </div>
+                                            <Input
+                                              value={row.name ?? ""}
+                                              onChange={e => updateManualAdjustmentRow(p.id, "promotion", row.id, { name: e.target.value })}
+                                              placeholder="Nhập tên khuyến mãi..."
+                                              aria-label="Tên khuyến mãi nhập tay"
+                                              maxLength={120}
+                                              className="h-8 min-w-0 flex-1 text-xs"
+                                              data-testid={`input-product-promotion-name-${row.id}`}
+                                            />
                                             <button
                                               type="button"
                                               className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
