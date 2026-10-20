@@ -60,6 +60,7 @@ export type IssueReceiptFormData = {
   manualPromotionRows?: ManualAdjustment[];
   manualSurchargeRows?: ManualAdjustment[];
   surchargeVatAmount?: number;
+  invoicePromotionVatAmount?: number;
   surchargeInvoiceLines?: SurchargeInvoiceLine[];
   hasInvoice: boolean;
   invoiceNote: string;
@@ -1001,6 +1002,7 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
         manualPromotionRows: invoicePromotionVatLocked ? [] : sidebarPromotionRows,
         manualSurchargeRows: sidebarSurchargeRows,
         surchargeVatAmount: totalSurchargeVat,
+        invoicePromotionVatAmount,
         surchargeInvoiceLines: surchargeBreakdown.lines,
         paymentMethod: form.paymentMethod,
         paymentDueDate: total > form.paidAmount ? form.paymentDueDate : "",

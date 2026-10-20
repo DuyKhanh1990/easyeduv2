@@ -268,7 +268,7 @@ export function StoreIssueReceiptTab() {
       paymentDueDate: data.paymentDueDate || null,
       status,
       sessionId: data.sessionId ?? null,
-        totalAmount: Math.max(0, data.items.reduce((sum, i) => (i as any).priceType === "star" ? sum : sum + Number(i.lineTotal ?? Number(i.quantity) * Number(i.salePrice)), 0) - Number(data.discount || 0) + Number(data.surcharge || 0) + Number(data.surchargeVatAmount || 0)),
+        totalAmount: Math.max(0, data.items.reduce((sum, i) => (i as any).priceType === "star" ? sum : sum + Number(i.lineTotal ?? Number(i.quantity) * Number(i.salePrice)), 0) - Number(data.discount || 0) - Number(data.invoicePromotionVatAmount || 0) + Number(data.surcharge || 0) + Number(data.surchargeVatAmount || 0)),
       items: data.items.map(({ _key, ...rest }) => ({
         ...rest,
         quantity: Number(rest.quantity) || 1,
