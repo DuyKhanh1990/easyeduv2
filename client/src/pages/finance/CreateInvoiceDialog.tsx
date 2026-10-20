@@ -62,6 +62,8 @@ type ManualAdjustment = {
   value: number;
 };
 
+const SURCHARGE_CATEGORY_ID = "__surcharge__";
+
 type PaymentScheduleEntry = {
   id: string;
   label: string;
