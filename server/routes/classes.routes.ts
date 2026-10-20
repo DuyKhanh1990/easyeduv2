@@ -36,6 +36,7 @@ import { getPreferredSystemTrainingTeacherRoleId } from "@shared/teacher-role-pr
 import { canUseMySpaceCalendarAction } from "@shared/my-space-calendar-permissions";
 import { mergeSelectedTeacherRoleIds } from "../storage/teacher-role-updates";
 import { getAutoInvoicePolicy, resolveAutoInvoiceValue } from "../lib/auto-invoice-policy";
+import { calculateInvoiceVatAmount, isInvoiceVatRate } from "@shared/invoice-vat";
 import {
   canRunPastScheduleForRequest,
   isPastScheduleDate,
@@ -1983,7 +1984,11 @@ export function registerClassesRoutes(app: Express): void {
                 const value = Number(row.valueAmount || 0);
                 return sum + (row.valueType === "percent" ? Math.round(baseAmount * value / 100) : value);
               }, 0);
-              const grandTotal = Math.max(0, baseAmount - totalPromotion + totalSurcharge);
+              const beforeVat = Math.max(0, baseAmount - totalPromotion + totalSurcharge);
+              const vatRate = Number(config.vatRate ?? 0);
+              if (!isInvoiceVatRate(vatRate)) throw new Error("Tỷ lệ VAT không hợp lệ.");
+              const vatAmount = calculateInvoiceVatAmount(beforeVat, vatRate);
+              const grandTotal = beforeVat + vatAmount;
               const adjustmentDescription = [
                 promotionRows.length > 0
                   ? `Khuyến mãi: ${promotionRows.map((row: any) => row.name).join(", ")}`
@@ -2038,7 +2043,9 @@ export function registerClassesRoutes(app: Express): void {
                     surchargeKeys,
                     promotionAmount: String(totalPromotion),
                     surchargeAmount: String(totalSurcharge),
-                    subtotal: String(grandTotal),
+                    subtotal: String(beforeVat),
+                    vatRate,
+                    vatAmount: String(vatAmount),
                     sortOrder: 0,
                   });
                   autoCreatedInvoices.push({

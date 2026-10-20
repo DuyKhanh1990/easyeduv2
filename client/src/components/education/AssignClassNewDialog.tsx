@@ -32,6 +32,7 @@ import { format } from "date-fns";
 import { useClasses } from "@/hooks/use-classes";
 import { useToast } from "@/hooks/use-toast";
 import { fmtMoney } from "@/types/invoice-types";
+import { calculateInvoiceVatAmount, INVOICE_VAT_RATES } from "@shared/invoice-vat";
 import { VoucherHint } from "@/components/finance/VoucherHint";
 import { useQuery, useQueries, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -199,8 +200,10 @@ export function AssignClassNewDialog({
     const base = calcBaseAmount(config, numSessions);
     const promo = getTotalPromoAmount(config, base);
     const surcharge = getTotalSurchargeAmount(config, base);
-    const grand = Math.max(0, base - promo + surcharge);
-    return { base, promo, surcharge, grand };
+    const beforeVat = Math.max(0, base - promo + surcharge);
+    const vat = calculateInvoiceVatAmount(beforeVat, Number(config.vatRate ?? 0));
+    const grand = beforeVat + vat;
+    return { base, promo, surcharge, beforeVat, vat, grand };
   };
 
   const togglePromoKey = (idx: number, id: string) => {
@@ -360,6 +363,7 @@ export function AssignClassNewDialog({
           autoInvoice: defaultAutoInvoice,
           promotionKeys: [],
           surchargeKeys: [],
+          vatRate: 0,
           useDeposit: undefined,
         }))
       );
@@ -808,7 +812,7 @@ export function AssignClassNewDialog({
                 <TableHeader>
                   <TableRow className="sticky top-0 z-20 h-8 border-0 bg-slate-50 hover:bg-slate-50">
                     <TableHead colSpan={4} className="h-8 rounded-tl-lg bg-sky-100 px-3 text-[11px] font-semibold uppercase tracking-wide text-sky-800">Lịch học</TableHead>
-                    <TableHead colSpan={3} className="h-8 bg-amber-100 px-3 text-[11px] font-semibold uppercase tracking-wide text-amber-800">Học phí</TableHead>
+                    <TableHead colSpan={4} className="h-8 bg-amber-100 px-3 text-[11px] font-semibold uppercase tracking-wide text-amber-800">Học phí</TableHead>
                     <TableHead colSpan={2} className="h-8 rounded-tr-lg bg-violet-100 px-3 text-[11px] font-semibold uppercase tracking-wide text-violet-800">Hóa đơn & lịch dự kiến</TableHead>
                   </TableRow>
                   <TableRow className="sticky top-8 z-20 h-10 bg-white hover:bg-white [&>th]:whitespace-nowrap [&>th]:font-bold [&>th]:text-black">
@@ -819,6 +823,7 @@ export function AssignClassNewDialog({
                     <TableHead className="w-[240px]">Gói học phí</TableHead>
                     <TableHead className="w-[180px]">Khuyến mãi</TableHead>
                     <TableHead className="w-[180px]">Phụ thu</TableHead>
+                    <TableHead className="w-[90px]">VAT</TableHead>
                     <TableHead className="w-[150px] py-2 align-middle">
                       <div className="flex items-center justify-center gap-1.5 whitespace-nowrap">
                         <span className="text-[11px] leading-none">Hoá đơn tự động</span>
@@ -1114,6 +1119,22 @@ export function AssignClassNewDialog({
                             </Popover>
                           </TableCell>
 
+                          <TableCell>
+                            <Select
+                              value={String(config.vatRate ?? 0)}
+                              onValueChange={(value) => updateStudentConfig(idx, { vatRate: Number(value) })}
+                            >
+                              <SelectTrigger className="h-8 w-full px-1.5 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {INVOICE_VAT_RATES.map((rate) => (
+                                  <SelectItem key={rate} value={String(rate)}>{rate}%</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+
                           <TableCell className="align-middle text-center">
                             <div className="flex items-center justify-center">
                               <Switch
@@ -1167,7 +1188,7 @@ export function AssignClassNewDialog({
                           if (!config.autoInvoice && !hasRemaining) return null;
                           return (
                             <TableRow className="border-b border-slate-200/70 bg-white">
-                              <TableCell colSpan={9} className="border-0 px-4 pb-2 pt-0">
+                              <TableCell colSpan={10} className="border-0 px-4 pb-2 pt-0">
                                 <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 pt-0 text-[10px]">
                                   {config.autoInvoice && (
                                     <>
@@ -1191,6 +1212,9 @@ export function AssignClassNewDialog({
                                           Phụ thu: <span className="font-medium">+{fmtMoney(invoicePreview.surcharge)}đ</span>
                                         </span>
                                       )}
+                                      <span className="text-slate-600">
+                                        VAT ({Number(config.vatRate ?? 0)}%): <span className="font-medium">{fmtMoney(invoicePreview.vat)}đ</span>
+                                      </span>
                                       <span className="font-semibold text-primary text-[10px]">
                                         Tổng: {fmtMoney(invoicePreview.grand)}đ
                                       </span>

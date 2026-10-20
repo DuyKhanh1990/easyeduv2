@@ -15,6 +15,7 @@ import {
   validateTeacherTimeCoverage,
 } from "@shared/teacher-time-assignments";
 import { calculateAutoInvoiceDepositTotals } from "@shared/invoice-deposit-accounting";
+import { calculateInvoiceVatAmount, isInvoiceVatRate } from "@shared/invoice-vat";
 import { distributeInvoiceFeeToSessions } from "./invoice-session-allocation.storage";
 import { getNextLocationCode } from "./finance.storage";
 import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
@@ -2243,7 +2244,11 @@ export async function scheduleClassStudents(classId: string, configs: any[], use
             }, 0);
           }
 
-          const grandTotal = Math.max(0, baseAmount - totalPromotion + totalSurcharge);
+          const beforeVat = Math.max(0, baseAmount - totalPromotion + totalSurcharge);
+          const vatRate = Number(config.vatRate ?? 0);
+          if (!isInvoiceVatRate(vatRate)) throw new Error("Tỷ lệ VAT không hợp lệ.");
+          const vatAmount = calculateInvoiceVatAmount(beforeVat, vatRate);
+          const grandTotal = beforeVat + vatAmount;
 
           const startDateFmt = formatInvoiceDate(newSessions[0].sessionDate);
           const endDateFmt = formatInvoiceDate(newSessions[newSessions.length - 1].sessionDate);
@@ -2310,7 +2315,9 @@ export async function scheduleClassStudents(classId: string, configs: any[], use
               surchargeKeys: config.surchargeKeys ?? [],
               promotionAmount: totalPromotion.toString(),
               surchargeAmount: totalSurcharge.toString(),
-              subtotal: grandTotal.toString(),
+              subtotal: beforeVat.toString(),
+              vatRate,
+              vatAmount: vatAmount.toString(),
               sortOrder: 0,
             });
 
