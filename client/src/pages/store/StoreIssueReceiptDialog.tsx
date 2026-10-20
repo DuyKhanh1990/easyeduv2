@@ -13,6 +13,7 @@ import { X, Search, Trash2, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { calculateInvoiceVatAmount, INVOICE_VAT_RATES } from "@shared/invoice-vat";
+import { calculateInvoicePromotionVat, getUniformInvoicePromotionVatRate } from "@shared/invoice-promotion-vat";
 
 type Location = { id: string; name: string };
 type Warehouse = { id: string; name: string; locationId: string | null };
@@ -54,6 +55,7 @@ export type IssueReceiptFormData = {
   surcharge: number;
   surchargeType: "VND" | "%";
   promotionKeys?: string[];
+  invoicePromotionName?: string | null;
   surchargeKeys?: string[];
   manualPromotionRows?: ManualAdjustment[];
   manualSurchargeRows?: ManualAdjustment[];
@@ -230,6 +232,7 @@ function IssueAdjustmentDialog({
   onAddRow,
   onRemoveRow,
   trigger,
+  promotionVatInfo,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -243,6 +246,12 @@ function IssueAdjustmentDialog({
   onAddRow: () => void;
   onRemoveRow: (rowId: string) => void;
   trigger: ReactElement;
+  promotionVatInfo?: {
+    hasItems: boolean;
+    mixed: boolean;
+    rate: number | null;
+    reduction: number;
+  };
 }) {
   const [openPickerId, setOpenPickerId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -416,6 +425,19 @@ function IssueAdjustmentDialog({
           <div className="mt-2 flex items-center justify-between text-sm">
             <span className="text-muted-foreground">VAT phụ thu</span>
             <span>{fmtVND(taxTotal)}</span>
+          </div>
+        )}
+        {kind === "promotion" && promotionVatInfo && (
+          <div className="mt-2 rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            {!promotionVatInfo.hasItems ? (
+              <span>Thêm hàng hóa có giá bán để xác định VAT cho khuyến mãi toàn đơn.</span>
+            ) : promotionVatInfo.mixed ? (
+              <span>VAT hàng hóa không đồng nhất. Hãy áp dụng khuyến mãi ở từng dòng.</span>
+            ) : (
+              <span>
+                VAT áp dụng: {promotionVatInfo.rate}%. VAT được giảm: -{fmtVND(promotionVatInfo.reduction)}.
+              </span>
+            )}
           </div>
         )}
       </DialogContent>
@@ -866,10 +888,20 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
     if ((item.priceType ?? "money") !== "money") return sum;
     return sum + getItemAmounts(item, promotionOptions, surchargeOptions).beforeVat;
   }, 0);
-  const totalVat = form.items.reduce((sum, item) => {
+  const itemVatTotal = form.items.reduce((sum, item) => {
     if ((item.priceType ?? "money") !== "money") return sum;
     return sum + getItemAmounts(item, promotionOptions, surchargeOptions).vatAmount;
   }, 0);
+  const invoicePromotionVatItems = form.items
+    .filter(item => (item.priceType ?? "money") === "money")
+    .map(item => {
+      const amounts = getItemAmounts(item, promotionOptions, surchargeOptions);
+      return { category: "Kho", vatRate: amounts.vatRate, subtotal: amounts.beforeVat };
+    });
+  const invoicePromotionVatRate = getUniformInvoicePromotionVatRate(invoicePromotionVatItems);
+  const hasInvoicePromotionVatItems = invoicePromotionVatItems.some(item => item.subtotal > 0);
+  const invoicePromotionVatMixed = hasInvoicePromotionVatItems && invoicePromotionVatRate === null;
+  const invoicePromotionVatLocked = !hasInvoicePromotionVatItems || invoicePromotionVatMixed;
 
   function calcPromoAmt(keys: string[], options: FinancePromotion[], base: number): number {
     return keys.reduce((sum, key) => {
@@ -883,10 +915,21 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
 
   const hasSidebarPromotion = selectedPromoKeys.length > 0 || sidebarPromotionRows.some(row => row.value > 0);
   const hasSidebarSurcharge = selectedSurchargeKeys.length > 0 || sidebarSurchargeRows.some(row => row.value > 0);
+  const invoicePromotionName = Array.from(new Set([
+    ...sidebarPromotionRows.map(row => {
+      const option = promotionOptions.find(candidate => candidate.id === row.optionKey || candidate.code === row.optionKey);
+      return row.name?.trim() || option?.name || "";
+    }),
+    ...selectedPromoKeys.map(key => promotionOptions.find(option => option.id === key || option.code === key)?.name ?? ""),
+  ].filter(Boolean))).join(", ");
 
   const discountAmt = hasSidebarPromotion
     ? adjustmentTotal(subtotal, selectedPromoKeys, sidebarPromotionRows, promotionOptions, "promotion")
     : (form.discountType === "VND" ? form.discount : subtotal * form.discount / 100);
+  const invoicePromotionVatAmount = !invoicePromotionName || invoicePromotionVatRate === null
+    ? 0
+    : calculateInvoicePromotionVat(discountAmt, invoicePromotionVatItems);
+  const totalVat = Math.max(0, itemVatTotal - invoicePromotionVatAmount);
 
   const surchargeBreakdown = hasSidebarSurcharge
     ? getSurchargeBreakdown(Math.max(0, subtotal - discountAmt), selectedSurchargeKeys, sidebarSurchargeRows, surchargeOptions)
@@ -927,6 +970,14 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
       toast({ variant: "destructive", title: `Học viên không đủ sao. Cần ${totalStarsNeeded} ⭐, hiện có ${starBalance?.available ?? 0} ⭐` });
       return;
     }
+    if (invoicePromotionVatMixed && discountAmt > 0) {
+      toast({ variant: "destructive", title: "VAT hàng hóa không đồng nhất. Hãy chuyển khuyến mãi toàn đơn sang khuyến mãi từng dòng." });
+      return;
+    }
+    if (discountAmt > 0 && !invoicePromotionName && !isEdit) {
+      toast({ variant: "destructive", title: "Vui lòng nhập tên cho khuyến mãi nhập tay để ghi lên hóa đơn." });
+      return;
+    }
     onSave(
       {
         ...form,
@@ -935,6 +986,7 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
         surcharge: surchargeAmt,
         surchargeType: "VND",
         promotionKeys: selectedPromoKeys,
+        invoicePromotionName: invoicePromotionName || null,
         surchargeKeys: selectedSurchargeKeys,
         manualPromotionRows: sidebarPromotionRows,
         manualSurchargeRows: sidebarSurchargeRows,
@@ -1441,6 +1493,12 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                 rows={sidebarPromotionRows}
                 options={promotionOptions}
                 baseAmount={subtotal}
+                promotionVatInfo={{
+                  hasItems: hasInvoicePromotionVatItems,
+                  mixed: invoicePromotionVatMixed,
+                  rate: invoicePromotionVatRate,
+                  reduction: invoicePromotionVatAmount,
+                }}
                 onSelectOption={(rowId, optionKey) => selectSidebarAdjustmentOption("promotion", rowId, optionKey)}
                 onUpdateRow={(rowId, patch) => updateSidebarAdjustmentRow("promotion", rowId, patch)}
                 onAddRow={() => addSidebarAdjustmentRow("promotion")}
@@ -1448,6 +1506,7 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                 trigger={(
                   <button
                     type="button"
+                    disabled={invoicePromotionVatLocked}
                     className="flex w-full items-center justify-between rounded-md px-0.5 py-0.5 text-xs transition-colors hover:bg-muted/40"
                   >
                     <span className="flex items-center gap-1 text-emerald-600">
@@ -1460,6 +1519,16 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
                   </button>
                 )}
               />
+              {invoicePromotionVatMixed && (
+                <p className="text-[10px] text-muted-foreground">
+                  VAT hàng hóa không đồng nhất. Hãy áp dụng khuyến mãi ở từng dòng.
+                </p>
+              )}
+              {!hasInvoicePromotionVatItems && (
+                <p className="text-[10px] text-muted-foreground">
+                  Thêm hàng hóa có giá bán để áp dụng khuyến mãi toàn đơn.
+                </p>
+              )}
               <IssueAdjustmentDialog
                 open={surchargeOpen}
                 onOpenChange={value => {
