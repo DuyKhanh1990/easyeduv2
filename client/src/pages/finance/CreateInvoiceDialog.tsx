@@ -361,6 +361,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   ]);
   const [openPromoId, setOpenPromoId] = useState<string | null>(null);
   const [openSurchargeId, setOpenSurchargeId] = useState<string | null>(null);
+  const [pendingStandaloneSurchargeId, setPendingStandaloneSurchargeId] = useState<string | null>(null);
   const [openProductPromoPicker, setOpenProductPromoPicker] = useState<string | null>(null);
   const [openProductSurchargePicker, setOpenProductSurchargePicker] = useState<string | null>(null);
   const [promotionSearch, setPromotionSearch] = useState("");
@@ -372,7 +373,6 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const [invoicePromotionRows, setInvoicePromotionRows] = useState<ManualAdjustment[]>([]);
   const [invoiceSurchargeRows, setInvoiceSurchargeRows] = useState<ManualAdjustment[]>([]);
   const [openInvoicePromo, setOpenInvoicePromo] = useState(false);
-  const [openInvoiceSurcharge, setOpenInvoiceSurcharge] = useState(false);
   const [openInvoicePromoPicker, setOpenInvoicePromoPicker] = useState<string | null>(null);
   const [openInvoiceSurchargePicker, setOpenInvoiceSurchargePicker] = useState<string | null>(null);
   const [openSchedulePromo, setOpenSchedulePromo] = useState<string | null>(null);
@@ -1472,6 +1472,27 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     setSurchargeSearch("");
     setKhoSearch("");
     setKhoPickerOpen(null);
+    setPendingStandaloneSurchargeId(null);
+  };
+  const addStandaloneSurcharge = () => {
+    const id = `surcharge-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setProducts(prev => [...prev, {
+      id,
+      packageId: null,
+      packageType: null,
+      name: "",
+      unitPrice: 0,
+      quantity: 1,
+      vatRate: 0,
+      promotionKeys: [],
+      surchargeKeys: [],
+      manualPromotionRows: [],
+      manualSurchargeRows: [],
+      categoryId: SURCHARGE_CATEGORY_ID,
+    }]);
+    setPendingStandaloneSurchargeId(id);
+    setProductPickerCategoryId(SURCHARGE_CATEGORY_ID);
+    setSurchargeSearch("");
   };
   const addSelectedFeePackage = (pkg: any, categoryId: string) => {
     const isCoursePackage = pkg.type === "khoá";
@@ -1529,20 +1550,28 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         return sum + promotion.finalAmount;
       }, 0);
     const amount = option.valueType === "percent" ? Math.round(basis * value / 100) : value;
-    setProducts(prev => [...prev, {
-      id: `surcharge-${Date.now()}`,
-      packageId: null,
-      packageType: null,
-      name: option.name,
-      unitPrice: amount,
-      quantity: 1,
-      vatRate: 0,
-      promotionKeys: [],
-      surchargeKeys: [],
-      manualPromotionRows: [],
-      manualSurchargeRows: [],
-      categoryId: SURCHARGE_CATEGORY_ID,
-    }]);
+    const pendingId = pendingStandaloneSurchargeId;
+    setProducts(prev => {
+      if (pendingId && prev.some(product => product.id === pendingId)) {
+        return prev.map(product => product.id === pendingId
+          ? { ...product, name: option.name, unitPrice: amount }
+          : product);
+      }
+      return [...prev, {
+        id: `surcharge-${Date.now()}`,
+        packageId: null,
+        packageType: null,
+        name: option.name,
+        unitPrice: amount,
+        quantity: 1,
+        vatRate: 0,
+        promotionKeys: [],
+        surchargeKeys: [],
+        manualPromotionRows: [],
+        manualSurchargeRows: [],
+        categoryId: SURCHARGE_CATEGORY_ID,
+      }];
+    });
     closeProductPicker();
   };
 
@@ -1554,6 +1583,12 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     if (!locationId) { toast({ title: t("finance.create.branchRequiredError"), variant: "destructive" }); return; }
     if (products.some(p => !p.categoryId)) { toast({ title: t("finance.create.categoryRequiredError"), variant: "destructive" }); return; }
     if (!studentId && !subjectName.trim()) { toast({ title: t("finance.create.nameRequiredError"), variant: "destructive" }); return; }
+    const incompleteSurcharge = products.some(product =>
+      product.categoryId === SURCHARGE_CATEGORY_ID &&
+      (product.name.trim() || product.unitPrice !== 0) &&
+      (!product.name.trim() || product.unitPrice <= 0),
+    );
+    if (incompleteSurcharge) { toast({ title: t("finance.create.nameRequiredError"), variant: "destructive" }); return; }
     if (directPaidAmount > finalTotal + 0.01) {
       toast({
         title: t("finance.create.paidAmountExceedsTotal"),
@@ -1590,7 +1625,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     const firstNonSurchargeProduct = products.find(product => product.categoryId !== SURCHARGE_CATEGORY_ID);
     const firstCat = allCategories.find((c: any) => c.id === firstNonSurchargeProduct?.categoryId);
 
-    const items = products.map(p => {
+    const items = products
+      .filter(p => !(p.categoryId === SURCHARGE_CATEGORY_ID && !p.name.trim() && p.unitPrice === 0))
+      .map(p => {
       const base = calcBase(p);
       const promotionResult = applySequentialAdjustments(
         base,
@@ -1632,7 +1669,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         warehouseId: p.warehouseId ?? null,
         warehouseName: p.warehouseName ?? null,
       };
-    });
+      });
 
     const baseSchedule = paymentSchedule.map(s => ({
       id: s.id.startsWith("auto-") ? undefined : s.id,
@@ -2171,12 +2208,16 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                     categoryName.includes("học phí") ||
                                     categoryName.includes("kho")
                                   ) {
-                                    setProductPickerCategoryId(group.categoryId);
-                                    setProductPickerSearch("");
-                                    setSurchargeSearch("");
-                                    if (categoryName.includes("kho")) {
-                                      setKhoSearch("");
-                                      setKhoPickerOpen(`category-picker:${group.categoryId}`);
+                                    if (group.categoryId === SURCHARGE_CATEGORY_ID) {
+                                      addStandaloneSurcharge();
+                                    } else {
+                                      setProductPickerCategoryId(group.categoryId);
+                                      setProductPickerSearch("");
+                                      setSurchargeSearch("");
+                                      if (categoryName.includes("kho")) {
+                                        setKhoSearch("");
+                                        setKhoPickerOpen(`category-picker:${group.categoryId}`);
+                                      }
                                     }
                                   } else {
                                     addProduct(group.categoryId);
@@ -2912,17 +2953,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                               <p className="mt-0.5 whitespace-nowrap text-[9px] text-muted-foreground">{t("finance.taxAmount")}: {fmtMoney(row.vatAmount)}</p>
                             </td>
                             <td className="p-2 text-right font-semibold">{fmtMoney(row.amount + row.vatAmount)}</td>
-                            <td className="p-1 text-center">
-                              <button
-                                type="button"
-                                className="text-muted-foreground hover:text-violet-600"
-                                onClick={() => setOpenSurchargeId(row.productId)}
-                                aria-label={t("finance.create.chooseSurcharge")}
-                                data-testid={`button-edit-surcharge-${row.productId}`}
-                              >
-                                <ChevronDown className="h-3.5 w-3.5" />
-                              </button>
-                            </td>
+                            <td className="p-1 text-center" />
                           </tr>
                         ))}
                       </Fragment>
@@ -3007,26 +3038,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                           };
                         })
                         .filter(row => row.amount > 0 || row.hasValue);
-                      const editSurcharge = () => {
-                        setSurchargeSearch("");
-                        setProducts(prev => prev.map(x => x.id === p.id
-                          ? { ...x, manualSurchargeRows: ensureAdjustmentRows(x.surchargeKeys, x.manualSurchargeRows, `manual-surcharge-${x.id}`) }
-                          : x));
-                        setOpenSurchargeId(p.id);
-                      };
-                      const actionButton = (
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7 text-orange-600"
-                          onClick={editSurcharge}
-                          aria-label={t("finance.create.chooseSurcharge")}
-                          data-testid={`button-edit-surcharge-${p.id}`}
-                        >
-                          <ChevronDown className="h-3.5 w-3.5" />
-                        </Button>
-                      );
+                      const actionButton = null;
 
                       if (displayRows.length === 0) {
                         return (
@@ -3298,48 +3310,13 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                   </DialogContent>
                 </Dialog>
 
-                <Dialog open={openInvoiceSurcharge} onOpenChange={v => {
-                  setOpenInvoiceSurcharge(v);
-                  if (v) {
-                    setSurchargeSearch("");
-                    setInvoiceSurchargeRows(prev => ensureAdjustmentRows(invoiceSurchargeKeys, prev, "invoice-surcharge"));
-                  } else {
-                    setOpenInvoiceSurchargePicker(null);
-                  }
-                }}>
-                  <DialogTrigger asChild>
-                    <button
-                      type="button"
-                      className="w-full flex justify-between items-center text-orange-500 hover:bg-orange-50 rounded px-1 -mx-1 py-0.5 transition-colors"
-                      data-testid="button-invoice-surcharge"
-                    >
-                      <span className="flex items-center gap-1">
-                         {t("finance.surcharge")}:
-                        <ChevronDown className="h-3 w-3 opacity-60" />
-                      </span>
-                      <span>{totalSurcharge > 0 ? `+${fmtMoney(totalSurcharge)}` : "0 ₫"}</span>
-                    </button>
-                  </DialogTrigger>
-                  <DialogContent
-                    className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
-                    overlayClassName="bg-black/30 backdrop-blur-[1px]"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                     <DialogTitle className="text-xl font-semibold">{t("finance.create.chooseSurcharge")}</DialogTitle>
-                      {canCreatePromotion && (
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-0.5 text-[11px] font-medium text-purple-600 hover:text-purple-700"
-                          onClick={() => openQuickCreate("surcharge", { scope: "invoice" })}
-                          data-testid="button-quick-add-invoice-surcharge"
-                        >
-                           <Plus className="h-3 w-3" /> {t("finance.addNew")}
-                        </button>
-                      )}
-                    </div>
-                    {renderInvoiceAdjustmentRows("surcharge")}
-                  </DialogContent>
-                </Dialog>
+                <div
+                  className="w-full flex justify-between items-center text-orange-500 rounded px-1 -mx-1 py-0.5"
+                  data-testid="button-invoice-surcharge"
+                >
+                  <span>{t("finance.surcharge")}:</span>
+                  <span>{totalSurcharge > 0 ? `+${fmtMoney(totalSurcharge)}` : "0 ₫"}</span>
+                </div>
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>{t("finance.create.totalVat")}:</span>
                   <span className="font-medium text-foreground">
