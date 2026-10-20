@@ -1802,16 +1802,16 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
               </div>
 
               <div className="rounded-lg border overflow-x-auto">
-                <table className="w-full min-w-[1040px] text-xs table-fixed [&_tbody_td]:align-top">
+                 <table className="w-full min-w-[940px] text-xs table-fixed [&_tbody_td]:align-top">
                   <colgroup>
-                    <col style={{ width: "25%" }} />
-                    <col style={{ width: "12%" }} />
-                    <col style={{ width: "6%" }} />
-                    <col style={{ width: "12%" }} />
-                    <col style={{ width: "12%" }} />
-                    <col style={{ width: "10%" }} />
-                    <col style={{ width: "10%" }} />
-                    <col style={{ width: "10%" }} />
+                     <col style={{ width: "28%" }} />
+                     <col style={{ width: "13%" }} />
+                     <col style={{ width: "7%" }} />
+                     <col style={{ width: "13%" }} />
+                     <col style={{ width: "0%" }} />
+                     <col style={{ width: "14%" }} />
+                     <col style={{ width: "11%" }} />
+                     <col style={{ width: "11%" }} />
                     <col style={{ width: "3%" }} />
                   </colgroup>
                   <thead className="bg-muted/60">
@@ -1820,7 +1820,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       <th className="p-2 text-right font-semibold text-muted-foreground">{t("finance.unitPrice")}</th>
                       <th className="p-2 text-center font-semibold text-muted-foreground">{t("finance.create.quantity")}</th>
                       <th className="p-2 text-right font-semibold text-muted-foreground">{t("finance.promotion")}</th>
-                      <th className="p-2 text-right font-semibold text-muted-foreground">{t("finance.surcharge")}</th>
+                       <th className="hidden" />
                       <th className="p-2 text-right font-semibold text-muted-foreground">{t("finance.lineTotal")}</th>
                       <th className="p-2 text-center font-semibold text-muted-foreground">{t("finance.vat")}</th>
                       <th className="p-2 text-right font-semibold text-muted-foreground">{t("finance.totalAfterVat")}</th>
@@ -1934,8 +1934,10 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       );
                       const promoAmt = promotionResult.adjustmentAmount;
                       const surchargeAmt = surchargeResult.adjustmentAmount;
-                      const subtotal = surchargeResult.finalAmount;
-                      const vatAmount = calculateInvoiceVatAmount(subtotal, p.vatRate);
+                       // Keep the surcharge in the existing calculations, but display it
+                       // separately below so the product row itself remains clear.
+                       const subtotal = promotionResult.finalAmount;
+                       const vatAmount = calculateInvoiceVatAmount(subtotal, p.vatRate);
                       return (
                         <Fragment key={p.id}>
                         <tr className="border-b last:border-0">
@@ -2226,7 +2228,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                 </DialogContent>
                               </Dialog>
                           </td>
-                          <td className="p-2">
+                          <td className="hidden">
                             <Dialog open={openSurchargeId === p.id} onOpenChange={v => {
                               setOpenSurchargeId(v ? p.id : null);
                               if (v) {
@@ -2238,14 +2240,6 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                 setOpenProductSurchargePicker(null);
                               }
                             }}>
-                              <DialogTrigger asChild>
-                                <button className="w-full h-8 flex items-center justify-end gap-1 px-1 rounded-none border-0 border-b border-border bg-transparent hover:border-purple-400 transition-colors text-[10px]">
-                                  <span className={`flex-1 text-right ${surchargeAmt > 0 ? "text-orange-600 font-semibold" : "text-muted-foreground"}`}>
-                                    {surchargeAmt > 0 ? `+${fmtMoney(surchargeAmt)}` : t("finance.create.choose")}
-                                  </span>
-                                  <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                                </button>
-                              </DialogTrigger>
                                 <DialogContent
                                   className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
                                   overlayClassName="bg-black/30 backdrop-blur-[1px]"
@@ -2420,6 +2414,122 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-orange-200 bg-orange-50/40 p-3 dark:border-orange-900 dark:bg-orange-950/10">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold text-orange-700 dark:text-orange-300">
+                  {t("finance.surcharge")}
+                </h3>
+                <span className="text-sm font-semibold text-orange-700 dark:text-orange-300">
+                  +{fmtMoney(itemSurcharge)}
+                </span>
+              </div>
+              <div className="divide-y">
+                {products.map(p => {
+                  const base = calcBase(p);
+                  const promotionResult = applySequentialAdjustments(
+                    base,
+                    p.promotionKeys,
+                    p.manualPromotionRows,
+                    promotionOptionsWithVouchers,
+                    "promotion",
+                  );
+                  const surchargeResult = applySequentialAdjustments(
+                    promotionResult.finalAmount,
+                    p.surchargeKeys,
+                    p.manualSurchargeRows,
+                    surchargeOptions,
+                    "surcharge",
+                  );
+                  const surchargeVat = Math.max(
+                    0,
+                    calculateInvoiceVatAmount(surchargeResult.finalAmount, p.vatRate) -
+                      calculateInvoiceVatAmount(promotionResult.finalAmount, p.vatRate),
+                  );
+                  const rowsForDisplay = p.manualSurchargeRows.length > 0 || p.surchargeKeys.length > 0
+                    ? ensureAdjustmentRows(p.surchargeKeys, p.manualSurchargeRows, `display-surcharge-${p.id}`)
+                    : [];
+                  const displaySurcharges = rowsForDisplay
+                    .map((row, index) => {
+                      const previousRows = rowsForDisplay.slice(0, index);
+                      const currentRows = rowsForDisplay.slice(0, index + 1);
+                      const previousKeys = previousRows.map(item => item.optionKey).filter((key): key is string => Boolean(key));
+                      const currentKeys = currentRows.map(item => item.optionKey).filter((key): key is string => Boolean(key));
+                      const before = applySequentialAdjustments(
+                        promotionResult.finalAmount,
+                        previousKeys,
+                        previousRows,
+                        surchargeOptions,
+                        "surcharge",
+                      ).adjustmentAmount;
+                      const throughCurrent = applySequentialAdjustments(
+                        promotionResult.finalAmount,
+                        currentKeys,
+                        currentRows,
+                        surchargeOptions,
+                        "surcharge",
+                      ).adjustmentAmount;
+                      const name = row.optionKey
+                        ? surchargeOptions.find((option: any) => option.id === row.optionKey)?.name ?? t("finance.surcharge")
+                        : t("finance.surcharge");
+                      return {
+                        id: row.id,
+                        name,
+                        amount: Math.max(0, throughCurrent - before),
+                        hasValue: Boolean(row.optionKey) || row.value > 0,
+                      };
+                    })
+                    .filter(row => row.amount > 0 || row.hasValue);
+                  const hasSurcharge = surchargeResult.adjustmentAmount > 0;
+
+                  return (
+                    <div key={`surcharge-${p.id}`} className="py-2.5">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[10px] font-medium text-muted-foreground">
+                            {p.name || t("finance.create.packageName")} · {t("finance.vat")} {p.vatRate}%
+                          </p>
+                          {displaySurcharges.length > 0 ? (
+                            <div className="mt-1 space-y-1">
+                              {displaySurcharges.map(row => (
+                                <div key={row.id} className="flex items-center justify-between gap-3 text-xs">
+                                  <span className="truncate font-medium">{row.name}</span>
+                                  <span className="shrink-0 font-semibold text-orange-600">+{fmtMoney(row.amount)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-1 text-xs text-muted-foreground">{t("finance.create.noSurcharge")}</p>
+                          )}
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 shrink-0 gap-1 text-[11px]"
+                          onClick={() => {
+                            setSurchargeSearch("");
+                            setProducts(prev => prev.map(x => x.id === p.id
+                              ? { ...x, manualSurchargeRows: ensureAdjustmentRows(x.surchargeKeys, x.manualSurchargeRows, `manual-surcharge-${x.id}`) }
+                              : x));
+                            setOpenSurchargeId(p.id);
+                          }}
+                          data-testid={`button-edit-surcharge-${p.id}`}
+                        >
+                          <Plus className="h-3 w-3" />
+                          {t("finance.add")}
+                        </Button>
+                      </div>
+                      {hasSurcharge && (
+                        <p className="mt-1 text-right text-[10px] text-muted-foreground">
+                          {t("finance.taxAmount")}: +{fmtMoney(surchargeVat)}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
