@@ -49,3 +49,11 @@ mtime_ms = 1791869354390
 storage_uri = "gcs://replit-rams-assets-sisko/rams/assets/repl:69862f0a-5b07-4700-aeaf-3fff688f1fc0/1000aa0d-4554-4143-8f1d-dd92e7cdb832/56c67ab8-e9bf-4fd0-a008-b1f2fbcc2b3b"
 storage_version_token = "1791869365626248"
 content_type = "text/html"
+
+[[outputs]]
+id = "wFPFZKqUAuo_b-j9R0Pou"
+uri = "file://attached_assets/invoice-template-copy.html"
+type = "html"
+title = "Mẫu hóa đơn đã bỏ ảnh nhúng"
+description = "Mở trang và bấm “Sao chép HTML” để lấy toàn bộ mẫu sau khi đã bỏ đúng thẻ ảnh base64."
+content_type = "text/html"
