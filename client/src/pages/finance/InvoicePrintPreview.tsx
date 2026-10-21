@@ -8,6 +8,7 @@ import type { InvoicePrintTemplateRow } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
 import { useStaff } from "@/hooks/use-staff";
 import { fmtDate as formatInvoiceDate, isInvoicePaidLike } from "@/types/invoice-types";
+import { INVOICE_PRINT_BASE_STYLES } from "./invoice-print-base-styles";
 
 interface InvoicePrintData {
   id: string;
@@ -826,10 +827,10 @@ export function InvoicePrintPreview({ invoice, onClose, skipFetch, titleSuffix, 
       <title>${invoice.code ?? "Hoá đơn"}</title>
       <style>
         @page { size: ${pageCfg.cssSize} ${orientation}; margin: 10mm; }
-        body { margin: 0; font-family: Arial, sans-serif; }
-        * { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; }
+        ${INVOICE_PRINT_BASE_STYLES}
       </style>
-    </head><body>${renderedHtml}</body></html>`);
+    </head><body><div class="invoice-print-root">${renderedHtml}</div></body></html>`);
     doc.close();
     setTimeout(() => { frame.contentWindow?.print(); }, 300);
   };
@@ -885,11 +886,13 @@ export function InvoicePrintPreview({ invoice, onClose, skipFetch, titleSuffix, 
                   background: "white",
                   boxShadow: "0 2px 16px rgba(0,0,0,0.12)",
                   borderRadius: "4px",
-                  padding: "16mm",
+                  padding: "10mm",
                   transition: "width 0.2s",
                 }}
-                dangerouslySetInnerHTML={{ __html: renderedHtml }}
-              />
+              >
+                <style>{INVOICE_PRINT_BASE_STYLES}</style>
+                <div className="invoice-print-root" dangerouslySetInnerHTML={{ __html: renderedHtml }} />
+              </div>
             ) : null}
           </div>
 
