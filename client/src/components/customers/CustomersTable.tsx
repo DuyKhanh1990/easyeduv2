@@ -407,10 +407,10 @@ export function CustomersTable({
     const base = cn("z-20", STICKY_BG_HEADER);
     if (isClassRosterView) {
       if (column.id === "selection") return cn("w-10 min-w-[40px] max-w-[40px] sticky left-0", base);
-      if (column.id === "classIdentity") return cn("w-[220px] min-w-[220px] max-w-[220px] sticky left-10", base);
-      if (column.id === "classGeneral") return cn("w-[190px] min-w-[190px] max-w-[190px] sticky left-[260px]", base, BLOCK_SHADOW_RIGHT);
-      if (column.id === "classTime") return cn("w-[180px] min-w-[180px]", base);
-      if (column.id === "classSessions") return cn("w-[170px] min-w-[170px]", base);
+      if (column.id === "classIdentity") return cn("w-[170px] min-w-[170px] max-w-[170px] sticky left-10", base);
+      if (column.id === "classGeneral") return cn("w-[150px] min-w-[150px] max-w-[150px] sticky left-[210px]", base, BLOCK_SHADOW_RIGHT);
+      if (column.id === "classTime") return cn("w-[125px] min-w-[125px]", base);
+      if (column.id === "classSessions") return cn("w-[110px] min-w-[110px]", base);
       if (column.id === "actions") return cn("w-12 sticky right-0 z-20 text-center", STICKY_BG_HEADER, BLOCK_SHADOW_LEFT);
     }
     if (column.id === "selection") return cn("w-10 min-w-[40px] max-w-[40px] sticky left-0", base);
@@ -429,10 +429,10 @@ export function CustomersTable({
     const base = cn("z-10", bg);
     if (isClassRosterView) {
       if (columnId === "selection") return cn("sticky left-0 w-10 min-w-[40px] max-w-[40px]", base);
-      if (columnId === "classIdentity") return cn("sticky left-10 w-[220px] min-w-[220px] max-w-[220px]", base);
-      if (columnId === "classGeneral") return cn("sticky left-[260px] w-[190px] min-w-[190px] max-w-[190px]", base, BLOCK_SHADOW_RIGHT);
-      if (columnId === "classTime") return "w-[180px] min-w-[180px]";
-      if (columnId === "classSessions") return "w-[170px] min-w-[170px]";
+      if (columnId === "classIdentity") return cn("sticky left-10 w-[170px] min-w-[170px] max-w-[170px]", base);
+      if (columnId === "classGeneral") return cn("sticky left-[210px] w-[150px] min-w-[150px] max-w-[150px]", base, BLOCK_SHADOW_RIGHT);
+      if (columnId === "classTime") return "w-[125px] min-w-[125px]";
+      if (columnId === "classSessions") return "w-[110px] min-w-[110px]";
       if (columnId === "actions") return cn("sticky right-0 z-10 text-center", bg, BLOCK_SHADOW_LEFT);
     }
     if (columnId === "selection") return cn("sticky left-0 w-10 min-w-[40px] max-w-[40px]", base);
@@ -519,20 +519,25 @@ export function CustomersTable({
           .filter(Boolean);
         const locationNames = locations.length > 0
           ? Array.from(new Set(locations)).join(", ")
-          : student.location?.name || "—";
+          : student.location?.name || "";
+        const dateOfBirth = student.dateOfBirth ? formatDate(student.dateOfBirth) : "";
         return (
-          <div className="flex flex-col gap-1 text-xs leading-snug">
-            <div className="truncate text-slate-600" title={locationNames}>
-              <span className="text-[10px] uppercase tracking-wide text-slate-400">Cơ sở: </span>{locationNames}
-            </div>
-            <div className="truncate">
-              <span className="text-[10px] uppercase tracking-wide text-slate-400">SĐT: </span>
-              {student.phone ? <CustomerPhoneCallMenu student={student} /> : <span className="text-slate-400">—</span>}
-            </div>
-            <div className="text-slate-600">
-              <span className="text-[10px] uppercase tracking-wide text-slate-400">Ngày sinh: </span>
-              {student.dateOfBirth ? formatDate(student.dateOfBirth) : "—"}
-            </div>
+          <div className="flex flex-col gap-0.5 text-[11px] leading-snug">
+            {locationNames && (
+              <div className="truncate text-slate-600" title={`Cơ sở: ${locationNames}`}>
+                <span className="text-slate-400">CS: </span>{locationNames}
+              </div>
+            )}
+            {student.phone && (
+              <div className="truncate" title={`SĐT: ${student.phone}`}>
+                <span className="text-slate-400">SĐT: </span><CustomerPhoneCallMenu student={student} />
+              </div>
+            )}
+            {dateOfBirth && (
+              <div className="text-slate-600" title={`Ngày sinh: ${dateOfBirth}`}>
+                <span className="text-slate-400">NS: </span>{dateOfBirth}
+              </div>
+            )}
           </div>
         );
       }
@@ -549,15 +554,18 @@ export function CustomersTable({
       const status = classDetail?.learningStatus;
       const statusConfig = status ? LEARNING_STATUS_MAP[status] : undefined;
       return (
-        <div className="flex flex-col gap-1.5 text-xs">
-          <div className="flex items-center gap-1 whitespace-nowrap" aria-label="Tổng, đã học, còn lại">
+        <div className="flex flex-col gap-1 text-xs">
+          <div
+            className="flex items-center gap-1 whitespace-nowrap"
+            aria-label={`Tổng ${classDetail?.totalSessions ?? 0}, đã học ${classDetail?.attendedSessions ?? 0}, còn lại ${classDetail?.remainingSessions ?? 0}`}
+            title={`Tổng: ${classDetail?.totalSessions ?? 0} · Đã học: ${classDetail?.attendedSessions ?? 0} · Còn lại: ${classDetail?.remainingSessions ?? 0}`}
+          >
             <span className="font-bold text-sky-700">{classDetail?.totalSessions ?? 0}</span>
             <span className="text-slate-300">–</span>
             <span className="font-bold text-emerald-600">{classDetail?.attendedSessions ?? 0}</span>
             <span className="text-slate-300">–</span>
             <span className="font-bold text-orange-500">{classDetail?.remainingSessions ?? 0}</span>
           </div>
-          <div className="text-[10px] text-slate-400">Tổng – Đã học – Còn lại</div>
           {statusConfig ? (
             <span
               className={cn("inline-flex w-fit items-center gap-1 px-1.5 py-0.5 rounded-full border text-[11px] font-semibold", statusConfig.badge)}
@@ -1197,7 +1205,7 @@ export function CustomersTable({
 
   return (
     <>
-      <table className="customers-table w-full caption-bottom text-sm border-separate border-spacing-0">
+      <table className={cn("customers-table caption-bottom text-sm border-separate border-spacing-0", isClassRosterView ? "w-max" : "w-full")}>
         {/* ── Header ── */}
         <thead className="sticky top-0 z-20">
           <tr className="bg-slate-50 dark:bg-slate-900">
@@ -1205,7 +1213,10 @@ export function CustomersTable({
               <th
                 key={col.id}
                 className={cn(
-                  "h-9 px-3 text-left align-middle whitespace-nowrap border-b border-slate-200 [&:has([role=checkbox])]:pr-0",
+                  cn(
+                    "h-9 text-left align-middle whitespace-nowrap border-b border-slate-200 [&:has([role=checkbox])]:pr-0",
+                    isClassRosterView ? "px-2" : "px-3",
+                  ),
                   "text-[11px] font-semibold text-slate-500 uppercase tracking-wide",
                   usesStandardCustomerFont(col.id) && "standard-customer-font",
                   getHeaderStyle(col)
@@ -1264,7 +1275,10 @@ export function CustomersTable({
                   <td
                     key={`${student.id}-${col.id}`}
                     className={cn(
-                      "px-3 py-2.5 align-middle whitespace-nowrap border-b border-slate-100 [&:has([role=checkbox])]:pr-0",
+                      cn(
+                        "align-middle whitespace-nowrap border-b border-slate-100 [&:has([role=checkbox])]:pr-0",
+                        isClassRosterView ? "px-2 py-1.5" : "px-3 py-2.5",
+                      ),
                       usesStandardCustomerFont(col.id) && "standard-customer-font",
                       getCellStyle(col.id, selectedIds.includes(student.id))
                     )}
