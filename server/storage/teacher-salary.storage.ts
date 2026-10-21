@@ -21,6 +21,7 @@ export type SessionInfo = {
   sessionId: string;
   sessionDate: string;
   sessionIndex: number | null;
+  roleName: string | null;
   startTime: string;
   endTime: string;
   durationHours: number;
@@ -376,6 +377,7 @@ export async function getTeacherSalaryDetailRows(
       sessionId: row.session_id,
       sessionDate: dateStr,
       sessionIndex: row.session_index != null ? Number(row.session_index) : null,
+      roleName: isTrainingDepartmentRole ? effectiveRole?.name ?? null : null,
       startTime: row.start_time || "00:00",
       endTime: row.end_time || "00:00",
       durationHours,

@@ -519,6 +519,11 @@ export function TeacherSalaryDetailTable({
                                           <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight font-medium">
                                             {session.startTime.substring(0, 5)} – {session.endTime.substring(0, 5)}
                                           </span>
+                                          {session.roleName && (
+                                            <span className="text-[9px] text-indigo-600 dark:text-indigo-300 leading-tight font-semibold">
+                                              {session.roleName}
+                                            </span>
+                                          )}
                                           {hasAttendance ? (
                                             <span className={cn(
                                               "text-[12px] font-bold leading-tight",
@@ -533,7 +538,12 @@ export function TeacherSalaryDetailTable({
                                           )}
                                         </div>
                                       ) : (
-                                        <div className="flex items-center justify-center h-full cursor-pointer select-none">
+                                        <div className="flex flex-col items-center justify-center h-full gap-0.5 cursor-pointer select-none">
+                                          {session.roleName && (
+                                            <span className="text-[9px] text-indigo-600 dark:text-indigo-300 leading-tight font-semibold">
+                                              {session.roleName}
+                                            </span>
+                                          )}
                                           <span className="text-[11px] text-amber-400 font-medium">—</span>
                                         </div>
                                       )}
@@ -561,6 +571,14 @@ export function TeacherSalaryDetailTable({
                                             : `${session.durationHours.toFixed(1)}h`}
                                         </span>
                                       </div>
+                                      {session.roleName && (
+                                        <div className="flex justify-between gap-2">
+                                          <span className="text-muted-foreground">Vai trò</span>
+                                          <span className="font-medium text-indigo-600 dark:text-indigo-300">
+                                            {session.roleName}
+                                          </span>
+                                        </div>
+                                      )}
                                       {hasAttendance && (
                                         <div className="flex justify-between gap-2">
                                           <span className="text-muted-foreground">Giờ vào / ra</span>

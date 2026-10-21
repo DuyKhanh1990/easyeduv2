@@ -13,6 +13,7 @@ export type TeacherSalaryTableWithRelations = TeacherSalaryTable & {
 export type SessionInfo = {
   sessionId: string;
   sessionDate: string;
+  roleName: string | null;
   startTime: string;
   endTime: string;
   durationHours: number;
