@@ -3248,6 +3248,50 @@ export function registerClassesRoutes(app: Express): void {
     }
   });
 
+  // Customers' class-roster calendar: load only this month's scheduled student sessions.
+  app.get("/api/classes/:classId/monthly-attendance-grid", async (req, res) => {
+    const classId = String(req.params.classId);
+    if (!(await assertClassReadable(req, res, classId))) return;
+
+    const month = String(req.query.month ?? "");
+    const match = /^(\d{4})-(\d{2})$/.exec(month);
+    if (!match) return res.status(400).json({ message: "Tháng không hợp lệ. Dùng định dạng YYYY-MM." });
+
+    const year = Number(match[1]);
+    const monthNumber = Number(match[2]);
+    if (monthNumber < 1 || monthNumber > 12) {
+      return res.status(400).json({ message: "Tháng không hợp lệ. Dùng định dạng YYYY-MM." });
+    }
+
+    try {
+      const startDate = `${match[1]}-${match[2]}-01`;
+      const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+      const endDate = `${match[1]}-${match[2]}-${String(lastDay).padStart(2, "0")}`;
+      const sessions = await db
+        .select({
+          studentId: studentSessions.studentId,
+          classSessionId: studentSessions.classSessionId,
+          sessionDate: classSessions.sessionDate,
+          attendanceStatus: studentSessions.attendanceStatus,
+        })
+        .from(studentSessions)
+        .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
+        .where(and(
+          eq(studentSessions.classId, classId),
+          eq(classSessions.classId, classId),
+          between(classSessions.sessionDate, startDate, endDate),
+          ne(classSessions.status, "cancelled"),
+          ne(studentSessions.status, "cancelled"),
+          ne(studentSessions.status, "transferred"),
+        ))
+        .orderBy(asc(classSessions.sessionDate), asc(studentSessions.studentId));
+
+      res.json({ month, sessions });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Không thể tải lịch điểm danh theo tháng." });
+    }
+  });
+
   // Get all student sessions for a specific student in a specific class
   app.get("/api/classes/:classId/student/:studentId/sessions", async (req, res) => {
     if (!(await assertClassReadable(req, res, String(req.params.classId)))) return;

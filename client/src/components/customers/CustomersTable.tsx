@@ -299,11 +299,19 @@ function CustomerPhoneCallMenu({ student, compact = false }: { student: any; com
 
 interface ParentRecord { id: string; fullName: string; code: string; }
 
+interface ClassMonthScheduleRow {
+  studentId: string;
+  classSessionId: string;
+  sessionDate: string;
+  attendanceStatus: string | null;
+}
+
 interface CustomersTableProps {
   students: StudentResponse[];
   isLoading: boolean;
   visibleColumns: ColumnConfig[];
   classViewId?: string;
+  classScheduleRows?: ClassMonthScheduleRow[];
   selectedIds: string[];
   crmRelationships: any[] | undefined;
   parents?: ParentRecord[];
@@ -346,13 +354,24 @@ const LEARNING_STATUS_MAP: Record<string, { label: string; dot: string; badge: s
 };
 
 export function CustomersTable({
-  students, isLoading, visibleColumns, classViewId, selectedIds, crmRelationships,
+  students, isLoading, visibleColumns, classViewId, classScheduleRows = [], selectedIds, crmRelationships,
   parents = [], learningStatuses = {}, latestScoreResults = {}, studentTasksMap = {}, starBalancesMap = {}, endingSoonMap = {}, overdueInvoicesMap = {},
   toggleSelectAll, toggleSelect, onEdit, onDelete, onCreateInvoice, onViewDetail,
   onViewClass, onChangePipeline, onChangeAccountStatus, onZaloChat, onFacebookChat, fbLinkedStudentIds,
   canEdit = true, canDelete = true,
 }: CustomersTableProps) {
   const isClassRosterView = Boolean(classViewId);
+  const scheduleRowsByStudentAndDate = useMemo(() => {
+    const result = new Map<string, ClassMonthScheduleRow[]>();
+    for (const row of classScheduleRows) {
+      const date = String(row.sessionDate).slice(0, 10);
+      const key = `${row.studentId}:${date}`;
+      const rows = result.get(key) ?? [];
+      rows.push(row);
+      result.set(key, rows);
+    }
+    return result;
+  }, [classScheduleRows]);
   const [pipelineDialog, setPipelineDialog] = useState<PipelineDialog | null>(null);
   const [accountStatusOpen, setAccountStatusOpen] = useState<string | null>(null);
   const [addTaskStudent, setAddTaskStudent] = useState<StudentResponse | null>(null);
@@ -416,6 +435,7 @@ export function CustomersTable({
       if (column.id === "classGeneral") return cn("w-[150px] min-w-[150px] max-w-[150px] sticky left-[210px]", base, BLOCK_SHADOW_RIGHT);
       if (column.id === "classTime") return cn("w-[125px] min-w-[125px]", base);
       if (column.id === "classSessions") return cn("w-[110px] min-w-[110px]", base);
+      if (column.id.startsWith("classDay:")) return cn("w-[76px] min-w-[76px] text-center", base);
       if (column.id === "actions") return cn("w-12 sticky right-0 z-20 text-center", STICKY_BG_HEADER, BLOCK_SHADOW_LEFT);
     }
     if (column.id === "selection") return cn("w-10 min-w-[40px] max-w-[40px] sticky left-0", base);
@@ -438,6 +458,7 @@ export function CustomersTable({
       if (columnId === "classGeneral") return cn("sticky left-[210px] w-[150px] min-w-[150px] max-w-[150px]", base, BLOCK_SHADOW_RIGHT);
       if (columnId === "classTime") return "w-[125px] min-w-[125px]";
       if (columnId === "classSessions") return "w-[110px] min-w-[110px]";
+      if (columnId.startsWith("classDay:")) return "w-[76px] min-w-[76px] p-1 text-center";
       if (columnId === "actions") return cn("sticky right-0 z-10 text-center", bg, BLOCK_SHADOW_LEFT);
     }
     if (columnId === "selection") return cn("sticky left-0 w-10 min-w-[40px] max-w-[40px]", base);
@@ -450,6 +471,31 @@ export function CustomersTable({
   };
 
   const renderCell = (student: any, columnId: string) => {
+    if (isClassRosterView && columnId.startsWith("classDay:")) {
+      const date = columnId.slice("classDay:".length);
+      const sessions = scheduleRowsByStudentAndDate.get(`${student.id}:${date}`) ?? [];
+      if (sessions.length === 0) return null;
+      const attendanceLabels: Record<string, { label: string; className: string }> = {
+        present: { label: "Có học", className: "text-emerald-700" },
+        absent: { label: "Nghỉ", className: "text-rose-700" },
+        makeup_wait: { label: "Chờ bù", className: "text-orange-700" },
+        makeup_scheduled: { label: "Đã xếp bù", className: "text-violet-800" },
+        makeup_done: { label: "Học bù", className: "text-blue-700" },
+        paused: { label: "Bảo lưu", className: "text-amber-700" },
+      };
+      return (
+        <div className="flex flex-col items-center gap-0.5 font-['Roboto'] text-[10px] leading-tight">
+          {sessions.map((session) => {
+            const status = session.attendanceStatus ? attendanceLabels[session.attendanceStatus] : undefined;
+            return status ? (
+              <span key={session.classSessionId} className={`whitespace-nowrap font-medium ${status.className}`}>
+                {status.label}
+              </span>
+            ) : null;
+          })}
+        </div>
+      );
+    }
     if (isClassRosterView && ["classIdentity", "classGeneral", "classTime", "classSessions"].includes(columnId)) {
       const classDetail = student.classDetails?.find((detail: any) => detail.classId === classViewId);
       const scoreResult = latestScoreResults[student.id];
@@ -1285,7 +1331,11 @@ export function CustomersTable({
                         isClassRosterView ? "px-2 py-1.5" : "px-3 py-2.5",
                       ),
                       usesStandardCustomerFont(col.id) && "standard-customer-font",
-                      getCellStyle(col.id, selectedIds.includes(student.id))
+                      getCellStyle(col.id, selectedIds.includes(student.id)),
+                      isClassRosterView &&
+                        col.id.startsWith("classDay:") &&
+                        scheduleRowsByStudentAndDate.has(`${student.id}:${col.id.slice("classDay:".length)}`) &&
+                        "bg-sky-100/80 group-hover:bg-sky-200/80 dark:bg-sky-950/30 dark:group-hover:bg-sky-900/40"
                     )}
                     onClick={(e) => (col.id === "selection" || col.id === "actions" || col.id === "pipeline" || col.id === "accountStatus") && e.stopPropagation()}
                   >

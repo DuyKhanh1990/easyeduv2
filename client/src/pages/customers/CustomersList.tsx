@@ -118,6 +118,7 @@ export function CustomersList() {
     const params = new URLSearchParams(window.location.search);
     return params.get("classTab") === "unassigned" ? "unassigned" : params.get("classId") || "all";
   });
+  const [classScheduleMonth, setClassScheduleMonth] = useState(() => format(new Date(), "yyyy-MM"));
   const [filters, setFilters] = useState({
     locationId: "all",
     type: "all",
@@ -597,14 +598,46 @@ export function CustomersList() {
     return [...nonActions, ...actions];
   }, [columns]);
   const classRosterViewActive = viewMode === "class" && activeClassTab !== "all" && activeClassTab !== "unassigned";
+  const { data: classMonthSchedule = [], isLoading: classMonthScheduleLoading } = useQuery<Array<{
+    studentId: string;
+    classSessionId: string;
+    sessionDate: string;
+    attendanceStatus: string | null;
+  }>>({
+    queryKey: ["/api/classes", activeClassTab, "monthly-attendance-grid", classScheduleMonth],
+    enabled: classRosterViewActive,
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/classes/${encodeURIComponent(activeClassTab)}/monthly-attendance-grid?month=${encodeURIComponent(classScheduleMonth)}`,
+        { credentials: "include" },
+      );
+      if (!response.ok) throw new Error("Không thể tải lịch điểm danh của tháng.");
+      const result = await response.json();
+      return result.sessions ?? [];
+    },
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+  const classScheduleDates = useMemo(
+    () => Array.from(new Set(classMonthSchedule.map((row) => String(row.sessionDate).slice(0, 10)))).sort(),
+    [classMonthSchedule],
+  );
   const classRosterColumns = useMemo<ColumnConfig[]>(() => [
     { id: "selection", label: "Tickbox", visible: true, fixed: "left" },
     { id: "classIdentity", label: "Họ và tên", visible: true, fixed: "left" },
     { id: "classGeneral", label: "Thông tin", visible: true, fixed: "left" },
     { id: "classTime", label: "Bắt đầu / Kết thúc", visible: true },
     { id: "classSessions", label: "Số buổi", visible: true },
+    ...classScheduleDates.map((date) => {
+      const [, month, day] = date.split("-");
+      return { id: `classDay:${date}`, label: `${day}/${month}`, visible: true };
+    }),
     { id: "actions", label: "Thao tác", visible: true, fixed: "right" },
-  ], []);
+  ], [classScheduleDates]);
+  const changeClassScheduleMonth = (offset: number) => {
+    const [year, month] = classScheduleMonth.split("-").map(Number);
+    setClassScheduleMonth(format(new Date(year, month - 1 + offset, 1), "yyyy-MM"));
+  };
 
   useEffect(() => {
     setIsActionMenuOpen(selectedIds.length > 0);
@@ -1575,11 +1608,45 @@ export function CustomersList() {
           </div>
 
           <div className="flex-1 overflow-auto">
+            {classRosterViewActive && (
+              <div className="flex min-h-10 items-center gap-2 border-b bg-white px-3 py-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7"
+                  aria-label="Tháng trước"
+                  onClick={() => changeClassScheduleMonth(-1)}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="min-w-[105px] text-center text-sm font-semibold text-slate-700">
+                  Tháng {Number(classScheduleMonth.slice(5, 7))}/{classScheduleMonth.slice(0, 4)}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7"
+                  aria-label="Tháng sau"
+                  onClick={() => changeClassScheduleMonth(1)}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                {classMonthScheduleLoading && (
+                  <span className="text-xs text-slate-400">Đang tải lịch…</span>
+                )}
+                {!classMonthScheduleLoading && classScheduleDates.length === 0 && (
+                  <span className="text-xs text-slate-400">Tháng này không có buổi học.</span>
+                )}
+              </div>
+            )}
             <CustomersTable
               students={students}
               isLoading={isLoading}
               visibleColumns={classRosterViewActive ? classRosterColumns : visibleColumns}
               classViewId={classRosterViewActive ? activeClassTab : undefined}
+              classScheduleRows={classRosterViewActive ? classMonthSchedule : undefined}
               selectedIds={selectedIds}
               crmRelationships={crmRelationships}
               parents={parents}
