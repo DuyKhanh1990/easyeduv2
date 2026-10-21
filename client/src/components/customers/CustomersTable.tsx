@@ -298,6 +298,7 @@ interface CustomersTableProps {
   students: StudentResponse[];
   isLoading: boolean;
   visibleColumns: ColumnConfig[];
+  classViewId?: string;
   selectedIds: string[];
   crmRelationships: any[] | undefined;
   parents?: ParentRecord[];
@@ -340,12 +341,13 @@ const LEARNING_STATUS_MAP: Record<string, { label: string; dot: string; badge: s
 };
 
 export function CustomersTable({
-  students, isLoading, visibleColumns, selectedIds, crmRelationships,
+  students, isLoading, visibleColumns, classViewId, selectedIds, crmRelationships,
   parents = [], learningStatuses = {}, latestScoreResults = {}, studentTasksMap = {}, starBalancesMap = {}, endingSoonMap = {}, overdueInvoicesMap = {},
   toggleSelectAll, toggleSelect, onEdit, onDelete, onCreateInvoice, onViewDetail,
   onViewClass, onChangePipeline, onChangeAccountStatus, onZaloChat, onFacebookChat, fbLinkedStudentIds,
   canEdit = true, canDelete = true,
 }: CustomersTableProps) {
+  const isClassRosterView = Boolean(classViewId);
   const [pipelineDialog, setPipelineDialog] = useState<PipelineDialog | null>(null);
   const [accountStatusOpen, setAccountStatusOpen] = useState<string | null>(null);
   const [addTaskStudent, setAddTaskStudent] = useState<StudentResponse | null>(null);
@@ -403,6 +405,14 @@ export function CustomersTable({
 
   const getHeaderStyle = (column: ColumnConfig) => {
     const base = cn("z-20", STICKY_BG_HEADER);
+    if (isClassRosterView) {
+      if (column.id === "selection") return cn("w-10 min-w-[40px] max-w-[40px] sticky left-0", base);
+      if (column.id === "classIdentity") return cn("w-[220px] min-w-[220px] max-w-[220px] sticky left-10", base);
+      if (column.id === "classGeneral") return cn("w-[190px] min-w-[190px] max-w-[190px] sticky left-[260px]", base, BLOCK_SHADOW_RIGHT);
+      if (column.id === "classTime") return cn("w-[180px] min-w-[180px]", base);
+      if (column.id === "classSessions") return cn("w-[170px] min-w-[170px]", base);
+      if (column.id === "actions") return cn("w-12 sticky right-0 z-20 text-center", STICKY_BG_HEADER, BLOCK_SHADOW_LEFT);
+    }
     if (column.id === "selection") return cn("w-10 min-w-[40px] max-w-[40px] sticky left-0", base);
     if (column.id === "code")      return cn("min-w-[100px] sticky left-10", base);
     if (column.id === "fullName")  return cn("min-w-[180px] sticky left-[140px]", base);
@@ -417,6 +427,14 @@ export function CustomersTable({
       ? "bg-sky-50/80 dark:bg-blue-950/20 group-hover:bg-sky-100 dark:group-hover:bg-blue-950/30"
       : `${STICKY_BG_CELL} group-hover:bg-slate-50/70 dark:group-hover:bg-slate-900`;
     const base = cn("z-10", bg);
+    if (isClassRosterView) {
+      if (columnId === "selection") return cn("sticky left-0 w-10 min-w-[40px] max-w-[40px]", base);
+      if (columnId === "classIdentity") return cn("sticky left-10 w-[220px] min-w-[220px] max-w-[220px]", base);
+      if (columnId === "classGeneral") return cn("sticky left-[260px] w-[190px] min-w-[190px] max-w-[190px]", base, BLOCK_SHADOW_RIGHT);
+      if (columnId === "classTime") return "w-[180px] min-w-[180px]";
+      if (columnId === "classSessions") return "w-[170px] min-w-[170px]";
+      if (columnId === "actions") return cn("sticky right-0 z-10 text-center", bg, BLOCK_SHADOW_LEFT);
+    }
     if (columnId === "selection") return cn("sticky left-0 w-10 min-w-[40px] max-w-[40px]", base);
     if (columnId === "code")      return cn("sticky left-10 min-w-[100px]", base);
     if (columnId === "fullName")  return cn("sticky left-[140px]", base);
@@ -427,6 +445,132 @@ export function CustomersTable({
   };
 
   const renderCell = (student: any, columnId: string) => {
+    if (isClassRosterView && ["classIdentity", "classGeneral", "classTime", "classSessions"].includes(columnId)) {
+      const classDetail = student.classDetails?.find((detail: any) => detail.classId === classViewId);
+      const scoreResult = latestScoreResults[student.id];
+      const passLabel = scoreResult?.passStatus === "passed"
+        ? "Đạt"
+        : scoreResult?.passStatus === "failed" ? "Không đạt" : null;
+      const formatDate = (value?: string | null) => {
+        if (!value) return "—";
+        const datePart = value.slice(0, 10);
+        const [year, month, day] = datePart.split("-");
+        return year && month && day ? `${day}/${month}/${year}` : "—";
+      };
+
+      if (columnId === "classIdentity") {
+        const name = student.fullName || "?";
+        const endingClasses = (endingSoonMap[student.id] || []).filter(
+          (item) => item.className === classDetail?.className,
+        );
+        return (
+          <div className="flex items-start gap-2 min-w-0">
+            <div className={cn(
+              "mt-0.5 w-7 h-7 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-sm",
+              avatarGradient(name)
+            )}>
+              {getInitials(name)}
+            </div>
+            <div className="flex min-w-0 flex-col gap-1">
+              <a
+                href={`/customers/${student.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(event) => event.stopPropagation()}
+                className="truncate font-semibold text-sky-600 hover:text-sky-800 hover:underline text-left text-xs leading-tight"
+              >
+                {name}
+              </a>
+              <span className="text-[11px] leading-tight text-slate-500">{student.code || "—"}</span>
+              {(scoreResult?.gradeBandLabel || passLabel) && (
+                <span
+                  className="font-['Roboto'] text-[12.5px] font-bold leading-tight"
+                  title={[scoreResult?.assessmentName, scoreResult?.examDate ? formatDate(scoreResult.examDate) : null].filter(Boolean).join(" · ")}
+                  data-testid={`latest-score-result-${student.id}`}
+                >
+                  {scoreResult?.gradeBandLabel && (
+                    <span style={{ color: scoreResult.gradeBandColor ?? undefined }}>{scoreResult.gradeBandLabel}</span>
+                  )}
+                  {scoreResult?.gradeBandLabel && passLabel && <span className="text-slate-400"> · </span>}
+                  {passLabel && (
+                    <span className={scoreResult?.passStatus === "passed" ? "text-green-600" : "text-red-600"}>{passLabel}</span>
+                  )}
+                </span>
+              )}
+              <div className="customer-name-meta flex flex-wrap items-center gap-x-2 gap-y-1">
+                {starBalancesMap[student.id] != null && starBalancesMap[student.id] > 0 && (
+                  <span className="flex items-center gap-0.5 text-xs text-amber-600 font-semibold leading-none">
+                    {starBalancesMap[student.id]}<Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
+                  </span>
+                )}
+                {endingClasses.length > 0 && <EndingSoonBadge classes={endingClasses} />}
+                {overdueInvoicesMap[student.id]?.length > 0 && (
+                  <OverdueInvoicesBadge invoices={overdueInvoicesMap[student.id]} />
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      if (columnId === "classGeneral") {
+        const locations = (student.locations || [])
+          .map((item: any) => item.location?.name)
+          .filter(Boolean);
+        const locationNames = locations.length > 0
+          ? Array.from(new Set(locations)).join(", ")
+          : student.location?.name || "—";
+        return (
+          <div className="flex flex-col gap-1 text-xs leading-snug">
+            <div className="truncate text-slate-600" title={locationNames}>
+              <span className="text-[10px] uppercase tracking-wide text-slate-400">Cơ sở: </span>{locationNames}
+            </div>
+            <div className="truncate">
+              <span className="text-[10px] uppercase tracking-wide text-slate-400">SĐT: </span>
+              {student.phone ? <CustomerPhoneCallMenu student={student} /> : <span className="text-slate-400">—</span>}
+            </div>
+            <div className="text-slate-600">
+              <span className="text-[10px] uppercase tracking-wide text-slate-400">Ngày sinh: </span>
+              {student.dateOfBirth ? formatDate(student.dateOfBirth) : "—"}
+            </div>
+          </div>
+        );
+      }
+
+      if (columnId === "classTime") {
+        return (
+          <div className="flex flex-col gap-1 text-xs leading-snug">
+            <div><span className="text-slate-400">Bắt đầu: </span><span className="font-medium text-slate-700">{formatDate(classDetail?.startDate)}</span></div>
+            <div><span className="text-slate-400">Kết thúc: </span><span className="font-medium text-slate-700">{formatDate(classDetail?.endDate)}</span></div>
+          </div>
+        );
+      }
+
+      const status = classDetail?.learningStatus;
+      const statusConfig = status ? LEARNING_STATUS_MAP[status] : undefined;
+      return (
+        <div className="flex flex-col gap-1.5 text-xs">
+          <div className="flex items-center gap-1 whitespace-nowrap" aria-label="Tổng, đã học, còn lại">
+            <span className="font-bold text-sky-700">{classDetail?.totalSessions ?? 0}</span>
+            <span className="text-slate-300">–</span>
+            <span className="font-bold text-emerald-600">{classDetail?.attendedSessions ?? 0}</span>
+            <span className="text-slate-300">–</span>
+            <span className="font-bold text-orange-500">{classDetail?.remainingSessions ?? 0}</span>
+          </div>
+          <div className="text-[10px] text-slate-400">Tổng – Đã học – Còn lại</div>
+          {statusConfig ? (
+            <span
+              className={cn("inline-flex w-fit items-center gap-1 px-1.5 py-0.5 rounded-full border text-[11px] font-semibold", statusConfig.badge)}
+              data-testid={`status-learning-${student.id}-${classViewId}`}
+            >
+              <span className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", statusConfig.dot)} />
+              {statusConfig.label}
+            </span>
+          ) : <span className="text-[11px] text-slate-400">—</span>}
+        </div>
+      );
+    }
+
     switch (columnId) {
       case "selection":
         return (

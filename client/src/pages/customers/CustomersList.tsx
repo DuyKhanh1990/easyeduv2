@@ -596,6 +596,15 @@ export function CustomersList() {
     const actions = filtered.filter((c) => c.id === "actions");
     return [...nonActions, ...actions];
   }, [columns]);
+  const classRosterViewActive = viewMode === "class" && activeClassTab !== "all" && activeClassTab !== "unassigned";
+  const classRosterColumns = useMemo<ColumnConfig[]>(() => [
+    { id: "selection", label: "Tickbox", visible: true, fixed: "left" },
+    { id: "classIdentity", label: "Họ và tên", visible: true, fixed: "left" },
+    { id: "classGeneral", label: "Thông tin chung", visible: true, fixed: "left" },
+    { id: "classTime", label: "Thời gian", visible: true },
+    { id: "classSessions", label: "Số buổi", visible: true },
+    { id: "actions", label: "Thao tác", visible: true, fixed: "right" },
+  ], []);
 
   useEffect(() => {
     setIsActionMenuOpen(selectedIds.length > 0);
@@ -1569,7 +1578,8 @@ export function CustomersList() {
             <CustomersTable
               students={students}
               isLoading={isLoading}
-              visibleColumns={visibleColumns}
+              visibleColumns={classRosterViewActive ? classRosterColumns : visibleColumns}
+              classViewId={classRosterViewActive ? activeClassTab : undefined}
               selectedIds={selectedIds}
               crmRelationships={crmRelationships}
               parents={parents}
