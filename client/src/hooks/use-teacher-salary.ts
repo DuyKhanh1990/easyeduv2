@@ -32,6 +32,7 @@ export type TeacherSalaryDetailRow = {
   className: string;
   courseId: string | null;
   role: string;
+  roleNames?: string[];
   sessions: SessionInfo[];
   sessionDates: string[];
 };

@@ -1,6 +1,15 @@
 import { db, eq, and, inArray, sql } from "./base";
-import { teacherSalaryTables, locations, users, staff } from "@shared/schema";
+import {
+  teacherSalaryTables,
+  locations,
+  users,
+  staff,
+  staffAssignments,
+  roles,
+  departments,
+} from "@shared/schema";
 import type { TeacherSalaryTable, InsertTeacherSalaryTable } from "@shared/schema";
+import { getPreferredSystemTrainingTeacherRoleId } from "@shared/teacher-role-priority";
 
 export type TeacherSalaryTableWithRelations = TeacherSalaryTable & {
   location?: { id: string; name: string } | null;
@@ -32,6 +41,7 @@ export type TeacherSalaryDetailRow = {
   className: string;
   courseId: string | null;
   role: string;
+  roleNames: string[];
   sessions: SessionInfo[];
   sessionDates: string[];
 };
@@ -205,9 +215,11 @@ export async function getTeacherSalaryDetailRows(
       c.id          AS class_id,
       c.name        AS class_name,
       c.course_id   AS course_id,
+       c.teachers_config_json AS teachers_config,
       cs.id            AS session_id,
       cs.session_date,
       cs.session_index,
+       cs.teacher_role_ids,
       st.start_time,
       st.end_time,
       COUNT(ss.id) FILTER (WHERE ss.attendance_status NOT IN ('pending', 'paused', 'reserved', 'makeup_wait', 'makeup_scheduled', 'makeup_done')) AS eligible_count,
@@ -228,9 +240,81 @@ export async function getTeacherSalaryDetailRows(
     ORDER BY s.full_name, c.name, cs.session_date
   `);
 
+  const resultRows = result.rows as any[];
+  const teacherIds = Array.from(new Set(resultRows.map((row) => row.teacher_id).filter(Boolean)));
+  const roleAssignments = teacherIds.length > 0
+    ? await db
+      .select({
+        staffId: staffAssignments.staffId,
+        roleId: staffAssignments.roleId,
+      })
+      .from(staffAssignments)
+      .where(and(
+        eq(staffAssignments.locationId, locationId),
+        inArray(staffAssignments.staffId, teacherIds),
+      ))
+    : [];
+
+  const roleIdsForLookup = new Set<string>(
+    roleAssignments.map((assignment) => assignment.roleId).filter(Boolean) as string[],
+  );
+  for (const row of resultRows) {
+    const overrides = row.teacher_role_ids;
+    if (overrides && typeof overrides === "object" && !Array.isArray(overrides)) {
+      for (const roleId of Object.values(overrides)) {
+        if (typeof roleId === "string" && roleId) roleIdsForLookup.add(roleId);
+      }
+    }
+    const teachersConfig = row.teachers_config;
+    if (Array.isArray(teachersConfig)) {
+      for (const teacherConfig of teachersConfig) {
+        const roleId = teacherConfig?.role_id ?? teacherConfig?.roleId;
+        if (typeof roleId === "string" && roleId) roleIdsForLookup.add(roleId);
+      }
+    }
+  }
+
+  const roleRows = roleIdsForLookup.size > 0
+    ? await db
+      .select({
+        id: roles.id,
+        name: roles.name,
+        isSystemRole: roles.isSystem,
+        departmentName: departments.name,
+        isSystemDepartment: departments.isSystem,
+      })
+      .from(roles)
+      .leftJoin(departments, eq(roles.departmentId, departments.id))
+      .where(inArray(roles.id, Array.from(roleIdsForLookup)))
+    : [];
+  const roleById = new Map(roleRows.map((role) => [role.id, role]));
+
+  const roleOptionsByStaffId = new Map<string, typeof roleRows>();
+  for (const assignment of roleAssignments) {
+    if (!assignment.roleId) continue;
+    const role = roleById.get(assignment.roleId);
+    if (!role) continue;
+    const options = roleOptionsByStaffId.get(assignment.staffId) ?? [];
+    if (!options.some((option) => option.id === role.id)) options.push(role);
+    roleOptionsByStaffId.set(assignment.staffId, options);
+  }
+
+  const configuredRoleByTeacherClass = new Map<string, string>();
+  for (const row of resultRows) {
+    const teachersConfig = row.teachers_config;
+    if (!Array.isArray(teachersConfig)) continue;
+    for (const teacherConfig of teachersConfig) {
+      const teacherId = teacherConfig?.teacher_id ?? teacherConfig?.teacherId;
+      const roleId = teacherConfig?.role_id ?? teacherConfig?.roleId;
+      if (typeof teacherId === "string" && typeof roleId === "string" && roleId) {
+        configuredRoleByTeacherClass.set(`${row.class_id}::${teacherId}`, roleId);
+      }
+    }
+  }
+
   const groupMap = new Map<string, TeacherSalaryDetailRow>();
 
-  for (const row of result.rows as any[]) {
+  for (const row of resultRows) {
     const key = `${row.teacher_id}::${row.class_id}`;
     if (!groupMap.has(key)) {
       groupMap.set(key, {
@@ -241,10 +325,35 @@ export async function getTeacherSalaryDetailRows(
         className: row.class_name,
         courseId: row.course_id ?? null,
         role: "Giáo viên",
+        roleNames: [],
         sessions: [],
         sessionDates: [],
       });
     }
+
+    const staffRoles = roleOptionsByStaffId.get(row.teacher_id) ?? [];
+    const preferredTrainingRoleId = getPreferredSystemTrainingTeacherRoleId(
+      staffRoles.map((role) => ({
+        id: role.id,
+        name: role.name,
+        isSystemRole: role.isSystemRole,
+        departmentName: role.departmentName ?? "",
+        isSystemDepartment: role.isSystemDepartment === true,
+      })),
+    );
+    const configuredRoleId = configuredRoleByTeacherClass.get(`${row.class_id}::${row.teacher_id}`);
+    const defaultRoleId = configuredRoleId ||
+      preferredTrainingRoleId ||
+      (staffRoles.length === 1 ? staffRoles[0].id : "");
+    const sessionRoleOverrides = row.teacher_role_ids;
+    const sessionRoleId = sessionRoleOverrides &&
+        typeof sessionRoleOverrides === "object" &&
+        !Array.isArray(sessionRoleOverrides)
+      ? String(sessionRoleOverrides[row.teacher_id] ?? "")
+      : "";
+    const effectiveRole = roleById.get(sessionRoleId || defaultRoleId);
+    const isTrainingDepartmentRole = effectiveRole?.isSystemDepartment === true &&
+      effectiveRole.departmentName === "Phòng Đào tạo";
 
     const dateStr = typeof row.session_date === "string"
       ? row.session_date.slice(0, 10)
@@ -278,11 +387,21 @@ export async function getTeacherSalaryDetailRows(
     };
 
     const entry = groupMap.get(key)!;
+    if (
+      isTrainingDepartmentRole &&
+      effectiveRole?.name &&
+      !entry.roleNames.includes(effectiveRole.name)
+    ) {
+      entry.roleNames.push(effectiveRole.name);
+    }
     entry.sessions.push(sessionInfo);
     entry.sessionDates.push(dateStr);
   }
 
-  return Array.from(groupMap.values());
+  return Array.from(groupMap.values()).map((entry) => ({
+    ...entry,
+    roleNames: entry.roleNames,
+  }));
 }
 
 export async function getTeacherSalaryRowPackages(

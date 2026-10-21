@@ -372,7 +372,9 @@ export function TeacherSalaryDetailTable({
                         {row.teacherName}
                       </div>
                       {publishedRows.has(row.rowKey) && (
-                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" title="Đã công bố" />
+                        <span title="Đã công bố">
+                          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                        </span>
                       )}
                     </div>
                     {row.teacherCode && (
@@ -425,12 +427,19 @@ export function TeacherSalaryDetailTable({
 
                   {/* Vai trò */}
                   <td className="px-3 py-2.5 whitespace-nowrap border-b border-slate-100 dark:border-gray-800">
-                    <Badge
-                      variant="outline"
-                      className="text-[10px] font-medium px-2 py-0.5 border-indigo-200 text-indigo-700 bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300 dark:bg-indigo-950/30"
-                    >
-                      {row.role}
-                    </Badge>
+                    <div className="flex max-w-[150px] flex-wrap gap-1 whitespace-normal">
+                      {(row.roleNames ?? []).length > 0 ? row.roleNames!.map((roleName) => (
+                        <Badge
+                          key={roleName}
+                          variant="outline"
+                          className="text-[10px] font-medium px-2 py-0.5 border-indigo-200 text-indigo-700 bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300 dark:bg-indigo-950/30"
+                        >
+                          {roleName}
+                        </Badge>
+                      )) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
+                    </div>
                   </td>
 
                   {/* Session cells */}
