@@ -925,6 +925,71 @@ export function InvoicePrintTemplate({
     editorRef.current?.focus();
   }, []);
 
+  const setHorizontalAlign = useCallback((align: "left" | "center" | "right") => {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    const selectedNode = selection?.rangeCount
+      ? selection.getRangeAt(0).commonAncestorContainer
+      : null;
+    const selectedElement = selectedNode
+      ? selectedNode.nodeType === Node.TEXT_NODE ? selectedNode.parentElement : selectedNode as Element
+      : null;
+    const selectedCell = selectedElement?.closest("td, th") as HTMLTableCellElement | null;
+    const cell = selectedCell ?? tableCtx?.cell ?? null;
+
+    if (cell && editor?.contains(cell)) {
+      cell.style.textAlign = align;
+      cell.querySelectorAll<HTMLElement>("p, div, li, h1, h2, h3, h4, h5, h6").forEach((block) => {
+        if (block.closest("td, th") === cell) block.style.textAlign = align;
+      });
+      refreshPreview();
+    } else {
+      document.execCommand(
+        align === "left" ? "justifyLeft" : align === "center" ? "justifyCenter" : "justifyRight",
+        false,
+      );
+    }
+
+    editor?.focus();
+  }, [refreshPreview, tableCtx]);
+
+  const handleEditorPaste = useCallback((event: React.ClipboardEvent<HTMLDivElement>) => {
+    const editor = editorRef.current;
+    const clipboard = event.clipboardData;
+    if (!editor || !clipboard || !Array.from(clipboard.types).includes("text/plain")) return;
+
+    // Rich clipboard HTML often contains fixed alignment and nested formatting
+    // that prevents the editor's alignment controls from taking effect.
+    event.preventDefault();
+    const text = clipboard.getData("text/plain").replace(/\r\n?/g, "\n");
+    const selection = window.getSelection();
+    if (!selection) return;
+
+    const currentRange = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+    const range = currentRange && editor.contains(currentRange.commonAncestorContainer)
+      ? currentRange
+      : document.createRange();
+    if (range !== currentRange) {
+      range.selectNodeContents(editor);
+      range.collapse(false);
+    }
+
+    range.deleteContents();
+    const fragment = document.createDocumentFragment();
+    const lines = text.split("\n");
+    lines.forEach((line, index) => {
+      if (index > 0) fragment.appendChild(document.createElement("br"));
+      if (line) fragment.appendChild(document.createTextNode(line));
+    });
+    const lastInsertedNode = fragment.lastChild;
+    range.insertNode(fragment);
+    if (lastInsertedNode) range.setStartAfter(lastInsertedNode);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    refreshPreview();
+  }, [refreshPreview]);
+
   const setVerticalAlign = useCallback((align: "top" | "middle" | "bottom") => {
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
@@ -1685,13 +1750,13 @@ export function InvoicePrintTemplate({
 
               <div className="w-px h-5 bg-border mx-1" />
 
-              <ToolbarBtn onClick={() => exec("justifyLeft")} title="Căn trái">
+              <ToolbarBtn onClick={() => setHorizontalAlign("left")} title="Căn trái">
                 <AlignLeft className="h-3.5 w-3.5" />
               </ToolbarBtn>
-              <ToolbarBtn onClick={() => exec("justifyCenter")} title="Căn giữa">
+              <ToolbarBtn onClick={() => setHorizontalAlign("center")} title="Căn giữa">
                 <AlignCenter className="h-3.5 w-3.5" />
               </ToolbarBtn>
-              <ToolbarBtn onClick={() => exec("justifyRight")} title="Căn phải">
+              <ToolbarBtn onClick={() => setHorizontalAlign("right")} title="Căn phải">
                 <AlignRight className="h-3.5 w-3.5" />
               </ToolbarBtn>
 
@@ -1917,6 +1982,7 @@ export function InvoicePrintTemplate({
                       onMouseOver={handleEditorMouseOver}
                       onMouseMove={handleEditorMouseMove}
                       onMouseLeave={scheduleHideTableLineBtns}
+                      onPaste={handleEditorPaste}
                       onInput={refreshPreview}
                       data-testid="template-editor"
                       data-placeholder="Nhập nội dung mẫu hoá đơn tại đây..."
