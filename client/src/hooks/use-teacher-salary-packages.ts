@@ -12,6 +12,28 @@ export interface SalaryRange {
   price: number;
 }
 
+export type SalaryPackageRole = { id: string; name: string };
+
+export function useSalaryPackageRoles() {
+  const { data: departments = [], ...query } = useQuery<Array<{
+    id: string;
+    name: string;
+    isSystem: boolean;
+    roles: SalaryPackageRole[];
+  }>>({
+    queryKey: ["/api/departments"],
+  });
+
+  const trainingDepartment = departments.find(
+    (department) => department.isSystem && department.name === "Phòng Đào tạo",
+  );
+
+  return {
+    ...query,
+    data: (trainingDepartment?.roles ?? []).map(({ id, name }) => ({ id, name })),
+  };
+}
+
 export const PACKAGE_TYPES = [
   { value: "theo-gio", label: "Theo giờ" },
   { value: "theo-buoi", label: "Theo buổi" },
@@ -31,6 +53,12 @@ export function isRangeBasedType(type: string): boolean {
   return RANGE_BASED_TYPES.includes(type);
 }
 
+export function getPackageRoleNames(pkg: TeacherSalaryPackage): string[] {
+  return Array.isArray(pkg.roleRates) && pkg.roleRates.length > 0
+    ? pkg.roleRates.map((rate) => rate.role)
+    : [pkg.role];
+}
+
 export function getPackageTypeLabel(type: string): string {
   return PACKAGE_TYPES.find((t) => t.value === type)?.label ?? type;
 }
@@ -44,18 +72,33 @@ export function getUnitPriceLabel(type: string): string {
 }
 
 export function formatUnitPrice(pkg: TeacherSalaryPackage): string {
-  const ranges = pkg.ranges as SalaryRange[] | null;
+  const roleRates = Array.isArray(pkg.roleRates) && pkg.roleRates.length > 0
+    ? pkg.roleRates
+    : [{ role: pkg.role, unitPrice: pkg.unitPrice, ranges: pkg.ranges as SalaryRange[] | null }];
+  const formatRate = (rate: { role: string; unitPrice: string | null; ranges: SalaryRange[] | null }) => {
+    if (isRangeBasedType(pkg.type)) {
+      return !rate.ranges?.length ? "Chưa thiết lập" : `${rate.ranges.length} khoảng`;
+    }
+    if (!rate.unitPrice) return "Chưa thiết lập";
+    const price = Number(rate.unitPrice);
+    switch (pkg.type) {
+      case "theo-gio": return `${price.toLocaleString("vi-VN")}đ/h`;
+      case "theo-buoi": return `${price.toLocaleString("vi-VN")}đ/buổi`;
+      default: return `${price.toLocaleString("vi-VN")}đ`;
+    }
+  };
+
+  if (roleRates.length > 1) {
+    return roleRates.map((rate) => `${rate.role}: ${formatRate(rate)}`).join(" · ");
+  }
+
+  const rate = roleRates[0];
+  const ranges = rate.ranges as SalaryRange[] | null;
   if (isRangeBasedType(pkg.type)) {
     if (!ranges || (ranges as SalaryRange[]).length === 0) return "Chưa thiết lập";
     return `${(ranges as SalaryRange[]).length} khoảng`;
   }
-  if (!pkg.unitPrice) return "Chưa thiết lập";
-  const price = Number(pkg.unitPrice);
-  switch (pkg.type) {
-    case "theo-gio": return `${price.toLocaleString("vi-VN")}đ/h`;
-    case "theo-buoi": return `${price.toLocaleString("vi-VN")}đ/buổi`;
-    default: return `${price.toLocaleString("vi-VN")}đ`;
-  }
+  return formatRate(rate);
 }
 
 export function useTeacherSalaryPackages() {

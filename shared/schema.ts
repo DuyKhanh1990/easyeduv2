@@ -1518,6 +1518,12 @@ export type InsertSubject = z.infer<typeof insertSubjectSchema>;
 // ==========================================
 // TEACHER SALARY PACKAGES (Gói lương đứng lớp)
 // ==========================================
+export type TeacherSalaryRoleRate = {
+  role: string;
+  unitPrice: string | null;
+  ranges: Array<{ from: number; to: number; price: number }> | null;
+};
+
 export const teacherSalaryPackages = pgTable("teacher_salary_packages", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   name: varchar("name", { length: 255 }).notNull(),
@@ -1525,6 +1531,7 @@ export const teacherSalaryPackages = pgTable("teacher_salary_packages", {
   role: varchar("role", { length: 100 }).notNull().default("Giáo viên"),
   unitPrice: decimal("unit_price", { precision: 15, scale: 2 }),
   ranges: jsonb("ranges"), // for theo-so-hv, tong-so-gio, tong-so-buoi: [{from, to, price}]
+  roleRates: jsonb("role_rates").$type<TeacherSalaryRoleRate[]>().notNull().default(sql`'[]'::jsonb`),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

@@ -60,6 +60,16 @@ export function calculateSessionSalary(
   session: SessionInfo,
   pkg: TeacherSalaryPackage
 ): number | null {
+  const roleRates = Array.isArray(pkg.roleRates) && pkg.roleRates.length > 0
+    ? pkg.roleRates
+    : [{ role: pkg.role, unitPrice: pkg.unitPrice, ranges: pkg.ranges as SalaryRange[] | null }];
+  const roleRate = session.roleName
+    ? roleRates.find((rate) => rate.role === session.roleName)
+    : roleRates.length === 1
+      ? roleRates[0]
+      : undefined;
+  if (!roleRate) return null;
+
   const coeff = session.attendanceCoefficient;
   const hasAttendance = coeff !== null && coeff !== undefined;
 
@@ -68,21 +78,21 @@ export function calculateSessionSalary(
   // Nếu có chấm công nhưng hệ số = 0 → không tính lương
   if (hasAttendance && coeff === 0) return 0;
 
-  const ranges = pkg.ranges as SalaryRange[] | null;
+  const ranges = roleRate.ranges as SalaryRange[] | null;
   const multiplier = hasAttendance ? coeff! : 1;
 
   switch (pkg.type) {
     case "theo-gio":
-      return session.durationHours * Number(pkg.unitPrice || 0) * multiplier;
+      return session.durationHours * Number(roleRate.unitPrice || 0) * multiplier;
     case "theo-buoi":
-      return Number(pkg.unitPrice || 0) * multiplier;
+      return Number(roleRate.unitPrice || 0) * multiplier;
     case "theo-so-hv": {
       const base = (() => {
         if (ranges && ranges.length > 0) {
           const rangePrice = findRangeSalary(session.attendedCount, ranges);
           return session.attendedCount * rangePrice;
         }
-        return session.attendedCount * Number(pkg.unitPrice || 0);
+        return session.attendedCount * Number(roleRate.unitPrice || 0);
       })();
       return base * multiplier;
     }
@@ -98,7 +108,9 @@ export function calculateTotalSalary(
   row: TeacherSalaryDetailRow,
   pkg: TeacherSalaryPackage
 ): number {
-  const ranges = pkg.ranges as SalaryRange[] | null;
+  const roleRates = Array.isArray(pkg.roleRates) && pkg.roleRates.length > 0
+    ? pkg.roleRates
+    : [{ role: pkg.role, unitPrice: pkg.unitPrice, ranges: pkg.ranges as SalaryRange[] | null }];
 
   switch (pkg.type) {
     case "theo-gio":
@@ -109,25 +121,32 @@ export function calculateTotalSalary(
         return sum + (v ?? 0);
       }, 0);
     case "tong-so-gio": {
-      // Nếu session có chấm công → tính giờ hiệu quả = lịch * hệ số
-      // Nếu không → dùng logic cũ (isEligible)
-      const totalHours = row.sessions.reduce((sum, s) => {
-        const coeff = s.attendanceCoefficient;
-        if (coeff !== null && coeff !== undefined) {
-          return sum + s.durationHours * coeff;
-        }
-        return s.isEligible ? sum + s.durationHours : sum;
+      return roleRates.reduce((total, rate) => {
+        const sessions = row.sessions.filter((session) =>
+          session.roleName ? session.roleName === rate.role : roleRates.length === 1
+        );
+        const totalHours = sessions.reduce((sum, session) => {
+          const coeff = session.attendanceCoefficient;
+          if (coeff !== null && coeff !== undefined) {
+            return sum + session.durationHours * coeff;
+          }
+          return session.isEligible ? sum + session.durationHours : sum;
+        }, 0);
+        return total + findRangeSalary(totalHours, rate.ranges as SalaryRange[] | null ?? []);
       }, 0);
-      return findRangeSalary(totalHours, ranges ?? []);
     }
     case "tong-so-buoi": {
-      // Đếm số buổi nguyên (có chấm công GV hoặc eligible theo HV) → tra bảng range
-      const totalSessions = row.sessions.reduce((sum, s) => {
-        const coeff = s.attendanceCoefficient;
-        if (coeff !== null && coeff !== undefined) return coeff > 0 ? sum + 1 : sum;
-        return s.isEligible ? sum + 1 : sum;
+      return roleRates.reduce((total, rate) => {
+        const sessions = row.sessions.filter((session) =>
+          session.roleName ? session.roleName === rate.role : roleRates.length === 1
+        );
+        const totalSessions = sessions.reduce((sum, session) => {
+          const coeff = session.attendanceCoefficient;
+          if (coeff !== null && coeff !== undefined) return coeff > 0 ? sum + 1 : sum;
+          return session.isEligible ? sum + 1 : sum;
+        }, 0);
+        return total + findRangeSalary(totalSessions, rate.ranges as SalaryRange[] | null ?? []);
       }, 0);
-      return findRangeSalary(totalSessions, ranges ?? []);
     }
     default:
       return 0;

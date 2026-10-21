@@ -31,7 +31,7 @@ import {
   useCreateTeacherSalaryPackage,
   useUpdateTeacherSalaryPackage,
   PACKAGE_TYPES,
-  PACKAGE_ROLES,
+  useSalaryPackageRoles,
   getUnitPriceLabel,
   isRangeBasedType,
 } from "@/hooks/use-teacher-salary-packages";
@@ -40,11 +40,10 @@ import type { TeacherSalaryPackage, SalaryRange } from "@/hooks/use-teacher-sala
 const formSchema = z.object({
   name: z.string().min(1, "Tên gói không được để trống"),
   type: z.string().min(1, "Vui lòng chọn loại gói"),
-  role: z.string().min(1, "Vui lòng chọn vai trò"),
-  unitPrice: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
+type RoleRateDraft = { role: string; unitPrice: string; ranges: SalaryRange[] };
 
 interface Props {
   open: boolean;
@@ -82,16 +81,15 @@ export function SalaryPackageDialog({ open, onOpenChange, editItem }: Props) {
   const { toast } = useToast();
   const createMutation = useCreateTeacherSalaryPackage();
   const updateMutation = useUpdateTeacherSalaryPackage();
+  const { data: trainingRoles = [] } = useSalaryPackageRoles();
 
-  const [ranges, setRanges] = useState<SalaryRange[]>([]);
+  const [roleRates, setRoleRates] = useState<RoleRateDraft[]>([]);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
       type: "theo-gio",
-      role: "Giáo viên",
-      unitPrice: "",
     },
   });
 
@@ -103,70 +101,116 @@ export function SalaryPackageDialog({ open, onOpenChange, editItem }: Props) {
         form.reset({
           name: editItem.name,
           type: editItem.type,
-          role: editItem.role,
-          unitPrice: editItem.unitPrice ? String(editItem.unitPrice) : "",
         });
-        const editRanges = editItem.ranges as SalaryRange[] | null;
-        setRanges(editRanges && Array.isArray(editRanges) ? editRanges : []);
+        const savedRates = Array.isArray(editItem.roleRates) ? editItem.roleRates : [];
+        setRoleRates(savedRates.length > 0
+          ? savedRates.map((rate) => ({
+              role: rate.role,
+              unitPrice: rate.unitPrice ? String(rate.unitPrice) : "",
+              ranges: Array.isArray(rate.ranges) ? rate.ranges as SalaryRange[] : [],
+            }))
+          : [{
+              role: editItem.role,
+              unitPrice: editItem.unitPrice ? String(editItem.unitPrice) : "",
+              ranges: Array.isArray(editItem.ranges) ? editItem.ranges as SalaryRange[] : [],
+            }]);
       } else {
         form.reset({
           name: "",
           type: "theo-gio",
-          role: "Giáo viên",
-          unitPrice: "",
         });
-        setRanges([]);
+        setRoleRates([]);
       }
     }
   }, [open, editItem]);
 
   useEffect(() => {
+    if (!open || editItem || trainingRoles.length === 0) return;
+    setRoleRates((prev) => prev.length > 0
+      ? prev
+      : [{ role: trainingRoles[0].name, unitPrice: "", ranges: [] }]);
+  }, [open, editItem, trainingRoles]);
+
+  useEffect(() => {
     if (!isRangeBasedType(selectedType)) {
-      setRanges([]);
+      setRoleRates((prev) => prev.map((rate) => ({ ...rate, ranges: [] })));
     }
   }, [selectedType]);
 
-  const handleAddRange = () => {
-    setRanges((prev) => {
-      if (prev.length === 0) {
-        if (selectedType === "theo-so-hv") {
-          return [{ from: 1, to: 10, price: 0 }];
-        }
-        return [{ from: 0, to: 10, price: 0 }];
+  const handleAddRoleRate = () => {
+    setRoleRates((prev) => [...prev, { role: "", unitPrice: "", ranges: [] }]);
+  };
+
+  const handleRemoveRoleRate = (index: number) => {
+    setRoleRates((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddRange = (roleIndex: number) => {
+    setRoleRates((prev) => prev.map((rate, index) => {
+      if (index !== roleIndex) return rate;
+      const current = rate.ranges;
+      if (current.length === 0) {
+        return {
+          ...rate,
+          ranges: selectedType === "theo-so-hv"
+            ? [{ from: 1, to: 10, price: 0 }]
+            : [{ from: 0, to: 9, price: 0 }],
+        };
       }
-      const last = prev[prev.length - 1];
-      const newFrom = last.to + 1;
-      const increment = selectedType === "theo-so-hv" ? 10 : 10;
-      return [...prev, { from: newFrom, to: newFrom + increment - 1, price: 0 }];
-    });
+      const last = current[current.length - 1];
+      return {
+        ...rate,
+        ranges: [...current, { from: last.to + 1, to: last.to + 10, price: 0 }],
+      };
+    }));
   };
 
-  const handleRemoveRange = (index: number) => {
-    setRanges((prev) => prev.filter((_, i) => i !== index));
+  const handleRemoveRange = (roleIndex: number, rangeIndex: number) => {
+    setRoleRates((prev) => prev.map((rate, index) => index === roleIndex
+      ? { ...rate, ranges: rate.ranges.filter((_, i) => i !== rangeIndex) }
+      : rate));
   };
 
-  const handleRangeChange = (index: number, field: keyof SalaryRange, value: string) => {
-    setRanges((prev) =>
-      prev.map((r, i) =>
-        i === index ? { ...r, [field]: value === "" ? 0 : Number(value) } : r
-      )
-    );
+  const handleRangeChange = (
+    roleIndex: number,
+    rangeIndex: number,
+    field: keyof SalaryRange,
+    value: string,
+  ) => {
+    setRoleRates((prev) => prev.map((rate, index) => index === roleIndex
+      ? {
+          ...rate,
+          ranges: rate.ranges.map((range, i) => i === rangeIndex
+            ? { ...range, [field]: value === "" ? 0 : Number(value) }
+            : range),
+        }
+      : rate));
   };
 
   const onSubmit = async (values: FormValues) => {
+    if (roleRates.length === 0 || roleRates.some((rate) => !rate.role)) {
+      toast({ title: "Thiếu vai trò", description: "Hãy chọn vai trò cho từng dòng.", variant: "destructive" });
+      return;
+    }
+    const selectedRoles = roleRates.map((rate) => rate.role);
+    if (new Set(selectedRoles).size !== selectedRoles.length) {
+      toast({ title: "Vai trò bị trùng", description: "Mỗi vai trò chỉ được chọn một lần trong gói.", variant: "destructive" });
+      return;
+    }
+    const savedRates = roleRates.map((rate) => ({
+      role: rate.role,
+      unitPrice: isRangeBasedType(values.type) ? null : rate.unitPrice || null,
+      ranges: isRangeBasedType(values.type) ? rate.ranges : null,
+    }));
+    const firstRate = savedRates[0];
     const payload: Record<string, unknown> = {
       name: values.name,
       type: values.type,
-      role: values.role,
+      roleRates: savedRates,
+      role: firstRate.role,
+      unitPrice: firstRate.unitPrice,
+      ranges: firstRate.ranges,
     };
-
-    if (isRangeBasedType(values.type)) {
-      payload.ranges = ranges;
-      payload.unitPrice = null;
-    } else {
-      payload.unitPrice = values.unitPrice ? values.unitPrice : null;
-      payload.ranges = null;
-    }
 
     try {
       if (editItem) {
@@ -187,11 +231,11 @@ export function SalaryPackageDialog({ open, onOpenChange, editItem }: Props) {
   };
 
   const isPending = createMutation.isPending || updateMutation.isPending;
-  const unit = getRangeUnit(selectedType);
   const sectionLabel = getSectionLabel(selectedType);
   const addButtonLabel = getAddButtonLabel(selectedType);
   const milestoneNote = getMilestoneNote(selectedType);
   const isRangeBased = isRangeBasedType(selectedType);
+  const unit = getRangeUnit(selectedType);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -222,7 +266,171 @@ export function SalaryPackageDialog({ open, onOpenChange, editItem }: Props) {
               )}
             />
 
-            <div className="grid grid-cols-2 gap-4">
+            <FormField
+              control={form.control}
+              name="type"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Loại gói <span className="text-destructive">*</span>
+                  </FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger data-testid="select-package-type">
+                        <SelectValue placeholder="Chọn loại gói" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {PACKAGE_TYPES.map((t) => (
+                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Vai trò và mức lương</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddRoleRate}
+                  data-testid="button-add-package-role"
+                  className="gap-1"
+                >
+                  <Plus className="h-4 w-4" />
+                  Thêm vai trò
+                </Button>
+              </div>
+              {roleRates.map((rate, roleIndex) => (
+                <div key={roleIndex} className="space-y-3 rounded-md border p-3">
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1 space-y-2">
+                      <label className="text-sm font-medium">
+                        Vai trò <span className="text-destructive">*</span>
+                      </label>
+                      <Select
+                        value={rate.role || undefined}
+                        onValueChange={(value) => setRoleRates((prev) => prev.map((item, index) =>
+                          index === roleIndex ? { ...item, role: value } : item
+                        ))}
+                      >
+                        <SelectTrigger data-testid={`select-package-role-${roleIndex}`}>
+                          <SelectValue placeholder="Chọn vai trò" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {trainingRoles.map((role) => (
+                            <SelectItem
+                              key={role.id}
+                              value={role.name}
+                              disabled={roleRates.some((item, index) => index !== roleIndex && item.role === role.name)}
+                            >
+                              {role.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleRemoveRoleRate(roleIndex)}
+                      aria-label="Xóa vai trò khỏi gói"
+                      data-testid={`button-remove-package-role-${roleIndex}`}
+                      className="text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  {!isRangeBased && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">{getUnitPriceLabel(selectedType)}</label>
+                      <Input
+                        type="number"
+                        min={0}
+                        placeholder="Nhập giá trị"
+                        value={rate.unitPrice}
+                        onChange={(event) => setRoleRates((prev) => prev.map((item, index) =>
+                          index === roleIndex ? { ...item, unitPrice: event.target.value } : item
+                        ))}
+                        data-testid={`input-unit-price-${roleIndex}`}
+                      />
+                    </div>
+                  )}
+
+                  {isRangeBased && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-foreground">{sectionLabel}</span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleAddRange(roleIndex)}
+                          data-testid={`button-add-range-${roleIndex}`}
+                          className="h-7 gap-1"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          {addButtonLabel}
+                        </Button>
+                      </div>
+                      {milestoneNote && <p className="text-xs text-blue-600">{milestoneNote}</p>}
+                      {rate.ranges.map((range, rangeIndex) => (
+                        <div key={rangeIndex} className="flex items-center gap-1.5">
+                          <span className="text-xs text-muted-foreground">{selectedType === "theo-so-hv" ? "" : "Từ"}</span>
+                          <Input
+                            type="number"
+                            value={range.from}
+                            onChange={(event) => handleRangeChange(roleIndex, rangeIndex, "from", event.target.value)}
+                            className="w-16 px-1 text-center"
+                            min={0}
+                            data-testid={`input-range-from-${roleIndex}-${rangeIndex}`}
+                          />
+                          <span className="text-xs text-muted-foreground">đến</span>
+                          <Input
+                            type="number"
+                            value={range.to}
+                            onChange={(event) => handleRangeChange(roleIndex, rangeIndex, "to", event.target.value)}
+                            className="w-16 px-1 text-center"
+                            min={0}
+                            data-testid={`input-range-to-${roleIndex}-${rangeIndex}`}
+                          />
+                          <span className="text-xs text-muted-foreground">{unit}</span>
+                          <Input
+                            type="number"
+                            value={range.price}
+                            onChange={(event) => handleRangeChange(roleIndex, rangeIndex, "price", event.target.value)}
+                            className="min-w-0 flex-1"
+                            min={0}
+                            data-testid={`input-range-price-${roleIndex}-${rangeIndex}`}
+                          />
+                          <span className="text-xs text-muted-foreground">đ</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleRemoveRange(roleIndex, rangeIndex)}
+                            aria-label="Xóa mốc lương"
+                            data-testid={`button-remove-range-${roleIndex}-${rangeIndex}`}
+                            className="h-7 w-7 shrink-0 text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/*
               <FormField
                 control={form.control}
                 name="type"
@@ -403,7 +611,7 @@ export function SalaryPackageDialog({ open, onOpenChange, editItem }: Props) {
                       ))}
                 </div>
               </div>
-            )}
+            */}
 
             <div className="flex justify-end gap-2 pt-2">
               <Button

@@ -15,7 +15,7 @@ import {
   useTeacherSalaryPackages,
   useDeleteTeacherSalaryPackage,
   PACKAGE_TYPES,
-  PACKAGE_ROLES,
+  getPackageRoleNames,
   getPackageTypeLabel,
   formatUnitPrice,
 } from "@/hooks/use-teacher-salary-packages";
@@ -41,11 +41,12 @@ export function TeacherSalaryPackages() {
   const [filterType, setFilterType] = useState("all");
   const [filterRole, setFilterRole] = useState("all");
   const [searchText, setSearchText] = useState("");
+  const packageRoleOptions = Array.from(new Set(packages.flatMap(getPackageRoleNames))).sort();
 
   const filtered = useMemo(() => {
     return packages.filter((pkg) => {
       if (filterType !== "all" && pkg.type !== filterType) return false;
-      if (filterRole !== "all" && pkg.role !== filterRole) return false;
+      if (filterRole !== "all" && !getPackageRoleNames(pkg).includes(filterRole)) return false;
       if (searchText.trim()) {
         if (!pkg.name.toLowerCase().includes(searchText.toLowerCase())) return false;
       }
@@ -119,8 +120,8 @@ export function TeacherSalaryPackages() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Tất cả</SelectItem>
-                {PACKAGE_ROLES.map((r) => (
-                  <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                {packageRoleOptions.map((role) => (
+                  <SelectItem key={role} value={role}>{role}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -184,7 +185,7 @@ export function TeacherSalaryPackages() {
                       {getPackageTypeLabel(pkg.type)}
                     </td>
                     <td className="px-4 py-3 text-foreground" data-testid={`text-role-${pkg.id}`}>
-                      {pkg.role}
+                      {getPackageRoleNames(pkg).join(", ")}
                     </td>
                     <td
                       className={`px-4 py-3 ${!pkg.unitPrice ? "text-muted-foreground italic" : "text-foreground"}`}
