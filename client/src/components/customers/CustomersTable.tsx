@@ -37,11 +37,11 @@ function getInitials(name: string) {
 }
 
 /* ── Ending-soon badge ── */
-function EndingSoonBadge({ classes }: { classes: { className: string; remainingSessions: number; endDate: string }[] }) {
+function EndingSoonBadge({ classes, compact = false }: { classes: { className: string; remainingSessions: number; endDate: string }[]; compact?: boolean }) {
   const [popPos, setPopPos] = useState<{ x: number; y: number } | null>(null);
   return (
     <span
-      className="inline-flex items-center gap-0.5 text-[12.5px] text-orange-600 font-semibold cursor-default leading-none"
+      className={cn("inline-flex items-center gap-0.5 text-orange-600 font-semibold cursor-default leading-none", compact ? "text-[12px]" : "text-[12.5px]")}
       onMouseEnter={(e) => {
         const r = e.currentTarget.getBoundingClientRect();
         setPopPos({ x: r.left, y: r.bottom + 6 });
@@ -99,7 +99,7 @@ const DEBT_STATUS_CONFIG: Record<string, { label: string; dotColor: string; text
 // Ưu tiên hiển thị trạng thái nghiêm trọng nhất
 const DEBT_PRIORITY = ["overdue", "dueSoon", "inTerm", "noDue"];
 
-function OverdueInvoicesBadge({ invoices }: { invoices: DebtInvoiceItem[] }) {
+function OverdueInvoicesBadge({ invoices, compact = false }: { invoices: DebtInvoiceItem[]; compact?: boolean }) {
   const [popPos, setPopPos] = useState<{ x: number; y: number } | null>(null);
 
   // Tìm trạng thái ưu tiên cao nhất để hiển thị trên badge
@@ -108,7 +108,7 @@ function OverdueInvoicesBadge({ invoices }: { invoices: DebtInvoiceItem[] }) {
 
   return (
     <span
-      className={`inline-flex items-center gap-0.5 text-[12.5px] font-semibold cursor-default leading-none ${cfg.textColor}`}
+      className={cn("inline-flex items-center gap-0.5 font-semibold cursor-default leading-none", compact ? "text-[12px]" : "text-[12.5px]", cfg.textColor)}
       onMouseEnter={(e) => {
         const r = e.currentTarget.getBoundingClientRect();
         setPopPos({ x: r.left, y: r.bottom + 6 });
@@ -471,20 +471,20 @@ export function CustomersTable({
             )}>
               {getInitials(name)}
             </div>
-            <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex min-w-0 flex-col gap-1 font-['Roboto']">
               <a
                 href={`/customers/${student.id}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={(event) => event.stopPropagation()}
-                className="truncate font-semibold text-sky-600 hover:text-sky-800 hover:underline text-left text-xs leading-tight"
+                className="truncate font-['Roboto'] text-[13px] font-semibold text-sky-600 hover:text-sky-800 hover:underline text-left leading-tight"
               >
                 {name}
               </a>
-              <span className="text-[11px] leading-tight text-slate-500">{student.code || "—"}</span>
+              <span className="font-['Roboto'] text-[12px] leading-tight text-slate-500">{student.code || "—"}</span>
               {(scoreResult?.gradeBandLabel || passLabel) && (
                 <span
-                  className="font-['Roboto'] text-[12.5px] font-bold leading-tight"
+                  className="font-['Roboto'] text-[12px] font-bold leading-tight"
                   title={[scoreResult?.assessmentName, scoreResult?.examDate ? formatDate(scoreResult.examDate) : null].filter(Boolean).join(" · ")}
                   data-testid={`latest-score-result-${student.id}`}
                 >
@@ -503,9 +503,9 @@ export function CustomersTable({
                     {starBalancesMap[student.id]}<Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
                   </span>
                 )}
-                {endingClasses.length > 0 && <EndingSoonBadge classes={endingClasses} />}
+                {endingClasses.length > 0 && <EndingSoonBadge classes={endingClasses} compact />}
                 {overdueInvoicesMap[student.id]?.length > 0 && (
-                  <OverdueInvoicesBadge invoices={overdueInvoicesMap[student.id]} />
+                  <OverdueInvoicesBadge invoices={overdueInvoicesMap[student.id]} compact />
                 )}
               </div>
             </div>
@@ -522,20 +522,20 @@ export function CustomersTable({
           : student.location?.name || "";
         const dateOfBirth = student.dateOfBirth ? formatDate(student.dateOfBirth) : "";
         return (
-          <div className="flex flex-col gap-0.5 text-[11px] leading-snug">
+          <div className="flex flex-col gap-0.5 font-['Roboto'] text-[12px] leading-snug">
             {locationNames && (
-              <div className="truncate text-slate-600" title={`Cơ sở: ${locationNames}`}>
-                <span className="text-slate-400">CS: </span>{locationNames}
+              <div className="truncate text-slate-600" title={locationNames}>
+                {locationNames}
               </div>
             )}
             {student.phone && (
-              <div className="truncate" title={`SĐT: ${student.phone}`}>
-                <span className="text-slate-400">SĐT: </span><CustomerPhoneCallMenu student={student} />
+              <div className="truncate" title={student.phone}>
+                <CustomerPhoneCallMenu student={student} />
               </div>
             )}
             {dateOfBirth && (
-              <div className="text-slate-600" title={`Ngày sinh: ${dateOfBirth}`}>
-                <span className="text-slate-400">NS: </span>{dateOfBirth}
+              <div className="text-slate-600" title={dateOfBirth}>
+                {dateOfBirth}
               </div>
             )}
           </div>
@@ -544,17 +544,18 @@ export function CustomersTable({
 
       if (columnId === "classTime") {
         return (
-          <div className="flex flex-col gap-1 text-xs leading-snug">
-            <div><span className="text-slate-400">Bắt đầu: </span><span className="font-medium text-slate-700">{formatDate(classDetail?.startDate)}</span></div>
-            <div><span className="text-slate-400">Kết thúc: </span><span className="font-medium text-slate-700">{formatDate(classDetail?.endDate)}</span></div>
+          <div className="flex flex-col gap-1 font-['Roboto'] text-[12px] leading-snug">
+            <div className="font-medium text-slate-700">{formatDate(classDetail?.startDate)}</div>
+            <div className="font-medium text-slate-700">{formatDate(classDetail?.endDate)}</div>
           </div>
         );
       }
 
       const status = classDetail?.learningStatus;
       const statusConfig = status ? LEARNING_STATUS_MAP[status] : undefined;
+      const statusTextColor = statusConfig?.badge.split(/\s+/).find((className) => className.startsWith("text-"));
       return (
-        <div className="flex flex-col gap-1 text-xs">
+        <div className="flex flex-col gap-1 font-['Roboto'] text-[12px]">
           <div
             className="flex items-center gap-1 whitespace-nowrap"
             aria-label={`Tổng ${classDetail?.totalSessions ?? 0}, đã học ${classDetail?.attendedSessions ?? 0}, còn lại ${classDetail?.remainingSessions ?? 0}`}
@@ -568,7 +569,10 @@ export function CustomersTable({
           </div>
           {statusConfig ? (
             <span
-              className={cn("inline-flex w-fit items-center gap-1 px-1.5 py-0.5 rounded-full border text-[11px] font-semibold", statusConfig.badge)}
+              className={cn(
+                "inline-flex w-fit items-center gap-1 font-['Roboto'] text-[12px] font-semibold",
+                statusTextColor,
+              )}
               data-testid={`status-learning-${student.id}-${classViewId}`}
             >
               <span className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", statusConfig.dot)} />

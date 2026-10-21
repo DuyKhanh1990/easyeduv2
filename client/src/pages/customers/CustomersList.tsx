@@ -601,7 +601,7 @@ export function CustomersList() {
     { id: "selection", label: "Tickbox", visible: true, fixed: "left" },
     { id: "classIdentity", label: "Họ và tên", visible: true, fixed: "left" },
     { id: "classGeneral", label: "Thông tin chung", visible: true, fixed: "left" },
-    { id: "classTime", label: "Thời gian", visible: true },
+    { id: "classTime", label: "Bắt đầu / Kết thúc", visible: true },
     { id: "classSessions", label: "Số buổi", visible: true },
     { id: "actions", label: "Thao tác", visible: true, fixed: "right" },
   ], []);
