@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { api } from "@shared/routes";
 import { db } from "../db";
+import { storage } from "../storage";
 import { recordFreeClassWalletTransition } from "../storage/free-class-wallet.storage";
 import {
   classSessions,
@@ -464,6 +465,19 @@ export function registerAttendanceRoutes(app: Express): void {
 
   app.get(api.attendance.list.path, async (req, res) => {
     try {
+      const attendancePermission = req.isSuperAdmin
+        ? null
+        : await storage.getEffectivePermissions(req.roleIds ?? [], "/attendance");
+      if (
+        !req.isSuperAdmin
+        && !attendancePermission?.canView
+        && !attendancePermission?.canViewAll
+      ) {
+        return res.status(403).json({
+          message: "Bạn không có quyền truy cập trang này. Vui lòng liên hệ Quản lý trung tâm để được cấp thêm quyền.",
+        });
+      }
+
       const { classes: classesStr = "", students: studentsStr = "", shift: shiftStr = "all", dateFrom = "", dateTo = "" } = req.query;
       const classIds = classesStr ? (classesStr as string).split(",").filter(Boolean) : [];
       const studentIds = studentsStr ? (studentsStr as string).split(",").filter(Boolean) : [];

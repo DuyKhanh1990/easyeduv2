@@ -21,7 +21,6 @@ export type MyPermissionsResult = {
 };
 
 export function useMyPermissions() {
-  const token = getAuthHeaders();
   return useQuery<MyPermissionsResult | null>({
     queryKey: ["/api/my-permissions"],
     queryFn: async () => {
@@ -33,7 +32,7 @@ export function useMyPermissions() {
       if (!res.ok) throw new Error("Failed to fetch permissions");
       return res.json();
     },
-    enabled: Object.keys(token).length > 0,
+    enabled: true,
     staleTime: 1000 * 60 * 5,
     refetchOnWindowFocus: false,
     refetchOnMount: true,

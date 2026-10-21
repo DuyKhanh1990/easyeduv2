@@ -128,6 +128,39 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export function Attendance() {
+  const { data: myPerms, isLoading: permissionsLoading } = useMyPermissions();
+  const canViewAttendance = Boolean(
+    myPerms?.isSuperAdmin
+    || myPerms?.permissions["/attendance"]?.canView
+    || myPerms?.permissions["/attendance"]?.canViewAll
+  );
+
+  if (permissionsLoading) {
+    return (
+      <DashboardLayout>
+        <div className="mx-auto mt-12 max-w-2xl rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
+          Đang kiểm tra quyền truy cập...
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!canViewAttendance) {
+    return (
+      <DashboardLayout>
+        <div className="mx-auto mt-12 max-w-2xl rounded-xl border bg-card p-8 text-center">
+          <p className="text-base font-medium text-foreground">
+            Bạn không có quyền truy cập trang này. Vui lòng liên hệ Quản lý trung tâm để được cấp thêm quyền.
+          </p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  return <AttendanceContent />;
+}
+
+function AttendanceContent() {
   const queryClient = useQueryClient();
   const { data: myPerms } = useMyPermissions();
   const canAttend = !myPerms || myPerms.isSuperAdmin || !!(myPerms.permissions["/attendance"]?.canCreate);
