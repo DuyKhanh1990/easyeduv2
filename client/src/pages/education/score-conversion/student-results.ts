@@ -2,6 +2,7 @@ export type DatedStudentResult = {
   studentId: string;
   examDate: string;
   sessionIndex: number | null;
+  status: "not_entered" | "in_progress" | "complete";
 };
 
 export type StudentPassStatus = "passed" | "failed";
@@ -15,8 +16,9 @@ export function matchesStudentPassStatus(
 
 export function keepLatestResultPerStudent<T extends DatedStudentResult>(results: T[]): T[] {
   const latestByStudent = new Map<string, T>();
+  const completedResults = results.filter((result) => result.status === "complete");
 
-  for (const result of results) {
+  for (const result of completedResults) {
     const current = latestByStudent.get(result.studentId);
     if (!current) {
       latestByStudent.set(result.studentId, result);
@@ -30,5 +32,5 @@ export function keepLatestResultPerStudent<T extends DatedStudentResult>(results
     }
   }
 
-  return results.filter((result) => latestByStudent.get(result.studentId) === result);
+  return completedResults.filter((result) => latestByStudent.get(result.studentId) === result);
 }

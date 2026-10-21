@@ -20,25 +20,25 @@ describe("matchesStudentPassStatus", () => {
 });
 
 describe("keepLatestResultPerStudent", () => {
-  it("keeps each student's latest exam date within the supplied filtered results", () => {
+  it("keeps the latest completed result per student, falling back past newer incomplete results", () => {
     const results = [
-      { studentId: "a", examDate: "2026-10-01", sessionIndex: 1, passStatus: "passed" },
-      { studentId: "b", examDate: "2026-10-02", sessionIndex: 1, passStatus: "passed" },
-      { studentId: "a", examDate: "2026-10-04", sessionIndex: 2, passStatus: "passed" },
-      { studentId: "a", examDate: "2026-10-03", sessionIndex: 3, passStatus: "failed" },
+      { studentId: "a", examDate: "2026-10-01", sessionIndex: 1, status: "complete" as const, passStatus: "passed" },
+      { studentId: "b", examDate: "2026-10-02", sessionIndex: 1, status: "complete" as const, passStatus: "passed" },
+      { studentId: "a", examDate: "2026-10-04", sessionIndex: 2, status: "not_entered" as const, passStatus: null },
+      { studentId: "a", examDate: "2026-10-03", sessionIndex: 3, status: "complete" as const, passStatus: "failed" },
     ];
 
-    const passedResults = results.filter((result) => result.passStatus === "passed");
-    expect(keepLatestResultPerStudent(passedResults)).toEqual([
+    expect(keepLatestResultPerStudent(results)).toEqual([
       results[1],
-      results[2],
+      results[3],
     ]);
   });
 
-  it("uses the higher session index to break ties on the same exam date", () => {
+  it("omits students without a completed result and breaks date ties by session index", () => {
     const results = [
-      { studentId: "a", examDate: "2026-10-04", sessionIndex: 1 },
-      { studentId: "a", examDate: "2026-10-04", sessionIndex: 3 },
+      { studentId: "a", examDate: "2026-10-04", sessionIndex: 1, status: "complete" as const },
+      { studentId: "a", examDate: "2026-10-04", sessionIndex: 3, status: "complete" as const },
+      { studentId: "b", examDate: "2026-10-05", sessionIndex: 1, status: "in_progress" as const },
     ];
 
     expect(keepLatestResultPerStudent(results)).toEqual([results[1]]);

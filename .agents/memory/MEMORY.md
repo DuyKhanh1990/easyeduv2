@@ -102,7 +102,7 @@
 - [Manual score-sheet assessments](manual-score-sheet-assessment.md) — manual changes only roster creation; keep lifecycle and results in the standard assessment/attempt flow.
 - [Finance translation parity](finance-translation-parity.md) — invoice English audits must compare vi/en key sets and scan child dialogs, not only the main Invoices page.
 - [Score conversion pass threshold](score-conversion-pass-threshold.md) — “Đạt” means the selected total is at least the “Từ” score; the “Đến” value does not cap higher scores.
-- [Student score-list defaults](student-score-list-filters.md) — Theo học viên defaults to all results, latest per student, and active students; apply optional pass/fail after selecting latest.
+- [Student score-list defaults](student-score-list-filters.md) — Theo học viên defaults to latest entered result per student and active students; apply optional pass/fail afterward.
 - [Inventory detail transfer net](inventory-detail-transfer-net.md) — on a warehouse's inventory detail, show signed transfer net as the main value and signed in/out subtotals beneath.
 - [Score conversion range boundaries](score-conversion-mapping-boundaries.md) — displayed “Từ–Đến” ranges include the upper bound unless the next range starts at that same boundary.
 - [Invoice installment filter authority](invoice-date-filter-row-parity.md) — installment values drive scheduled-invoice filters; parent fields are only shared context or aggregation.
