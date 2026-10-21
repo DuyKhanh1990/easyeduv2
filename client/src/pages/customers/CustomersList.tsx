@@ -818,10 +818,11 @@ export function CustomersList() {
 
   const visibleChildren = activeGroupId ? childrenOfSelected : ungroupedRelationships;
   const classTabs = classTabsData?.classes ?? [];
+  const selectedClass = classTabs.find((classItem) => classItem.id === activeClassTab);
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col h-full gap-3">
+      <div className="flex h-full min-h-0 flex-col gap-3">
 
         {/* ── Stat Cards + Add Button ── */}
         <div className="flex items-center justify-between gap-3 flex-shrink-0">
@@ -1613,7 +1614,7 @@ export function CustomersList() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-auto">
+          <div className="flex-1 min-h-0 overflow-auto overscroll-contain">
             {classRosterViewActive && (
               <div className="sticky top-0 z-30 flex min-h-10 items-center gap-2 border-b bg-white px-3 py-1.5">
                 <Button
@@ -1685,6 +1686,14 @@ export function CustomersList() {
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
+                {selectedClass && (
+                  <div className="ml-2 inline-flex min-w-0 items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs">
+                    <span className="shrink-0 text-slate-500">Lớp đang xem:</span>
+                    <span className="truncate font-semibold text-sky-800" title={selectedClass.name}>
+                      {selectedClass.name}
+                    </span>
+                  </div>
+                )}
                 {classMonthScheduleLoading && (
                   <span className="text-xs text-slate-400">Đang tải lịch…</span>
                 )}
