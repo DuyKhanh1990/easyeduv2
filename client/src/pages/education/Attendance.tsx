@@ -305,13 +305,26 @@ function AttendanceContent() {
     );
   }, [studentsData, filters.studentSearch]);
 
+  const attendanceVisibleClasses = useMemo(() => {
+    if (myPerms?.isSuperAdmin || myPerms?.permissions["/attendance"]?.canViewAll) {
+      return classesData;
+    }
+
+    const classIdsWithVisibleAttendance = new Set(
+      (attendanceData as StudentAttendance[]).map((record) => record.classId),
+    );
+    return classesData.filter((cls: any) =>
+      classIdsWithVisibleAttendance.has(cls.id) || filters.classes.includes(cls.id)
+    );
+  }, [attendanceData, classesData, filters.classes, myPerms]);
+
   const filteredClasses = useMemo(() => {
     const query = classSearch.trim().toLowerCase();
-    if (!query) return classesData;
-    return classesData.filter((cls: any) =>
+    if (!query) return attendanceVisibleClasses;
+    return attendanceVisibleClasses.filter((cls: any) =>
       `${cls.classCode ?? ""} ${cls.name ?? ""}`.toLowerCase().includes(query)
     );
-  }, [classesData, classSearch]);
+  }, [attendanceVisibleClasses, classSearch]);
 
   const filteredShiftOptions = useMemo(() => {
     const query = shiftSearch.trim().toLowerCase();
@@ -344,7 +357,7 @@ function AttendanceContent() {
     );
   };
 
-  const selectedClassesLabels = classesData
+  const selectedClassesLabels = attendanceVisibleClasses
     .filter((c: any) => filters.classes.includes(c.id))
     .map((c: any) => c.classCode)
     .join(", ");

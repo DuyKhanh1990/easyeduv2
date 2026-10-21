@@ -484,6 +484,15 @@ export function registerAttendanceRoutes(app: Express): void {
 
       const allowedLocationIds = req.allowedLocationIds;
       const isSuperAdmin = req.isSuperAdmin;
+      const canViewAllAttendance = isSuperAdmin || attendancePermission?.canViewAll === true;
+      const assignedClassCondition = canViewAllAttendance
+        ? undefined
+        : req.staffId
+          ? sql`(
+              ${req.staffId} = ANY(COALESCE(${classes.teacherIds}, ARRAY[]::uuid[]))
+              OR ${req.staffId} = ANY(COALESCE(${classes.managerIds}, ARRAY[]::uuid[]))
+            )`
+          : sql`FALSE`;
 
       if (!isSuperAdmin && allowedLocationIds && allowedLocationIds.length === 0) {
         return res.json([]);
@@ -527,6 +536,9 @@ export function registerAttendanceRoutes(app: Express): void {
       if (!isSuperAdmin && allowedLocationIds && allowedLocationIds.length > 0) {
         conditions.push(inArray(classes.locationId, allowedLocationIds));
         conditions.push(sql`EXISTS (SELECT 1 FROM student_locations WHERE student_locations.student_id = students.id AND student_locations.location_id = ANY(ARRAY[${sql.raw(allowedLocationIds.map((id: string) => `'${id}'`).join(','))}]::uuid[]))`);
+      }
+      if (assignedClassCondition) {
+        conditions.push(assignedClassCondition);
       }
 
       const results = await db
@@ -581,6 +593,9 @@ export function registerAttendanceRoutes(app: Express): void {
           WHERE student_locations.student_id = ${students.id}
             AND student_locations.location_id = ANY(ARRAY[${sql.raw(allowedLocationIds.map((id: string) => `'${id}'`).join(","))}]::uuid[])
         )`);
+      }
+      if (assignedClassCondition) {
+        freeConditions.push(assignedClassCondition);
       }
 
       const freeRows = await db
@@ -664,6 +679,7 @@ export function registerAttendanceRoutes(app: Express): void {
               : allowedLocationIds && allowedLocationIds.length > 0
               ? [inArray(classes.locationId, allowedLocationIds)]
               : []),
+            ...(assignedClassCondition ? [assignedClassCondition] : []),
           ))
         : [];
 
