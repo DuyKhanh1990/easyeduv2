@@ -103,6 +103,7 @@ export interface IStorage {
     birthdayTo?: string;
     classTabId?: string;
     classTab?: 'unassigned';
+    endingSoonOnly?: boolean;
     viewScope?: 'all' | 'own';
     viewerStaffId?: string;
   }): Promise<{ students: StudentResponse[]; total: number }>;
@@ -888,6 +889,7 @@ export class DatabaseStorage implements IStorage {
     birthdayTo?: string;
     classTabId?: string;
     classTab?: 'unassigned';
+    endingSoonOnly?: boolean;
     viewScope?: 'all' | 'own';
     viewerStaffId?: string;
   }): Promise<{ students: StudentResponse[]; total: number }> {

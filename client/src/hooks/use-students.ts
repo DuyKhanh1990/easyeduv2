@@ -33,6 +33,7 @@ export function useStudents(params?: {
   birthdayTo?: string;
   classTabId?: string;
   classTab?: "unassigned";
+  endingSoonOnly?: boolean;
   enabled?: boolean;
 }) {
   const { enabled, ...queryParams } = params ?? {};

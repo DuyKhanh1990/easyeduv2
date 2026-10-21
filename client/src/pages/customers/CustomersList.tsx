@@ -144,6 +144,7 @@ export function CustomersList() {
     birthdayTo: "",
   });
   const [customerLearningStatusFilter, setCustomerLearningStatusFilter] = useState<CustomerLearningStatus | null>(null);
+  const [endingSoonOnly, setEndingSoonOnly] = useState(false);
 
   const { data: classTabsData, isLoading: classTabsLoading } = useQuery<{
     classes: { id: string; name: string; classCode: string }[];
@@ -186,6 +187,7 @@ export function CustomersList() {
     accountStatuses: filters.accountStatuses.length > 0 ? filters.accountStatuses : undefined,
     learningStatuses: filters.learningStatuses.length > 0 ? filters.learningStatuses : undefined,
     customerLearningStatus: customerLearningStatusFilter ?? undefined,
+    endingSoonOnly: endingSoonOnly || undefined,
     birthdayFrom: filters.birthdayFrom || undefined,
     birthdayTo: filters.birthdayTo || undefined,
   });
@@ -195,7 +197,7 @@ export function CustomersList() {
   const totalPages = Math.ceil(totalItems / pageSize);
 
   const { data: learningSummary, isLoading: summaryLoading } = useQuery<{
-    dangHoc: number; baoLuu: number; choLich: number; daNghi: number; chuaCoLich: number; total: number;
+    dangHoc: number; baoLuu: number; choLich: number; daNghi: number; chuaCoLich: number; sapHetLich: number; total: number;
   }>({
     queryKey: ["/api/students/customer-learning-status-summary"],
     queryFn: () => fetch("/api/students/customer-learning-status-summary", { credentials: "include" }).then((r) => r.json()),
@@ -387,7 +389,16 @@ export function CustomersList() {
   const { data: freshEditingStudent } = useStudent(editingStudent?.id || "");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const handleCustomerLearningStatusClick = (status: CustomerLearningStatus | null) => {
+    setEndingSoonOnly(false);
     setCustomerLearningStatusFilter((current) => status !== null && current === status ? null : status);
+    setFilters((current) => current.learningStatuses.length > 0
+      ? { ...current, learningStatuses: [] }
+      : current);
+    setSelectedIds([]);
+  };
+  const handleEndingSoonClick = () => {
+    setEndingSoonOnly((current) => !current);
+    setCustomerLearningStatusFilter(null);
     setFilters((current) => current.learningStatuses.length > 0
       ? { ...current, learningStatuses: [] }
       : current);
@@ -653,7 +664,7 @@ export function CustomersList() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, filters, pageSize, customerLearningStatusFilter]);
+  }, [searchTerm, filters, pageSize, customerLearningStatusFilter, endingSoonOnly]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -799,6 +810,7 @@ export function CustomersList() {
 
   const hasActiveFilters =
     customerLearningStatusFilter !== null ||
+    endingSoonOnly ||
     filters.locationId !== "all" ||
     filters.type !== "all" ||
     filters.pipelineStage !== "all" ||
@@ -953,6 +965,25 @@ export function CustomersList() {
                 <p className="text-[10px] font-semibold text-rose-600 uppercase tracking-wide leading-none">{t("customers.statInactive")}</p>
                 <p className="text-base font-bold text-rose-700 leading-tight mt-0.5">
                   {summaryLoading ? "…" : (learningSummary?.daNghi ?? 0).toLocaleString()}
+                </p>
+              </div>
+            </button>
+
+            {/* Sắp hết lịch */}
+            <button
+              type="button"
+              onClick={handleEndingSoonClick}
+              aria-pressed={endingSoonOnly}
+              data-testid="customer-status-card-ending-soon"
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-orange-200 shadow-sm min-w-[100px] text-left cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-1 ${
+                endingSoonOnly ? "ring-2 ring-orange-500 ring-offset-1" : ""
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-orange-500 flex-shrink-0" />
+              <div>
+                <p className="text-[10px] font-semibold text-orange-600 uppercase tracking-wide leading-none">Sắp hết lịch</p>
+                <p className="text-base font-bold text-orange-700 leading-tight mt-0.5">
+                  {summaryLoading ? "…" : (learningSummary?.sapHetLich ?? 0).toLocaleString()}
                 </p>
               </div>
             </button>
@@ -1645,6 +1676,7 @@ export function CustomersList() {
                       className="h-8 text-xs text-slate-500 hover:text-slate-700 rounded-lg"
                       onClick={() => {
                         setCustomerLearningStatusFilter(null);
+                        setEndingSoonOnly(false);
                         setFilters({ locationId: "all", type: "all", pipelineStage: filters.pipelineStage, relationshipIds: [], sources: [], rejectReasons: [], saleIds: [], managerIds: [], teacherIds: [], classIds: [], schoolIds: [], birthYear: "", dateRange: {} as DateRange, updatedRange: {} as DateRange, accountStatuses: [], learningStatuses: [], birthdayFrom: "", birthdayTo: "" });
                       }}
                       data-testid="button-filter-clear-all"

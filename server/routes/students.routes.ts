@@ -367,6 +367,7 @@ export function registerStudentsRoutes(app: Express): void {
         birthdayTo: req.query.birthdayTo as string | undefined,
         classTabId: req.query.classTabId as string | undefined,
         classTab: req.query.classTab === "unassigned" ? "unassigned" : undefined,
+        endingSoonOnly: req.query.endingSoonOnly === "true",
         viewScope,
         viewerStaffId: req.staffId ?? undefined,
       });

@@ -193,6 +193,7 @@ export async function getStudents(params: {
   birthdayTo?: string;
   classTabId?: string;
   classTab?: 'unassigned';
+  endingSoonOnly?: boolean;
   viewScope?: 'all' | 'own';
   viewerStaffId?: string;
 }): Promise<{ students: StudentResponse[]; total: number }> {
@@ -201,7 +202,7 @@ export async function getStudents(params: {
     locationId, studentIds: filterStudentIds, offset, limit, searchTerm, type, pipelineStage, relationshipIds, pipelineGroupId, parentRelationshipId,
     sources, rejectReasons, salesIds, managerIds, teacherIds, classIds, schoolIds, birthYear,
     startDate, endDate, updatedFrom, updatedTo,
-    accountStatuses, learningStatuses, customerLearningStatus, birthdayFrom, birthdayTo, classTabId, classTab,
+    accountStatuses, learningStatuses, customerLearningStatus, birthdayFrom, birthdayTo, classTabId, classTab, endingSoonOnly,
     viewScope, viewerStaffId
   } = params;
 
@@ -303,6 +304,41 @@ export async function getStudents(params: {
       FROM student_classes sc
       INNER JOIN classes c ON c.id = sc.class_id
       WHERE sc.student_id = ${students.id}
+    )`;
+  }
+  if (endingSoonOnly) {
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    whereClause = sql`${whereClause} AND EXISTS (
+      SELECT 1
+      FROM student_classes sc
+      WHERE sc.student_id = ${students.id}
+        AND sc.status = 'active'
+        AND EXISTS (
+          SELECT 1
+          FROM student_sessions ss_scheduled
+          INNER JOIN class_sessions cs_scheduled ON ss_scheduled.class_session_id = cs_scheduled.id
+          WHERE (ss_scheduled.student_class_id = sc.id
+            OR (ss_scheduled.student_class_id IS NULL AND ss_scheduled.student_id = sc.student_id AND ss_scheduled.class_id = sc.class_id))
+            AND cs_scheduled.status != 'cancelled'
+        )
+        AND (
+          SELECT MAX(cs_end.session_date)
+          FROM student_sessions ss_end
+          INNER JOIN class_sessions cs_end ON ss_end.class_session_id = cs_end.id
+          WHERE (ss_end.student_class_id = sc.id
+            OR (ss_end.student_class_id IS NULL AND ss_end.student_id = sc.student_id AND ss_end.class_id = sc.class_id))
+            AND cs_end.status != 'cancelled'
+        ) >= ${yesterday}::date
+        AND (
+          SELECT COUNT(*)::int
+          FROM student_sessions ss_remaining
+          INNER JOIN class_sessions cs_remaining ON ss_remaining.class_session_id = cs_remaining.id
+          WHERE (ss_remaining.student_class_id = sc.id
+            OR (ss_remaining.student_class_id IS NULL AND ss_remaining.student_id = sc.student_id AND ss_remaining.class_id = sc.class_id))
+            AND cs_remaining.session_date >= ${today}::date
+            AND cs_remaining.status != 'cancelled'
+        ) <= 10
     )`;
   }
   if (startDate) {
@@ -2621,13 +2657,47 @@ export async function getCustomerLearningStatusSummary(params: {
   choLich: number;
   daNghi: number;
   chuaCoLich: number;
+  sapHetLich: number;
   total: number;
 }> {
   const locationWhere = buildLocationWhere(params.isSuperAdmin, params.allowedLocationIds, params.locationId);
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const queryStr = `
     ${buildCustomerLearningStatusCtes(
       `SELECT s.id FROM students s WHERE ${locationWhere}`
     )},
+    ending_soon_students AS (
+      SELECT DISTINCT ts.id
+      FROM target_students ts
+      INNER JOIN student_classes sc ON sc.student_id = ts.id
+      WHERE sc.status = 'active'
+        AND EXISTS (
+          SELECT 1
+          FROM student_sessions ss_scheduled
+          INNER JOIN class_sessions cs_scheduled ON ss_scheduled.class_session_id = cs_scheduled.id
+          WHERE (ss_scheduled.student_class_id = sc.id
+            OR (ss_scheduled.student_class_id IS NULL AND ss_scheduled.student_id = sc.student_id AND ss_scheduled.class_id = sc.class_id))
+            AND cs_scheduled.status != 'cancelled'
+        )
+        AND (
+          SELECT MAX(cs_end.session_date)
+          FROM student_sessions ss_end
+          INNER JOIN class_sessions cs_end ON ss_end.class_session_id = cs_end.id
+          WHERE (ss_end.student_class_id = sc.id
+            OR (ss_end.student_class_id IS NULL AND ss_end.student_id = sc.student_id AND ss_end.class_id = sc.class_id))
+            AND cs_end.status != 'cancelled'
+        ) >= '${yesterday}'::date
+        AND (
+          SELECT COUNT(*)::int
+          FROM student_sessions ss_remaining
+          INNER JOIN class_sessions cs_remaining ON ss_remaining.class_session_id = cs_remaining.id
+          WHERE (ss_remaining.student_class_id = sc.id
+            OR (ss_remaining.student_class_id IS NULL AND ss_remaining.student_id = sc.student_id AND ss_remaining.class_id = sc.class_id))
+            AND cs_remaining.session_date >= '${today}'::date
+            AND cs_remaining.status != 'cancelled'
+        ) <= 10
+    ),
     student_status AS (
       SELECT
         ts.id AS student_id,
@@ -2648,6 +2718,7 @@ export async function getCustomerLearningStatusSummary(params: {
       COUNT(*) FILTER (WHERE learning_status = 'cho_lich') AS cho_lich,
       COUNT(*) FILTER (WHERE learning_status = 'da_nghi') AS da_nghi,
       COUNT(*) FILTER (WHERE learning_status = 'chua_co_lich') AS chua_co_lich,
+      (SELECT COUNT(*) FROM ending_soon_students) AS sap_het_lich,
       COUNT(*) AS total
     FROM student_status
   `;
@@ -2660,6 +2731,7 @@ export async function getCustomerLearningStatusSummary(params: {
     choLich: parseInt(row.cho_lich ?? "0", 10),
     daNghi: parseInt(row.da_nghi ?? "0", 10),
     chuaCoLich: parseInt(row.chua_co_lich ?? "0", 10),
+    sapHetLich: parseInt(row.sap_het_lich ?? "0", 10),
     total: parseInt(row.total ?? "0", 10),
   };
 }
