@@ -16,8 +16,12 @@ export function useInvoiceSchedules(invoiceId: string) {
   };
 
   const deleteMutation = useMutation({
-    mutationFn: (scheduleId: string) =>
-      apiRequest("DELETE", `/api/finance/invoice-schedules/${scheduleId}`),
+    mutationFn: (scheduleId: string) => apiRequest(
+      "DELETE",
+      schedules.length === 1
+        ? `/api/finance/invoices/${invoiceId}`
+        : `/api/finance/invoice-schedules/${scheduleId}`,
+    ),
     onSuccess: invalidate,
   });
 

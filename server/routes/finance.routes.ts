@@ -1751,12 +1751,23 @@ export function registerFinanceRoutes(app: Express): void {
       const inv = await storage.getInvoice(req.params.id);
       if (!inv) return res.status(404).json({ message: "Không tìm thấy hoá đơn" });
 
-      if (isPaidInvoiceStatus(inv.status) || inv.status === "partial") {
-        const statusLabel = isPaidInvoiceStatus(inv.status) ? (STATUS_LABEL[inv.status] ?? "Đã thanh toán") : "Thanh toán một phần";
+      if (inv.status !== "unpaid") {
+        const statusLabel = isPaidInvoiceStatus(inv.status) ? (STATUS_LABEL[inv.status] ?? "Đã thanh toán") : inv.status === "partial" ? "Thanh toán một phần" : inv.status;
         return res.status(409).json({
-          message: `Hoá đơn ${inv.code} đang ở trạng thái ${statusLabel}. Vui lòng chuyển về Chưa thanh toán trước khi xoá.`,
+          message: `Hoá đơn ${inv.code} đang ở trạng thái ${statusLabel}. Chỉ hoá đơn Chưa thanh toán mới được xoá.`,
           invoiceStatus: inv.status,
         });
+      }
+
+      const schedules = await db
+        .select({ status: invoicePaymentSchedule.status })
+        .from(invoicePaymentSchedule)
+        .where(eq(invoicePaymentSchedule.invoiceId, req.params.id));
+      if (schedules.length > 1) {
+        return res.status(409).json({ message: "Hãy xoá từng đợt chưa thanh toán trước khi xoá hoá đơn." });
+      }
+      if (schedules.some(schedule => schedule.status !== "unpaid")) {
+        return res.status(409).json({ message: "Chỉ được xoá hoá đơn khi đợt thanh toán chưa thanh toán." });
       }
 
       // Cancel linked phiếu xuất kho (restores inventory)
@@ -2487,6 +2498,8 @@ export function registerFinanceRoutes(app: Express): void {
 
   app.delete("/api/finance/invoice-schedules/:id", async (req, res) => {
     try {
+      const invPerms = await getInvoicePermissions(req);
+      if (!invPerms.canDelete) return res.status(403).json({ message: "Bạn không có quyền xoá hoá đơn." });
       await storage.deleteInvoiceSchedule(req.params.id);
       res.status(204).send();
     } catch (err: any) {

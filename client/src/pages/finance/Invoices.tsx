@@ -732,6 +732,7 @@ function renderInvoiceCell(
     isPending: boolean;
   },
   canEdit: boolean,
+  canDelete: boolean,
   canEditPaidDates: boolean,
   allowedStatusTargets: readonly string[],
   isSelected?: boolean,
@@ -802,7 +803,7 @@ function renderInvoiceCell(
         const parentInvoice = inv.parentInvoice ?? inv;
         return (
           <td key="scheduleProgress" className="p-2 text-center" style={{ minWidth: 140 }}>
-            <ScheduleProgressPopover inv={parentInvoice} allowedStatusTargets={allowedStatusTargets}>
+            <ScheduleProgressPopover inv={parentInvoice} allowedStatusTargets={allowedStatusTargets} canDelete={canDelete}>
               <button
                 type="button"
                 className="w-full rounded-md py-1 hover:bg-violet-50 transition-colors cursor-pointer"
@@ -850,7 +851,7 @@ function renderInvoiceCell(
 
       return (
         <td key="scheduleProgress" className="p-2 text-center" style={{ minWidth: 140 }}>
-          <ScheduleProgressPopover inv={inv} allowedStatusTargets={allowedStatusTargets}>
+          <ScheduleProgressPopover inv={inv} allowedStatusTargets={allowedStatusTargets} canDelete={canDelete}>
             <div className="flex items-center justify-center gap-1.5 mb-0.5 hover:opacity-80 transition-opacity">
               {allDone
                 ? <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
@@ -1456,7 +1457,7 @@ function DeleteInvoiceDialog({ target, onClose, deleteMutation }: {
     queryFn: () => apiRequest("GET", `/api/finance/invoices/${target.id}/linked-store-receipts`).then(r => r.json()),
   });
 
-  const isPaidOrPartial = isInvoicePaidLike(target.status) || target.status === "partial";
+  const isNotUnpaid = target.status !== "unpaid";
   const activeReceipts = linkedReceipts.filter(r => r.status !== "cancelled");
 
   return (
@@ -1471,13 +1472,13 @@ function DeleteInvoiceDialog({ target, onClose, deleteMutation }: {
           <p className="text-sm">
              {t("finance.confirmDeleteInvoiceQuestion", { code: target.code || target.id })}
           </p>
-          {isPaidOrPartial && (
+          {isNotUnpaid && (
             <div className="rounded-lg bg-orange-50 border border-orange-200 p-3 text-xs text-orange-800">
               <p className="font-semibold mb-1">{t("finance.cannotDelete")}</p>
               <p>{t("finance.invoiceCode")} <strong>{isInvoicePaidLike(target.status) ? STATUS_CONFIG[target.status]?.label : t("finance.partialPayment")}</strong>. {t("finance.tryAgain")}</p>
             </div>
           )}
-          {!isPaidOrPartial && activeReceipts.length > 0 && (
+          {!isNotUnpaid && activeReceipts.length > 0 && (
             <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-3 text-xs text-yellow-800">
               <p className="font-semibold mb-1">{t("finance.deleteLinkedIssueWarning")}</p>
               <ul className="list-disc list-inside space-y-0.5">
@@ -1487,7 +1488,7 @@ function DeleteInvoiceDialog({ target, onClose, deleteMutation }: {
               </ul>
             </div>
           )}
-          {!isPaidOrPartial && (
+          {!isNotUnpaid && (
             <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-xs text-red-800">
                {t("finance.deleteIrreversible")}
             </div>
@@ -1495,7 +1496,7 @@ function DeleteInvoiceDialog({ target, onClose, deleteMutation }: {
         </div>
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={onClose} disabled={deleteMutation.isPending}>{t("finance.cancel")}</Button>
-          {!isPaidOrPartial && (
+          {!isNotUnpaid && (
             <Button
               variant="destructive"
               onClick={() =>
@@ -2708,6 +2709,7 @@ export default function Invoices() {
                       updateStatusMutation,
                       updateScheduleStatusMutation,
                       invPerm.canEdit,
+                      invPerm.canDelete,
                       canEditPaidDates,
                       allowedStatusTargets,
                       isSelected,
@@ -2846,10 +2848,11 @@ export default function Invoices() {
                       isExpanded={isExpanded}
                        visibleColumns={visibleColumns.map(({ key, labelKey }) => ({ key, label: t(labelKey) }))}
                       onSplit={(s) => setSplitDialog({ scheduleId: s.id, label: s.label, amount: parseFloat(s.amount ?? "0"), invoiceId: inv.id })}
-                      invoice={{ id: inv.id, code: inv.code ?? undefined, name: inv.name ?? undefined, branch: inv.branch ?? undefined, dueDate: inv.dueDate ?? undefined, description: (inv as any).description ?? undefined, note: (inv as any).note ?? undefined }}
+                      invoice={{ id: inv.id, status: inv.status, code: inv.code ?? undefined, name: inv.name ?? undefined, branch: inv.branch ?? undefined, dueDate: inv.dueDate ?? undefined, description: (inv as any).description ?? undefined, note: (inv as any).note ?? undefined }}
                       selectedScheduleIds={selectedScheduleIdSet}
                       onToggleSchedule={toggleSchedule}
                       canSelect={invPerm.canDelete}
+                      canDelete={invPerm.canDelete}
                       allowedStatusTargets={allowedStatusTargets}
                       payerNames={filters.payers}
                       onViewPrint={(s) => setPrintPreviewSchedule({ schedule: s, invoice: inv })}

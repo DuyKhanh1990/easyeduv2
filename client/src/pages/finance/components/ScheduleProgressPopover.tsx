@@ -29,9 +29,9 @@ function StatusLabel({ status, dueDate }: { status: string; dueDate?: string | n
   return <span className="text-muted-foreground flex items-center gap-1">⏳ {t("finance.unpaidStatus")}</span>;
 }
 
-interface Props { inv: InvoiceRow; children: React.ReactNode; allowedStatusTargets: readonly string[]; }
+interface Props { inv: InvoiceRow; children: React.ReactNode; allowedStatusTargets: readonly string[]; canDelete?: boolean; }
 
-export function ScheduleProgressPopover({ inv, children, allowedStatusTargets }: Props) {
+export function ScheduleProgressPopover({ inv, children, allowedStatusTargets, canDelete: hasDeletePermission = false }: Props) {
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
   const { lang, t } = useLanguage();
@@ -59,7 +59,10 @@ export function ScheduleProgressPopover({ inv, children, allowedStatusTargets }:
     queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
   };
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/finance/invoice-schedules/${id}`),
+    mutationFn: (id: string) => apiRequest(
+      "DELETE",
+      schedules.length === 1 ? `/api/finance/invoices/${inv.id}` : `/api/finance/invoice-schedules/${id}`,
+    ),
     onSuccess: invalidate,
   });
   const updateStatusMutation = useMutation({
@@ -287,7 +290,12 @@ export function ScheduleProgressPopover({ inv, children, allowedStatusTargets }:
                     const schDue     = sch.dueDate ? new Date(sch.dueDate) : null;
                     const schOverdue = sch.status !== "paid" && schDue !== null && schDue < today;
                     const isPaid     = sch.status === "paid";
-                    const canDelete  = !sch.isSynthetic && !isPaid && displaySchedules.length > 1;
+                    const unpaidCount = displaySchedules.filter(item => item.status === "unpaid").length;
+                    const canDelete = hasDeletePermission && !sch.isSynthetic && sch.status === "unpaid" && (
+                      displaySchedules.length === 1
+                        ? inv.status === "unpaid"
+                        : unpaidCount >= 2
+                    );
                     const canSign    = !sch.isSynthetic && isPaid && sch.einvoiceStatus !== "published";
                     const isSigned   = sch.einvoiceStatus === "published";
                     const isStatusPending = sch.isSynthetic
@@ -493,7 +501,9 @@ export function ScheduleProgressPopover({ inv, children, allowedStatusTargets }:
               <p className="text-sm">{t("finance.confirmDeleteScheduleQuestion", { label: deleteTarget.label })}</p>
               <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-3 text-xs text-yellow-800 space-y-1">
                 <p className="font-semibold">{t("finance.businessNote")}</p>
-                <p>{t("finance.deleteScheduleReallocation", { amount: fmtMoney(parseNum(deleteTarget.amount)) })}</p>
+                <p>{schedules.length === 1
+                  ? t("finance.deleteLastScheduleDeletesInvoice")
+                  : t("finance.deleteScheduleReallocation", { amount: fmtMoney(parseNum(deleteTarget.amount)) })}</p>
               </div>
             </div>
             <div className="flex justify-end gap-2">
@@ -501,7 +511,11 @@ export function ScheduleProgressPopover({ inv, children, allowedStatusTargets }:
               <Button
                 variant="destructive"
                 onClick={() => deleteMutation.mutate(deleteTarget.id, {
-                   onSuccess: () => { setDeleteTarget(null); toast({ title: t("finance.deleteScheduleSuccess") }); },
+                   onSuccess: () => {
+                     setDeleteTarget(null);
+                     if (schedules.length === 1) setOpen(false);
+                     toast({ title: schedules.length === 1 ? t("finance.deleteInvoiceSuccess") : t("finance.deleteScheduleSuccess") });
+                   },
                    onError: (err: any) => toast({ title: t("finance.deleteError"), description: err.message, variant: "destructive" }),
                 })}
                 disabled={deleteMutation.isPending}

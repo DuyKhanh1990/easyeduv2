@@ -2975,17 +2975,23 @@ export async function updateInvoiceStatus(invoiceId: string, status: string, use
 }
 
 export async function deleteInvoice(id: string): Promise<void> {
-  const schedules = await db
-    .select({ id: invoicePaymentSchedule.id })
-    .from(invoicePaymentSchedule)
-    .where(eq(invoicePaymentSchedule.invoiceId, id));
-  if (schedules.length > 1) {
-    throw new Error("Hóa đơn đã có các đợt thanh toán. Vui lòng xoá các đợt trước khi xoá hóa đơn.");
-  }
   await db.transaction(async (tx) => {
-    if (schedules.length === 1) {
-      await tx.delete(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.invoiceId, id));
+    await tx.execute(sql`SELECT id FROM invoices WHERE id = ${id} FOR UPDATE`);
+    const [invoice] = await tx.select({ status: invoices.status }).from(invoices).where(eq(invoices.id, id));
+    if (!invoice) throw new Error("Không tìm thấy hoá đơn");
+    if (invoice.status !== "unpaid") throw new Error("Chỉ được xoá hoá đơn chưa thanh toán");
+
+    const schedules = await tx
+      .select({ id: invoicePaymentSchedule.id, status: invoicePaymentSchedule.status })
+      .from(invoicePaymentSchedule)
+      .where(eq(invoicePaymentSchedule.invoiceId, id));
+    if (schedules.length > 1) {
+      throw new Error("Hãy xoá từng đợt chưa thanh toán trước khi xoá hoá đơn.");
     }
+    if (schedules.some(schedule => schedule.status !== "unpaid")) {
+      throw new Error("Chỉ được xoá hoá đơn khi đợt thanh toán chưa thanh toán.");
+    }
+    await tx.delete(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.invoiceId, id));
     await tx.delete(invoices).where(eq(invoices.id, id));
   });
 }
@@ -2994,13 +3000,24 @@ export async function deleteInvoiceSchedule(id: string): Promise<void> {
   await db.transaction(async (tx) => {
     const [schedule] = await tx.select().from(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.id, id));
     if (!schedule) throw new Error("Không tìm thấy đợt thanh toán");
-    if (isPaidScheduleStatus(schedule.status)) throw new Error("Không thể xoá đợt đã thanh toán");
+    await tx.execute(sql`SELECT id FROM invoices WHERE id = ${schedule.invoiceId} FOR UPDATE`);
 
     const all = await tx
       .select()
       .from(invoicePaymentSchedule)
       .where(eq(invoicePaymentSchedule.invoiceId, schedule.invoiceId))
       .orderBy(asc(invoicePaymentSchedule.sortOrder));
+    const currentSchedule = all.find(row => row.id === id);
+    if (!currentSchedule) throw new Error("Không tìm thấy đợt thanh toán");
+    if (currentSchedule.status !== "unpaid") throw new Error("Chỉ được xoá đợt chưa thanh toán");
+    if (all.length <= 1) throw new Error("Đợt cuối phải được xoá cùng hoá đơn");
+
+    const unpaidSchedules = all.filter(row => row.status === "unpaid");
+    const recipients = unpaidSchedules.filter(row => row.id !== id);
+    if (recipients.length === 0) {
+      throw new Error("Cần có một đợt chưa thanh toán khác để nhận số tiền được dồn.");
+    }
+
     const previousSchedulePromotionTotal = all.reduce(
       (sum, row) => sum + (parseFloat(row.promotionAmount ?? "0") || 0),
       0,
@@ -3010,22 +3027,19 @@ export async function deleteInvoiceSchedule(id: string): Promise<void> {
       0,
     );
 
-    if (all.length <= 1) throw new Error("Không thể xoá đợt duy nhất");
-
-    const others = all.filter(s => s.id !== id);
-    const lastSchedule = others[others.length - 1];
+    const recipient = recipients[recipients.length - 1];
 
     const deletedAmount = parseFloat(schedule.amount ?? "0");
-    const lastAmount = parseFloat(lastSchedule.amount ?? "0");
+    const recipientAmount = parseFloat(recipient.amount ?? "0");
     const lastHasAdjustments =
-      lastSchedule.baseAmount !== null ||
-      (lastSchedule.promotionKeys?.length ?? 0) > 0 ||
-      (lastSchedule.surchargeKeys?.length ?? 0) > 0;
+      recipient.baseAmount !== null ||
+      (recipient.promotionKeys?.length ?? 0) > 0 ||
+      (recipient.surchargeKeys?.length ?? 0) > 0;
     if (lastHasAdjustments) {
-      const promotionKeys = lastSchedule.promotionKeys ?? [];
-      const surchargeKeys = lastSchedule.surchargeKeys ?? [];
+      const promotionKeys = recipient.promotionKeys ?? [];
+      const surchargeKeys = recipient.surchargeKeys ?? [];
       const options = await loadScheduleAdjustmentOptions(tx, promotionKeys, surchargeKeys);
-      const nextBaseAmount = parseFloat(lastSchedule.baseAmount ?? lastSchedule.amount ?? "0") + deletedAmount;
+      const nextBaseAmount = parseFloat(recipient.baseAmount ?? recipient.amount ?? "0") + deletedAmount;
       const calculated = calculateScheduleAdjustments(nextBaseAmount, promotionKeys, surchargeKeys, options);
       await tx
         .update(invoicePaymentSchedule)
@@ -3036,12 +3050,12 @@ export async function deleteInvoiceSchedule(id: string): Promise<void> {
           surchargeAmount: calculated.surchargeAmount.toFixed(2),
           updatedAt: new Date(),
         })
-        .where(eq(invoicePaymentSchedule.id, lastSchedule.id));
+        .where(eq(invoicePaymentSchedule.id, recipient.id));
     } else {
       await tx
         .update(invoicePaymentSchedule)
-        .set({ amount: (lastAmount + deletedAmount).toFixed(2) })
-        .where(eq(invoicePaymentSchedule.id, lastSchedule.id));
+        .set({ amount: (recipientAmount + deletedAmount).toFixed(2) })
+        .where(eq(invoicePaymentSchedule.id, recipient.id));
     }
 
     await tx.delete(invoicePaymentSchedule).where(eq(invoicePaymentSchedule.id, id));

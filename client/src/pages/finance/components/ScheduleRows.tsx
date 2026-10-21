@@ -23,6 +23,7 @@ import { getBankCode, sanitizeForBank } from "./qr-utils";
 
 interface ParentInvoice {
   id: string;
+  status?: string;
   code?: string;
   name?: string;
   branch?: string;
@@ -40,6 +41,7 @@ export function ScheduleRows({
   selectedScheduleIds,
   onToggleSchedule,
   canSelect = true,
+  canDelete = false,
   onViewPrint,
   payerNames = [],
   allowedStatusTargets = [],
@@ -52,6 +54,7 @@ export function ScheduleRows({
   selectedScheduleIds?: Set<string>;
   onToggleSchedule?: (s: ScheduleItem, checked: boolean) => void;
   canSelect?: boolean;
+  canDelete?: boolean;
   onViewPrint?: (s: ScheduleItem) => void;
   payerNames?: string[];
   allowedStatusTargets?: readonly string[];
@@ -197,7 +200,12 @@ export function ScheduleRows({
         const hasAdjustment = s.baseAmount !== null && s.baseAmount !== undefined
           || (s.promotionKeys?.length ?? 0) > 0
           || (s.surchargeKeys?.length ?? 0) > 0;
-        const canDelete = !isPaid && totalSchedules > 1;
+        const unpaidScheduleCount = schedules.filter(schedule => schedule.status === "unpaid").length;
+        const canDeleteSchedule = canDelete && s.status === "unpaid" && (
+          totalSchedules === 1
+            ? invoice?.status === "unpaid"
+            : unpaidScheduleCount >= 2
+        );
         const isSelected = selectedScheduleIds?.has(s.id) ?? false;
         const canSign = isPaid && s.einvoiceStatus !== "published";
 
@@ -276,7 +284,7 @@ export function ScheduleRows({
                       </DropdownMenuItem>
                     </>
                   )}
-                  {canDelete && (
+                  {canDeleteSchedule && (
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
@@ -344,7 +352,9 @@ export function ScheduleRows({
               <p className="text-sm">Bạn chắc chắn muốn xoá đợt <span className="font-semibold">{deleteTarget.label}</span>?</p>
               <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-3 text-xs text-yellow-800 space-y-1">
                 <p className="font-semibold">Lưu ý nghiệp vụ:</p>
-                <p>Số tiền <span className="font-semibold">{fmtMoney(parseNum(deleteTarget.amount))}</span> sẽ được cộng vào đợt cuối cùng để đảm bảo tổng tiền không thay đổi.</p>
+                {totalSchedules === 1
+                  ? <p>Xóa đợt cuối sẽ xóa toàn bộ hóa đơn.</p>
+                  : <p>Số tiền <span className="font-semibold">{fmtMoney(parseNum(deleteTarget.amount))}</span> sẽ được cộng vào một đợt chưa thanh toán khác.</p>}
               </div>
             </div>
             <div className="flex justify-end gap-2">
@@ -355,7 +365,7 @@ export function ScheduleRows({
                   deleteMutation.mutate(deleteTarget.id, {
                     onSuccess: () => {
                       setDeleteTarget(null);
-                      toast({ title: "Đã xoá đợt thanh toán" });
+                       toast({ title: totalSchedules === 1 ? "Đã xoá hóa đơn" : "Đã xoá đợt thanh toán" });
                     },
                     onError: (err: any) => toast({ title: "Lỗi xoá", description: err.message, variant: "destructive" }),
                   })
