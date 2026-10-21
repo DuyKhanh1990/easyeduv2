@@ -90,6 +90,7 @@ import { registerCommissionRoutes } from "./routes/commission.routes";
 import { registerAdminHubRoutes } from "./routes/admin-hub.routes";
 import { registerReconciliationRoutes } from "./routes/reconciliation.routes";
 import { registerDatabaseBackupRoutes } from "./routes/database-backup.routes";
+import { registerAdminEducationRoutes } from "./routes/admin-education.routes";
 import { startDatabaseBackupScheduler } from "./services/database-backup-scheduler.service";
 import { startAdminHubSyncScheduler } from "./services/admin-hub-sync.service";
 import {
@@ -428,6 +429,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerZbsTemplateLibraryRoutes(app);
   registerDatabaseBackupRoutes(app);
   registerAdminHubRoutes(app);
+  registerAdminEducationRoutes(app);
   registerMobileRoutes(app);
   registerMobileTaskRoutes(app);
   registerMobileNewsFeedRoutes(app);

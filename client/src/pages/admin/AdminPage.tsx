@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import { vi } from "date-fns/locale";
 import {
   AlertTriangle,
+  BookOpen,
   CheckCircle2,
   Clock3,
   Cloud,
@@ -19,6 +20,8 @@ import {
   RotateCcw,
   ShieldAlert,
   ShieldCheck,
+  ScanSearch,
+  Trash2,
   XCircle,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -82,6 +85,29 @@ type DatabaseRestore = {
   progressMessage: string | null;
   errorMessage: string | null;
   completedAt: string | null;
+};
+
+type OrphanTeacherAssignment = {
+  assignmentId: string;
+  classSessionId: string;
+  classId: string;
+  classCode: string;
+  className: string;
+  sessionIndex: number | null;
+  sessionDate: string;
+  oldTeacherId: string;
+  oldTeacherName: string;
+  oldTeacherCode: string;
+  startTime: string;
+  endTime: string;
+  currentTeachers: Array<{ id: string; fullName: string; code: string }>;
+};
+
+type OrphanTeacherAssignmentScan = {
+  total: number;
+  classCount: number;
+  sessionCount: number;
+  items: OrphanTeacherAssignment[];
 };
 
 function formatDateTime(value: string | null | undefined): string {
@@ -203,6 +229,7 @@ export default function AdminPage() {
   const [adminHubConnectionCode, setAdminHubConnectionCode] = useState("");
   const [adminHubConnectionStatus, setAdminHubConnectionStatus] = useState<"idle" | "connected" | "failed">("idle");
   const [adminHubClaimStatus, setAdminHubClaimStatus] = useState<"connected" | "already_connected" | null>(null);
+  const [cleanupOrphanAssignmentsOpen, setCleanupOrphanAssignmentsOpen] = useState(false);
 
   const adminHubConnectionQuery = useQuery<{
     connected: boolean;
@@ -287,6 +314,43 @@ export default function AdminPage() {
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       return status === "completed" || status === "failed" ? false : 3000;
+    },
+  });
+
+  const orphanTeacherAssignmentsQuery = useQuery<OrphanTeacherAssignmentScan>({
+    queryKey: ["/api/admin/education/orphan-teacher-assignments"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/admin/education/orphan-teacher-assignments");
+      return (await response.json()) as OrphanTeacherAssignmentScan;
+    },
+    enabled: false,
+  });
+
+  const cleanupOrphanTeacherAssignmentsMutation = useMutation({
+    mutationFn: async (assignmentIds: string[]) => {
+      const response = await apiRequest(
+        "POST",
+        "/api/admin/education/orphan-teacher-assignments/cleanup",
+        { assignmentIds },
+      );
+      return response.json() as Promise<{ removedCount: number; skippedCount: number }>;
+    },
+    onSuccess: async (result) => {
+      setCleanupOrphanAssignmentsOpen(false);
+      await orphanTeacherAssignmentsQuery.refetch();
+      toast({
+        title: "Đã dọn phân công giáo viên cũ",
+        description: result.skippedCount > 0
+          ? `Đã xóa ${result.removedCount} dòng; bỏ qua ${result.skippedCount} dòng đã thay đổi sau lần quét.`
+          : `Đã xóa ${result.removedCount} dòng phân công không còn khớp với giáo viên của buổi.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Không thể dọn phân công giáo viên cũ",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -413,6 +477,10 @@ export default function AdminPage() {
               <TabsTrigger value="admin-hub" className="gap-2">
                 <Link2 className="h-4 w-4" />
                 Kết nối Admin Hub
+              </TabsTrigger>
+              <TabsTrigger value="education" className="gap-2">
+                <BookOpen className="h-4 w-4" />
+                EDUCATION
               </TabsTrigger>
             </TabsList>
           </div>
@@ -893,6 +961,195 @@ export default function AdminPage() {
                 </Alert>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="education" className="mt-0 space-y-6">
+            <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-950 via-slate-900 to-teal-950 px-6 py-7 text-white shadow-lg md:px-8 md:py-9">
+              <div className="absolute -right-16 -top-24 h-64 w-64 rounded-full bg-emerald-500/15 blur-3xl" />
+              <div className="relative flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                <div className="max-w-2xl">
+                  <div className="mb-3 flex items-center gap-2 text-emerald-200">
+                    <BookOpen className="h-4 w-4" />
+                    <span className="text-xs font-bold uppercase tracking-[0.16em]">Nghiệp vụ Education</span>
+                  </div>
+                  <h2 className="text-3xl font-bold tracking-tight md:text-4xl">Công cụ bảo trì lịch học</h2>
+                  <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300 md:text-base">
+                    Rà soát các phân công giờ còn gắn với giáo viên không còn nằm trong danh sách của buổi học.
+                  </p>
+                </div>
+                <Badge className="w-fit border-white/20 bg-white/10 text-emerald-100 hover:bg-white/10">
+                  Chỉ Super Admin
+                </Badge>
+              </div>
+            </section>
+
+            <Card className="border-white/80 shadow-sm">
+              <CardHeader className="border-b border-border/60 bg-white/70 px-5 py-5 md:px-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <ScanSearch className="h-5 w-5 text-emerald-700" />
+                      Phân công giáo viên cũ
+                    </CardTitle>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Chỉ xóa dòng phân công giờ khi giáo viên không còn được phân công cho buổi đó.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="gap-2"
+                    disabled={orphanTeacherAssignmentsQuery.isFetching || cleanupOrphanTeacherAssignmentsMutation.isPending}
+                    onClick={() => void orphanTeacherAssignmentsQuery.refetch()}
+                  >
+                    {orphanTeacherAssignmentsQuery.isFetching ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ScanSearch className="h-4 w-4" />
+                    )}
+                    {orphanTeacherAssignmentsQuery.data ? "Quét lại dữ liệu" : "Quét dữ liệu"}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-5 px-5 py-6 md:px-6">
+                <Alert className="border-amber-200 bg-amber-50/70 text-amber-950">
+                  <ShieldAlert className="h-4 w-4" />
+                  <AlertTitle>Phạm vi dọn dữ liệu</AlertTitle>
+                  <AlertDescription className="text-amber-900/80">
+                    Không đổi giáo viên hiện tại, giờ riêng của giáo viên đang được phân công, lịch buổi, vai trò,
+                    học viên hay điểm danh. Các dòng được chọn sẽ được kiểm tra lại trước khi xóa và thao tác được ghi nhật ký nội bộ.
+                  </AlertDescription>
+                </Alert>
+
+                {orphanTeacherAssignmentsQuery.isError && (
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Không thể quét dữ liệu</AlertTitle>
+                    <AlertDescription>
+                      {(orphanTeacherAssignmentsQuery.error as Error).message}
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {orphanTeacherAssignmentsQuery.data && (
+                  <>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={orphanTeacherAssignmentsQuery.data.total > 0 ? "destructive" : "outline"}>
+                        {orphanTeacherAssignmentsQuery.data.total} dòng cần kiểm tra
+                      </Badge>
+                      <Badge variant="outline">{orphanTeacherAssignmentsQuery.data.classCount} lớp</Badge>
+                      <Badge variant="outline">{orphanTeacherAssignmentsQuery.data.sessionCount} buổi</Badge>
+                    </div>
+
+                    {orphanTeacherAssignmentsQuery.data.items.length === 0 ? (
+                      <Alert className="border-emerald-200 bg-emerald-50/70 text-emerald-950">
+                        <CheckCircle2 className="h-4 w-4" />
+                        <AlertTitle>Không phát hiện phân công giáo viên cũ</AlertTitle>
+                        <AlertDescription>
+                          Các phân công giờ hiện khớp với danh sách giáo viên của từng buổi.
+                        </AlertDescription>
+                      </Alert>
+                    ) : (
+                      <>
+                        <div className="max-h-[440px] overflow-auto rounded-xl border">
+                          <Table>
+                            <TableHeader className="sticky top-0 bg-background">
+                              <TableRow>
+                                <TableHead>Lớp / buổi</TableHead>
+                                <TableHead>Giáo viên cũ</TableHead>
+                                <TableHead>Giáo viên hiện tại</TableHead>
+                                <TableHead>Giờ phân công cũ</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {orphanTeacherAssignmentsQuery.data.items.map((item) => (
+                                <TableRow key={item.assignmentId}>
+                                  <TableCell className="min-w-[190px]">
+                                    <div className="font-medium">{item.classCode} · Buổi {item.sessionIndex ?? "—"}</div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {item.className} · {format(new Date(`${item.sessionDate}T00:00:00`), "dd/MM/yyyy")}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="font-medium text-red-700">{item.oldTeacherName}</div>
+                                    <div className="text-xs text-muted-foreground">{item.oldTeacherCode}</div>
+                                  </TableCell>
+                                  <TableCell>
+                                    {item.currentTeachers.length > 0 ? (
+                                      item.currentTeachers.map((teacher) => (
+                                        <div key={teacher.id} className="font-medium">
+                                          {teacher.fullName}{teacher.code ? ` (${teacher.code})` : ""}
+                                        </div>
+                                      ))
+                                    ) : (
+                                      <span className="text-muted-foreground">Chưa gán giáo viên</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="whitespace-nowrap">
+                                    {item.startTime.slice(0, 5)}–{item.endTime.slice(0, 5)}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                        <div className="flex justify-end">
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            className="gap-2"
+                            disabled={cleanupOrphanTeacherAssignmentsMutation.isPending}
+                            onClick={() => setCleanupOrphanAssignmentsOpen(true)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Dọn {orphanTeacherAssignmentsQuery.data.total} dòng đã phát hiện
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            <AlertDialog open={cleanupOrphanAssignmentsOpen} onOpenChange={setCleanupOrphanAssignmentsOpen}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Xác nhận dọn phân công giáo viên cũ?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Hệ thống sẽ xóa tối đa {orphanTeacherAssignmentsQuery.data?.total ?? 0} dòng đang hiển thị,
+                    sau khi kiểm tra lại rằng giáo viên đó không còn nằm trong danh sách của buổi.
+                    Giáo viên và lịch hiện tại sẽ không bị thay đổi.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={cleanupOrphanTeacherAssignmentsMutation.isPending}>
+                    Hủy
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    disabled={
+                      cleanupOrphanTeacherAssignmentsMutation.isPending ||
+                      !orphanTeacherAssignmentsQuery.data?.items.length
+                    }
+                    onClick={(event) => {
+                      event.preventDefault();
+                      const assignmentIds = orphanTeacherAssignmentsQuery.data?.items.map((item) => item.assignmentId) ?? [];
+                      if (assignmentIds.length > 0) {
+                        cleanupOrphanTeacherAssignmentsMutation.mutate(assignmentIds);
+                      }
+                    }}
+                    className="bg-red-600 text-white hover:bg-red-700"
+                  >
+                    {cleanupOrphanTeacherAssignmentsMutation.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="mr-2 h-4 w-4" />
+                    )}
+                    Xác nhận dọn
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </TabsContent>
         </Tabs>
       </div>
