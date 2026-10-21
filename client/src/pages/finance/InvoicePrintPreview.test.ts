@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderHistoryHtml, renderTemplate } from "./InvoicePrintPreview";
+import { INVOICE_PRINT_BASE_STYLES } from "./invoice-print-base-styles";
 
 describe("legacy invoice-print financial variables", () => {
   it("uses parent invoice amounts when printing an installment", () => {
@@ -100,5 +101,15 @@ describe("{{lich_su_thanh_toan}}", () => {
     expect(html).toContain("ĐỢT 1 đã thanh toán");
     expect(html).toContain("ĐỢT 2 chưa thanh toán");
     expect(html).toContain("Dự kiến 26/09/2026");
+  });
+});
+
+describe("invoice print layout styles", () => {
+  it("resets browser defaults that otherwise change spacing and borderless table alignment", () => {
+    expect(INVOICE_PRINT_BASE_STYLES).toContain(".invoice-print-root p");
+    expect(INVOICE_PRINT_BASE_STYLES).toContain("margin: 0;");
+    expect(INVOICE_PRINT_BASE_STYLES).toContain("border-spacing: 0;");
+    expect(INVOICE_PRINT_BASE_STYLES).toContain("padding-left: 0 !important;");
+    expect(INVOICE_PRINT_BASE_STYLES).toContain("padding-right: 0 !important;");
   });
 });
