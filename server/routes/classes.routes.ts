@@ -31,6 +31,7 @@ import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 import { getNextLocationCode } from "../storage/finance.storage";
 import { recordFreeClassWalletTransition } from "../storage/free-class-wallet.storage";
 import { buildTeacherTimeAssignments, getShiftScheduleKey } from "@shared/teacher-time-assignments";
+import { resolveTeacherAttendanceScope } from "../lib/teacher-attendance-access";
 import { canScheduleWrite, isScheduleEntryVisible } from "@shared/schedule-access";
 import { getPreferredSystemTrainingTeacherRoleId } from "@shared/teacher-role-priority";
 import { canUseMySpaceCalendarAction } from "@shared/my-space-calendar-permissions";
@@ -9908,6 +9909,26 @@ export function registerClassesRoutes(app: Express): void {
   // ─── Teacher Attendance (Chấm công giáo viên) ────────────────────────────
   app.get("/api/learning-overview/teacher-attendance", async (req, res) => {
     try {
+      const user = req.user as { username?: string } | undefined;
+      const isSuperAdmin = req.isSuperAdmin === true || user?.username === "admin";
+      const permission = isSuperAdmin
+        ? { canView: true, canViewAll: true }
+        : await storage.getEffectivePermissions(
+            req.roleIds ?? [],
+            "/learning-overview#cham-cong-giao-vien",
+          );
+      const access = resolveTeacherAttendanceScope({
+        isSuperAdmin,
+        permission,
+        staffId: req.staffId,
+      });
+      if (!access.allowed) {
+        return res.status(403).json({ message: "Bạn không có quyền xem chấm công giáo viên." });
+      }
+      const staffScopeSql = access.staffId
+        ? sql`AND sf.id = ${access.staffId}::uuid`
+        : sql``;
+
       const today = new Date().toISOString().split("T")[0];
       const dateFrom = String(req.query.dateFrom || today);
       const dateTo = String(req.query.dateTo || today);
@@ -9928,6 +9949,7 @@ export function registerClassesRoutes(app: Express): void {
         JOIN staff sf ON sf.id = ANY(cs.teacher_ids)
         WHERE cs.session_date BETWEEN ${dateFrom}::date AND ${dateTo}::date
           AND cs.status != 'cancelled'
+          ${staffScopeSql}
           ${searchSql}
       `)).rows as any[];
 
@@ -9952,6 +9974,7 @@ export function registerClassesRoutes(app: Express): void {
         LEFT JOIN teacher_attendance ta ON ta.class_session_id = cs.id AND ta.staff_id = sf.id
         WHERE cs.session_date BETWEEN ${dateFrom}::date AND ${dateTo}::date
           AND cs.status != 'cancelled'
+          ${staffScopeSql}
           ${searchSql}
         ORDER BY cs.session_date ASC, st.start_time ASC, sf.full_name ASC
         LIMIT ${pageSize} OFFSET ${offset}
