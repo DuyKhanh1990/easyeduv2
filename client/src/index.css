@@ -111,6 +111,12 @@
     font-size: 11px !important;
   }
 
+  .customers-class-roster-table .class-roster-general-info,
+  .customers-class-roster-table .class-roster-general-info *:not(svg) {
+    font-family: 'Roboto', Helvetica, Arial, sans-serif !important;
+    font-size: 12px !important;
+  }
+
   .glass-panel {
     @apply bg-white/70 backdrop-blur-xl border border-white/20 shadow-sm;
   }

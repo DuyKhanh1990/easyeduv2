@@ -213,7 +213,7 @@ type OmicallCallerResponse = {
   locations: OmicallCallerLocation[];
 };
 
-function CustomerPhoneCallMenu({ student }: { student: any }) {
+function CustomerPhoneCallMenu({ student, compact = false }: { student: any; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const { data: caller, isLoading } = useQuery<OmicallCallerResponse>({
     queryKey: ["/api/call-center/omicall/caller"],
@@ -246,11 +246,16 @@ function CustomerPhoneCallMenu({ student }: { student: any }) {
         <button
           type="button"
           onClick={(event) => event.stopPropagation()}
-          className="group inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-xs font-medium text-slate-600 transition-colors hover:bg-emerald-50 hover:text-emerald-700"
+          className={cn(
+            "group inline-flex items-center gap-1 font-medium text-slate-600 transition-colors hover:bg-emerald-50 hover:text-emerald-700",
+            compact
+              ? "rounded-none px-0 py-0 font-['Roboto'] !text-[12px]"
+              : "rounded-md px-1 py-0.5 text-xs",
+          )}
           data-testid={`button-call-student-${student.id}`}
           title="Chọn số tổng đài để gọi"
         >
-          <span>{student.phone}</span>
+          <span className={compact ? "font-['Roboto'] !text-[12px]" : undefined}>{student.phone}</span>
           <PhoneCall className="h-3 w-3 text-emerald-600 opacity-0 transition-opacity group-hover:opacity-100" />
         </button>
       </PopoverTrigger>
@@ -498,11 +503,6 @@ export function CustomersTable({
                 </span>
               )}
               <div className="customer-class-name-meta flex flex-wrap items-center gap-x-2 gap-y-1">
-                {starBalancesMap[student.id] != null && starBalancesMap[student.id] > 0 && (
-                  <span className="flex items-center gap-0.5 text-[11px] text-amber-600 font-semibold leading-none">
-                    {starBalancesMap[student.id]}<Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
-                  </span>
-                )}
                 {endingClasses.length > 0 && <EndingSoonBadge classes={endingClasses} compact />}
                 {overdueInvoicesMap[student.id]?.length > 0 && (
                   <OverdueInvoicesBadge invoices={overdueInvoicesMap[student.id]} compact />
@@ -522,7 +522,7 @@ export function CustomersTable({
           : student.location?.name || "";
         const dateOfBirth = student.dateOfBirth ? formatDate(student.dateOfBirth) : "";
         return (
-          <div className="flex flex-col gap-0.5 font-['Roboto'] text-[12px] leading-snug">
+          <div className="class-roster-general-info flex flex-col gap-0.5 font-['Roboto'] text-[12px] leading-snug">
             {locationNames && (
               <div className="truncate text-slate-600" title={locationNames}>
                 {locationNames}
@@ -530,7 +530,7 @@ export function CustomersTable({
             )}
             {student.phone && (
               <div className="truncate" title={student.phone}>
-                <CustomerPhoneCallMenu student={student} />
+                <CustomerPhoneCallMenu student={student} compact />
               </div>
             )}
             {dateOfBirth && (
@@ -545,8 +545,8 @@ export function CustomersTable({
       if (columnId === "classTime") {
         return (
           <div className="flex flex-col gap-1 font-['Roboto'] text-[12px] leading-snug">
-            <div className="font-medium text-slate-700">{formatDate(classDetail?.startDate)}</div>
-            <div className="font-medium text-slate-700">{formatDate(classDetail?.endDate)}</div>
+            <div className="font-medium text-slate-700">BĐ: {formatDate(classDetail?.startDate)}</div>
+            <div className="font-medium text-slate-700">KT: {formatDate(classDetail?.endDate)}</div>
           </div>
         );
       }
@@ -1209,7 +1209,7 @@ export function CustomersTable({
 
   return (
     <>
-      <table className={cn("customers-table caption-bottom text-sm border-separate border-spacing-0", isClassRosterView ? "w-max" : "w-full")}>
+      <table className={cn("customers-table caption-bottom text-sm border-separate border-spacing-0", isClassRosterView ? "customers-class-roster-table w-max" : "w-full")}>
         {/* ── Header ── */}
         <thead className="sticky top-0 z-20">
           <tr className="bg-slate-50 dark:bg-slate-900">
