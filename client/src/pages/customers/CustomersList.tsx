@@ -1616,7 +1616,7 @@ export function CustomersList() {
 
           <div className="flex-1 min-h-0 overflow-auto overscroll-contain">
             {classRosterViewActive && (
-              <div className="sticky top-0 z-30 flex min-h-10 items-center gap-2 border-b bg-white px-3 py-1.5">
+              <div className="sticky left-0 top-0 z-30 flex min-h-10 w-full items-center gap-2 border-b bg-white px-3 py-1.5 shadow-sm">
                 <Button
                   type="button"
                   variant="outline"
