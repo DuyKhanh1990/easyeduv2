@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { MoreHorizontal, Pencil, ReceiptText, Trash2, ChevronDown, MessageCircle, CheckCircle2, XCircle, CalendarPlus, Star, AlertTriangle, Clock, Facebook, PhoneCall } from "lucide-react";
+import { MoreHorizontal, Pencil, ReceiptText, Trash2, ChevronDown, MessageCircle, CheckCircle2, XCircle, CalendarPlus, Star, AlertTriangle, Clock, Facebook, PhoneCall, PauseCircle, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { ColumnConfig } from "./SortableColumnItem";
@@ -353,6 +353,21 @@ const LEARNING_STATUS_MAP: Record<string, { label: string; dot: string; badge: s
   chua_co_lich: { label: "Chưa có lịch", dot: "bg-slate-400",   badge: "bg-slate-50 text-slate-600 border-slate-200" },
 };
 
+const CLASS_ATTENDANCE_DISPLAY: Record<string, {
+  label: string;
+  Icon: typeof CheckCircle2;
+  cardClass: string;
+  iconClass: string;
+}> = {
+  present: { label: "Có học", Icon: CheckCircle2, cardClass: "border-emerald-200 bg-emerald-50 text-emerald-800", iconClass: "text-emerald-600" },
+  absent: { label: "Nghỉ", Icon: XCircle, cardClass: "border-rose-200 bg-rose-50 text-rose-800", iconClass: "text-rose-600" },
+  makeup_wait: { label: "Chờ bù", Icon: Clock, cardClass: "border-orange-200 bg-orange-50 text-orange-800", iconClass: "text-orange-600" },
+  makeup_scheduled: { label: "Đã xếp bù", Icon: Clock, cardClass: "border-violet-200 bg-violet-50 text-violet-800", iconClass: "text-violet-700" },
+  makeup_done: { label: "Học bù", Icon: RefreshCw, cardClass: "border-blue-200 bg-blue-50 text-blue-800", iconClass: "text-blue-600" },
+  paused: { label: "Bảo lưu", Icon: PauseCircle, cardClass: "border-amber-200 bg-amber-50 text-amber-800", iconClass: "text-amber-600" },
+  pending: { label: "Chưa điểm danh", Icon: Clock, cardClass: "border-slate-200 bg-white text-slate-600", iconClass: "text-slate-400" },
+};
+
 function getClassDayHeader(columnId: string) {
   const date = columnId.slice("classDay:".length);
   const [year, month, day] = date.split("-").map(Number);
@@ -444,7 +459,7 @@ export function CustomersTable({
       if (column.id === "classGeneral") return cn("w-[150px] min-w-[150px] max-w-[150px] sticky left-[210px]", base, BLOCK_SHADOW_RIGHT);
       if (column.id === "classTime") return cn("w-[125px] min-w-[125px]", base);
       if (column.id === "classSessions") return cn("w-[110px] min-w-[110px]", base);
-      if (column.id.startsWith("classDay:")) return cn("w-[76px] min-w-[76px] border-l border-slate-200 text-center", base);
+      if (column.id.startsWith("classDay:")) return cn("w-[76px] min-w-[76px] border-l border-sky-200 bg-sky-50 text-center dark:border-sky-900 dark:bg-sky-950/40", base);
       if (column.id === "actions") return cn("w-12 sticky right-0 z-20 text-center", STICKY_BG_HEADER, BLOCK_SHADOW_LEFT);
     }
     if (column.id === "selection") return cn("w-10 min-w-[40px] max-w-[40px] sticky left-0", base);
@@ -484,23 +499,27 @@ export function CustomersTable({
       const date = columnId.slice("classDay:".length);
       const sessions = scheduleRowsByStudentAndDate.get(`${student.id}:${date}`) ?? [];
       if (sessions.length === 0) return null;
-      const attendanceLabels: Record<string, { label: string; className: string }> = {
-        present: { label: "Có học", className: "text-emerald-700" },
-        absent: { label: "Nghỉ", className: "text-rose-700" },
-        makeup_wait: { label: "Chờ bù", className: "text-orange-700" },
-        makeup_scheduled: { label: "Đã xếp bù", className: "text-violet-800" },
-        makeup_done: { label: "Học bù", className: "text-blue-700" },
-        paused: { label: "Bảo lưu", className: "text-amber-700" },
-      };
+      const statuses = sessions.map((session) =>
+        CLASS_ATTENDANCE_DISPLAY[session.attendanceStatus ?? "pending"] ?? CLASS_ATTENDANCE_DISPLAY.pending
+      );
       return (
-        <div className="flex flex-col items-center gap-0.5 font-['Roboto'] text-[10px] leading-tight">
-          {sessions.map((session) => {
-            const status = session.attendanceStatus ? attendanceLabels[session.attendanceStatus] : undefined;
-            return status ? (
-              <span key={session.classSessionId} className={`whitespace-nowrap font-medium ${status.className}`}>
-                {status.label}
-              </span>
-            ) : null;
+        <div className="mx-auto flex w-full flex-col items-center justify-center gap-1 font-['Roboto'] text-[10px] leading-tight">
+          {sessions.map((session, index) => {
+            const status = statuses[index];
+            const Icon = status.Icon;
+            return (
+              <div
+                key={session.classSessionId}
+                className={cn(
+                  "flex min-h-[54px] w-full flex-col items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-center font-semibold shadow-sm",
+                  status.cardClass,
+                )}
+                title={status.label}
+              >
+                <Icon className={cn("h-4 w-4 shrink-0", status.iconClass)} strokeWidth={2.5} />
+                <span className="leading-tight">{status.label}</span>
+              </div>
+            );
           })}
         </div>
       );
@@ -1346,10 +1365,6 @@ export function CustomersTable({
                       ),
                       usesStandardCustomerFont(col.id) && "standard-customer-font",
                       getCellStyle(col.id, selectedIds.includes(student.id)),
-                      isClassRosterView &&
-                        col.id.startsWith("classDay:") &&
-                        scheduleRowsByStudentAndDate.has(`${student.id}:${col.id.slice("classDay:".length)}`) &&
-                        "bg-sky-100/80 group-hover:bg-sky-200/80 dark:bg-sky-950/30 dark:group-hover:bg-sky-900/40"
                     )}
                     onClick={(e) => (col.id === "selection" || col.id === "actions" || col.id === "pipeline" || col.id === "accountStatus") && e.stopPropagation()}
                   >
