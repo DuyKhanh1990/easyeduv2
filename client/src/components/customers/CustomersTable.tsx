@@ -353,6 +353,15 @@ const LEARNING_STATUS_MAP: Record<string, { label: string; dot: string; badge: s
   chua_co_lich: { label: "Chưa có lịch", dot: "bg-slate-400",   badge: "bg-slate-50 text-slate-600 border-slate-200" },
 };
 
+function getClassDayHeader(columnId: string) {
+  const date = columnId.slice("classDay:".length);
+  const [year, month, day] = date.split("-").map(Number);
+  const weekday = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"][
+    new Date(Date.UTC(year, month - 1, day)).getUTCDay()
+  ];
+  return { dateLabel: `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}`, weekday };
+}
+
 export function CustomersTable({
   students, isLoading, visibleColumns, classViewId, classScheduleRows = [], selectedIds, crmRelationships,
   parents = [], learningStatuses = {}, latestScoreResults = {}, studentTasksMap = {}, starBalancesMap = {}, endingSoonMap = {}, overdueInvoicesMap = {},
@@ -435,7 +444,7 @@ export function CustomersTable({
       if (column.id === "classGeneral") return cn("w-[150px] min-w-[150px] max-w-[150px] sticky left-[210px]", base, BLOCK_SHADOW_RIGHT);
       if (column.id === "classTime") return cn("w-[125px] min-w-[125px]", base);
       if (column.id === "classSessions") return cn("w-[110px] min-w-[110px]", base);
-      if (column.id.startsWith("classDay:")) return cn("w-[76px] min-w-[76px] text-center", base);
+      if (column.id.startsWith("classDay:")) return cn("w-[76px] min-w-[76px] border-l border-slate-200 text-center", base);
       if (column.id === "actions") return cn("w-12 sticky right-0 z-20 text-center", STICKY_BG_HEADER, BLOCK_SHADOW_LEFT);
     }
     if (column.id === "selection") return cn("w-10 min-w-[40px] max-w-[40px] sticky left-0", base);
@@ -458,7 +467,7 @@ export function CustomersTable({
       if (columnId === "classGeneral") return cn("sticky left-[210px] w-[150px] min-w-[150px] max-w-[150px]", base, BLOCK_SHADOW_RIGHT);
       if (columnId === "classTime") return "w-[125px] min-w-[125px]";
       if (columnId === "classSessions") return "w-[110px] min-w-[110px]";
-      if (columnId.startsWith("classDay:")) return "w-[76px] min-w-[76px] p-1 text-center";
+      if (columnId.startsWith("classDay:")) return "w-[76px] min-w-[76px] border-l border-slate-200 p-1 text-center";
       if (columnId === "actions") return cn("sticky right-0 z-10 text-center", bg, BLOCK_SHADOW_LEFT);
     }
     if (columnId === "selection") return cn("sticky left-0 w-10 min-w-[40px] max-w-[40px]", base);
@@ -1257,7 +1266,7 @@ export function CustomersTable({
     <>
       <table className={cn("customers-table caption-bottom text-sm border-separate border-spacing-0", isClassRosterView ? "customers-class-roster-table w-max" : "w-full")}>
         {/* ── Header ── */}
-        <thead className="sticky top-0 z-20">
+        <thead className={cn("sticky z-20", isClassRosterView ? "top-10" : "top-0")}>
           <tr className="bg-slate-50 dark:bg-slate-900">
             {visibleColumns.map((col) => (
               <th
@@ -1279,7 +1288,12 @@ export function CustomersTable({
                     onCheckedChange={toggleSelectAll}
                   />
                 ) : (
-                  col.label
+                  col.id.startsWith("classDay:") ? (
+                    <div className="flex flex-col items-center gap-0.5 normal-case leading-tight">
+                      <span>{getClassDayHeader(col.id).dateLabel}</span>
+                      <span className="text-[10px] font-normal text-slate-500">{getClassDayHeader(col.id).weekday}</span>
+                    </div>
+                  ) : col.label
                 )}
               </th>
             ))}

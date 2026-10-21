@@ -119,6 +119,8 @@ export function CustomersList() {
     return params.get("classTab") === "unassigned" ? "unassigned" : params.get("classId") || "all";
   });
   const [classScheduleMonth, setClassScheduleMonth] = useState(() => format(new Date(), "yyyy-MM"));
+  const [classMonthPickerOpen, setClassMonthPickerOpen] = useState(false);
+  const [classMonthPickerYear, setClassMonthPickerYear] = useState(() => new Date().getFullYear());
   const [filters, setFilters] = useState({
     locationId: "all",
     type: "all",
@@ -637,6 +639,10 @@ export function CustomersList() {
   const changeClassScheduleMonth = (offset: number) => {
     const [year, month] = classScheduleMonth.split("-").map(Number);
     setClassScheduleMonth(format(new Date(year, month - 1 + offset, 1), "yyyy-MM"));
+  };
+  const chooseClassScheduleMonth = (month: number) => {
+    setClassScheduleMonth(`${classMonthPickerYear}-${String(month).padStart(2, "0")}`);
+    setClassMonthPickerOpen(false);
   };
 
   useEffect(() => {
@@ -1609,7 +1615,7 @@ export function CustomersList() {
 
           <div className="flex-1 overflow-auto">
             {classRosterViewActive && (
-              <div className="flex min-h-10 items-center gap-2 border-b bg-white px-3 py-1.5">
+              <div className="sticky top-0 z-30 flex min-h-10 items-center gap-2 border-b bg-white px-3 py-1.5">
                 <Button
                   type="button"
                   variant="outline"
@@ -1620,9 +1626,55 @@ export function CustomersList() {
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <span className="min-w-[105px] text-center text-sm font-semibold text-slate-700">
-                  Tháng {Number(classScheduleMonth.slice(5, 7))}/{classScheduleMonth.slice(0, 4)}
-                </span>
+                <Popover
+                  open={classMonthPickerOpen}
+                  onOpenChange={(open) => {
+                    if (open) setClassMonthPickerYear(Number(classScheduleMonth.slice(0, 4)));
+                    setClassMonthPickerOpen(open);
+                  }}
+                >
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex min-w-[130px] items-center justify-center gap-1 rounded-md px-2 py-1 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                      aria-label="Chọn tháng và năm"
+                    >
+                      Tháng {Number(classScheduleMonth.slice(5, 7))}/{classScheduleMonth.slice(0, 4)}
+                      <ChevronDown className="h-3.5 w-3.5 text-slate-500" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="center" className="w-64 p-3">
+                    <Select value={String(classMonthPickerYear)} onValueChange={(value) => setClassMonthPickerYear(Number(value))}>
+                      <SelectTrigger className="mb-3 h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-60">
+                        {Array.from({ length: new Date().getFullYear() - 1999 + 10 }, (_, index) => 2000 + index).map((year) => (
+                          <SelectItem key={year} value={String(year)}>{year}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => {
+                        const isSelected =
+                          Number(classScheduleMonth.slice(0, 4)) === classMonthPickerYear &&
+                          Number(classScheduleMonth.slice(5, 7)) === month;
+                        return (
+                          <Button
+                            key={month}
+                            type="button"
+                            variant={isSelected ? "default" : "outline"}
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={() => chooseClassScheduleMonth(month)}
+                          >
+                            Tháng {month}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  </PopoverContent>
+                </Popover>
                 <Button
                   type="button"
                   variant="outline"
