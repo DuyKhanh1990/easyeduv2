@@ -954,14 +954,32 @@ export function InvoicePrintTemplate({
   }, [refreshPreview, tableCtx]);
 
   const handleEditorPaste = useCallback((event: React.ClipboardEvent<HTMLDivElement>) => {
-    const editor = editorRef.current;
     const clipboard = event.clipboardData;
-    if (!editor || !clipboard || !Array.from(clipboard.types).includes("text/plain")) return;
+    event.preventDefault();
+    if (!clipboard) return;
+
+    const clipboardTypes = Array.from(clipboard.types).map(type => type.toLowerCase());
+    const containsFile = clipboard.files.length > 0
+      || Array.from(clipboard.items).some(item => item.kind === "file")
+      || clipboardTypes.some(type =>
+        type === "files" || type.startsWith("image/") || type.startsWith("video/") || type.startsWith("audio/"),
+      );
+    if (containsFile) {
+      toast({
+        title: "Không thể dán tệp",
+        description: "Mẫu hóa đơn chỉ chấp nhận văn bản.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const editor = editorRef.current;
+    if (!editor || !clipboardTypes.includes("text/plain")) return;
 
     // Rich clipboard HTML often contains fixed alignment and nested formatting
     // that prevents the editor's alignment controls from taking effect.
-    event.preventDefault();
     const text = clipboard.getData("text/plain").replace(/\r\n?/g, "\n");
+    if (!text) return;
     const selection = window.getSelection();
     if (!selection) return;
 
@@ -988,7 +1006,18 @@ export function InvoicePrintTemplate({
     selection.removeAllRanges();
     selection.addRange(range);
     refreshPreview();
-  }, [refreshPreview]);
+  }, [refreshPreview, toast]);
+
+  const handleEditorDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (event.dataTransfer.files.length > 0) {
+      toast({
+        title: "Không thể thêm tệp",
+        description: "Mẫu hóa đơn chỉ chấp nhận văn bản.",
+        variant: "destructive",
+      });
+    }
+  }, [toast]);
 
   const setVerticalAlign = useCallback((align: "top" | "middle" | "bottom") => {
     const sel = window.getSelection();
@@ -1983,6 +2012,8 @@ export function InvoicePrintTemplate({
                       onMouseMove={handleEditorMouseMove}
                       onMouseLeave={scheduleHideTableLineBtns}
                       onPaste={handleEditorPaste}
+                      onDragOver={event => event.preventDefault()}
+                      onDrop={handleEditorDrop}
                       onInput={refreshPreview}
                       data-testid="template-editor"
                       data-placeholder="Nhập nội dung mẫu hoá đơn tại đây..."
