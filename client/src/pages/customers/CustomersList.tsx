@@ -969,6 +969,8 @@ export function CustomersList() {
               </div>
             </button>
 
+            <span aria-hidden="true" className="mx-1 select-none text-xl font-light text-slate-400">|</span>
+
             {/* Sắp hết lịch */}
             <button
               type="button"
