@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useLanguage } from "@/hooks/use-language";
 import { useQuery } from "@tanstack/react-query";
@@ -118,6 +118,8 @@ export function CustomersList() {
     const params = new URLSearchParams(window.location.search);
     return params.get("classTab") === "unassigned" ? "unassigned" : params.get("classId") || "all";
   });
+  const [classTabSearchInput, setClassTabSearchInput] = useState("");
+  const activeClassTabButtonRef = useRef<HTMLButtonElement | null>(null);
   const [classScheduleMonth, setClassScheduleMonth] = useState(() => format(new Date(), "yyyy-MM"));
   const [classMonthPickerOpen, setClassMonthPickerOpen] = useState(false);
   const [classMonthPickerYear, setClassMonthPickerYear] = useState(() => new Date().getFullYear());
@@ -819,6 +821,20 @@ export function CustomersList() {
   const visibleChildren = activeGroupId ? childrenOfSelected : ungroupedRelationships;
   const classTabs = classTabsData?.classes ?? [];
   const selectedClass = classTabs.find((classItem) => classItem.id === activeClassTab);
+  const normalizeClassSearch = (value: string) =>
+    value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
+  const filteredClassTabs = useMemo(() => {
+    const query = normalizeClassSearch(classTabSearchInput.trim());
+    if (!query) return [];
+    return classTabs.filter((classTab) =>
+      normalizeClassSearch(`${classTab.name} ${classTab.classCode}`).includes(query)
+    );
+  }, [classTabs, classTabSearchInput]);
+
+  useEffect(() => {
+    if (viewMode !== "class" || activeClassTab === "all" || activeClassTab === "unassigned") return;
+    activeClassTabButtonRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }, [activeClassTab, viewMode, classTabsData]);
 
   return (
     <DashboardLayout>
@@ -1066,50 +1082,94 @@ export function CustomersList() {
 
             </>
           ) : (
-            <div className="flex items-end gap-0 border-b border-border/60 overflow-x-auto">
-              <button
-                onClick={() => setActiveClassTab("all")}
-                className={cn(
-                  "relative px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors",
-                  activeClassTab === "all" ? "text-sky-600 font-semibold" : "text-muted-foreground hover:text-foreground"
-                )}
-                data-testid="class-tab-all"
-              >
-                {t("customers.filterAll")}
-                {activeClassTab === "all" && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-500 rounded-t-full" />}
-              </button>
-              {classTabsData?.hasUnassigned && (
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex min-w-0 flex-1 items-end gap-0 overflow-x-auto border-b border-border/60">
                 <button
-                  onClick={() => setActiveClassTab("unassigned")}
+                  onClick={() => setActiveClassTab("all")}
                   className={cn(
                     "relative px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors",
-                    activeClassTab === "unassigned" ? "text-sky-600 font-semibold" : "text-muted-foreground hover:text-foreground"
+                    activeClassTab === "all" ? "text-sky-600 font-semibold" : "text-muted-foreground hover:text-foreground"
                   )}
-                  data-testid="class-tab-unassigned"
+                  data-testid="class-tab-all"
                 >
-                  Chưa có lớp
-                  {activeClassTab === "unassigned" && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-500 rounded-t-full" />}
+                  {t("customers.filterAll")}
+                  {activeClassTab === "all" && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-500 rounded-t-full" />}
                 </button>
-              )}
-              {classTabsLoading ? (
-                <span className="px-4 py-2 text-xs text-muted-foreground">Đang tải lớp…</span>
-              ) : (
-                classTabs.map((classTab) => (
+                {classTabsData?.hasUnassigned && (
                   <button
-                    key={classTab.id}
-                    onClick={() => setActiveClassTab(classTab.id)}
+                    onClick={() => setActiveClassTab("unassigned")}
                     className={cn(
                       "relative px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors",
-                      activeClassTab === classTab.id ? "text-sky-600 font-semibold" : "text-muted-foreground hover:text-foreground"
+                      activeClassTab === "unassigned" ? "text-sky-600 font-semibold" : "text-muted-foreground hover:text-foreground"
                     )}
-                    title={classTab.classCode}
-                    data-testid={`class-tab-${classTab.id}`}
+                    data-testid="class-tab-unassigned"
                   >
-                    {classTab.name || classTab.classCode}
-                    {activeClassTab === classTab.id && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-500 rounded-t-full" />}
+                    Chưa có lớp
+                    {activeClassTab === "unassigned" && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-500 rounded-t-full" />}
                   </button>
-                ))
-              )}
+                )}
+                {classTabsLoading ? (
+                  <span className="px-4 py-2 text-xs text-muted-foreground">Đang tải lớp…</span>
+                ) : (
+                  classTabs.map((classTab) => (
+                    <button
+                      key={classTab.id}
+                      ref={activeClassTab === classTab.id ? activeClassTabButtonRef : null}
+                      onClick={() => setActiveClassTab(classTab.id)}
+                      className={cn(
+                        "relative px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors",
+                        activeClassTab === classTab.id ? "text-sky-600 font-semibold" : "text-muted-foreground hover:text-foreground"
+                      )}
+                      title={classTab.classCode}
+                      data-testid={`class-tab-${classTab.id}`}
+                    >
+                      {classTab.name || classTab.classCode}
+                      {activeClassTab === classTab.id && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-500 rounded-t-full" />}
+                    </button>
+                  ))
+                )}
+              </div>
+              <div className="relative w-56 shrink-0">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <Input
+                  value={classTabSearchInput}
+                  onChange={(event) => setClassTabSearchInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") setClassTabSearchInput("");
+                    if (event.key === "Enter" && filteredClassTabs[0]) {
+                      event.preventDefault();
+                      setActiveClassTab(filteredClassTabs[0].id);
+                      setClassTabSearchInput("");
+                    }
+                  }}
+                  placeholder="Tìm tên hoặc mã lớp…"
+                  aria-label="Tìm lớp theo tên hoặc mã"
+                  data-testid="input-search-class-tabs"
+                  className="h-8 rounded-lg border-slate-200 bg-white pl-8 text-xs"
+                />
+                {classTabSearchInput.trim() && (
+                  <div className="absolute right-0 top-full z-50 mt-1 max-h-64 w-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+                    {filteredClassTabs.length > 0 ? filteredClassTabs.slice(0, 12).map((classTab) => (
+                      <button
+                        key={classTab.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveClassTab(classTab.id);
+                          setClassTabSearchInput("");
+                        }}
+                        className="flex w-full flex-col items-start rounded-lg px-3 py-2 text-left hover:bg-sky-50"
+                      >
+                        <span className="text-xs font-semibold text-slate-800">{classTab.name || classTab.classCode}</span>
+                        {classTab.name && classTab.classCode && (
+                          <span className="text-[10px] text-slate-500">{classTab.classCode}</span>
+                        )}
+                      </button>
+                    )) : (
+                      <div className="px-3 py-2 text-xs text-slate-500">Không tìm thấy lớp phù hợp.</div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
