@@ -154,7 +154,7 @@ export function SalaryPackageDialog({ open, onOpenChange, editItem }: Props) {
           ...rate,
           ranges: selectedType === "theo-so-hv"
             ? [{ from: 1, to: 10, price: 0 }]
-            : [{ from: 0, to: 9, price: 0 }],
+            : [{ from: 0, to: 10, price: 0 }],
         };
       }
       const last = current[current.length - 1];
@@ -299,6 +299,7 @@ export function SalaryPackageDialog({ open, onOpenChange, editItem }: Props) {
                   variant="outline"
                   size="sm"
                   onClick={handleAddRoleRate}
+                  disabled={trainingRoles.length > 0 && roleRates.length >= trainingRoles.length}
                   data-testid="button-add-package-role"
                   className="gap-1"
                 >

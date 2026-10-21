@@ -4060,36 +4060,44 @@ export function registerMySpaceRoutes(app: Express): void {
           return match ? match.price : 0;
         }
 
-        const eligibleSessions = sessions.filter((s: any) => s.isEligible);
-        const ranges = (pkg.ranges as SalaryRange[] | null) ?? [];
-
-        switch (pkg.type) {
-          case "theo-gio":
-            return eligibleSessions.reduce(
-              (sum: number, s: any) => sum + s.durationHours * Number(pkg.unitPrice || 0),
-              0
-            );
-          case "theo-buoi":
-            return eligibleSessions.length * Number(pkg.unitPrice || 0);
-          case "theo-so-hv":
-            return eligibleSessions.reduce((sum: number, s: any) => {
-              if (ranges.length > 0) {
-                return sum + s.attendedCount * findRange(s.attendedCount, ranges);
-              }
-              return sum + s.attendedCount * Number(pkg.unitPrice || 0);
-            }, 0);
-          case "tong-so-gio": {
-            const totalHours = eligibleSessions.reduce(
-              (sum: number, s: any) => sum + s.durationHours,
-              0
-            );
-            return findRange(totalHours, ranges);
+        const roleRates = Array.isArray(pkg.roleRates) && pkg.roleRates.length > 0
+          ? pkg.roleRates
+          : [{ role: pkg.role, unitPrice: pkg.unitPrice, ranges: pkg.ranges }];
+        return roleRates.reduce((total: number, rate: any) => {
+          const eligibleSessions = sessions.filter((session: any) =>
+            session.isEligible && (
+              session.roleName ? session.roleName === rate.role : roleRates.length === 1
+            )
+          );
+          const ranges = (rate.ranges as SalaryRange[] | null) ?? [];
+          switch (pkg.type) {
+            case "theo-gio":
+              return total + eligibleSessions.reduce(
+                (sum: number, session: any) => sum + session.durationHours * Number(rate.unitPrice || 0),
+                0
+              );
+            case "theo-buoi":
+              return total + eligibleSessions.length * Number(rate.unitPrice || 0);
+            case "theo-so-hv":
+              return total + eligibleSessions.reduce((sum: number, session: any) => {
+                if (ranges.length > 0) {
+                  return sum + session.attendedCount * findRange(session.attendedCount, ranges);
+                }
+                return sum + session.attendedCount * Number(rate.unitPrice || 0);
+              }, 0);
+            case "tong-so-gio": {
+              const totalHours = eligibleSessions.reduce(
+                (sum: number, session: any) => sum + session.durationHours,
+                0
+              );
+              return total + findRange(totalHours, ranges);
+            }
+            case "tong-so-buoi":
+              return total + findRange(eligibleSessions.length, ranges);
+            default:
+              return total;
           }
-          case "tong-so-buoi":
-            return findRange(eligibleSessions.length, ranges);
-          default:
-            return 0;
-        }
+        }, 0);
       }
 
       const summaries: any[] = [];
